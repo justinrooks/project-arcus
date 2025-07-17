@@ -1,0 +1,710 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		3F01848D8796909E173B675D /* Pods_SkyAware.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A62666682C922D561CB41D97 /* Pods_SkyAware.framework */; };
+		6541B68C31FDBAA3D3AE61D1 /* Pods_SkyAware_SkyAwareUITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */; };
+		7282DFA7AB8C8CEF71224CD3 /* Pods_SkyAwareTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */; };
+		D0F594752E171DCB002E2BB6 /* .swiftlint.yml in Resources */ = {isa = PBXBuildFile; fileRef = D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D095EFB32E16F56A0074F867 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D095EF9B2E16F5690074F867 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D095EFA22E16F5690074F867;
+			remoteInfo = SkyAware;
+		};
+		D095EFBD2E16F56A0074F867 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D095EF9B2E16F5690074F867 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D095EFA22E16F5690074F867;
+			remoteInfo = SkyAware;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		11170A554A33C91864DDFDE2 /* Pods-SkyAwareTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAwareTests.debug.xcconfig"; path = "Target Support Files/Pods-SkyAwareTests/Pods-SkyAwareTests.debug.xcconfig"; sourceTree = "<group>"; };
+		26070BA9C2AE5CA7186FD299 /* Pods-SkyAware-SkyAwareUITests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware-SkyAwareUITests.debug.xcconfig"; path = "Target Support Files/Pods-SkyAware-SkyAwareUITests/Pods-SkyAware-SkyAwareUITests.debug.xcconfig"; sourceTree = "<group>"; };
+		260B8FC91F5C9ECB5A57928B /* Pods-SkyAware.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware.debug.xcconfig"; path = "Target Support Files/Pods-SkyAware/Pods-SkyAware.debug.xcconfig"; sourceTree = "<group>"; };
+		91BFB16A8B5CC56C5724566E /* Pods-SkyAwareTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAwareTests.release.xcconfig"; path = "Target Support Files/Pods-SkyAwareTests/Pods-SkyAwareTests.release.xcconfig"; sourceTree = "<group>"; };
+		96707DB1EF9FAC956FC13EA0 /* Pods-SkyAware.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware.release.xcconfig"; path = "Target Support Files/Pods-SkyAware/Pods-SkyAware.release.xcconfig"; sourceTree = "<group>"; };
+		A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SkyAware_SkyAwareUITests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		A62666682C922D561CB41D97 /* Pods_SkyAware.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SkyAware.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		CB12C488C26F4DD639DCC5F0 /* Pods-SkyAware-SkyAwareUITests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware-SkyAwareUITests.release.xcconfig"; path = "Target Support Files/Pods-SkyAware-SkyAwareUITests/Pods-SkyAware-SkyAwareUITests.release.xcconfig"; sourceTree = "<group>"; };
+		D095EFA32E16F5690074F867 /* SkyAware.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SkyAware.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = .swiftlint.yml; sourceTree = "<group>"; };
+		FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SkyAwareTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		D0F5941A2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAware" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Tests/SkyAwareTests/SkyAwareTests.swift,
+				Tests/SkyAwareUITests/SkyAwareUITests.swift,
+				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
+			);
+			target = D095EFA22E16F5690074F867 /* SkyAware */;
+		};
+		D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Tests/SkyAwareTests/SkyAwareTests.swift,
+			);
+			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
+		};
+		D0F594212E17075B002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Tests/SkyAwareUITests/SkyAwareUITests.swift,
+				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
+			);
+			target = D095EFBB2E16F56A0074F867 /* SkyAwareUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		D095EFA52E16F5690074F867 /* SkyAware */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D0F5941A2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAware" target */,
+				D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */,
+				D0F594212E17075B002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareUITests" target */,
+			);
+			path = SkyAware;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		D095EFA02E16F5690074F867 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3F01848D8796909E173B675D /* Pods_SkyAware.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D095EFAF2E16F56A0074F867 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7282DFA7AB8C8CEF71224CD3 /* Pods_SkyAwareTests.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D095EFB92E16F56A0074F867 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6541B68C31FDBAA3D3AE61D1 /* Pods_SkyAware_SkyAwareUITests.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		46CBFA838E2D7CBF2EBC299F /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				260B8FC91F5C9ECB5A57928B /* Pods-SkyAware.debug.xcconfig */,
+				96707DB1EF9FAC956FC13EA0 /* Pods-SkyAware.release.xcconfig */,
+				26070BA9C2AE5CA7186FD299 /* Pods-SkyAware-SkyAwareUITests.debug.xcconfig */,
+				CB12C488C26F4DD639DCC5F0 /* Pods-SkyAware-SkyAwareUITests.release.xcconfig */,
+				11170A554A33C91864DDFDE2 /* Pods-SkyAwareTests.debug.xcconfig */,
+				91BFB16A8B5CC56C5724566E /* Pods-SkyAwareTests.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		4FF60265E384AB8FC83C01FB /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A62666682C922D561CB41D97 /* Pods_SkyAware.framework */,
+				A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */,
+				FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		D095EF9A2E16F5690074F867 = {
+			isa = PBXGroup;
+			children = (
+				D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */,
+				D095EFA52E16F5690074F867 /* SkyAware */,
+				D095EFA42E16F5690074F867 /* Products */,
+				46CBFA838E2D7CBF2EBC299F /* Pods */,
+				4FF60265E384AB8FC83C01FB /* Frameworks */,
+			);
+			sourceTree = "<group>";
+		};
+		D095EFA42E16F5690074F867 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				D095EFA32E16F5690074F867 /* SkyAware.app */,
+				D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */,
+				D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		D095EFA22E16F5690074F867 /* SkyAware */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D095EFC62E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAware" */;
+			buildPhases = (
+				DAA7A7BD42419436B5958C81 /* [CP] Check Pods Manifest.lock */,
+				D095EF9F2E16F5690074F867 /* Sources */,
+				D095EFA02E16F5690074F867 /* Frameworks */,
+				D095EFA12E16F5690074F867 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D095EFA52E16F5690074F867 /* SkyAware */,
+			);
+			name = SkyAware;
+			productName = SkyAware;
+			productReference = D095EFA32E16F5690074F867 /* SkyAware.app */;
+			productType = "com.apple.product-type.application";
+		};
+		D095EFB12E16F56A0074F867 /* SkyAwareTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D095EFC92E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAwareTests" */;
+			buildPhases = (
+				96CA18A116EF1CC00C3FD7DA /* [CP] Check Pods Manifest.lock */,
+				D095EFAE2E16F56A0074F867 /* Sources */,
+				D095EFAF2E16F56A0074F867 /* Frameworks */,
+				D095EFB02E16F56A0074F867 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D095EFB42E16F56A0074F867 /* PBXTargetDependency */,
+			);
+			name = SkyAwareTests;
+			productName = SkyAwareTests;
+			productReference = D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		D095EFBB2E16F56A0074F867 /* SkyAwareUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D095EFCC2E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAwareUITests" */;
+			buildPhases = (
+				C29A7170BB046C2928FB4A7D /* [CP] Check Pods Manifest.lock */,
+				D095EFB82E16F56A0074F867 /* Sources */,
+				D095EFB92E16F56A0074F867 /* Frameworks */,
+				D095EFBA2E16F56A0074F867 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D095EFBE2E16F56A0074F867 /* PBXTargetDependency */,
+			);
+			name = SkyAwareUITests;
+			productName = SkyAwareUITests;
+			productReference = D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D095EF9B2E16F5690074F867 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1640;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					D095EFA22E16F5690074F867 = {
+						CreatedOnToolsVersion = 16.4;
+					};
+					D095EFB12E16F56A0074F867 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = D095EFA22E16F5690074F867;
+					};
+					D095EFBB2E16F56A0074F867 = {
+						CreatedOnToolsVersion = 16.4;
+						TestTargetID = D095EFA22E16F5690074F867;
+					};
+				};
+			};
+			buildConfigurationList = D095EF9E2E16F5690074F867 /* Build configuration list for PBXProject "SkyAware" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D095EF9A2E16F5690074F867;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D095EFA42E16F5690074F867 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				D095EFA22E16F5690074F867 /* SkyAware */,
+				D095EFB12E16F56A0074F867 /* SkyAwareTests */,
+				D095EFBB2E16F56A0074F867 /* SkyAwareUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		D095EFA12E16F5690074F867 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0F594752E171DCB002E2BB6 /* .swiftlint.yml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D095EFB02E16F56A0074F867 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D095EFBA2E16F56A0074F867 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		96CA18A116EF1CC00C3FD7DA /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SkyAwareTests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		C29A7170BB046C2928FB4A7D /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SkyAware-SkyAwareUITests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		DAA7A7BD42419436B5958C81 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SkyAware-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		D095EF9F2E16F5690074F867 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D095EFAE2E16F56A0074F867 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D095EFB82E16F56A0074F867 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D095EFB42E16F56A0074F867 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D095EFA22E16F5690074F867 /* SkyAware */;
+			targetProxy = D095EFB32E16F56A0074F867 /* PBXContainerItemProxy */;
+		};
+		D095EFBE2E16F56A0074F867 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D095EFA22E16F5690074F867 /* SkyAware */;
+			targetProxy = D095EFBD2E16F56A0074F867 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		D095EFC42E16F56A0074F867 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		D095EFC52E16F56A0074F867 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D095EFC72E16F56A0074F867 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 260B8FC91F5C9ECB5A57928B /* Pods-SkyAware.debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Access required to determine proximity to weather events";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAware;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D095EFC82E16F56A0074F867 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 96707DB1EF9FAC956FC13EA0 /* Pods-SkyAware.release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Access required to determine proximity to weather events";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAware;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		D095EFCA2E16F56A0074F867 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 11170A554A33C91864DDFDE2 /* Pods-SkyAwareTests.debug.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkyAware.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SkyAware";
+			};
+			name = Debug;
+		};
+		D095EFCB2E16F56A0074F867 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 91BFB16A8B5CC56C5724566E /* Pods-SkyAwareTests.release.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkyAware.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SkyAware";
+			};
+			name = Release;
+		};
+		D095EFCD2E16F56A0074F867 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 26070BA9C2AE5CA7186FD299 /* Pods-SkyAware-SkyAwareUITests.debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SkyAware;
+			};
+			name = Debug;
+		};
+		D095EFCE2E16F56A0074F867 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = CB12C488C26F4DD639DCC5F0 /* Pods-SkyAware-SkyAwareUITests.release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SkyAware;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		D095EF9E2E16F5690074F867 /* Build configuration list for PBXProject "SkyAware" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D095EFC42E16F56A0074F867 /* Debug */,
+				D095EFC52E16F56A0074F867 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D095EFC62E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAware" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D095EFC72E16F56A0074F867 /* Debug */,
+				D095EFC82E16F56A0074F867 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D095EFC92E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAwareTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D095EFCA2E16F56A0074F867 /* Debug */,
+				D095EFCB2E16F56A0074F867 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D095EFCC2E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAwareUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D095EFCD2E16F56A0074F867 /* Debug */,
+				D095EFCE2E16F56A0074F867 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = D095EF9B2E16F5690074F867 /* Project object */;
+}

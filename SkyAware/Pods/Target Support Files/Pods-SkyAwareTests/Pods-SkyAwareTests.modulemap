@@ -1,0 +1,6 @@
+framework module Pods_SkyAwareTests {
+  umbrella header "Pods-SkyAwareTests-umbrella.h"
+
+  export *
+  module * { export * }
+}
