@@ -16,7 +16,10 @@ func parseForecastCoordinate(_ raw: String) -> CLLocationCoordinate2D? {
     }
     
     let lat = latHundo / 100.0
-    let lon = -(lonHundo / 100.0)
+    let lonRaw = lonHundo / 100.0
+    
+    // If longitude is less than 60, it's likely missing a digit (e.g., 0288 → 102.88)
+    let lon = (lonRaw < 60.0) ? -(100.0 + lonRaw) : -lonRaw
     
     return CLLocationCoordinate2D(latitude: lat, longitude: lon)
 }

@@ -103,32 +103,16 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "FD4BD302-55EE-4F13-83B1-BD7B45A5F065"
+            uuid = "63D9F027-124B-411A-BDF0-1791C8EB8E05"
             shouldBeEnabled = "Yes"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SkyAware/Code/Models/SPC/SpcProvider.swift"
+            filePath = "SkyAware/Code/Models/MapStuff/PointsProvider.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "60"
-            endingLineNumber = "60"
-            landmarkName = "loadFeed()"
-            landmarkType = "7">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "BCEE594B-B7A5-44E5-A1DD-3F08B6300A8C"
-            shouldBeEnabled = "Yes"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/Code/Models/SPC/SpcProvider.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "58"
-            endingLineNumber = "58"
-            landmarkName = "loadFeed()"
+            startingLineNumber = "54"
+            endingLineNumber = "54"
+            landmarkName = "loadPoints()"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>

@@ -38,12 +38,24 @@ struct SeverePoint: Identifiable {
     let id: UUID = UUID()
     let probability: Double
     let points: [CLLocationCoordinate2D]
+    
+    // Checks if the polygon is already closed. We'll only want to process
+    // polygons that aren't enclosed.
+    var isEnclosed: Bool {
+        isClosedLoop(self.points)
+    }
 }
 
 struct OutlookPolygon: Identifiable {
     let id: UUID = UUID()
     let convectiveOutlook: String
     let points: [CLLocationCoordinate2D]
+    
+    // Checks if the polygon is already closed. We'll only want to process
+    // polygons that aren't enclosed.
+    var isEnclosed: Bool {
+        isClosedLoop(self.points)
+    }
 }
 
 struct PointsFileParser {
@@ -65,7 +77,7 @@ struct PointsFileParser {
         var currentPoints: [CLLocationCoordinate2D] = []
         
         // MARK: Holders for Severe
-        var currentProbability: Double? = nil
+        var currentProbability: String? = nil
         var tornPoints: [SeverePoint] = []
         var hailPoints: [SeverePoint] = []
         var windPoints: [SeverePoint] = []
@@ -109,11 +121,11 @@ struct PointsFileParser {
                 handleSevereSectionLine(type: .wind, line: trimmed, currentProbability: &currentProbability, currentPoints: &currentPoints, severePoints: &severePoints, tornPoints: &tornPoints, hailPoints: &hailPoints, windPoints: &windPoints)
             case .categorical:
                 if let riskLabel = trimmed.components(separatedBy: .whitespaces).first,
-                let risk = ConvectiveRisk(rawValue: riskLabel.lowercased()) { // We are assigning it this way since it allows functionality to work
-                        flushOutlook(category: currentRiskCategory, currentPoints: &currentPoints, into: &outlookPolygons)
-                        currentRiskCategory = riskLabel
-                        let coords = trimmed.dropFirst(riskLabel.count).trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces)
-                        currentPoints += coords.compactMap(parseForecastCoordinate)
+                   let risk = ConvectiveRisk(rawValue: riskLabel.lowercased()) { // We are assigning it this way since it allows functionality to work
+                    flushOutlook(category: currentRiskCategory, currentPoints: &currentPoints, into: &outlookPolygons)
+                    currentRiskCategory = riskLabel
+                    let coords = trimmed.dropFirst(riskLabel.count).trimmingCharacters(in: .whitespaces).components(separatedBy: .whitespaces)
+                    currentPoints += coords.compactMap(parseForecastCoordinate)
                 } else if trimmed == "&&" {
                     flushOutlook(category: currentRiskCategory, currentPoints: &currentPoints, into: &outlookPolygons)
                     currentRiskCategory = nil
@@ -157,13 +169,13 @@ struct PointsFileParser {
         return Points(valid: valid, issued: issued, severe: severePolygons, categorical: outlookPolygons)
     }
     
-    private func handleSevereSectionLine(type: SevereRiskType, line: String, currentProbability: inout Double?, currentPoints: inout [CLLocationCoordinate2D], severePoints: inout [SeverePoint], tornPoints: inout [SeverePoint], hailPoints: inout [SeverePoint], windPoints: inout [SeverePoint]) {
+    private func handleSevereSectionLine(type: SevereRiskType, line: String, currentProbability: inout String?, currentPoints: inout [CLLocationCoordinate2D], severePoints: inout [SeverePoint], tornPoints: inout [SeverePoint], hailPoints: inout [SeverePoint], windPoints: inout [SeverePoint]) {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         
         if let probabilityLabel = trimmed.components(separatedBy: .whitespaces).first,
-           probabilityLabel.contains("."), let prob = Double(probabilityLabel) {
+           probabilityLabel.contains(".") || probabilityLabel.contains("SIGN") { //, let prob = Double(probabilityLabel) {
             flushSevere(probability: currentProbability, currentPoints: &currentPoints, into: &severePoints)
-            currentProbability = prob
+            currentProbability = probabilityLabel
             let coords = trimmed.dropFirst(probabilityLabel.count).trimmingCharacters(in: .whitespaces)
             currentPoints += parseLineOfCoords(coords)
         } else if trimmed == "&&" {
@@ -180,9 +192,18 @@ struct PointsFileParser {
         }
     }
     
-    private func flushSevere(probability: Double?, currentPoints: inout [CLLocationCoordinate2D], into severePoints: inout [SeverePoint]) {
+    private func flushSevere(probability: String?, currentPoints: inout [CLLocationCoordinate2D], into severePoints: inout [SeverePoint]) {
         guard let probability, !currentPoints.isEmpty else { return }
-        let point = SeverePoint(probability: probability, points: currentPoints)
+        var probabilityDouble: Double = 0.0
+        if(probability.uppercased() == "SIGN") {
+#if DEBUG
+            print("⚠️ Significant weather event detected! Probability SET to: 0.97")
+#endif
+            probabilityDouble = 0.97
+        } else {
+            probabilityDouble = Double(probability)!
+        }
+        let point = SeverePoint(probability: probabilityDouble, points: currentPoints)
         severePoints.append(point)
         currentPoints.removeAll()
     }
@@ -199,4 +220,16 @@ struct PointsFileParser {
             .components(separatedBy: .whitespaces)
             .compactMap(parseForecastCoordinate)
     }
+}
+
+// MARK: Computes if an array of coordinates are an enclosed polygon or not within a margin of error
+func isClosedLoop(_ coords: [CLLocationCoordinate2D], epsilon: Double = 0.001) -> Bool {
+    guard let first = coords.first, let last = coords.last else {
+        return false
+    }
+    
+    let latDiff = abs(first.latitude - last.latitude)
+    let lonDiff = abs(first.longitude - last.longitude)
+    
+    return latDiff < epsilon && lonDiff < epsilon
 }

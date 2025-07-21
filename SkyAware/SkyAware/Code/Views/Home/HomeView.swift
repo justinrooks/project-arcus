@@ -7,11 +7,13 @@
 
 import SwiftUI
 import SwiftData
+import MapKit
 
 struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var provider = SpcProvider()
-
+    @StateObject private var pointsProvider = PointsProvider()
+    
     var body: some View {
         ZStack {
             TabView {
@@ -20,21 +22,25 @@ struct HomeView: View {
                         Image(systemName: "sunrise.fill")
                         Text("Summary")
                     }
+                MapView(polygons: pointsProvider.hail)
+                    .tabItem {
+                        Image(systemName: "map")
+                        Text("Map")
+                    }
                 ConvectiveOutlookView(outlooks: provider.outlooks)
                     .tabItem {
                         Image(systemName: "umbrella")
                         Text("Outlooks")
                     }
+                MesoView(discussions: provider.meso)
+                    .tabItem {
+                        Image(systemName: "cloud.bolt.rain.fill")
+                        Text("Meso")
+                    }
                 WatchWarn(watches: provider.watches)
                     .tabItem {
                         Image(systemName: "exclamationmark.triangle")
                         Text("Watches")
-                    }
-
-                MesoView(discussions: provider.meso)
-                    .tabItem {
-                        Image(systemName: "cloud.bolt.rain.fill")
-                        Text("Mesoscale")
                     }
             }
             
@@ -60,12 +66,16 @@ extension HomeView {
         provider.loadFeed()
         
         print("Got SPC Feed data")
+        
+        pointsProvider.loadPoints()
+        
+        print("Got SPC Points data")
     }
 }
 
 
 #Preview {
     HomeView()
-//        .modelContainer(for: ItemTest.self, inMemory: true)
-//        .environment()
+    //        .modelContainer(for: ItemTest.self, inMemory: true)
+    //        .environment()
 }

@@ -19,6 +19,36 @@ final class SpcClient {
     private let pointsParser = PointsFileParser()
     private let downloader: HTTPDataDownloader = URLSession.shared
     
+    func fetchPoints() async throws -> Points {
+        async let pointsText = fetchPointsFile()
+        
+        do {
+            let points = try await pointsText
+                        
+            // Parse the points file into a polygon result
+            let polygons = self.pointsParser.parse(content: points)
+
+            return polygons
+        } catch {
+            throw SpcError.parsingError
+        }
+    }
+    
+    func fetchRss() async throws -> RSS {
+        async let rssData = fetchRSSFeed()
+        
+        do {
+            let rss = try await rssData
+            
+            // Parse RSS into feed result
+            let feedResult = try self.parser.parse(data:rss)
+
+            return feedResult!
+        } catch {
+            throw SpcError.parsingError
+        }
+    }
+    
     func fetchFeedAndPoints() async throws -> SpcResult {
         async let rssData = fetchRSSFeed()
         async let pointsText = fetchPointsFile()

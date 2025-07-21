@@ -12,28 +12,28 @@ struct ConvectiveOutlookView: View {
     
     var body: some View {
         VStack {
-            HStack {
+            if(outlooks.count == 0){
+                Text("No convective outlooks found")
+            } else {
                 Text("Convective Outlooks")
                     .fontWeight(.bold)
                     .padding()
-                
-                Spacer()
-            }
-            NavigationView {
-                List(outlooks.filter { $0.day == 1 }.sorted(by: { $0.published > $1.published }), id: \.id) { outlook in
-                    VStack(alignment: .leading) {
-                        Text(outlook.title)
-                            .font(.headline)
-                        if(outlook.riskLevel != nil) {
-                            Text(outlook.riskLevel!)
-                                .font(.subheadline)
-                        } else {
-                            Text("No risk level")
-                                .font(.subheadline)
+                NavigationView{
+                    List(outlooks.filter { $0.day == 1 }.sorted(by: { $0.published > $1.published }), id: \.id) { outlook in
+                        VStack(alignment: .leading) {
+                            Text(outlook.title)
+                                .font(.headline)
+                            if(outlook.riskLevel != nil) {
+                                Text(outlook.riskLevel!)
+                                    .font(.subheadline)
+                            } else {
+                                Text("No risk level")
+                                    .font(.subheadline)
+                            }
+                            
+                            //                        Text(outlook.published)
+                            //                            .font(.subheadline)
                         }
-
-//                        Text(outlook.published)
-//                            .font(.subheadline)
                     }
                 }
             }
