@@ -9,25 +9,51 @@ import SwiftUI
 
 struct MesoView: View {
     let discussions: [MesoscaleDiscussion]
+    @EnvironmentObject private var provider: SpcProvider
+    @EnvironmentObject private var pointsProvider: PointsProvider
     
     var body: some View {
         VStack {
             if (discussions.count == 0) {
                 Text("No current mesoscale discussions")
             } else {
-                Text("Mesoscale Discussions")
-                    .fontWeight(.bold)
-                    .padding()
-                NavigationView {
-                    List(discussions.sorted(by: { $0.published < $1.published }), id: \.id) { meso in
-                        VStack(alignment: .leading) {
-                            Text(meso.title)
-                                .font(.headline)
+                NavigationStack {
+                    List(discussions.sorted(by: { $0.published > $1.published }), id: \.id) { meso in
+//                        Section("Meso Discussions") {
+//                            ForEach(provider.meso) { meso in
+//                                NavigationLink(value: meso) {
+//                                    Text(meso.title)
+//                                }
+//                            }
+//                        }
+                        NavigationLink(destination: MesoDetailView(discussion: meso)) {
+                            VStack(alignment: .leading) {
+                                Text(meso.title)
+                                    .font(.headline)
+                            }
+                            .padding(.vertical, 4)
                         }
+                        .navigationTitle("Mesoscale Discussions")
+                        .font(.subheadline)
                     }
+                }
+                .refreshable {
+                    fetchSpcData()
                 }
             }
         }
+    }
+}
+
+extension MesoView {
+    func fetchSpcData() {
+        provider.loadFeed()
+        
+        print("Got SPC Feed data")
+        
+        pointsProvider.loadPoints()
+        
+        print("Got SPC Points data")
     }
 }
 

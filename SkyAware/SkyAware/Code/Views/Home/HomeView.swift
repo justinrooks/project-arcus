@@ -10,9 +10,9 @@ import SwiftData
 import MapKit
 
 struct HomeView: View {
-    @Environment(\.modelContext) private var modelContext
-    @StateObject private var provider = SpcProvider()
-    @StateObject private var pointsProvider = PointsProvider()
+//    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var provider: SpcProvider
+    @EnvironmentObject private var pointsProvider: PointsProvider
     
     var body: some View {
         ZStack {
@@ -22,7 +22,7 @@ struct HomeView: View {
                         Image(systemName: "sunrise.fill")
                         Text("Summary")
                     }
-                MapView(polygons: pointsProvider.hail)
+                MapView(polygons: pointsProvider.slight)
                     .tabItem {
                         Image(systemName: "map")
                         Text("Map")
@@ -76,6 +76,8 @@ extension HomeView {
 
 #Preview {
     HomeView()
+        .environmentObject(SpcProvider())
+        .environmentObject(PointsProvider())
     //        .modelContainer(for: ItemTest.self, inMemory: true)
     //        .environment()
 }

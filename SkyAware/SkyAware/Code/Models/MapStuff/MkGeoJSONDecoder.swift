@@ -20,7 +20,7 @@ enum BoundaryQuality: String {
 }
 
 // MARK: Discover CONUS boundary
-func loadCONUSBoundaryPolygons(quality: BoundaryQuality = .low) -> ([MKPolygon], [CLLocationCoordinate2D]) {
+func loadCONUSBoundaryPolygons(quality: BoundaryQuality = .low) -> [CLLocationCoordinate2D] {
     let qualityFile:String // Low by default
     
     switch quality
@@ -41,7 +41,7 @@ func loadCONUSBoundaryPolygons(quality: BoundaryQuality = .low) -> ([MKPolygon],
           let features = try? MKGeoJSONDecoder().decode(data)
     else {
         print("Failed to load CONUS GeoJSON")
-        return ([],[])
+        return []
     }
     
     var polygons: [MKPolygon] = []
@@ -61,8 +61,8 @@ func loadCONUSBoundaryPolygons(quality: BoundaryQuality = .low) -> ([MKPolygon],
         }
     }
     
-    // Just flatten it and return a tuple. May not need the tuple, but useful example right now
-    return (polygons, flattenCONUSBoundary(polygons))
+    // Just flatten it and return
+    return flattenCONUSBoundary(polygons)
 }
 
 private func flattenCONUSBoundary(_ polygons: [MKPolygon]) -> [CLLocationCoordinate2D] {

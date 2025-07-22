@@ -29,8 +29,7 @@ final class PointsProvider: ObservableObject {
     
     init() {
         // MARK: Fetch the US Polygon
-        let (_, flat) = loadCONUSBoundaryPolygons(quality: .low)
-        flatPoly = flat
+        flatPoly = loadCONUSBoundaryPolygons(quality: .low)
     }
     
     func loadPoints() {
@@ -59,13 +58,12 @@ final class PointsProvider: ObservableObject {
     }
     
     func extractCategoricalPolygon(risk: ConvectiveRisk, points: [OutlookPolygon]) -> MKMultiPolygon {
-        // TODO: Maybe Return an array of the CLLocatoinCoords2d so we can check if location is in each polygon
-        // -> (MKMultiPolygon, [CLLocationCoords2d])
-        var readyPoints: [MKPolygon] = []
+        var readyPolygons: [MKPolygon] = []
         let riskStr = risk.rawValue.lowercased()
         
         for p in points {
-            var pts:[CLLocationCoordinate2D] = p.points
+#warning("TODO: We should not use a magic string here of 99.99 and -99.99, but it'll work for now")
+            var pts:[CLLocationCoordinate2D] = p.points.filter { $0.latitude != 99.99 && $0.longitude != -99.99 }
             let category = p.convectiveOutlook.lowercased()
             if category == "tstm" {
 #if DEBUG
@@ -96,16 +94,19 @@ final class PointsProvider: ObservableObject {
 #endif
                     pts.append(contentsOf: arc)
                 }
+                //                29548626 30668641 31408622 33078561 34218415 34008239
+                //                       33917974 34047885 33387783 99999999 31068080 30338188
+                //                       30348353 30098419 29328428
             }
             
             // MARK: Add to the Array
             let closedPoly = MKPolygon(coordinates: pts, count: pts.count)
             closedPoly.title = p.convectiveOutlook
             
-            readyPoints.append(closedPoly)
+            readyPolygons.append(closedPoly)
         }
         
-        return MKMultiPolygon(readyPoints)
+        return MKMultiPolygon(readyPolygons)
     }
     
     // MARK: Method to extract a specific type of severe weather polygon, closed or not
@@ -113,7 +114,8 @@ final class PointsProvider: ObservableObject {
         var readyPoints: [MKPolygon] = []
         
         for p in risk.points {
-            var pts:[CLLocationCoordinate2D] = p.points
+#warning("TODO: We should not use a magic string here of 99.99 and -99.99, but it'll work for now")
+            var pts:[CLLocationCoordinate2D] = p.points.filter { $0.latitude != 99.99 && $0.longitude != -99.99 }
             if(p.probability < minimumRisk) { continue } // MARK: This should be configurable via risk or warning level
             
             if(!p.isEnclosed) {

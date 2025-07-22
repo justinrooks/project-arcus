@@ -10,25 +10,44 @@ import MapKit
 
 struct WatchWarn: View {
     let watches: [Watch]
+    @EnvironmentObject private var provider: SpcProvider
+    @EnvironmentObject private var pointsProvider: PointsProvider
     
     var body: some View {
-        if ( watches.isEmpty) {
-            Text("No current watches")
-        } else {
-            VStack {
-                Text("Watches")
-                    .fontWeight(.bold)
-                    .padding()
-                NavigationView {
+        VStack {
+            if (watches.count == 0) {
+                Text("No current watches")
+            } else {
+                NavigationStack {
                     List(watches.sorted(by: { $0.published > $1.published }), id: \.id) { watch in
-                        VStack(alignment: .leading) {
-                            Text(watch.title)
-                                .font(.headline)
+                        NavigationLink(destination: WatchDetailView(watch: watch)) {
+                            VStack(alignment: .leading) {
+                                Text(watch.title)
+                                    .font(.headline)
+                            }
+                            .padding(.vertical, 4)
                         }
+                        .navigationTitle("Watches")
+                        .font(.subheadline)
                     }
+                }
+                .refreshable {
+                    fetchSpcData()
                 }
             }
         }
+    }
+}
+
+extension WatchWarn {
+    func fetchSpcData() {
+        provider.loadFeed()
+        
+        print("Got SPC Feed data")
+        
+        pointsProvider.loadPoints()
+        
+        print("Got SPC Points data")
     }
 }
 
