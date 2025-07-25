@@ -16,7 +16,9 @@ struct SummaryView: View {
     }
     
     var body: some View {
-        VStack(spacing: 10) {
+        VStack {
+            Label(viewModel.nearestTown, systemImage: "location")
+                .fontWeight(.medium)
             HStack {
                 StormRiskBadgeView(level: viewModel.stormRisk)
                 SevereWeatherBadgeView(threat: viewModel.severeRisk)

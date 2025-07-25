@@ -12,16 +12,19 @@ import Combine
 
 @MainActor
 final class SummaryViewModel: ObservableObject {
-    //    private let userLocation: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 45.01890187118621, longitude: -104.41476597508318)
+    //        private let userLocation: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 45.01890187118621, longitude: -104.41476597508318)
     private let userLocation = CLLocationCoordinate2D(latitude: 39.75288661683443, longitude: -104.44886203922174) // Bennett, CO
-    //    private let userLocation = CLLocationCoordinate2D(latitude: 44.95871621867224, longitude: -89.6297215778462) // Wausau, WI
+    //        private let userLocation = CLLocationCoordinate2D(latitude: 44.95871621867224, longitude: -89.6297215778462) // Wausau, WI
+    //    private let userLocation = CLLocationCoordinate2D(latitude: 39.141082435056475, longitude: -94.94050397438647)
+    //    private let userLocation = CLLocationCoordinate2D(latitude: 40.59353588092804, longitude: -74.63735052368774)
     
     @Published var errorMessage: String?
-    //    @Published var isLoading: Bool = true
+    @Published var isLoading: Bool = true
     
     // Badges
     @Published var stormRisk: StormRiskLevel = .allClear
     @Published var severeRisk: SevereWeatherThreat = .allClear
+    @Published var nearestTown: String = "Locating..."
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -36,13 +39,21 @@ final class SummaryViewModel: ObservableObject {
     /// Fetches the weather status. It includes based on user location their
     /// current convective category, torn, hail, wind, watches, mesos
     func getWeatherStatus() {
-        //        isLoading = true
+        isLoading = true
         
         Task {
+            getNearestTown(from: userLocation) { town, state in
+                if let town = town, let state = state {
+                    self.nearestTown = "\(town), \(state)"
+                } else {
+                    print("Could not determine location.")
+                }
+            }
+            
             observeAllConvectiveCategories()
             observeSevereThreats()
             
-            //            self.isLoading = false
+            self.isLoading = false
         }
     }
     
@@ -90,14 +101,14 @@ final class SummaryViewModel: ObservableObject {
             (.hail(probability: 0), hail),
             (.tornado(probability: 0), tornado)
         ]
-
+        
         let threat = severePolygons
             .compactMap { baseThreat, polygons in
                 let (isInPolygon, probability) = isUserIn(user: userLocation, mkPolygons: polygons.polygons)
                 return isInPolygon ? baseThreat.with(probability: probability) : nil
             }
             .max(by: { $0.priority < $1.priority }) ?? .allClear
-
+        
         self.severeRisk = threat
     }
     
@@ -161,5 +172,31 @@ final class SummaryViewModel: ObservableObject {
         }
         
         return (isInsideAny, maxProbability)
+    }
+    
+    
+    /// Reverse geocodes the provided location into city and state
+    /// - Parameters:
+    ///   - coordinate: coordinates to reverse encode
+    ///   - completion: tuple with city and state
+    private func getNearestTown(from coordinate: CLLocationCoordinate2D, completion: @escaping (String?, String?) -> Void) {
+        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        let geocoder = CLGeocoder()
+        
+        geocoder.reverseGeocodeLocation(location) { placemarks, error in
+            if let error = error {
+                print("Reverse geocoding failed: \(error.localizedDescription)")
+                completion(nil, nil)
+                return
+            }
+            
+            if let placemark = placemarks?.first {
+                let town = placemark.locality ?? placemark.subAdministrativeArea
+                let state = placemark.administrativeArea
+                completion(town, state)
+            } else {
+                completion(nil, nil)
+            }
+        }
     }
 }
