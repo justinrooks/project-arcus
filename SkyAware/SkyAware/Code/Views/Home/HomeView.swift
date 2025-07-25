@@ -16,13 +16,15 @@ struct HomeView: View {
     
     var body: some View {
         ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
             TabView {
-                SummaryView()
+                SummaryView(pointsProvider: pointsProvider)
                     .tabItem {
                         Image(systemName: "sunrise.fill")
                         Text("Summary")
                     }
-                MapView(polygons: pointsProvider.slight)
+                MapView(polygons: pointsProvider.marginal)
                     .tabItem {
                         Image(systemName: "map")
                         Text("Map")

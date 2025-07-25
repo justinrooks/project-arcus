@@ -143,6 +143,7 @@ final class PointsProvider: ObservableObject {
             
             // MARK: Add to the Array
             let closedPoly = MKPolygon(coordinates: pts, count: pts.count)
+#warning("TODO: Probably want a different way to pass the probability out, but this works for now")
             closedPoly.title = "\(risk.type.rawValue): \(p.probability)"
             
             readyPoints.append(closedPoly)

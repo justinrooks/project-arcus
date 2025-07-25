@@ -8,58 +8,42 @@
 import SwiftUI
 
 struct SummaryView: View {
+    @EnvironmentObject private var pointsProvider: PointsProvider
+    @StateObject private var viewModel: SummaryViewModel
+    
+    init(pointsProvider: PointsProvider) {
+        _viewModel = StateObject(wrappedValue: SummaryViewModel(pointsProvider: pointsProvider))
+    }
+    
     var body: some View {
-        VStack(spacing: 30) {
+        VStack(spacing: 10) {
             HStack {
-                Badge(message:"All Clear", summary: "25 mi")
-//                Badge(threat: .tornado, message: "Tornado", summary: "Moderate Risk", level: .danger)
-//                
-//                Badge(threat:.hail, message: "Hail", summary: "Up to 1/4 inch", level: .enhanced)
+                StormRiskBadgeView(level: viewModel.stormRisk)
+                SevereWeatherBadgeView(threat: viewModel.severeRisk)
             }
-            .padding(.horizontal)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Color(.systemGray6))
+                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y:2)
+            )
+            .padding()
             .fixedSize(horizontal: true, vertical: true)
             
-//            VStack(alignment: .leading, spacing: 20) {
-//                HStack(spacing: 8) {
-//                    Image(systemName: "sun.max.fill")
-//                        .foregroundColor(.yellow)
-//                        .font(.title2)
-//                    VStack(alignment: .leading) {
-//                        Text("Today")
-//                            .font(.caption)
-//                            .foregroundColor(.gray)
-//                        Text("Mostly Sunny, high near 91°F")
-//                            .font(.subheadline)
-//                            .lineLimit(2)
-//                    }
-//                }
-//                HStack(spacing: 8) {
-//                    Image(systemName: "cloud.moon.fill")
-//                        .foregroundColor(.blue)
-//                        .font(.title2)
-//                    VStack(alignment: .leading) {
-//                        Text("Tonight")
-//                            .font(.caption)
-//                            .foregroundColor(.gray)
-//                        Text("Clouds increasing, low around 62°F")
-//                            .font(.subheadline)
-//                            .lineLimit(2)
-//                    }
-//                }
-//            }
-//            .padding()
-//            .background(Color(.systemGray6))
-//            .cornerRadius(16)
-            
             GroupBox{
-                Text("No active mesoscale discussions near by")
+                HStack {
+                    Text("No active mesoscale discussions near by")
+                    Spacer()
+                }
             } label: {
                 Label("Nearby Mesoscale Discussions", systemImage: "cloud.bolt.rain.fill")
                     .foregroundColor(.teal)
             }
             
             GroupBox{
-                Text("No active watches near by")
+                HStack {
+                    Text("No active watches near by")
+                    Spacer()
+                }
             } label: {
                 Label("Nearby Watches", systemImage: "exclamationmark.triangle")
                     .foregroundColor(.teal)
@@ -73,12 +57,13 @@ struct SummaryView: View {
                 Label("Outlook Summary - Storm Chaser", systemImage: "sun.max.fill")
                     .foregroundStyle(.teal)
             }
-            Spacer()
         }
         .padding()
+        
     }
 }
 
 #Preview {
-    SummaryView()
+    let mockProvider = PointsProvider()
+    SummaryView(pointsProvider: mockProvider)
 }
