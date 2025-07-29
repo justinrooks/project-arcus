@@ -66,7 +66,7 @@ enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable {
     
     var message: String {
         switch self {
-        case .allClear: return "All Clear"
+        case .allClear: return "Clear Skies"
         case .marginal: return "Marginal"
         case .slight: return "Slight Risk"
         case .enhanced: return "Enhanced Risk"

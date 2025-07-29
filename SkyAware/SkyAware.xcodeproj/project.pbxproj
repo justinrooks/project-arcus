@@ -50,6 +50,7 @@
 		D0F5941A2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAware" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Info.plist,
 				Tests/SkyAwareTests/SkyAwareTests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
@@ -536,7 +537,8 @@
 				DEVELOPMENT_TEAM = YVC4WFW94T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Access required to determine proximity to weather events";
+				INFOPLIST_FILE = SkyAware/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -571,7 +573,8 @@
 				DEVELOPMENT_TEAM = YVC4WFW94T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Access required to determine proximity to weather events";
+				INFOPLIST_FILE = SkyAware/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

@@ -16,6 +16,7 @@ struct CONUSMapView: UIViewRepresentable {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
         mapView.mapType = .mutedStandard
+        mapView.showsUserLocation = true
 
         // Zoom the map to show the entire US
         let center = CLLocationCoordinate2D(latitude: 39.8283, longitude: -98.5795) // center of CONUS

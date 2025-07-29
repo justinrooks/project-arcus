@@ -7,13 +7,13 @@
 
 import Foundation
 
-struct Watch: Identifiable, Hashable {
+struct Watch: Identifiable, Hashable, AlertItem {
     let id: UUID              // usually the GUID or derived from it
     let title: String           // e.g., "Day 1 Convective Outlook"
     let link: URL               // link to full outlook page
     let published: Date         // pubDate
     let summary: String         // description / CDATA
-//    let riskLevel: String?      // Optional, e.g., "SLGT", "ENH", etc., if extracted from summary
+    let alertType: AlertType    // Type of alert to conform to alert item
 }
 
 extension Watch {
@@ -35,6 +35,7 @@ extension Watch {
             link: link,
             published: published,
             summary: summary,
+            alertType: .watch
         )
     }
 }

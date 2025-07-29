@@ -9,15 +9,21 @@ import Foundation
 import Observation
 
 @MainActor
+@Observable
 final class SpcProvider: ObservableObject {
-    @Published var errorMessage: String?
-    @Published var isLoading: Bool = true
+    var errorMessage: String?
+    var isLoading: Bool = true
     
-    @Published var outlooks: [SPCConvectiveOutlook] = []
-    @Published var meso: [MesoscaleDiscussion] = []
-    @Published var watches: [Watch] = []
+    var outlooks: [SPCConvectiveOutlook] = []
+    var meso: [MesoscaleDiscussion] = []
+    var watches: [Watch] = []
+    var alertCount: Int = 0
     
-    private let spcClient = SpcClient()
+    @ObservationIgnored private let spcClient = SpcClient()
+    
+    init() {
+        loadFeed()
+    }
     
     func loadFeed() {
         isLoading = true
@@ -35,8 +41,10 @@ final class SpcProvider: ObservableObject {
                     .compactMap { MesoscaleDiscussion.from(rssItem: $0) }
                 
                 self.watches = result.channel!.items
-                    .filter { $0.title?.contains("Watch") == true }
+                    .filter { $0.title?.contains("Watch") == true && $0.title?.contains("Status Reports") == false }
                     .compactMap { Watch.from(rssItem: $0) }
+                
+                self.alertCount = self.meso.count + self.watches.count
             } catch {
                 self.errorMessage = error.localizedDescription
                 print(self.errorMessage!)

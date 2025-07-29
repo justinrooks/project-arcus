@@ -9,6 +9,7 @@ import Foundation
 import Observation
 import MapKit
 
+#warning("TODO: Implement the @Observable macro")
 @MainActor
 final class PointsProvider: ObservableObject {
     @Published var errorMessage: String?
@@ -30,6 +31,8 @@ final class PointsProvider: ObservableObject {
     init() {
         // MARK: Fetch the US Polygon
         flatPoly = loadCONUSBoundaryPolygons(quality: .low)
+        
+        loadPoints()
     }
     
     func loadPoints() {

@@ -7,13 +7,13 @@
 
 import Foundation
 
-struct MesoscaleDiscussion: Identifiable, Hashable {
+struct MesoscaleDiscussion: Identifiable, Hashable, AlertItem {
     let id: UUID              // usually the GUID or derived from it
     let title: String           // e.g., "Day 1 Convective Outlook"
     let link: URL               // link to full outlook page
     let published: Date         // pubDate
     let summary: String         // description / CDATA
-//    let riskLevel: String?      // Optional, e.g., "SLGT", "ENH", etc., if extracted from summary
+    let alertType: AlertType    // type of alert to conform to AlertItem
 }
 
 extension MesoscaleDiscussion {
@@ -35,6 +35,7 @@ extension MesoscaleDiscussion {
             link: link,
             published: published,
             summary: summary,
+            alertType: .mesoscale
         )
     }
 }

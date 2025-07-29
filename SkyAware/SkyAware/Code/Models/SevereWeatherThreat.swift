@@ -72,7 +72,7 @@ enum SevereWeatherThreat: Comparable {
     
     var message: String {
         switch self {
-        case .allClear: return "All Clear"
+        case .allClear: return "No Active Threats"
         case .wind: return "Wind"
         case .hail: return "Hail"
         case .tornado: return "Tornado"
