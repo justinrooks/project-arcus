@@ -43,7 +43,7 @@ struct iPhoneHomeView: View {
                         Text("Alerts")
                     }.badge(provider.alertCount)
                     
-                    MapView(polygons: pointsProvider.slight)
+                    MapView()
                         .tabItem {
                             Image(systemName: "map")
                             Text("Map")
