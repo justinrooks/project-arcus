@@ -19,6 +19,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate, ObservableObje
     {
         super.init()
         manager.delegate = self
+        manager.distanceFilter = 1650
     }
     
     
