@@ -32,11 +32,11 @@ struct SummaryView: View {
                 }
             }
             
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(Color(.systemGray6))
-                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y:2)
-            )
+//            .background(
+//                RoundedRectangle(cornerRadius: 20, style: .continuous)
+//                    .fill(Color(.systemGray6))
+//                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y:2)
+//            )
             .padding()
             .fixedSize(horizontal: true, vertical: true)
             
