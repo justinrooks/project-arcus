@@ -60,9 +60,6 @@
 		D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Resources/CONUS_cleaned_high.geojson,
-				Resources/CONUS_cleaned_medium.geojson,
-				Resources/CONUS_cleaned.geojson,
 				Tests/SkyAwareTests/SkyAwareTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
@@ -70,9 +67,6 @@
 		D0F594212E17075B002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Resources/CONUS_cleaned_high.geojson,
-				Resources/CONUS_cleaned_medium.geojson,
-				Resources/CONUS_cleaned.geojson,
 				Tests/SkyAwareUITests/SkyAwareUITests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
 			);
