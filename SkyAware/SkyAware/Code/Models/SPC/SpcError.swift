@@ -11,6 +11,7 @@ enum SpcError: Error {
     case missingData
     case networkError
     case parsingError
+    case invalidUrl
 }
 
 extension SpcError: LocalizedError {
@@ -22,6 +23,8 @@ extension SpcError: LocalizedError {
             return "SPC data network error."
         case .parsingError:
             return "SPC data parsing error."
+        case .invalidUrl:
+            return "Url is nil or invalid"
         }
     }
 }

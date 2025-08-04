@@ -11,26 +11,22 @@ import MapKit
 struct MapView: View {
     @EnvironmentObject private var pointsProvider: PointsProvider
     
-    @State private var selectedLayer: String = "MRGL"
+    @State private var selectedLayer: String = "CAT"
     
     private let availableLayers: [(key: String, label: String)] = [
-        ("MRGL", "Marginal Risk"),
-        ("SLGT", "Slight Risk"),
-        ("ENH", "Enhanced Risk"),
-        ("MDT", "Moderate Risk"),
-        ("HIGH", "High Risk"),
+        ("CAT", "Categorical"),
         ("TOR", "Tornado"),
         ("HAIL", "Hail"),
         ("WIND", "Wind")
     ]
     
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack(alignment: .topLeading) {
             CONUSMapView(polygonList: polygonsForLayer(named: selectedLayer))
                 .edgesIgnoringSafeArea(.top)
             
             Menu {
-                ForEach(availableLayers.filter { hasPolygons(for: $0.key) }, id: \.key) { layer in
+                ForEach(availableLayers, id: \.key) { layer in
                     Button(layer.label) {
                         withAnimation {
                             selectedLayer = layer.key
@@ -38,7 +34,7 @@ struct MapView: View {
                     }
                 }
             } label: {
-                Image(systemName: "map.fill")
+                Image(systemName: "list.triangle")
                     .padding()
                     .background(.thinMaterial)
                     .clipShape(Circle())
@@ -47,24 +43,10 @@ struct MapView: View {
         }
     }
     
-    
-    private func hasPolygons(for layer: String) -> Bool {
-        let polygons = polygonsForLayer(named: layer)
-        return polygons.polygons.count > 0
-    }
-    
     private func polygonsForLayer(named layer: String) -> MKMultiPolygon {
         switch layer {
-        case "MRGL":
-            return pointsProvider.marginal
-        case "SLGT":
-            return pointsProvider.slight
-        case "ENH":
-            return pointsProvider.enhanced
-        case "MDT":
-            return pointsProvider.moderate
-        case "HIGH":
-            return pointsProvider.high
+        case "CAT":
+            return pointsProvider.categorical
         case "TOR":
             return pointsProvider.tornado
         case "HAIL":
@@ -80,4 +62,5 @@ struct MapView: View {
 #Preview {
     MapView()
         .environmentObject(PointsProvider.pointsPreview)
+        .environmentObject(LocationManager())
 }

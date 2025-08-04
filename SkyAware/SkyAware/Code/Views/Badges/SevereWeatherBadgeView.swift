@@ -28,11 +28,11 @@ struct SevereWeatherBadgeView: View {
     Group {
         HStack {
             SevereWeatherBadgeView(threat: .allClear)
-            SevereWeatherBadgeView(threat: .wind(probability: 0.15))
+            SevereWeatherBadgeView(threat: .wind(probability: 15))
         }
         HStack {
-            SevereWeatherBadgeView(threat: .hail(probability: 0.02))
-            SevereWeatherBadgeView(threat: .tornado(probability: 0.05))
+            SevereWeatherBadgeView(threat: .hail(probability: 2))
+            SevereWeatherBadgeView(threat: .tornado(probability: 5))
                 .preferredColorScheme(.dark)
         }
     }

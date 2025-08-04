@@ -90,9 +90,9 @@ enum SevereWeatherThreat: Comparable {
     
     var dynamicSummary: String {
         switch self {
-        case .tornado: return "\(String(format: "%.0f%%", self.probability * 100)) chance of tornadoes"
-        case .hail: return "\(String(format: "%.0f%%", self.probability * 100)) chance of large hail"
-        case .wind: return "\(String(format: "%.0f%%", self.probability * 100)) chance of damaging winds"
+        case .tornado: return "\(String(format: "%.0f%%", self.probability)) chance of tornadoes"
+        case .hail: return "\(String(format: "%.0f%%", self.probability)) chance of large hail"
+        case .wind: return "\(String(format: "%.0f%%", self.probability)) chance of damaging winds"
         case .allClear: return ""
         }
     }

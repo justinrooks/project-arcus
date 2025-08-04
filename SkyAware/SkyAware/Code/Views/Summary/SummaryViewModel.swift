@@ -15,10 +15,11 @@ import Combine
 final class SummaryViewModel: ObservableObject {
     //        private let userLocation: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 45.01890187118621, longitude: -104.41476597508318)
     //private var userLocation = CLLocationCoordinate2D(latitude: 39.75288661683443, longitude: -104.44886203922174) // Bennett, CO
-//    @ObservationIgnored private let userLocation = CLLocationCoordinate2D(latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
+    //    @ObservationIgnored private let userLocation = CLLocationCoordinate2D(latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
     //    private let userLocation = CLLocationCoordinate2D(latitude: 39.141082435056475, longitude: -94.94050397438647)
     //    private let userLocation = CLLocationCoordinate2D(latitude: 40.59353588092804, longitude: -74.63735052368774)
-
+    //40.63805277084582, -102.62175635050521 //Haxtun, CO
+    
     @ObservationIgnored private var userLocation: CLLocationCoordinate2D?
     @ObservationIgnored private var resolvedUserLocation: CLLocationCoordinate2D {
         userLocation ?? CLLocationCoordinate2D(latitude: 39.75288661683443, longitude: -104.44886203922174) // Bennett, CO
@@ -76,21 +77,11 @@ final class SummaryViewModel: ObservableObject {
     }
     
     private func observeAllConvectiveCategories() {
-        Publishers.CombineLatest3(
-            pointsProvider.$marginal,
-            pointsProvider.$slight,
-            pointsProvider.$enhanced
-        )
-        .combineLatest(
-            Publishers.CombineLatest(pointsProvider.$moderate, pointsProvider.$high)
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] base, highRisk in
-            let (marginal, slight, enhanced) = base
-            let (moderate, high) = highRisk
-            self?.handleAllConvectiveRisk(marginal, slight, enhanced, moderate, high)
-        }
-        .store(in: &cancellables)
+        pointsProvider.$categorical
+            .receive(on: RunLoop.main)
+            .sink { [weak self] categorical in
+                self?.handleConvectiveRisk(categorical)
+            }.store(in: &cancellables)
     }
     
     private func observeSevereThreats() {
@@ -119,7 +110,7 @@ final class SummaryViewModel: ObservableObject {
             (.hail(probability: 0), hail),
             (.tornado(probability: 0), tornado)
         ]
-        
+
         let threat = severePolygons
             .compactMap { baseThreat, polygons in
                 let (isInPolygon, probability) = isUserIn(user: resolvedUserLocation, mkPolygons: polygons.polygons)
@@ -132,35 +123,29 @@ final class SummaryViewModel: ObservableObject {
     
     /// Determines how the Categorical badge will be displayed. It evaluates the highest category the user is in and prepares the appropriate badge configuration
     /// - Parameters:
-    ///   - marginal: MKMultiPolygon object containing all the marginal category polygons
-    ///   - slight: MKMultiPolygon object containing all the slight category polygons
-    ///   - enhanced: MKMultiPolygon object containing all the enhanced category polygons
-    ///   - moderate: MKMultiPolygon object containing all the moderate category polygons
-    ///   - high: MKMultiPolygon object containing all the high category polygons
-    private func handleAllConvectiveRisk(
-        _ marginal: MKMultiPolygon,
-        _ slight: MKMultiPolygon,
-        _ enhanced: MKMultiPolygon,
-        _ moderate: MKMultiPolygon,
-        _ high: MKMultiPolygon
-    ) {
-        let riskPolygons: [(StormRiskLevel, MKMultiPolygon)] = [
-            (.high, high),
-            (.moderate, moderate),
-            (.enhanced, enhanced),
-            (.slight, slight),
-            (.marginal, marginal)
+    ///   - convective: MKMultiPolygon object containing all the categorical risk polygons
+    private func handleConvectiveRisk(_ convective: MKMultiPolygon) {
+        let titleToRisk: [String: StormRiskLevel] = [
+            "MARGINAL RISK": .marginal,
+            "SLIGHT RISK": .slight,
+            "ENHANCED RISK": .enhanced,
+            "MODERATE RISK": .moderate,
+            "HIGH RISK": .high
         ]
         
-        let risk = riskPolygons
-            .filter {
-                let (userIn, probability) = isUserIn(user: resolvedUserLocation, mkPolygons: $0.1.polygons)
-                return userIn
-            }
+        let matchingPolygons: [(StormRiskLevel, MKPolygon)] = convective.polygons.compactMap { polygon in
+            guard let title = polygon.title?.uppercased(),
+                  let risk = titleToRisk[title] else { return nil }
+                        
+            return (risk, polygon)
+        }
+        
+        let highest = matchingPolygons
+            .filter { isUserIn(user: resolvedUserLocation, mkPolygons: [$0.1]).0 }
             .map { $0.0 }
             .max() ?? .allClear
         
-        self.stormRisk = risk
+        self.stormRisk = highest
     }
     
     /// Determine if the user is in any of the provided polygons
@@ -182,7 +167,7 @@ final class SummaryViewModel: ObservableObject {
                 isInsideAny = true
                 
                 if let title = polygon.title,
-                   let valueString = title.split(separator: ":").last?.trimmingCharacters(in: .whitespaces),
+                   let valueString = title.split(separator: "%").first?.trimmingCharacters(in: .whitespaces),
                    let value = Double(valueString) {
                     maxProbability = max(maxProbability, value)
                 }
