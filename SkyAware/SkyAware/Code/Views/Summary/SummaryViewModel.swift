@@ -13,12 +13,12 @@ import Combine
 @MainActor
 @Observable
 final class SummaryViewModel: ObservableObject {
-    //        private let userLocation: CLLocationCoordinate2D = CLLocationCoordinate2D(latitude: 45.01890187118621, longitude: -104.41476597508318)
-    //private var userLocation = CLLocationCoordinate2D(latitude: 39.75288661683443, longitude: -104.44886203922174) // Bennett, CO
-    //    @ObservationIgnored private let userLocation = CLLocationCoordinate2D(latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
-    //    private let userLocation = CLLocationCoordinate2D(latitude: 39.141082435056475, longitude: -94.94050397438647)
-    //    private let userLocation = CLLocationCoordinate2D(latitude: 40.59353588092804, longitude: -74.63735052368774)
-    //40.63805277084582, -102.62175635050521 //Haxtun, CO
+    // latitude: 45.01890187118621,  longitude: -104.41476597508318)
+    // latitude: 39.75288661683443,  longitude: -104.44886203922174) // Bennett, CO
+    // latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
+    // latitude: 39.141082435056475, longitude: -94.94050397438647)
+    // latitude: 40.59353588092804,  longitude: -74.63735052368774)
+    //           40.63805277084582,            -102.62175635050521 //Haxtun, CO
     
     @ObservationIgnored private var userLocation: CLLocationCoordinate2D?
     @ObservationIgnored private var resolvedUserLocation: CLLocationCoordinate2D {
@@ -34,11 +34,11 @@ final class SummaryViewModel: ObservableObject {
     
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     
-    @ObservationIgnored private let pointsProvider: PointsProvider
+    @ObservationIgnored private let provider: SpcProvider
     @ObservationIgnored private let locationProvider: LocationManager
     
-    init(pointsProvider: PointsProvider, locationProvider: LocationManager) {
-        self.pointsProvider = pointsProvider
+    init(provider: SpcProvider, locationProvider: LocationManager) {
+        self.provider = provider
         self.locationProvider = locationProvider
         
         getWeatherStatus()
@@ -77,7 +77,7 @@ final class SummaryViewModel: ObservableObject {
     }
     
     private func observeAllConvectiveCategories() {
-        pointsProvider.$categorical
+        provider.$categorical
             .receive(on: RunLoop.main)
             .sink { [weak self] categorical in
                 self?.handleConvectiveRisk(categorical)
@@ -86,9 +86,9 @@ final class SummaryViewModel: ObservableObject {
     
     private func observeSevereThreats() {
         Publishers.CombineLatest3(
-            pointsProvider.$wind,
-            pointsProvider.$hail,
-            pointsProvider.$tornado
+            provider.$wind,
+            provider.$hail,
+            provider.$tornado
         )
         .receive(on: RunLoop.main)
         .sink { [weak self] wind, hail, tornado in

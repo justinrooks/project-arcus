@@ -11,7 +11,6 @@ import SwiftData
 struct iPhoneHomeView: View {
     //    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var provider: SpcProvider
-    @EnvironmentObject private var pointsProvider: PointsProvider
     @EnvironmentObject private var locationProvider: LocationManager
     
     var body: some View {
@@ -24,12 +23,16 @@ struct iPhoneHomeView: View {
                     LoadingView(message: "Fetching SPC data...")
                     Spacer()
                 }
-                .transition(.opacity)
-                .animation(.easeInOut, value: provider.isLoading)
             } else {
                 TabView {
                     NavigationStack {
-                        SummaryView(pointsProvider: pointsProvider, locationProvider: locationProvider)
+                        ScrollView{
+                            SummaryView(provider: provider, locationProvider: locationProvider)
+                        }
+                        .refreshable {
+                            print("Refreshing data...")
+                            fetchSpcData()
+                        }
                     }
                     .tabItem {
                         Image(systemName: "circle.grid.cross.fill") //sunrise.fill
@@ -38,7 +41,8 @@ struct iPhoneHomeView: View {
                     
                     NavigationStack {
                         AlertView()
-                    }    .tabItem {
+                    }
+                    .tabItem {
                         Image(systemName: "exclamationmark.bubble") //umbrella
                         Text("Alerts")
                     }.badge(provider.alertCount)
@@ -48,6 +52,7 @@ struct iPhoneHomeView: View {
                             Image(systemName: "map")
                             Text("Map")
                         }
+                    
                     NavigationStack {
                         ForecastView()
                     }
@@ -55,6 +60,7 @@ struct iPhoneHomeView: View {
                         Image(systemName: "cloud.sun") //cloud.bolt.rain.fill
                         Text("Forecast")
                     }
+                    
                     NavigationStack {
                         SettingsView()
                     }
@@ -65,14 +71,23 @@ struct iPhoneHomeView: View {
                 }
             }
         }
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.5), value: provider.isLoading)
         .accentColor(.teal)
+    }
+}
+
+extension iPhoneHomeView {
+    func fetchSpcData() {
+        provider.loadFeed()
+        
+        print("Got SPC Feed data")
     }
 }
 
 #Preview {
     iPhoneHomeView()
         .environmentObject(SpcProvider())
-        .environmentObject(PointsProvider())
         .environmentObject(LocationManager())
     //        .modelContainer(for: ItemTest.self, inMemory: true)
     //        .environment()

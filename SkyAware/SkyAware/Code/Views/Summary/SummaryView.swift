@@ -8,14 +8,14 @@
 import SwiftUI
 
 struct SummaryView: View {
-    @EnvironmentObject private var pointsProvider: PointsProvider
     @EnvironmentObject private var locationProvider: LocationManager
+    @EnvironmentObject private var spcProvider: SpcProvider
     
     @StateObject private var viewModel: SummaryViewModel
     
-    init(pointsProvider: PointsProvider, locationProvider: LocationManager) {
+    init(provider: SpcProvider, locationProvider: LocationManager) {
         _viewModel = StateObject(
-            wrappedValue: SummaryViewModel(pointsProvider: pointsProvider,
+            wrappedValue: SummaryViewModel(provider: provider,
                                            locationProvider: locationProvider))
     }
     
@@ -27,16 +27,11 @@ struct SummaryView: View {
                 NavigationLink(destination: ConvectiveOutlookView()) {
                     StormRiskBadgeView(level: viewModel.stormRisk)
                 }
+                
                 NavigationLink(destination: SevereThreatView()) {
                     SevereWeatherBadgeView(threat: viewModel.severeRisk)
                 }
             }
-            
-//            .background(
-//                RoundedRectangle(cornerRadius: 20, style: .continuous)
-//                    .fill(Color(.systemGray6))
-//                    .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y:2)
-//            )
             .padding()
             .fixedSize(horizontal: true, vertical: true)
             
@@ -73,13 +68,13 @@ struct SummaryView: View {
             }
         }
         .padding()
-        
     }
 }
 
 #Preview {
     let mock = LocationManager()
+    let spc = SpcProvider()
     SummaryView(
-        pointsProvider: PointsProvider.pointsPreview,
+        provider: spc,
         locationProvider: mock)
 }

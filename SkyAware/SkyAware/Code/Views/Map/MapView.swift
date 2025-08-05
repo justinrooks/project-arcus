@@ -9,7 +9,7 @@ import SwiftUI
 import MapKit
 
 struct MapView: View {
-    @EnvironmentObject private var pointsProvider: PointsProvider
+    @EnvironmentObject private var provider: SpcProvider
     
     @State private var selectedLayer: String = "CAT"
     
@@ -46,13 +46,13 @@ struct MapView: View {
     private func polygonsForLayer(named layer: String) -> MKMultiPolygon {
         switch layer {
         case "CAT":
-            return pointsProvider.categorical
+            return provider.categorical
         case "TOR":
-            return pointsProvider.tornado
+            return provider.tornado
         case "HAIL":
-            return pointsProvider.hail
+            return provider.hail
         case "WIND":
-            return pointsProvider.wind
+            return provider.wind
         default:
             return MKMultiPolygon()
         }
@@ -61,6 +61,5 @@ struct MapView: View {
 
 #Preview {
     MapView()
-        .environmentObject(PointsProvider.pointsPreview)
         .environmentObject(LocationManager())
 }

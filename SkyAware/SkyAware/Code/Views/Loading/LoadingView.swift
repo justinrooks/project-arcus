@@ -31,6 +31,7 @@ struct LoadingView: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .shadow(radius: 4)
         }
+        .transition(.opacity.combined(with: .scale)) // Smooth fade & scale
     }
 }
 

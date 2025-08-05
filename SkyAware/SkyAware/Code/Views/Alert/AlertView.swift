@@ -9,7 +9,6 @@ import SwiftUI
 
 struct AlertView: View {
     @EnvironmentObject private var provider: SpcProvider
-    @EnvironmentObject private var pointsProvider: PointsProvider
     
     var body: some View {
         List {
@@ -39,11 +38,22 @@ struct AlertView: View {
         }
         .listStyle(.plain)
         .navigationTitle("Nearby Alerts")
+        .refreshable {
+            print("Refreshing SPC Data")
+            fetchSpcData()
+        }
+    }
+}
+
+extension AlertView {
+    func fetchSpcData() {
+        provider.loadFeed()
+        
+        print("Got SPC Feed data")
     }
 }
 
 #Preview {
     AlertView()
         .environmentObject(SpcProvider.previewData)
-        .environmentObject(PointsProvider.pointsPreview)
 }
