@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		3F01848D8796909E173B675D /* Pods_SkyAware.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A62666682C922D561CB41D97 /* Pods_SkyAware.framework */; };
 		6541B68C31FDBAA3D3AE61D1 /* Pods_SkyAware_SkyAwareUITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */; };
 		7282DFA7AB8C8CEF71224CD3 /* Pods_SkyAwareTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */; };
 		D0F594752E171DCB002E2BB6 /* .swiftlint.yml in Resources */ = {isa = PBXBuildFile; fileRef = D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */; };
@@ -92,7 +91,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				3F01848D8796909E173B675D /* Pods_SkyAware.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -532,6 +530,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SkyAware/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -568,6 +568,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SkyAware/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

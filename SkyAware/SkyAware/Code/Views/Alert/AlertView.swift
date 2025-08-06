@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct AlertView: View {
-    @EnvironmentObject private var provider: SpcProvider
+    @Environment(SpcProvider.self) private var provider: SpcProvider
     
     var body: some View {
         List {
@@ -55,5 +55,5 @@ extension AlertView {
 
 #Preview {
     AlertView()
-        .environmentObject(SpcProvider.previewData)
+        .environment(SpcProvider.previewData)
 }

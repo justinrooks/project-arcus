@@ -8,18 +8,18 @@
 import Foundation
 import CoreLocation
 
-
-final class LocationManager: NSObject, CLLocationManagerDelegate, ObservableObject {
-    private let manager = CLLocationManager()
-    @Published var isAuthorized = false
-    @Published var locale: String = "Locating..."
-    @Published var userLocation: CLLocation?
+@Observable
+final class LocationManager: NSObject, CLLocationManagerDelegate {
+    @ObservationIgnored private let manager = CLLocationManager()
+    var isAuthorized = false
+    var locale: String = "Locating..."
+    var userLocation: CLLocation?
     
     override init()
     {
         super.init()
         manager.delegate = self
-        manager.distanceFilter = 1650
+        manager.distanceFilter = 1650 // causes the manager to not report location changes less than 1650m
     }
     
     

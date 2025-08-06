@@ -10,7 +10,7 @@ import MapKit
 
 struct CONUSMapView: UIViewRepresentable {
     let polygonList: MKMultiPolygon
-    @EnvironmentObject private var locationProvider: LocationManager
+    @Environment(LocationManager.self) private var locationProvider: LocationManager
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()

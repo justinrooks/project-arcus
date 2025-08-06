@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ConvectiveOutlookView: View {
-    @EnvironmentObject private var provider: SpcProvider
+    @Environment(SpcProvider.self) private var provider: SpcProvider
     
     var body: some View {
         VStack {
@@ -54,5 +54,5 @@ extension ConvectiveOutlookView {
 
 #Preview {
     ConvectiveOutlookView()
-        .environmentObject(SpcProvider.previewData)
+        .environment(SpcProvider.previewData)
 }

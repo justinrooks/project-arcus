@@ -8,13 +8,13 @@
 import SwiftUI
 
 struct SummaryView: View {
-    @EnvironmentObject private var locationProvider: LocationManager
-    @EnvironmentObject private var spcProvider: SpcProvider
+    @Environment(LocationManager.self) private var locationProvider: LocationManager
+    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
     
-    @StateObject private var viewModel: SummaryViewModel
+    @State private var viewModel: SummaryViewModel
     
     init(provider: SpcProvider, locationProvider: LocationManager) {
-        _viewModel = StateObject(
+        _viewModel = State(
             wrappedValue: SummaryViewModel(provider: provider,
                                            locationProvider: locationProvider))
     }
@@ -74,7 +74,8 @@ struct SummaryView: View {
 #Preview {
     let mock = LocationManager()
     let spc = SpcProvider()
-    SummaryView(
-        provider: spc,
-        locationProvider: mock)
+    SummaryView(provider: spc,
+    locationProvider: mock)
+        .environment(mock)
+        .environment(spc)
 }

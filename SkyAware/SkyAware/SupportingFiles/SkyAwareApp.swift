@@ -10,8 +10,8 @@ import SwiftData
 
 @main
 struct SkyAwareApp: App {
-    @StateObject private var provider = SpcProvider()
-    @StateObject private var locationProvider = LocationManager()
+    @State private var provider = SpcProvider()
+    @State private var locationProvider = LocationManager()
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -30,8 +30,8 @@ struct SkyAwareApp: App {
         WindowGroup {
             if (locationProvider.isAuthorized) {
                 iPhoneHomeView()
-                    .environmentObject(provider)
-                    .environmentObject(locationProvider)
+                    .environment(provider)
+                    .environment(locationProvider)
             } else {
                 Text("Missing Location Authorization")
             }

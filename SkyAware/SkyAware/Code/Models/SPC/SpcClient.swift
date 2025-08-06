@@ -44,6 +44,7 @@ final class SpcClient {
             ]
             
         } catch {
+            print(error.localizedDescription)
             throw SpcError.missingData
         }
     }
@@ -81,6 +82,12 @@ final class SpcClient {
         return data
     }
     
+    
+    /// Builds out the URL required to get geojson data from the SPC
+    /// the url is mostly consistent between each product, so this
+    /// standardizes that creation process
+    /// - Parameter product: the product to fetch
+    /// - Returns: a url to use to fetch geojson data for the provided product
     private func buildUrl(for product: Product) throws -> URL {
         let url = URL(string:"https://www.spc.noaa.gov/products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
         
@@ -91,8 +98,27 @@ final class SpcClient {
         return finalUrl
     }
     
+    
+    /// Decides the provided Data object into a GeoJSONFeatureCollection DTO object
+    /// - Parameter data: data stream to decode
+    /// - Returns: a populated GeoJSONFeatureCollection DTO, or empty if there's a decoding error
     private func decodeGeoJSON(from data: Data) async throws -> GeoJSONFeatureCollection {
         let decoder = JSONDecoder()
-        return try decoder.decode(GeoJSONFeatureCollection.self, from: data)
+        
+        do {
+            let decoded = try decoder.decode(GeoJSONFeatureCollection.self, from: data)
+            return decoded
+        } catch DecodingError.dataCorrupted,
+                DecodingError.keyNotFound,
+                DecodingError.typeMismatch,
+                DecodingError.valueNotFound {
+            // Handle known decoding errors by returning an empty collection
+            print("GeoJSON decoding error")
+            return .empty
+        } catch {
+            // For any other unexpected error, log and return empty
+            print("Unexpected GeoJSON decode error:", error.localizedDescription)
+            return .empty
+        }
     }
 }

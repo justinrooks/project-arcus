@@ -9,7 +9,7 @@ import SwiftUI
 import MapKit
 
 struct MapView: View {
-    @EnvironmentObject private var provider: SpcProvider
+    @Environment(SpcProvider.self) private var provider: SpcProvider
     
     @State private var selectedLayer: String = "CAT"
     
@@ -21,38 +21,52 @@ struct MapView: View {
     ]
     
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack {
             CONUSMapView(polygonList: polygonsForLayer(named: selectedLayer))
                 .edgesIgnoringSafeArea(.top)
             
-            Menu {
-                ForEach(availableLayers, id: \.key) { layer in
-                    Button(layer.label) {
-                        withAnimation {
-                            selectedLayer = layer.key
+            VStack {
+                Menu {
+                    ForEach(availableLayers, id: \.key) { layer in
+                        Button(layer.label) {
+                            withAnimation {
+                                selectedLayer = layer.key
+                            }
                         }
                     }
+                } label: {
+                    Image(systemName: "list.triangle")
+                        .padding()
+                        .background(.thinMaterial)
+                        .clipShape(Circle())
+                        .padding()
                 }
-            } label: {
-                Image(systemName: "list.triangle")
+               Spacer()
+           }
+           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            
+            // Legend in bottom-right
+            VStack {
+                Spacer()
+                LegendView()
                     .padding()
-                    .background(.thinMaterial)
-                    .clipShape(Circle())
-                    .padding()
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .padding([.bottom, .trailing])
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
     }
     
     private func polygonsForLayer(named layer: String) -> MKMultiPolygon {
         switch layer {
         case "CAT":
-            return provider.categorical
+            return MKMultiPolygon(provider.categorical.flatMap {$0.polygons}) //provider.categorical
         case "TOR":
-            return provider.tornado
+            return MKMultiPolygon(provider.tornado.flatMap {$0.polygons})
         case "HAIL":
-            return provider.hail
+            return MKMultiPolygon(provider.hail.flatMap {$0.polygons})
         case "WIND":
-            return provider.wind
+            return MKMultiPolygon(provider.wind.flatMap {$0.polygons})
         default:
             return MKMultiPolygon()
         }
@@ -61,5 +75,6 @@ struct MapView: View {
 
 #Preview {
     MapView()
-        .environmentObject(LocationManager())
+        .environment(LocationManager())
+        .environment(SpcProvider())
 }

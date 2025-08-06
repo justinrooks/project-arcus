@@ -10,8 +10,8 @@ import SwiftData
 
 struct iPhoneHomeView: View {
     //    @Environment(\.modelContext) private var modelContext
-    @EnvironmentObject private var provider: SpcProvider
-    @EnvironmentObject private var locationProvider: LocationManager
+    @Environment(SpcProvider.self) private var provider: SpcProvider
+    @Environment(LocationManager.self) private var locationProvider: LocationManager
     
     var body: some View {
         ZStack {
@@ -87,8 +87,8 @@ extension iPhoneHomeView {
 
 #Preview {
     iPhoneHomeView()
-        .environmentObject(SpcProvider())
-        .environmentObject(LocationManager())
+        .environment(SpcProvider())
+        .environment(LocationManager())
     //        .modelContainer(for: ItemTest.self, inMemory: true)
     //        .environment()
 }

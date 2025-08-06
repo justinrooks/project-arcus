@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct ConvectiveOutlookDetailView: View {
-    let outlook: SPCConvectiveOutlook
+    let outlook: ConvectiveOutlook
     
     var body: some View {
         ScrollView {
@@ -91,7 +91,7 @@ extension ConvectiveOutlookDetailView {
 }
 
 #Preview {
-    ConvectiveOutlookDetailView(outlook: SPCConvectiveOutlook(
+    ConvectiveOutlookDetailView(outlook: ConvectiveOutlook(
         id: UUID(),
         title: "Day 1 Convective Outlook",
         link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk.html")!,

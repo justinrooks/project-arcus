@@ -249,7 +249,7 @@ extension SpcProvider {
         ]
         
         mock.outlooks = [
-            SPCConvectiveOutlook(
+            ConvectiveOutlook(
                 id: UUID(),
                 title: "Day 1 Convective Outlook",
                 link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk.html")!,
@@ -258,7 +258,7 @@ extension SpcProvider {
                 day: 1,
                 riskLevel: "SLGT"
             ),
-            SPCConvectiveOutlook(
+            ConvectiveOutlook(
                 id: UUID(),
                 title: "Day 1 Convective Outlook - Update",
                 link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk2.html")!,

@@ -1,5 +1,5 @@
 //
-//  SPCConvectiveOutlook.swift
+//  ConvectiveOutlook.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 7/11/25.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct SPCConvectiveOutlook: Identifiable, Hashable {
+struct ConvectiveOutlook: Identifiable, Hashable {
     let id: UUID              // usually the GUID or derived from it
     let title: String           // e.g., "Day 1 Convective Outlook"
     let link: URL               // link to full outlook page
@@ -17,8 +17,8 @@ struct SPCConvectiveOutlook: Identifiable, Hashable {
     let riskLevel: String?      // Optional, e.g., "SLGT", "ENH", etc., if extracted from summary
 }
 
-extension SPCConvectiveOutlook {
-    static func from(rssItem: Item) -> SPCConvectiveOutlook? {
+extension ConvectiveOutlook {
+    static func from(rssItem: Item) -> ConvectiveOutlook? {
         guard
             let title = rssItem.title,
             let linkString = rssItem.link,
@@ -36,7 +36,7 @@ extension SPCConvectiveOutlook {
 
         let riskLevel = extractRiskLevel(from: summary)
 
-        return SPCConvectiveOutlook(
+        return ConvectiveOutlook(
             id: UUID(),
             title: title,
             link: link,
@@ -51,14 +51,4 @@ extension SPCConvectiveOutlook {
         let levels = ["MRGL", "SLGT", "ENH", "MDT", "HIGH"]
         return levels.first { text.contains($0) }
     }
-}
-
-extension DateFormatter {
-    static let rfc822: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter
-    }()
 }

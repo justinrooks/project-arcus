@@ -8,95 +8,54 @@
 import Foundation
 import Observation
 import MapKit
-import Combine
+
+// Location Reference
+// latitude: 45.01890187118621,  longitude: -104.41476597508318)
+// latitude: 39.75288661683443,  longitude: -104.44886203922174) // Bennett, CO
+// latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
+// latitude: 39.141082435056475, longitude: -94.94050397438647)
+// latitude: 40.59353588092804,  longitude: -74.63735052368774)
+//           40.63805277084582,            -102.62175635050521 //Haxtun, CO
+// 43.49080559901152, -97.38563534330301 // Dolton, SD
 
 @MainActor
 @Observable
-final class SummaryViewModel: ObservableObject {
-    // latitude: 45.01890187118621,  longitude: -104.41476597508318)
-    // latitude: 39.75288661683443,  longitude: -104.44886203922174) // Bennett, CO
-    // latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
-    // latitude: 39.141082435056475, longitude: -94.94050397438647)
-    // latitude: 40.59353588092804,  longitude: -74.63735052368774)
-    //           40.63805277084582,            -102.62175635050521 //Haxtun, CO
-    
-    @ObservationIgnored private var userLocation: CLLocationCoordinate2D?
-    @ObservationIgnored private var resolvedUserLocation: CLLocationCoordinate2D {
-        userLocation ?? CLLocationCoordinate2D(latitude: 39.75288661683443, longitude: -104.44886203922174) // Bennett, CO
+final class SummaryViewModel {
+    private var userLocation: CLLocationCoordinate2D?
+    private var resolvedUserLocation: CLLocationCoordinate2D {
+        locationProvider.userLocation?.coordinate ?? CLLocationCoordinate2D(
+            latitude: 39.75288661683443,
+            longitude: -104.44886203922174
+        )
     }
+    
     var errorMessage: String?
     var isLoading: Bool = true
+    var nearestTown: String? {
+        locationProvider.locale
+    }
     
-    // Badges
-    var stormRisk: StormRiskLevel = .allClear
-    var severeRisk: SevereWeatherThreat = .allClear
-    var nearestTown: String?
-    
-    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
-    
-    @ObservationIgnored private let provider: SpcProvider
-    @ObservationIgnored private let locationProvider: LocationManager
+    var provider: SpcProvider
+    var locationProvider: LocationManager
     
     init(provider: SpcProvider, locationProvider: LocationManager) {
         self.provider = provider
         self.locationProvider = locationProvider
-        
-        getWeatherStatus()
     }
     
-    /// Fetches the weather status. It includes based on user location their
-    /// current convective category, torn, hail, wind, watches, mesos
-    func getWeatherStatus() {
-        isLoading = true
-        
-        Task {
-            observeLocation()
-            
-            self.isLoading = false
-        }
+    var stormRisk: StormRiskLevel {
+        handleConvectiveRisk(MKMultiPolygon(
+            provider.categorical.flatMap{$0.polygons}
+        ))
     }
     
-    private func observeLocation() {
-        Publishers.CombineLatest(locationProvider.$userLocation, locationProvider.$locale)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] loc, town in
-                guard let coords = loc?.coordinate else {
-                    self?.userLocation = CLLocationCoordinate2D(latitude: 39.75288661683443, longitude: -104.44886203922174) // Bennett, CO
-                    print("Location unavailable. Using default location")
-                    return
-                }
-                
-                self?.nearestTown = town
-                self?.userLocation = coords
-                print("Location: \(coords.latitude), \(coords.longitude)")
-                
-                self?.observeAllConvectiveCategories()
-                self?.observeSevereThreats()
-            }
-            .store(in: &cancellables)
-    }
-    
-    private func observeAllConvectiveCategories() {
-        provider.$categorical
-            .receive(on: RunLoop.main)
-            .sink { [weak self] categorical in
-                self?.handleConvectiveRisk(categorical)
-            }.store(in: &cancellables)
-    }
-    
-    private func observeSevereThreats() {
-        Publishers.CombineLatest3(
-            provider.$wind,
-            provider.$hail,
-            provider.$tornado
+    var severeRisk: SevereWeatherThreat {
+        handleSevereRisk(
+            MKMultiPolygon(provider.wind.flatMap {$0.polygons}),
+            MKMultiPolygon(provider.hail.flatMap {$0.polygons}),
+            MKMultiPolygon(provider.tornado.flatMap {$0.polygons})
         )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] wind, hail, tornado in
-            self?.handleSevereRisk(wind, hail, tornado)
-        }
-        .store(in: &cancellables)
     }
-    
     
     /// Determine how the Severe badge will be displayed. It evaluates the wind, hail, and tornado based on users location and prepares the appropriate
     /// badge configuration
@@ -104,27 +63,30 @@ final class SummaryViewModel: ObservableObject {
     ///   - wind: MKMultiPolygon object containing all the wind polygons
     ///   - hail: MKMultiPolygon object containing all the hail polygons
     ///   - tornado: MKMultiPolygon object containing all the tornado polygons
-    private func handleSevereRisk(_ wind: MKMultiPolygon, _ hail: MKMultiPolygon, _ tornado: MKMultiPolygon) {
+    private func handleSevereRisk(
+        _ wind: MKMultiPolygon,
+        _ hail: MKMultiPolygon,
+        _ tornado: MKMultiPolygon
+    ) -> SevereWeatherThreat {
         let severePolygons: [(SevereWeatherThreat, MKMultiPolygon)] = [
             (.wind(probability: 0), wind),
             (.hail(probability: 0), hail),
-            (.tornado(probability: 0), tornado)
+            (.tornado(probability: 0), tornado),
         ]
-
-        let threat = severePolygons
-            .compactMap { baseThreat, polygons in
-                let (isInPolygon, probability) = isUserIn(user: resolvedUserLocation, mkPolygons: polygons.polygons)
+        
+        return severePolygons
+            .compactMap { baseThreat, polygon in
+                let (isInPolygon, probability) =
+                isUserIn(user: resolvedUserLocation, mkPolygons: polygon.polygons)
                 return isInPolygon ? baseThreat.with(probability: probability) : nil
             }
-            .max(by: { $0.priority < $1.priority }) ?? .allClear
-        
-        self.severeRisk = threat
+            .max(by: {$0.priority < $1.priority}) ?? .allClear
     }
     
     /// Determines how the Categorical badge will be displayed. It evaluates the highest category the user is in and prepares the appropriate badge configuration
     /// - Parameters:
     ///   - convective: MKMultiPolygon object containing all the categorical risk polygons
-    private func handleConvectiveRisk(_ convective: MKMultiPolygon) {
+    private func handleConvectiveRisk(_ convective: MKMultiPolygon) -> StormRiskLevel {
         let titleToRisk: [String: StormRiskLevel] = [
             "MARGINAL RISK": .marginal,
             "SLIGHT RISK": .slight,
@@ -136,16 +98,14 @@ final class SummaryViewModel: ObservableObject {
         let matchingPolygons: [(StormRiskLevel, MKPolygon)] = convective.polygons.compactMap { polygon in
             guard let title = polygon.title?.uppercased(),
                   let risk = titleToRisk[title] else { return nil }
-                        
+            
             return (risk, polygon)
         }
         
-        let highest = matchingPolygons
+        return matchingPolygons
             .filter { isUserIn(user: resolvedUserLocation, mkPolygons: [$0.1]).0 }
             .map { $0.0 }
             .max() ?? .allClear
-        
-        self.stormRisk = highest
     }
     
     /// Determine if the user is in any of the provided polygons
@@ -176,4 +136,5 @@ final class SummaryViewModel: ObservableObject {
         
         return (isInsideAny, maxProbability)
     }
+    
 }
