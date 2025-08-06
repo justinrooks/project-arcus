@@ -9,11 +9,12 @@ import SwiftUI
 
 enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable {
     case allClear = 0
-    case marginal = 1
-    case slight = 2
-    case enhanced = 3
-    case moderate = 4
-    case high = 5
+    case thunderstorm = 1
+    case marginal = 2
+    case slight = 3
+    case enhanced = 4
+    case moderate = 5
+    case high = 6
     
     var id: Self { self }
    
@@ -24,6 +25,7 @@ enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable {
     var iconName: String {
         switch self {
         case .allClear: return "checkmark.seal"
+        case .thunderstorm: return "cloud.bolt.rain"
         case .marginal: return "circle.dashed"
         case .slight: return "exclamationmark.triangle.fill"
         case .enhanced: return "bolt.fill"
@@ -31,11 +33,59 @@ enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable {
         case .high: return "flame"
         }
     }
+    
+    var message: String {
+        switch self {
+        case .allClear: return "Clear Skies"
+        case .thunderstorm: return "Thunderstorms"
+        case .marginal: return "Marginal"
+        case .slight: return "Slight Risk"
+        case .enhanced: return "Enhanced Risk"
+        case .moderate: return "Moderate Risk"
+        case .high: return "High Risk"
+        }
+    }
+    
+    var summary: String {
+        switch self {
+        case .allClear: return "No severe storms expected"
+        case .thunderstorm: return "Chance of thunderstorms"
+        case .marginal: return "Low risk, but some stronger storms possible"
+        case .slight: return "Chance for a few strong storms"
+        case .enhanced: return "Several severe storms are possible"
+        case .moderate: return "Widespread severe storms expected"
+        case .high: return "Severe outbreak likely — stay alert"
+        }
+    }
+    
+    var abbreviation: String {
+        switch self {
+        case .allClear: return "clr"
+        case .thunderstorm: return "tstm"
+        case .marginal: return "mrgl"
+        case .slight: return "slgt"
+        case .enhanced: return "enh"
+        case .moderate: return "mdt"
+        case .high: return "high"
+        }
+    }
+    
+    init(abbreviation: String) {
+        switch abbreviation.lowercased() {
+        case "tstm": self = .thunderstorm
+        case "mrgl": self = .marginal
+        case "slgt": self = .slight
+        case "enh":  self = .enhanced
+        case "mdt":  self = .moderate
+        case "high": self = .high
+        default: self = .allClear
+        }
+    }
 
     func iconColor(for colorScheme: ColorScheme) -> LinearGradient {
         let colors: [Color]
         switch self {
-        case .allClear:
+        case .allClear, .thunderstorm:
                 colors = colorScheme == .dark
                     ? [.green.opacity(0.4), .green.darken()]
                     : [.green.opacity(0.2), .green]
@@ -62,27 +112,5 @@ enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable {
         }
 
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
-    
-    var message: String {
-        switch self {
-        case .allClear: return "Clear Skies"
-        case .marginal: return "Marginal"
-        case .slight: return "Slight Risk"
-        case .enhanced: return "Enhanced Risk"
-        case .moderate: return "Moderate Risk"
-        case .high: return "High Risk"
-        }
-    }
-    
-    var summary: String {
-        switch self {
-        case .allClear: return "No severe storms expected"
-        case .marginal: return "Low risk, but some stronger storms possible"
-        case .slight: return "Chance for a few strong storms"
-        case .enhanced: return "Several severe storms are possible"
-        case .moderate: return "Widespread severe storms expected"
-        case .high: return "Severe outbreak likely — stay alert"
-        }
     }
 }

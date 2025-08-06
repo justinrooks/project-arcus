@@ -88,6 +88,7 @@ final class SummaryViewModel {
     ///   - convective: MKMultiPolygon object containing all the categorical risk polygons
     private func handleConvectiveRisk(_ convective: MKMultiPolygon) -> StormRiskLevel {
         let titleToRisk: [String: StormRiskLevel] = [
+            "GENERAL THUNDERSTORMS RISK": .thunderstorm,
             "MARGINAL RISK": .marginal,
             "SLIGHT RISK": .slight,
             "ENHANCED RISK": .enhanced,
