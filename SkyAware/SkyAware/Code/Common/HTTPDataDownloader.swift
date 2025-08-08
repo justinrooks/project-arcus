@@ -13,6 +13,16 @@ protocol HTTPDataDownloader: Sendable {
     func httpData(from: URLRequest) async throws -> Data
 }
 
+extension URLSession {
+    static let fastFailing: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 5 // Fail fast if request is slow
+        config.timeoutIntervalForResource = 20
+        return URLSession(configuration: config)
+    }()
+}
+
+
 extension URLSession: HTTPDataDownloader {
     func httpData(from request: URLRequest) async throws -> Data {
         var attempt = 0

@@ -19,10 +19,8 @@ struct iPhoneHomeView: View {
                 .ignoresSafeArea()
             if provider.isLoading {
                 VStack {
-                    Spacer()
                     LoadingView(message: "Fetching SPC data...")
-                    Spacer()
-                }
+                }.ignoresSafeArea()
             } else {
                 TabView {
                     NavigationStack {

@@ -30,7 +30,7 @@ struct AlertRowView: View {
                     .lineLimit(2)
                     .minimumScaleFactor(0.9)
 
-                Text(relativeDate(alert.published))
+                Text(relativeDate(alert.issued))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

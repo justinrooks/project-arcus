@@ -10,7 +10,7 @@ import Foundation
 protocol AlertItem: Identifiable, Hashable {
     var title: String { get }
     var summary: String { get }
-    var published: Date { get }
+    var issued: Date { get }
     var link: URL { get }
     var alertType: AlertType { get }
 }

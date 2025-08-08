@@ -28,7 +28,8 @@ struct AlertView: View {
             if !provider.meso.isEmpty {
                 Section(header: Text("Mesoscale Discussions")) {
                     ForEach(provider.meso) { meso in
-                        NavigationLink(destination: MesoDetailView(discussion: meso)) {
+//                        NavigationLink(destination: MesoDetailView(discussion: meso)) {
+                        NavigationLink(destination: MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: meso))) {
                             AlertRowView(alert: meso)
                         }
                         .foregroundStyle(Color.clear)

@@ -11,7 +11,7 @@ struct Watch: Identifiable, Hashable, AlertItem {
     let id: UUID              // usually the GUID or derived from it
     let title: String           // e.g., "Day 1 Convective Outlook"
     let link: URL               // link to full outlook page
-    let published: Date         // pubDate
+    let issued: Date         // pubDate
     let summary: String         // description / CDATA
     let alertType: AlertType    // Type of alert to conform to alert item
 }
@@ -33,7 +33,7 @@ extension Watch {
             id: UUID(),
             title: title,
             link: link,
-            published: published,
+            issued: published,
             summary: summary,
             alertType: .watch
         )

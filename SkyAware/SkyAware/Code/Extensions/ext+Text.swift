@@ -19,4 +19,12 @@ extension Text {
             .lineLimit(1)
             .minimumScaleFactor(0.5)
     }
+    
+    // Meso detail
+    func labelStyle() -> some View { self.font(.caption.smallCaps()).foregroundStyle(.secondary) }
+    func valueStyle(multiline: Bool = false) -> some View {
+        self.font(.footnote.monospaced())
+            .foregroundStyle(.primary)
+            .lineLimit(multiline ? 3 : 1)
+    }
 }

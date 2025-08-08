@@ -39,9 +39,9 @@ enum SevereWeatherThreat: Comparable {
     
     var iconName: String {
         switch self {
-        case .allClear: return "checkmark.seal"
+        case .allClear: return "checkmark.seal.fill"
         case .wind: return "wind"
-        case .hail: return "cloud.hail"
+        case .hail: return "cloud.hail.fill"
         case .tornado: return "tornado"
         }
     }

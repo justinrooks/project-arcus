@@ -28,6 +28,9 @@ struct StormRiskBadgeView: View {
     Group {
         HStack {
             StormRiskBadgeView(level: .allClear)
+            StormRiskBadgeView(level: .thunderstorm)
+        }
+        HStack {
             StormRiskBadgeView(level: .marginal)
         }
         HStack {

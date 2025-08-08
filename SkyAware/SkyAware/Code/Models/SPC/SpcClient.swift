@@ -16,7 +16,7 @@ enum Product: String {
 
 final class SpcClient {
     private let feedURL = URL(string: "https://www.spc.noaa.gov/products/spcrss.xml")!
-        
+    
     private let parser = RSSFeedParser()
     private let downloader: HTTPDataDownloader = URLSession.shared
     
@@ -48,7 +48,7 @@ final class SpcClient {
             throw SpcError.missingData
         }
     }
-
+    
     
     /// Fetches RSS from the SPC site
     /// - Returns: a RSS object for processing
@@ -60,13 +60,13 @@ final class SpcClient {
             
             // Parse RSS into feed result
             let feedResult = try self.parser.parse(data:rss)
-
+            
             return feedResult!
         } catch {
             throw SpcError.parsingError
         }
     }
-        
+    
     private func fetchGeoJsonFile(for product: Product) async throws -> Data {
         let productUrl = try buildUrl(for: product)
         let request = URLRequest(url: productUrl)
@@ -108,15 +108,19 @@ final class SpcClient {
         do {
             let decoded = try decoder.decode(GeoJSONFeatureCollection.self, from: data)
             return decoded
-        } catch DecodingError.dataCorrupted,
-                DecodingError.keyNotFound,
-                DecodingError.typeMismatch,
-                DecodingError.valueNotFound {
-            // Handle known decoding errors by returning an empty collection
-            print("GeoJSON decoding error")
+        } catch let DecodingError.dataCorrupted(context) {
+            print("GeoJSON decoding failed: Data corrupted –", context.debugDescription)
+            return .empty
+        } catch let DecodingError.keyNotFound(key, context) {
+            print("GeoJSON decoding failed: Missing key '\(key.stringValue)' –", context.debugDescription)
+            return .empty
+        } catch let DecodingError.typeMismatch(type, context) {
+            print("GeoJSON decoding failed: Type mismatch for type '\(type)' –", context.debugDescription)
+            return .empty
+        } catch let DecodingError.valueNotFound(value, context) {
+            print("GeoJSON decoding failed: Missing value '\(value)' –", context.debugDescription)
             return .empty
         } catch {
-            // For any other unexpected error, log and return empty
             print("Unexpected GeoJSON decode error:", error.localizedDescription)
             return .empty
         }
