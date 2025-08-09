@@ -42,9 +42,11 @@ struct ActiveMesoSummaryView: View {
         .sheet(item: $selectedMeso) { meso in
             VStack {
                 ScrollView {
-                    MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: meso), layout: .sheet)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 25)
+                    MesoscaleDiscussionCard(
+                        vm: MesoscaleDiscussionViewModel(md: meso),
+                        layout: .sheet)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 25)
                     Spacer()
                 }
             }

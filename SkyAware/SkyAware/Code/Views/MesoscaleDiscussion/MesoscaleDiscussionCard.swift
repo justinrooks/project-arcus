@@ -14,7 +14,8 @@ enum DetailLayout { case full, sheet }
 struct MesoscaleDiscussionCard: View {
     var vm: MesoscaleDiscussionViewModel
     var layout: DetailLayout = .full
-
+    var onShowMap: (() -> Void)? = nil
+    
     // Layout metrics
     private var hPad: CGFloat { layout == .sheet ? 0 : 18 }
     private var vPad: CGFloat { layout == .sheet ? 0 : 18 }
@@ -55,7 +56,7 @@ struct MesoscaleDiscussionCard: View {
                 .font(headerFont.weight(.semibold))
                 .textCase(.uppercase)
             Spacer()
-            InZonePill(inZone: vm.md.userIsInPolygon)
+            InZonePill(inZone: layout == .sheet) // The sheet view is filtered, alters and full are not
         }
         .overlay(alignment: .bottomLeading) {
             Text(vm.issuedText)
@@ -124,11 +125,35 @@ struct MesoscaleDiscussionCard: View {
         TimelineView(.periodic(from: .now, by: 60)) { ctx in
             let remaining = vm.timeRemaining(now: ctx.date)
             HStack {
+                mapButton
+                Spacer()
+                spcLink
                 Spacer()
                 ExpiryLabel(remaining: remaining)
             }
         }
     }
+    
+    private var mapButton: some View {
+        Button {
+            onShowMap?()
+        } label: {
+            Label("View on Map", systemImage: "map")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding(.top, 6)
+    }
+
+    private var spcLink: some View {
+        Link(destination: vm.md.link) {
+            Label("Open on SPC", systemImage: "arrow.up.right.square")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.secondary)
+        }
+        .padding(.top, 6)
+    }
+
 }
 
 
@@ -139,7 +164,7 @@ struct MesoscaleDiscussionCard_Previews: PreviewProvider {
             MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[1]), layout: .sheet)
                 .padding()
                 .previewLayout(.sizeThatFits)
-                .environment(\.colorScheme, .light)
+                .environment(\.colorScheme, .dark)
             MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[0]),
                 layout: .full)
                 .padding()

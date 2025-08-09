@@ -17,7 +17,8 @@ struct MapView: View {
         ("CAT", "Categorical"),
         ("TOR", "Tornado"),
         ("HAIL", "Hail"),
-        ("WIND", "Wind")
+        ("WIND", "Wind"),
+        ("MDT", "Test")
     ]
     
     var body: some View {

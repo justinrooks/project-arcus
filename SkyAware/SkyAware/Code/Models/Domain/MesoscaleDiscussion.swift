@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import MapKit
 
 // MARK: - Domain Model (minimal for the card)
 struct MDThreats: Hashable, Equatable {
@@ -32,11 +33,45 @@ struct MesoscaleDiscussion: Identifiable, Hashable, Equatable, AlertItem {
     let concerning: String?     // e.g. "Severe potential... Watch unlikely"
     let watchProbability: WatchProbability
     let threats: MDThreats
-    let userIsInPolygon: Bool
+    let coordinates: [CLLocationCoordinate2D]
     let alertType: AlertType    // type of alert to conform to AlertItem
 }
 
 extension MesoscaleDiscussion {
+        // Equality: base on stable identifiers/fields; ignore polygon coordinates to avoid float noise
+        static func == (lhs: MesoscaleDiscussion, rhs: MesoscaleDiscussion) -> Bool {
+            return lhs.id == rhs.id
+                && lhs.number == rhs.number
+                && lhs.title == rhs.title
+                && lhs.link == rhs.link
+                && lhs.issued == rhs.issued
+                && lhs.validStart == rhs.validStart
+                && lhs.validEnd == rhs.validEnd
+                && lhs.areasAffected == rhs.areasAffected
+                && lhs.summary == rhs.summary
+                && lhs.concerning == rhs.concerning
+                && lhs.watchProbability == rhs.watchProbability
+                && lhs.threats == rhs.threats
+                // polygon intentionally excluded (CLLocationCoordinate2D is not Hashable and can suffer precision drift)
+        }
+
+        // Hashing: hash the same stable fields; exclude polygon
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(id)
+            hasher.combine(number)
+            hasher.combine(title)
+            hasher.combine(link)
+            hasher.combine(issued)
+            hasher.combine(validStart)
+            hasher.combine(validEnd)
+            hasher.combine(areasAffected)
+            hasher.combine(summary)
+            hasher.combine(concerning)
+            hasher.combine(watchProbability)
+            hasher.combine(threats)
+            // polygon intentionally excluded
+        }
+        
     // MARK: - Parsing (private)
 
     // Block-capture sections
@@ -65,10 +100,14 @@ extension MesoscaleDiscussion {
     // Parse MD number from link (md####.html)
     private static func parseMDNumber(from url: URL) -> Int? {
         let s = url.absoluteString
-        if let m = s.range(of: #"md(\d{3,4})\.html"#, options: [.regularExpression, .caseInsensitive]) {
-            return Int(s[m].replacingOccurrences(of: "md", with: "").replacingOccurrences(of: ".html", with: ""))
-        }
-        return nil
+        guard
+            let r = s.range(of: #"md(\d{3,4})\.html"#, options: .regularExpression),
+            let m = try? NSRegularExpression(pattern: #"md(\d{3,4})\.html"#)
+                .firstMatch(in: s, range: NSRange(r, in: s)),
+            m.numberOfRanges == 2,
+            let gr = Range(m.range(at: 1), in: s)
+        else { return nil }
+        return Int(s[gr])
     }
 
     // Parse Valid range (Z times) relative to issued date (UTC). Handles crossing 00Z boundary.
@@ -187,7 +226,7 @@ extension MesoscaleDiscussion {
             hailRangeInches: hailRng,
             tornadoStrength: torText
         )
-
+        
         // NOTE: userIsInPolygon requires your geometry pipeline; leave false here.
         return MesoscaleDiscussion(
             id: UUID(),
@@ -202,7 +241,7 @@ extension MesoscaleDiscussion {
             concerning: concerningLine,
             watchProbability: watchProb,
             threats: threats,
-            userIsInPolygon: false, // TODO: Wire this up. Need to get polygon from rss data, and integrate with other checks
+            coordinates: MesoGeometry.coordinates(from: rawText) ?? [],
             alertType: .mesoscale
         )
     }

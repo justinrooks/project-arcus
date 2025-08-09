@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import MapKit
 
 extension SpcProvider {
     static var previewData: SpcProvider {
@@ -24,7 +25,17 @@ extension SpcProvider {
                 concerning: "Severe potential… Watch unlikely",
                 watchProbability: .percent(5),
                 threats: MDThreats(peakWindMPH: 65, hailRangeInches: 1.5...2.5, tornadoStrength: "Not expected"),
-                userIsInPolygon: true,
+                coordinates: MesoGeometry.coordinates(from: """
+                       ATTN...WFO...BYZ...GGW...TFX...
+
+                       LAT...LON   46441136 46761221 47041239 47441240 47691208 47991054
+                                   48011017 48080908 47980781 47500689 46800636 46110655
+                                   45890673 45420788 45690939 45951005 46201081 46441136 
+
+                       MOST PROBABLE PEAK WIND GUST...55-70 MPH
+                       MOST PROBABLE PEAK HAIL SIZE...1.50-2.50 IN
+""") ?? [],
+
                 alertType: .mesoscale
             ),
             MesoscaleDiscussion(
@@ -40,7 +51,16 @@ extension SpcProvider {
                 concerning: "Severe potential… Watch likely",
                 watchProbability: .percent(5),
                 threats: MDThreats(peakWindMPH: 60, hailRangeInches: 1.5...5.5, tornadoStrength: "95 MPH"),
-                userIsInPolygon: false,
+                coordinates: MesoGeometry.coordinates(from: """
+                        ATTN...WFO...UNR...BYZ...
+
+                        LAT...LON   44640241 44240268 44030332 44140411 44370500 44480533
+                                    44700555 44990556 45370523 45570470 45590413 45440325
+                                    45220265 44970240 44640241 
+
+                        MOST PROBABLE PEAK WIND GUST...UP TO 60 MPH
+                        MOST PROBABLE PEAK HAIL SIZE...1.50-2.50 IN
+""") ?? [],
                 alertType: .mesoscale
             ),
             MesoscaleDiscussion(
@@ -56,7 +76,17 @@ extension SpcProvider {
                 concerning: "Severe potential… Watch unlikely",
                 watchProbability: .percent(15),
                 threats: MDThreats(peakWindMPH: 63, hailRangeInches: 1.0...4.5, tornadoStrength: "Not expected"),
-                userIsInPolygon: true,
+                coordinates: MesoGeometry.coordinates(from: """
+                   ATTN...WFO...FSD...ABR...LBF...UNR...
+
+                   LAT...LON   43370091 44049966 44449790 43689659 43239776 42699886
+                               42500075 43370091 
+
+                   MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH
+                   MOST PROBABLE PEAK WIND GUST...65-80 MPH
+                   MOST PROBABLE PEAK HAIL SIZE...1.50-2.50 IN
+                                      
+""") ?? [],
                 alertType: .mesoscale
             )
 //            MesoscaleDiscussion(
