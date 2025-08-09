@@ -32,22 +32,11 @@ struct SummaryView: View {
                     SevereWeatherBadgeView(threat: viewModel.severeRisk)
                 }
             }
-            .padding()
+            .padding(5)
             .fixedSize(horizontal: true, vertical: true)
             
-            NavigationLink(destination: AlertView()) {
-                GroupBox{
-                    HStack {
-                        Text("No active mesoscale discussions near by")
-                        Spacer()
-                    }
-                } label: {
-                    Label("Nearby Mesoscale Discussions", systemImage: "cloud.bolt.rain.fill")
-                        .foregroundColor(.teal)
-                }
-            }
-            .buttonStyle(PlainButtonStyle())
-            
+            ActiveMesoSummaryView(viewModel: viewModel)
+    
             GroupBox{
                 HStack {
                     Text("No active watches near by")
@@ -73,7 +62,7 @@ struct SummaryView: View {
 
 #Preview {
     let mock = LocationManager()
-    let spc = SpcProvider()
+    let spc = SpcProvider.previewData
     SummaryView(provider: spc,
     locationProvider: mock)
         .environment(mock)

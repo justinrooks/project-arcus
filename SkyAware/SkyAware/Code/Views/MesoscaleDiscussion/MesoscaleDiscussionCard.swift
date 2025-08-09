@@ -1,5 +1,5 @@
 //
-//  MesoDetailView.swift
+//  MesoscaleDiscussionCard.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 7/21/25.
@@ -9,24 +9,41 @@ import SwiftUI
 import Foundation
 
 // MARK: - Card View (Less "weather-y")
+enum DetailLayout { case full, sheet }
+
 struct MesoscaleDiscussionCard: View {
     var vm: MesoscaleDiscussionViewModel
+    var layout: DetailLayout = .full
+
+    // Layout metrics
+    private var hPad: CGFloat { layout == .sheet ? 0 : 18 }
+    private var vPad: CGFloat { layout == .sheet ? 0 : 18 }
+    private var sectionSpacing: CGFloat { layout == .sheet ? 12 : 14 }
+    private var headerFont: Font { layout == .sheet ? .headline : .title3 }
+    private var showCardBackground: Bool { layout == .full }
+    private var cornerRadius: CGFloat { layout == .sheet ? 0 : 22 }
+    private var showShadow: Bool { layout == .full }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: sectionSpacing) {
             header
-            Divider().opacity(0.15)
+            Divider().opacity(0.12)
             pairs
             if let concerning = vm.concerningText, !concerning.isEmpty { contextNote(concerning) }
             probability
             primaryThreat
             footer
         }
-        .padding(18)
+        .padding(.horizontal, hPad)
+        .padding(.vertical, vPad)
         .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(Neutral.cardBG)
-                .shadow(color: Neutral.stroke, radius: 10, y: 2)
+            Group {
+                if showCardBackground {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Neutral.cardBG)
+                        .shadow(color: showShadow ? Neutral.stroke : .clear, radius: 10, y:2)
+                }
+            }
         )
         .accessibilityElement(children: .contain)
     }
@@ -35,7 +52,7 @@ struct MesoscaleDiscussionCard: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(vm.title)
-                .font(.title3.weight(.semibold))
+                .font(headerFont.weight(.semibold))
                 .textCase(.uppercase)
             Spacer()
             InZonePill(inZone: vm.md.userIsInPolygon)
@@ -77,7 +94,7 @@ struct MesoscaleDiscussionCard: View {
                 .frame(height: 8)
                 .clipShape(Capsule())
         }
-        .padding(.top, 4)
+        .padding(.top, layout == .sheet ? 2 : 4)
     }
     
     private var primaryThreat: some View {
@@ -119,11 +136,12 @@ struct MesoscaleDiscussionCard: View {
 struct MesoscaleDiscussionCard_Previews: PreviewProvider {
     static var previews: some View {
         Group {
-            MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[1]))
+            MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[1]), layout: .sheet)
                 .padding()
                 .previewLayout(.sizeThatFits)
                 .environment(\.colorScheme, .light)
-            MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[0]))
+            MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[0]),
+                layout: .full)
                 .padding()
                 .previewLayout(.sizeThatFits)
                 .environment(\.colorScheme, .dark)

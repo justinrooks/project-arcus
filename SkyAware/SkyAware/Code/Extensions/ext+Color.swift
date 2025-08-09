@@ -15,4 +15,7 @@ extension Color {
     func darken(by amount: Double = 0.2) -> Color {
         return self.opacity(1.0 - amount)
     }
+    
+    // Meso card
+    static var accentIndigoFallback: Color { Color(red: 0.39, green: 0.40, blue: 0.95) }
 }

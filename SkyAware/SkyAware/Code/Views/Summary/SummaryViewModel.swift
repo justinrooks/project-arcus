@@ -57,6 +57,78 @@ final class SummaryViewModel {
         )
     }
     
+    var mesosNearby: [MesoscaleDiscussion] {
+//        provider.meso.filter {
+//            !$0.userIsInPolygon
+//        }
+        [
+            MesoscaleDiscussion(
+                id: UUID(),
+                number: 1893,
+                title: "test",
+                link: URL(string:"https://www.spc.noaa.gov/products/md/md1893.html")!,
+                issued: Date(),
+                validStart: Calendar.current.date(byAdding: .minute, value: 60, to: Date())!,
+                validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
+                areasAffected: "Western SD, northeast WY, far southeast MT",
+                summary: "test",
+                concerning: "Severe potential… Watch unlikely",
+                watchProbability: .percent(5),
+                threats: MDThreats(peakWindMPH: 65, hailRangeInches: 1.5...2.5, tornadoStrength: "Not expected"),
+                userIsInPolygon: true,
+                alertType: .mesoscale
+            ),
+            MesoscaleDiscussion(
+                id: UUID(),
+                number: 1894,
+                title: "test",
+                link: URL(string:"https://www.spc.noaa.gov/products/md/md1894.html")!,
+                issued: Date(),
+                validStart: Calendar.current.date(byAdding: .minute, value: 90, to: Date())!,
+                validEnd: Calendar.current.date(byAdding: .hour, value: 3, to: Date())!,
+                areasAffected: "Western ID, northwest WY, far southwest MT",
+                summary: "test",
+                concerning: "Severe potential… Watch likely",
+                watchProbability: .percent(5),
+                threats: MDThreats(peakWindMPH: 60, hailRangeInches: 1.5...5.5, tornadoStrength: "95 MPH"),
+                userIsInPolygon: false,
+                alertType: .mesoscale
+            ),
+            MesoscaleDiscussion(
+                id: UUID(),
+                number: 1895,
+                title: "test",
+                link: URL(string:"https://www.spc.noaa.gov/products/md/md1895.html")!,
+                issued: Date(),
+                validStart: Calendar.current.date(byAdding: .minute, value: 120, to: Date())!,
+                validEnd: Calendar.current.date(byAdding: .hour, value: 4, to: Date())!,
+                areasAffected: "Western SD, northeast WY, far southeast MT",
+                summary: "test",
+                concerning: "Severe potential… Watch unlikely",
+                watchProbability: .percent(15),
+                threats: MDThreats(peakWindMPH: nil, hailRangeInches: 1.0...4.5, tornadoStrength: nil),
+                userIsInPolygon: true,
+                alertType: .mesoscale
+            ),
+            MesoscaleDiscussion(
+                id: UUID(),
+                number: 1896,
+                title: "test",
+                link: URL(string:"https://www.spc.noaa.gov/products/md/md1896.html")!,
+                issued: Date(),
+                validStart: Calendar.current.date(byAdding: .minute, value: 120, to: Date())!,
+                validEnd: Calendar.current.date(byAdding: .hour, value: 4, to: Date())!,
+                areasAffected: "Western SD, northeast WY, far southeast MT",
+                summary: "test",
+                concerning: "Severe potential… Watch unlikely",
+                watchProbability: .percent(45),
+                threats: MDThreats(peakWindMPH: 63, hailRangeInches: nil, tornadoStrength: "Not expected"),
+                userIsInPolygon: true,
+                alertType: .mesoscale
+            )
+        ]
+    }
+    
     /// Determine how the Severe badge will be displayed. It evaluates the wind, hail, and tornado based on users location and prepares the appropriate
     /// badge configuration
     /// - Parameters:
@@ -137,5 +209,4 @@ final class SummaryViewModel {
         
         return (isInsideAny, maxProbability)
     }
-    
 }

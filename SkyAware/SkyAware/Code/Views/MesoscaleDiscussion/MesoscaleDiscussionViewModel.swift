@@ -1,5 +1,5 @@
 //
-//  MesoDetailViewModel.swift
+//  MesoscaleDiscussionViewModel.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 8/8/25.
@@ -66,8 +66,4 @@ final class MesoscaleDiscussionViewModel {
         static let stroke = Color.black.opacity(0.08)
         static let labelSecondary = Color.secondary
         static let accent = Color("AccentIndigo") // Provide in Assets or fallback below
-    }
-
-    extension Color {
-        static var accentIndigoFallback: Color { Color(red: 0.39, green: 0.40, blue: 0.95) }
     }
