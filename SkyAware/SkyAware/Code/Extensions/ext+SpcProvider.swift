@@ -22,7 +22,7 @@ extension SpcProvider {
                 validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
                 areasAffected: "Western SD, northeast WY, far southeast MT",
                 summary: "test",
-                concerning: "Severe potential… Watch unlikely",
+                concerning: "Concerning...Severe Thunderstorm Watch 580...",
                 watchProbability: .percent(5),
                 threats: MDThreats(peakWindMPH: 65, hailRangeInches: 1.5...2.5, tornadoStrength: "Not expected"),
                 coordinates: MesoGeometry.coordinates(from: """
@@ -102,7 +102,7 @@ extension SpcProvider {
 //                   Areas affected...parts of south central and southeastern South
 //                   Dakota...adjacent north central Nebraska
 //
-//                   Concerning...Severe potential...Watch possible 
+//                   Concerning...Severe Thunderstorm Watch 580...
 //
 //                   Valid 281947Z - 282145Z
 //

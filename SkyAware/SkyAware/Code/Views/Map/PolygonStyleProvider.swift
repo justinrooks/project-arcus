@@ -22,6 +22,8 @@ enum PolygonStyleProvider {
             return (UIColor.red.withAlphaComponent(0.5), .red)
         case let r where r.contains("HIGH"):
             return (UIColor.purple.withAlphaComponent(0.5), .purple)
+        case let r where r.contains("MESO"):
+            return (UIColor.blue.withAlphaComponent(0.3), .blue)
             
         case let r where r.contains("WIND"):
             let isSignificant = r.contains("SIGN")

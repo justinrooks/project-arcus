@@ -227,7 +227,6 @@ extension MesoscaleDiscussion {
             tornadoStrength: torText
         )
         
-        // NOTE: userIsInPolygon requires your geometry pipeline; leave false here.
         return MesoscaleDiscussion(
             id: UUID(),
             number: mdNumber,

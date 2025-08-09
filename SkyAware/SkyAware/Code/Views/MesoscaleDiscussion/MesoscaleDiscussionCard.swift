@@ -56,6 +56,7 @@ struct MesoscaleDiscussionCard: View {
                 .font(headerFont.weight(.semibold))
                 .textCase(.uppercase)
             Spacer()
+            #warning("TODO: May need a better way. This is based off more 'convention' that the summary/sheet view is localized")
             InZonePill(inZone: layout == .sheet) // The sheet view is filtered, alters and full are not
         }
         .overlay(alignment: .bottomLeading) {

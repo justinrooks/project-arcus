@@ -28,22 +28,7 @@ struct CONUSMapView: UIViewRepresentable {
 //        let annotation = MKPointAnnotation()
 //        annotation.coordinate = center // Use the calculated center coordinate
 //        annotation.title = "Your Polygon Name" // Set the text you want to display
-        
-        
-//        let coords = MesoGeometry.coordinates(from: """
-//                 
-//   ATTN...WFO...DLH...MPX...DMX...FGF...FSD...ABR...
-//
-//   LAT...LON   43289764 48459445 48459097 43289447 43289764 
-//
-//   MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH                       
-//""")
-//        let testPoly = MKPolygon(coordinates: coords ?? [], count: coords?.count ?? 0)
-//        testPoly.title = "HIGH"
-//
-//        let multi = MKMultiPolygon([testPoly])
-//        
-//        mapView.addOverlays(multi.polygons)
+
         mapView.addOverlays(polygonList.polygons)
 //        mapView.addAnnotation(annotation)
         
@@ -56,28 +41,9 @@ struct CONUSMapView: UIViewRepresentable {
 
         // Add new overlays from the updated polygonList
         uiView.addOverlays(polygonList.polygons)
-        
-        
-//        let coords = MesoGeometry.coordinates(from: """
-//                   
-//   ATTN...WFO...DLH...MPX...DMX...FGF...FSD...ABR...
-//
-//   LAT...LON   43289764 48459445 48459097 43289447 43289764 
-//
-//   MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH                           
-//""")
-//        let testPoly = MKPolygon(coordinates: coords ?? [], count: coords?.count ?? 0)
-//        testPoly.title = "HIGH"
-//        let multi = MKMultiPolygon([testPoly])
-//        
-//        uiView.addOverlays(multi.polygons)
     }
 
     func makeCoordinator() -> MapCoordinator {
         MapCoordinator()
     }
 }
-
-//#Preview {
-//    CONUSMapView()
-//}

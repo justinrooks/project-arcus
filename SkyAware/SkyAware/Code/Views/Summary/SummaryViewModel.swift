@@ -60,7 +60,11 @@ final class SummaryViewModel {
         )
     }
     
+    /// Provides a filtered list of mesoscale discussions for the current user's location
+    /// meso's get coordinates, so we build a polygon and then use the existing poly
+    /// check to see if it affects the current user based on location.
     var mesosNearby: [MesoscaleDiscussion] {
+        #warning("TODO: Remove this if check eventually")
         if (provider.meso.count > 0) {
             return provider.meso.filter {
                 let poly = MKPolygon(coordinates: $0.coordinates, count: $0.coordinates.count)
@@ -78,7 +82,7 @@ final class SummaryViewModel {
                     validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
                     areasAffected: "Western SD, northeast WY, far southeast MT",
                     summary: "test",
-                    concerning: "Severe potential… Watch unlikely",
+                    concerning: "Concerning...Severe Thunderstorm Watch 580...",
                     watchProbability: .percent(5),
                     threats: MDThreats(peakWindMPH: 65, hailRangeInches: 1.5...2.5, tornadoStrength: "Not expected"),
                     coordinates: MesoGeometry.coordinates(from: """
@@ -251,6 +255,11 @@ final class SummaryViewModel {
     }
     
     
+    /// Determines if a location is inside a single polygon
+    /// - Parameters:
+    ///   - user: the users CLLocationCoordinate
+    ///   - polygon: Polygon to check
+    /// - Returns: true if location is within the provided polygon, false otherwise
     private func inPoly(user: CLLocationCoordinate2D, polygon: MKPolygon) -> Bool {
         let userMapPoint = MKMapPoint(user)
         var isInsideAny = false
