@@ -29,7 +29,7 @@ enum ThreatType: String, CaseIterable {
     }
 }
 
-enum ThreatProbability: Equatable {
+enum ThreatProbability: Equatable, Hashable {
     case percent(Double)   // e.g., 2, 5, 15, 30
     case significant(Int)    // SIGN
     

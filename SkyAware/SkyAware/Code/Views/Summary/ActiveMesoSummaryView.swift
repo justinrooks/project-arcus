@@ -44,7 +44,24 @@ struct ActiveMesoSummaryView: View {
                 ScrollView {
                     MesoscaleDiscussionCard(
                         vm: MesoscaleDiscussionViewModel(md: meso),
-                        layout: .sheet)
+                        layout: .sheet)//,
+//                        onShowMap: {
+//                            print("Show map for \(meso.number)")
+//                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
+//                                poly.title = "MESO"
+//                                
+//                            selectedPolygon = MKMultiPolygon([poly])
+//                            showMap = true
+//                            
+//                            NavigationLink("", destination: CONUSMapView(polygonList: selectedPolygon ?? MKMultiPolygon()), isActive: $showMap)
+//                                .hidden()
+//                            
+////                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
+////                            poly.title = "MESO"
+////                            
+////                            CONUSMapView(polygonList: MKMultiPolygon([poly]))
+////                                .edgesIgnoringSafeArea(.top)
+//                        })
                     .padding(.horizontal, 16)
                     .padding(.vertical, 25)
                     Spacer()

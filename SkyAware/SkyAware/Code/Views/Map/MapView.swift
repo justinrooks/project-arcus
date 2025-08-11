@@ -11,7 +11,7 @@ import MapKit
 struct MapView: View {
     @Environment(SpcProvider.self) private var provider: SpcProvider
     
-    @State private var selectedLayer: String = "CAT"
+    @State private var selectedLayer: String = "HAIL"
     
     private let availableLayers: [(key: String, label: String)] = [
         ("CAT", "Categorical"),
@@ -44,15 +44,43 @@ struct MapView: View {
                 }
                Spacer()
            }
-           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             
             // Legend in bottom-right
             VStack {
                 Spacer()
-                LegendView()
-                    .padding()
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                    .padding([.bottom, .trailing])
+                switch selectedLayer {
+                case "CAT":
+                    LegendView()
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .padding([.bottom, .trailing])
+                case "TOR":
+                    let probabilities = provider.tornado.compactMap { $0.probability }
+                        .sorted { $0.intValue < $1.intValue }
+                    SevereLegendView(probabilities: probabilities,
+                                     legendLabel: "Tornado",
+                                     risk: "TOR")
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .padding([.bottom, .trailing])
+                case "HAIL":
+                    let probabilities = provider.hail.compactMap { $0.probability }
+                        .sorted { $0.intValue < $1.intValue }
+                    SevereLegendView(probabilities: probabilities,
+                                     legendLabel: "Hail",
+                                     risk: "HAIL")
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .padding([.bottom, .trailing])
+                case "WIND":
+                    let probabilities = provider.wind.compactMap { $0.probability }
+                        .sorted { $0.intValue < $1.intValue }
+                    SevereLegendView(probabilities: probabilities,
+                                     legendLabel: "Wind",
+                                     risk: "WIND")
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                        .padding([.bottom, .trailing])
+                default:
+                    EmptyView()
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
@@ -77,18 +105,6 @@ struct MapView: View {
             }
             
             return MKMultiPolygon(polys)
-//            let coords = MesoGeometry.coordinates(from: """
-//            
-//               ATTN...WFO...DLH...MPX...DMX...FGF...FSD...ABR...
-//            
-//               LAT...LON   43289764 48459445 48459097 43289447 43289764
-//            
-//               MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH
-//            """)
-//            let testPoly = MKPolygon(coordinates: coords ?? [], count: coords?.count ?? 0)
-//            testPoly.title = "MESO"
-//            
-//            return MKMultiPolygon([testPoly])
         default:
             return MKMultiPolygon()
         }

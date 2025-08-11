@@ -11,7 +11,10 @@ struct LegendView: View {
 //    @ObservedObject var selection: SelectedLayer
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("Severe Risk")
+                .fontWeight(.bold)
+                .font(.caption)
             LegendItem(risk:"HIGH")
             LegendItem(risk:"MDT")
             LegendItem(risk:"ENH")
@@ -19,7 +22,7 @@ struct LegendView: View {
             LegendItem(risk:"MRGL")
             LegendItem(risk:"TSTM")
         }
-        .padding(8)
+        .padding()
     }
 }
 
@@ -31,7 +34,7 @@ struct LegendItem: View {
         HStack {
             Circle()
                 .fill(Color(stroke))
-                .frame(width: 14, height: 14)
+                .frame(width: 13, height: 13)
             Text(risk)
                 .font(.caption)
         }
