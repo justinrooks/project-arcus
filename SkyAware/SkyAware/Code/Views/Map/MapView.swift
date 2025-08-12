@@ -11,7 +11,7 @@ import MapKit
 struct MapView: View {
     @Environment(SpcProvider.self) private var provider: SpcProvider
     
-    @State private var selectedLayer: String = "HAIL"
+    @State private var selectedLayer: String = "CAT"
     
     private let availableLayers: [(key: String, label: String)] = [
         ("CAT", "Categorical"),
@@ -59,7 +59,7 @@ struct MapView: View {
                         .sorted { $0.intValue < $1.intValue }
                     SevereLegendView(probabilities: probabilities,
                                      legendLabel: "Tornado",
-                                     risk: "TOR")
+                                     risk: selectedLayer)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding([.bottom, .trailing])
                 case "HAIL":
@@ -67,7 +67,7 @@ struct MapView: View {
                         .sorted { $0.intValue < $1.intValue }
                     SevereLegendView(probabilities: probabilities,
                                      legendLabel: "Hail",
-                                     risk: "HAIL")
+                                     risk: selectedLayer)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding([.bottom, .trailing])
                 case "WIND":
@@ -75,7 +75,7 @@ struct MapView: View {
                         .sorted { $0.intValue < $1.intValue }
                     SevereLegendView(probabilities: probabilities,
                                      legendLabel: "Wind",
-                                     risk: "WIND")
+                                     risk: selectedLayer)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding([.bottom, .trailing])
                 default:

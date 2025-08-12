@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct LegendView: View {
-//    @ObservedObject var selection: SelectedLayer
     
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -44,6 +43,3 @@ struct LegendItem: View {
 #Preview {
     LegendView()
 }
-
-
-

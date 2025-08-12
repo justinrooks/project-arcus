@@ -18,13 +18,12 @@ struct SevereLegendView: View {
                     .fontWeight(.bold)
                     .font(.caption)
                 ForEach (probabilities, id: \.self) { index in
-//                    print(index.description)
-                    let (_, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(
+                    let (fill, _) = PolygonStyleProvider.getPolygonStyleForLegend(
                         risk: "\(risk) - \(index)",
-                        probability: String(index.intValue * 25))
+                        probability: String(index.intValue))
                     HStack {
                         Circle()
-                            .fill(Color(stroke))
+                            .fill(Color(fill))
                             .frame(width: 13, height: 13)
                         Text("\(index.intValue)%")
                             .font(.caption)
