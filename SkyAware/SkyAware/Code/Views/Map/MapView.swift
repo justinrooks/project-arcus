@@ -58,7 +58,6 @@ struct MapView: View {
                     let probabilities = provider.tornado.compactMap { $0.probability }
                         .sorted { $0.intValue < $1.intValue }
                     SevereLegendView(probabilities: probabilities,
-                                     legendLabel: "Tornado",
                                      risk: selectedLayer)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding([.bottom, .trailing])
@@ -66,7 +65,6 @@ struct MapView: View {
                     let probabilities = provider.hail.compactMap { $0.probability }
                         .sorted { $0.intValue < $1.intValue }
                     SevereLegendView(probabilities: probabilities,
-                                     legendLabel: "Hail",
                                      risk: selectedLayer)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding([.bottom, .trailing])
@@ -74,7 +72,6 @@ struct MapView: View {
                     let probabilities = provider.wind.compactMap { $0.probability }
                         .sorted { $0.intValue < $1.intValue }
                     SevereLegendView(probabilities: probabilities,
-                                     legendLabel: "Wind",
                                      risk: selectedLayer)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                         .padding([.bottom, .trailing])

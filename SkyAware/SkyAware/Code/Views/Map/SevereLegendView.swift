@@ -9,12 +9,11 @@ import SwiftUI
 
 struct SevereLegendView: View {
     let probabilities: [ThreatProbability]
-    let legendLabel: String
     let risk: String
         
         var body: some View {
             VStack(alignment: .leading, spacing: 9) {
-                Text(legendLabel)
+                Text(getLabel(risk: risk))
                     .fontWeight(.bold)
                     .font(.caption)
                 ForEach (probabilities, id: \.self) { index in
@@ -34,9 +33,21 @@ struct SevereLegendView: View {
         }
 }
 
+private func getLabel(risk: String) -> String {
+    switch risk {
+    case "WIND":
+        return "Wind"
+    case "HAIL":
+        return "Hail"
+    case "TOR":
+        return "Tornado"
+    default:
+        return "Unknown"
+    }
+}
+
 #Preview {
     SevereLegendView(
         probabilities: [.percent(0.02), .percent(0.15)],
-        legendLabel: "Tornado",
         risk: "TOR")
 }

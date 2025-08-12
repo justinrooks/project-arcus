@@ -142,25 +142,49 @@ extension MesoscaleDiscussion {
 
     // Parse watch probability + concerning line
     private static func parseWatchFields(_ text: String) -> (WatchProbability, String?) {
-        if let m = text.firstMatch(of: rePwoiOrWatch) {
-            if let pRange = m.output["pwoi"]?.range, let pct = Int(text[pRange]) {
-                return (.percent(min(max(pct, 0), 100)), nil)
+        var probability: WatchProbability? = nil
+        var concerningText: String? = nil
+
+        // --- Probability of Watch Issuance ---
+        if let pwoiMatch = text.firstMatch(of: try! Regex(#"(?im)Probability\ of\ Watch\ Issuance\.\.\.\s*([0-9]{1,3})\s*percent\b"#)) {
+            if let range = pwoiMatch.output[1].range,
+               let pct = Int(text[range]) {
+                probability = .percent(min(max(pct, 0), 100))
             }
-            if let tRange = m.output["watchtype"]?.range, let nRange = m.output["watchnos"]?.range {
-                let type = String(text[tRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                // Keep full concerning line for UI; also try to detect 'unlikely'
-                let tail = String(text[nRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                // Extract numeric IDs just in case you want them later
+        }
+
+        // --- Concerning line ---
+        if let concerningMatch = text.firstMatch(of: try! Regex(#"(?im)Concerning\.\.\.\s*(.+)$"#)) {
+            if let range = concerningMatch.output[1].range {
+                let raw = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+                // Clean up trailing spaces or extra dots
+                concerningText = raw.replacingOccurrences(of: #"\s+\.\.\."#, with: "", options: .regularExpression)
+            }
+        }
+
+        // --- Active watch form (Tornado/Severe Thunderstorm Watch #s) ---
+        if let watchMatch = text.firstMatch(of: try! Regex(#"(?im)Concerning\.\.\.\s*(Tornado|Severe\ Thunderstorm)\s+Watch(?:es)?\s+([^\n]+)"#)) {
+            if let typeRange = watchMatch.output[1].range,
+               let numRange = watchMatch.output[2].range {
+                let type = String(text[typeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+                let tail = String(text[numRange]).trimmingCharacters(in: .whitespacesAndNewlines)
                 let ids = tail.matches(of: try! Regex(#"\d+"#)).compactMap { Int(String(tail[$0.range])) }
                 let line = ids.isEmpty ? "\(type) Watch \(tail)" : "\(type) Watch \(ids.map(String.init).joined(separator: ", "))"
-                return (.unlikely, line) // Probability not defined for active watch context; keep conservative default
+                concerningText = line
+                if probability == nil {
+                    probability = .unlikely
+                }
             }
         }
-        // Heuristic: look for 'watch unlikely' anywhere
-        if text.range(of: #"watch\s+unlikely"#, options: [.regularExpression, .caseInsensitive]) != nil {
-            return (.unlikely, nil)
+
+        // --- Fallback if no probability found ---
+        if probability == nil {
+            if text.range(of: #"watch\s+unlikely"#, options: [.regularExpression, .caseInsensitive]) != nil {
+                probability = .unlikely
+            }
         }
-        return (.unlikely, nil)
+
+        return (probability ?? .unlikely, concerningText)
     }
 
     // Parse wind mph: choose the upper bound when a range is provided
