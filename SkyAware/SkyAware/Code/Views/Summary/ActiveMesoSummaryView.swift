@@ -6,18 +6,18 @@
 //
 
 import SwiftUI
+import MapKit
 
 struct ActiveMesoSummaryView: View {
-    @State private var viewModel: SummaryViewModel
-    @State private var selectedMeso: MesoscaleDiscussion? = nil
+    @Environment(LocationManager.self) private var locationProvider: LocationManager
+    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
     
-    init(viewModel: SummaryViewModel) {
-        _viewModel = State(initialValue: viewModel)
-    }
+    @State private var selectedMeso: MesoscaleDiscussion? = nil
     
     var body: some View {
         GroupBox {
-            let mesos: [MesoscaleDiscussion] = Array(viewModel.mesosNearby.prefix(3))
+            //            let mesos: [MesoscaleDiscussion] = Array(viewModel.mesosNearby.prefix(3))
+            let mesos: [MesoscaleDiscussion] = Array(nearbyMesos.prefix(3))
             Divider()
             if mesos.isEmpty {
                 HStack {
@@ -44,24 +44,24 @@ struct ActiveMesoSummaryView: View {
                 ScrollView {
                     MesoscaleDiscussionCard(
                         vm: MesoscaleDiscussionViewModel(md: meso),
-                        layout: .sheet)//,
-//                        onShowMap: {
-//                            print("Show map for \(meso.number)")
-//                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
-//                                poly.title = "MESO"
-//                                
-//                            selectedPolygon = MKMultiPolygon([poly])
-//                            showMap = true
-//                            
-//                            NavigationLink("", destination: CONUSMapView(polygonList: selectedPolygon ?? MKMultiPolygon()), isActive: $showMap)
-//                                .hidden()
-//                            
-////                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
-////                            poly.title = "MESO"
-////                            
-////                            CONUSMapView(polygonList: MKMultiPolygon([poly]))
-////                                .edgesIgnoringSafeArea(.top)
-//                        })
+                        layout: .sheet,
+                        onShowMap: {
+                            print("Show map for \(meso.number)")
+                            //                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
+                            //                                poly.title = "MESO"
+                            //
+                            //                            selectedPolygon = MKMultiPolygon([poly])
+                            //                            showMap = true
+                            //
+                            //                            NavigationLink("", destination: CONUSMapView(polygonList: selectedPolygon ?? MKMultiPolygon()), isActive: $showMap)
+                            //                                .hidden()
+                            //
+                            ////                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
+                            ////                            poly.title = "MESO"
+                            ////
+                            ////                            CONUSMapView(polygonList: MKMultiPolygon([poly]))
+                            ////                                .edgesIgnoringSafeArea(.top)
+                        })
                     .padding(.horizontal, 16)
                     .padding(.vertical, 25)
                     Spacer()
@@ -71,6 +71,15 @@ struct ActiveMesoSummaryView: View {
             .presentationDragIndicator(.visible)
             .presentationCornerRadius(24)
             .presentationBackground(.regularMaterial)
+        }
+    }
+}
+
+extension ActiveMesoSummaryView {
+    var nearbyMesos: [MesoscaleDiscussion] {
+        return spcProvider.meso.filter {
+            let poly = MKPolygon(coordinates: $0.coordinates, count: $0.coordinates.count)
+            return PolygonHelpers.inPoly(user: locationProvider.resolvedUserLocation, polygon: poly)
         }
     }
 }
@@ -144,5 +153,7 @@ private struct ThreatIconsCol: View {
 #Preview {
     let mock = LocationManager()
     let spc = SpcProvider.previewData
-    ActiveMesoSummaryView(viewModel: SummaryViewModel(provider: spc, locationProvider: mock))
+    ActiveMesoSummaryView()
+    .environment(mock)
+    .environment(spc)
 }

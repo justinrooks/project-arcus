@@ -32,6 +32,19 @@ final class SpcProvider {
     }
     
     func loadFeed() {
+//        let freshness = SharedPrefs.freshness(thresholdMinutes: 15)
+//
+//        switch freshness {
+//        case .fresh:
+//            print("✅ Recent enough, skip auto-refresh")
+//            isLoading = false
+//            return
+//        case .stale:
+//            print("⚠️ Refresh recommended")
+//        case .neverUpdated:
+//            print("🚫 No data yet — must refresh")
+//        }
+        
         isLoading = true
         
         Task {
@@ -66,11 +79,15 @@ final class SpcProvider {
                 self.wind = getTypedFeature(from: geoResult, for: .wind, transform: SevereThreat.from)
                 self.hail = getTypedFeature(from: geoResult, for: .hail, transform: SevereThreat.from)
                 self.tornado = getTypedFeature(from: geoResult, for: .tornado, transform: SevereThreat.from)
+#if DEBUG
+                print("Parsed \(self.wind.count) wind features, \(self.hail.count) hail features, \(self.tornado.count) tornado features from SPC")
+#endif
             } catch {
                 self.errorMessage = error.localizedDescription
                 print(error.localizedDescription)
             }
             
+            SharedPrefs.recordGlobalSuccess()
             isLoading = false
         }
     }

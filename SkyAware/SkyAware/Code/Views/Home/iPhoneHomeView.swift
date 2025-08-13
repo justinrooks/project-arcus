@@ -11,7 +11,6 @@ import SwiftData
 struct iPhoneHomeView: View {
     //    @Environment(\.modelContext) private var modelContext
     @Environment(SpcProvider.self) private var provider: SpcProvider
-    @Environment(LocationManager.self) private var locationProvider: LocationManager
     
     var body: some View {
         ZStack {
@@ -25,7 +24,7 @@ struct iPhoneHomeView: View {
                 TabView {
                     NavigationStack {
                         ScrollView{
-                            SummaryView(provider: provider, locationProvider: locationProvider)
+                            SummaryView()
                         }
                         .refreshable {
                             print("Refreshing data...")

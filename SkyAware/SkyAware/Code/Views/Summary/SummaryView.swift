@@ -8,38 +8,25 @@
 import SwiftUI
 
 struct SummaryView: View {
-    @Environment(LocationManager.self) private var locationProvider: LocationManager
-    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
-    
-    @State private var viewModel: SummaryViewModel
-    
-    init(provider: SpcProvider, locationProvider: LocationManager) {
-        _viewModel = State(
-            wrappedValue: SummaryViewModel(provider: provider,
-                                           locationProvider: locationProvider))
-    }
+//    @Environment(LocationManager.self) private var locationProvider: LocationManager
+//    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
     
     var body: some View {
         VStack {
-            Label(viewModel.nearestTown ?? "Locating...", systemImage: "location")
-                .fontWeight(.medium)
-            HStack {
-                NavigationLink(destination: ConvectiveOutlookView()) {
-                    StormRiskBadgeView(level: viewModel.stormRisk)
-                }
-                
-                NavigationLink(destination: SevereThreatView()) {
-                    SevereWeatherBadgeView(threat: viewModel.severeRisk)
-                }
-            }
-            .padding(5)
-            .fixedSize(horizontal: true, vertical: true)
+            // Header
+            SummaryHeaderView()
             
-            ActiveMesoSummaryView(viewModel: viewModel)
+            // Badges
+            SummaryBadgeView()
+            
+            //Mesos
+            ActiveMesoSummaryView()
     
             GroupBox{
+                Divider()
                 HStack {
-                    Text("No active watches near by")
+                    Text("No active watches in your area")
+                        .foregroundStyle(.secondary)
                     Spacer()
                 }
             } label: {
@@ -56,15 +43,12 @@ struct SummaryView: View {
                     .foregroundStyle(.teal)
             }
         }
-        .padding()
+        .padding(.horizontal)
     }
 }
 
 #Preview {
-    let mock = LocationManager()
-    let spc = SpcProvider.previewData
-    SummaryView(provider: spc,
-    locationProvider: mock)
-        .environment(mock)
-        .environment(spc)
+    SummaryView()
+        .environment(LocationManager())
+        .environment(SpcProvider.previewData)
 }

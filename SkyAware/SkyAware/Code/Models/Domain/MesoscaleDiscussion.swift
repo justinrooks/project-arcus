@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import MapKit
+import CoreLocation
 
 // MARK: - Domain Model (minimal for the card)
 struct MDThreats: Hashable, Equatable {
