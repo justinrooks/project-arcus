@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct iPhoneHomeView: View {
-    //    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext
     @Environment(SpcProvider.self) private var provider: SpcProvider
     
     var body: some View {
@@ -51,15 +51,20 @@ struct iPhoneHomeView: View {
                         }
                     
                     NavigationStack {
-                        ForecastView()
+                        ConvectiveOutlookView()
                     }
                     .tabItem {
-                        Image(systemName: "cloud.sun") //cloud.bolt.rain.fill
-                        Text("Forecast")
+                        Image(systemName: "cloud.bolt.rain.fill") //cloud.bolt.rain.fill
+                        Text("Outlook")
                     }
                     
                     NavigationStack {
-                        SettingsView()
+//                        CadenceSandboxView()
+                        #if DEBUG
+                        NavigationStack {
+                            DebugFeedCacheView()
+                        }
+                        #endif
                     }
                     .tabItem {
                         Image(systemName: "gear") //exclamationmark.triangle
@@ -83,9 +88,25 @@ extension iPhoneHomeView {
 }
 
 #Preview {
-    iPhoneHomeView()
-        .environment(SpcProvider())
-        .environment(LocationManager())
-    //        .modelContainer(for: ItemTest.self, inMemory: true)
-    //        .environment()
+    // 1) In‑memory SwiftData container for previews
+    let container = try! ModelContainer(
+        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    
+    // 2) Wire client → repo → service → provider (no network auto-load in previews)
+    let client   = SpcClient()
+    let service  = SpcService(client: client)
+    let provider = SpcProvider(service: service, autoLoad: false)
+    
+    // 3) Build your preview view and inject env objects
+    return iPhoneHomeView()
+        .environment(provider)                // your @Observable provider
+        .environment(LocationManager())       // or a preconfigured preview instance
+        .modelContainer(container)            // attaches the container to the view tree
+    //    iPhoneHomeView()
+    //        .environment(SpcProvider())
+    //        .environment(LocationManager())
+    //        .modelContainer(for: FeedCache.self, inMemory: true)
+    //    //        .environment()
 }

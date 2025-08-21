@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MapKit
+import SwiftData
 
 struct MapView: View {
     @Environment(SpcProvider.self) private var provider: SpcProvider
@@ -109,7 +110,24 @@ struct MapView: View {
 }
 
 #Preview {
-    MapView()
-        .environment(LocationManager())
-        .environment(SpcProvider())
+    // 1) In‑memory SwiftData container for previews
+    let container = try! ModelContainer(
+        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    
+    // 2) Wire client → repo → service → provider (no network auto-load in previews)
+    let client   = SpcClient()
+    let service  = SpcService(client: client)
+    let provider = SpcProvider(service: service, autoLoad: false)
+    
+    // 3) Build your preview view and inject env objects
+    return MapView()
+        .environment(provider)                // your @Observable provider
+        .environment(LocationManager())       // or a preconfigured preview instance
+        .modelContainer(container)            // attaches the container to the view tree
+    
+//    MapView()
+//        .environment(LocationManager())
+//        .environment(SpcProvider())
 }

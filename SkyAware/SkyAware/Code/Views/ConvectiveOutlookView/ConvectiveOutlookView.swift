@@ -16,7 +16,8 @@ struct ConvectiveOutlookView: View {
                 Text("No convective outlooks found")
             } else {
                 NavigationStack {
-                    List(provider.outlooks.filter { $0.day == 1 }.sorted(by: { $0.published > $1.published }), id: \.id) { outlook in
+                    List(provider.outlooks.filter { $0.day == 1 }
+                        .sorted(by: { $0.published > $1.published }), id: \.id) { outlook in
                         
                         NavigationLink(destination: ConvectiveOutlookDetailView(outlook:outlook)) {
                             VStack(alignment: .leading) {
