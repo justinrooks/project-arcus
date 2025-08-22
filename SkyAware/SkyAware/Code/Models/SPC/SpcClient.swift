@@ -43,48 +43,6 @@ final class SpcClient {
         self.http = http
     }
     
-    func fetchGeoJson() async throws -> [GeoJsonResult] {
-        logger.info("Fetching GeoJSON data from SPC")
-        let client = self.http
-
-        // 1) Precompute URLs synchronously (no concurrency, no self escaping).
-        let catURL  = try getGeoJSONUrl(for: .categorical)
-        let torURL  = try getGeoJSONUrl(for: .tornado)
-        let hailURL = try getGeoJSONUrl(for: .hail)
-        let windURL = try getGeoJSONUrl(for: .wind)
-
-        // 2) Local helper that does not touch `self`.
-        func download(_ url: URL) async throws -> Data {
-            let resp = try await client.get(url, headers: [:])
-            guard (200...299).contains(resp.status), let data = resp.data else {
-                throw SpcError.missingGeoJsonData
-            }
-            return data
-        }
-        
-        // 3) Fetch concurrently without capturing `self`.
-        async let catData = download(catURL)
-        async let torData  = download(torURL)
-        async let hailData = download(hailURL)
-        async let windData = download(windURL)
-  
-        let (catD, torD, hailD, windD) = try await (catData, torData, hailData, windData)
-        
-        // 4) Decode (non-throwing version recommended per earlier review).
-        let categorical = decodeGeoJSON(from: catD)
-        let tornado     = decodeGeoJSON(from: torD)
-        let hail        = decodeGeoJSON(from: hailD)
-        let wind        = decodeGeoJSON(from: windD)
-
-        logger.info("GeoJSON data fetched successfully")
-        return [
-            GeoJsonResult(product: .categorical, featureCollection: categorical),
-            GeoJsonResult(product: .tornado,     featureCollection: tornado),
-            GeoJsonResult(product: .hail,        featureCollection: hail),
-            GeoJsonResult(product: .wind,        featureCollection: wind)
-        ]
-    }
-    
     /// Fetches and decides "modified" by comparing returned validators (ETag / Last-Modified)
     /// against `prior`. The server always returns 200; no reliance on 304.
     /// Behavior:
@@ -189,30 +147,5 @@ final class SpcClient {
         logger.debug("No usable validators found; treating cache as outdated")
         // No usable validators -> safest to assume cache is busted
         return true
-    }
-    
-    /// Decides the provided Data object into a GeoJSONFeatureCollection DTO object
-    /// - Parameter data: data stream to decode
-    /// - Returns: a populated GeoJSONFeatureCollection DTO, or empty if there's a decoding error
-    private func decodeGeoJSON(from data: Data) -> GeoJSONFeatureCollection {
-        let decoder = JSONDecoder()
-        do {
-            return try decoder.decode(GeoJSONFeatureCollection.self, from: data)
-        } catch let DecodingError.dataCorrupted(context) {
-            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription)")
-            return .empty
-        } catch let DecodingError.keyNotFound(key, context) {
-            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue)' – \(context.debugDescription)")
-            return .empty
-        } catch let DecodingError.typeMismatch(type, context) {
-            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type)' – \(context.debugDescription)")
-            return .empty
-        } catch let DecodingError.valueNotFound(value, context) {
-            logger.error("GeoJSON decoding failed: Missing value '\(value)' – \(context.debugDescription)")
-            return .empty
-        } catch {
-            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription)")
-            return .empty
-        }
     }
 }

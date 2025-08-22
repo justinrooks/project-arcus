@@ -30,7 +30,7 @@ struct SummaryView: View {
                     Spacer()
                 }
             } label: {
-                Label("Nearby Watches", systemImage: "exclamationmark.triangle")
+                Label("Nearby Watches", systemImage: "exclamationmark.triangle.fill")
                     .foregroundColor(.teal)
             }
             

@@ -32,7 +32,7 @@ struct iPhoneHomeView: View {
                         }
                     }
                     .tabItem {
-                        Image(systemName: "circle.grid.cross.fill") //sunrise.fill
+                        Image(systemName: "list.bullet") //sunrise.fill, circle.grid.cross.fill
                         Text("Summary")
                     }
                     
@@ -40,7 +40,7 @@ struct iPhoneHomeView: View {
                         AlertView()
                     }
                     .tabItem {
-                        Image(systemName: "exclamationmark.bubble") //umbrella
+                        Image(systemName: "exclamationmark.triangle") //umbrella
                         Text("Alerts")
                     }.badge(provider.alertCount)
                     
@@ -67,7 +67,7 @@ struct iPhoneHomeView: View {
                         #endif
                     }
                     .tabItem {
-                        Image(systemName: "gear") //exclamationmark.triangle
+                        Image(systemName: "gearshape") //exclamationmark.triangle
                         Text("Settings")
                     }
                 }
@@ -97,7 +97,7 @@ extension iPhoneHomeView {
     // 2) Wire client → repo → service → provider (no network auto-load in previews)
     let client   = SpcClient()
     let service  = SpcService(client: client)
-    let provider = SpcProvider(service: service, autoLoad: false)
+    let provider = SpcProvider(service: service, autoLoad: true)
     
     // 3) Build your preview view and inject env objects
     return iPhoneHomeView()
