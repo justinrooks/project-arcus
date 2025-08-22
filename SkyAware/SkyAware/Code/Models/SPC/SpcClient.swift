@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 enum GeoJSONProduct: String {
     case categorical = "cat" // this corresponds to the url builder, see buildUrl func below
@@ -36,63 +37,86 @@ private func conditionalHeaders(from prior: HTTPCacheTag?) -> [String: String] {
 
 final class SpcClient {
     private let http: HTTPClient
+    private let logger = Logger.spcClient
     
     init(http: HTTPClient = URLSessionHTTPClient(session: .fastFailing)) {
         self.http = http
     }
     
     func fetchGeoJson() async throws -> [GeoJsonResult] {
-        do {
-            let (categoricalData, tornadoData, hailData, windData) = try await (
-                fetchGeoJsonFile(for: .categorical),
-                fetchGeoJsonFile(for: .tornado),
-                fetchGeoJsonFile(for: .hail),
-                fetchGeoJsonFile(for: .wind))
-            
-            let (categorical, tornado, hail, wind) = try await (
-                decodeGeoJSON(from: categoricalData),
-                decodeGeoJSON(from: tornadoData),
-                decodeGeoJSON(from: hailData),
-                decodeGeoJSON(from: windData))
-            
-            return [
-                GeoJsonResult(product: .categorical, featureCollection: categorical),
-                GeoJsonResult(product: .tornado, featureCollection: tornado),
-                GeoJsonResult(product: .hail, featureCollection: hail),
-                GeoJsonResult(product: .wind, featureCollection: wind)
-            ]
-            
-        } catch {
-            print(error.localizedDescription)
-            throw SpcError.missingGeoJsonData
+        logger.info("Fetching GeoJSON data from SPC")
+        let client = self.http
+
+        // 1) Precompute URLs synchronously (no concurrency, no self escaping).
+        let catURL  = try getGeoJSONUrl(for: .categorical)
+        let torURL  = try getGeoJSONUrl(for: .tornado)
+        let hailURL = try getGeoJSONUrl(for: .hail)
+        let windURL = try getGeoJSONUrl(for: .wind)
+
+        // 2) Local helper that does not touch `self`.
+        func download(_ url: URL) async throws -> Data {
+            let resp = try await client.get(url, headers: [:])
+            guard (200...299).contains(resp.status), let data = resp.data else {
+                throw SpcError.missingGeoJsonData
+            }
+            return data
         }
+        
+        // 3) Fetch concurrently without capturing `self`.
+        async let catData = download(catURL)
+        async let torData  = download(torURL)
+        async let hailData = download(hailURL)
+        async let windData = download(windURL)
+  
+        let (catD, torD, hailD, windD) = try await (catData, torData, hailData, windData)
+        
+        // 4) Decode (non-throwing version recommended per earlier review).
+        let categorical = decodeGeoJSON(from: catD)
+        let tornado     = decodeGeoJSON(from: torD)
+        let hail        = decodeGeoJSON(from: hailD)
+        let wind        = decodeGeoJSON(from: windD)
+
+        logger.info("GeoJSON data fetched successfully")
+        return [
+            GeoJsonResult(product: .categorical, featureCollection: categorical),
+            GeoJsonResult(product: .tornado,     featureCollection: tornado),
+            GeoJsonResult(product: .hail,        featureCollection: hail),
+            GeoJsonResult(product: .wind,        featureCollection: wind)
+        ]
     }
     
-    /// Conditional fetch for a single product...
-    func fetchContitionalData(for url: URL, prior: HTTPCacheTag?) async throws -> ConditionalFetch {
+    /// Fetches and decides "modified" by comparing returned validators (ETag / Last-Modified)
+    /// against `prior`. The server always returns 200; no reliance on 304.
+    /// Behavior:
+    /// - If ETag present on both prior & new → modified iff ETag differs.
+    /// - Else if Last-Modified present on both → modified iff Last-Modified differs.
+    /// - Else (no comparable validators) → assume modified to be safe.
+    func fetchConditionalData(for url: URL, prior: HTTPCacheTag?) async throws -> ConditionalFetch {
+        logger.info("Starting conditional fetch for \(url)")
         if let prior {
             do {
-                let headResp = try await http.head(url, headers: [:])
+                let headResp = try await http.head(url, headers: conditionalHeaders(from: prior))
                 let headTag = HTTPCacheTag(
                     etag: headResp.header("ETag"),
                     lastModified: headResp.header("Last-Modified")
                 )
+                
                 // If the server returned validators and they match prior, short-circuit.
                 if (!isCacheBusted(prior, headTag)) {
                     return ConditionalFetch(value: nil, newTag: headTag, modified: false)
                 }
-                // If HEAD didn’t return validators, fall through to GET.
             } catch {
                 // Network failure on HEAD → fall through to GET; GET will decide.
             }
         }
 
+        // Either no prior, or validators differ, or HEAD didn’t return validators → GET full body.
+        logger.info("Cache validators changed or unknown; performing GET")
         let resp = try await http.get(url, headers: [:])
         guard (200...299).contains(resp.status), let data = resp.data else {
             throw SpcError.missingData
         }
         
-        // Build up a HTTPCacheTag to record the etag and last modified values
         let tag = HTTPCacheTag(
             etag: resp.header("ETag"),
             lastModified: resp.header("Last-Modified")
@@ -103,108 +127,8 @@ final class SpcClient {
             return ConditionalFetch(value: nil, newTag: tag, modified: false)
         }
         
+        logger.info("Fetched updated data")
         return ConditionalFetch(value: data, newTag: tag, modified: true)
-    }
-    
-    /// Conditional GeoJSON fetch for a single product. Returns notModified=true on 304.
-//    func fetchGeoJsonConditional(for product: Product, prior: HTTPCacheTag?) async throws -> ConditionalFetch {
-//        let url = try buildGeoJsonUrl(for: product)
-//        if let prior {
-//            do {
-//                let headResp = try await http.head(url, headers: [:])
-//                let headTag = HTTPCacheTag(
-//                    etag: headResp.header("ETag"),
-//                    lastModified: headResp.header("Last-Modified")
-//                )
-//                // If the server returned validators and they match prior, short-circuit.
-//                if (!isCacheBusted(prior, headTag)) {
-//                    return ConditionalFetch(value: nil, newTag: headTag, modified: false)
-//                }
-//                // If HEAD didn’t return validators, fall through to GET.
-//            } catch {
-//                // Network failure on HEAD → fall through to GET; GET will decide.
-//            }
-//        }
-//
-//        let resp = try await http.get(url, headers: [:])
-//        guard (200...299).contains(resp.status), let data = resp.data else {
-//            throw SpcError.missingGeoJsonData
-//        }
-//        
-//        // Build up a HTTPCacheTag to record the etag and last modified values
-//        let tag = HTTPCacheTag(
-//            etag: resp.header("ETag"),
-//            lastModified: resp.header("Last-Modified")
-//        )
-//        
-//        // If validators still match prior after GET, treat as not modified to save parsing.
-//        if (!isCacheBusted(prior, tag)) {
-//            return ConditionalFetch(value: nil, newTag: tag, modified: false)
-//        }
-//        
-//        return ConditionalFetch(value: data, newTag: tag, modified: true)
-//        
-////        let resp = try await http.get(url, headers: conditionalHeaders(from: prior))
-////        if resp.status == 304 { return ConditionalFetch(value: nil, newTag: nil, modified: false) }
-////        guard (200...299).contains(resp.status), let data = resp.data else {
-////            throw SpcError.missingGeoJsonData
-////        }
-////        let tag = HTTPCacheTag(etag: resp.header("ETag"), lastModified: resp.header("Last-Modified"))
-////        return ConditionalFetch(value: data, newTag: tag, modified: true)
-//    }
-    
-    /// Conditional RSS fetch using ETag/Last-Modified without relying on HTTP 304.
-    /// Strategy: if prior validators exist, issue a HEAD probe; if validators match, skip GET.
-    /// Otherwise, GET the feed; if validators still match prior, treat as not modified.
-//    func fetchRss(prior: HTTPCacheTag?) async throws -> ConditionalFetch {
-//        let feedURL = try buildRssUrl(for: .combined)
-//        // If we have prior validators, try a cheap HEAD call first.
-//        if let prior {
-//            do {
-//                let headResp = try await http.head(feedURL, headers: [:])
-//                let headTag = HTTPCacheTag(
-//                    etag: headResp.header("ETag"),
-//                    lastModified: headResp.header("Last-Modified")
-//                )
-//                // If the server returned validators and they match prior, short-circuit.
-//                if (!isCacheBusted(prior, headTag)) {
-//                    return ConditionalFetch(value: nil, newTag: headTag, modified: false)
-//                }
-//                // If HEAD didn’t return validators, fall through to GET.
-//            } catch {
-//                // Network failure on HEAD → fall through to GET; GET will decide.
-//            }
-//        }
-//        
-//        // If we made it here, then we probably need to fetch new data
-//        // Perform GET and decide based on validators.
-//        let resp = try await http.get(feedURL, headers: [:])
-//        guard (200...299).contains(resp.status), let data = resp.data else {
-//            throw SpcError.missingRssData
-//        }
-//        
-//        // Build up a HTTPCacheTag to record the etag and last modified values
-//        let tag = HTTPCacheTag(
-//            etag: resp.header("ETag"),
-//            lastModified: resp.header("Last-Modified")
-//        )
-//        
-//        // If validators still match prior after GET, treat as not modified to save parsing.
-//        if (!isCacheBusted(prior, tag)) {
-//            return ConditionalFetch(value: nil, newTag: tag, modified: false)
-//        }
-//        
-//        return ConditionalFetch(value: data, newTag: tag, modified: true)
-//    }
-    
-    private func fetchGeoJsonFile(for product: GeoJSONProduct) async throws -> Data {
-        let productUrl = try getGeoJSONUrl(for: product)
-        let resp = try await http.get(productUrl, headers: [:])
-        guard (200...299).contains(resp.status), let data = resp.data else {
-            throw SpcError.missingGeoJsonData
-        }
-        
-        return data
     }
     
     /// Builds out the URL required to get geojson data from the SPC
@@ -216,15 +140,29 @@ final class SpcClient {
         try makeSPCURL(path: "products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
     }
     
-    /// Builds out the URL required to get SPC Rss products from the SPC
-    /// - Parameter product: the prodcut to fetch
+    /// Builds out the URL required to get SPC RSS products
+    /// - Parameter product: the product to fetch
     /// - Returns: a url to use to fetch rss data for the provided product
     func getRssUrl(for product: RssProduct) throws -> URL {
         try makeSPCURL(path: "products/\(product.rawValue).xml")
     }
     
+    // MARK: Private Funcs
+    /// Fetches the GeoJSON file at the url provided
+    /// - Parameters:
+    ///   - productUrl: the url of the product to fetch
+    ///   - client: a http client to use for the connection
+    /// - Returns: a data stream from the resource
+    private func fetchGeoJsonFile(for productUrl: URL, with client: HTTPClient) async throws -> Data {
+        let resp = try await client.get(productUrl, headers: [:])
+        guard (200...299).contains(resp.status), let data = resp.data else {
+            throw SpcError.missingGeoJsonData
+        }
+        
+        return data
+    }
+    
     /// Build an absolute SPC URL from a relative path, or throw on failure.
-    @inline(__always)
     private func makeSPCURL(path: String) throws -> URL {
         let base = "https://www.spc.noaa.gov/"
         guard let url = URL(string: base + path) else { throw SpcError.invalidUrl }
@@ -239,41 +177,41 @@ final class SpcClient {
     ///   - tag: new cache tag to compare against whats stored
     /// - Returns: true if cache is busted and we need to reload, false of prior and new cache tags are the same
     private func isCacheBusted(_ prior: HTTPCacheTag?, _ tag: HTTPCacheTag) -> Bool {
-        if let prior {
-            if let et = tag.etag, let pet = prior.etag, et == pet {
-                return false
-            }
-            if let lm = tag.lastModified, let plm = prior.lastModified, lm == plm {
-                return false
-            }
+        guard let prior else { return true }
+        
+        if let et = tag.etag, let pet = prior.etag {
+            return et != pet
+        }
+        if let lm = tag.lastModified, let plm = prior.lastModified {
+            return lm != plm
         }
         
+        logger.debug("No usable validators found; treating cache as outdated")
+        // No usable validators -> safest to assume cache is busted
         return true
     }
     
     /// Decides the provided Data object into a GeoJSONFeatureCollection DTO object
     /// - Parameter data: data stream to decode
     /// - Returns: a populated GeoJSONFeatureCollection DTO, or empty if there's a decoding error
-    private func decodeGeoJSON(from data: Data) async throws -> GeoJSONFeatureCollection {
+    private func decodeGeoJSON(from data: Data) -> GeoJSONFeatureCollection {
         let decoder = JSONDecoder()
-        
         do {
-            let decoded = try decoder.decode(GeoJSONFeatureCollection.self, from: data)
-            return decoded
+            return try decoder.decode(GeoJSONFeatureCollection.self, from: data)
         } catch let DecodingError.dataCorrupted(context) {
-            print("GeoJSON decoding failed: Data corrupted –", context.debugDescription)
+            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription)")
             return .empty
         } catch let DecodingError.keyNotFound(key, context) {
-            print("GeoJSON decoding failed: Missing key '\(key.stringValue)' –", context.debugDescription)
+            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue)' – \(context.debugDescription)")
             return .empty
         } catch let DecodingError.typeMismatch(type, context) {
-            print("GeoJSON decoding failed: Type mismatch for type '\(type)' –", context.debugDescription)
+            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type)' – \(context.debugDescription)")
             return .empty
         } catch let DecodingError.valueNotFound(value, context) {
-            print("GeoJSON decoding failed: Missing value '\(value)' –", context.debugDescription)
+            logger.error("GeoJSON decoding failed: Missing value '\(value)' – \(context.debugDescription)")
             return .empty
         } catch {
-            print("Unexpected GeoJSON decode error:", error.localizedDescription)
+            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription)")
             return .empty
         }
     }

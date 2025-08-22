@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import OSLog
 
 // Location Reference
 // latitude: 45.01890187118621,  longitude: -104.41476597508318)
@@ -23,6 +24,7 @@ import CoreLocation
 @Observable
 final class LocationManager: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private let manager = CLLocationManager()
+    @ObservationIgnored private let logger = Logger.locationMgr
     var isAuthorized = false
     var locale: String = "Locating..."
     var userLocation: CLLocation?
@@ -47,15 +49,15 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
         case .restricted:
-            print("Location Services are restricted.")
+            logger.warning("Location Services are restricted.")
         case .denied:
-            print("You've denied SkyAware access to your location. Please enable in settings.")
+            logger.critical("You've denied SkyAware access to your location. Please enable in settings.")
         case .authorizedAlways, .authorizedWhenInUse:
             manager.startUpdatingLocation()
             isAuthorized = true
             
         @unknown default:
-            print("Unknown authorization status.")
+            logger.error("Unknown authorization status.")
             break
         }
     }
@@ -72,7 +74,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         
         geocoder.reverseGeocodeLocation(currentLocation) { placemarks, error in
             if let error = error {
-                print("Reverse geocoding failed: \(error.localizedDescription)")
+                self.logger.error("Reverse geocoding failed: \(error.localizedDescription)")
                 return
             }
             

@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import OSLog
 
 struct SpcServiceResult {
     var outlooks: [ConvectiveOutlook] = []
@@ -26,6 +27,7 @@ final class SpcService {
     private let now: () -> Date
     private let fetcher: SpcFetcher
     private let parser: RSSFeedParser
+    private let logger = Logger.spcService
 
     init(client: SpcClient,
          now: @escaping () -> Date = { Date() },
@@ -62,20 +64,22 @@ final class SpcService {
         
     // MARK: - RSS (conditional)
     private func refreshRSS() async throws -> SpcServiceResult {
+        logger.debug("Refreshing Spc RSS data")
         // 1) Pull prior data from SwiftData (if any)
         let cache = try await fetcher.get(FeedKey.outlookDay1RSS)
         let priorTag = httpCacheTag(from: cache)
 
         // 2) Conditional fetch
         let url = try client.getRssUrl(for: .combined)
-        let cf = try await client.fetchContitionalData(for: url, prior: priorTag)
+//        let cf = try await client.fetchContitionalData(for: url, prior: priorTag)
+        let cf = try await client.fetchConditionalData(for: url, prior: priorTag)
 
         // 3) If its modified and we have new data we'll continue
         //    but if modified is not true or value (data) is nil,
         //    then we'll fall into the else and return cached data.
         guard cf.modified, let data = cf.value else {
             if let cached = cache?.body {
-                print("No change in eTag, returning cached data")
+                logger.debug("No change in eTag, returning cached data")
                 let rss = try parseRSS(cached)
                 return buildServiceResult(from: rss)
             }
@@ -94,11 +98,12 @@ final class SpcService {
             body: data
         )
         try await fetcher.upsert(FeedKey.outlookDay1RSS, applying: patch)
-        
+        logger.debug("Cached data updated")
         
         // 5) Parse and return
         let rss = try parseRSS(data)
         
+        logger.info("Rss parsed, returning data")
         return buildServiceResult(from: rss)
     }
     

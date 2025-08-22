@@ -7,11 +7,13 @@
 
 import Foundation
 import Observation
+import OSLog
 
 @Observable
 final class SpcProvider {
     var errorMessage: String?
     var isLoading: Bool = true
+    @ObservationIgnored let logger = Logger.spcProvider
     
     @ObservationIgnored private let service: SpcService
     
@@ -41,9 +43,8 @@ final class SpcProvider {
                     self.outlooks = res.outlooks
                     self.meso = res.mesos
                     self.watches = res.watches
-#if DEBUG
-                    print("Parsed \(self.outlooks.count) outlooks, \(self.meso.count) mesoscale discussions, \(self.watches.count) watches from SPC")
-#endif
+
+                    logger.debug("Parsed \(self.outlooks.count) outlooks, \(self.meso.count) mesoscale discussions, \(self.watches.count) watches from SPC")
                 }
                 if res.pointsChanged {
                     // derive your typed features for the map
@@ -51,13 +52,12 @@ final class SpcProvider {
                     self.wind        = getTypedFeature(from: res.geo, for: .wind,        transform: SevereThreat.from)
                     self.hail        = getTypedFeature(from: res.geo, for: .hail,        transform: SevereThreat.from)
                     self.tornado     = getTypedFeature(from: res.geo, for: .tornado,     transform: SevereThreat.from)
-#if DEBUG
-                    print("Parsed \(self.wind.count) wind features, \(self.hail.count) hail features, \(self.tornado.count) tornado features from SPC")
-#endif
+
+                    logger.debug("Parsed \(self.wind.count) wind features, \(self.hail.count) hail features, \(self.tornado.count) tornado features from SPC")
                 }
             } catch {
                 self.errorMessage = error.localizedDescription
-                print(error.localizedDescription)
+                logger.error("Error loading Spc feed: \(error.localizedDescription)")
             }
             
             SharedPrefs.recordGlobalSuccess()

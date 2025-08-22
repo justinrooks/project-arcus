@@ -6,10 +6,11 @@
 //
 
 import Foundation
+import OSLog
 
 class RSSFeedParser: NSObject, XMLParserDelegate {
     // MARK: - Properties
-    
+    private let logger = Logger.rssParser
     private var feed: RSS?
     private var currentChannel: Channel?
     private var currentItem: Item?
@@ -31,7 +32,7 @@ class RSSFeedParser: NSObject, XMLParserDelegate {
         parser.shouldResolveExternalEntities = false
         
         guard parser.parse() else {
-            print("XML Parsing failed: \(parser.parserError?.localizedDescription ?? "Unknown error")")
+            logger.error("XML Parsing failed: \(parser.parserError?.localizedDescription ?? "Unknown error")")
             throw SpcError.parsingError
         }
         return feed
@@ -123,7 +124,7 @@ class RSSFeedParser: NSObject, XMLParserDelegate {
     }
     
     func parser(_ parser: XMLParser, parseErrorOccurred parseError: Error) {
-        print("XML Parse Error: \(parseError.localizedDescription)")
+        logger.error("XML Parse Error: \(parseError.localizedDescription)")
     }
     
     // MARK: - Private Assignment Helpers (Unchanged, as their internal logic was fine)

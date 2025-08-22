@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 let validStatus = 200...299
 
@@ -19,7 +20,7 @@ public struct HTTPResponse {
     }
 }
 
-public protocol HTTPClient {
+public protocol HTTPClient: Sendable {
     func head(_ url: URL, headers: [String: String]) async throws -> HTTPResponse
     func get (_ url: URL, headers: [String: String]) async throws -> HTTPResponse
 }
@@ -41,6 +42,7 @@ extension URLSession {
 
 
 public final class URLSessionHTTPClient: HTTPClient {
+    private let logger = Logger.downloader
     private let session: URLSession
     private let delays: [UInt64] = [0, 5, 10, 15, 20] // seconds
     public init(session: URLSession) {
@@ -83,18 +85,18 @@ public final class URLSessionHTTPClient: HTTPClient {
                                     data: data.isEmpty ? nil : data)
             } catch {
                 if isTransient(error) {
-                    print("Triggering retry. Retries: \(attempt)")
+                    logger.debug("Triggering retry. Retries: \(attempt)")
                     // If this was the last attempt, bubble up the error.
                     if attempt >= delays.count - 1 { throw error }
                     
                     // Otherwise, wait the configured backoff before retrying.
                     let wait = delays[attempt + 1]
-                    print("Sleeping for \(wait) seconds")
+                    logger.debug("Sleeping for \(wait) seconds")
                     try? await Task.sleep(for: .seconds(Int(wait)))
-                    print("Retrying query...")
+                    logger.debug("Retrying query...")
                     continue
                 } else {
-                    print("Non transient request error. Fatal: \(error)")
+                    logger.error("Non transient request error. Fatal: \(error)")
                     throw error
                 }
             }
