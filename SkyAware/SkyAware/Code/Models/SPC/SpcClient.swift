@@ -9,38 +9,29 @@ import Foundation
 import OSLog
 
 enum GeoJSONProduct: String {
-    case categorical = "cat" // this corresponds to the url builder, see buildUrl func below
-    case tornado = "torn"
-    case hail = "hail"
-    case wind = "wind"
+    case categorical = "cat"       // this corresponds to the url builder, see buildUrl func below
+    case tornado     = "torn"
+    case hail        = "hail"
+    case wind        = "wind"
 }
 
 enum RssProduct: String {
-    case convective = "spcacrss" // Convective outlooks only
-    case meso = "spcmdrss"       // Meso discussions only
-    case combined = "spcrss"           // All the watches, warnings, mesos, convective, & fire
-}
-
-// MARK: - Conditional fetch result helpers
-struct ConditionalFetch {
-    let value: Data?
-    let newTag: HTTPCacheTag?
-    let modified: Bool
-}
-
-private func conditionalHeaders(from prior: HTTPCacheTag?) -> [String: String] {
-    var headers: [String: String] = [:]
-    if let et = prior?.etag { headers["If-None-Match"] = et }
-    if let lm = prior?.lastModified { headers["If-Modified-Since"] = lm }
-    return headers
+    case convective  = "spcacrss"  // Convective outlooks only
+    case meso        = "spcmdrss"  // Meso discussions only
+    case combined    = "spcrss"    // All the watches, warnings, mesos, convective, & fire
 }
 
 final class SpcClient {
     private let http: HTTPClient
     private let logger = Logger.spcClient
     
-    init(http: HTTPClient = URLSessionHTTPClient(session: .fastFailing)) {
+    init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http
+    }
+    
+    func fetchCombinedRssData() async throws -> Data? {
+        let url = try getRssUrl(for: .combined)
+        return try await fetchSpcData(for: url)
     }
     
     /// Fetches and decides "modified" by comparing returned validators (ETag / Last-Modified)
@@ -49,44 +40,18 @@ final class SpcClient {
     /// - If ETag present on both prior & new → modified iff ETag differs.
     /// - Else if Last-Modified present on both → modified iff Last-Modified differs.
     /// - Else (no comparable validators) → assume modified to be safe.
-    func fetchConditionalData(for url: URL, prior: HTTPCacheTag?) async throws -> ConditionalFetch {
-        logger.info("Starting conditional fetch for \(url)")
-        if let prior {
-            do {
-                let headResp = try await http.head(url, headers: conditionalHeaders(from: prior))
-                let headTag = HTTPCacheTag(
-                    etag: headResp.header("ETag"),
-                    lastModified: headResp.header("Last-Modified")
-                )
-                
-                // If the server returned validators and they match prior, short-circuit.
-                if (!isCacheBusted(prior, headTag)) {
-                    return ConditionalFetch(value: nil, newTag: headTag, modified: false)
-                }
-            } catch {
-                // Network failure on HEAD → fall through to GET; GET will decide.
-            }
-        }
-
-        // Either no prior, or validators differ, or HEAD didn’t return validators → GET full body.
-        logger.info("Cache validators changed or unknown; performing GET")
+    func fetchSpcData(for url: URL) async throws -> Data? {
+        logger.info("Starting conditional fetch (single GET) for \(url)")
+  
         let resp = try await http.get(url, headers: [:])
+        
+        logger.info("Response code: \(resp.status), for: \(url)")
+        
         guard (200...299).contains(resp.status), let data = resp.data else {
-            throw SpcError.missingData
+            throw SpcError.networkError
         }
         
-        let tag = HTTPCacheTag(
-            etag: resp.header("ETag"),
-            lastModified: resp.header("Last-Modified")
-        )
-        
-        // If validators still match prior after GET, treat as not modified to save parsing.
-        if (!isCacheBusted(prior, tag)) {
-            return ConditionalFetch(value: nil, newTag: tag, modified: false)
-        }
-        
-        logger.info("Fetched updated data")
-        return ConditionalFetch(value: data, newTag: tag, modified: true)
+        return data
     }
     
     /// Builds out the URL required to get geojson data from the SPC
@@ -105,47 +70,10 @@ final class SpcClient {
         try makeSPCURL(path: "products/\(product.rawValue).xml")
     }
     
-    // MARK: Private Funcs
-    /// Fetches the GeoJSON file at the url provided
-    /// - Parameters:
-    ///   - productUrl: the url of the product to fetch
-    ///   - client: a http client to use for the connection
-    /// - Returns: a data stream from the resource
-    private func fetchGeoJsonFile(for productUrl: URL, with client: HTTPClient) async throws -> Data {
-        let resp = try await client.get(productUrl, headers: [:])
-        guard (200...299).contains(resp.status), let data = resp.data else {
-            throw SpcError.missingGeoJsonData
-        }
-        
-        return data
-    }
-    
     /// Build an absolute SPC URL from a relative path, or throw on failure.
     private func makeSPCURL(path: String) throws -> URL {
         let base = "https://www.spc.noaa.gov/"
         guard let url = URL(string: base + path) else { throw SpcError.invalidUrl }
         return url
-    }
-    
-    /// Compares the prior cache tag to the current cache tag. When the etag or lastmodified date differ between
-    /// the two, our cache is busted and we need to reload. If etag or lastmodified are equal between the two then
-    /// no data changed, and we can adjust downstream.
-    /// - Parameters:
-    ///   - prior: cache tag from previous run, stored in SwiftData
-    ///   - tag: new cache tag to compare against whats stored
-    /// - Returns: true if cache is busted and we need to reload, false of prior and new cache tags are the same
-    private func isCacheBusted(_ prior: HTTPCacheTag?, _ tag: HTTPCacheTag) -> Bool {
-        guard let prior else { return true }
-        
-        if let et = tag.etag, let pet = prior.etag {
-            return et != pet
-        }
-        if let lm = tag.lastModified, let plm = prior.lastModified {
-            return lm != plm
-        }
-        
-        logger.debug("No usable validators found; treating cache as outdated")
-        // No usable validators -> safest to assume cache is busted
-        return true
     }
 }

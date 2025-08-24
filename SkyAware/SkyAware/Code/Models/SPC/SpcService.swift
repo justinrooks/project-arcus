@@ -80,30 +80,12 @@ final class SpcService {
     /// - Returns: SpcServiceResult object containing the parsed rss data as objects
     private func refreshRSS() async throws -> SpcServiceResult {
         logger.debug("Refreshing Spc RSS data")
-        // 1) Pull prior data from SwiftData (if any)
-        let cache = try await fetcher.get(FeedKey.outlookDay1RSS)
-        let priorTag = httpCacheTag(from: cache)
+        let data = try await client.fetchCombinedRssData()
         
-        // 2) Conditional fetch
-        let url = try client.getRssUrl(for: .combined)
-        let cf = try await client.fetchConditionalData(for: url, prior: priorTag)
-        
-        // 3) If its modified and we have new data we'll continue
-        //    but if modified is not true or value (data) is nil,
-        //    then we'll fall into the else and return cached data.
-        guard cf.modified, let data = cf.value else {
-            if let cached = cache?.body {
-                logger.debug("Validators unchanged, returning cached data")
-                let rss = try parseRSS(cached)
-                return buildServiceResult(from: rss, changed: false)
-            }
-            
+        guard let data else {
             return SpcServiceResult(rssChanged: false)
         }
-        
-        try await updateCacheData(for: cf, with: data, key: FeedKey.outlookDay1RSS)
-        
-        // 5) Parse and return
+
         let rss = try parseRSS(data)
         
         logger.info("Rss parsed, returning data")
@@ -115,52 +97,6 @@ final class SpcService {
     private func refreshPoints() async throws -> (geo: [GeoJsonResult], changed: Bool) {
         logger.debug("Refreshing SPC Points data")
         
-        //        // Precompute inputs synchronously (no concurrency, no self escaping).
-        //        let inputs: [(product: GeoJSONProduct, key: String, prior: HTTPCacheTag?, url: URL)] = try {
-        //            let prods: [GeoJSONProduct] = [.categorical, .tornado, .hail, .wind]
-        //            return try prods.map { p in
-        //                let key = getKey(for: p)
-        //                let cache = try await fetcher.get(key)  // still awaited here; if desired, hoist to group too
-        //                return (p, key, httpCacheTag(from: cache), try client.getGeoJSONUrl(for: p))
-        //            }
-        //        }()
-        //        
-        //        // Capture only the needed Sendable deps.
-        //        let fetcher = self.fetcher
-        //        let client  = self.client
-        //        let now     = self.now
-        //        
-        //        struct Item { let result: GeoJsonResult?; let changed: Bool }
-        //        
-        //        func fetchOne(_ input: (product: GeoJSONProduct, key: String, prior: HTTPCacheTag?, url: URL)) async throws -> Item {
-        //            let cf = try await client.fetchConditionalData(for: input.url, prior: input.prior)
-        //            guard cf.modified, let data = cf.value else {
-        //                if let cached = try await fetcher.get(input.key)?.body {
-        //                    let cachedGeo = decodeGeoJSON(from: cached)
-        //                    return Item(result: GeoJsonResult(product: input.product, featureCollection: cachedGeo), changed: false)
-        //                }
-        //                // Intentional: first run with "unchanged" validators → treat as no data.
-        //                return Item(result: GeoJsonResult(product: input.product, featureCollection: .empty), changed: false)
-        //            }
-        //            // Update cache and decode
-        //            let patch = FeedCachePatch(etag: cf.newTag?.etag, lastModified: cf.newTag?.lastModified, lastSuccessAt: now(), nextPlannedAt: nil, body: data)
-        //            try await fetcher.upsert(input.key, applying: patch)
-        //            let decoded = decodeGeoJSON(from: data)
-        //            return Item(result: GeoJsonResult(product: input.product, featureCollection: decoded), changed: true)
-        //        }
-        //        
-        //        // Run in parallel without capturing self inside the tasks.
-        //        async let a = fetchOne(inputs[0])
-        //        async let b = fetchOne(inputs[1])
-        //        async let c = fetchOne(inputs[2])
-        //        async let d = fetchOne(inputs[3])
-        //        let (ra, rb, rc, rd) = try await (a, b, c, d)
-        //        
-        //        let all = [ra, rb, rc, rd]
-        //        let changed = all.contains { $0.changed }
-        //        let geo = all.compactMap { $0.result }
-        //        return (geo, changed)
-        
         let (cat, cCh)  = try await getGeoJSONData(for: .categorical)
         let (torn, tCh) = try await getGeoJSONData(for: .tornado)
         let (hail, hCh) = try await getGeoJSONData(for: .hail)
@@ -169,82 +105,24 @@ final class SpcService {
         let changed = cCh || tCh || hCh || wCh
         return ([cat, torn, hail, wind].compactMap{ $0 }, changed)
     }
-    
-    /// Convenience function for mapping a product to a FeedKey for SwiftData
-    /// - Parameter product: product to map
-    /// - Returns: string value of the key
-    private func getKey(for product: GeoJSONProduct) -> String {
-        switch product {
-        case .categorical: return FeedKey.categoricalGeoJSON
-        case .tornado:     return FeedKey.tornadoGeoJSON
-        case .hail:        return FeedKey.hailGeoJSON
-        case .wind:        return FeedKey.windGeoJSON
-        }
-    }
-    
+
     /// Tries to get GeoJSON data for the provided product
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the GeoJSON result and bool indicating changed or not
     private func getGeoJSONData(for product: GeoJSONProduct) async throws -> (GeoJsonResult?, Bool) {
         logger.debug("Getting GeoJSON for \(product.rawValue)")
-        // Get data, either from cache or server
-        let key = getKey(for: product)
-        let cache = try await fetcher.get(key)
-        let priorTag = httpCacheTag(from: cache)
-        
         let url = try client.getGeoJSONUrl(for: product)
-        let cf = try await client.fetchConditionalData(for: url, prior: priorTag)
+        let data = try await client.fetchSpcData(for: url)
         
-        // 3) If its modified and we have new data we'll continue
-        //    but if modified is not true or value (data) is nil,
-        //    then we'll fall into the else and return cached data.
-        guard cf.modified, let data = cf.value else {
-            if let cached = cache?.body {
-                logger.debug("Validators unchanged, returning cached GeoJSON")
-                // Convert to Objects
-                let cachedGeo = decodeGeoJSON(from: cached)
-                return (GeoJsonResult(product: product, featureCollection: cachedGeo), false)
-            }
-            
+        guard let data else {
             return (GeoJsonResult(product: product, featureCollection: .empty), false)
         }
         
-        // Refresh the cached data
-        try await updateCacheData(for: cf, with: data, key: key)
-        
-        // Convert to Objects
         let decoded = decodeGeoJSON(from: data)
         
         return (GeoJsonResult(product: product, featureCollection: decoded), true)
     }
-    
-    /// Tries to update the cached data in SwiftData with the provided data for the provided key
-    /// - Parameters:
-    ///   - fetch: header info including the etag and last modified
-    ///   - data: a data stream to persist in the body
-    ///   - key: FeedKey identifier in SwiftData
-    private func updateCacheData(for fetch: ConditionalFetch, with data: Data?, key: String) async throws {
-        // 4) Create a patch object to write updates to SwiftData
-        //    Using a patch instead of the closure makes this
-        //    operation thread safe.
-        let patch = FeedCachePatch(
-            etag: fetch.newTag?.etag,
-            lastModified: fetch.newTag?.lastModified,
-            lastSuccessAt: now(),
-            nextPlannedAt: nil,
-            body: data
-        )
-        
-        try await fetcher.upsert(key, applying: patch)
-        logger.debug("Cached data updated")
-    }
-    
-    /// Builds an HTTP cache tag (ETag/Last-Modified) from a stored cache row.
-    private func httpCacheTag(from cache: FeedCache?) -> HTTPCacheTag? {
-        guard let cache else { return nil }
-        return HTTPCacheTag(etag: cache.etag, lastModified: cache.lastModified)
-    }
-    
+
     /// Parse RSS data or throw a standard parsing error.
     private func parseRSS(_ data: Data) throws -> RSS {
         guard let rss = try parser.parse(data: data) else {

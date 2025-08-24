@@ -21,32 +21,57 @@ public struct HTTPResponse {
 }
 
 public protocol HTTPClient: Sendable {
+    @available(*, deprecated, message: "No need for head calls right now, remove")
     func head(_ url: URL, headers: [String: String]) async throws -> HTTPResponse
     func get (_ url: URL, headers: [String: String]) async throws -> HTTPResponse
 }
 
-extension URLSession {
-    static let fastFailing: URLSession = {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10 // Fail fast if request is slow
-        config.timeoutIntervalForResource = 20
-        return URLSession(configuration: config)
-    }()
-    
-    static let background: URLSession = {
-       let config = URLSessionConfiguration.background(withIdentifier: "com.skyaware.background.url")
-        config.sessionSendsLaunchEvents = true
-        return URLSession(configuration: config)
-    }()
-}
+//extension URLSession {
+//    static let fastFailing: URLSession = {
+//        let config = URLSessionConfiguration.default
+//        config.timeoutIntervalForRequest = 10 // Fail fast if request is slow
+//        config.timeoutIntervalForResource = 20
+//        
+//        let memoryCapacity = 4 * 1024 * 1024 // 4 MB
+//        let diskCapacity = 100 * 1024 * 1024 // 100 MB
+//        let urlCache = URLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity, diskPath: "skyaware")
+//        
+//        config.requestCachePolicy = .returnCacheDataElseLoad
+//        config.urlCache = urlCache
+//        return URLSession(configuration: config)
+//    }()
+//    
+//    static let background: URLSession = {
+//       let config = URLSessionConfiguration.background(withIdentifier: "com.skyaware.background.url")
+//        config.sessionSendsLaunchEvents = true
+//        return URLSession(configuration: config)
+//    }()
+//}
 
 
 public final class URLSessionHTTPClient: HTTPClient {
     private let logger = Logger.downloader
     private let session: URLSession
     private let delays: [UInt64] = [0, 5, 10, 15, 20] // seconds
-    public init(session: URLSession) {
-        self.session = session
+    private let cache: URLCache
+    
+    public init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 10 // Fail fast if request is slow
+        config.timeoutIntervalForResource = 20
+        
+        let memoryCapacity = 4 * 1024 * 1024 // 4 MB
+        let diskCapacity = 100 * 1024 * 1024 // 100 MB
+        self.cache = URLCache(
+            memoryCapacity: memoryCapacity,
+            diskCapacity: diskCapacity,
+            diskPath: "skyaware"
+        )
+        
+        config.requestCachePolicy = .returnCacheDataElseLoad
+        config.urlCache = self.cache
+        
+        self.session = URLSession(configuration: config)
     }
     
     public func head(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
@@ -56,7 +81,15 @@ public final class URLSessionHTTPClient: HTTPClient {
     public func get(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
         try await request(url: url, method: "GET", headers: headers)
     }
+
+    public func getCachedResponse(for request: URLRequest) -> CachedURLResponse? {
+        cache.cachedResponse(for: request)
+    }
     
+    public func clearCache() {
+        cache.removeAllCachedResponses()
+    }
+
     private func request(url: URL, method: String, headers: [String: String]) async throws -> HTTPResponse {
         // Try up to `delays.count` attempts. Delays array encodes backoff for retries,
         // where index+1 corresponds to the wait before the next attempt.
@@ -65,23 +98,22 @@ public final class URLSessionHTTPClient: HTTPClient {
             do {
                 var req = URLRequest(url: url)
                 req.httpMethod = method
-                headers.forEach { req.setValue($0.value, forHTTPHeaderField: $0.key) }
-                
+
+                // Check the cache using the retained instance via the singleton
+                if getCachedResponse(for: req) != nil {
+                    logger.debug("Found cached response for \(url). Skipping network call.")
+                } else {
+                    logger.debug("No cached response found. Making network call.")
+                }
+
                 let (data, response) = try await session.data(for: req, delegate: nil)
                 
                 guard let http = response as? HTTPURLResponse else {
                     throw URLError(.badServerResponse)
                 }
                 
-                let headerMap: [String: String] = http.allHeaderFields.reduce(into: [:]) {
-                    dict, kv in
-                    if let k = kv.key as? String {
-                        dict[k] = String(describing: kv.value)
-                    }
-                }
-                
                 return HTTPResponse(status: http.statusCode,
-                                    headers: headerMap,
+                                    headers: [:],
                                     data: data.isEmpty ? nil : data)
             } catch {
                 if isTransient(error) {
