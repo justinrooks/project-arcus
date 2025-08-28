@@ -7,6 +7,7 @@
 
 import Foundation
 import OSLog
+import SwiftUI
 
 let validStatus = 200...299
 
@@ -24,29 +25,35 @@ public protocol HTTPClient: Sendable {
     @available(*, deprecated, message: "No need for head calls right now, remove")
     func head(_ url: URL, headers: [String: String]) async throws -> HTTPResponse
     func get (_ url: URL, headers: [String: String]) async throws -> HTTPResponse
+    func clearCache()
 }
 
-//extension URLSession {
-//    static let fastFailing: URLSession = {
-//        let config = URLSessionConfiguration.default
-//        config.timeoutIntervalForRequest = 10 // Fail fast if request is slow
-//        config.timeoutIntervalForResource = 20
-//        
-//        let memoryCapacity = 4 * 1024 * 1024 // 4 MB
-//        let diskCapacity = 100 * 1024 * 1024 // 100 MB
-//        let urlCache = URLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapacity, diskPath: "skyaware")
-//        
-//        config.requestCachePolicy = .returnCacheDataElseLoad
-//        config.urlCache = urlCache
-//        return URLSession(configuration: config)
-//    }()
-//    
-//    static let background: URLSession = {
-//       let config = URLSessionConfiguration.background(withIdentifier: "com.skyaware.background.url")
-//        config.sessionSendsLaunchEvents = true
-//        return URLSession(configuration: config)
-//    }()
-//}
+// This is ok to leave as @unchecked sendable since we are only observing the metrics
+// for now, and updating a refresh token that doesn't care about a particular source
+// if any source is updatd, its ok to update the token. for now.
+class CustomSessionDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let logger = Logger.downloader
+    
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        guard let transactionMetrics = metrics.transactionMetrics.first else { return }
+
+        switch transactionMetrics.resourceFetchType {
+        case .localCache:
+            logger.debug("Response for \(task.originalRequest?.url?.absoluteString ?? "request") was served from the local cache")
+        case .networkLoad:
+            logger.debug("Response for \(task.originalRequest?.url?.absoluteString ?? "request") was loaded from the network")
+            let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
+            guard let suite else { return }
+            
+            let lastGlobalSuccessAtKey = "lastGlobalSuccessAt"
+            let now: Date = .now
+            
+            suite.set(now.timeIntervalSince1970, forKey: lastGlobalSuccessAtKey)
+        default:
+            logger.error("Response for \(task.originalRequest?.url?.absoluteString ?? "request") had an unknown fetch type")
+        }
+    }
+}
 
 
 public final class URLSessionHTTPClient: HTTPClient {
@@ -55,11 +62,7 @@ public final class URLSessionHTTPClient: HTTPClient {
     private let delays: [UInt64] = [0, 5, 10, 15, 20] // seconds
     private let cache: URLCache
     
-    public init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10 // Fail fast if request is slow
-        config.timeoutIntervalForResource = 20
-        
+    public init(background: Bool = false) {
         let memoryCapacity = 4 * 1024 * 1024 // 4 MB
         let diskCapacity = 100 * 1024 * 1024 // 100 MB
         self.cache = URLCache(
@@ -68,12 +71,30 @@ public final class URLSessionHTTPClient: HTTPClient {
             diskPath: "skyaware"
         )
         
-        config.requestCachePolicy = .returnCacheDataElseLoad
+        let config = {
+            if background {
+                let bConfig = URLSessionConfiguration.background(withIdentifier: "com.skyaware.background.url")
+                bConfig.sessionSendsLaunchEvents = true
+                
+                return bConfig
+            }
+            else {
+                let cfg = URLSessionConfiguration.default
+                cfg.timeoutIntervalForRequest = 10 // Fail fast if request is slow
+                cfg.timeoutIntervalForResource = 20
+                
+                return cfg
+            }
+        }()
+        
+        config.requestCachePolicy = .reloadRevalidatingCacheData
         config.urlCache = self.cache
         
-        self.session = URLSession(configuration: config)
+        let myDelegate = CustomSessionDelegate()
+        
+        self.session = URLSession(configuration: config, delegate: myDelegate, delegateQueue: nil)
     }
-    
+        
     public func head(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
         try await request(url: url, method: "HEAD", headers: headers)
     }
@@ -90,6 +111,10 @@ public final class URLSessionHTTPClient: HTTPClient {
         cache.removeAllCachedResponses()
     }
 
+//    public func bgRequest(request: URLRequest) async throws -> Data? {
+//        
+//    }
+    
     private func request(url: URL, method: String, headers: [String: String]) async throws -> HTTPResponse {
         // Try up to `delays.count` attempts. Delays array encodes backoff for retries,
         // where index+1 corresponds to the wait before the next attempt.
@@ -98,13 +123,6 @@ public final class URLSessionHTTPClient: HTTPClient {
             do {
                 var req = URLRequest(url: url)
                 req.httpMethod = method
-
-                // Check the cache using the retained instance via the singleton
-                if getCachedResponse(for: req) != nil {
-                    logger.debug("Found cached response for \(url). Skipping network call.")
-                } else {
-                    logger.debug("No cached response found. Making network call.")
-                }
 
                 let (data, response) = try await session.data(for: req, delegate: nil)
                 

@@ -8,7 +8,17 @@
 import SwiftUI
 
 struct FreshnessView: View {
-    var lastUpdated: Date? { SharedPrefs.lastGlobalSuccess() }
+    var lastUpdated: Date? {
+        let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
+        guard let suite else { return nil}
+        
+        let lastGlobalSuccessAtKey = "lastGlobalSuccessAt"
+        
+        let time = suite.double(forKey: lastGlobalSuccessAtKey)
+        return time > 0 ? Date(timeIntervalSince1970: time) : nil
+//        SharedPrefs.lastGlobalSuccess()
+    }
+//    @AppStorage("lastUpdated") var lastUpdated: Date?
     
     var body: some View {
         if let last = lastUpdated {

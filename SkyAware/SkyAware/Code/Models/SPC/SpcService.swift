@@ -28,6 +28,7 @@ final class SpcService {
     private let fetcher: SpcFetcher
     private let parser: RSSFeedParser
     private let logger = Logger.spcService
+    private let builder = UrlBuilder()
     
     // Preferred for tests / app composition:
     init(client: SpcClient,
@@ -111,7 +112,7 @@ final class SpcService {
     /// - Returns: the GeoJSON result and bool indicating changed or not
     private func getGeoJSONData(for product: GeoJSONProduct) async throws -> (GeoJsonResult?, Bool) {
         logger.debug("Getting GeoJSON for \(product.rawValue)")
-        let url = try client.getGeoJSONUrl(for: product)
+        let url = try builder.getGeoJSONUrl(for: product)
         let data = try await client.fetchSpcData(for: url)
         
         guard let data else {

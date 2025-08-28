@@ -22,4 +22,8 @@ extension Logger {
     static let convectiveView = Logger(subsystem: subsystem, category: "ConvectiveView")
     static let mainView = Logger(subsystem: subsystem, category: "MainView")
     static let mapping = Logger(subsystem: subsystem, category: "Mapping")
+    
+    static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")
+    static let scheduler = Logger(subsystem: subsystem, category: "Scheduler")
+    static let mainApp = Logger(subsystem: subsystem, category: "MainApp")
 }

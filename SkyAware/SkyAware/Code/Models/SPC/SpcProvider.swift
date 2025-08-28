@@ -10,7 +10,7 @@ import Observation
 import OSLog
 
 @Observable
-final class SpcProvider {
+final class SpcProvider: Sendable {
     var errorMessage: String?
     var isLoading: Bool = true
     @ObservationIgnored let logger = Logger.spcProvider
@@ -60,7 +60,6 @@ final class SpcProvider {
                 logger.error("Error loading Spc feed: \(error.localizedDescription)")
             }
             
-            SharedPrefs.recordGlobalSuccess()
             isLoading = false
         }
     }
