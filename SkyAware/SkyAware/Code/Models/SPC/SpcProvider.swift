@@ -15,7 +15,6 @@ final class SpcProvider: Sendable {
     var isLoading: Bool = true
     
     @ObservationIgnored private let logger = Logger.spcProvider
-//    @ObservationIgnored private let service1: SpcService
     @ObservationIgnored private let client: SpcClient
     @ObservationIgnored private let parser: RSSFeedParser
     
@@ -31,17 +30,12 @@ final class SpcProvider: Sendable {
     var tornado = [SevereThreat]()
     
     init(client: SpcClient, parser: RSSFeedParser = RSSFeedParser(), autoLoad: Bool = true) {
-//        self.service1 = service
         self.client = client
         self.parser = parser
         
         if autoLoad { loadFeed() }
     }
-    
-    func nukeCache() {
-        client.nukeCache()
-    }
-    
+
     func loadFeed() {
         isLoading = true
         
@@ -51,11 +45,13 @@ final class SpcProvider: Sendable {
         }
     }
     
+    /// Loads all the SPC products including RSS and GeoJSON
+    /// - Returns: bool indicating changed
     func loadFeedAsync() async -> Bool {
         do {
-            self.outlooks = try await refreshOutlooks()
-            self.meso = try await refreshMesos()
-            self.watches = []//res.watches
+            self.outlooks = try await fetchOutlooks()
+            self.meso = try await fetchMesoDiscussions()
+            self.watches = try await fetchWatches()
             
             logger.debug("Parsed \(self.outlooks.count) outlooks, \(self.meso.count) mesoscale discussions, \(self.watches.count) watches from SPC")
             
@@ -76,21 +72,12 @@ final class SpcProvider: Sendable {
         }
     }
     
-    private func getTypedFeature<T>(from list: [GeoJsonResult], for product: GeoJSONProduct, transform: (GeoJSONFeature) -> T?) -> [T] {
-        guard let features = list.first(where: { $0.product == product })?.featureCollection.features else { return [] }
-        return features.compactMap(transform)
-    }
-    
-    func refreshOutlooks() async throws -> [ConvectiveOutlook] {
+    /// Fetches an array of convective outlooks from SPC
+    /// - Returns: array of convective outlooks
+    func fetchOutlooks() async throws -> [ConvectiveOutlook] {
         logger.info("Refreshing convective outlooks")
-        let convectiveData = try await client.fetchRssData(for: .convective)
-        
-        guard let convectiveData else {
-            return []
-        }
-        
-        let rss = try parseRSS(convectiveData)
-        let items = rss.channel?.items ?? []
+        let data = try await client.fetchRssData(for: .convective)
+        let items = try getRssItems(data: data)
         
         let outlooks = items
             .filter { ($0.title ?? "").contains(" Convective Outlook") }
@@ -99,16 +86,12 @@ final class SpcProvider: Sendable {
         return outlooks
     }
     
-    func refreshMesos() async throws -> [MesoscaleDiscussion] {
+    /// Fetches an array of meso discussions from SPC
+    /// - Returns: array of meso discussions
+    func fetchMesoDiscussions() async throws -> [MesoscaleDiscussion] {
         logger.info("Refreshing SPC Meso discussions")
-        let mesoData = try await client.fetchRssData(for: .meso)
-        
-        guard let mesoData else {
-            return []
-        }
-        
-        let rss = try parseRSS(mesoData)
-        let items = rss.channel?.items ?? []
+        let data = try await client.fetchRssData(for: .meso)
+        let items = try getRssItems(data: data)
         
         let mesos = items
             .filter { ($0.title ?? "").contains("SPC MD ") }
@@ -117,12 +100,45 @@ final class SpcProvider: Sendable {
         return mesos
     }
     
-    //        let watches = items
-    //            .filter {
-    //                guard let t = $0.title else { return false }
-    //                return t.contains("Watch") && !t.contains("Status Reports")
-    //            }
-    //            .compactMap { Watch.from(rssItem: $0) }
+    /// Fetches an array of Watches from SPC
+    /// - Returns: Array of Watches
+    func fetchWatches() async throws -> [Watch] {
+        logger.info("Refreshing SPC Watches")
+        let data = try await client.fetchRssData(for: .watch)
+        let items = try getRssItems(data: data)
+        
+        let result = items
+            .filter {
+                guard let t = $0.title else { return false }
+                return t.contains("Watch") && !t.contains("Status Reports")
+            }
+            .compactMap { Watch.from(rssItem: $0) }
+        
+        return result
+    }
+    
+    /// Processes the provided data object into an array of RSS Items
+    /// - Parameter data: optional data to process
+    /// - Returns: Array of RSS Items, or empty array
+    private func getRssItems(data: Data?) throws -> [Item] {
+        guard let data else {
+            return []
+        }
+        
+        let rss = try parseRSS(data)
+        return rss.channel?.items ?? []
+    }
+    
+    /// Transforms the GeoJSON into usable features for the map
+    /// - Parameters:
+    ///   - list: list of GeoJSON result objects to process
+    ///   - product: product to classify as
+    ///   - transform: the transform description
+    /// - Returns: the typed object
+    private func getTypedFeature<T>(from list: [GeoJsonResult], for product: GeoJSONProduct, transform: (GeoJSONFeature) -> T?) -> [T] {
+        guard let features = list.first(where: { $0.product == product })?.featureCollection.features else { return [] }
+        return features.compactMap(transform)
+    }
     
     /// Fetches the points data for severe weather
     /// - Returns: array of GeoJsonResult and a bool indicating if any of the products changed
@@ -153,8 +169,6 @@ final class SpcProvider: Sendable {
         
         return (GeoJsonResult(product: product, featureCollection: decoded), true)
     }
-    
-    
     
     /// Parse RSS data or throw a standard parsing error.
     private func parseRSS(_ data: Data) throws -> RSS {

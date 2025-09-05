@@ -140,7 +140,7 @@ struct DebugFeedCacheView: View {
     }
 
     @MainActor private func deleteAll() {
-        provider.nukeCache()
+        URLCache.shared.removeAllCachedResponses()
 //        items.forEach { context.delete($0) }
 //        try? context.save()
         
@@ -149,7 +149,7 @@ struct DebugFeedCacheView: View {
     @MainActor private func delete(_ cache: FeedCache) {
 //        context.delete(cache)
 //        try? context.save()
-        provider.nukeCache()
+        URLCache.shared.removeAllCachedResponses()
     }
 
     @MainActor private func delete(at offsets: IndexSet) {

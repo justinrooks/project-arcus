@@ -125,8 +125,4 @@ struct MapView: View {
         .environment(provider)                // your @Observable provider
         .environment(LocationManager())       // or a preconfigured preview instance
         .modelContainer(container)            // attaches the container to the view tree
-    
-//    MapView()
-//        .environment(LocationManager())
-//        .environment(SpcProvider())
 }

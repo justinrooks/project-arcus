@@ -6,7 +6,7 @@
 //
 
 import SwiftUI
-import SwiftData
+//import SwiftData
 import BackgroundTasks
 import OSLog
 

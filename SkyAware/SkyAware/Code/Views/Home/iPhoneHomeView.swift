@@ -75,7 +75,7 @@ struct iPhoneHomeView: View {
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.5), value: provider.isLoading)
-        .accentColor(.teal)
+        .accentColor(.green.opacity(0.80))
     }
 }
 
@@ -94,20 +94,12 @@ extension iPhoneHomeView {
 //        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
 //    )
     
-    // 2) Wire client → repo → service → provider (no network auto-load in previews)
     let client   = SpcClient()
     let provider = SpcProvider(client: client, autoLoad: true)
     let mock = LocationManager()
     
-    // 3) Build your preview view and inject env objects
     return iPhoneHomeView()
         .environment(provider)                // your @Observable provider
         .environment(LocationManager())       // or a preconfigured preview instance
         .environment(SummaryProvider(provider: provider, location: mock))
-//        .modelContainer(container)            // attaches the container to the view tree
-    //    iPhoneHomeView()
-    //        .environment(SpcProvider())
-    //        .environment(LocationManager())
-    //        .modelContainer(for: FeedCache.self, inMemory: true)
-    //    //        .environment()
 }

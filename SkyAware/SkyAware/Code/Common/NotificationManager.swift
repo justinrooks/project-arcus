@@ -34,7 +34,7 @@ struct NotificationManager: Sendable {
 
         let notificationReq = UNMutableNotificationContent()
         notificationReq.title = "New Day 1 Convective Outlook"
-        notificationReq.subtitle = "Published: \(formattedDate(outlook.published))"
+        notificationReq.subtitle = "Published: \(outlook.published.toShortTime())"
         notificationReq.body = "\(message ?? String(outlook.summary.prefix(24)))..."
         notificationReq.sound = UNNotificationSound.default
         notificationReq.badge = 0
@@ -46,12 +46,7 @@ struct NotificationManager: Sendable {
         await internalNotify(request: request)
     }
     
-    func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
+    
     
     
     private func internalNotify(request: UNNotificationRequest) async {

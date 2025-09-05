@@ -8,6 +8,7 @@
 import Foundation
 import OSLog
 
+/// Mapping enum that associates a product to its gis spc url
 enum GeoJSONProduct: String {
     case categorical = "cat"       // this corresponds to the url builder, see buildUrl func below
     case tornado     = "torn"
@@ -15,6 +16,7 @@ enum GeoJSONProduct: String {
     case wind        = "wind"
 }
 
+/// Mapping enum that associates a product to its spc url
 enum RssProduct: String {
     case convective  = "spcacrss"  // Convective outlooks only
     case meso        = "spcmdrss"  // Meso discussions only
@@ -34,11 +36,17 @@ struct SpcClient {
         http.clearCache()
     }
     
+    /// Wrapper func that pulls the rss data from spc
+    /// - Parameter product: product to obtain data for
+    /// - Returns: a data object to be parsed
     func fetchRssData(for product: RssProduct) async throws -> Data? {
         let url = try getRssUrl(for: product)
         return try await fetchSpcData(for: url)
     }
     
+    /// Wrapper func that pulls geojson specific data from the spc
+    /// - Parameter product: product to obtain data for
+    /// - Returns: a data object to be parsed
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data? {
         let url = try getGeoJSONUrl(for: product)
         return try await fetchSpcData(for: url)

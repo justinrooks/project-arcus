@@ -27,5 +27,12 @@ extension Date {
         return formatter.string(from: self)
     }
     
-    
+    /// Formats to a short time style and ommits the date entirely
+    /// - Returns: string of the date formatted with short time only
+    func toShortTime() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: self)
+    }
 }
