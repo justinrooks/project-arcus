@@ -13,17 +13,16 @@ import SwiftData
 extension SpcProvider {
     static var previewData: SpcProvider {
         // 1) In‑memory SwiftData container for previews
-        let container = try! ModelContainer(
-            for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
+//        let container = try! ModelContainer(
+//            for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+//            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+//        )
         
         // 2) Wire client → repo → service → provider (no network auto-load in previews)
         let client   = SpcClient()
-        let service  = SpcService(client: client)
-        let provider = SpcProvider(service: service, autoLoad: false)
+//        let provider = SpcProvider(service: service, autoLoad: false)
         
-        let mock = SpcProvider(service: service, autoLoad: false)
+        let mock = SpcProvider(client: client, autoLoad: false)
         mock.meso = [
             MesoscaleDiscussion(
                 id: UUID(),

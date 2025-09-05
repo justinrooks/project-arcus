@@ -12,47 +12,38 @@ import OSLog
 struct NotificationManager: Sendable {
     private let logger = Logger.notifications
     
+    func notify(title: String, subtitle: String, body: String, interval: TimeInterval = 10) async {
+        let notificationReq = UNMutableNotificationContent()
+        notificationReq.title = title
+        notificationReq.subtitle = subtitle
+        notificationReq.body = body
+        notificationReq.sound = UNNotificationSound.default
+        notificationReq.badge = 0
+        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+        
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
+        
+        await internalNotify(request: request)
+    }
     
-    func notify(for outlook:ConvectiveOutlook?) async {
+    func notify(for outlook:ConvectiveOutlook?, with message: String?) async {
         guard let outlook else { return } // if we don't get an outlook, dont send a notification
         
-//        let d = does(outlook.published, matchHour: 7)
+        //        let d = does(outlook.published, matchHour: 7)
+
+        let notificationReq = UNMutableNotificationContent()
+        notificationReq.title = "New Day 1 Convective Outlook"
+        notificationReq.subtitle = "Published: \(formattedDate(outlook.published))"
+        notificationReq.body = "\(message ?? String(outlook.summary.prefix(24)))..."
+        notificationReq.sound = UNNotificationSound.default
+        notificationReq.badge = 0
         
-        // TODO: Move this check somewhere else? Maybe ask on first load
-        let center = UNUserNotificationCenter.current()
-        let authType = await checkAuthorized()
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
         
-        let addNotification = {
-            let notificationReq = UNMutableNotificationContent()
-            notificationReq.title = "New Day 1 Convective Outlook"
-            notificationReq.subtitle = "Published: \(formattedDate(outlook.published))"
-            notificationReq.body = "\(String(outlook.summary.prefix(24)))..."
-            notificationReq.sound = UNNotificationSound.default
-            notificationReq.badge = 0
-            
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
-            
-            let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
-            center.add(request)
-        }
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
         
-        switch authType {
-        case .notDetermined:
-            let result = await requestAuthorization()
-            if result {
-                addNotification()
-            } else {
-                logger.error("Error authorizing notifications")
-                return
-            }
-        case .denied:
-            return
-        case .authorized, .provisional, .ephemeral:
-            addNotification()
-        @unknown default:
-            logger.warning("Unknown authorization status")
-            return
-        }
+        await internalNotify(request: request)
     }
     
     func formattedDate(_ date: Date) -> String {
@@ -62,6 +53,33 @@ struct NotificationManager: Sendable {
         return formatter.string(from: date)
     }
     
+    
+    private func internalNotify(request: UNNotificationRequest) async {
+        let authType = await checkAuthorized()
+
+        do {
+            let center = UNUserNotificationCenter.current()
+            switch authType {
+            case .notDetermined:
+                let result = await requestAuthorization()
+                if result {
+                    try await center.add(request)
+                } else {
+                    logger.error("Error authorizing notifications")
+                    return
+                }
+            case .denied:
+                return
+            case .authorized, .provisional, .ephemeral:
+                try await center.add(request)
+            @unknown default:
+                logger.warning("Unknown authorization status")
+                return
+            }
+        } catch {
+            logger.error("Error sending notification: \(error.localizedDescription)")
+        }
+    }
     
     /// Checks if the user has authorized Notifiations
     /// - Returns: the authorization status
@@ -80,7 +98,7 @@ struct NotificationManager: Sendable {
         let center = UNUserNotificationCenter.current()
         
         do {
-            try await center.requestAuthorization(options: [.alert, .badge, .sound, .provisional])
+            try await center.requestAuthorization(options: [.alert, .badge, .sound])
             logger.debug("Notification authorization successful")
             return true
             

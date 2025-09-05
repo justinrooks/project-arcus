@@ -118,8 +118,7 @@ struct MapView: View {
     
     // 2) Wire client → repo → service → provider (no network auto-load in previews)
     let client   = SpcClient()
-    let service  = SpcService(client: client)
-    let provider = SpcProvider(service: service, autoLoad: false)
+    let provider = SpcProvider(client: client, autoLoad: false)
     
     // 3) Build your preview view and inject env objects
     return MapView()

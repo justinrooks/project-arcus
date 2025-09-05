@@ -21,8 +21,8 @@ struct Scheduler {
             let today = Calendar.current.startOfDay(for: .now)
             dateComponents.hour = hour
             dateComponents.minute = minute
-            // random seconds between 13-37
-            let sec = Int.random(in: 13...37)
+            // random seconds between 3-27
+            let sec = Int.random(in: 3...27)
             dateComponents.second = sec
             return calendar.date(byAdding: dateComponents, to: today)!
         }
@@ -72,8 +72,12 @@ struct Scheduler {
                 let amComponent = calendar.dateComponents([.hour, .minute, .second], from: firstTimeOfNextCycle)
                 let am = Calendar.current.date(byAdding: amComponent, to: tomorrow)
                 
-                logger.debug("All times for today have passed. The next scheduled time (wrapping around) is: \(firstTimeOfNextCycle.formatted(date: .omitted, time: .shortened))")
-                
+                if let am {
+                    logger.debug("All times for today have passed. The next scheduled time (wrapping around) is: \(am.formatted(date: .abbreviated, time: .shortened))")
+                } else {
+                    logger.warning("Error determining next scheduled runtime")
+                }
+
                 return am
             } else {
                 logger.warning("The list of scheduled times is empty.")

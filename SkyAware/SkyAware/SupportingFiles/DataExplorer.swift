@@ -48,7 +48,7 @@ public extension View {
 struct DebugFeedCacheView: View {
     @Environment(\.modelContext) private var context
 
-    
+    @Environment(SpcProvider.self) private var provider: SpcProvider
     
     @Query(sort: [SortDescriptor(\FeedCache.updatedAt, order: .reverse)])
     private var items: [FeedCache]
@@ -140,14 +140,16 @@ struct DebugFeedCacheView: View {
     }
 
     @MainActor private func deleteAll() {
-        items.forEach { context.delete($0) }
-        try? context.save()
+        provider.nukeCache()
+//        items.forEach { context.delete($0) }
+//        try? context.save()
         
     }
 
     @MainActor private func delete(_ cache: FeedCache) {
-        context.delete(cache)
-        try? context.save()
+//        context.delete(cache)
+//        try? context.save()
+        provider.nukeCache()
     }
 
     @MainActor private func delete(at offsets: IndexSet) {

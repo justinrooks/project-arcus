@@ -32,10 +32,20 @@ struct FreshnessView: View {
         }
     }
     
-    private func relativeTime(from date: Date) -> String {
+//    private func relativeTime(from date: Date) -> String {
+//        let formatter = RelativeDateTimeFormatter()
+//        formatter.unitsStyle = .short
+//        return formatter.localizedString(for: date, relativeTo: .now)
+//    }
+    
+    func relativeTime(from date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        if seconds <= 0 {
+            return "just now"
+        }
         let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: .now)
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 
