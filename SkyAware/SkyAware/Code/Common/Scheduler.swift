@@ -8,9 +8,22 @@
 import Foundation
 import OSLog
 
+enum ScheduleType: String {
+    case convective
+    case meso
+    case watch
+}
 
 struct Scheduler {
     private let logger = Logger.scheduler
+    private let scheduleType: ScheduleType
+    
+    init(scheduleType: ScheduleType) {
+        self.logger.info("Initializing Scheduler for \(scheduleType.rawValue)")
+        self.scheduleType = scheduleType
+    }
+    
+    
     
     func getNextRunTime() -> Date? {
         let calendar = Calendar.current

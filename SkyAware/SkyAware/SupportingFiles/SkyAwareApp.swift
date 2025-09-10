@@ -74,7 +74,7 @@ struct SkyAwareApp: App {
                 let stormRisk = await summaryProvider.getStormRisk()
                 let severeRisk = await summaryProvider.getSevereRisk()
                 
-                let message = "Storm Activity: \(stormRisk.summary)\n\nSevere Activity: \(severeRisk.summary)"
+                let message = "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)"
                 
                 let ol = await prov.outlooks
                 let mostRecentArticle = ol.max { $0.published < $1.published }
@@ -119,6 +119,7 @@ struct SkyAwareApp: App {
 
                     do {
                         try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                        scheduleNextAppRefresh()
                     } catch {
                         logger.error("Error requesting notification permission: \(error.localizedDescription)")
                     }
@@ -142,7 +143,7 @@ struct SkyAwareApp: App {
             
             guard requests.isEmpty else { return } // If we don't have any pending requests, schedule a new one
             
-            let sch = Scheduler()
+            let sch = Scheduler(scheduleType: .convective)
             let nextRun = sch.getNextRunTime()
             
             guard let nextRun else { return } // Ensure we received the next runtime from teh scheduler

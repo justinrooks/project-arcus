@@ -59,12 +59,7 @@ struct iPhoneHomeView: View {
                     }
                     
                     NavigationStack {
-//                        CadenceSandboxView()
-                        #if DEBUG
-                        NavigationStack {
-//                            DebugFeedCacheView()
-                        }
-                        #endif
+                        SettingsView()
                     }
                     .tabItem {
                         Image(systemName: "gearshape") //exclamationmark.triangle

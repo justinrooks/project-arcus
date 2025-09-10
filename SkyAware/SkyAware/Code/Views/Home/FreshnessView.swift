@@ -16,7 +16,6 @@ struct FreshnessView: View {
         
         let time = suite.double(forKey: lastGlobalSuccessAtKey)
         return time > 0 ? Date(timeIntervalSince1970: time) : nil
-//        SharedPrefs.lastGlobalSuccess()
     }
 //    @AppStorage("lastUpdated") var lastUpdated: Date?
     
@@ -32,13 +31,7 @@ struct FreshnessView: View {
         }
     }
     
-//    private func relativeTime(from date: Date) -> String {
-//        let formatter = RelativeDateTimeFormatter()
-//        formatter.unitsStyle = .short
-//        return formatter.localizedString(for: date, relativeTo: .now)
-//    }
-    
-    func relativeTime(from date: Date) -> String {
+    private func relativeTime(from date: Date) -> String {
         let seconds = Int(Date().timeIntervalSince(date))
         if seconds <= 0 {
             return "just now"
