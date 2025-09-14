@@ -9,7 +9,7 @@ import Foundation
 import MapKit
 
 struct GeoJsonResult {
-    let product: Product
+    let product: GeoJSONProduct
     let featureCollection: GeoJSONFeatureCollection
 }
 

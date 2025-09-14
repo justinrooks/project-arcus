@@ -8,7 +8,16 @@
 import SwiftUI
 
 struct FreshnessView: View {
-    var lastUpdated: Date? { SharedPrefs.lastGlobalSuccess() }
+    var lastUpdated: Date? {
+        let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
+        guard let suite else { return nil}
+        
+        let lastGlobalSuccessAtKey = "lastGlobalSuccessAt"
+        
+        let time = suite.double(forKey: lastGlobalSuccessAtKey)
+        return time > 0 ? Date(timeIntervalSince1970: time) : nil
+    }
+//    @AppStorage("lastUpdated") var lastUpdated: Date?
     
     var body: some View {
         if let last = lastUpdated {
@@ -23,9 +32,13 @@ struct FreshnessView: View {
     }
     
     private func relativeTime(from date: Date) -> String {
+        let seconds = Int(Date().timeIntervalSince(date))
+        if seconds <= 0 {
+            return "just now"
+        }
         let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
-        return formatter.localizedString(for: date, relativeTo: .now)
+        formatter.unitsStyle = .full
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

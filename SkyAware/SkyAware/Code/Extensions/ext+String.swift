@@ -15,4 +15,13 @@ extension String {
         formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.date(from: self)
     }
+    
+    /// Parses an RFC1123 string into a Date
+    func fromRFC1123String() -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
+        return formatter.date(from: self)
+    }
 }

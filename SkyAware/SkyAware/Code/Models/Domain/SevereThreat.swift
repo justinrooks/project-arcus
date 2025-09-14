@@ -8,7 +8,7 @@
 import Foundation
 import MapKit
 
-struct SevereThreat {
+struct SevereThreat: Identifiable {
     let id: UUID = UUID()
     let type: ThreatType
     let probability: ThreatProbability

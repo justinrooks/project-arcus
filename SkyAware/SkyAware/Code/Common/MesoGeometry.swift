@@ -12,15 +12,15 @@ import MapKit
 // MARK: - Meso polygon (single-ring) extraction
 
 enum MesoGeometry {
-    // Regex that starts after "LAT...LON" and collects all 8-digit tokens (across lines)
-    private static let reLatLonBlock = try! Regex(#"(?is)LAT\.\.\.LON\s+([0-9\s]+)"#)
-    private static let rePoint = try! Regex(#"\b\d{8}\b"#)
-    // Treat any all-9 token of length 5..8 as a break (e.g., 99999, 999999, 99999999)
-    private static let reBreak = try! Regex(#"^9{5,8}$"#)
-
     /// Parse a single polygon from the MD text using all 8-digit LAT/LON points after `LAT...LON`.
     /// Assumes the sequence represents one closed ring (final point may repeat the first).
     static func coordinates(from rawText: String) -> [CLLocationCoordinate2D]? {
+        // Regex that starts after "LAT...LON" and collects all 8-digit tokens (across lines)
+        let reLatLonBlock = try! Regex(#"(?is)LAT\.\.\.LON\s+([0-9\s]+)"#)
+        let rePoint = try! Regex(#"\b\d{8}\b"#)
+        // Treat any all-9 token of length 5..8 as a break (e.g., 99999, 999999, 99999999)
+        let reBreak = try! Regex(#"^9{5,8}$"#)
+        
         // Find the numeric block after LAT...LON
         guard let blockMatch = rawText.firstMatch(of: reLatLonBlock),
               let r = blockMatch.output[1].range else { return nil }

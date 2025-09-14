@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct iPhoneHomeView: View {
-    //    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext
     @Environment(SpcProvider.self) private var provider: SpcProvider
     
     var body: some View {
@@ -32,7 +32,7 @@ struct iPhoneHomeView: View {
                         }
                     }
                     .tabItem {
-                        Image(systemName: "circle.grid.cross.fill") //sunrise.fill
+                        Image(systemName: "list.bullet") //sunrise.fill, circle.grid.cross.fill
                         Text("Summary")
                     }
                     
@@ -40,7 +40,7 @@ struct iPhoneHomeView: View {
                         AlertView()
                     }
                     .tabItem {
-                        Image(systemName: "exclamationmark.bubble") //umbrella
+                        Image(systemName: "exclamationmark.triangle") //umbrella
                         Text("Alerts")
                     }.badge(provider.alertCount)
                     
@@ -51,18 +51,18 @@ struct iPhoneHomeView: View {
                         }
                     
                     NavigationStack {
-                        ForecastView()
+                        ConvectiveOutlookView()
                     }
                     .tabItem {
-                        Image(systemName: "cloud.sun") //cloud.bolt.rain.fill
-                        Text("Forecast")
+                        Image(systemName: "cloud.bolt.rain.fill") //cloud.bolt.rain.fill
+                        Text("Outlook")
                     }
                     
                     NavigationStack {
                         SettingsView()
                     }
                     .tabItem {
-                        Image(systemName: "gear") //exclamationmark.triangle
+                        Image(systemName: "gearshape") //exclamationmark.triangle
                         Text("Settings")
                     }
                 }
@@ -70,7 +70,7 @@ struct iPhoneHomeView: View {
         }
         .transition(.opacity)
         .animation(.easeInOut(duration: 0.5), value: provider.isLoading)
-        .accentColor(.teal)
+        .accentColor(.green.opacity(0.80))
     }
 }
 
@@ -83,9 +83,18 @@ extension iPhoneHomeView {
 }
 
 #Preview {
-    iPhoneHomeView()
-        .environment(SpcProvider())
-        .environment(LocationManager())
-    //        .modelContainer(for: ItemTest.self, inMemory: true)
-    //        .environment()
+    // 1) In‑memory SwiftData container for previews
+    let container = try! ModelContainer(
+        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+    
+    let client   = SpcClient()
+    let provider = SpcProvider(client: client, container: container, autoLoad: true)
+    let mock = LocationManager()
+    
+    return iPhoneHomeView()
+        .environment(provider)                // your @Observable provider
+        .environment(LocationManager())       // or a preconfigured preview instance
+        .environment(SummaryProvider(provider: provider, location: mock))
 }

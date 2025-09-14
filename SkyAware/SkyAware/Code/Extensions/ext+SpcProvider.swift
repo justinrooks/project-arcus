@@ -7,10 +7,22 @@
 
 import Foundation
 import MapKit
+import SwiftData
 
+@MainActor
 extension SpcProvider {
     static var previewData: SpcProvider {
-        let mock = SpcProvider()
+        // 1) In‑memory SwiftData container for previews
+        let container = try! ModelContainer(
+            for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        
+        // 2) Wire client → repo → service → provider (no network auto-load in previews)
+        let client   = SpcClient()
+//        let provider = SpcProvider(service: service, autoLoad: false)
+        
+        let mock = SpcProvider(client: client, container: container, autoLoad: false)
         mock.meso = [
             MesoscaleDiscussion(
                 id: UUID(),
@@ -373,27 +385,6 @@ extension SpcProvider {
             )
         ]
         
-        mock.outlooks = [
-            ConvectiveOutlook(
-                id: UUID(),
-                title: "Day 1 Convective Outlook",
-                link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk.html")!,
-                published: Date(),
-                summary: "A SLGT risk of severe thunderstorms exists across the Plains.",
-                day: 1,
-                riskLevel: "SLGT"
-            ),
-            ConvectiveOutlook(
-                id: UUID(),
-                title: "Day 1 Convective Outlook - Update",
-                link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk2.html")!,
-                published: Date().addingTimeInterval(-3600),
-                summary: "An ENH risk of severe storms exists across the Midwest.",
-                day: 1,
-                riskLevel: "ENH"
-            )
-        ]
-
         return mock
     }
 }

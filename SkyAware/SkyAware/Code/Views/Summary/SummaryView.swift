@@ -8,12 +8,12 @@
 import SwiftUI
 
 struct SummaryView: View {
-//    @Environment(LocationManager.self) private var locationProvider: LocationManager
-//    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
+    @Environment(LocationManager.self) private var locationProvider: LocationManager
+    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
     
     var body: some View {
         VStack {
-            // Header
+//             Header
             SummaryHeaderView()
             
             // Badges
@@ -30,7 +30,7 @@ struct SummaryView: View {
                     Spacer()
                 }
             } label: {
-                Label("Nearby Watches", systemImage: "exclamationmark.triangle")
+                Label("Nearby Watches", systemImage: "exclamationmark.triangle.fill")
                     .foregroundColor(.teal)
             }
             
@@ -48,7 +48,11 @@ struct SummaryView: View {
 }
 
 #Preview {
+    let mock = LocationManager()
+    let spc = SpcProvider.previewData
+    
     SummaryView()
-        .environment(LocationManager())
-        .environment(SpcProvider.previewData)
+        .environment(mock)
+        .environment(spc)
+        .environment(SummaryProvider(provider: spc, location: mock))
 }

@@ -74,23 +74,6 @@ extension MesoscaleDiscussion {
         
     // MARK: - Parsing (private)
 
-    // Block-capture sections
-    private static let reAreas   = try! Regex(#"(?is)Areas affected\.\.\.\s*(.*?)\s*(?=Concerning\.\.\.)"#)
-    private static let reSummary = try! Regex(#"(?is)SUMMARY\.\.\.\s*(.*?)\s*(?=DISCUSSION\.\.\.)"#)
-
-    // Line captures
-    private static let reValid   = try! Regex(#"(?im)^\s*Valid\s+(\d{2})(\d{2})Z\s*-\s*(\d{2})(\d{2})Z\s*$"#)
-    private static let rePwoiOrWatch = try! Regex(#"""
-(?im)^\s*(?:
-  Probability\ of\ Watch\ Issuance\.\.\.\s*(?<pwoi>\d{1,3})\s*percent\b
-|
-  Concerning\.\.\.\s*(?<watchtype>Tornado|Severe\ Thunderstorm)\s+Watch(?:es)?\s+(?<watchnos>[^\n]+)
-)\s*$
-"""#)
-    private static let reWind    = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK WIND GUST\.\.\.\s*([0-9]{2,3})(?:\s*-\s*([0-9]{2,3}))?\s*(?:MPH|KT)\b.*$"#)
-    private static let reHail    = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK HAIL SIZE\.\.\.\s*(?:UP TO\s*)?([0-9]+(?:\.[0-9]+)?)(?:\s*-\s*([0-9]+(?:\.[0-9]+)?))?\s*IN\b.*$"#)
-    private static let reTor     = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK TORNADO (?:INTENSITY|STRENGTH)\.\.\.\s*([^\n]+)$"#)
-
     // Utility: first capture helper
     private static func first(_ text: String, _ re: Regex<AnyRegexOutput>) -> String? {
         guard let m = text.firstMatch(of: re), let r = m.output[1].range else { return nil }
@@ -112,6 +95,7 @@ extension MesoscaleDiscussion {
 
     // Parse Valid range (Z times) relative to issued date (UTC). Handles crossing 00Z boundary.
     private static func parseValid(_ text: String, issued: Date) -> (Date, Date)? {
+        let reValid = try! Regex(#"(?im)^\s*Valid\s+(\d{2})(\d{2})Z\s*-\s*(\d{2})(\d{2})Z\s*$"#)
         guard let m = text.firstMatch(of: reValid) else { return nil }
         let sH = Int(String(text[m.output[1].range!]))!
         let sM = Int(String(text[m.output[2].range!]))!
@@ -187,8 +171,21 @@ extension MesoscaleDiscussion {
         return (probability ?? .unlikely, concerningText)
     }
 
+    // Parse the areas affected
+    private static func parseAreas(_ text: String) -> String {
+        let reAreas   = try! Regex(#"(?is)Areas affected\.\.\.\s*(.*?)\s*(?=Concerning\.\.\.)"#)
+        return first(text, reAreas) ?? ""
+    }
+    
+    // Parse the summary and discussion
+    private static func parseSummary(_ text: String) -> String {
+        let reSummary = try! Regex(#"(?is)SUMMARY\.\.\.\s*(.*?)\s*(?=DISCUSSION\.\.\.)"#)
+        return first(text, reSummary) ?? ""
+    }
+    
     // Parse wind mph: choose the upper bound when a range is provided
     private static func parseWindMPH(_ text: String) -> Int? {
+        let reWind = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK WIND GUST\.\.\.\s*([0-9]{2,3})(?:\s*-\s*([0-9]{2,3}))?\s*(?:MPH|KT)\b.*$"#)
         guard let m = text.firstMatch(of: reWind) else { return nil }
         if let hiR = m.output[2].range { return Int(String(text[hiR])) }
         if let loR = m.output[1].range { return Int(String(text[loR])) }
@@ -197,6 +194,7 @@ extension MesoscaleDiscussion {
 
     // Parse hail inches as ClosedRange<Double>
     private static func parseHailRange(_ text: String) -> ClosedRange<Double>? {
+        let reHail = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK HAIL SIZE\.\.\.\s*(?:UP TO\s*)?([0-9]+(?:\.[0-9]+)?)(?:\s*-\s*([0-9]+(?:\.[0-9]+)?))?\s*IN\b.*$"#)
         guard let m = text.firstMatch(of: reHail) else { return nil }
         let low = Double(String(text[m.output[1].range!]))!
         if let hiR = m.output[2].range {
@@ -210,7 +208,8 @@ extension MesoscaleDiscussion {
 
     // Tornado strength as free text (e.g., "UP TO 95 MPH", "EF1-2 possible")
     private static func parseTornadoStrength(_ text: String) -> String? {
-        first(text, reTor)
+        let reTor = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK TORNADO (?:INTENSITY|STRENGTH)\.\.\.\s*([^\n]+)$"#)
+        return first(text, reTor)
     }
 
     static func from(rssItem: Item) -> MesoscaleDiscussion? {
@@ -229,8 +228,8 @@ extension MesoscaleDiscussion {
         }() ?? -1
 
         // Areas / Summary (block captures)
-        let areasAffected = first(rawText, reAreas) ?? ""
-        let summaryParsed = first(rawText, reSummary) ?? ""
+        let areasAffected = parseAreas(rawText)
+        let summaryParsed = parseSummary(rawText)
 
         // Valid range (UTC), fallback to issued+2h if missing
         let validPair = parseValid(rawText, issued: issued)

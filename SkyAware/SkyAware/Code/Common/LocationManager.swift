@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreLocation
+import OSLog
 
 // Location Reference
 // latitude: 45.01890187118621,  longitude: -104.41476597508318)
@@ -21,8 +22,10 @@ import CoreLocation
 // latitude: 43.83334367563072,  longitude: -96.01419655189608) // NE SD somewhere
 
 @Observable
+@MainActor
 final class LocationManager: NSObject, CLLocationManagerDelegate {
     @ObservationIgnored private let manager = CLLocationManager()
+    @ObservationIgnored private let logger = Logger.locationMgr
     var isAuthorized = false
     var locale: String = "Locating..."
     var userLocation: CLLocation?
@@ -38,54 +41,54 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     {
         super.init()
         manager.delegate = self
+        //        manager.allowsBackgroundLocationUpdates = true
+        //        manager.showsBackgroundLocationIndicator = true
         manager.distanceFilter = 1650 // causes the manager to not report location changes less than 1650m
     }
-    
     
     func checkLocationAuthorization() {
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
         case .restricted:
-            print("Location Services are restricted.")
+            logger.warning("Location Services are restricted.")
         case .denied:
-            print("You've denied SkyAware access to your location. Please enable in settings.")
+            logger.critical("You've denied SkyAware access to your location. Please enable in settings.")
         case .authorizedAlways, .authorizedWhenInUse:
             manager.startUpdatingLocation()
             isAuthorized = true
-            
         @unknown default:
-            print("Unknown authorization status.")
+            logger.error("Unknown authorization status.")
             break
         }
     }
     
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        checkLocationAuthorization()
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
+        Task { @MainActor in
+            self.checkLocationAuthorization()
+        }
     }
     
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let currentLocation = locations.last else { return }
         
-        userLocation = currentLocation
-        let geocoder = CLGeocoder()
-        
-        geocoder.reverseGeocodeLocation(currentLocation) { placemarks, error in
-            if let error = error {
-                print("Reverse geocoding failed: \(error.localizedDescription)")
-                return
-            }
-            
-            if let placemark = placemarks?.first {
-                let town = placemark.locality ?? placemark.subAdministrativeArea
-                let state = placemark.administrativeArea
+        Task { @MainActor in
+            self.userLocation = currentLocation
+            let geocoder = CLGeocoder()
+            do {
+                let xy = try await geocoder.reverseGeocodeLocation(currentLocation)
                 
-                if let town = town, let state = state {
-                    self.locale = "\(town), \(state)"
+                if let placemark = xy.first {
+                    let town = placemark.locality ?? placemark.subAdministrativeArea
+                    let state = placemark.administrativeArea
+                    
+                    if let town = town, let state = state {
+                        self.locale = "\(town), \(state)"
+                    }
                 }
-                
-            } else {
-                return
+            } catch {
+                self.logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

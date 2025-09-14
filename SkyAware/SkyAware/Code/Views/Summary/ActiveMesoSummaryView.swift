@@ -104,12 +104,28 @@ private struct MesoRowView: View {
             }
             
             Spacer()
-            
-            Text("Ends: \(meso.validEnd, style: .time)")
-                .monospacedDigit()
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading) {
+                Text("Ends: \(meso.validEnd, style: .time)")
+                    .monospacedDigit()
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Text("Watch Probability: \(getProbabilityString(for: meso.watchProbability))")
+                    .monospacedDigit()
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+}
+
+extension MesoRowView {
+    func getProbabilityString(for probability: WatchProbability) -> String {
+        return {
+            switch probability {
+            case .percent(let p): return "\(p)%"
+            case .unlikely: return "Unlikely"
+            }
+        }()
     }
 }
 

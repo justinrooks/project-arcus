@@ -91,13 +91,9 @@ extension ConvectiveOutlookDetailView {
 }
 
 #Preview {
-    ConvectiveOutlookDetailView(outlook: ConvectiveOutlook(
-        id: UUID(),
-        title: "Day 1 Convective Outlook",
-        link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk.html")!,
-        published: Date(),
-        summary: "A SLGT risk of severe thunderstorms exists across the Plains.",
-        day: 1,
-        riskLevel: "SLGT"
-    ))
+    let preview = Preview(ConvectiveOutlook.self)
+    
+    return NavigationStack {
+        ConvectiveOutlookDetailView(outlook: ConvectiveOutlook.sampleOutlooks[0])
+    }
 }
