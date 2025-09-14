@@ -7,13 +7,14 @@
 
 import Foundation
 
-enum Relative {
-    static let rtf: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f
-    }()
-    static func fromNow(_ date: Date) -> String {
-        rtf.localizedString(for: date, relativeTo: .now)
-    }
-}
+//enum Relative {
+//    func fromNow(_ date: Date) -> String {
+//        let rtf: RelativeDateTimeFormatter = {
+//            let f = RelativeDateTimeFormatter()
+//            f.unitsStyle = .short
+//            return f
+//        }()
+//        
+//        return rtf.localizedString(for: date, relativeTo: .now)
+//    }
+//}

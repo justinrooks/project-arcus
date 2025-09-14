@@ -14,6 +14,7 @@ import Foundation
 enum OtherErrors: Error {
     case nilContext
     case contextFetchError
+    case contextSaveError
 }
 
 enum SpcError: Error {

@@ -27,7 +27,7 @@ struct NotificationManager: Sendable {
         await internalNotify(request: request)
     }
     
-    func notify(for outlook:ConvectiveOutlook?, with message: String?) async {
+    func notify(for outlook:ConvectiveOutlookDTO?, with message: String?) async {
         guard let outlook else { return } // if we don't get an outlook, dont send a notification
         
         //        let d = does(outlook.published, matchHour: 7)

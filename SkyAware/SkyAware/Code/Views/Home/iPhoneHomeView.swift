@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct iPhoneHomeView: View {
-//    @Environment(\.modelContext) private var modelContext
+    @Environment(\.modelContext) private var modelContext
     @Environment(SpcProvider.self) private var provider: SpcProvider
     
     var body: some View {
@@ -84,13 +84,13 @@ extension iPhoneHomeView {
 
 #Preview {
     // 1) In‑memory SwiftData container for previews
-//    let container = try! ModelContainer(
-//        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
-//        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-//    )
+    let container = try! ModelContainer(
+        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
     
     let client   = SpcClient()
-    let provider = SpcProvider(client: client, autoLoad: true)
+    let provider = SpcProvider(client: client, container: container, autoLoad: true)
     let mock = LocationManager()
     
     return iPhoneHomeView()
