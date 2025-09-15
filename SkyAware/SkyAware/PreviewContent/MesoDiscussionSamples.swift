@@ -8,8 +8,26 @@
 import Foundation
 
 extension MD {
-    private static func getMD() -> MD {
-        let coordinates = MesoGeometry.coordinates(from: """
+    private static func buildCoords(for location: String) -> [Coordinate2D] {
+        let coordinates = MesoGeometry.coordinates(from: location) ?? []
+        return coordinates.compactMap(Coordinate2D.init)
+    }
+    
+    static var sampleDiscussions: [MD] {
+        [
+            MD(
+                number: 1893,
+                title: "SPC MD 1893",
+                link: URL(string:"https://www.spc.noaa.gov/products/md/md1893.html")!,
+                issued: Date(),
+                validStart: Calendar.current.date(byAdding: .minute, value: 60, to: Date())!,
+                validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
+                areasAffected: "Western SD, northeast WY, far southeast MT",
+                summary: "test",
+                concerning: "Concerning...Severe Thunderstorm Watch 580...",
+                watchProbability: "5",
+                threats: MDThreats(peakWindMPH: 65, hailRangeInches: 2.5, tornadoStrength: "Not expected"),
+                coordinates: buildCoords(for: """
                        ATTN...WFO...BYZ...GGW...TFX...
         
                        LAT...LON   46441136 46761221 47041239 47441240 47691208 47991054
@@ -18,27 +36,36 @@ extension MD {
         
                        MOST PROBABLE PEAK WIND GUST...55-70 MPH
                        MOST PROBABLE PEAK HAIL SIZE...1.50-2.50 IN
-        """) ?? []
-        let m = coordinates.compactMap(Coordinate2D.init)
-        return MD(
-            number: 1893,
-            title: "test",
-            link: URL(string:"https://www.spc.noaa.gov/products/md/md1893.html")!,
-            issued: Date(),
-            validStart: Calendar.current.date(byAdding: .minute, value: 60, to: Date())!,
-            validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
-            areasAffected: "Western SD, northeast WY, far southeast MT",
-            summary: "test",
-            concerning: "Concerning...Severe Thunderstorm Watch 580...",
-            watchProbability: "5%",
-            threats: MDThreats(peakWindMPH: 65, hailRangeInches: 2.5, tornadoStrength: "Not expected"),
-            coordinates: m,
-            alertType: .mesoscale
-        )
-    }
-    static var sampleDiscussions: [MD] {
-        [
-            getMD()
+        """),
+                alertType: .mesoscale
+            ),
+            MD(
+                number: 1913,
+                title: "SPC MD 1913",
+                link: URL(string:"https://www.spc.noaa.gov/products/md/md1913.html")!,
+                issued: Date(),
+                validStart: Calendar.current.date(byAdding: .minute, value: 60, to: Date())!,
+                validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
+                areasAffected: "Western SD, northeast WY, far southeast MT",
+                summary: "test",
+                concerning: "Concerning...Severe Thunderstorm Watch 580...",
+                watchProbability: "20",
+                threats: MDThreats(peakWindMPH: 70, hailRangeInches: 3.5, tornadoStrength: "Up to 95mph"),
+                coordinates: buildCoords(for: """
+                       ATTN...WFO...LBF...DDC...GLD...PUB...BOU...CYS...
+
+                          LAT...LON   38960506 39710477 40880364 41480236 41210180 40690124
+                                      40250073 39950055 38790042 37700066 37210280 37620395
+                                      38260476 38960506 
+
+                          MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH
+                          MOST PROBABLE PEAK WIND GUST...55-70 MPH
+                          MOST PROBABLE PEAK HAIL SIZE...2.00-3.50 IN
+        """),
+                alertType: .mesoscale
+            )
+            
+            
 //            MD(
 //                number: 1894,
 //                title: "test",

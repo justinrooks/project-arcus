@@ -44,7 +44,7 @@ struct WatchProbabilityBar: View {
                         colors: [Color.accentColor.opacity(0.65), Color.accentColor],
                         startPoint: .leading, endPoint: .trailing
                     ))
-                    .frame(width: max(8, geo.size.width * progress))
+                    .frame(width: max(8, geo.size.width * (progress/100)))
             }
         }
         .frame(height: 8)

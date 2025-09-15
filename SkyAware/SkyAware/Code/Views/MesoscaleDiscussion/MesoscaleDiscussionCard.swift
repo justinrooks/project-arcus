@@ -103,7 +103,7 @@ struct MesoscaleDiscussionCard: View {
                     Text("\(meso.watchProbability)")
                         .font(.subheadline.weight(.semibold))
                 } else {
-                    Text("\(meso.watchProbability) %")
+                    Text("\(meso.watchProbability)%")
                         .font(.subheadline.weight(.semibold))
                 }
             }
@@ -179,6 +179,6 @@ extension MesoscaleDiscussionCard {
     let preview = Preview(MD.self)
     
     return NavigationStack {
-        MesoscaleDiscussionCard(meso: MD.sampleDiscussions[0], layout: .full)
+        MesoscaleDiscussionCard(meso: MD.sampleDiscussions[1], layout: .full)
     }
 }

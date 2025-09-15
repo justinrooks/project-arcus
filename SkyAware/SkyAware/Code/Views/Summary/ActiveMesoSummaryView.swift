@@ -13,16 +13,16 @@ struct ActiveMesoSummaryView: View {
     @Environment(LocationManager.self) private var locationProvider: LocationManager
     @Environment(\.modelContext) private var modelContext
     
-    @Query()
-    private var mesos: [MD]
+    @Query
+    private var allMesos: [MD]
     
     @State private var selectedMeso: MD? = nil
     
     var body: some View {
         GroupBox {
-            let mesos: [MD] = Array(nearbyMesos.prefix(3))
+            let nearBy: [MD] = Array(nearbyMesos.prefix(3))
             Divider()
-            if mesos.isEmpty {
+            if nearBy.isEmpty {
                 HStack {
                     Text("No active mesos in your area")
                         .foregroundStyle(.secondary)
@@ -30,11 +30,11 @@ struct ActiveMesoSummaryView: View {
                 }
             } else {
                 VStack(spacing: 8) {
-                    ForEach(mesos) { meso in
+                    ForEach(nearBy) { meso in
                         Button { selectedMeso = meso } label: { MesoRowView(meso: meso) }
                             .buttonStyle(.plain)
                         
-                        if meso.number != mesos.last?.number { Divider() }
+                        if meso.number != allMesos.last?.number { Divider() }
                     }
                 }
             }
@@ -62,7 +62,7 @@ struct ActiveMesoSummaryView: View {
 
 extension ActiveMesoSummaryView {
     var nearbyMesos: [MD] {
-        return mesos.filter {
+        return allMesos.filter {
             let coord = $0.coordinates.map { $0.location }
             let poly = MKPolygon(coordinates: coord, count: coord.count)
             return PolygonHelpers.inPoly(user: locationProvider.resolvedUserLocation, polygon: poly)

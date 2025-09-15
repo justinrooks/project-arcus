@@ -160,17 +160,3 @@ struct SkyAwareApp: App {
         }
     }
 }
-//
-//lease do a quick project-wide search for these patterns:
-//
-//• UIHostingController usage:
-//   • “UIHostingController(”
-//   • And if found, check for “.view.addSubview(”
-//• UIKit insertion/presentation:
-//   • “addSubview(”
-//   • “present(”
-//   • “UIApplication.shared”
-//   • “keyWindow” / “windows.first”
-//   • “rootViewController”
-//• Other representables:
-//   • Any UIViewRepresentable/UIViewControllerRepresentable beyond CONUSMapView (e.g., video player, camera, web view, page view, etc.) that might be inserting views outside its root.
