@@ -11,10 +11,17 @@ import Foundation
 // MARK: - Card View (Less "weather-y")
 enum DetailLayout { case full, sheet }
 
+// MARK: - Neutral/Utility palette
+struct Neutral {
+    static let cardBG = Color(uiColor: .secondarySystemBackground)
+    static let stroke = Color.black.opacity(0.08)
+    static let labelSecondary = Color.secondary
+    static let accent = Color("AccentIndigo") // Provide in Assets or fallback below
+}
+
 struct MesoscaleDiscussionCard: View {
-    var vm: MesoscaleDiscussionViewModel
+    let meso: MD
     var layout: DetailLayout = .full
-    var onShowMap: (() -> Void)? = nil
     
     // Layout metrics
     private var hPad: CGFloat { layout == .sheet ? 0 : 18 }
@@ -30,7 +37,9 @@ struct MesoscaleDiscussionCard: View {
             header
             Divider().opacity(0.12)
             pairs
-            if let concerning = vm.concerningText, !concerning.isEmpty { contextNote(concerning) }
+            if let concerning = meso.concerning {
+                contextNote(concerning)
+            }
             probability
             primaryThreat
             footer
@@ -53,7 +62,7 @@ struct MesoscaleDiscussionCard: View {
     // MARK: - Sections
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Text(vm.title)
+            Text(meso.title)
                 .font(headerFont.weight(.semibold))
                 .textCase(.uppercase)
             Spacer()
@@ -61,7 +70,7 @@ struct MesoscaleDiscussionCard: View {
             InZonePill(inZone: layout == .sheet) // The sheet view is filtered, alters and full are not
         }
         .overlay(alignment: .bottomLeading) {
-            Text(vm.issuedText)
+            Text("Issued \(meso.issued) ")// + meso.issued.formatted(dateTime))
                 .font(.caption)
                 .foregroundStyle(Neutral.labelSecondary)
                 .offset(y: 26)
@@ -71,8 +80,8 @@ struct MesoscaleDiscussionCard: View {
     
     private var pairs: some View {
         VStack(alignment: .leading, spacing: 10) {
-            KeyValueRow(key: "Areas affected", value: vm.areasText)
-            KeyValueRow(key: "Valid", value: vm.validRangeText)
+            KeyValueRow(key: "Areas affected", value: meso.areasAffected)
+            KeyValueRow(key: "Valid", value: "\(meso.validStart) – \(meso.validEnd)") //"\(md.validStart.formatted(dateTime)) – \(md.validEnd.formatted(dateTime))"
         }
     }
     
@@ -90,10 +99,16 @@ struct MesoscaleDiscussionCard: View {
                 Text("Probability of Watch")
                     .font(.subheadline)
                 Spacer()
-                Text(vm.watchProbabilityText)
-                    .font(.subheadline.weight(.semibold))
+                if (meso.watchProbability == "" || meso.watchProbability == "") {
+                    Text("\(meso.watchProbability)")
+                        .font(.subheadline.weight(.semibold))
+                } else {
+                    Text("\(meso.watchProbability) %")
+                        .font(.subheadline.weight(.semibold))
+                }
             }
-            WatchProbabilityBar(progress: vm.watchProbabilityValue)
+            
+            WatchProbabilityBar(progress: Double(meso.watchProbability) ?? 0)//getWatchProbability(for: meso))
                 .frame(height: 8)
                 .clipShape(Capsule())
         }
@@ -102,7 +117,7 @@ struct MesoscaleDiscussionCard: View {
     
     private var primaryThreat: some View {
         Group {
-            if let label = vm.primaryThreatLabel {
+            if let label = getPrimaryThreatLabel(for: meso){
                 HStack {
                     Text(label)
                         .font(.footnote.weight(.semibold))
@@ -115,9 +130,9 @@ struct MesoscaleDiscussionCard: View {
             } else {
                 // Grid of simple label:value pairs when there is no standout threat
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
-                    GridRow { Text("Wind:").labelStyle(); Text(vm.md.threats.peakWindMPH.map { "Up to \($0) mph" } ?? "—").valueStyle() }
-                    GridRow { Text("Hail:").labelStyle(); Text(vm.md.threats.hailRangeInches.map { String(format: "%.2g–%.2g in", $0.lowerBound, $0.upperBound) } ?? "—").valueStyle() }
-                    GridRow { Text("Tornado:").labelStyle(); Text(vm.md.threats.tornadoStrength ?? "Not expected").valueStyle() }
+                    GridRow { Text("Wind:").labelStyle(); Text(meso.threats.peakWindMPH.map { "Up to \($0) mph" } ?? "—").valueStyle() }
+                    GridRow { Text("Hail:").labelStyle(); Text(meso.threats.hailRangeInches.map { String(format: "up to %.2g in", $0) } ?? "—").valueStyle() }
+                    GridRow { Text("Tornado:").labelStyle(); Text(meso.threats.tornadoStrength ?? "Not expected").valueStyle() }
                 }
             }
         }
@@ -125,7 +140,7 @@ struct MesoscaleDiscussionCard: View {
     
     private var footer: some View {
         TimelineView(.periodic(from: .now, by: 60)) { ctx in
-            let remaining = vm.timeRemaining(now: ctx.date)
+            let remaining = timeRemaining(meso: meso, now: ctx.date)
             HStack {
 //                mapButton
 //                Spacer()
@@ -135,20 +150,9 @@ struct MesoscaleDiscussionCard: View {
             }
         }
     }
-    
-    private var mapButton: some View {
-        Button {
-            onShowMap?()
-        } label: {
-            Label("View on Map", systemImage: "map")
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(.secondary)
-        }
-        .padding(.top, 6)
-    }
 
     private var spcLink: some View {
-        Link(destination: vm.md.link) {
+        Link(destination: meso.link) {
             Label("Open on SPC", systemImage: "arrow.up.right.square")
                 .font(.footnote.weight(.semibold))
                 .foregroundColor(.secondary)
@@ -158,20 +162,23 @@ struct MesoscaleDiscussionCard: View {
 
 }
 
+extension MesoscaleDiscussionCard {
+    func getPrimaryThreatLabel(for m: MD) -> String? {
+        if let t = m.threats.tornadoStrength, t.lowercased() != "not expected" { return "Primary threat: Tornado (\(t))" }
+        if let hail = m.threats.hailRangeInches { return "Primary threat: Large hail (up to \(hail) in)" }// String(format: "Primary threat: Large hail (%.2g–%.2g in)", hail, hail) }
+        if let wind = m.threats.peakWindMPH { return "Primary threat: Wind (up to \(wind) mph)" }
+        return nil
+    }
+    
+    func timeRemaining(meso: MD, now: Date = .now) -> TimeInterval { max(0, meso.validEnd.timeIntervalSince(now)) }
+}
 
 // MARK: - Preview
-struct MesoscaleDiscussionCard_Previews: PreviewProvider {
-    static var previews: some View {
-        Group {
-            MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[1]), layout: .sheet)
-                .padding()
-                .previewLayout(.sizeThatFits)
-                .environment(\.colorScheme, .dark)
-            MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: SpcProvider.previewData.meso[0]),
-                layout: .full)
-                .padding()
-                .previewLayout(.sizeThatFits)
-                .environment(\.colorScheme, .dark)
-        }
+
+#Preview {
+    let preview = Preview(MD.self)
+    
+    return NavigationStack {
+        MesoscaleDiscussionCard(meso: MD.sampleDiscussions[0], layout: .full)
     }
 }

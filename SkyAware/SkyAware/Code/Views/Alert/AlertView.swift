@@ -6,9 +6,13 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct AlertView: View {
     @Environment(SpcProvider.self) private var provider: SpcProvider
+    @Environment(\.modelContext) private var modelContext
+    
+    @Query private var mesos: [MD]
     
     var body: some View {
         List {
@@ -25,11 +29,13 @@ struct AlertView: View {
                 }
             }
 
-            if !provider.meso.isEmpty {
+            if(mesos.isEmpty) {
+                ContentUnavailableView("No active mesoscale discussions",
+                   systemImage: "sun.horizon.fill")
+            } else {
                 Section(header: Text("Mesoscale Discussions")) {
-                    ForEach(provider.meso) { meso in
-//                        NavigationLink(destination: MesoDetailView(discussion: meso)) {
-                        NavigationLink(destination: MesoscaleDiscussionCard(vm: MesoscaleDiscussionViewModel(md: meso))) {
+                    ForEach(mesos) { meso in
+                        NavigationLink(destination: MesoscaleDiscussionCard(meso: meso)) {
                             AlertRowView(alert: meso)
                         }
                         .foregroundStyle(Color.clear)
@@ -40,21 +46,24 @@ struct AlertView: View {
         .listStyle(.plain)
         .navigationTitle("Nearby Alerts")
         .refreshable {
-            print("Refreshing SPC Data")
-            fetchSpcData()
+            Task {
+                print("Refreshing Alerts")
+                try await provider.fetchMesoDiscussions()
+            }
         }
     }
 }
 
-extension AlertView {
-    func fetchSpcData() {
-        provider.loadFeed()
-        
-        print("Got SPC Feed data")
-    }
-}
-
 #Preview {
-    AlertView()
-        .environment(SpcProvider.previewData)
+    let preview = Preview(MD.self)
+    preview.addExamples(MD.sampleDiscussions)
+    let provider = SpcProvider(client: SpcClient(),
+                               container: preview.container,
+                               autoLoad: false)
+    
+    return NavigationStack {
+        AlertView()
+            .modelContainer(preview.container)
+            .environment(provider)
+    }
 }

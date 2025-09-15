@@ -25,7 +25,7 @@ struct SkyAwareApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([ConvectiveOutlook.self])
+        let schema = Schema([ConvectiveOutlook.self, MD.self])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         do { return try ModelContainer(for: schema, configurations: config) }
         catch { fatalError("Could not create ModelContainer: \(error)") }
@@ -160,3 +160,17 @@ struct SkyAwareApp: App {
         }
     }
 }
+//
+//lease do a quick project-wide search for these patterns:
+//
+//• UIHostingController usage:
+//   • “UIHostingController(”
+//   • And if found, check for “.view.addSubview(”
+//• UIKit insertion/presentation:
+//   • “addSubview(”
+//   • “present(”
+//   • “UIApplication.shared”
+//   • “keyWindow” / “windows.first”
+//   • “rootViewController”
+//• Other representables:
+//   • Any UIViewRepresentable/UIViewControllerRepresentable beyond CONUSMapView (e.g., video player, camera, web view, page view, etc.) that might be inserting views outside its root.

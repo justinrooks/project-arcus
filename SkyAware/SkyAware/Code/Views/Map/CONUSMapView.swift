@@ -22,7 +22,7 @@ struct CONUSMapView: UIViewRepresentable {
         let center = locationProvider.userLocation?.coordinate ?? CLLocationCoordinate2D(latitude: 39.8, longitude: -98.6) // fallback: center of CONUS
 //        let region = MKCoordinateRegion(center: center, latitudinalMeters: 5000000, longitudinalMeters: 5000000) // Entire US
         let region = MKCoordinateRegion(center: center, latitudinalMeters: 1450000, longitudinalMeters: 1450000)
-        mapView.setRegion(region, animated: true)
+        mapView.setRegion(region, animated: false)
 
         // Add boundary overlays
 //        let annotation = MKPointAnnotation()
@@ -35,12 +35,22 @@ struct CONUSMapView: UIViewRepresentable {
         return mapView
     }
 
+//    func updateUIView(_ uiView: MKMapView, context: Context) {
+//        // Remove existing overlays
+//        uiView.removeOverlays(uiView.overlays)
+//
+//        // Add new overlays from the updated polygonList
+//        uiView.addOverlays(polygonList.polygons)
+//    }
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        // Remove existing overlays
-        uiView.removeOverlays(uiView.overlays)
+        let existing = Set(uiView.overlays.compactMap { $0 as? MKPolygon })
+        let incoming = Set(polygonList.polygons)
 
-        // Add new overlays from the updated polygonList
-        uiView.addOverlays(polygonList.polygons)
+        let toRemove = existing.subtracting(incoming)
+        let toAdd = incoming.subtracting(existing)
+
+        if !toRemove.isEmpty { uiView.removeOverlays(Array(toRemove)) }
+        if !toAdd.isEmpty { uiView.addOverlays(Array(toAdd)) }
     }
 
     func makeCoordinator() -> MapCoordinator {

@@ -22,6 +22,15 @@ actor DatabaseActor: Sendable {
         try ctx.save()
     }
     
+    func insertMesos(_ md: [Item]) async throws {
+        _ = try md.map {
+            guard let m = MD(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(m)
+        }
+        
+        try ctx.save()
+    }
+    
     func create<T: PersistentModel>(todo: [T]) throws {
         _ = todo.map { ctx.insert($0) }
         try ctx.save()

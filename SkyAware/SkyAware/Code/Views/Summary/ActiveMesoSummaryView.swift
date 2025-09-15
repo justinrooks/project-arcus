@@ -7,17 +7,20 @@
 
 import SwiftUI
 import MapKit
+import SwiftData
 
 struct ActiveMesoSummaryView: View {
     @Environment(LocationManager.self) private var locationProvider: LocationManager
-    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
+    @Environment(\.modelContext) private var modelContext
     
-    @State private var selectedMeso: MesoscaleDiscussion? = nil
+    @Query()
+    private var mesos: [MD]
+    
+    @State private var selectedMeso: MD? = nil
     
     var body: some View {
         GroupBox {
-            //            let mesos: [MesoscaleDiscussion] = Array(viewModel.mesosNearby.prefix(3))
-            let mesos: [MesoscaleDiscussion] = Array(nearbyMesos.prefix(3))
+            let mesos: [MD] = Array(nearbyMesos.prefix(3))
             Divider()
             if mesos.isEmpty {
                 HStack {
@@ -42,26 +45,8 @@ struct ActiveMesoSummaryView: View {
         .sheet(item: $selectedMeso) { meso in
             VStack {
                 ScrollView {
-                    MesoscaleDiscussionCard(
-                        vm: MesoscaleDiscussionViewModel(md: meso),
-                        layout: .sheet,
-                        onShowMap: {
-                            print("Show map for \(meso.number)")
-                            //                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
-                            //                                poly.title = "MESO"
-                            //
-                            //                            selectedPolygon = MKMultiPolygon([poly])
-                            //                            showMap = true
-                            //
-                            //                            NavigationLink("", destination: CONUSMapView(polygonList: selectedPolygon ?? MKMultiPolygon()), isActive: $showMap)
-                            //                                .hidden()
-                            //
-                            ////                            let poly = MKPolygon(coordinates: meso.coordinates, count: meso.coordinates.count)
-                            ////                            poly.title = "MESO"
-                            ////
-                            ////                            CONUSMapView(polygonList: MKMultiPolygon([poly]))
-                            ////                                .edgesIgnoringSafeArea(.top)
-                        })
+                    MesoscaleDiscussionCard(meso: meso,
+                        layout: .sheet)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 25)
                     Spacer()
@@ -76,16 +61,17 @@ struct ActiveMesoSummaryView: View {
 }
 
 extension ActiveMesoSummaryView {
-    var nearbyMesos: [MesoscaleDiscussion] {
-        return spcProvider.meso.filter {
-            let poly = MKPolygon(coordinates: $0.coordinates, count: $0.coordinates.count)
+    var nearbyMesos: [MD] {
+        return mesos.filter {
+            let coord = $0.coordinates.map { $0.location }
+            let poly = MKPolygon(coordinates: coord, count: coord.count)
             return PolygonHelpers.inPoly(user: locationProvider.resolvedUserLocation, polygon: poly)
         }
     }
 }
 
 private struct MesoRowView: View {
-    let meso: MesoscaleDiscussion
+    let meso: MD
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
@@ -109,7 +95,7 @@ private struct MesoRowView: View {
                     .monospacedDigit()
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("Watch Probability: \(getProbabilityString(for: meso.watchProbability))")
+                Text("Watch Probability: \(meso.watchProbability)")
                     .monospacedDigit()
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -117,18 +103,6 @@ private struct MesoRowView: View {
         }
     }
 }
-
-extension MesoRowView {
-    func getProbabilityString(for probability: WatchProbability) -> String {
-        return {
-            switch probability {
-            case .percent(let p): return "\(p)%"
-            case .unlikely: return "Unlikely"
-            }
-        }()
-    }
-}
-
 
 private struct ThreatIconsCol: View {
     let showWind: Bool
@@ -166,10 +140,25 @@ private struct ThreatIconsCol: View {
     }
 }
 
+extension MesoRowView {
+//    func getProbabilityString(for probability: WatchProbability) -> String {
+//        return {
+//            switch probability {
+//            case .percent(let p): return "\(p)%"
+//            case .unlikely: return "Unlikely"
+//            }
+//        }()
+//    }
+}
+
 #Preview {
-    let mock = LocationManager()
-    let spc = SpcProvider.previewData
-    ActiveMesoSummaryView()
-    .environment(mock)
-    .environment(spc)
+    let provider = LocationManager()
+    let preview = Preview(MD.self)
+    preview.addExamples(MD.sampleDiscussions)
+
+    return NavigationStack {
+        ActiveMesoSummaryView()
+            .modelContainer(preview.container)
+            .environment(provider)
+    }
 }

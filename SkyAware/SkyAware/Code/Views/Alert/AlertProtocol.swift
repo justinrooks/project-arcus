@@ -15,7 +15,7 @@ protocol AlertItem: Identifiable, Hashable {
     var alertType: AlertType { get }
 }
 
-enum AlertType {
+enum AlertType: Codable {
     case watch
     case mesoscale
 }

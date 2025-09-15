@@ -20,7 +20,6 @@ final class SpcProvider: Sendable {
     @ObservationIgnored private let dba: DatabaseActor
     
     // Domain Models
-    var meso: [MesoscaleDiscussion] = []
     var watches: [Watch] = []
     var alertCount: Int = 0
     
@@ -49,11 +48,11 @@ final class SpcProvider: Sendable {
     /// - Returns: bool indicating changed
     func loadFeedAsync() async {
         do {
-            let outlooks = try await fetchOutlooks()
-            self.meso = try await fetchMesoDiscussions()
+            try await fetchOutlooks()
+            try await fetchMesoDiscussions()
             self.watches = try await fetchWatches()
             
-            logger.debug("Parsed \(outlooks) outlooks, \(self.meso.count) mesoscale discussions, \(self.watches.count) watches from SPC")
+            logger.debug("Parsed \(self.watches.count) watches from SPC")
             
             let points = try await client.refreshPoints()
             
@@ -71,7 +70,7 @@ final class SpcProvider: Sendable {
     
     /// Fetches an array of convective outlooks from SPC
     /// - Returns: array of convective outlooks
-    func fetchOutlooks() async throws -> Int {
+    func fetchOutlooks() async throws {
         let items = try await client.fetchOutlookItems()
   
         //TODO: Clean up old outlooks based on valid date
@@ -80,20 +79,19 @@ final class SpcProvider: Sendable {
             .filter { ($0.title ?? "").contains(" Convective Outlook") }
         
         try await dba.insertConvectiveOutlooks(outlooks)
-        
-        return outlooks.count
+        logger.debug("Parsed \(outlooks.count) outlooks from SPC")
     }
     
     /// Fetches an array of meso discussions from SPC
     /// - Returns: array of meso discussions
-    func fetchMesoDiscussions() async throws -> [MesoscaleDiscussion] {
+    func fetchMesoDiscussions() async throws {
         let items = try await client.fetchMesoItems()
         
         let mesos = items
             .filter { ($0.title ?? "").contains("SPC MD ") }
-            .compactMap { MesoscaleDiscussion.from(rssItem: $0) }
         
-        return mesos
+        try await dba.insertMesos(mesos)
+        logger.debug("Parsed \(mesos.count) mesos from SPC")
     }
     
     /// Fetches an array of Watches from SPC

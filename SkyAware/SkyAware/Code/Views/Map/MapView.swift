@@ -11,8 +11,12 @@ import SwiftData
 
 struct MapView: View {
     @Environment(SpcProvider.self) private var provider: SpcProvider
+    @Environment(\.modelContext) private var modelContext
     
     @State private var selectedLayer: String = "CAT"
+    @State private var showLayerPicker = false
+    
+    @Query private var mesos: [MD]
     
     private let availableLayers: [(key: String, label: String)] = [
         ("CAT", "Categorical"),
@@ -28,14 +32,8 @@ struct MapView: View {
                 .edgesIgnoringSafeArea(.top)
             
             VStack {
-                Menu {
-                    ForEach(availableLayers, id: \.key) { layer in
-                        Button(layer.label) {
-                            withAnimation {
-                                selectedLayer = layer.key
-                            }
-                        }
-                    }
+                Button {
+                    showLayerPicker = true
                 } label: {
                     Image(systemName: "list.triangle")
                         .padding()
@@ -43,42 +41,70 @@ struct MapView: View {
                         .clipShape(Circle())
                         .padding()
                 }
+                .sheet(isPresented: $showLayerPicker) {
+                    NavigationStack {
+                        List {
+                            ForEach(availableLayers, id: \.key) { layer in
+                                Button {
+                                    selectedLayer = layer.key
+                                    showLayerPicker = false
+                                } label: {
+                                    HStack {
+                                        Text(layer.label)
+                                        if selectedLayer == layer.key {
+                                            Spacer()
+                                            Image(systemName: "checkmark")
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .navigationTitle("Select Layer")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .presentationDetents([.medium])
+                    .presentationDragIndicator(.visible)
+                }
+//                .confirmationDialog("Select Layer", isPresented: $showLayerPicker) {
+//                    ForEach(availableLayers, id: \.key) { layer in
+//                        Button(layer.label) { selectedLayer = layer.key }.buttonStyle(.borderless)
+//                    }
+//                }
+                
                Spacer()
            }
            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             
-            // Legend in bottom-right
+            // Legend in bottom-right (stable container)
             VStack {
                 Spacer()
-                switch selectedLayer {
-                case "CAT":
-                    LegendView()
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                        .padding([.bottom, .trailing])
-                case "TOR":
-                    let probabilities = provider.tornado.compactMap { $0.probability }
-                        .sorted { $0.intValue < $1.intValue }
-                    SevereLegendView(probabilities: probabilities,
-                                     risk: selectedLayer)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                        .padding([.bottom, .trailing])
-                case "HAIL":
-                    let probabilities = provider.hail.compactMap { $0.probability }
-                        .sorted { $0.intValue < $1.intValue }
-                    SevereLegendView(probabilities: probabilities,
-                                     risk: selectedLayer)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                        .padding([.bottom, .trailing])
-                case "WIND":
-                    let probabilities = provider.wind.compactMap { $0.probability }
-                        .sorted { $0.intValue < $1.intValue }
-                    SevereLegendView(probabilities: probabilities,
-                                     risk: selectedLayer)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-                        .padding([.bottom, .trailing])
-                default:
-                    EmptyView()
+                Group {
+                    switch selectedLayer {
+                    case "CAT":
+                        LegendView()
+                    case "TOR":
+                        let probabilities = provider.tornado.compactMap { $0.probability }
+                            .sorted { $0.intValue < $1.intValue }
+                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+                    case "HAIL":
+                        let probabilities = provider.hail.compactMap { $0.probability }
+                            .sorted { $0.intValue < $1.intValue }
+                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+                    case "WIND":
+                        let probabilities = provider.wind.compactMap { $0.probability }
+                            .sorted { $0.intValue < $1.intValue }
+                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+                    default:
+                        EmptyView()
+                    }
                 }
+//                .transition(.opacity)
+//                .animation(.default, value: selectedLayer)
+                .padding(12)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
@@ -95,8 +121,9 @@ struct MapView: View {
         case "WIND":
             return MKMultiPolygon(provider.wind.flatMap {$0.polygons})
         case "MESO":
-            let polys = provider.meso.compactMap() {
-                let poly = MKPolygon(coordinates: $0.coordinates, count: $0.coordinates.count)
+            let polys = mesos.compactMap() {
+                let coord = $0.coordinates.map { $0.location }
+                let poly = MKPolygon(coordinates: coord, count: coord.count)
                 poly.title = layer
                 
                 return poly
@@ -110,19 +137,17 @@ struct MapView: View {
 }
 
 #Preview {
-    // 1) In‑memory SwiftData container for previews
-    let container = try! ModelContainer(
-        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
+    let preview = Preview(MD.self)
+    preview.addExamples(MD.sampleDiscussions)
+    let provider = SpcProvider(client: SpcClient(),
+                               container: preview.container,
+                               autoLoad: false)
     
-    // 2) Wire client → repo → service → provider (no network auto-load in previews)
-    let client   = SpcClient()
-    let provider = SpcProvider(client: client, container: container, autoLoad: false)
-    
-    // 3) Build your preview view and inject env objects
-    return MapView()
-        .environment(provider)                // your @Observable provider
-        .environment(LocationManager())       // or a preconfigured preview instance
-        .modelContainer(container)            // attaches the container to the view tree
+    return NavigationStack {
+        MapView()
+            .modelContainer(preview.container)
+            .environment(provider)
+            .environment(LocationManager())       // or a preconfigured preview instance
+    }
 }
+
