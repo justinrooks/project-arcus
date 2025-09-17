@@ -12,19 +12,56 @@ struct SpcRepo {
     private let logger = Logger.spcRepo
     let client: SpcClient
     let dba: DatabaseActor
-
+    
+    func refreshConvectiveOutlooks() async throws {
+        let items = try await client.fetchOutlookItems()
+        
+        // Filters out some odd contents
+        let outlooks = items
+            .filter { ($0.title ?? "").contains(" Convective Outlook") }
+            .compactMap { makeConvectiveDto(from: $0) }
+        
+        try await dba.upsertConvectiveOutlooks(outlooks)
+        logger.debug("Parsed \(outlooks.count) outlooks from SPC")
+    }
+    
     func refreshMesoscaleDiscussions() async throws {
         let items = try await client.fetchMesoItems()
         // Filters out some odd contents
         let mesos = items
             .filter { ($0.title ?? "").contains("SPC MD ") }
-            .compactMap { convert(from: $0) }
+            .compactMap { makeMdDto(from: $0) }
         
         try await dba.upsertMesos(mesos)
         logger.debug("Parsed \(mesos.count) meso discussions from SPC")
     }
     
-    private func convert(from rssItem: Item) -> MdDTO? {
+    private func makeConvectiveDto(from rssItem: Item) -> ConvectiveOutlookDTO? {
+        guard
+            let title = rssItem.title,
+            let linkString = rssItem.link,
+            let link = URL(string: linkString),
+            let pubDateString = rssItem.pubDate,
+            let summary = rssItem.description,
+            let published = DateFormatter.rfc822.date(from: pubDateString)
+        else { return nil }
+        
+        let day = title.contains("Day 1") ? 1 :
+        title.contains("Day 2") ? 2 :
+        title.contains("Day 3") ? 3 : nil
+        
+        let riskLevel = "TBD"//extractRiskLevel(from: summary)
+        
+        return ConvectiveOutlookDTO(
+                  title: title,
+                  link: link,
+                  published: published,
+                  summary: summary,
+                  day: day,
+                  riskLevel: riskLevel)
+    }
+    
+    private func makeMdDto(from rssItem: Item) -> MdDTO? {
         guard
             let title = rssItem.title,
             let linkString = rssItem.link,

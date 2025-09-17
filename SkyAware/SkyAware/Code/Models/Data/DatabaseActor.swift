@@ -12,11 +12,11 @@ import SwiftData
 @ModelActor
 actor DatabaseActor: Sendable {
     private var ctx: ModelContext { modelExecutor.modelContext }
-    
-    func insertConvectiveOutlooks(_ outlook:[Item]) async throws {
-        _ = try outlook.map {
-            guard let ol = ConvectiveOutlook(from: $0) else { throw OtherErrors.contextSaveError }
-            ctx.insert(ol)
+        
+    func upsertConvectiveOutlooks(_ outlooks: [ConvectiveOutlookDTO]) async throws {
+        _ = try outlooks.map {
+            guard let m = ConvectiveOutlook(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(m)
         }
         
         try ctx.save()
@@ -53,8 +53,7 @@ actor DatabaseActor: Sendable {
     func fetchConvectiveOutlooks() throws -> [ConvectiveOutlookDTO] {
         let fetchDescriptor = FetchDescriptor<ConvectiveOutlook>()
         let outlooks: [ConvectiveOutlook] = try ctx.fetch(fetchDescriptor)
-        let dto = outlooks.map { ConvectiveOutlookDTO(id: $0.id,
-                                                     title: $0.title,
+        let dto = outlooks.map { ConvectiveOutlookDTO(title: $0.title,
                                                      link: $0.link,
                                                      published: $0.published,
                                                      summary: $0.summary,

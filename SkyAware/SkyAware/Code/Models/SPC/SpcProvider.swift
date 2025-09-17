@@ -53,7 +53,7 @@ final class SpcProvider: Sendable {
     /// - Returns: bool indicating changed
     func loadFeedAsync() async {
         do {
-            try await fetchOutlooks()
+            try await repository.refreshConvectiveOutlooks()
             try await repository.refreshMesoscaleDiscussions()
             try await fetchWatches()
             
@@ -74,15 +74,16 @@ final class SpcProvider: Sendable {
     /// Fetches an array of convective outlooks from SPC
     /// - Returns: array of convective outlooks
     func fetchOutlooks() async throws {
-        let items = try await client.fetchOutlookItems()
-        
-        //TODO: Clean up old outlooks based on valid date
-        
-        let outlooks = items
-            .filter { ($0.title ?? "").contains(" Convective Outlook") }
-        
-        try await dba.insertConvectiveOutlooks(outlooks)
-        logger.debug("Parsed \(outlooks.count) outlooks from SPC")
+        try await repository.refreshConvectiveOutlooks()
+//        let items = try await client.fetchOutlookItems()
+//        
+//        //TODO: Clean up old outlooks based on valid date
+//        
+//        let outlooks = items
+//            .filter { ($0.title ?? "").contains(" Convective Outlook") }
+//        
+//        try await dba.insertConvectiveOutlooks(outlooks)
+//        logger.debug("Parsed \(outlooks.count) outlooks from SPC")
     }
     
     func fetchMesoDiscussions() async throws {
