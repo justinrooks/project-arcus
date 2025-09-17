@@ -17,23 +17,12 @@ final class WatchModel: AlertItem {
     var summary: String         // description / CDATA
     var alertType: AlertType    // Type of alert to conform to alert item
     
-    convenience init? (from rssItem: Item) {
-        guard
-            let title = rssItem.title,
-            let linkString = rssItem.link,
-            let link = URL(string: linkString),
-            let pubDateString = rssItem.pubDate,
-            let summary = rssItem.description,
-            let published = DateFormatter.rfc822.date(from: pubDateString)
-        else {
-            return nil
-        }
-        
+    convenience init? (from dto: WatchDTO) {
         self.init(
-            title: title,
-            link: link,
-            issued: published,
-            summary: summary,
+            title: dto.title,
+            link: dto.link,
+            issued: dto.issued,
+            summary: dto.summary,
             alertType: .watch
         )
     }

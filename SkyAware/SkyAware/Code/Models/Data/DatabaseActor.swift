@@ -31,8 +31,8 @@ actor DatabaseActor: Sendable {
         try ctx.save()
     }
 
-    func insertWatches(_ watch: [Item]) async throws {
-        _ = try watch.map {
+    func upsertWatches(_ watches: [WatchDTO]) async throws {
+        _ = try watches.map {
             guard let w = WatchModel(from: $0) else { throw OtherErrors.contextSaveError }
             ctx.insert(w)
         }
@@ -40,16 +40,16 @@ actor DatabaseActor: Sendable {
         try ctx.save()
     }
     
-    func create<T: PersistentModel>(todo: [T]) throws {
-        _ = todo.map { ctx.insert($0) }
-        try ctx.save()
-    }
-    
-    func getAll<T: PersistentModel>() throws -> [T]? {
-        let fetchDescriptor = FetchDescriptor<T>()
-        return try? ctx.fetch(fetchDescriptor)
-    }
-    
+//    func create<T: PersistentModel>(todo: [T]) throws {
+//        _ = todo.map { ctx.insert($0) }
+//        try ctx.save()
+//    }
+//    
+//    func getAll<T: PersistentModel>() throws -> [T]? {
+//        let fetchDescriptor = FetchDescriptor<T>()
+//        return try? ctx.fetch(fetchDescriptor)
+//    }
+//    
     func fetchConvectiveOutlooks() throws -> [ConvectiveOutlookDTO] {
         let fetchDescriptor = FetchDescriptor<ConvectiveOutlook>()
         let outlooks: [ConvectiveOutlook] = try ctx.fetch(fetchDescriptor)

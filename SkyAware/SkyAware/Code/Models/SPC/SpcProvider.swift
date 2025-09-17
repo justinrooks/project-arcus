@@ -50,12 +50,11 @@ final class SpcProvider: Sendable {
     }
     
     /// Loads all the SPC products including RSS and GeoJSON
-    /// - Returns: bool indicating changed
     func loadFeedAsync() async {
         do {
             try await repository.refreshConvectiveOutlooks()
             try await repository.refreshMesoscaleDiscussions()
-            try await fetchWatches()
+            try await repository.refreshWatches()
             
             let points = try await client.refreshPoints()
             
@@ -72,18 +71,8 @@ final class SpcProvider: Sendable {
     }
     
     /// Fetches an array of convective outlooks from SPC
-    /// - Returns: array of convective outlooks
     func fetchOutlooks() async throws {
         try await repository.refreshConvectiveOutlooks()
-//        let items = try await client.fetchOutlookItems()
-//        
-//        //TODO: Clean up old outlooks based on valid date
-//        
-//        let outlooks = items
-//            .filter { ($0.title ?? "").contains(" Convective Outlook") }
-//        
-//        try await dba.insertConvectiveOutlooks(outlooks)
-//        logger.debug("Parsed \(outlooks.count) outlooks from SPC")
     }
     
     func fetchMesoDiscussions() async throws {
@@ -91,17 +80,8 @@ final class SpcProvider: Sendable {
     }
     
     /// Fetches an array of Watches from SPC
-    /// - Returns: Array of Watches
     func fetchWatches() async throws {
-        let items = try await client.fetchWatchItems()
-        
-        let watches = items
-            .filter {
-                guard let t = $0.title else { return false }
-                return t.contains("Watch") && !t.contains("Status Reports")
-            }
-        try await dba.insertWatches(watches)
-        logger.debug("Parsed \(watches.count) watches from SPC")
+        try await repository.refreshWatches()
     }
     
     /// Transforms the GeoJSON into usable features for the map

@@ -36,6 +36,20 @@ struct SpcRepo {
         logger.debug("Parsed \(mesos.count) meso discussions from SPC")
     }
     
+    func refreshWatches() async throws {
+        let items = try await client.fetchWatchItems()
+        // Filters out some odd contents
+        let watches = items
+            .filter {
+                guard let t = $0.title else { return false }
+                return t.contains("Watch") && !t.contains("Status Reports")
+            }
+            .compactMap { makeWatchDto(from: $0) }
+        
+        try await dba.upsertWatches(watches)
+        logger.debug("Parsed \(watches.count) watches from SPC")
+    }
+    
     private func makeConvectiveDto(from rssItem: Item) -> ConvectiveOutlookDTO? {
         guard
             let title = rssItem.title,
@@ -115,6 +129,24 @@ struct SpcRepo {
             watchProbability: watchProb,
             threats: threats,
             coordinates: m
+        )
+    }
+    
+    private func makeWatchDto(from rssItem: Item) -> WatchDTO? {
+        guard
+            let title = rssItem.title,
+            let linkString = rssItem.link,
+            let link = URL(string: linkString),
+            let pubDateString = rssItem.pubDate,
+            let summary = rssItem.description,
+            let published = DateFormatter.rfc822.date(from: pubDateString)
+        else { return nil }
+        
+        return WatchDTO(
+            title: title,
+            link: link,
+            issued: published,
+            summary: summary
         )
     }
 }
