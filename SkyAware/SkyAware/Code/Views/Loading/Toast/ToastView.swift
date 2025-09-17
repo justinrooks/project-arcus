@@ -1,18 +1,18 @@
 //
-//  ForecastView.swift
+//  ToastView.swift
 //  SkyAware
 //
-//  Created by Justin Rooks on 7/28/25.
+//  Created by Justin Rooks on 9/16/25.
 //
 
 import SwiftUI
 
-struct ForecastView: View {
+struct ToastView: View {
     var body: some View {
         Text(/*@START_MENU_TOKEN@*/"Hello, World!"/*@END_MENU_TOKEN@*/)
     }
 }
 
 #Preview {
-    ForecastView()
+    ToastView()
 }
