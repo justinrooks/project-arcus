@@ -22,7 +22,7 @@ actor DatabaseActor: Sendable {
         try ctx.save()
     }
     
-    func insertMesos(_ md: [Item]) async throws {
+    func upsertMesos(_ md: [MdDTO]) async throws {
         _ = try md.map {
             guard let m = MD(from: $0) else { throw OtherErrors.contextSaveError }
             ctx.insert(m)
@@ -30,7 +30,7 @@ actor DatabaseActor: Sendable {
         
         try ctx.save()
     }
-    
+
     func insertWatches(_ watch: [Item]) async throws {
         _ = try watch.map {
             guard let w = WatchModel(from: $0) else { throw OtherErrors.contextSaveError }

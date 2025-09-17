@@ -13,6 +13,7 @@ extension Logger {
     static let spcClient = Logger(subsystem: subsystem, category: "SpcClient")
     static let spcService = Logger(subsystem: subsystem, category: "SpcService")
     static let spcProvider = Logger(subsystem: subsystem, category: "SpcProvider")
+    static let spcRepo = Logger(subsystem: subsystem, category: "SpcRepo")
     static let downloader = Logger(subsystem: subsystem, category: "Downloader")
     
 //    static let downloader = Logger(subsystem: subsystem, category: "Downloader")

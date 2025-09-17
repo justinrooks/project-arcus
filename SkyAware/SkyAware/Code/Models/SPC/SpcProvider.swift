@@ -18,6 +18,7 @@ final class SpcProvider: Sendable {
     @ObservationIgnored private let logger = Logger.spcProvider
     @ObservationIgnored private let client: SpcClient
     @ObservationIgnored private let dba: DatabaseActor
+    @ObservationIgnored private let repository: SpcRepo
     
     // Domain Models
     var alertCount: Int = 0
@@ -29,20 +30,22 @@ final class SpcProvider: Sendable {
     
     init(client: SpcClient, container: ModelContainer, autoLoad: Bool = true) {
         self.client = client
-        self.dba = DatabaseActor(modelContainer: container)
+        let d = DatabaseActor(modelContainer: container)
+        self.dba = d
+        self.repository = SpcRepo(client: client, dba: d)
         
         if autoLoad { loadFeed() }
     }
-
+    
     func loadFeed() {
         isLoading = true
         
         Task {
             await loadFeedAsync()
-            await MainActor.run {
-                ToastManager.shared.showSuccess(title: "SPC data loaded")
-            }
-                    isLoading = false
+            //            await MainActor.run {
+            //                ToastManager.shared.showSuccess(title: "SPC data loaded")
+            //            }
+            isLoading = false
         }
     }
     
@@ -51,7 +54,7 @@ final class SpcProvider: Sendable {
     func loadFeedAsync() async {
         do {
             try await fetchOutlooks()
-            try await fetchMesoDiscussions()
+            try await repository.refreshMesoscaleDiscussions()
             try await fetchWatches()
             
             let points = try await client.refreshPoints()
@@ -72,7 +75,7 @@ final class SpcProvider: Sendable {
     /// - Returns: array of convective outlooks
     func fetchOutlooks() async throws {
         let items = try await client.fetchOutlookItems()
-  
+        
         //TODO: Clean up old outlooks based on valid date
         
         let outlooks = items
@@ -82,16 +85,8 @@ final class SpcProvider: Sendable {
         logger.debug("Parsed \(outlooks.count) outlooks from SPC")
     }
     
-    /// Fetches an array of meso discussions from SPC
-    /// - Returns: array of meso discussions
     func fetchMesoDiscussions() async throws {
-        let items = try await client.fetchMesoItems()
-        
-        let mesos = items
-            .filter { ($0.title ?? "").contains("SPC MD ") }
-        
-        try await dba.insertMesos(mesos)
-        logger.debug("Parsed \(mesos.count) mesos from SPC")
+        try await repository.refreshMesoscaleDiscussions()
     }
     
     /// Fetches an array of Watches from SPC
@@ -107,7 +102,7 @@ final class SpcProvider: Sendable {
         try await dba.insertWatches(watches)
         logger.debug("Parsed \(watches.count) watches from SPC")
     }
-
+    
     /// Transforms the GeoJSON into usable features for the map
     /// - Parameters:
     ///   - list: list of GeoJSON result objects to process
@@ -125,7 +120,7 @@ final class SpcProvider: Sendable {
         let valid: String
         let body: String
     }
-
+    
     func parseOutlookHeader(_ text: String) -> OutlookHeader? {
         // Regex for issued (time/date) and valid line
         let issuedPattern = #"(?m)^\d{3,4} [AP]M [A-Z]{2,4} .+$"#

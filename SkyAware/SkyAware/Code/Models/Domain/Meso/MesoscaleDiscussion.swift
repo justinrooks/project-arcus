@@ -9,6 +9,8 @@ import Foundation
 import CoreLocation
 import SwiftData
 
+
+
 @Model
 final class MD: AlertItem {
     var id: UUID                // usually the GUID or derived from it
@@ -26,66 +28,26 @@ final class MD: AlertItem {
     var threats: MDThreats?
     var coordinates: [Coordinate2D]
     var alertType: AlertType    // type of alert to conform to AlertItem
-    
-    convenience init? (from rssItem: Item) {
-        guard
-            let title = rssItem.title,
-            let linkString = rssItem.link,
-            let link = URL(string: linkString),
-            let pubDateString = rssItem.pubDate,
-            let rawText = rssItem.description, // SPC MD free text lives here in your feed
-            let issued = DateFormatter.rfc822.date(from: pubDateString)
-        else { return nil }
 
-        let mdNumber = MD.parseMDNumber(from: link) ?? {
-            // Fallback: try to read from title if present
-            if let r = title.range(of: #"\b(\d{3,4})\b"#, options: .regularExpression) { return Int(title[r]) } else { return nil }
-        }() ?? -1
-
-        // Areas / Summary (block captures)
-        let areasAffected = MD.parseAreas(rawText)
-        let summaryParsed = MD.parseSummary(rawText)
-
-        // Valid range (UTC), fallback to issued+2h if missing
-        let validPair = MD.parseValid(rawText, issued: issued)
-        let validStart = validPair?.0 ?? issued
-        let validEnd   = validPair?.1 ?? Calendar.current.date(byAdding: .hour, value: 2, to: issued)!
-
-        // Watch probability + concerning
-        let (watchProb, concerningLine) = MD.parseWatchFields(rawText)
-
-        // Threats
-        let windMPH  = MD.parseWindMPH(rawText)
-        let hailRng  = MD.parseHailRange(rawText)
-        let torText  = MD.parseTornadoStrength(rawText)
-
-        let threats = MDThreats(
-            peakWindMPH: windMPH,
-            hailRangeInches: hailRng,
-            tornadoStrength: torText
-        )
-        
-        let coordinates = MesoGeometry.coordinates(from: rawText) ?? []
-        let m = coordinates.compactMap(Coordinate2D.init)
-        
+    convenience init? (from dto: MdDTO) {
         self.init(
-            number: mdNumber,
-            title: title,
-            link: link,
-            issued: issued,
-            validStart: validStart,
-            validEnd: validEnd,
-            areasAffected: areasAffected,
-            summary: summaryParsed.isEmpty ? rawText : summaryParsed,
-            concerning: concerningLine,
-            watchProbability: watchProb,
-            threats: threats,
-            coordinates: m,
+            number: dto.number,
+            title: dto.title,
+            link: dto.link,
+            issued: dto.issued,
+            validStart: dto.validStart,
+            validEnd: dto.validEnd,
+            areasAffected: dto.areasAffected,
+            summary: dto.summary,
+            concerning: dto.concerning,
+            watchProbability: dto.watchProbability,
+            threats: dto.threats,
+            coordinates: dto.coordinates,
             alertType: .mesoscale
         )
     }
     
-    init(number: Int, title: String, link: URL, issued: Date, validStart: Date, validEnd: Date, areasAffected: String, summary: String, concerning: String? = nil, watchProbability: String, threats: MDThreats, coordinates: [Coordinate2D], alertType: AlertType) {
+    init(number: Int, title: String, link: URL, issued: Date, validStart: Date, validEnd: Date, areasAffected: String, summary: String, concerning: String? = nil, watchProbability: String, threats: MDThreats?, coordinates: [Coordinate2D], alertType: AlertType) {
         self.id = UUID()
         self.number = number
         self.title = title
@@ -101,146 +63,6 @@ final class MD: AlertItem {
         self.coordinates = coordinates
         self.alertType = alertType
     }
-    
-    // Utility: first capture helper
-    private static func first(_ text: String, _ re: Regex<AnyRegexOutput>) -> String? {
-        guard let m = text.firstMatch(of: re), let r = m.output[1].range else { return nil }
-        return String(text[r]).trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    
-    // Parse MD number from link (md####.html)
-    private static func parseMDNumber(from url: URL) -> Int? {
-        let s = url.absoluteString
-        guard
-            let r = s.range(of: #"md(\d{3,4})\.html"#, options: .regularExpression),
-            let m = try? NSRegularExpression(pattern: #"md(\d{3,4})\.html"#)
-                .firstMatch(in: s, range: NSRange(r, in: s)),
-            m.numberOfRanges == 2,
-            let gr = Range(m.range(at: 1), in: s)
-        else { return nil }
-        return Int(s[gr])
-    }
-    
-    // Parse the areas affected
-    private static func parseAreas(_ text: String) -> String {
-        let reAreas   = try! Regex(#"(?is)Areas affected\.\.\.\s*(.*?)\s*(?=Concerning\.\.\.)"#)
-        return first(text, reAreas) ?? ""
-    }
-    
-    // Parse the summary and discussion
-    private static func parseSummary(_ text: String) -> String {
-        let reSummary = try! Regex(#"(?is)SUMMARY\.\.\.\s*(.*?)\s*(?=DISCUSSION\.\.\.)"#)
-        return first(text, reSummary) ?? ""
-    }
-    
-    // TODO: MOVE OUT TO REUSE?
-    // Parse Valid range (Z times) relative to issued date (UTC). Handles crossing 00Z boundary.
-    private static func parseValid(_ text: String, issued: Date) -> (Date, Date)? {
-        let reValid = try! Regex(#"(?im)^\s*Valid\s+(\d{2})(\d{2})Z\s*-\s*(\d{2})(\d{2})Z\s*$"#)
-        guard let m = text.firstMatch(of: reValid) else { return nil }
-        let sH = Int(String(text[m.output[1].range!]))!
-        let sM = Int(String(text[m.output[2].range!]))!
-        let eH = Int(String(text[m.output[3].range!]))!
-        let eM = Int(String(text[m.output[4].range!]))!
-
-        var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(secondsFromGMT: 0)!
-
-        // Build start on issued day in UTC
-        let comps = cal.dateComponents(in: cal.timeZone, from: issued)
-        let start = cal.date(from: DateComponents(calendar: cal,
-                                                 timeZone: cal.timeZone,
-                                                 year: comps.year,
-                                                 month: comps.month,
-                                                 day: comps.day,
-                                                 hour: sH, minute: sM))!
-        var end   = cal.date(from: DateComponents(calendar: cal,
-                                                 timeZone: cal.timeZone,
-                                                 year: comps.year,
-                                                 month: comps.month,
-                                                 day: comps.day,
-                                                 hour: eH, minute: eM))!
-        // If end before start, roll to next day
-        if end < start { end = cal.date(byAdding: .day, value: 1, to: end)! }
-        return (start, end)
-    }
-
-    // Parse watch probability + concerning line
-    private static func parseWatchFields(_ text: String) -> (String, String?) {
-        var probability: String? = nil
-        var concerningText: String? = nil
-
-        // --- Probability of Watch Issuance ---
-        if let pwoiMatch = text.firstMatch(of: try! Regex(#"(?im)Probability\ of\ Watch\ Issuance\.\.\.\s*([0-9]{1,3})\s*percent\b"#)) {
-            if let range = pwoiMatch.output[1].range,
-               let pct = Int(text[range]) {
-                probability = String(min(max(pct, 0), 100))
-            }
-        }
-
-        // --- Concerning line ---
-        if let concerningMatch = text.firstMatch(of: try! Regex(#"(?im)Concerning\.\.\.\s*(.+)$"#)) {
-            if let range = concerningMatch.output[1].range {
-                let raw = String(text[range]).trimmingCharacters(in: .whitespacesAndNewlines)
-                // Clean up trailing spaces or extra dots
-                concerningText = raw.replacingOccurrences(of: #"\s+\.\.\."#, with: "", options: .regularExpression)
-            }
-        }
-
-        // --- Active watch form (Tornado/Severe Thunderstorm Watch #s) ---
-        if let watchMatch = text.firstMatch(of: try! Regex(#"(?im)Concerning\.\.\.\s*(Tornado|Severe\ Thunderstorm)\s+Watch(?:es)?\s+([^\n]+)"#)) {
-            if let typeRange = watchMatch.output[1].range,
-               let numRange = watchMatch.output[2].range {
-                let type = String(text[typeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let tail = String(text[numRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-                let ids = tail.matches(of: try! Regex(#"\d+"#)).compactMap { Int(String(tail[$0.range])) }
-                let line = ids.isEmpty ? "\(type) Watch \(tail)" : "\(type) Watch \(ids.map(String.init).joined(separator: ", "))"
-                concerningText = line
-                if probability == nil {
-                    probability = "Unlikely"
-                }
-            }
-        }
-
-        // --- Fallback if no probability found ---
-        if probability == nil {
-            if text.range(of: #"watch\s+unlikely"#, options: [.regularExpression, .caseInsensitive]) != nil {
-                probability = "Unlikely"
-            }
-        }
-
-        return (probability ?? "Unknown", concerningText)
-    }
-
-    // Parse wind mph: choose the upper bound when a range is provided
-    private static func parseWindMPH(_ text: String) -> Int? {
-        let reWind = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK WIND GUST\.\.\.\s*([0-9]{2,3})(?:\s*-\s*([0-9]{2,3}))?\s*(?:MPH|KT)\b.*$"#)
-        guard let m = text.firstMatch(of: reWind) else { return nil }
-        if let hiR = m.output[2].range { return Int(String(text[hiR])) }
-        if let loR = m.output[1].range { return Int(String(text[loR])) }
-        return nil
-    }
-
-    // Parse hail inches as Double? (modified)
-    private static func parseHailRange(_ text: String) -> Double? {
-        let reHail = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK HAIL SIZE\.\.\.\s*(?:UP TO\s*)?([0-9]+(?:\.[0-9]+)?)(?:\s*-\s*([0-9]+(?:\.[0-9]+)?))?\s*IN\b.*$"#)
-        guard let m = text.firstMatch(of: reHail) else { return nil }
-        let low = Double(String(text[m.output[1].range!]))!
-        if let hiR = m.output[2].range {
-            let high = Double(String(text[hiR]))!
-            // When a range is provided, use the upper bound as the representative value
-            return max(low, high)
-        } else {
-            // Single value or "UP TO" value: use that value directly
-            return low
-        }
-    }
-
-    // Tornado strength as free text (e.g., "UP TO 95 MPH", "EF1-2 possible")
-    private static func parseTornadoStrength(_ text: String) -> String? {
-        let reTor = try! Regex(#"(?im)^\s*MOST PROBABLE PEAK TORNADO (?:INTENSITY|STRENGTH)\.\.\.\s*([^\n]+)$"#)
-        return first(text, reTor)
-    }
 }
 
 // MARK: - Domain Model (minimal for the card)
@@ -251,6 +73,7 @@ struct Coordinate2D: Sendable, Codable {
     init(latitude: Double, longitude: Double) {
         self.latitude = latitude
         self.longitude = longitude
+        
     }
 }
 
@@ -259,6 +82,7 @@ extension Coordinate2D {
         self.latitude = location.latitude
         self.longitude = location.longitude
     }
+    
 
     var location: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
