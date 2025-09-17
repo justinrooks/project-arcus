@@ -48,11 +48,14 @@ struct SummaryView: View {
 }
 
 #Preview {
+    let preview = Preview(ConvectiveOutlook.self)
     let mock = LocationManager()
-    let spc = SpcProvider.previewData
+    let provider = SpcProvider(client: SpcClient(),
+                               container: preview.container,
+                               autoLoad: false)
     
     SummaryView()
         .environment(mock)
-        .environment(spc)
-        .environment(SummaryProvider(provider: spc, location: mock))
+        .environment(provider)
+        .environment(SummaryProvider(provider: provider, location: mock))
 }

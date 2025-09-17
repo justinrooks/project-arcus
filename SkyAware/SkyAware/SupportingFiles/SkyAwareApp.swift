@@ -25,7 +25,8 @@ struct SkyAwareApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([ConvectiveOutlook.self, MD.self])
+        print(URL.applicationSupportDirectory.path(percentEncoded: false))
+        let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         do { return try ModelContainer(for: schema, configurations: config) }
         catch { fatalError("Could not create ModelContainer: \(error)") }
@@ -55,6 +56,7 @@ struct SkyAwareApp: App {
         WindowGroup {
             if (locationProvider.isAuthorized) {
                 iPhoneHomeView()
+                    .toasting()
                     .environment(prov)
                     .environment(locationProvider)
                     .environment(summaryProvider)

@@ -25,7 +25,11 @@ struct SummaryBadgeView: View {
 
 #Preview {
     let mock = LocationManager()
-    let spc = SpcProvider.previewData
+    let preview = Preview(ConvectiveOutlook.self)
+    let provider = SpcProvider(client: SpcClient(),
+                               container: preview.container,
+                               autoLoad: false)
+    
     SummaryBadgeView()
-        .environment(SummaryProvider(provider: spc, location: mock))
+        .environment(SummaryProvider(provider: provider, location: mock))
 }

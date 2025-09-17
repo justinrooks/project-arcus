@@ -23,7 +23,7 @@ final class MD: AlertItem {
     var concerning: String?     // e.g. "Severe potential... Watch unlikely"
     
     var watchProbability: String
-    var threats: MDThreats
+    var threats: MDThreats?
     var coordinates: [Coordinate2D]
     var alertType: AlertType    // type of alert to conform to AlertItem
     

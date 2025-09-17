@@ -31,6 +31,15 @@ actor DatabaseActor: Sendable {
         try ctx.save()
     }
     
+    func insertWatches(_ watch: [Item]) async throws {
+        _ = try watch.map {
+            guard let w = WatchModel(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(w)
+        }
+        
+        try ctx.save()
+    }
+    
     func create<T: PersistentModel>(todo: [T]) throws {
         _ = todo.map { ctx.insert($0) }
         try ctx.save()

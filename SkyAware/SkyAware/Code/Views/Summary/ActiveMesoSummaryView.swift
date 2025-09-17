@@ -75,10 +75,11 @@ private struct MesoRowView: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
-            ThreatIconsCol(threats: meso.threats)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            
+            if let threats = meso.threats {
+                ThreatIconsCol(threats: threats)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text("MD \(meso.number.formatted(.number.grouping(.never)))")
                     .fontWeight(.medium)

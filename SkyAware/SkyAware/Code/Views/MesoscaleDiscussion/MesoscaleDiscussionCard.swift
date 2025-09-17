@@ -130,9 +130,9 @@ struct MesoscaleDiscussionCard: View {
             } else {
                 // Grid of simple label:value pairs when there is no standout threat
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
-                    GridRow { Text("Wind:").labelStyle(); Text(meso.threats.peakWindMPH.map { "Up to \($0) mph" } ?? "—").valueStyle() }
-                    GridRow { Text("Hail:").labelStyle(); Text(meso.threats.hailRangeInches.map { String(format: "up to %.2g in", $0) } ?? "—").valueStyle() }
-                    GridRow { Text("Tornado:").labelStyle(); Text(meso.threats.tornadoStrength ?? "Not expected").valueStyle() }
+                    GridRow { Text("Wind:").labelStyle(); Text(meso.threats?.peakWindMPH.map { "Up to \($0) mph" } ?? "—").valueStyle() }
+                    GridRow { Text("Hail:").labelStyle(); Text(meso.threats?.hailRangeInches.map { String(format: "up to %.2g in", $0) } ?? "—").valueStyle() }
+                    GridRow { Text("Tornado:").labelStyle(); Text(meso.threats?.tornadoStrength ?? "Not expected").valueStyle() }
                 }
             }
         }
@@ -164,9 +164,11 @@ struct MesoscaleDiscussionCard: View {
 
 extension MesoscaleDiscussionCard {
     func getPrimaryThreatLabel(for m: MD) -> String? {
-        if let t = m.threats.tornadoStrength, t.lowercased() != "not expected" { return "Primary threat: Tornado (\(t))" }
-        if let hail = m.threats.hailRangeInches { return "Primary threat: Large hail (up to \(hail) in)" }// String(format: "Primary threat: Large hail (%.2g–%.2g in)", hail, hail) }
-        if let wind = m.threats.peakWindMPH { return "Primary threat: Wind (up to \(wind) mph)" }
+        guard let threats = m.threats else { return nil }
+        
+        if let t = threats.tornadoStrength, t.lowercased() != "not expected" { return "Primary threat: Tornado (\(t))" }
+        if let hail = threats.hailRangeInches { return "Primary threat: Large hail (up to \(hail) in)" }// String(format: "Primary threat: Large hail (%.2g–%.2g in)", hail, hail) }
+        if let wind = threats.peakWindMPH { return "Primary threat: Wind (up to \(wind) mph)" }
         return nil
     }
     

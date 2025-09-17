@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct WatchDetailView: View {
-    let watch: Watch
+    let watch: WatchModel
     @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded = false
     
@@ -140,5 +140,9 @@ struct WatchDetailView: View {
 }
 
 #Preview {
-    WatchDetailView(watch: SpcProvider.previewData.watches.first!)
+    let preview = Preview(WatchModel.self)
+    
+    NavigationStack {
+        WatchDetailView(watch: WatchModel.sampleWatches[0])
+    }
 }

@@ -41,37 +41,37 @@ struct MapView: View {
                         .clipShape(Circle())
                         .padding()
                 }
-                .sheet(isPresented: $showLayerPicker) {
-                    NavigationStack {
-                        List {
-                            ForEach(availableLayers, id: \.key) { layer in
-                                Button {
-                                    selectedLayer = layer.key
-                                    showLayerPicker = false
-                                } label: {
-                                    HStack {
-                                        Text(layer.label)
-                                        if selectedLayer == layer.key {
-                                            Spacer()
-                                            Image(systemName: "checkmark")
-                                                .foregroundStyle(.secondary)
-                                        }
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .navigationTitle("Select Layer")
-                        .navigationBarTitleDisplayMode(.inline)
-                    }
-                    .presentationDetents([.medium])
-                    .presentationDragIndicator(.visible)
-                }
-//                .confirmationDialog("Select Layer", isPresented: $showLayerPicker) {
-//                    ForEach(availableLayers, id: \.key) { layer in
-//                        Button(layer.label) { selectedLayer = layer.key }.buttonStyle(.borderless)
+//                .sheet(isPresented: $showLayerPicker) {
+//                    NavigationStack {
+//                        List {
+//                            ForEach(availableLayers, id: \.key) { layer in
+//                                Button {
+//                                    selectedLayer = layer.key
+//                                    showLayerPicker = false
+//                                } label: {
+//                                    HStack {
+//                                        Text(layer.label)
+//                                        if selectedLayer == layer.key {
+//                                            Spacer()
+//                                            Image(systemName: "checkmark")
+//                                                .foregroundStyle(.secondary)
+//                                        }
+//                                    }
+//                                }
+//                                .buttonStyle(.plain)
+//                            }
+//                        }
+//                        .navigationTitle("Select Layer")
+//                        .navigationBarTitleDisplayMode(.inline)
 //                    }
+//                    .presentationDetents([.medium])
+//                    .presentationDragIndicator(.visible)
 //                }
+                .confirmationDialog("Select Layer", isPresented: $showLayerPicker) {
+                    ForEach(availableLayers, id: \.key) { layer in
+                        Button(layer.label) { selectedLayer = layer.key }
+                    }
+                }
                 
                Spacer()
            }
@@ -100,8 +100,8 @@ struct MapView: View {
                         EmptyView()
                     }
                 }
-//                .transition(.opacity)
-//                .animation(.default, value: selectedLayer)
+                .transition(.opacity)
+                .animation(.default, value: selectedLayer)
                 .padding(12)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
                 .padding([.bottom, .trailing])

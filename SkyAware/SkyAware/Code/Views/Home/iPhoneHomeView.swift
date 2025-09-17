@@ -12,6 +12,9 @@ struct iPhoneHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(SpcProvider.self) private var provider: SpcProvider
     
+    @Query private var mesos: [MD]
+    @Query private var watches: [WatchModel]
+    
     var body: some View {
         ZStack {
             Color(.systemGray6)
@@ -42,7 +45,7 @@ struct iPhoneHomeView: View {
                     .tabItem {
                         Image(systemName: "exclamationmark.triangle") //umbrella
                         Text("Alerts")
-                    }.badge(provider.alertCount)
+                    }.badge(mesos.count + watches.count)
                     
                     MapView()
                         .tabItem {

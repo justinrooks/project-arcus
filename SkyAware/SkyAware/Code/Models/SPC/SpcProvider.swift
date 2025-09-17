@@ -13,14 +13,13 @@ import SwiftData
 @Observable
 final class SpcProvider: Sendable {
     //var errorMessage: String?
-    var isLoading: Bool = true
+    var isLoading: Bool = false
     
     @ObservationIgnored private let logger = Logger.spcProvider
     @ObservationIgnored private let client: SpcClient
     @ObservationIgnored private let dba: DatabaseActor
     
     // Domain Models
-    var watches: [Watch] = []
     var alertCount: Int = 0
     
     var categorical = [CategoricalStormRisk]()
@@ -40,7 +39,10 @@ final class SpcProvider: Sendable {
         
         Task {
             await loadFeedAsync()
-            isLoading = false
+            await MainActor.run {
+                ToastManager.shared.showSuccess(title: "SPC data loaded")
+            }
+                    isLoading = false
         }
     }
     
@@ -50,9 +52,7 @@ final class SpcProvider: Sendable {
         do {
             try await fetchOutlooks()
             try await fetchMesoDiscussions()
-            self.watches = try await fetchWatches()
-            
-            logger.debug("Parsed \(self.watches.count) watches from SPC")
+            try await fetchWatches()
             
             let points = try await client.refreshPoints()
             
@@ -96,7 +96,7 @@ final class SpcProvider: Sendable {
     
     /// Fetches an array of Watches from SPC
     /// - Returns: Array of Watches
-    func fetchWatches() async throws -> [Watch] {
+    func fetchWatches() async throws {
         let items = try await client.fetchWatchItems()
         
         let watches = items
@@ -104,9 +104,8 @@ final class SpcProvider: Sendable {
                 guard let t = $0.title else { return false }
                 return t.contains("Watch") && !t.contains("Status Reports")
             }
-            .compactMap { Watch.from(rssItem: $0) }
-        
-        return watches
+        try await dba.insertWatches(watches)
+        logger.debug("Parsed \(watches.count) watches from SPC")
     }
 
     /// Transforms the GeoJSON into usable features for the map

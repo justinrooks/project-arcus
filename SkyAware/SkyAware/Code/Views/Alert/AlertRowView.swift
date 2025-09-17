@@ -34,11 +34,6 @@ struct AlertRowView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .foregroundColor(.secondary)
         }
         .padding(.vertical, 8)
     }
