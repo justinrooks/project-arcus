@@ -6,6 +6,7 @@ xcuserdata/
 *.xcuserstate
 *.scbkptlist
 *.xcscmblueprint
+UserinterfaceState.xcuserstate
 
 # Build products
 build/
