@@ -1,16 +1,14 @@
 {
   "fill" : {
-    "linear-gradient" : [
-      "display-p3:0.22353,0.33725,0.47059,1.00000",
-      "display-p3:0.40277,0.50512,0.62512,1.00000"
-    ]
+    "automatic-gradient" : "display-p3:0.22353,0.33725,0.47059,1.00000"
   },
   "groups" : [
     {
+      "hidden" : true,
       "layers" : [
         {
           "blend-mode" : "normal",
-          "hidden" : true,
+          "hidden" : false,
           "image-name" : "background.png",
           "name" : "background",
           "opacity" : 0.4
@@ -26,8 +24,11 @@
       }
     },
     {
+      "hidden" : true,
       "layers" : [
         {
+          "glass" : true,
+          "hidden" : false,
           "image-name" : "Group 1-3.png",
           "name" : "Group 1-3",
           "position" : {

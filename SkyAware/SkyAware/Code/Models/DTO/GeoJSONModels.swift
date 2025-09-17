@@ -50,6 +50,16 @@ extension GeoJSONFeatureCollection {
     }
 }
 
+struct GeoPolygonEntity: Sendable, Codable {
+    var title: String
+    var coordinates: [Coordinate2D] // Use Coordinate2D from elsewhere in the project
+    
+    init(title: String, coordinates: [Coordinate2D]) {
+        self.title = title
+        self.coordinates = coordinates
+    }
+}
+
 extension GeoJSONFeature {
     /// Creates the MKMultiPolygon object from the array of GeoJSONFeatures provided
     /// - Parameter polyTitle: the string title to apply to each polygon
@@ -63,6 +73,22 @@ extension GeoJSONFeature {
                 let poly = MKPolygon(coordinates: coords, count: coords.count)
                 poly.title = polyTitle
                 return poly
+            }
+        }
+    }
+    
+    /// Creates GeoPolygonEntity objects from the polygon rings
+    /// - Parameter polyTitle: the title to assign to each GeoPolygonEntity
+    /// - Returns: Array of GeoPolygonEntity instances
+    func createPolygonEntities(polyTitle: String) -> [GeoPolygonEntity] {
+        guard geometry.type == "MultiPolygon" else { return [] }
+        
+        return geometry.coordinates.flatMap { polygonGroup in
+            polygonGroup.map { ring in
+                let coords: [Coordinate2D] = ring.map { pair in
+                    Coordinate2D(latitude: pair[1], longitude: pair[0])
+                }
+                return GeoPolygonEntity(title: polyTitle, coordinates: coords)
             }
         }
     }

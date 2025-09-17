@@ -1,0 +1,52 @@
+{
+  "fill" : {
+    "automatic-gradient" : "display-p3:0.02237,0.27826,0.47984,1.00000"
+  },
+  "groups" : [
+    {
+      "blend-mode" : "normal",
+      "blur-material" : null,
+      "layers" : [
+        {
+          "hidden" : false,
+          "image-name" : "cyclone.png",
+          "name" : "cyclone",
+          "position" : {
+            "scale" : 1.9,
+            "translation-in-points" : [
+              2.546875,
+              -27.799999999999997
+            ]
+          }
+        },
+        {
+          "hidden" : true,
+          "image-name" : "cloud.png",
+          "name" : "cloud",
+          "position" : {
+            "scale" : 1.25,
+            "translation-in-points" : [
+              -25.53125,
+              -115.2421875
+            ]
+          }
+        }
+      ],
+      "opacity" : 0.85,
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
