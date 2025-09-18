@@ -93,6 +93,7 @@ struct SpcClient {
 
     /// Fetches the points data for severe weather
     /// - Returns: array of GeoJsonResult and a bool indicating if any of the products changed
+    @available(*, deprecated, message: "Use fetch methods for severe instead (fetchTornadoRisk)")
     func refreshPoints() async throws -> (geo: [GeoJsonResult], changed: Bool) {
         logger.debug("Refreshing SPC Points data")
         

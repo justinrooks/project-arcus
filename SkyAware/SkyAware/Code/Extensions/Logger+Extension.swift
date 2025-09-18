@@ -14,6 +14,14 @@ extension Logger {
     static let spcService = Logger(subsystem: subsystem, category: "SpcService")
     static let spcProvider = Logger(subsystem: subsystem, category: "SpcProvider")
     static let spcRepo = Logger(subsystem: subsystem, category: "SpcRepo")
+    
+    static let convectiveRepo = Logger(subsystem: subsystem, category: "ConvectiveOutlookRepo")
+    static let mesoRepo = Logger(subsystem: subsystem, category: "MesoRepo")
+    static let watchRepo = Logger(subsystem: subsystem, category: "WatchRepo")
+    static let stormRiskRepo = Logger(subsystem: subsystem, category: "StormRiskRepo")
+    static let severeRiskRepo = Logger(subsystem: subsystem, category: "SevereRiskRepo")
+    
+    
     static let downloader = Logger(subsystem: subsystem, category: "Downloader")
     
 //    static let downloader = Logger(subsystem: subsystem, category: "Downloader")

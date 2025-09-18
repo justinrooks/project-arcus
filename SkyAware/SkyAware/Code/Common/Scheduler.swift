@@ -42,7 +42,7 @@ struct Scheduler {
         
         let scheduledTimes: [Date] = [
             createDate(hour: 7, minute: 23),   // 7:23 AM
-            createDate(hour: 10, minute: 43), // 10:43 AM
+            createDate(hour: 10, minute: 47), // 10:47 AM
             createDate(hour: 14, minute: 13), // 2:13 PM
             createDate(hour: 19, minute: 17)  // 7:17 PM
         ]

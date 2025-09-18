@@ -77,8 +77,9 @@ struct SkyAwareApp: App {
                 let message = "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)"
                 
                 do {
-                    let dba = DatabaseActor(modelContainer: sharedModelContainer)
-                    let ol = try await dba.fetchConvectiveOutlooks()
+                    let repo = ConvectiveOutlookRepo(modelContainer: sharedModelContainer)
+                    
+                    let ol = try await repo.fetchConvectiveOutlooks()
                     let mostRecentArticle = ol.max { $0.published < $1.published }
                     
                     let mgr = NotificationManager()

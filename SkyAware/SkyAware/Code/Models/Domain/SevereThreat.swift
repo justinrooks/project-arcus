@@ -8,6 +8,7 @@
 import Foundation
 import MapKit
 
+@available(*, deprecated, message: "SevereRisk instead", renamed: "SevereRisk()")
 struct SevereThreat: Identifiable {
     let id: UUID = UUID()
     let type: ThreatType
@@ -72,6 +73,7 @@ extension SevereThreat {
         )
     }
     
+    @available(*, deprecated, message: "SevereRisk instead", renamed: "SevereRisk()")
     private static func getProbability(from properties: GeoJSONProperties) -> ThreatProbability {
         // Content comes in from both label and label2
         // When its significant label has "SIGN" and label2 has something like "10% Significant Hail Risk"
@@ -94,6 +96,7 @@ extension SevereThreat {
     }
     
     // TODO: Eventually want to sync this up so that we don't even need to convert.
+    @available(*, deprecated, message: "SevereRisk instead", renamed: "SevereRisk()")
     private static func getThreatLevel(from threat: ThreatType, probability: Double) -> SevereWeatherThreat {
         switch threat {
         case .wind:

@@ -8,6 +8,7 @@
 import Foundation
 import MapKit
 
+@available(*, deprecated, message: "StormRisk instead", renamed: "StormRisk()")
 struct CategoricalStormRisk {
     let id: UUID = UUID()
     let riskLevel: StormRiskLevel

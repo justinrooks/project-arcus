@@ -30,8 +30,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "143"
-            endingLineNumber = "143"
+            startingLineNumber = "144"
+            endingLineNumber = "144"
             landmarkName = "SkyAwareApp"
             landmarkType = "14">
          </BreakpointContent>
@@ -46,8 +46,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "117"
-            endingLineNumber = "117"
+            startingLineNumber = "118"
+            endingLineNumber = "118"
             landmarkName = "body"
             landmarkType = "24">
          </BreakpointContent>
@@ -62,8 +62,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "145"
-            endingLineNumber = "145"
+            startingLineNumber = "146"
+            endingLineNumber = "146"
             landmarkName = "scheduleNextAppRefresh()"
             landmarkType = "7">
          </BreakpointContent>
@@ -78,8 +78,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "121"
-            endingLineNumber = "121"
+            startingLineNumber = "122"
+            endingLineNumber = "122"
             landmarkName = "body"
             landmarkType = "24">
          </BreakpointContent>
@@ -94,8 +94,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "124"
-            endingLineNumber = "124"
+            startingLineNumber = "125"
+            endingLineNumber = "125"
             landmarkName = "body"
             landmarkType = "24">
          </BreakpointContent>
@@ -188,8 +188,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "147"
-            endingLineNumber = "147"
+            startingLineNumber = "148"
+            endingLineNumber = "148"
             landmarkName = "scheduleNextAppRefresh()"
             landmarkType = "7">
          </BreakpointContent>
@@ -264,13 +264,13 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "85"
-            endingLineNumber = "85"
+            startingLineNumber = "86"
+            endingLineNumber = "86"
             landmarkName = "body"
             landmarkType = "24">
             <Locations>
                <Location
-                  uuid = "508AEFAE-359E-49C2-B44C-5A50C20A1F53 - b4dba954e0bf39d1"
+                  uuid = "508AEFAE-359E-49C2-B44C-5A50C20A1F53 - b4dba954e0bf39f6"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -280,11 +280,11 @@
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/SupportingFiles/SkyAwareApp.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "85"
-                  endingLineNumber = "85">
+                  startingLineNumber = "86"
+                  endingLineNumber = "86">
                </Location>
                <Location
-                  uuid = "508AEFAE-359E-49C2-B44C-5A50C20A1F53 - 36389a11b7cffb3"
+                  uuid = "508AEFAE-359E-49C2-B44C-5A50C20A1F53 - 36389a11b7cff94"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -294,8 +294,8 @@
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/SupportingFiles/SkyAwareApp.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "85"
-                  endingLineNumber = "85">
+                  startingLineNumber = "86"
+                  endingLineNumber = "86">
                </Location>
             </Locations>
          </BreakpointContent>

@@ -88,7 +88,7 @@ extension iPhoneHomeView {
 #Preview {
     // 1) In‑memory SwiftData container for previews
     let container = try! ModelContainer(
-        for: FeedCache.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
+        for: ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
         configurations: ModelConfiguration(isStoredInMemoryOnly: true)
     )
     

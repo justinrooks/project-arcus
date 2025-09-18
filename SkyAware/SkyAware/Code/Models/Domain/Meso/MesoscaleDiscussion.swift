@@ -6,10 +6,7 @@
 //
 
 import Foundation
-import CoreLocation
 import SwiftData
-
-
 
 @Model
 final class MD: AlertItem {
@@ -62,30 +59,6 @@ final class MD: AlertItem {
         self.threats = threats
         self.coordinates = coordinates
         self.alertType = alertType
-    }
-}
-
-// MARK: - Domain Model (minimal for the card)
-struct Coordinate2D: Sendable, Codable {
-    let latitude: Double
-    let longitude: Double
-
-    init(latitude: Double, longitude: Double) {
-        self.latitude = latitude
-        self.longitude = longitude
-        
-    }
-}
-
-extension Coordinate2D {
-    init(_ location: CLLocationCoordinate2D) {
-        self.latitude = location.latitude
-        self.longitude = location.longitude
-    }
-    
-
-    var location: CLLocationCoordinate2D {
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }
 

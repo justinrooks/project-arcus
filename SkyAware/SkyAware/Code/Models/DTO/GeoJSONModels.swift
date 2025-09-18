@@ -64,6 +64,7 @@ extension GeoJSONFeature {
     /// Creates the MKMultiPolygon object from the array of GeoJSONFeatures provided
     /// - Parameter polyTitle: the string title to apply to each polygon
     /// - Returns: MKMultiPolygon ready for rendering on a map
+    @available(*, deprecated, message: "Use newFunction() instead.", renamed: "createPolygonEntities()")
     func createPolygons(polyTitle: String) -> [MKPolygon] {
         guard geometry.type == "MultiPolygon" else { return [] }
         
