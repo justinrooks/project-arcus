@@ -69,6 +69,27 @@ struct SpcClient {
     func fetchWatchItems() async throws -> [Item] {
         try await fetchRssItems(for: .watch)
     }
+    
+    /// Fetches the categorical storm risk geojson
+    func fetchStormRisk() async throws -> GeoJsonResult? {
+        let (json, _) = try await getGeoJSONData(for: .categorical)
+        return json
+    }
+    
+    func fetchHailRisk() async throws -> GeoJsonResult? {
+        let (json, _) = try await getGeoJSONData(for: .hail)
+        return json
+    }
+    
+    func fetchWindRisk() async throws -> GeoJsonResult? {
+        let (json, _) = try await getGeoJSONData(for: .wind)
+        return json
+    }
+    
+    func fetchTornadoRisk() async throws -> GeoJsonResult? {
+        let (json, _) = try await getGeoJSONData(for: .tornado)
+        return json
+    }
 
     /// Fetches the points data for severe weather
     /// - Returns: array of GeoJsonResult and a bool indicating if any of the products changed

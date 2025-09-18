@@ -50,6 +50,60 @@ struct SpcRepo {
         logger.debug("Parsed \(watches.count) watches from SPC")
     }
     
+    func refreshStormRisk() async throws {
+        let risk = try await client.fetchStormRisk()
+        guard let risk else { return } // if we don't have any items, just return
+        
+        let dto = risk.featureCollection.features.compactMap {
+            let props = $0.properties
+
+            return StormRiskDTO(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
+                                issued: props.ISSUE.asUTCDate() ?? Date(),
+                                validUntil: props.VALID.asUTCDate() ?? Date(),
+                                polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
+            )
+        }
+        
+        try await dba.upsertStormRisk(dto)
+        logger.debug("Updated Categorical Storm Risk")
+    }
+    
+    func refreshHailRisk() async throws {
+        let risk = try await client.fetchHailRisk()
+        guard let risk else { return } // if we don't have any items, just return
+        
+        let dto = risk.featureCollection.features.compactMap {
+            makeSevereRiskDTO(for: .hail, with: $0)
+        }
+
+        try await dba.upsertHailRisk(dto)
+        logger.debug("Updated Hail Risk")
+    }
+    
+    func refreshWindRisk() async throws {
+        let risk = try await client.fetchWindRisk()
+        guard let risk else { return } // if we don't have any items, just return
+        
+        let dto = risk.featureCollection.features.compactMap {
+            makeSevereRiskDTO(for: .wind, with: $0)
+        }
+        
+        try await dba.upsertWindRisk(dto)
+        logger.debug("Updated Wind Risk")
+    }
+    
+    func refreshTornadoRisk() async throws {
+        let risk = try await client.fetchTornadoRisk()
+        guard let risk else { return } // if we don't have any items, just return
+        
+        let dto = risk.featureCollection.features.compactMap {
+            makeSevereRiskDTO(for: .tornado, with: $0)
+        }
+        
+        try await dba.upsertTornadoRisk(dto)
+        logger.debug("Updated Tornado Risk")
+    }
+    
     private func makeConvectiveDto(from rssItem: Item) -> ConvectiveOutlookDTO? {
         guard
             let title = rssItem.title,
@@ -148,5 +202,52 @@ struct SpcRepo {
             issued: published,
             summary: summary
         )
+    }
+    
+    private func makeSevereRiskDTO(for threat: ThreatType, with feature: GeoJSONFeature) -> SevereRiskDTO {
+        let props = feature.properties
+        let parsedProbability = getProbability(from: props)
+        
+        return SevereRiskDTO(type: threat,
+                             probability: parsedProbability,
+                             threatLevel: getThreatLevel(from: threat, probability: parsedProbability.decimalValue),
+                             issued: props.ISSUE.asUTCDate() ?? Date(),
+                             validUntil: props.VALID.asUTCDate() ?? Date(),
+                             polygons: feature.createPolygonEntities(polyTitle: props.LABEL2)
+                             )
+    }
+    
+    private func getProbability(from properties: GeoJSONProperties) -> ThreatProbability {
+        // Content comes in from both label and label2
+        // When its significant label has "SIGN" and label2 has something like "10% Significant Hail Risk"
+        // When its not significant then label has the percentage like "0.05" as a string
+        // This is where we would possibly need to tweak that probability calculation/display
+        
+        if let parsedDouble = Double(properties.LABEL) {
+            return .percent(parsedDouble)
+        } else {
+            if properties.LABEL == "SIGN" {
+                let cleaned = properties.LABEL2.split(separator: "%").first?.trimmingCharacters(in: .whitespaces)
+                
+                if let intPercent = Int(cleaned ?? "0") {
+                    return .significant(intPercent)
+                }
+            }
+            
+            return .percent(0) // shouldn't really get here, but need to cover the case.
+        }
+    }
+    
+    private func getThreatLevel(from threat: ThreatType, probability: Double) -> SevereWeatherThreat {
+        switch threat {
+        case .wind:
+            return .wind(probability: probability)
+        case .hail:
+            return .hail(probability: probability)
+        case .tornado:
+            return .tornado(probability: probability)
+        default:
+            return .allClear
+        }
     }
 }

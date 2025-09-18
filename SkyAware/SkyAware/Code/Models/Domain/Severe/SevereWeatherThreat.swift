@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-enum SevereWeatherThreat: Comparable {
+enum SevereWeatherThreat: Comparable, Codable {
     case allClear
     case wind(probability: Double)
     case hail(probability: Double)

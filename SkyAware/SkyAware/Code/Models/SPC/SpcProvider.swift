@@ -23,10 +23,10 @@ final class SpcProvider: Sendable {
     // Domain Models
     var alertCount: Int = 0
     
-    var categorical = [CategoricalStormRisk]()
-    var wind = [SevereThreat]()
-    var hail = [SevereThreat]()
-    var tornado = [SevereThreat]()
+    var categorical = [CategoricalStormRisk]() // ready to deprecate
+    var wind = [SevereThreat]() // ready to deprecate
+    var hail = [SevereThreat]() // ready to deprecate
+    var tornado = [SevereThreat]() // ready to deprecate
     
     init(client: SpcClient, container: ModelContainer, autoLoad: Bool = true) {
         self.client = client
@@ -56,6 +56,12 @@ final class SpcProvider: Sendable {
             try await repository.refreshMesoscaleDiscussions()
             try await repository.refreshWatches()
             
+            try await repository.refreshStormRisk()
+            try await repository.refreshHailRisk()
+            try await repository.refreshWindRisk()
+            try await repository.refreshTornadoRisk()
+            
+            // ready to deprecate below
             let points = try await client.refreshPoints()
             
             self.categorical = getTypedFeature(from: points.geo, for: .categorical, transform: CategoricalStormRisk.from)
@@ -68,6 +74,22 @@ final class SpcProvider: Sendable {
             //self.errorMessage = error.localizedDescription
             logger.error("Error loading Spc feed: \(error.localizedDescription)")
         }
+    }
+    
+    func fetchStormRisk() async throws {
+        try await repository.refreshStormRisk()
+    }
+    
+    func fetchHailRisk() async throws {
+        try await repository.refreshHailRisk()
+    }
+    
+    func fetchWindRisk() async throws {
+        try await repository.refreshWindRisk()
+    }
+    
+    func fetchTornadoRisk() async throws {
+        try await repository.refreshTornadoRisk()
     }
     
     /// Fetches an array of convective outlooks from SPC

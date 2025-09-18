@@ -40,6 +40,42 @@ actor DatabaseActor: Sendable {
         try ctx.save()
     }
     
+    func upsertStormRisk(_ risks: [StormRiskDTO]) async throws {
+        _ = try risks.map {
+            guard let w = StormRisk(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(w)
+        }
+        
+        try ctx.save()
+    }
+    
+    func upsertHailRisk(_ risks: [SevereRiskDTO]) async throws {
+        _ = try risks.map {
+            guard let w = SevereRisk(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(w)
+        }
+        
+        try ctx.save()
+    }
+    
+    func upsertWindRisk(_ risks: [SevereRiskDTO]) async throws {
+        _ = try risks.map {
+            guard let w = SevereRisk(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(w)
+        }
+        
+        try ctx.save()
+    }
+    
+    func upsertTornadoRisk(_ risks: [SevereRiskDTO]) async throws {
+        _ = try risks.map {
+            guard let w = SevereRisk(from: $0) else { throw OtherErrors.contextSaveError }
+            ctx.insert(w)
+        }
+        
+        try ctx.save()
+    }
+    
 //    func create<T: PersistentModel>(todo: [T]) throws {
 //        _ = todo.map { ctx.insert($0) }
 //        try ctx.save()

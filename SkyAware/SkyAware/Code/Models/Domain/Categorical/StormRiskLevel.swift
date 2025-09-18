@@ -7,7 +7,7 @@
 
 import SwiftUI
 
-enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable {
+enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
     case allClear = 0
     case thunderstorm = 1
     case marginal = 2

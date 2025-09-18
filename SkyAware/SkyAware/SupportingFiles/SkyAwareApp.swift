@@ -26,7 +26,7 @@ struct SkyAwareApp: App {
     
     var sharedModelContainer: ModelContainer = {
         print(URL.applicationSupportDirectory.path(percentEncoded: false))
-        let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self])
+        let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         do { return try ModelContainer(for: schema, configurations: config) }
         catch { fatalError("Could not create ModelContainer: \(error)") }
