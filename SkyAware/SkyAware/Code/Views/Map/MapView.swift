@@ -140,7 +140,6 @@ struct MapView: View {
     let preview = Preview(MD.self)
     preview.addExamples(MD.sampleDiscussions)
     let provider = SpcProvider(client: SpcClient(),
-                               container: preview.container,
                                autoLoad: false)
     
     return NavigationStack {

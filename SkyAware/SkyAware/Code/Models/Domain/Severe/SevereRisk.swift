@@ -53,7 +53,8 @@ final class SevereRisk {
     var probability: ThreatProbability
     var threatLevel: SevereWeatherThreat
     var issued: Date
-    var validUntil: Date
+    var valid: Date
+    var expires: Date
     var polygons: [GeoPolygonEntity]
     
     convenience init?(from dto: SevereRiskDTO) {
@@ -61,19 +62,29 @@ final class SevereRisk {
                   probability: dto.probability,
                   threatLevel: dto.threatLevel,
                   issued: dto.issued,
-                  validUntil: dto.validUntil,
-                  polygons: dto.polygons
+                  valid: dto.valid,
+                  expires: dto.expires,
+                  dn: dto.dn,
+                  polygons: dto.polygons,
+                  label: dto.label
         )
     }
     
-    init(type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, validUntil: Date, polygons: [GeoPolygonEntity]) {
+    init(type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, valid: Date, expires: Date, dn: Int, polygons: [GeoPolygonEntity], label: String) {
         self.id = UUID()
-        self.key = "\(type.rawValue)_\(issued.timeIntervalSince1970)"
+        
+        if(label == "SIGN") {
+            self.key = "\(type.rawValue)_\(issued.timeIntervalSince1970)_p\(dn)_SIGN"
+        } else {
+            self.key = "\(type.rawValue)_\(issued.timeIntervalSince1970)_p\(dn)"
+        }
+        
         self.type = type
         self.probability = probability
         self.threatLevel = threatLevel
         self.issued = issued
-        self.validUntil = validUntil
+        self.valid = valid
+        self.expires = expires
         self.polygons = polygons
     }
 }

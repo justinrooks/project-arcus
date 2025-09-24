@@ -93,7 +93,7 @@ extension iPhoneHomeView {
     )
     
     let client   = SpcClient()
-    let provider = SpcProvider(client: client, container: container, autoLoad: true)
+    let provider = SpcProvider(client: client, autoLoad: true)
     let mock = LocationManager()
     
     return iPhoneHomeView()

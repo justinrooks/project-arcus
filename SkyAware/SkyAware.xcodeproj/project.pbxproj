@@ -50,7 +50,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				Tests/SkyAwareTests/SkyAwareTests.swift,
+				Tests/SkyAwareTests/WatchParserTests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
 			);
@@ -59,7 +59,7 @@
 		D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Tests/SkyAwareTests/SkyAwareTests.swift,
+				Tests/SkyAwareTests/WatchParserTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};

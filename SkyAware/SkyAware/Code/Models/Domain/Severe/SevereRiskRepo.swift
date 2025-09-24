@@ -8,10 +8,10 @@
 import Foundation
 import OSLog
 import SwiftData
+import CoreLocation
 
 @ModelActor
 actor SevereRiskRepo {
-    private var context: ModelContext { modelExecutor.modelContext }
     private let logger = Logger.severeRiskRepo
 
     func refreshHailRisk() async throws {
@@ -21,10 +21,10 @@ actor SevereRiskRepo {
         guard let risk else { return } // if we don't have any items, just return
         
         let dto = risk.featureCollection.features.compactMap {
-            makeSevereRiskDTO(for: .hail, with: $0)
+            makeSevereRisk(for: .hail, with: $0)
         }
 
-        try await upsertHailRisk(dto)
+        try upsert(dto)
         logger.debug("Updated \(dto.count) hail risk feature\(dto.count > 1 ? "s" : "")")
     }
     
@@ -35,10 +35,10 @@ actor SevereRiskRepo {
         guard let risk else { return } // if we don't have any items, just return
         
         let dto = risk.featureCollection.features.compactMap {
-            makeSevereRiskDTO(for: .wind, with: $0)
+            makeSevereRisk(for: .wind, with: $0)
         }
         
-        try await upsertWindRisk(dto)
+        try upsert(dto)
         logger.debug("Updated \(dto.count) wind risk feature\(dto.count > 1 ? "s" : "")")
     }
     
@@ -49,23 +49,76 @@ actor SevereRiskRepo {
         guard let risk else { return } // if we don't have any items, just return
         
         let dto = risk.featureCollection.features.compactMap {
-            makeSevereRiskDTO(for: .tornado, with: $0)
+            makeSevereRisk(for: .tornado, with: $0)
         }
         
-        try await upsertTornadoRisk(dto)
+        try upsert(dto)
         logger.debug("Updated \(dto.count) tornado risk feature\(dto.count > 1 ? "s" : "")")
     }
     
-    private func makeSevereRiskDTO(for threat: ThreatType, with feature: GeoJSONFeature) -> SevereRiskDTO {
+    /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
+    func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> SevereWeatherThreat {
+        // 1) Fetch only risks that are currently valid
+        let pred = #Predicate<SevereRisk> { date >= $0.valid && date <= $0.expires }
+        let risks = try modelContext.fetch(FetchDescriptor<SevereRisk>(predicate: pred))
+        
+        // 2) Sort by descending risk so we can early-exit on first hit
+        let bySeverity = risks.sorted { $0.threatLevel.priority > $1.threatLevel.priority }
+
+        // 3) For each risk, check polygons with optional bbox prefilter, then precise hit test
+        for risk in bySeverity {
+            for poly in risk.polygons {
+                // Coarse bbox prefilter if available
+                if let bbox = poly.bbox, bbox.contains(point) == false { continue }
+                
+                // Precise hit test on ring coordinates
+                let ring = poly.ringCoordinates
+                guard !ring.isEmpty else { continue }
+                if MesoGeometry.contains(point, inRing: ring) {
+                    return risk.threatLevel
+                }
+            }
+        }
+        
+        return .allClear
+    }
+    
+    func purge(asOf now: Date = .init()) throws {
+        logger.info("Purging expired severe risk geometry")
+        
+        // Fetch in batches to avoid large in-memory sets
+        let predicate = #Predicate<SevereRisk> { $0.expires < now }
+        var desc = FetchDescriptor<SevereRisk>(predicate: predicate)
+        desc.fetchLimit = 50
+        
+        while true {
+            let batch = try modelContext.fetch(desc)
+            if batch.isEmpty { break }
+            logger.debug("Found \(batch.count) to purge")
+            
+            for obj in batch { modelContext.delete(obj) }
+            
+            try modelContext.save()
+        }
+        
+        logger.info("Purged old severe risk geometry")
+    }
+    
+    
+    
+    private func makeSevereRisk(for threat: ThreatType, with feature: GeoJSONFeature) -> SevereRisk {
         let props = feature.properties
         let parsedProbability = getProbability(from: props)
         
-        return SevereRiskDTO(type: threat,
+        return SevereRisk(type: threat,
                              probability: parsedProbability,
                              threatLevel: getThreatLevel(from: threat, probability: parsedProbability.decimalValue),
                              issued: props.ISSUE.asUTCDate() ?? Date(),
-                             validUntil: props.VALID.asUTCDate() ?? Date(),
-                             polygons: feature.createPolygonEntities(polyTitle: props.LABEL2)
+                             valid: props.VALID.asUTCDate() ?? Date(),
+                             expires: props.EXPIRE.asUTCDate() ?? Date(),
+                             dn: props.DN,
+                             polygons: feature.createPolygonEntities(polyTitle: props.LABEL2),
+                             label: props.LABEL
                              )
     }
     
@@ -103,30 +156,10 @@ actor SevereRiskRepo {
         }
     }
     
-    private func upsertHailRisk(_ risks: [SevereRiskDTO]) async throws {
-        _ = try risks.map {
-            guard let w = SevereRisk(from: $0) else { throw OtherErrors.contextSaveError }
-            context.insert(w)
+    private func upsert(_ items: [any PersistentModel]) throws {
+        for item in items {
+            modelContext.insert(item)
         }
-        
-        try context.save()
-    }
-    
-    private func upsertWindRisk(_ risks: [SevereRiskDTO]) async throws {
-        _ = try risks.map {
-            guard let w = SevereRisk(from: $0) else { throw OtherErrors.contextSaveError }
-            context.insert(w)
-        }
-        
-        try context.save()
-    }
-    
-    private func upsertTornadoRisk(_ risks: [SevereRiskDTO]) async throws {
-        _ = try risks.map {
-            guard let w = SevereRisk(from: $0) else { throw OtherErrors.contextSaveError }
-            context.insert(w)
-        }
-        
-        try context.save()
+        try modelContext.save()
     }
 }

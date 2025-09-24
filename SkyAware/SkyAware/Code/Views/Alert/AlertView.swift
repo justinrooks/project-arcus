@@ -70,8 +70,8 @@ struct AlertView: View {
         .refreshable {
             Task {
                 print("Refreshing Alerts")
-                try await provider.fetchMesoDiscussions()
-                try await provider.fetchWatches()
+//                try await provider.fetchMesoDiscussions()
+//                try await provider.fetchWatches()
             }
         }
     }
@@ -82,7 +82,6 @@ struct AlertView: View {
     preview.addExamples(MD.sampleDiscussions)
     preview.addExamples(WatchModel.sampleWatches)
     let provider = SpcProvider(client: SpcClient(),
-                               container: preview.container,
                                autoLoad: false)
     
     return NavigationStack {

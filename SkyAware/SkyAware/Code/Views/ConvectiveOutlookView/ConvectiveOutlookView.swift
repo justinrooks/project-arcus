@@ -53,7 +53,7 @@ struct ConvectiveOutlookView: View {
                     }
                     .refreshable {
                         Task {
-                            try await provider.fetchOutlooks()
+//                            try await provider.fetchOutlooks()
                         }
                     }
                 }
@@ -98,7 +98,6 @@ extension ConvectiveOutlookView {
     let preview = Preview(ConvectiveOutlook.self)
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
     let provider = SpcProvider(client: SpcClient(),
-                               container: preview.container,
                                autoLoad: false)
     
     return NavigationStack {

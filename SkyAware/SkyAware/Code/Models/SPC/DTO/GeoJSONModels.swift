@@ -50,16 +50,6 @@ extension GeoJSONFeatureCollection {
     }
 }
 
-struct GeoPolygonEntity: Sendable, Codable {
-    var title: String
-    var coordinates: [Coordinate2D] // Use Coordinate2D from elsewhere in the project
-    
-    init(title: String, coordinates: [Coordinate2D]) {
-        self.title = title
-        self.coordinates = coordinates
-    }
-}
-
 extension GeoJSONFeature {
     /// Creates the MKMultiPolygon object from the array of GeoJSONFeatures provided
     /// - Parameter polyTitle: the string title to apply to each polygon

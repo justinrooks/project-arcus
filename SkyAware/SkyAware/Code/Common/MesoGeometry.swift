@@ -60,4 +60,48 @@ enum MesoGeometry {
         
         return CLLocationCoordinate2D(latitude: lat, longitude: lon)
     }
+    
+    
+    
+    // MARK: Ray-casting
+    /// Even–odd ray-cast test. Treats “on edge” as inside.
+    static func contains(_ p: CLLocationCoordinate2D, inRing ring: [CLLocationCoordinate2D]) -> Bool {
+        guard ring.count > 2 else { return false }
+        
+        let x = p.longitude, y = p.latitude
+        var inside = false
+        var j = ring.count - 1
+        
+        for i in 0..<ring.count {
+            let xi = ring[i].longitude, yi = ring[i].latitude
+            let xj = ring[j].longitude, yj = ring[j].latitude
+            
+            let intersects = ((yi > y) != (yj > y)) &&
+            (x < (xj - xi) * (y - yi) / ((yj - yi) != 0 ? (yj - yi) : 1e-15) + xi)
+            if intersects { inside.toggle() }
+            j = i
+        }
+        return inside || onEdge(p, ring: ring)
+    }
+    
+    private static func onEdge(_ p: CLLocationCoordinate2D, ring: [CLLocationCoordinate2D]) -> Bool {
+        guard ring.count > 1 else { return false }
+        let px = p.longitude, py = p.latitude
+        for i in 0..<ring.count {
+            let a = ring[i], b = ring[(i + 1) % ring.count]
+            if colinearAndBetween(px, py, a.longitude, a.latitude, b.longitude, b.latitude) { return true }
+        }
+        return false
+    }
+    
+    private static func colinearAndBetween(_ px: Double, _ py: Double,
+                                           _ ax: Double, _ ay: Double,
+                                           _ bx: Double, _ by: Double) -> Bool {
+        let area = (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+        if abs(area) > 1e-12 { return false }
+        let minx = min(ax, bx) - 1e-12, maxx = max(ax, bx) + 1e-12
+        let miny = min(ay, by) - 1e-12, maxy = max(ay, by) + 1e-12
+        return (px >= minx && px <= maxx && py >= miny && py <= maxy)
+    }
+    
 }

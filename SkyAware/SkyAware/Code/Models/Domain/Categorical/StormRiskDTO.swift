@@ -7,18 +7,20 @@
 
 import Foundation
 
-final class StormRiskDTO: Sendable, Identifiable {
+struct StormRiskDTO: Sendable, Identifiable {
     let id: UUID
     let riskLevel: StormRiskLevel
     let issued: Date
-    let validUntil: Date
+    let valid: Date
+    let expires: Date
     let polygons: [GeoPolygonEntity]
     
-    init(id: UUID = UUID(), riskLevel: StormRiskLevel, issued: Date, validUntil: Date, polygons: [GeoPolygonEntity]) {
+    init(id: UUID = UUID(), riskLevel: StormRiskLevel, issued: Date, expires: Date, valid: Date, polygons: [GeoPolygonEntity]) {
         self.id = id
         self.riskLevel = riskLevel
         self.issued = issued
-        self.validUntil = validUntil
+        self.valid = valid
+        self.expires = expires
         self.polygons = polygons
     }
 }

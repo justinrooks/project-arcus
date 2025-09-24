@@ -8,7 +8,7 @@
 import Foundation
 
 // DTO for transfering across actor boundaries
-final class MdDTO: Sendable, Identifiable {
+struct MdDTO: Sendable, Identifiable {
     let id: UUID                // usually the GUID or derived from it
     let number: Int             // the MD number 1895
     let title: String           // e.g., "Day 1 Convective Outlook"
@@ -39,4 +39,19 @@ final class MdDTO: Sendable, Identifiable {
         self.threats = threats
         self.coordinates = coordinates
     }
+    
+//    static func from(md: MD) -> Self? {
+//        return MdDTO(number: md.number,
+//                    title: md.title,
+//                    link: md.link,
+//                    issued: md.issued,
+//                    validStart: md.validStart,
+//                    validEnd: md.validEnd,
+//                    areasAffected: md.areasAffected,
+//                    summary: md.summary,
+//                    watchProbability: md.watchProbability,
+//                    threats: md.threats ?? nil,
+//                    coordinates:md.coordinates
+//            )
+//    }
 }

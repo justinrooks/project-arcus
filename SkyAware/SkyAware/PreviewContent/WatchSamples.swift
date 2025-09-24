@@ -11,9 +11,12 @@ extension WatchModel {
     static var sampleWatches: [WatchModel] {
         [
             WatchModel(
+                number: 551,
                 title: "Watch 551",
                 link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk.html")!,
                 issued: Date(),
+                validStart: Date(),
+                validEnd: Date(),
                 summary: """
                 SEL1
                 
@@ -70,9 +73,12 @@ extension WatchModel {
                 alertType: .watch
             ),
             WatchModel(
+                number: 550,
                 title: "Watch 550",
                 link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk2.html")!,
                 issued: Date().addingTimeInterval(-3600),
+                validStart: Date(),
+                validEnd: Date(),
                 summary: """
                      SEL0
 

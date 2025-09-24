@@ -18,14 +18,22 @@ struct SkyAwareApp: App {
     private let mesoRefreshID = "com.skyaware.meso.refresh"
     private let logger = Logger.mainApp
     
+    // Repos
+    private let outlookRepo: ConvectiveOutlookRepo
+    private let mesoRepo: MesoRepo
+    private let watchRepo: WatchRepo
+    private let stormRiskRepo: StormRiskRepo
+    private let severeRiskRepo: SevereRiskRepo
+    
     @State private var locationProvider: LocationManager
     @State private var prov: SpcProvider
+    @State private var spcProvider: SpcProviderV1
     @State private var summaryProvider: SummaryProvider
     
     @Environment(\.scenePhase) private var scenePhase
     
     var sharedModelContainer: ModelContainer = {
-        print(URL.applicationSupportDirectory.path(percentEncoded: false))
+//        print(URL.applicationSupportDirectory.path(percentEncoded: false))
         let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         do { return try ModelContainer(for: schema, configurations: config) }
@@ -43,12 +51,29 @@ struct SkyAwareApp: App {
             diskPath: "skyaware-dataCache"
         )
         
+        self.outlookRepo    = ConvectiveOutlookRepo(modelContainer: sharedModelContainer)
+        self.mesoRepo       = MesoRepo(modelContainer: sharedModelContainer)
+        self.watchRepo      = WatchRepo(modelContainer: sharedModelContainer)
+        self.stormRiskRepo  = StormRiskRepo(modelContainer: sharedModelContainer)
+        self.severeRiskRepo = SevereRiskRepo(modelContainer: sharedModelContainer)
+
         let loc = LocationManager()
-        let spc = SpcProvider(client: SpcClient(), container: sharedModelContainer)
+        let spc = SpcProvider(client: SpcClient(),
+                              autoLoad: false)
+        
+        let spc1 = SpcProviderV1(outlookRepo: self.outlookRepo,
+                                 mesoRepo: self.mesoRepo,
+                                 watchRepo: self.watchRepo,
+                                 stormRiskRepo: self.stormRiskRepo,
+                                 severeRiskRepo: self.severeRiskRepo,
+                                 locationManager: loc)
+        
         let sum = SummaryProvider(provider: spc, location: loc)
         
         _locationProvider = .init(wrappedValue: loc)
         _prov = .init(wrappedValue: spc)
+        _spcProvider = .init(wrappedValue: spc1)
+        
         _summaryProvider = .init(wrappedValue: sum)
     }
     
@@ -58,6 +83,7 @@ struct SkyAwareApp: App {
                 iPhoneHomeView()
                     .toasting()
                     .environment(prov)
+//                    .environment(spcProvider)
                     .environment(locationProvider)
                     .environment(summaryProvider)
             } else {
@@ -70,20 +96,14 @@ struct SkyAwareApp: App {
             
             await withTaskCancellationHandler {
                 _ = await prov.loadFeedAsync() // Get the latest data from SPC, updates the db
-
-                let stormRisk = await summaryProvider.getStormRisk()
-                let severeRisk = await summaryProvider.getSevereRisk()
-                
-                let message = "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)"
-                
                 do {
-                    let repo = ConvectiveOutlookRepo(modelContainer: sharedModelContainer)
-                    
-                    let ol = try await repo.fetchConvectiveOutlooks()
-                    let mostRecentArticle = ol.max { $0.published < $1.published }
+                    let outlook = try await outlookRepo.current()
+                    let severeRiskv1 = try await spcProvider.getSevereRisk(for: locationProvider.resolvedUserLocation)
+                    let stormRiskv1 = try await spcProvider.getStormRisk(for: locationProvider.resolvedUserLocation)
+                    let message = "Storm Activity: \(stormRiskv1.summary)\nSevere Activity: \(severeRiskv1.summary)"
                     
                     let mgr = NotificationManager()
-                    await mgr.notify(for: mostRecentArticle, with: message)
+                    await mgr.notify(for: outlook, with: message)
                 } catch {
                     logger.error("Error refreshing background data: \(error.localizedDescription)")
                 }
@@ -130,6 +150,19 @@ struct SkyAwareApp: App {
                         logger.error("Error requesting notification permission: \(error.localizedDescription)")
                     }
                 }
+                
+                Task {
+                    await spcProvider.cleanup()
+                    await spcProvider.sync()
+//                    
+//                    let c = try await outlookRepo.current()
+//                    
+//                    let y = try? await spcProvider.getSevereRisk(for: locationProvider.resolvedUserLocation)
+//                    print("Severe Risk: \(y)")
+//                    
+//                    let x = try? await spcProvider.getStormRisk(for: locationProvider.resolvedUserLocation)
+//                    print("Storm Risk: \(x)")
+                }
             }
             
             //            if newPhase == .background {
@@ -141,7 +174,7 @@ struct SkyAwareApp: App {
     
     
     
-    // MARK - Schedule Next App Refresh
+    // MARK: - Schedule Next App Refresh
     private func scheduleNextAppRefresh() {
         logger.debug("Checking if we need to schedule an app refresh")
         BGTaskScheduler.shared.getPendingTaskRequests { requests in

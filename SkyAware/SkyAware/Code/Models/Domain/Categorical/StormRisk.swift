@@ -14,23 +14,26 @@ final class StormRisk {
     @Attribute(.unique) var key: String
     var riskLevel: StormRiskLevel
     var issued: Date
-    var validUntil: Date
+    var valid: Date
+    var expires: Date
     var polygons: [GeoPolygonEntity]
     
     convenience init?(from dto: StormRiskDTO) {
         self.init(riskLevel: dto.riskLevel,
                   issued: dto.issued,
-                  validUntil: dto.validUntil,
+                  expires: dto.expires,
+                  valid: dto.valid,
                   polygons: dto.polygons
         )
     }
     
-    init(riskLevel: StormRiskLevel, issued: Date, validUntil: Date, polygons: [GeoPolygonEntity]) {
+    init(riskLevel: StormRiskLevel, issued: Date, expires: Date, valid: Date, polygons: [GeoPolygonEntity]) {
         id = UUID()
         self.key = "\(riskLevel.rawValue)_\(issued.timeIntervalSince1970)"
         self.riskLevel = riskLevel
         self.issued = issued
-        self.validUntil = validUntil
+        self.valid = valid
+        self.expires = expires
         self.polygons = polygons
     }
 }

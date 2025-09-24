@@ -7,7 +7,7 @@
 
 import Foundation
 
-final class ConvectiveOutlookDTO: Sendable, Identifiable {
+struct ConvectiveOutlookDTO: Sendable, Identifiable {
     let id: UUID    // usually the GUID or derived from it
     let title: String                   // e.g., "Day 1 Convective Outlook"
     let link: URL                       // link to full outlook page

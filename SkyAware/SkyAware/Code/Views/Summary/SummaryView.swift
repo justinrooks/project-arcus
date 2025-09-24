@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SummaryView: View {
 //    @Environment(LocationManager.self) private var locationProvider: LocationManager
-//    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
+    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
     
     var body: some View {
         VStack {
@@ -50,12 +50,11 @@ struct SummaryView: View {
 #Preview {
     let preview = Preview(ConvectiveOutlook.self)
     let mock = LocationManager()
-    let provider = SpcProvider(client: SpcClient(),
-                               container: preview.container,
-                               autoLoad: false)
+    let spc = SpcProvider(client: SpcClient(),
+                          autoLoad: false)
     
     SummaryView()
         .environment(mock)
-        .environment(provider)
-        .environment(SummaryProvider(provider: provider, location: mock))
+        .environment(spc)
+        .environment(SummaryProvider(provider: spc, location: mock))
 }

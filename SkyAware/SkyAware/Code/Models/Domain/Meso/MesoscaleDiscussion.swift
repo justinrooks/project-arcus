@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import CoreLocation
 
 @Model
 final class MD: AlertItem {
@@ -24,6 +25,12 @@ final class MD: AlertItem {
     var watchProbability: String
     var threats: MDThreats?
     var coordinates: [Coordinate2D]
+    
+    var minLat: Double?
+    var maxLat: Double?
+    var minLon: Double?
+    var maxLon: Double?
+    
     var alertType: AlertType    // type of alert to conform to AlertItem
 
     convenience init? (from dto: MdDTO) {
@@ -58,6 +65,22 @@ final class MD: AlertItem {
         self.watchProbability = watchProbability
         self.threats = threats
         self.coordinates = coordinates
+        
+        if !coordinates.isEmpty {
+            let lats = coordinates.map(\.latitude)
+            let lons = coordinates.map(\.longitude)
+            
+            self.minLat = lats.min()
+            self.maxLat = lats.max()
+            self.minLon = lons.min()
+            self.maxLon = lons.max()
+        } else {
+            self.minLat = nil
+            self.maxLat = nil
+            self.minLon = nil
+            self.maxLon = nil
+        }
+        
         self.alertType = alertType
     }
 }
@@ -67,6 +90,45 @@ struct MDThreats: Sendable, Codable {
     var hailRangeInches: Double? // e.g. 1.5...2.5
     var tornadoStrength: String?     // e.g. "Brief / weak", "EF1+ possible", or nil
 }
+
+struct GeoBBox: Sendable {
+    let minLat: Double, maxLat: Double, minLon: Double, maxLon: Double
+    
+    func contains(_ p: CLLocationCoordinate2D) -> Bool {
+        p.latitude >= minLat && p.latitude <= maxLat &&
+        p.longitude >= minLon && p.longitude <= maxLon
+    }
+}
+
+extension MD {
+    nonisolated var ringCoordinates: [CLLocationCoordinate2D] {
+        coordinates.map { $0.location }
+    }
+    
+    nonisolated var bbox: GeoBBox? {
+        guard let minLat, let maxLat, let minLon, let maxLon else { return nil }
+        
+        return GeoBBox(minLat: minLat, maxLat: maxLat, minLon: minLon, maxLon: maxLon)
+    }
+    
+    func updateDerivedBBox() {
+        if !coordinates.isEmpty {
+            let lats = coordinates.map(\.latitude)
+            let lons = coordinates.map(\.longitude)
+            
+            self.minLat = lats.min()
+            self.maxLat = lats.max()
+            self.minLon = lons.min()
+            self.maxLon = lons.max()
+        } else {
+            self.minLat = nil
+            self.maxLat = nil
+            self.minLon = nil
+            self.maxLon = nil
+        }
+    }
+}
+
 
 //enum WatchProbability: Hashable, Equatable, Sendable, Codable {
 //    case percent(Int)   // 0...100
