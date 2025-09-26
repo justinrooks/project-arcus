@@ -14,8 +14,7 @@ import CoreLocation
 actor SevereRiskRepo {
     private let logger = Logger.severeRiskRepo
 
-    func refreshHailRisk() async throws {
-        let client = SpcClient()
+    func refreshHailRisk(using client: any SpcClient) async throws {
         let risk = try await client.fetchHailRisk()
         
         guard let risk else { return } // if we don't have any items, just return
@@ -28,8 +27,7 @@ actor SevereRiskRepo {
         logger.debug("Updated \(dto.count) hail risk feature\(dto.count > 1 ? "s" : "")")
     }
     
-    func refreshWindRisk() async throws {
-        let client = SpcClient()
+    func refreshWindRisk(using client: any SpcClient) async throws {
         let risk = try await client.fetchWindRisk()
         
         guard let risk else { return } // if we don't have any items, just return
@@ -42,8 +40,8 @@ actor SevereRiskRepo {
         logger.debug("Updated \(dto.count) wind risk feature\(dto.count > 1 ? "s" : "")")
     }
     
-    func refreshTornadoRisk() async throws {
-        let client = SpcClient()
+    /// Testable overload that allows injecting a client
+    func refreshTornadoRisk(using client: any SpcClient) async throws {
         let risk = try await client.fetchTornadoRisk()
         
         guard let risk else { return } // if we don't have any items, just return
@@ -81,6 +79,26 @@ actor SevereRiskRepo {
         }
         
         return .allClear
+    }
+    
+    func getSevereRiskShapes() throws -> [SevereRiskShapeDTO]{
+        // Can't use an enum in a predicate, so need to find a different way.
+        // For now, I'm just going to return an array of the DTO's shaped in
+        // a way that's easier to use downstream. Then we'll just use the View
+        // layer to put the shapes in their respective buckets.
+
+        let risks = try modelContext.fetch(FetchDescriptor<SevereRisk>())
+        var result: [SevereRiskShapeDTO] = []
+        
+        for risk in risks {
+            result.append(SevereRiskShapeDTO(type: risk.type,
+                                             probabilities: risk.probability,
+                                             polygons: risk.polygons)
+            )
+        }
+
+        return result
+        
     }
     
     func purge(asOf now: Date = .init()) throws {

@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct AlertView: View {
-    @Environment(SpcProvider.self) private var provider: SpcProvider
+//    @Environment(SpcProvider.self) private var provider: SpcProvider
     @Environment(\.modelContext) private var modelContext
     
     private let scale: Double = 0.9
@@ -81,12 +81,12 @@ struct AlertView: View {
     let preview = Preview(MD.self, WatchModel.self)
     preview.addExamples(MD.sampleDiscussions)
     preview.addExamples(WatchModel.sampleWatches)
-    let provider = SpcProvider(client: SpcClient(),
-                               autoLoad: false)
+//    let provider = SpcProvider(client: SpcClient(),
+//                               autoLoad: false)
     
     return NavigationStack {
         AlertView()
             .modelContainer(preview.container)
-            .environment(provider)
+//            .environment(provider)
     }
 }

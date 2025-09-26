@@ -13,8 +13,7 @@ import OSLog
 actor ConvectiveOutlookRepo {
     private let logger = Logger.convectiveRepo
     
-    func refreshConvectiveOutlooks() async throws {
-        let client = SpcClient()
+    func refreshConvectiveOutlooks(using client: any SpcClient) async throws {
         let items = try await client.fetchOutlookItems()
         
         // Filters out some odd contents

@@ -10,13 +10,16 @@ import MapKit
 import SwiftData
 
 struct MapView: View {
-    @Environment(SpcProvider.self) private var provider: SpcProvider
+    @Environment(\.spcService) private var svc: any SpcService
     @Environment(\.modelContext) private var modelContext
     
     @State private var selectedLayer: String = "CAT"
     @State private var showLayerPicker = false
     
     @Query private var mesos: [MD]
+    @Query private var stormRisk: [StormRisk]
+    
+    @State private var severeRisks: [SevereRiskShapeDTO] = []
     
     private let availableLayers: [(key: String, label: String)] = [
         ("CAT", "Categorical"),
@@ -85,17 +88,24 @@ struct MapView: View {
                     case "CAT":
                         LegendView()
                     case "TOR":
-                        let probabilities = provider.tornado.compactMap { $0.probability }
-                            .sorted { $0.intValue < $1.intValue }
-                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+                        SevereLegendView(probabilities: getProbability(for: .tornado), risk: selectedLayer)
+
+////                        let prob = tornadoRisks.probabilities
+////                        let probabilities = severeRisks
+////                            .filter { $0.type == .tornado }
+////                            .compactMap { $0.probability }
+////                            .sorted { $0.intValue < $1.intValue }
+////                        let probabilities = provider.tornado.compactMap { $0.probability }
+////                            .sorted { $0.intValue < $1.intValue }
+//
+////                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+//                        if let tornadoRisks{
+//                            SevereLegendView(probabilities: tornadoRisks.probabilities, risk: selectedLayer)
+//                        }
                     case "HAIL":
-                        let probabilities = provider.hail.compactMap { $0.probability }
-                            .sorted { $0.intValue < $1.intValue }
-                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+                        SevereLegendView(probabilities: getProbability(for: .hail), risk: selectedLayer)
                     case "WIND":
-                        let probabilities = provider.wind.compactMap { $0.probability }
-                            .sorted { $0.intValue < $1.intValue }
-                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
+                        SevereLegendView(probabilities: getProbability(for: .wind), risk: selectedLayer)
                     default:
                         EmptyView()
                     }
@@ -108,45 +118,132 @@ struct MapView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
+        .onAppear {
+            Task {
+                do {
+                    severeRisks = try await svc.getSevereRiskShapes()
+                } catch {
+                    print(error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    private func getProbability(for type:ThreatType) -> [ThreatProbability] {
+        severeRisks.filter { $0.type == type }
+          .compactMap { $0.probabilities }
+          .sorted { $0.intValue < $1.intValue }
+    }
+    
+    // Helper to build MKPolygons from arbitrary sources
+    private func makeMKPolygons<Element>(
+        from source: [Element],
+        coordinates: (Element) -> [CLLocationCoordinate2D],
+        title: (Element) -> String?
+    ) -> [MKPolygon] {
+        source.map { element in
+            let coords = coordinates(element)
+            let mkPolygon = MKPolygon(coordinates: coords, count: coords.count)
+            mkPolygon.title = title(element)
+            return mkPolygon
+        }
     }
     
     private func polygonsForLayer(named layer: String) -> MKMultiPolygon {
         switch layer {
         case "CAT":
-            return MKMultiPolygon(provider.categorical.flatMap {$0.polygons}) //provider.categorical
+            let source = stormRisk.flatMap { $0.polygons }
+            let polygons = makeMKPolygons(
+                from: source,
+                coordinates: { $0.ringCoordinates },
+                title: { $0.title }
+            )
+            return MKMultiPolygon(polygons)
         case "TOR":
-            return MKMultiPolygon(provider.tornado.flatMap {$0.polygons})
+//            return MKMultiPolygon(provider.tornado.flatMap {$0.polygons})
+            let source = severeRisks
+                .filter { $0.type == .tornado }
+                .flatMap { $0.polygons }
+            let polygons = makeMKPolygons(
+                from: source,
+                coordinates: { $0.ringCoordinates },
+                title: { $0.title }
+            )
+            return MKMultiPolygon(polygons)
         case "HAIL":
-            return MKMultiPolygon(provider.hail.flatMap {$0.polygons})
+            let source = severeRisks
+                .filter { $0.type == .hail }
+                .flatMap { $0.polygons }
+            let polygons = makeMKPolygons(
+                from: source,
+                coordinates: { $0.ringCoordinates },
+                title: { $0.title }
+            )
+            return MKMultiPolygon(polygons)
         case "WIND":
-            return MKMultiPolygon(provider.wind.flatMap {$0.polygons})
+            let source = severeRisks
+                .filter { $0.type == .wind }
+                .flatMap { $0.polygons }
+            let polygons = makeMKPolygons(
+                from: source,
+                coordinates: { $0.ringCoordinates },
+                title: { $0.title }
+            )
+            return MKMultiPolygon(polygons)
         case "MESO":
-            let polys = mesos.compactMap() {
-                let coord = $0.coordinates.map { $0.location }
-                let poly = MKPolygon(coordinates: coord, count: coord.count)
-                poly.title = layer
-                
-                return poly
-            }
-            
-            return MKMultiPolygon(polys)
+            let polygons = makeMKPolygons(
+                from: mesos,
+                coordinates: { $0.coordinates.map { $0.location } },
+                title: { _ in layer }
+            )
+            return MKMultiPolygon(polygons)
         default:
             return MKMultiPolygon()
         }
     }
 }
 
-#Preview {
-    let preview = Preview(MD.self)
-    preview.addExamples(MD.sampleDiscussions)
-    let provider = SpcProvider(client: SpcClient(),
-                               autoLoad: false)
-    
-    return NavigationStack {
-        MapView()
-            .modelContainer(preview.container)
-            .environment(provider)
-            .environment(LocationManager())       // or a preconfigured preview instance
-    }
-}
+//#Preview {
+//    let preview = Preview(MD.self)
+//    preview.addExamples(MD.sampleDiscussions)
+////    let provider = SpcProvider(client: SpcClient(),
+////                               autoLoad: false)
+//    
+//    return NavigationStack {
+//        MapView()
+//            .modelContainer(preview.container)
+////            .environment(provider)
+//            .environment(LocationManager())       // or a preconfigured preview instance
+//    }
+//}
 
+//#Preview("Summary – Slight + 10% Tornado") {
+//    // Local mock for SpcService used by SummaryBadgeView
+//    struct MockSpcService: SpcService {
+//        let storm: StormRiskLevel
+//        let severe: SevereWeatherThreat
+//
+//        func sync() async {}
+//        func syncTextProducts() async {}
+//        func cleanup(daysToKeep: Int) async {}
+//
+//        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { storm }
+//        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { severe }
+//        func getSevereRiskShapes(for type: ThreatType) async throws -> SevereRiskShapeDTO { SevereRiskShapeDTO(type: .tornado, probabilities: [], polygons: []) }
+//    }
+//
+//    // Seed some sample Mesos so ActiveMesoSummaryView has content
+//    let mdPreview = Preview(MD.self)
+//    mdPreview.addExamples(MD.sampleDiscussions)
+//
+//    let location = LocationManager()
+//    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
+//
+//    return NavigationStack {
+//        MapView()
+//            .modelContainer(mdPreview.container)
+////            .environment(location)
+//            .environment(\.spcService, spcMock)
+//            .padding()
+//    }
+//}

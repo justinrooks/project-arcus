@@ -13,8 +13,7 @@ import OSLog
 actor WatchRepo {
     private let logger = Logger.watchRepo
     
-    func refreshWatches() async throws {
-        let client = SpcClient()
+    func refreshWatches(using client: any SpcClient) async throws {
         let items = try await client.fetchWatchItems()
         
         // Filters out some odd contents

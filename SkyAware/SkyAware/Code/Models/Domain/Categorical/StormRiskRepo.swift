@@ -14,8 +14,7 @@ import OSLog
 actor StormRiskRepo {
     private let logger = Logger.stormRiskRepo
     
-    func refreshStormRisk() async throws {
-        let client = SpcClient()
+    func refreshStormRisk(using client: any SpcClient) async throws {
         let risk = try await client.fetchStormRisk()
         
         guard let risk else { return } // if we don't have any items, just return

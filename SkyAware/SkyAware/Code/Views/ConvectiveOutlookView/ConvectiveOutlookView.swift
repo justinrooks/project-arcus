@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct ConvectiveOutlookView: View {
-    @Environment(SpcProvider.self) private var provider: SpcProvider
+//    @Environment(SpcProvider.self) private var provider: SpcProvider
     @Environment(\.modelContext) private var modelContext
     
     @Query(filter: #Predicate<ConvectiveOutlook> { $0.day == 1 },
@@ -97,12 +97,12 @@ extension ConvectiveOutlookView {
 #Preview {
     let preview = Preview(ConvectiveOutlook.self)
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    let provider = SpcProvider(client: SpcClient(),
-                               autoLoad: false)
+//    let provider = SpcProvider(client: SpcClient(),
+//                               autoLoad: false)
     
     return NavigationStack {
         ConvectiveOutlookView()
             .modelContainer(preview.container)
-            .environment(provider)
+//            .environment(provider)
     }
 }

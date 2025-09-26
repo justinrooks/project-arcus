@@ -1,76 +1,100 @@
 //
-//  SpcProvider.swift
+//  SpcProviderV1.swift
 //  SkyAware
 //
-//  Created by Justin Rooks on 7/3/25.
+//  Created by Justin Rooks on 9/18/25.
 //
 
 import Foundation
-import Observation
 import OSLog
+import SwiftData
+import CoreLocation
 
-@Observable
-final class SpcProvider: Sendable {
-    //var errorMessage: String?
-    var isLoading: Bool = false
-    var statusMessage: String? = "Data Loaded"
+protocol SpcService: Sendable {
+    func sync() async -> Void
+    func syncTextProducts() async -> Void
+    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel
+    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat
+    func cleanup(daysToKeep: Int) async -> Void
     
-    @ObservationIgnored private let logger = Logger.spcProvider
-    @ObservationIgnored private let client: SpcClient
-        
-    // Domain Models
-    var alertCount: Int = 0
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO]
+}
+
+actor SpcProvider: SpcService {
+    private let logger = Logger.spcProvider
+    private let outlookRepo: ConvectiveOutlookRepo
+    private let mesoRepo: MesoRepo
+    private let watchRepo: WatchRepo
+    private let stormRiskRepo: StormRiskRepo
+    private let severeRiskRepo: SevereRiskRepo
+    private let locationmanager: LocationManager
+    private let client: SpcClient
     
-    var categorical = [CategoricalStormRisk]() // ready to deprecate
-    var wind = [SevereThreat]() // ready to deprecate
-    var hail = [SevereThreat]() // ready to deprecate
-    var tornado = [SevereThreat]() // ready to deprecate
-    
-    init(client: SpcClient,
-         autoLoad: Bool = true) {
+    init(outlookRepo: ConvectiveOutlookRepo,
+         mesoRepo: MesoRepo,
+         watchRepo: WatchRepo,
+         stormRiskRepo: StormRiskRepo,
+         severeRiskRepo: SevereRiskRepo,
+         locationManager: LocationManager,
+         client: SpcClient) {
+        self.outlookRepo = outlookRepo
+        self.mesoRepo = mesoRepo
+        self.watchRepo = watchRepo
+        self.stormRiskRepo = stormRiskRepo
+        self.severeRiskRepo = severeRiskRepo
+        self.locationmanager = locationManager
         self.client = client
-
-        if autoLoad { loadFeed() }
     }
     
-    func loadFeed() {
-//        isLoading = true
-        
-        Task {
-            await loadFeedAsync()
-            //            await MainActor.run {
-            //                ToastManager.shared.showSuccess(title: "SPC data loaded")
-            //            }
-//            isLoading = false
-            statusMessage = "Spc Data Loaded"
-        }
-    }
-    
-    /// Loads all the SPC products including RSS and GeoJSON
-    func loadFeedAsync() async {
+    func sync() async {
         do {
-            // ready to deprecate below
-            let points = try await client.refreshPoints()
+            await syncTextProducts()
             
-            self.categorical = getTypedFeature(from: points.geo, for: .categorical, transform: CategoricalStormRisk.from)
-            self.wind        = getTypedFeature(from: points.geo, for: .wind,        transform: SevereThreat.from)
-            self.hail        = getTypedFeature(from: points.geo, for: .hail,        transform: SevereThreat.from)
-            self.tornado     = getTypedFeature(from: points.geo, for: .tornado,     transform: SevereThreat.from)
+            try await stormRiskRepo.refreshStormRisk(using: client)
+            try await severeRiskRepo.refreshHailRisk(using: client)
+            try await severeRiskRepo.refreshWindRisk(using: client)
+            try await severeRiskRepo.refreshTornadoRisk(using: client)
         } catch {
-            //self.errorMessage = error.localizedDescription
             logger.error("Error loading Spc feed: \(error.localizedDescription)")
         }
     }
-
-    /// Transforms the GeoJSON into usable features for the map
-    /// - Parameters:
-    ///   - list: list of GeoJSON result objects to process
-    ///   - product: product to classify as
-    ///   - transform: the transform description
-    /// - Returns: the typed object
-    @available(*, deprecated, message: "Replaced in repos")
-    private func getTypedFeature<T>(from list: [GeoJsonResult], for product: GeoJSONProduct, transform: (GeoJSONFeature) -> T?) -> [T] {
-        guard let features = list.first(where: { $0.product == product })?.featureCollection.features else { return [] }
-        return features.compactMap(transform)
+    
+    func syncTextProducts() async {
+        do {
+            try await outlookRepo.refreshConvectiveOutlooks(using: client)
+            try await mesoRepo.refreshMesoscaleDiscussions(using: client)
+            try await watchRepo.refreshWatches(using: client)
+        } catch {
+            logger.error("Error loading Spc feed: \(error.localizedDescription)")
+        }
+    }
+    
+    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
+        try await stormRiskRepo.active(for: point)
+    }
+    
+    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
+        try await severeRiskRepo.active(for: point)
+    }
+    
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
+        try await severeRiskRepo.getSevereRiskShapes()
+    }
+    
+    func cleanup(daysToKeep: Int = 3) async {
+        do {
+            try await outlookRepo.purge()
+            try await mesoRepo.purge()
+            try await watchRepo.purge()
+            
+            // Clean up the geojson
+            try await stormRiskRepo.purge()
+            try await severeRiskRepo.purge()
+            
+            
+        } catch {
+            logger.error("Error cleaning up old Spc feed data: \(error.localizedDescription)")
+        }
+        
     }
 }

@@ -12,11 +12,11 @@
 
 import Foundation
 
-struct RSS {
+struct RSS: Sendable {
     var channel: Channel?
 }
 
-struct Channel {
+struct Channel: Sendable {
     var title: String?
     var link: String?
     var description: String?
@@ -29,13 +29,13 @@ struct Channel {
     var items: [Item] = []
 }
 
-struct AtomLink {
+struct AtomLink: Sendable {
     var href: String?
     var rel: String?
     var type: String?
 }
 
-struct Item {
+struct Item: Sendable {
     var link: String?
     var title: String?
     var description: String?
@@ -43,7 +43,7 @@ struct Item {
     var guid: GUID?
 }
 
-struct GUID {
+struct GUID: Sendable {
     var value: String?
     var isPermaLink: String?
 }

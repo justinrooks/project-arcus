@@ -54,19 +54,19 @@ extension GeoJSONFeature {
     /// Creates the MKMultiPolygon object from the array of GeoJSONFeatures provided
     /// - Parameter polyTitle: the string title to apply to each polygon
     /// - Returns: MKMultiPolygon ready for rendering on a map
-    @available(*, deprecated, message: "Use newFunction() instead.", renamed: "createPolygonEntities()")
-    func createPolygons(polyTitle: String) -> [MKPolygon] {
-        guard geometry.type == "MultiPolygon" else { return [] }
-        
-        return geometry.coordinates.flatMap { polygonGroup in
-            polygonGroup.map { ring in
-                let coords = ring.map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) }
-                let poly = MKPolygon(coordinates: coords, count: coords.count)
-                poly.title = polyTitle
-                return poly
-            }
-        }
-    }
+//    @available(*, deprecated, message: "Use newFunction() instead.", renamed: "createPolygonEntities()")
+//    func createPolygons(polyTitle: String) -> [MKPolygon] {
+//        guard geometry.type == "MultiPolygon" else { return [] }
+//        
+//        return geometry.coordinates.flatMap { polygonGroup in
+//            polygonGroup.map { ring in
+//                let coords = ring.map { CLLocationCoordinate2D(latitude: $0[1], longitude: $0[0]) }
+//                let poly = MKPolygon(coordinates: coords, count: coords.count)
+//                poly.title = polyTitle
+//                return poly
+//            }
+//        }
+//    }
     
     /// Creates GeoPolygonEntity objects from the polygon rings
     /// - Parameter polyTitle: the title to assign to each GeoPolygonEntity

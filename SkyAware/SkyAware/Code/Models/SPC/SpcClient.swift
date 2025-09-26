@@ -42,7 +42,27 @@ enum RssProduct: String, CustomStringConvertible {
     }
 }
 
-struct SpcClient {
+protocol SpcClient: Sendable {
+    /// Fetches an array of convective outlook RSS Items from SPC
+    /// - Returns: array of RSS Items
+    func fetchOutlookItems() async throws -> [Item]
+    
+    /// Fetches an array of meso RSS Items from SPC
+    /// - Returns: array of RSS Items
+    func fetchMesoItems() async throws -> [Item]
+    
+    /// Fetches an array of watch RSS Items from SPC
+    /// - Returns: array of RSS Items
+    func fetchWatchItems() async throws -> [Item]
+    
+    /// Fetches the categorical storm risk geojson
+    func fetchStormRisk() async throws -> GeoJsonResult?
+    func fetchHailRisk() async throws -> GeoJsonResult?
+    func fetchWindRisk() async throws -> GeoJsonResult?
+    func fetchTornadoRisk() async throws -> GeoJsonResult?
+}
+
+struct SpcHttpClient: SpcClient {
     private let http: HTTPClient
     private let parser: RSSFeedParser
     private let logger = Logger.spcClient
@@ -90,22 +110,7 @@ struct SpcClient {
         let (json, _) = try await getGeoJSONData(for: .tornado)
         return json
     }
-
-    /// Fetches the points data for severe weather
-    /// - Returns: array of GeoJsonResult and a bool indicating if any of the products changed
-    @available(*, deprecated, message: "Use fetch methods for severe instead (fetchTornadoRisk)")
-    func refreshPoints() async throws -> (geo: [GeoJsonResult], changed: Bool) {
-        logger.debug("Refreshing SPC Points data")
-        
-        let (cat, cCh)  = try await getGeoJSONData(for: .categorical)
-        let (torn, tCh) = try await getGeoJSONData(for: .tornado)
-        let (hail, hCh) = try await getGeoJSONData(for: .hail)
-        let (wind, wCh) = try await getGeoJSONData(for: .wind)
-        
-        let changed = cCh || tCh || hCh || wCh
-        return ([cat, torn, hail, wind].compactMap{ $0 }, changed)
-    }
-    
+ 
     /// Wrapper func that pulls the rss data from spc
     /// - Parameter product: product to obtain data for
     /// - Returns: an array of RSS Items

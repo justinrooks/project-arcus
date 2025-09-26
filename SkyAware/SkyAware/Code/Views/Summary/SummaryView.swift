@@ -6,14 +6,13 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct SummaryView: View {
-//    @Environment(LocationManager.self) private var locationProvider: LocationManager
-    @Environment(SpcProvider.self) private var spcProvider: SpcProvider
     
     var body: some View {
         VStack {
-//             Header
+            // Header
             SummaryHeaderView()
             
             // Badges
@@ -47,14 +46,33 @@ struct SummaryView: View {
     }
 }
 
-#Preview {
-    let preview = Preview(ConvectiveOutlook.self)
-    let mock = LocationManager()
-    let spc = SpcProvider(client: SpcClient(),
-                          autoLoad: false)
-    
-    SummaryView()
-        .environment(mock)
-        .environment(spc)
-        .environment(SummaryProvider(provider: spc, location: mock))
+#Preview("Summary – Slight + 10% Tornado") {
+    // Local mock for SpcService used by SummaryBadgeView
+    struct MockSpcService: SpcService {
+        let storm: StormRiskLevel
+        let severe: SevereWeatherThreat
+
+        func sync() async {}
+        func syncTextProducts() async {}
+        func cleanup(daysToKeep: Int) async {}
+
+        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { storm }
+        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { severe }
+        func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+    }
+
+    // Seed some sample Mesos so ActiveMesoSummaryView has content
+    let mdPreview = Preview(MD.self)
+    mdPreview.addExamples(MD.sampleDiscussions)
+
+    let location = LocationManager()
+    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
+
+    return NavigationStack {
+        SummaryView()
+            .modelContainer(mdPreview.container)
+            .environment(location)
+            .environment(\.spcService, spcMock)
+            .padding()
+    }
 }

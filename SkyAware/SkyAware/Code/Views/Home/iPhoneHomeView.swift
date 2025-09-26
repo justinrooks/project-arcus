@@ -7,10 +7,11 @@
 
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 struct iPhoneHomeView: View {
     @Environment(\.modelContext) private var modelContext
-    @Environment(SpcProvider.self) private var provider: SpcProvider
+//    @Environment(SpcProvider.self) private var provider: SpcProvider
     
     @Query private var mesos: [MD]
     @Query private var watches: [WatchModel]
@@ -19,11 +20,11 @@ struct iPhoneHomeView: View {
         ZStack {
             Color(.systemGray6)
                 .ignoresSafeArea()
-            if provider.isLoading {
-                VStack {
-                    LoadingView(message: "Fetching SPC data...")
-                }.ignoresSafeArea()
-            } else {
+//            if provider.isLoading {
+//                VStack {
+//                    LoadingView(message: "Fetching SPC data...")
+//                }.ignoresSafeArea()
+//            } else {
                 TabView {
                     NavigationStack {
                         ScrollView{
@@ -70,34 +71,79 @@ struct iPhoneHomeView: View {
                     }
                 }
             }
-        }
+//        }
         .transition(.opacity)
-        .animation(.easeInOut(duration: 0.5), value: provider.isLoading)
+//        .animation(.easeInOut(duration: 0.5), value: provider.isLoading)
         .accentColor(.green.opacity(0.80))
     }
 }
 
 extension iPhoneHomeView {
     func fetchSpcData() {
-        provider.loadFeed()
-        
-        print("Got SPC Feed data")
+//        provider.loadFeed()
+//        
+//        print("Got SPC Feed data")
     }
 }
 
-#Preview {
-    // 1) In‑memory SwiftData container for previews
-    let container = try! ModelContainer(
-        for: ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self,//, RiskSnapshot.self, MDEntry.self,  // include any @Model types you use
-        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-    )
-    
-    let client   = SpcClient()
-    let provider = SpcProvider(client: client, autoLoad: true)
-    let mock = LocationManager()
-    
+// Shared mock service for previews
+private struct PreviewSpcService: SpcService {
+    let storm: StormRiskLevel
+    let severe: SevereWeatherThreat
+
+    func sync() async {}
+    func syncTextProducts() async {}
+    func cleanup(daysToKeep: Int) async {}
+
+    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { storm }
+    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { severe }
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+}
+
+#Preview("Home – Slight + 10% Tornado") {
+    // In-memory SwiftData container with sample data for all tabs
+    let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self)
+    preview.addExamples(MD.sampleDiscussions)
+    preview.addExamples(WatchModel.sampleWatches)
+    preview.addExamples(ConvectiveOutlook.sampleOutlooks)
+
+    // Environment dependencies
+    let location = LocationManager()
+    let spcMock = PreviewSpcService(storm: .slight, severe: .tornado(probability: 0.10))
+
     return iPhoneHomeView()
-        .environment(provider)                // your @Observable provider
-        .environment(LocationManager())       // or a preconfigured preview instance
-        .environment(SummaryProvider(provider: provider, location: mock))
+        .modelContainer(preview.container)
+        .environment(location)
+        .environment(\.spcService, spcMock)
+}
+
+#Preview("Home – All Clear") {
+    let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self)
+    preview.addExamples(MD.sampleDiscussions)
+    preview.addExamples(WatchModel.sampleWatches)
+    preview.addExamples(ConvectiveOutlook.sampleOutlooks)
+
+    let location = LocationManager()
+    let spcMock = PreviewSpcService(storm: .allClear, severe: .allClear)
+
+    return iPhoneHomeView()
+        .modelContainer(preview.container)
+        .environment(location)
+        .environment(\.spcService, spcMock)
+}
+
+#Preview("Home – Enhanced + 30% Hail (Dark)") {
+    let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self)
+    preview.addExamples(MD.sampleDiscussions)
+    preview.addExamples(WatchModel.sampleWatches)
+    preview.addExamples(ConvectiveOutlook.sampleOutlooks)
+
+    let location = LocationManager()
+    let spcMock = PreviewSpcService(storm: .enhanced, severe: .hail(probability: 0.30))
+
+    return iPhoneHomeView()
+        .modelContainer(preview.container)
+        .environment(location)
+        .environment(\.spcService, spcMock)
+        .environment(\.colorScheme, .dark)
 }

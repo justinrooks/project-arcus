@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-class RSSFeedParser: NSObject, XMLParserDelegate {
+final class RSSFeedParser: NSObject, XMLParserDelegate, @unchecked Sendable {
     // MARK: - Properties
     private let logger = Logger.rssParser
     private var feed: RSS?
@@ -154,3 +154,4 @@ class RSSFeedParser: NSObject, XMLParserDelegate {
         }
     }
 }
+

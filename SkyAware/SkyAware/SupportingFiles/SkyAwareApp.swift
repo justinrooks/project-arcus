@@ -26,9 +26,7 @@ struct SkyAwareApp: App {
     private let severeRiskRepo: SevereRiskRepo
     
     @State private var locationProvider: LocationManager
-    @State private var prov: SpcProvider
-    @State private var spcProvider: SpcProviderV1
-    @State private var summaryProvider: SummaryProvider
+    @State private var spcProvider: SpcProvider
     
     @Environment(\.scenePhase) private var scenePhase
     
@@ -58,23 +56,15 @@ struct SkyAwareApp: App {
         self.severeRiskRepo = SevereRiskRepo(modelContainer: sharedModelContainer)
 
         let loc = LocationManager()
-        let spc = SpcProvider(client: SpcClient(),
-                              autoLoad: false)
-        
-        let spc1 = SpcProviderV1(outlookRepo: self.outlookRepo,
+        let spc1 = SpcProvider(outlookRepo: self.outlookRepo,
                                  mesoRepo: self.mesoRepo,
                                  watchRepo: self.watchRepo,
                                  stormRiskRepo: self.stormRiskRepo,
                                  severeRiskRepo: self.severeRiskRepo,
-                                 locationManager: loc)
-        
-        let sum = SummaryProvider(provider: spc, location: loc)
-        
+                                 locationManager: loc,
+                                 client: SpcHttpClient())
         _locationProvider = .init(wrappedValue: loc)
-        _prov = .init(wrappedValue: spc)
         _spcProvider = .init(wrappedValue: spc1)
-        
-        _summaryProvider = .init(wrappedValue: sum)
     }
     
     var body: some Scene {
@@ -82,10 +72,8 @@ struct SkyAwareApp: App {
             if (locationProvider.isAuthorized) {
                 iPhoneHomeView()
                     .toasting()
-                    .environment(prov)
-//                    .environment(spcProvider)
+                    .environment(\.spcService, spcProvider)
                     .environment(locationProvider)
-                    .environment(summaryProvider)
             } else {
                 Text("Missing Location Authorization")
             }
@@ -95,7 +83,6 @@ struct SkyAwareApp: App {
             await scheduleNextAppRefresh() // Ensure we schedule again
             
             await withTaskCancellationHandler {
-                _ = await prov.loadFeedAsync() // Get the latest data from SPC, updates the db
                 do {
                     let outlook = try await outlookRepo.current()
                     let severeRiskv1 = try await spcProvider.getSevereRisk(for: locationProvider.resolvedUserLocation)
@@ -154,14 +141,6 @@ struct SkyAwareApp: App {
                 Task {
                     await spcProvider.cleanup()
                     await spcProvider.sync()
-//                    
-//                    let c = try await outlookRepo.current()
-//                    
-//                    let y = try? await spcProvider.getSevereRisk(for: locationProvider.resolvedUserLocation)
-//                    print("Severe Risk: \(y)")
-//                    
-//                    let x = try? await spcProvider.getStormRisk(for: locationProvider.resolvedUserLocation)
-//                    print("Storm Risk: \(x)")
                 }
             }
             

@@ -50,7 +50,9 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				Tests/SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				Tests/SkyAwareTests/WatchParserTests.swift,
+				Tests/SkyAwareTests/WatchRepoPurgeTests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITests.swift,
 				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
 			);
@@ -59,7 +61,9 @@
 		D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Tests/SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				Tests/SkyAwareTests/WatchParserTests.swift,
+				Tests/SkyAwareTests/WatchRepoPurgeTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};
@@ -458,6 +462,7 @@
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -514,6 +519,7 @@
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
@@ -554,7 +560,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -595,7 +601,7 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -614,7 +620,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkyAware.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SkyAware";
 			};
@@ -634,7 +640,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SkyAware.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SkyAware";
 			};
@@ -652,7 +658,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = SkyAware;
 			};
@@ -670,7 +676,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.justinrooks.SkyAwareUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_VERSION = 5.0;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = SkyAware;
 			};

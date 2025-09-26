@@ -8,7 +8,7 @@
 import Foundation
 import SwiftData
 
-enum ThreatType: String, CaseIterable, Codable {
+enum ThreatType: String, CaseIterable, Codable, Sendable {
     case wind
     case hail
     case tornado

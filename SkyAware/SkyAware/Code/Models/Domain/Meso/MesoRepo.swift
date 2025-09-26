@@ -14,8 +14,8 @@ import OSLog
 actor MesoRepo {
     private let logger = Logger.mesoRepo
  
-    func refreshMesoscaleDiscussions() async throws {
-        let client = SpcClient()
+    func refreshMesoscaleDiscussions(using client: SpcClient) async throws {
+//        let client = SpcClient()
         let items = try await client.fetchMesoItems()
         
         // Filters out some odd contents

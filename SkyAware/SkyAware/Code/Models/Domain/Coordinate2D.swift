@@ -6,7 +6,7 @@
 //
 
 import Foundation
-import MapKit
+import CoreLocation
 
 struct Coordinate2D: Sendable, Codable {
     let latitude: Double
