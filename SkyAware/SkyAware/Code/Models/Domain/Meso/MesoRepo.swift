@@ -13,13 +13,27 @@ import OSLog
 @ModelActor
 actor MesoRepo {
     private let logger = Logger.mesoRepo
+    private let parser: RSSFeedParser = RSSFeedParser()
  
     func refreshMesoscaleDiscussions(using client: SpcClient) async throws {
-//        let client = SpcClient()
-        let items = try await client.fetchMesoItems()
+        let data = try await client.fetchRssData(for: .meso)
+
+        guard let data else {
+            logger.warning("No mesoscale discussions found")
+            return
+        }
+                
+        guard let rss = try parser.parse(data: data) else {
+            throw SpcError.parsingError
+        }
+        
+        guard let channel = rss.channel else {
+            logger.warning("Error parsing mesoscale items")
+            return
+        }
         
         // Filters out some odd contents
-        let mesos = items
+        let mesos = channel.items
             .filter { ($0.title ?? "").contains("SPC MD ") }
             .compactMap { makeMD(from: $0) }
         

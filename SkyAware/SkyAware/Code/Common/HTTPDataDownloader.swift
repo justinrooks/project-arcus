@@ -33,7 +33,7 @@ public final class URLSessionHTTPClient: HTTPClient {
     private let session: URLSession
     private let delays: [UInt64] = [0, 5, 10, 15] // seconds
     
-    public init(identifier: String?) {
+    public init() {
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .useProtocolCachePolicy
         config.timeoutIntervalForRequest = 15

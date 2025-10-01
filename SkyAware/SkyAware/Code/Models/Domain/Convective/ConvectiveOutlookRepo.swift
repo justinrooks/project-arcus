@@ -12,12 +12,27 @@ import OSLog
 @ModelActor
 actor ConvectiveOutlookRepo {
     private let logger = Logger.convectiveRepo
+    private let parser: RSSFeedParser = RSSFeedParser()
     
     func refreshConvectiveOutlooks(using client: any SpcClient) async throws {
-        let items = try await client.fetchOutlookItems()
+        let data = try await client.fetchRssData(for: .convective)
+
+        guard let data else {
+            logger.warning("No convective outlooks found")
+            return
+        }
+                
+        guard let rss = try parser.parse(data: data) else {
+            throw SpcError.parsingError
+        }
+        
+        guard let channel = rss.channel else {
+            logger.warning("Error parsing convective channel items")
+            return
+        }
         
         // Filters out some odd contents
-        let outlooks = items
+        let outlooks = channel.items
             .filter { ($0.title ?? "").contains(" Convective Outlook") }
             .compactMap { makeConvectiveOutlook(from: $0) }
         
@@ -40,7 +55,7 @@ actor ConvectiveOutlookRepo {
     func current() throws -> ConvectiveOutlookDTO? {
         let fetchDescriptor = FetchDescriptor<ConvectiveOutlook>()
         let outlooks: [ConvectiveOutlook] = try modelContext.fetch(fetchDescriptor)
-        let outlook = outlooks.sorted { $0.published > $1.published }
+        let outlook = outlooks.sorted { $0.published < $1.published }
         
         return ConvectiveOutlookDTO(title: outlook[0].title,
                                        link: outlook[0].link,

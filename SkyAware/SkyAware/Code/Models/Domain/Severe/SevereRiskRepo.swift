@@ -15,43 +15,55 @@ actor SevereRiskRepo {
     private let logger = Logger.severeRiskRepo
 
     func refreshHailRisk(using client: any SpcClient) async throws {
-        let risk = try await client.fetchHailRisk()
+        let data = try await client.fetchGeoJsonData(for: .hail)
+        guard let data else {
+            logger.warning("No hail risk data returned")
+            return
+        } // if we don't have any items, just return
         
-        guard let risk else { return } // if we don't have any items, just return
+        let decoded = GeoJsonParser.decode(from: data)
         
-        let dto = risk.featureCollection.features.compactMap {
+        let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .hail, with: $0)
         }
-
-        try upsert(dto)
-        logger.debug("Updated \(dto.count) hail risk feature\(dto.count > 1 ? "s" : "")")
+        
+        try upsert(dtos)
+        logger.debug("Updated \(dtos.count) hail risk feature\(dtos.count > 1 ? "s" : "")")
     }
     
     func refreshWindRisk(using client: any SpcClient) async throws {
-        let risk = try await client.fetchWindRisk()
+        let data = try await client.fetchGeoJsonData(for: .wind)
+        guard let data else {
+            logger.warning("No wind risk data returned")
+            return
+        } // if we don't have any items, just return
         
-        guard let risk else { return } // if we don't have any items, just return
+        let decoded = GeoJsonParser.decode(from: data)
         
-        let dto = risk.featureCollection.features.compactMap {
-            makeSevereRisk(for: .wind, with: $0)
+        let dtos = decoded.features.compactMap {
+            makeSevereRisk(for: .hail, with: $0)
         }
         
-        try upsert(dto)
-        logger.debug("Updated \(dto.count) wind risk feature\(dto.count > 1 ? "s" : "")")
+        try upsert(dtos)
+        logger.debug("Updated \(dtos.count) wind risk feature\(dtos.count > 1 ? "s" : "")")
     }
     
     /// Testable overload that allows injecting a client
     func refreshTornadoRisk(using client: any SpcClient) async throws {
-        let risk = try await client.fetchTornadoRisk()
+        let data = try await client.fetchGeoJsonData(for: .tornado)
+        guard let data else {
+            logger.warning("No tornado risk data returned")
+            return
+        } // if we don't have any items, just return
         
-        guard let risk else { return } // if we don't have any items, just return
+        let decoded = GeoJsonParser.decode(from: data)
         
-        let dto = risk.featureCollection.features.compactMap {
-            makeSevereRisk(for: .tornado, with: $0)
+        let dtos = decoded.features.compactMap {
+            makeSevereRisk(for: .hail, with: $0)
         }
         
-        try upsert(dto)
-        logger.debug("Updated \(dto.count) tornado risk feature\(dto.count > 1 ? "s" : "")")
+        try upsert(dtos)
+        logger.debug("Updated \(dtos.count) tornado risk feature\(dtos.count > 1 ? "s" : "")")
     }
     
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.

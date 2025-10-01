@@ -15,11 +15,15 @@ actor StormRiskRepo {
     private let logger = Logger.stormRiskRepo
     
     func refreshStormRisk(using client: any SpcClient) async throws {
-        let risk = try await client.fetchStormRisk()
+        let data = try await client.fetchGeoJsonData(for: .categorical)
+        guard let data else {
+            logger.warning("No categorical storm risk data returned")
+            return
+        } // if we don't have any items, just return
         
-        guard let risk else { return } // if we don't have any items, just return
+        let decoded = GeoJsonParser.decode(from: data)
         
-        let dto = risk.featureCollection.features.compactMap {
+        let dtos = decoded.features.compactMap {
             let props = $0.properties
             
             return StormRisk(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
@@ -30,8 +34,8 @@ actor StormRiskRepo {
             )
         }
         
-        try upsert(dto)
-        logger.debug("Updated \(dto.count) categorical storm risk feature\(dto.count > 1 ? "s" : "")")
+        try upsert(dtos)
+        logger.debug("Updated \(dtos.count) categorical storm risk feature\(dtos.count > 1 ? "s" : "")")
     }
     
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.

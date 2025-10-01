@@ -20,6 +20,7 @@ extension Logger {
     static let watchRepo = Logger(subsystem: subsystem, category: "WatchRepo")
     static let stormRiskRepo = Logger(subsystem: subsystem, category: "StormRiskRepo")
     static let severeRiskRepo = Logger(subsystem: subsystem, category: "SevereRiskRepo")
+    static let riskProductRepo = Logger(subsystem: subsystem, category: "RiskProductRepo")
     
     
     static let downloader = Logger(subsystem: subsystem, category: "Downloader")

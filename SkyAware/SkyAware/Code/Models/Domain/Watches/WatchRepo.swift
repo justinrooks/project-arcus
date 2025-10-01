@@ -12,12 +12,27 @@ import OSLog
 @ModelActor
 actor WatchRepo {
     private let logger = Logger.watchRepo
+    private let parser: RSSFeedParser = RSSFeedParser()
     
     func refreshWatches(using client: any SpcClient) async throws {
-        let items = try await client.fetchWatchItems()
+        let data = try await client.fetchRssData(for: .convective)
+
+        guard let data else {
+            logger.warning("No severe watches found")
+            return
+        }
+                
+        guard let rss = try parser.parse(data: data) else {
+            throw SpcError.parsingError
+        }
+        
+        guard let channel = rss.channel else {
+            logger.warning("Error parsing severe watch channel items")
+            return
+        }
         
         // Filters out some odd contents
-        let watches = items
+        let watches = channel.items
             .filter {
                 guard let t = $0.title else { return false }
                 return t.contains("Watch") && !t.contains("Status Reports")
