@@ -47,27 +47,13 @@ struct SummaryView: View {
 }
 
 #Preview("Summary – Slight + 10% Tornado") {
-    // Local mock for SpcService used by SummaryBadgeView
-    struct MockSpcService: SpcService {
-        let storm: StormRiskLevel
-        let severe: SevereWeatherThreat
-
-        func sync() async {}
-        func syncTextProducts() async {}
-        func cleanup(daysToKeep: Int) async {}
-
-        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { storm }
-        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { severe }
-        func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
-    }
-
     // Seed some sample Mesos so ActiveMesoSummaryView has content
+    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
     let mdPreview = Preview(MD.self)
     mdPreview.addExamples(MD.sampleDiscussions)
 
     let location = LocationManager()
-    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
-
+    
     return NavigationStack {
         SummaryView()
             .modelContainer(mdPreview.container)

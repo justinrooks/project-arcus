@@ -65,6 +65,26 @@ actor StormRiskRepo {
         return .allClear
     }
     
+    func getLatestMapData(asOf date: Date = .init()) throws -> [StormRiskDTO] {
+        // 1) Fetch only risks that are currently valid
+        let pred = #Predicate<StormRisk> { $0.valid <= date && date < $0.expires }
+        var desc = FetchDescriptor<StormRisk>(predicate: pred)
+        desc.sortBy = [SortDescriptor(\.issued, order: .reverse)]
+        
+        let risks = try modelContext.fetch(desc)
+        
+        // 2) Sort by descending risk so we can early-exit on first hit
+        let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
+    
+        return bySeverity.map {
+            StormRiskDTO(riskLevel: $0.riskLevel,
+                         issued: $0.issued,
+                         expires: $0.expires,
+                         valid: $0.valid,
+                         polygons: $0.polygons)
+        }
+    }
+    
     func purge(asOf now: Date = .init()) throws {
         logger.info("Purging expired storm risk geometry")
         

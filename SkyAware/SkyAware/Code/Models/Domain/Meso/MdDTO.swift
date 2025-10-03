@@ -24,7 +24,7 @@ struct MdDTO: Sendable, Identifiable {
     let threats: MDThreats?
     let coordinates: [Coordinate2D]
     
-    init(number: Int, title: String, link: URL, issued: Date, validStart: Date, validEnd: Date, areasAffected: String, summary: String, concerning: String? = nil, watchProbability: String, threats: MDThreats, coordinates: [Coordinate2D]) {
+    init(number: Int, title: String, link: URL, issued: Date, validStart: Date, validEnd: Date, areasAffected: String, summary: String, concerning: String? = nil, watchProbability: String, threats: MDThreats?, coordinates: [Coordinate2D]) {
         self.id = UUID()
         self.number = number
         self.title = title

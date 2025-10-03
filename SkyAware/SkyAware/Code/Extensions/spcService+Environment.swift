@@ -36,6 +36,11 @@ private struct MissingSpcService: SpcService {
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
         assertionFailure(" Not injected "); throw MissingError()
     }
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
+        assertionFailure(" NOT INJECTED "); throw MissingError()
+    }
+    func getStormRiskMapData() async throws -> [StormRiskDTO] {assertionFailure("NOT INJECTED"); throw MissingError()}
+    func getMesoMapData() async throws -> [MdDTO] { assertionFailure("NOT INJECTED"); throw MissingError() }
     
     struct MissingError: Error {}
 }

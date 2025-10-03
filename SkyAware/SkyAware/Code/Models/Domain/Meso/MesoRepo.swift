@@ -70,6 +70,43 @@ actor MesoRepo {
         return hits
     }
     
+    func getLatestMapData(asOf date: Date = .init()) throws -> [MdDTO] {
+        // 1) Fetch only risks that are currently valid
+        let pred = #Predicate<MD> { $0.validStart <= date && date < $0.validEnd }
+        var desc = FetchDescriptor<MD>(predicate: pred)
+        desc.sortBy = [SortDescriptor(\.issued, order: .reverse)]
+        
+        let risks = try modelContext.fetch(desc)
+        
+        // 2) Sort by descending risk so we can early-exit on first hit
+//        let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
+    
+        return risks.map {
+            MdDTO(
+                number: $0.number,
+                title: $0.title,
+                link: $0.link,
+                issued: $0.issued,
+                validStart: $0.validStart,
+                validEnd: $0.validEnd,
+                areasAffected: $0.areasAffected,
+                summary: $0.summary,
+                watchProbability: $0.watchProbability,
+                threats: $0.threats,
+                coordinates: $0.coordinates
+            )
+        }
+        
+//        return bySeverity.map {
+//            StormRiskDTO(riskLevel: $0.riskLevel,
+//                         issued: $0.issued,
+//                         expires: $0.expires,
+//                         valid: $0.valid,
+//                         polygons: $0.polygons)
+//        }
+    }
+    
+    
     /// Removes any expired mesoscale discussions from datastore
     /// - Parameter now: defaults to now
     func purge(asOf now: Date = .init()) throws {

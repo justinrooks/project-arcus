@@ -53,16 +53,25 @@ actor ConvectiveOutlookRepo {
     }
     
     func current() throws -> ConvectiveOutlookDTO? {
-        let fetchDescriptor = FetchDescriptor<ConvectiveOutlook>()
-        let outlooks: [ConvectiveOutlook] = try modelContext.fetch(fetchDescriptor)
-        let outlook = outlooks.sorted { $0.published < $1.published }
+        var fetchDescriptor = FetchDescriptor<ConvectiveOutlook>(
+            // Optional: Add a predicate if you want to filter results before sorting
+            // predicate: #Predicate { $0.name == "Specific Name" },
+            
+            // 2. Sort by your date property in descending order
+            sortBy: [SortDescriptor(\.published, order: .reverse)]
+        )
         
-        return ConvectiveOutlookDTO(title: outlook[0].title,
-                                       link: outlook[0].link,
-                                       published: outlook[0].published,
-                                       summary: outlook[0].summary,
-                                       day: outlook[0].day,
-                                       riskLevel: outlook[0].riskLevel)
+        // 3. Limit the fetch to only one result (the most recent)
+        fetchDescriptor.fetchLimit = 1
+        
+        guard let outlook = try modelContext.fetch(fetchDescriptor).first else { return nil }
+        
+        return ConvectiveOutlookDTO(title: outlook.title,
+                                    link: outlook.link,
+                                    published: outlook.published,
+                                    summary: outlook.summary,
+                                    day: outlook.day,
+                                    riskLevel: outlook.riskLevel)
     }
     
     func purge(asOf now: Date = .init()) throws {

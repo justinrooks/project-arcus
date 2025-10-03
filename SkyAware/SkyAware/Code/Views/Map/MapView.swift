@@ -11,14 +11,12 @@ import SwiftData
 
 struct MapView: View {
     @Environment(\.spcService) private var svc: any SpcService
-    @Environment(\.modelContext) private var modelContext
     
     @State private var selectedLayer: String = "CAT"
     @State private var showLayerPicker = false
     
-    @Query private var mesos: [MD]
-    @Query private var stormRisk: [StormRisk]
-    
+    @State private var mesos: [MdDTO] = []
+    @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
     
     private let availableLayers: [(key: String, label: String)] = [
@@ -122,6 +120,10 @@ struct MapView: View {
             Task {
                 do {
                     severeRisks = try await svc.getSevereRiskShapes()
+//                    async let dto = svc.getStormRiskMapData()
+                    stormRisk = try await svc.getStormRiskMapData()
+                    mesos = try await svc.getMesoMapData()
+//                    stormRisk = try await dto.compactMap{ StormRisk(from: $0) }
                 } catch {
                     print(error.localizedDescription)
                 }
@@ -203,47 +205,15 @@ struct MapView: View {
     }
 }
 
-//#Preview {
-//    let preview = Preview(MD.self)
-//    preview.addExamples(MD.sampleDiscussions)
-////    let provider = SpcProvider(client: SpcClient(),
-////                               autoLoad: false)
-//    
-//    return NavigationStack {
-//        MapView()
+#Preview {
+    let preview = Preview(MD.self)
+    preview.addExamples(MD.sampleDiscussions)
+    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
+    
+    return NavigationStack {
+        MapView()
 //            .modelContainer(preview.container)
-////            .environment(provider)
-//            .environment(LocationManager())       // or a preconfigured preview instance
-//    }
-//}
-
-//#Preview("Summary – Slight + 10% Tornado") {
-//    // Local mock for SpcService used by SummaryBadgeView
-//    struct MockSpcService: SpcService {
-//        let storm: StormRiskLevel
-//        let severe: SevereWeatherThreat
-//
-//        func sync() async {}
-//        func syncTextProducts() async {}
-//        func cleanup(daysToKeep: Int) async {}
-//
-//        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { storm }
-//        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { severe }
-//        func getSevereRiskShapes(for type: ThreatType) async throws -> SevereRiskShapeDTO { SevereRiskShapeDTO(type: .tornado, probabilities: [], polygons: []) }
-//    }
-//
-//    // Seed some sample Mesos so ActiveMesoSummaryView has content
-//    let mdPreview = Preview(MD.self)
-//    mdPreview.addExamples(MD.sampleDiscussions)
-//
-//    let location = LocationManager()
-//    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
-//
-//    return NavigationStack {
-//        MapView()
-//            .modelContainer(mdPreview.container)
-////            .environment(location)
-//            .environment(\.spcService, spcMock)
-//            .padding()
-//    }
-//}
+            .environment(LocationManager())       // or a preconfigured preview instance
+            .environment(\.spcService, spcMock)
+    }
+}

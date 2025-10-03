@@ -41,7 +41,7 @@ actor SevereRiskRepo {
         let decoded = GeoJsonParser.decode(from: data)
         
         let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .hail, with: $0)
+            makeSevereRisk(for: .wind, with: $0)
         }
         
         try upsert(dtos)
@@ -59,7 +59,7 @@ actor SevereRiskRepo {
         let decoded = GeoJsonParser.decode(from: data)
         
         let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .hail, with: $0)
+            makeSevereRisk(for: .tornado, with: $0)
         }
         
         try upsert(dtos)
@@ -193,3 +193,4 @@ actor SevereRiskRepo {
         try modelContext.save()
     }
 }
+

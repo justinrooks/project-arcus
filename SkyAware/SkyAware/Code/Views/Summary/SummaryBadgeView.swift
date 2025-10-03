@@ -35,64 +35,47 @@ struct SummaryBadgeView: View {
 
 #Preview("Slight + 10% Tornado") {
     // Mock service that returns deterministic values for previews
-    struct MockSpcService: SpcService {
-        let storm: StormRiskLevel
-        let severe: SevereWeatherThreat
-
-        func sync() async {}
-        func syncTextProducts() async {}
-        func cleanup(daysToKeep: Int) async {}
-
-        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
-            storm
-        }
-
-        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
-            severe
-        }
-        func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
-    }
+//    struct MockSpcService: SpcService {
+//        let storm: StormRiskLevel
+//        let severe: SevereWeatherThreat
+//
+//        func sync() async {}
+//        func syncTextProducts() async {}
+//        func cleanup(daysToKeep: Int) async {}
+//
+//        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
+//            storm
+//        }
+//
+//        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
+//            severe
+//        }
+//        func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+//        func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {nil}
+//        func getStormRiskMapData() async throws -> [StormRiskDTO] {[StormRiskDTO]()}
+//        func getMesoMapData() async throws -> [MdDTO] { [MdDTO]() }
+//    }
 
     let mockLocation = LocationManager() // uses fallback coordinate if no real location
-    let mockService = MockSpcService(
-        storm: .slight,
-        severe: .tornado(probability: 0.10)
-    )
+    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
 
     return SummaryBadgeView()
         .environment(mockLocation)
-        .environment(\.spcService, mockService)
+        .environment(\.spcService, spcMock)
 }
 
 #Preview("All Clear") {
-    struct MockSpcService: SpcService {
-        func sync() async {}
-        func syncTextProducts() async {}
-        func cleanup(daysToKeep: Int) async {}
-
-        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { .allClear }
-        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { .allClear }
-        func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
-    }
-
+    let spcMock = MockSpcService(storm: .allClear, severe: .allClear)
+    
     return SummaryBadgeView()
         .environment(LocationManager())
-        .environment(\.spcService, MockSpcService())
+        .environment(\.spcService, spcMock)
 }
 
 #Preview("Enhanced + 30% Hail") {
-    struct MockSpcService: SpcService {
-        func sync() async {}
-        func syncTextProducts() async {}
-        func cleanup(daysToKeep: Int) async {}
-
-        func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { .enhanced }
-        func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { .hail(probability: 0.30) }
-        
-        func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
-    }
+    let spcMock = MockSpcService(storm: .enhanced, severe: .hail(probability: 0.30))
 
     return SummaryBadgeView()
         .environment(LocationManager())
-        .environment(\.spcService, MockSpcService())
+        .environment(\.spcService, spcMock)
 }

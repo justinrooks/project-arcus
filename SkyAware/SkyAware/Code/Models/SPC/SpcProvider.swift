@@ -15,9 +15,14 @@ protocol SpcService: Sendable {
     func syncTextProducts() async -> Void
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO?
+    
     func cleanup(daysToKeep: Int) async -> Void
     
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO]
+    
+    func getStormRiskMapData() async throws -> [StormRiskDTO]
+    func getMesoMapData() async throws -> [MdDTO]
 }
 
 actor SpcProvider: SpcService {
@@ -69,6 +74,10 @@ actor SpcProvider: SpcService {
         }
     }
     
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
+        try await outlookRepo.current()
+    }
+    
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
         try await stormRiskRepo.active(for: point)
     }
@@ -79,6 +88,14 @@ actor SpcProvider: SpcService {
     
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
         try await severeRiskRepo.getSevereRiskShapes()
+    }
+    
+    func getStormRiskMapData() async throws -> [StormRiskDTO] {
+        try await stormRiskRepo.getLatestMapData()
+    }
+    
+    func getMesoMapData() async throws -> [MdDTO] {
+        try await mesoRepo.getLatestMapData()
     }
     
     func cleanup(daysToKeep: Int = 3) async {

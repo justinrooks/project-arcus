@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftData
+import CoreLocation
 
 struct Preview {
     let container: ModelContainer
@@ -15,9 +16,10 @@ struct Preview {
     let severeRiskRepo: SevereRiskRepo
     let mesoRepo: MesoRepo
     let watchRepo: WatchRepo
-//    let provider: SpcProviderV1
+    //let provider: SpcService
     
-    init(_ models: any PersistentModel.Type ...) {
+    init(
+        _ models: any PersistentModel.Type ...) {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let schema = Schema(models)
         do {
@@ -32,14 +34,9 @@ struct Preview {
         self.stormRiskRepo  = StormRiskRepo(modelContainer: container)
         self.severeRiskRepo = SevereRiskRepo(modelContainer: container)
         
+//        self.provider = MockSpcService(storm: stormRisk, severe: severeRisk)
 //        let loc = LocationManager()
-//        
-//        self.provider = SpcProviderV1(outlookRepo: self.outlookRepo,
-//                                 mesoRepo: self.mesoRepo,
-//                                 watchRepo: self.watchRepo,
-//                                 stormRiskRepo: self.stormRiskRepo,
-//                                 severeRiskRepo: self.severeRiskRepo,
-//                                 locationManager: loc)
+
     }
     @MainActor
     func addExamples(_ examples: [any PersistentModel]) {
@@ -50,3 +47,28 @@ struct Preview {
         }
     }
 }
+
+
+struct MockSpcService: SpcService {
+    let stormRisk: StormRiskLevel
+    let severeRisk: SevereWeatherThreat
+    
+    init(storm: StormRiskLevel, severe: SevereWeatherThreat){
+        self.stormRisk = storm
+        self.severeRisk = severe
+    }
+    
+    func sync() async {}
+    func syncTextProducts() async {}
+    func cleanup(daysToKeep: Int) async {}
+
+    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { self.stormRisk }
+    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { self.severeRisk }
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {nil}
+    func getStormRiskMapData() async throws -> [StormRiskDTO] {[StormRiskDTO]()}
+    func getMesoMapData() async throws -> [MdDTO] { [MdDTO]() }
+    
+}
+
+

@@ -84,7 +84,9 @@ struct SkyAwareApp: App {
             
             await withTaskCancellationHandler {
                 do {
-                    let outlook = try await outlookRepo.current()
+                    await spcProvider.sync()
+                    
+                    let outlook = try await spcProvider.getLatestConvectiveOutlook()
                     let severeRiskv1 = try await spcProvider.getSevereRisk(for: locationProvider.resolvedUserLocation)
                     let stormRiskv1 = try await spcProvider.getStormRisk(for: locationProvider.resolvedUserLocation)
                     let message = "Storm Activity: \(stormRiskv1.summary)\nSevere Activity: \(severeRiskv1.summary)"

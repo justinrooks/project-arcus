@@ -9,26 +9,26 @@ import Foundation
 import MapKit
 
 // Top-level container
-struct GeoJSONFeatureCollection: Decodable {
+struct GeoJSONFeatureCollection: Decodable, Encodable {
     let type: String //FeatureCollection
     let features: [GeoJSONFeature]
 }
 
 // A single feature (risk polygon)
-struct GeoJSONFeature: Decodable {
+struct GeoJSONFeature: Decodable, Encodable {
     let type: String //Feature
     let geometry: GeoJSONGeometry
     let properties: GeoJSONProperties
 }
 
 // Geometry object: supports MultiPolygon
-struct GeoJSONGeometry: Decodable {
+struct GeoJSONGeometry: Decodable, Encodable {
     let type: String //MultiPolygon
     let coordinates: [[[[Double]]]]  // [[[ [lon, lat], ... ]]]
 }
 
 // Metadata about the polygon (risk label, stroke/fill color, etc.)
-struct GeoJSONProperties: Decodable {
+struct GeoJSONProperties: Decodable, Encodable {
     let DN: Int
     let VALID: String
     let EXPIRE: String
