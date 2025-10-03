@@ -68,15 +68,24 @@ actor StormRiskRepo {
     func getLatestMapData(asOf date: Date = .init()) throws -> [StormRiskDTO] {
         // 1) Fetch only risks that are currently valid
         let pred = #Predicate<StormRisk> { $0.valid <= date && date < $0.expires }
-        var desc = FetchDescriptor<StormRisk>(predicate: pred)
-        desc.sortBy = [SortDescriptor(\.issued, order: .reverse)]
-        
+        let desc = FetchDescriptor<StormRisk>(predicate: pred)
+        // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
         let risks = try modelContext.fetch(desc)
-        
-        // 2) Sort by descending risk so we can early-exit on first hit
-        let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
-    
-        return bySeverity.map {
+
+        // 2) For each risk level, keep the record with the most recent `valid` date
+        let mostRecentByLevel: [Int: StormRisk] = Dictionary(
+            risks.map { ($0.riskLevel.rawValue, $0) },
+            uniquingKeysWith: { lhs, rhs in
+                // choose the record with the later `valid` date
+                return lhs.valid >= rhs.valid ? lhs : rhs
+            }
+        )
+
+        // 3) Sort the selected items by descending risk severity for a stable output order
+        let selected = mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
+
+        // 4) Map to DTOs
+        return selected.map {
             StormRiskDTO(riskLevel: $0.riskLevel,
                          issued: $0.issued,
                          expires: $0.expires,
@@ -113,3 +122,4 @@ actor StormRiskRepo {
         try modelContext.save()
     }
 }
+

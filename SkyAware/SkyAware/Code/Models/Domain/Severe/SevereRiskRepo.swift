@@ -93,19 +93,31 @@ actor SevereRiskRepo {
         return .allClear
     }
     
-    func getSevereRiskShapes() throws -> [SevereRiskShapeDTO]{
+    func getSevereRiskShapes(asOf date: Date = .init()) throws -> [SevereRiskShapeDTO]{
         // Can't use an enum in a predicate, so need to find a different way.
         // For now, I'm just going to return an array of the DTO's shaped in
         // a way that's easier to use downstream. Then we'll just use the View
         // layer to put the shapes in their respective buckets.
 
-        let risks = try modelContext.fetch(FetchDescriptor<SevereRisk>())
+        let pred = #Predicate<SevereRisk> { $0.valid <= date && date < $0.expires }
+        let desc = FetchDescriptor<SevereRisk>(predicate: pred)
+        // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
+        let risks = try modelContext.fetch(desc)
+
+        // 2) For each risk level, keep the record with the most recent `valid` date
+        let mostRecentByLevel: [String: SevereRisk] = Dictionary(
+            risks.map { ($0.type.rawValue, $0) },
+            uniquingKeysWith: { lhs, rhs in
+                // choose the record with the later `valid` date
+                return lhs.valid >= rhs.valid ? lhs : rhs
+            }
+        )
         var result: [SevereRiskShapeDTO] = []
         
-        for risk in risks {
-            result.append(SevereRiskShapeDTO(type: risk.type,
-                                             probabilities: risk.probability,
-                                             polygons: risk.polygons)
+        for (_, data) in mostRecentByLevel {
+            result.append(SevereRiskShapeDTO(type: data.type,
+                                             probabilities: data.probability,
+                                             polygons: data.polygons)
             )
         }
 

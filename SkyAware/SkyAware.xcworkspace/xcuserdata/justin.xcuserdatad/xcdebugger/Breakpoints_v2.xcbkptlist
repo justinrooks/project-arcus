@@ -188,52 +188,52 @@
             filePath = "SkyAware/Code/Views/Map/MapView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "128"
-            endingLineNumber = "128"
+            startingLineNumber = "93"
+            endingLineNumber = "93"
             landmarkName = "body"
             landmarkType = "24">
             <Locations>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - dfa8d533fb8a8e41"
+                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - dba2b6b7999a62cf"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(8) suspend resume partial function for closure #1 () async -&gt; () in closure #2 () -&gt; () in SkyAware.MapView.body.getter : some"
+                  symbolName = "(8) suspend resume partial function for closure #1 () async -&gt; () in closure #3 () -&gt; () in SkyAware.MapView.body.getter : some"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "128"
-                  endingLineNumber = "128">
+                  startingLineNumber = "93"
+                  endingLineNumber = "93">
                </Location>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - e8c68641d4bf2c40"
+                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - f4d063c5ca8f00c8"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(9) suspend resume partial function for closure #1 () async -&gt; () in closure #2 () -&gt; () in SkyAware.MapView.body.getter : some"
+                  symbolName = "(9) suspend resume partial function for closure #1 () async -&gt; () in closure #3 () -&gt; () in SkyAware.MapView.body.getter : some"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "128"
-                  endingLineNumber = "128">
+                  startingLineNumber = "93"
+                  endingLineNumber = "93">
                </Location>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - ece85a364c7e3e6b"
+                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - 528fe33f005df2e6"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(10) suspend resume partial function for closure #1 () async -&gt; () in closure #2 () -&gt; () in SkyAware.MapView.body.getter : some"
+                  symbolName = "(10) suspend resume partial function for closure #1 () async -&gt; () in closure #3 () -&gt; () in SkyAware.MapView.body.getter : some"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "128"
-                  endingLineNumber = "128">
+                  startingLineNumber = "93"
+                  endingLineNumber = "93">
                </Location>
             </Locations>
          </BreakpointContent>
