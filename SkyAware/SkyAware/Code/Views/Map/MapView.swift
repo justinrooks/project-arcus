@@ -21,7 +21,7 @@ struct MapView: View {
     
     var body: some View {
         ZStack {
-            CONUSMapView(polygonList: polygonsForLayer(named: selected.key))
+            CONUSMapView(polygonList: polygonsForLayer(named: selected))
                 .edgesIgnoringSafeArea(.top)
             
             VStack {
@@ -33,9 +33,7 @@ struct MapView: View {
                 }
                 .buttonStyle(.plain)
                 .background(.ultraThickMaterial, in: Circle())
-                .padding(16)
-                
-                Spacer()
+                .padding(26)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             
@@ -43,36 +41,11 @@ struct MapView: View {
             VStack {
                 Spacer()
                 Group {
-                    switch selected.key {
-                    case "CAT":
-                        LegendView()
-                    case "TOR":
-                        SevereLegendView(probabilities: getProbability(for: .tornado), risk: selected.key)
-                        
-                        ////                        let prob = tornadoRisks.probabilities
-                        ////                        let probabilities = severeRisks
-                        ////                            .filter { $0.type == .tornado }
-                        ////                            .compactMap { $0.probability }
-                        ////                            .sorted { $0.intValue < $1.intValue }
-                        ////                        let probabilities = provider.tornado.compactMap { $0.probability }
-                        ////                            .sorted { $0.intValue < $1.intValue }
-                        //
-                        ////                        SevereLegendView(probabilities: probabilities, risk: selectedLayer)
-                        //                        if let tornadoRisks{
-                        //                            SevereLegendView(probabilities: tornadoRisks.probabilities, risk: selectedLayer)
-                        //                        }
-                    case "HAIL":
-                        SevereLegendView(probabilities: getProbability(for: .hail), risk: selected.key)
-                    case "WIND":
-                        SevereLegendView(probabilities: getProbability(for: .wind), risk: selected.key)
-                    default:
-                        EmptyView()
-                    }
+                    MapLegend(layer: selected, probabilities: severeProbabilitiesForSelectedLayer())
                 }
                 .transition(.opacity)
-                .animation(.default, value: selected.key)
-                .padding(12)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                .animation(.default, value: selected)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
                 .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -81,8 +54,6 @@ struct MapView: View {
             LayerPickerSheet(selection: $selected,
                              title: "Map Layers")
         }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
         .onAppear {
             Task {
                 do {
@@ -93,6 +64,15 @@ struct MapView: View {
                     print(error.localizedDescription)
                 }
             }
+        }
+    }
+    
+    private func severeProbabilitiesForSelectedLayer() -> [ThreatProbability]? {
+        switch selected {
+        case .tornado: return getProbability(for: .tornado)
+        case .hail:    return getProbability(for: .hail)
+        case .wind:    return getProbability(for: .wind)
+        default:       return nil
         }
     }
     
@@ -116,9 +96,9 @@ struct MapView: View {
         }
     }
     
-    private func polygonsForLayer(named layer: String) -> MKMultiPolygon {
+    private func polygonsForLayer(named layer: MapLayer) -> MKMultiPolygon {
         switch layer {
-        case "CAT":
+        case .categorical:
             let source = stormRisk.flatMap { $0.polygons }
             let polygons = makeMKPolygons(
                 from: source,
@@ -126,7 +106,7 @@ struct MapView: View {
                 title: { $0.title }
             )
             return MKMultiPolygon(polygons)
-        case "TOR":
+        case .tornado:
             //            return MKMultiPolygon(provider.tornado.flatMap {$0.polygons})
             let source = severeRisks
                 .filter { $0.type == .tornado }
@@ -137,7 +117,7 @@ struct MapView: View {
                 title: { $0.title }
             )
             return MKMultiPolygon(polygons)
-        case "HAIL":
+        case .hail:
             let source = severeRisks
                 .filter { $0.type == .hail }
                 .flatMap { $0.polygons }
@@ -147,7 +127,7 @@ struct MapView: View {
                 title: { $0.title }
             )
             return MKMultiPolygon(polygons)
-        case "WIND":
+        case .wind:
             let source = severeRisks
                 .filter { $0.type == .wind }
                 .flatMap { $0.polygons }
@@ -157,15 +137,13 @@ struct MapView: View {
                 title: { $0.title }
             )
             return MKMultiPolygon(polygons)
-        case "MESO":
+        case .meso:
             let polygons = makeMKPolygons(
                 from: mesos,
                 coordinates: { $0.coordinates.map { $0.location } },
-                title: { _ in layer }
+                title: { _ in layer.key }
             )
             return MKMultiPolygon(polygons)
-        default:
-            return MKMultiPolygon()
         }
     }
 }
@@ -181,3 +159,4 @@ struct MapView: View {
             .environment(\.spcService, spcMock)
     }
 }
+

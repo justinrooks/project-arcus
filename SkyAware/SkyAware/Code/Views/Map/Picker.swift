@@ -77,7 +77,7 @@ struct LayerTile: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }) {
             VStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(layer.gradient(for: scheme))
                     .overlay(
                         Image(systemName: layer.symbol).formatBadgeImage()
@@ -85,7 +85,7 @@ struct LayerTile: View {
                     .frame(width: 80, height: 80)
                     .overlay(
                         // selection ring
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
                             .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
                     )
                     .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.2), radius: 6, y: 3)
@@ -127,21 +127,21 @@ struct LayerPickerSheet: View {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(MapLayer.allCases) { layer in
                     LayerTile(layer: layer, isSelected: selection == layer) {
-//                        isSelected: selection.contains(layer)
                         toggle(layer)
                     }
                 }
             }
             .padding(.horizontal)
-            .padding(.bottom, 16)
+            .padding(.bottom, 14)
 
             // optional helper text
-            Text("Choose a layer.")
+            Text("Choose a layer")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.bottom, 10)
+                .padding(.bottom, 5)
         }
         .presentationDetents([.height(375)]) // looks like the Apple Maps panel
+//        .presentationDetents([.medium])
 //        .presentationCornerRadius(24)
         .interactiveDismissDisabled(false)
     }

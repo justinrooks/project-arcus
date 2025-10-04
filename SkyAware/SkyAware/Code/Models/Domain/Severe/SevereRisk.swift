@@ -25,8 +25,8 @@ enum ThreatProbability: Equatable, Hashable, Codable {
     
     var description: String {
         switch self {
-        case .percent(let value): return "\(value * 100)%"
-        case .significant(let value): return "\(value)% Significant Risk"
+        case .percent(let value): return "\(Int(value * 100))%"
+        case .significant(let value): return "\(value)% Significant"
         }
     }
     

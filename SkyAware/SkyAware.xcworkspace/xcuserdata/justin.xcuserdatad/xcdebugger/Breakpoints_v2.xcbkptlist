@@ -188,13 +188,13 @@
             filePath = "SkyAware/Code/Views/Map/MapView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "93"
-            endingLineNumber = "93"
+            startingLineNumber = "64"
+            endingLineNumber = "64"
             landmarkName = "body"
             landmarkType = "24">
             <Locations>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - dba2b6b7999a62cf"
+                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - dba2b6b7999a6680"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -204,11 +204,11 @@
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "93"
-                  endingLineNumber = "93">
+                  startingLineNumber = "64"
+                  endingLineNumber = "64">
                </Location>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - f4d063c5ca8f00c8"
+                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - f4d063c5ca8f0487"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -218,11 +218,11 @@
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "93"
-                  endingLineNumber = "93">
+                  startingLineNumber = "64"
+                  endingLineNumber = "64">
                </Location>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - 528fe33f005df2e6"
+                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - 528fe33f005df6a9"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
@@ -232,8 +232,8 @@
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "93"
-                  endingLineNumber = "93">
+                  startingLineNumber = "64"
+                  endingLineNumber = "64">
                </Location>
             </Locations>
          </BreakpointContent>

@@ -98,9 +98,13 @@ actor SevereRiskRepo {
         // For now, I'm just going to return an array of the DTO's shaped in
         // a way that's easier to use downstream. Then we'll just use the View
         // layer to put the shapes in their respective buckets.
-
-        let pred = #Predicate<SevereRisk> { $0.valid <= date && date < $0.expires }
-        let desc = FetchDescriptor<SevereRisk>(predicate: pred)
+        
+        // Targeting only those items that are both valid and not expired
+        let desc = FetchDescriptor<SevereRisk>(
+            predicate: #Predicate<SevereRisk> {
+                $0.valid <= date && date < $0.expires
+            })
+        
         // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
         let risks = try modelContext.fetch(desc)
 
