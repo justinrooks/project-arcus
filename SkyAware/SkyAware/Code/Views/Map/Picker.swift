@@ -110,6 +110,8 @@ struct LayerPickerSheet: View {
     @Binding var selection: MapLayer
     var title: String = "Map Layers"
 
+    @Environment(\.dismiss) private var dismiss
+    
     private let columns = [GridItem(.flexible()), GridItem(.flexible()),
                            GridItem(.flexible()), GridItem(.flexible())]
 
@@ -148,6 +150,7 @@ struct LayerPickerSheet: View {
 
     private func toggle(_ layer: MapLayer) {
         selection = layer
+        dismiss()
     }
 }
 
