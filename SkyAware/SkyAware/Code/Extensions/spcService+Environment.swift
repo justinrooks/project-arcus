@@ -8,10 +8,6 @@
 import SwiftUI
 import CoreLocation
 
-private struct SpcServiceKey: EnvironmentKey {
-    static let defaultValue: SpcService = MissingSpcService()
-}
-
 // Crash loudly in DEBUG if you forgot to inject.
 private struct MissingSpcService: SpcService {
     func sync() async {
@@ -46,8 +42,5 @@ private struct MissingSpcService: SpcService {
 }
 
 extension EnvironmentValues {
-    var spcService: SpcService {
-        get { self[SpcServiceKey.self] }
-        set { self[SpcServiceKey.self] = newValue }
-    }
+    @Entry var spcService: SpcService = MissingSpcService()
 }

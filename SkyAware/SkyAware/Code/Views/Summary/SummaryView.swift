@@ -9,18 +9,35 @@ import SwiftUI
 import CoreLocation
 
 struct SummaryView: View {
+    @Environment(\.locationClient) private var locSvc
+    @Environment(\.spcService) private var svc: any SpcService
+    
+    @State private var snap: LocationSnapshot?
+    
+    @State private var stormRisk: StormRiskLevel = .allClear
+    @State private var severeRisk: SevereWeatherThreat = .allClear
+    @State private var riskRefreshTask: Task<Void, Never>?
     
     var body: some View {
         VStack {
             // Header
-            SummaryHeaderView()
+            FreshnessView()
+
+            Label(snap?.placemarkSummary ?? "Searching...", systemImage: "location")
+                .fontWeight(.medium)
             
             // Badges
-            SummaryBadgeView()
+            HStack {
+                StormRiskBadgeView(level: stormRisk)
+                Spacer()
+                SevereWeatherBadgeView(threat: severeRisk)
+            }
+            .padding(.vertical, 5)
             
             //Mesos
-            ActiveMesoSummaryView()
+            ActiveMesoSummaryView(coordinates: snap?.coordinates)
     
+            // Filler
             GroupBox{
                 Divider()
                 HStack {
@@ -43,7 +60,60 @@ struct SummaryView: View {
             }
         }
         .padding(.horizontal)
+        .task {
+            if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
+            if let first = await locSvc.snapshot() {
+                await MainActor.run { snap = first }
+                //risk task here
+                startRefreshTask(for: first.coordinates)
+            }
+            
+            let stream = await locSvc.updates()
+            for await s in stream {
+                snap = s
+                await MainActor.run { snap = s }
+                startRefreshTask(for: s.coordinates)
+            }
+        }
     }
+    
+    private func startRefreshTask(for coord: CLLocationCoordinate2D) {
+        riskRefreshTask?.cancel()
+        riskRefreshTask = Task {
+            do {
+                async let storm = svc.getStormRisk(for: coord)
+                async let severe = svc.getSevereRisk(for: coord)
+                
+                let (s, v) = try await (storm, severe)
+                await MainActor.run {
+                    self.stormRisk = s
+                    self.severeRisk = v
+                }
+            } catch {
+                
+            }
+        }
+    }
+}
+
+#Preview {
+    let preview = Preview(ConvectiveOutlook.self)
+
+    SummaryView()
+            .environment(\.locationClient, .init(
+                snapshot: { .init(
+                    coordinates: .init(latitude: 39.75, longitude: -104.44),
+                    timestamp: .now,
+                    accuracy: 20,
+                    placemarkSummary: "Bennett, CO"
+                )},
+                updates: { AsyncStream { $0.yield(.init(
+                    coordinates: .init(latitude: 39.75, longitude: -104.44),
+                    timestamp: .now,
+                    accuracy: 20,
+                    placemarkSummary: "Bennett, CO"
+                )) } }
+            ))
 }
 
 #Preview("Summary – Slight + 10% Tornado") {
@@ -52,12 +122,34 @@ struct SummaryView: View {
     let mdPreview = Preview(MD.self)
     mdPreview.addExamples(MD.sampleDiscussions)
 
-    let location = LocationManager()
+//    let location = LocationManager()
+//    let oneShotPreviewClient = LocationClient(
+//        snapshot: { () async -> LocationSnapshot? in
+//            .init(
+//                coordinates: .init(latitude: 39.75, longitude: -104.44),
+//                timestamp: .now,
+//                accuracy: 20,
+//                placemarkSummary: "Bennett, CO"
+//            )
+//        },
+//        updates: { () -> AsyncStream<LocationSnapshot> in
+//            AsyncStream<LocationSnapshot> { c in
+//                c.yield(.init(
+//                    coordinates: .init(latitude: 39.75, longitude: -104.44),
+//                    timestamp: .now,
+//                    accuracy: 20,
+//                    placemarkSummary: "Bennett, CO"
+//                ))
+//                c.finish()
+//            }
+//        }
+//    )
     
     return NavigationStack {
         SummaryView()
             .modelContainer(mdPreview.container)
-            .environment(location)
+            .environment(\.locationClient, .offline)
+//            .environment(LocationManager())
             .environment(\.spcService, spcMock)
             .padding()
     }

@@ -10,7 +10,7 @@ import MapKit
 import SwiftData
 
 struct ActiveMesoSummaryView: View {
-    @Environment(LocationManager.self) private var locationProvider: LocationManager
+    let coordinates: CLLocationCoordinate2D?
     @Environment(\.modelContext) private var modelContext
     
     @Query
@@ -65,7 +65,8 @@ extension ActiveMesoSummaryView {
         return allMesos.filter {
             let coord = $0.coordinates.map { $0.location }
             let poly = MKPolygon(coordinates: coord, count: coord.count)
-            return PolygonHelpers.inPoly(user: locationProvider.resolvedUserLocation, polygon: poly)
+            guard let coordinates else { return false }
+            return PolygonHelpers.inPoly(user: coordinates, polygon: poly)
         }
     }
 }
@@ -141,25 +142,23 @@ private struct ThreatIconsCol: View {
     }
 }
 
-extension MesoRowView {
-//    func getProbabilityString(for probability: WatchProbability) -> String {
-//        return {
-//            switch probability {
-//            case .percent(let p): return "\(p)%"
-//            case .unlikely: return "Unlikely"
-//            }
-//        }()
-//    }
-}
+//extension MesoRowView {
+////    func getProbabilityString(for probability: WatchProbability) -> String {
+////        return {
+////            switch probability {
+////            case .percent(let p): return "\(p)%"
+////            case .unlikely: return "Unlikely"
+////            }
+////        }()
+////    }
+//}
 
 #Preview {
-    let provider = LocationManager()
     let preview = Preview(MD.self)
     preview.addExamples(MD.sampleDiscussions)
 
     return NavigationStack {
-        ActiveMesoSummaryView()
+        ActiveMesoSummaryView(coordinates: .init(latitude: 39.75, longitude: -104.44))
             .modelContainer(preview.container)
-            .environment(provider)
     }
 }

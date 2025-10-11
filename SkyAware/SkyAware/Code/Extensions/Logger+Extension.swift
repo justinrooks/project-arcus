@@ -27,6 +27,9 @@ extension Logger {
     
 //    static let downloader = Logger(subsystem: subsystem, category: "Downloader")
     static let locationMgr = Logger(subsystem: subsystem, category: "LocationMgr")
+    
+    static let locationPipeline = Logger(subsystem: subsystem, category: "LocationPipeline")
+    
     static let rssParser = Logger(subsystem: subsystem, category: "RssParser")
     static let alertView = Logger(subsystem: subsystem, category: "AlertView")
     static let convectiveView = Logger(subsystem: subsystem, category: "ConvectiveView")

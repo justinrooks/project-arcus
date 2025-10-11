@@ -80,12 +80,10 @@ struct iPhoneHomeView: View {
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
     
     // Environment dependencies
-    let location = LocationManager()
     let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
     
     return iPhoneHomeView()
         .modelContainer(preview.container)
-        .environment(location)
         .environment(\.spcService, spcMock)
 }
 
@@ -95,12 +93,10 @@ struct iPhoneHomeView: View {
     preview.addExamples(WatchModel.sampleWatches)
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
     
-    let location = LocationManager()
     let spcMock = MockSpcService(storm: .allClear, severe: .allClear)
     
     return iPhoneHomeView()
         .modelContainer(preview.container)
-        .environment(location)
         .environment(\.spcService, spcMock)
 }
 
@@ -110,12 +106,10 @@ struct iPhoneHomeView: View {
     preview.addExamples(WatchModel.sampleWatches)
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
     
-    let location = LocationManager()
     let spcMock = MockSpcService(storm: .enhanced, severe: .hail(probability: 0.30))
     
     return iPhoneHomeView()
         .modelContainer(preview.container)
-        .environment(location)
         .environment(\.spcService, spcMock)
         .environment(\.colorScheme, .dark)
 }

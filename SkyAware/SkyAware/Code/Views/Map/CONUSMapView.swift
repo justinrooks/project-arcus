@@ -10,7 +10,7 @@ import MapKit
 
 struct CONUSMapView: UIViewRepresentable {
     let polygonList: MKMultiPolygon
-    @Environment(LocationManager.self) private var locationProvider: LocationManager
+    let coordinates: CLLocationCoordinate2D?
 
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -19,7 +19,7 @@ struct CONUSMapView: UIViewRepresentable {
         mapView.showsUserLocation = true
 
         // Zoom the map to show the entire US
-        let center = locationProvider.userLocation?.coordinate ?? CLLocationCoordinate2D(latitude: 39.8, longitude: -98.6) // fallback: center of CONUS
+        let center = coordinates ?? CLLocationCoordinate2D(latitude: 39.8, longitude: -98.6) // fallback: center of CONUS
 //        let region = MKCoordinateRegion(center: center, latitudinalMeters: 5000000, longitudinalMeters: 5000000) // Entire US
         let region = MKCoordinateRegion(center: center, latitudinalMeters: 1450000, longitudinalMeters: 1450000)
         mapView.setRegion(region, animated: false)

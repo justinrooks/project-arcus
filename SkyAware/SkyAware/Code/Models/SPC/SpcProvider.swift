@@ -32,7 +32,6 @@ actor SpcProvider: SpcService {
     private let watchRepo: WatchRepo
     private let stormRiskRepo: StormRiskRepo
     private let severeRiskRepo: SevereRiskRepo
-    private let locationmanager: LocationManager
     private let client: SpcClient
     
     init(outlookRepo: ConvectiveOutlookRepo,
@@ -40,14 +39,12 @@ actor SpcProvider: SpcService {
          watchRepo: WatchRepo,
          stormRiskRepo: StormRiskRepo,
          severeRiskRepo: SevereRiskRepo,
-         locationManager: LocationManager,
          client: SpcClient) {
         self.outlookRepo = outlookRepo
         self.mesoRepo = mesoRepo
         self.watchRepo = watchRepo
         self.stormRiskRepo = stormRiskRepo
         self.severeRiskRepo = severeRiskRepo
-        self.locationmanager = locationManager
         self.client = client
     }
     

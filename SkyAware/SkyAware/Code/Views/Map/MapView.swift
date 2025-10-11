@@ -11,6 +11,7 @@ import SwiftData
 
 struct MapView: View {
     @Environment(\.spcService) private var svc: any SpcService
+    @Environment(\.locationClient) private var loc
     
     @State private var selected: MapLayer = .categorical
     @State private var showLayerPicker = false
@@ -18,10 +19,11 @@ struct MapView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var snap: LocationSnapshot?
     
     var body: some View {
         ZStack {
-            CONUSMapView(polygonList: polygonsForLayer(named: selected))
+            CONUSMapView(polygonList: polygonsForLayer(named: selected), coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.top)
             
             VStack {
@@ -53,6 +55,16 @@ struct MapView: View {
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(selection: $selected,
                              title: "Map Layers")
+        }
+        .task {
+            if let first = await loc.snapshot() {
+                await MainActor.run { snap = first }
+            }
+            
+            let stream = await loc.updates()
+            for await s in stream {
+                await MainActor.run { snap = s }
+            }
         }
         .onAppear {
             Task {
@@ -155,7 +167,6 @@ struct MapView: View {
     
     return NavigationStack {
         MapView()
-            .environment(LocationManager())       // or a preconfigured preview instance
             .environment(\.spcService, spcMock)
     }
 }

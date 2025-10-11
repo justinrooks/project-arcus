@@ -18,6 +18,10 @@ struct SkyAwareApp: App {
     private let mesoRefreshID = "com.skyaware.meso.refresh"
     private let logger = Logger.mainApp
     
+    // Location
+    private let provider = LocationProvider()
+    @State private var locationMgr: LocationManager
+    
     // Repos
     private let outlookRepo: ConvectiveOutlookRepo
     private let mesoRepo: MesoRepo
@@ -25,11 +29,12 @@ struct SkyAwareApp: App {
     private let stormRiskRepo: StormRiskRepo
     private let severeRiskRepo: SevereRiskRepo
     
-    @State private var locationProvider: LocationManager
     @State private var spcProvider: SpcProvider
-    
+
+    // EnvVars
     @Environment(\.scenePhase) private var scenePhase
     
+    // Shared SwiftData context
     var sharedModelContainer: ModelContainer = {
 //        print(URL.applicationSupportDirectory.path(percentEncoded: false))
         let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self])
@@ -40,7 +45,12 @@ struct SkyAwareApp: App {
     
     init() {
         print(URL.applicationSupportDirectory.path(percentEncoded: false))
+
+        // Setup Location Monitoring
+        let sink: LocationSink = { [provider] update in await provider.send(update: update) }
+        let loc = LocationManager(onUpdate: sink)
         
+        // Configure the network cache
         let memoryCapacity = 4 * 1024 * 1024 // 4 MB
         let diskCapacity = 100 * 1024 * 1024 // 100 MB
         URLCache.shared = URLCache(
@@ -49,34 +59,37 @@ struct SkyAwareApp: App {
             diskPath: "skyaware-dataCache"
         )
         
+        // Create our data layer repos
         self.outlookRepo    = ConvectiveOutlookRepo(modelContainer: sharedModelContainer)
         self.mesoRepo       = MesoRepo(modelContainer: sharedModelContainer)
         self.watchRepo      = WatchRepo(modelContainer: sharedModelContainer)
         self.stormRiskRepo  = StormRiskRepo(modelContainer: sharedModelContainer)
         self.severeRiskRepo = SevereRiskRepo(modelContainer: sharedModelContainer)
 
-        let loc = LocationManager()
         let spc1 = SpcProvider(outlookRepo: self.outlookRepo,
                                  mesoRepo: self.mesoRepo,
                                  watchRepo: self.watchRepo,
                                  stormRiskRepo: self.stormRiskRepo,
                                  severeRiskRepo: self.severeRiskRepo,
-                                 locationManager: loc,
                                  client: SpcHttpClient())
-        _locationProvider = .init(wrappedValue: loc)
+
+        // Assign
+        _locationMgr = .init(wrappedValue: loc)
         _spcProvider = .init(wrappedValue: spc1)
     }
     
     var body: some Scene {
         WindowGroup {
-            if (locationProvider.isAuthorized) {
-                iPhoneHomeView()
-                    .toasting()
-                    .environment(\.spcService, spcProvider)
-                    .environment(locationProvider)
-            } else {
-                Text("Missing Location Authorization")
-            }
+            iPhoneHomeView()
+                .environment(\.spcService, spcProvider)
+                .environment(\.locationClient, makeLocationClient(provider: provider))
+                .alert("Location Permission Needed",
+                       isPresented: .constant(locationMgr.authStatus == .denied)) {
+//                    Button("Settings") { locCoord.openSettings() }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Enable location to see nearby weather risks and alerts.")
+                }
         }
         .modelContainer(sharedModelContainer)
         .backgroundTask(.appRefresh(appRefreshID)) {
@@ -84,15 +97,22 @@ struct SkyAwareApp: App {
             
             await withTaskCancellationHandler {
                 do {
-                    await spcProvider.sync()
+                    let snap = await provider.snapshot()
                     
-                    let outlook = try await spcProvider.getLatestConvectiveOutlook()
-                    let severeRiskv1 = try await spcProvider.getSevereRisk(for: locationProvider.resolvedUserLocation)
-                    let stormRiskv1 = try await spcProvider.getStormRisk(for: locationProvider.resolvedUserLocation)
-                    let message = "Storm Activity: \(stormRiskv1.summary)\nSevere Activity: \(severeRiskv1.summary)"
-                    
-                    let mgr = NotificationManager()
-                    await mgr.notify(for: outlook, with: message)
+                    if let coord = snap?.coordinates {
+                        await spcProvider.sync()
+                        
+                        let outlook = try await spcProvider.getLatestConvectiveOutlook()
+                        
+                        async let severeRiskv1 = spcProvider.getSevereRisk(for: coord)
+                        async let stormRiskv1 = spcProvider.getStormRisk(for: coord)
+                        
+//                        let message = "Storm Activity: \(try await stormRiskv1.summary)\n\nSevere Activity: \(try await severeRiskv1.summary)\n\nFor: \(snap?.placemarkSummary, default: "Unknown")"
+                        let message = "Latest severe weather outlook for \(snap?.placemarkSummary, default: "Unknown"):\nStorm Activity: \(try await stormRiskv1.summary)\nSevere Activity: \(try await severeRiskv1.summary)"
+                        
+                        let mgr = NotificationManager()
+                        await mgr.notify(for: outlook, with: message)
+                    }
                 } catch {
                     logger.error("Error refreshing background data: \(error.localizedDescription)")
                 }
@@ -128,7 +148,9 @@ struct SkyAwareApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .background {
                 scheduleNextAppRefresh()
+//                locCoord.setBackground()
             } else if newPhase == .active {
+//                locCoord.setForeground()
                 Task {
                     let center = UNUserNotificationCenter.current()
                     

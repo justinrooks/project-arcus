@@ -23,54 +23,6 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "C30D22FC-7EE0-4332-A03D-2B65BD758E00"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "158"
-            endingLineNumber = "158"
-            landmarkName = "SkyAwareApp"
-            landmarkType = "14">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "E8926C93-BDF3-48D8-97C6-D0ED915B6A13"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "160"
-            endingLineNumber = "160"
-            landmarkName = "scheduleNextAppRefresh()"
-            landmarkType = "7">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "827413C3-D3A9-4689-B4E6-1150D240460C"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "131"
-            endingLineNumber = "131"
-            landmarkName = "body"
-            landmarkType = "24">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
             uuid = "571EB1C8-C439-4896-9206-9B847DAB30F2"
             shouldBeEnabled = "Yes"
             ignoreCount = "0"
@@ -149,22 +101,6 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "1D9913F4-4E8A-4806-BD0C-D82A4A8A9E46"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "162"
-            endingLineNumber = "162"
-            landmarkName = "scheduleNextAppRefresh()"
-            landmarkType = "7">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
             uuid = "E5BE64C0-DD79-4D3E-9391-B2B7814109C3"
             shouldBeEnabled = "Yes"
             ignoreCount = "0"
@@ -181,59 +117,59 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03"
+            uuid = "EE41AA03-7AF2-4B39-BCD5-01ED4C609C0D"
             shouldBeEnabled = "Yes"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SkyAware/Code/Views/Map/MapView.swift"
+            filePath = "SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "64"
-            endingLineNumber = "64"
-            landmarkName = "body"
-            landmarkType = "24">
+            startingLineNumber = "77"
+            endingLineNumber = "77"
+            landmarkName = "updatePlacemarkIfNeeded(for:timestamp:)"
+            landmarkType = "7">
             <Locations>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - dba2b6b7999a6680"
+                  uuid = "EE41AA03-7AF2-4B39-BCD5-01ED4C609C0D - 103668854b61631c"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(8) suspend resume partial function for closure #1 () async -&gt; () in closure #3 () -&gt; () in SkyAware.MapView.body.getter : some"
+                  symbolName = "(3) suspend resume partial function for SkyAware.LocationPipeline.updatePlacemarkIfNeeded(for: __C.CLLocationCoordinate2D, timestamp: Foundation.Date) async -&gt; ()"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "64"
-                  endingLineNumber = "64">
+                  startingLineNumber = "77"
+                  endingLineNumber = "77">
                </Location>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - f4d063c5ca8f0487"
+                  uuid = "EE41AA03-7AF2-4B39-BCD5-01ED4C609C0D - b5f9e66da9c04927"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(9) suspend resume partial function for closure #1 () async -&gt; () in closure #3 () -&gt; () in SkyAware.MapView.body.getter : some"
+                  symbolName = "(4) suspend resume partial function for SkyAware.LocationPipeline.updatePlacemarkIfNeeded(for: __C.CLLocationCoordinate2D, timestamp: Foundation.Date) async -&gt; ()"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "64"
-                  endingLineNumber = "64">
+                  startingLineNumber = "77"
+                  endingLineNumber = "77">
                </Location>
                <Location
-                  uuid = "C24EABAB-6195-47C9-BB9E-3BDCBA518F03 - 528fe33f005df6a9"
+                  uuid = "EE41AA03-7AF2-4B39-BCD5-01ED4C609C0D - b5f9e66da9c04927"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(10) suspend resume partial function for closure #1 () async -&gt; () in closure #3 () -&gt; () in SkyAware.MapView.body.getter : some"
+                  symbolName = "(4) suspend resume partial function for SkyAware.LocationPipeline.updatePlacemarkIfNeeded(for: __C.CLLocationCoordinate2D, timestamp: Foundation.Date) async -&gt; ()"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Views/Map/MapView.swift"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "64"
-                  endingLineNumber = "64">
+                  startingLineNumber = "77"
+                  endingLineNumber = "77">
                </Location>
             </Locations>
          </BreakpointContent>
@@ -241,15 +177,103 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "59DA775C-F972-4CB4-B055-B5D1FA26621C"
+            uuid = "53B57212-1EBF-41D0-8675-97D70A29D1D3"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "47"
+            endingLineNumber = "47"
+            landmarkName = "send(update:)"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "53B57212-1EBF-41D0-8675-97D70A29D1D3 - 94528f8eedf2659"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "SkyAware.LocationPipeline.send(update: SkyAware.LocationUpdate) -&gt; ()"
+                  moduleName = "SkyAware.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "47"
+                  endingLineNumber = "47">
+               </Location>
+               <Location
+                  uuid = "53B57212-1EBF-41D0-8675-97D70A29D1D3 - 56491e98d926a11b"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "closure #1 () async -&gt; () in SkyAware.LocationPipeline.send(update: SkyAware.LocationUpdate) -&gt; ()"
+                  moduleName = "SkyAware.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "47"
+                  endingLineNumber = "47">
+               </Location>
+               <Location
+                  uuid = "53B57212-1EBF-41D0-8675-97D70A29D1D3 - 9ac13e1573107128"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(1) suspend resume partial function for closure #1 () async -&gt; () in SkyAware.LocationPipeline.send(update: SkyAware.LocationUpdate) -&gt; ()"
+                  moduleName = "SkyAware.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "47"
+                  endingLineNumber = "47">
+               </Location>
+               <Location
+                  uuid = "53B57212-1EBF-41D0-8675-97D70A29D1D3 - 634a69536eb55a63"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(2) await resume partial function for closure #1 () async -&gt; () in SkyAware.LocationPipeline.send(update: SkyAware.LocationUpdate) -&gt; ()"
+                  moduleName = "SkyAware.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "47"
+                  endingLineNumber = "47">
+               </Location>
+               <Location
+                  uuid = "53B57212-1EBF-41D0-8675-97D70A29D1D3 - d60fa0a16409352a"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "(3) suspend resume partial function for closure #1 () async -&gt; () in SkyAware.LocationPipeline.send(update: SkyAware.LocationUpdate) -&gt; ()"
+                  moduleName = "SkyAware.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Common/LocationSvcs/LocationPipeline.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "47"
+                  endingLineNumber = "47">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "D5E1B25E-E7B5-4CF2-8B86-0C34C5F75605"
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "83"
-            endingLineNumber = "83"
+            startingLineNumber = "149"
+            endingLineNumber = "149"
             landmarkName = "body"
             landmarkType = "24">
          </BreakpointContent>
@@ -257,81 +281,17 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "1817CE1A-0704-4CB6-A018-B1CCFA6D6149"
+            uuid = "6A0AC91D-0CBC-4A5B-BB4D-618E1E72C8CA"
             shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
+            filePath = "SkyAware/Code/Common/LocationSvcs/LocationProvider.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "86"
-            endingLineNumber = "86"
-            landmarkName = "body"
-            landmarkType = "24">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "BCC13435-43F4-4DD1-A801-B93DC27E7981"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "88"
-            endingLineNumber = "88"
-            landmarkName = "body"
-            landmarkType = "24">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "8D195845-72FC-40B7-883E-B5E493777126"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "130"
-            endingLineNumber = "130"
-            landmarkName = "body"
-            landmarkType = "24">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "AB8A10B2-1996-40AF-AA0F-E1E763BE1E70"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "129"
-            endingLineNumber = "129"
-            landmarkName = "body"
-            landmarkType = "24">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "5C247283-A85D-4BEF-968F-28B5F1926D65"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "133"
-            endingLineNumber = "133"
-            landmarkName = "body"
-            landmarkType = "24">
+            startingLineNumber = "66"
+            endingLineNumber = "66"
+            landmarkName = "send(update:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>
