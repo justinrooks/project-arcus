@@ -35,4 +35,18 @@ extension Date {
         formatter.timeStyle = .short
         return formatter.string(from: self)
     }
+    
+    func shortRelativeDescription(to referenceDate: Date = .now) -> String {
+            let seconds = Int(referenceDate.timeIntervalSince(self))
+            switch seconds {
+            case ..<60:
+                return "\(seconds)s"
+            case ..<3600:
+                return "\(seconds / 60)m"
+            case ..<86_400:
+                return "\(seconds / 3600)h"
+            default:
+                return "\(seconds / 86_400)d"
+            }
+        }
 }

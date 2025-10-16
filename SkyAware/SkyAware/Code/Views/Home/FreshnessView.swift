@@ -8,27 +8,83 @@
 import SwiftUI
 
 struct FreshnessView: View {
-    var lastUpdated: Date? {
-        let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
-        guard let suite else { return nil}
-        
-        let lastGlobalSuccessAtKey = "lastGlobalSuccessAt"
-        
-        let time = suite.double(forKey: lastGlobalSuccessAtKey)
-        return time > 0 ? Date(timeIntervalSince1970: time) : nil
-    }
-//    @AppStorage("lastUpdated") var lastUpdated: Date?
+    @Environment(\.spcService) private var svc: any SpcService
+    @Environment(\.locationClient) private var locSvc: LocationClient
+
+    @State private var convectiveLoad: Date?
+    @State private var snap: LocationSnapshot?
+    
+//    var lastUpdated: Date? {
+//        let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
+//        guard let suite else { return nil}
+//        
+//        let lastGlobalSuccessAtKey = "lastGlobalSuccessAt"
+//        
+//        let time = suite.double(forKey: lastGlobalSuccessAtKey)
+//        return time > 0 ? Date(timeIntervalSince1970: time) : nil
+//    }
     
     var body: some View {
-        if let last = lastUpdated {
-            Text("Updated \(relativeTime(from: last))")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        } else {
-            Text("No data yet")
-                .font(.caption)
-                .foregroundColor(.secondary)
+        VStack {
+            HStack {
+                if let cl = convectiveLoad {
+                    Text("As of \(relativeTime(from: cl))")
+                }
+
+//                if let lastFix = snap?.timestamp,
+//                   (lastFix.timeIntervalSince1970 - Date().timeIntervalSince1970)  > 0 {
+//                    Text("· Loc \(lastFix.shortRelativeDescription())")
+//                }
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+//            if let last = lastUpdated {
+//                Text("Updated \(relativeTime(from: last))")
+//                    .font(.caption)
+//                    .foregroundColor(.secondary)
+//            } else {
+//                Text("No data yet")
+//                    .font(.caption)
+//                    .foregroundColor(.secondary)
+//            }
         }
+        // Seed once for first paint
+        .task {
+            convectiveLoad = try? await svc.latestIssue(for: .convective)
+        }
+        // Then react to pushes
+        .task {
+            let stream = await svc.convectiveIssueUpdates()
+            for await d in stream {
+                await MainActor.run { convectiveLoad = d }
+            }
+        }
+//        .onAppear {
+//            Task {
+//                do {
+//                    convectiveLoad = try await svc.latestIssue(for: .convective)
+//                } catch {
+//                    print("Error fetching freshness: \(error.localizedDescription)")
+//                }
+//            }
+//        }
+//        .task {
+//            if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
+//
+//            if let first = await locSvc.snapshot() {
+//                await MainActor.run { snap = first }
+//                //risk task here
+////                startRefreshTask(for: first.coordinates)
+//            }
+//            
+//            let stream = await locSvc.updates()
+//            for await s in stream {
+//                snap = s
+//                await MainActor.run { snap = s }
+////                startRefreshTask(for: s.coordinates)
+//            }
+//        }
+
     }
     
     private func relativeTime(from date: Date) -> String {
@@ -43,5 +99,12 @@ struct FreshnessView: View {
 }
 
 #Preview {
-    FreshnessView()
+    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
+    let mdPreview = Preview(MD.self)
+    mdPreview.addExamples(MD.sampleDiscussions)
+    
+    return FreshnessView()
+        .modelContainer(mdPreview.container)
+        .environment(\.spcService, spcMock)
+        .environment(\.locationClient, .offline)
 }

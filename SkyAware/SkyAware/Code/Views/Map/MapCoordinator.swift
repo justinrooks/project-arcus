@@ -9,6 +9,12 @@ import MapKit
 import Foundation
 
 final class MapCoordinator: NSObject, MKMapViewDelegate {
+    var lastCenteredCoordinate: CLLocationCoordinate2D?
+
+    init(lastCenteredCoordinate: CLLocationCoordinate2D? = nil) {
+        self.lastCenteredCoordinate = lastCenteredCoordinate
+    }
+
     func parseRiskLabel(_ label: String) -> (type: String, percentage: String)? {
         let lowercase = label.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
 

@@ -24,7 +24,7 @@ struct MapView: View {
     var body: some View {
         ZStack {
             CONUSMapView(polygonList: polygonsForLayer(named: selected), coordinates: snap?.coordinates)
-                .edgesIgnoringSafeArea(.top)
+                .edgesIgnoringSafeArea(.all)
             
             VStack {
                 Button {
@@ -56,16 +56,6 @@ struct MapView: View {
             LayerPickerSheet(selection: $selected,
                              title: "Map Layers")
         }
-        .task {
-            if let first = await loc.snapshot() {
-                await MainActor.run { snap = first }
-            }
-            
-            let stream = await loc.updates()
-            for await s in stream {
-                await MainActor.run { snap = s }
-            }
-        }
         .onAppear {
             Task {
                 do {
@@ -75,6 +65,16 @@ struct MapView: View {
                 } catch {
                     print(error.localizedDescription)
                 }
+            }
+        }
+        .task {
+            if let first = await loc.snapshot() {
+                await MainActor.run { snap = first }
+            }
+            
+            let stream = await loc.updates()
+            for await s in stream {
+                await MainActor.run { snap = s }
             }
         }
     }

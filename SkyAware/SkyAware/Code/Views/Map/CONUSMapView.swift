@@ -11,18 +11,29 @@ import MapKit
 struct CONUSMapView: UIViewRepresentable {
     let polygonList: MKMultiPolygon
     let coordinates: CLLocationCoordinate2D?
-
+    
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
         mapView.delegate = context.coordinator
         mapView.mapType = .mutedStandard
         mapView.showsUserLocation = true
 
-        // Zoom the map to show the entire US
-        let center = coordinates ?? CLLocationCoordinate2D(latitude: 39.8, longitude: -98.6) // fallback: center of CONUS
-//        let region = MKCoordinateRegion(center: center, latitudinalMeters: 5000000, longitudinalMeters: 5000000) // Entire US
-        let region = MKCoordinateRegion(center: center, latitudinalMeters: 1450000, longitudinalMeters: 1450000)
-        mapView.setRegion(region, animated: false)
+        
+        // Initial viewport: if we have a user coordinate, center on it; otherwise fit all polygons
+        if let coord = coordinates {
+            let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
+            mapView.setRegion(region, animated: false)
+        }
+        
+        
+        
+        
+        
+//        // Zoom the map to show the entire US
+//        let center = coordinates ?? CLLocationCoordinate2D(latitude: 39.8, longitude: -98.6) // fallback: center of CONUS
+////        let region = MKCoordinateRegion(center: center, latitudinalMeters: 5000000, longitudinalMeters: 5000000) // Entire US
+//        let region = MKCoordinateRegion(center: center, latitudinalMeters: 1450000, longitudinalMeters: 1450000)
+//        mapView.setRegion(region, animated: false)
 
         // Add boundary overlays
 //        let annotation = MKPointAnnotation()
@@ -51,8 +62,13 @@ struct CONUSMapView: UIViewRepresentable {
 
         if !toRemove.isEmpty { uiView.removeOverlays(Array(toRemove)) }
         if !toAdd.isEmpty { uiView.addOverlays(Array(toAdd)) }
+        
+        if let coord = coordinates {
+            let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
+            uiView.setRegion(region, animated: true)
+        }
     }
-
+    
     func makeCoordinator() -> MapCoordinator {
         MapCoordinator()
     }

@@ -23,6 +23,23 @@ protocol SpcService: Sendable {
     
     func getStormRiskMapData() async throws -> [StormRiskDTO]
     func getMesoMapData() async throws -> [MdDTO]
+    
+    // MARK: Freshness APIs
+    // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
+    func latestIssue(for product: GeoJSONProduct) async throws -> Date?
+    func latestIssue(for product: RssProduct) async throws -> Date?
+
+    // 2) Location-scope: “what’s the ISSUE of the feature that applies here?”
+    func latestIssue(for product: GeoJSONProduct, at coord: CLLocationCoordinate2D) async throws -> Date?
+    func latestIssue(for product: RssProduct, at coord: CLLocationCoordinate2D) async throws -> Date?
+
+    // MARK: Streams
+    // SIMPLE: convective-only freshness (seed + stream)
+    func convectiveIssueUpdates() async -> AsyncStream<Date>
+    
+    // Optional: a unifying signal if you want push instead of polling
+//    func issueUpdates(for product: GeoJSONProduct) -> AsyncStream<Date>
+//    func issueUpdates(for product: RssProduct) -> AsyncStream<Date>
 }
 
 actor SpcProvider: SpcService {
@@ -33,6 +50,10 @@ actor SpcProvider: SpcService {
     private let stormRiskRepo: StormRiskRepo
     private let severeRiskRepo: SevereRiskRepo
     private let client: SpcClient
+    
+    // Convective freshness Stream
+    private var latestConvective: Date?
+    private var convectiveContinuations: [UUID: AsyncStream<Date>.Continuation] = [:]
     
     init(outlookRepo: ConvectiveOutlookRepo,
          mesoRepo: MesoRepo,
@@ -64,6 +85,12 @@ actor SpcProvider: SpcService {
     func syncTextProducts() async {
         do {
             try await outlookRepo.refreshConvectiveOutlooks(using: client)
+            
+            // After refresh, fetch the latest and publish (keeps it simple and reactive)
+            if let d = try? await latestIssue(for: .convective) {
+                publishConvectiveIssue(d)
+            }
+            
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
             try await watchRepo.refreshWatches(using: client)
         } catch {
@@ -95,6 +122,53 @@ actor SpcProvider: SpcService {
         try await mesoRepo.getLatestMapData()
     }
     
+    // Freshness APIs
+    // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
+    func latestIssue(for product: GeoJSONProduct) async throws -> Date? {
+        return nil
+    }
+    
+    func latestIssue(for product: RssProduct) async throws -> Date? {
+        try await outlookRepo.current()?.published
+    }
+
+    // 2) Location-scope: “what’s the ISSUE of the feature that applies here?”
+    func latestIssue(for product: GeoJSONProduct, at coord: CLLocationCoordinate2D) async throws -> Date? {
+        return nil
+    }
+    
+    func latestIssue(for product: RssProduct, at coord: CLLocationCoordinate2D) async throws -> Date? {
+        return nil
+    }
+    
+    // MARK: - Convective Freshness (seed + stream)
+//    func latestConvectiveIssue() async -> Date? { latestConvective }
+
+    func convectiveIssueUpdates() async -> AsyncStream<Date> {
+        AsyncStream<Date>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            // Seed with cached value if we have one
+            if let latestConvective { continuation.yield(latestConvective) }
+            // Store continuation so we can yield future updates
+            let id = UUID()
+            convectiveContinuations[id] = continuation
+            continuation.onTermination = { @Sendable _ in
+                Task { [weak self] in
+                    await self?.removeConvectiveContinuation(id: id)
+                }
+            }
+        }
+    }
+
+    private func publishConvectiveIssue(_ date: Date) {
+        latestConvective = date
+        for c in convectiveContinuations.values { c.yield(date) }
+    }
+
+    private func removeConvectiveContinuation(id: UUID) {
+        convectiveContinuations[id] = nil
+    }
+
+        
     func cleanup(daysToKeep: Int = 3) async {
         do {
             try await outlookRepo.purge()

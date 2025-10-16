@@ -19,8 +19,8 @@ struct SkyAwareApp: App {
     private let logger = Logger.mainApp
     
     // Location
-    private let provider = LocationProvider()
-    @State private var locationMgr: LocationManager
+    @MainActor private let provider = LocationProvider()
+    @MainActor private var locationMgr: LocationManager
     
     // Repos
     private let outlookRepo: ConvectiveOutlookRepo
@@ -30,6 +30,7 @@ struct SkyAwareApp: App {
     private let severeRiskRepo: SevereRiskRepo
     
     @State private var spcProvider: SpcProvider
+    @State private var showLocationPermissionAlert = false
 
     // EnvVars
     @Environment(\.scenePhase) private var scenePhase
@@ -48,7 +49,7 @@ struct SkyAwareApp: App {
 
         // Setup Location Monitoring
         let sink: LocationSink = { [provider] update in await provider.send(update: update) }
-        let loc = LocationManager(onUpdate: sink)
+        locationMgr = LocationManager(onUpdate: sink)
         
         // Configure the network cache
         let memoryCapacity = 4 * 1024 * 1024 // 4 MB
@@ -74,7 +75,6 @@ struct SkyAwareApp: App {
                                  client: SpcHttpClient())
 
         // Assign
-        _locationMgr = .init(wrappedValue: loc)
         _spcProvider = .init(wrappedValue: spc1)
     }
     
@@ -84,11 +84,18 @@ struct SkyAwareApp: App {
                 .environment(\.spcService, spcProvider)
                 .environment(\.locationClient, makeLocationClient(provider: provider))
                 .alert("Location Permission Needed",
-                       isPresented: .constant(locationMgr.authStatus == .denied)) {
-//                    Button("Settings") { locCoord.openSettings() }
+                       isPresented: $showLocationPermissionAlert) {
+                    Button("Settings") { locationMgr.openSettings() }
                     Button("Cancel", role: .cancel) {}
                 } message: {
                     Text("Enable location to see nearby weather risks and alerts.")
+                }
+                .task {
+                    if isPreview { return }
+                    locationMgr.checkLocationAuthorization(isActive: true)
+                    locationMgr.updateMode(for: scenePhase)
+                    
+                    showLocationPermissionAlert = (locationMgr.authStatus == .denied || locationMgr.authStatus == .restricted)
                 }
         }
         .modelContainer(sharedModelContainer)
@@ -97,22 +104,23 @@ struct SkyAwareApp: App {
             
             await withTaskCancellationHandler {
                 do {
-                    let snap = await provider.snapshot()
+                    let mgr = NotificationManager()
+                    await spcProvider.sync()
+                    let outlook = try await spcProvider.getLatestConvectiveOutlook()
                     
-                    if let coord = snap?.coordinates {
-                        await spcProvider.sync()
-                        
-                        let outlook = try await spcProvider.getLatestConvectiveOutlook()
-                        
-                        async let severeRiskv1 = spcProvider.getSevereRisk(for: coord)
-                        async let stormRiskv1 = spcProvider.getStormRisk(for: coord)
-                        
-//                        let message = "Storm Activity: \(try await stormRiskv1.summary)\n\nSevere Activity: \(try await severeRiskv1.summary)\n\nFor: \(snap?.placemarkSummary, default: "Unknown")"
-                        let message = "Latest severe weather outlook for \(snap?.placemarkSummary, default: "Unknown"):\nStorm Activity: \(try await stormRiskv1.summary)\nSevere Activity: \(try await severeRiskv1.summary)"
-                        
-                        let mgr = NotificationManager()
+                    guard let snap = await provider.snapshot() else {
+                        let message = "New convective outlook available"
                         await mgr.notify(for: outlook, with: message)
+                        
+                        return
                     }
+                    
+                    async let updatedSnap = provider.ensurePlacemark(for: snap.coordinates)
+                    async let severeRisk = spcProvider.getSevereRisk(for: snap.coordinates)
+                    async let stormRisk = spcProvider.getStormRisk(for: snap.coordinates)
+                    let message = "Latest severe weather outlook for \(await updatedSnap.placemarkSummary, default: "Unknown"):\nStorm Activity: \(try await stormRisk.summary)\nSevere Activity: \(try await severeRisk.summary)"
+                    
+                    await mgr.notify(for: outlook, with: message)
                 } catch {
                     logger.error("Error refreshing background data: \(error.localizedDescription)")
                 }
@@ -146,17 +154,17 @@ struct SkyAwareApp: App {
 //            //            }
 //        }
         .onChange(of: scenePhase) { _, newPhase in
+            locationMgr.updateMode(for: newPhase)
+            showLocationPermissionAlert = (locationMgr.authStatus == .denied || locationMgr.authStatus == .restricted)
+            
             if newPhase == .background {
                 scheduleNextAppRefresh()
-//                locCoord.setBackground()
             } else if newPhase == .active {
-//                locCoord.setForeground()
                 Task {
                     let center = UNUserNotificationCenter.current()
                     
                     do {
                         try await center.requestAuthorization(options: [.alert, .sound, .badge])
-                        scheduleNextAppRefresh()
                     } catch {
                         logger.error("Error requesting notification permission: \(error.localizedDescription)")
                     }
@@ -167,15 +175,12 @@ struct SkyAwareApp: App {
                     await spcProvider.sync()
                 }
             }
-            
-            //            if newPhase == .background {
-            //                // Optionally re-schedule when going to background
-            //                scheduleNextAppRefresh(earliest: Date().addingTimeInterval(30 * 60)) // placeholder; replace using CadencePlanner
-            //            }
         }
     }
     
-    
+    private var isPreview: Bool {
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    }
     
     // MARK: - Schedule Next App Refresh
     private func scheduleNextAppRefresh() {

@@ -26,6 +26,11 @@ enum SpcError: Error {
     case invalidUrl
 }
 
+enum GeocodeError: Error {
+    case noResults
+    case noCoordinate
+}
+
 //enum DownloaderError: Error {
 //    case missingData
 //    case networkError

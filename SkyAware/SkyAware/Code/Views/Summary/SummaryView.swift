@@ -18,6 +18,17 @@ struct SummaryView: View {
     @State private var severeRisk: SevereWeatherThreat = .allClear
     @State private var riskRefreshTask: Task<Void, Never>?
     
+    init( // This is purely for Preview functionality.
+        initialStormRisk: StormRiskLevel = .allClear,
+        initialSevereRisk: SevereWeatherThreat = .allClear,
+        initialSnapshot: LocationSnapshot? = nil
+    ) {
+        _stormRisk = State(initialValue: initialStormRisk)
+        _severeRisk = State(initialValue: initialSevereRisk)
+        _snap = State(initialValue: initialSnapshot)
+    }
+
+    
     var body: some View {
         VStack {
             // Header
@@ -146,7 +157,16 @@ struct SummaryView: View {
 //    )
     
     return NavigationStack {
-        SummaryView()
+        SummaryView(
+            initialStormRisk: .slight,
+            initialSevereRisk: .tornado(probability: 0.10),
+            initialSnapshot: .init(
+                coordinates: .init(latitude: 39.75, longitude: -104.44),
+                timestamp: .now,
+                accuracy: 20,
+                placemarkSummary: "Bennett, CO"
+            )
+        )
             .modelContainer(mdPreview.container)
             .environment(\.locationClient, .offline)
 //            .environment(LocationManager())
