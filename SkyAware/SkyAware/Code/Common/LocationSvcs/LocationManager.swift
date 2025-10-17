@@ -121,7 +121,6 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
         Task { @MainActor in
             updateMode(for: lastPhase)
-//            self.checkLocationAuthorization()
         }
     }
     

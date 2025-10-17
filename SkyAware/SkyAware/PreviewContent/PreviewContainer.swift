@@ -49,26 +49,18 @@ struct Preview {
 }
 
 
-struct MockSpcService: SpcService {
-    let stormRisk: StormRiskLevel
-    let severeRisk: SevereWeatherThreat
-    
-    init(storm: StormRiskLevel, severe: SevereWeatherThreat){
-        self.stormRisk = storm
-        self.severeRisk = severe
-    }
-    
+extension MockSpcService: SpcSyncing {
     func sync() async {}
     func syncTextProducts() async {}
-    func cleanup(daysToKeep: Int) async {}
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {nil}
+}
 
+extension MockSpcService: SpcRiskQuerying {
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { self.stormRisk }
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { self.severeRisk }
-    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
-    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {nil}
-    func getStormRiskMapData() async throws -> [StormRiskDTO] {[StormRiskDTO]()}
-    func getMesoMapData() async throws -> [MdDTO] { [MdDTO]() }
-    
+}
+
+extension MockSpcService: SpcFreshnessPublishing {
     // MARK: Freshness APIs
     // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
     func latestIssue(for product: GeoJSONProduct) async throws -> Date? { .now }
@@ -90,6 +82,59 @@ struct MockSpcService: SpcService {
             }
         }
     }
+}
+
+extension MockSpcService: SpcCleanup {
+    func cleanup(daysToKeep: Int) async {}
+}
+
+extension MockSpcService: SpcMapData {
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+    func getStormRiskMapData() async throws -> [StormRiskDTO] {[StormRiskDTO]()}
+    func getMesoMapData() async throws -> [MdDTO] { [MdDTO]() }
+}
+
+struct MockSpcService {
+    let stormRisk: StormRiskLevel
+    let severeRisk: SevereWeatherThreat
+    
+    init(storm: StormRiskLevel, severe: SevereWeatherThreat){
+        self.stormRisk = storm
+        self.severeRisk = severe
+    }
+    
+//    func sync() async {}
+//    func syncTextProducts() async {}
+//    func cleanup(daysToKeep: Int) async {}
+
+//    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { self.stormRisk }
+//    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { self.severeRisk }
+//    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+//    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {nil}
+//    func getStormRiskMapData() async throws -> [StormRiskDTO] {[StormRiskDTO]()}
+//    func getMesoMapData() async throws -> [MdDTO] { [MdDTO]() }
+    
+//    // MARK: Freshness APIs
+//    // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
+//    func latestIssue(for product: GeoJSONProduct) async throws -> Date? { .now }
+//    func latestIssue(for product: RssProduct) async throws -> Date? { .now }
+//
+//    // 2) Location-scope: “what’s the ISSUE of the feature that applies here?”
+//    func latestIssue(for product: GeoJSONProduct, at coord: CLLocationCoordinate2D) async throws -> Date? { .now }
+//    func latestIssue(for product: RssProduct, at coord: CLLocationCoordinate2D) async throws -> Date? { .now }
+//    
+//    func convectiveIssueUpdates() async -> AsyncStream<Date> {
+//        AsyncStream<Date> { continuation in
+//            // Emit a fake initial value
+//            continuation.yield(Date())
+//            // Optionally emit another update a few seconds later (useful for preview)
+//            Task {
+//                try? await Task.sleep(for: .seconds(3))
+//                continuation.yield(Date().addingTimeInterval(60 * 30)) // “30m later”
+//                continuation.finish()
+//            }
+//        }
+//    }
 
 }
 

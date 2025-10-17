@@ -8,16 +8,10 @@
 import SwiftUI
 import CoreLocation
 
+struct MissingError: Error {}
+
 // Crash loudly in DEBUG if you forgot to inject.
-private struct MissingSpcService: SpcService {
-    func sync() async {
-        assertionFailure("⚠️ SpcService not injected into environment")
-    }
-    
-    func syncTextProducts() async {
-        assertionFailure("⚠️ SpcService not injected into environment")
-    }
-    
+private struct EmptyRiskQuerying: SpcRiskQuerying {
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
         assertionFailure("⚠️ SpcService not injected into environment"); throw MissingError()
     }
@@ -25,19 +19,30 @@ private struct MissingSpcService: SpcService {
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
         assertionFailure("⚠️ SpcService not injected into environment"); throw MissingError()
     }
-    
-    func cleanup(daysToKeep: Int = 3) async {
+}
+
+private struct EmptySyncing: SpcSyncing {
+    func sync() async {
         assertionFailure("⚠️ SpcService not injected into environment")
     }
-    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
-        assertionFailure(" Not injected "); throw MissingError()
+    
+    func syncTextProducts() async {
+        assertionFailure("⚠️ SpcService not injected into environment")
     }
     func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
         assertionFailure(" NOT INJECTED "); throw MissingError()
     }
+}
+
+private struct EmptyMapData: SpcMapData {
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
+        assertionFailure(" Not injected "); throw MissingError()
+    }
     func getStormRiskMapData() async throws -> [StormRiskDTO] {assertionFailure("NOT INJECTED"); throw MissingError()}
     func getMesoMapData() async throws -> [MdDTO] { assertionFailure("NOT INJECTED"); throw MissingError() }
-    
+}
+
+private struct EmptyFreshness: SpcFreshnessPublishing {
     // MARK: Freshness APIs
     // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
     func latestIssue(for product: GeoJSONProduct) async throws -> Date? { assertionFailure("NOT INJECTED"); throw MissingError() }
@@ -60,9 +65,37 @@ private struct MissingSpcService: SpcService {
         }
     }
     
-    struct MissingError: Error {}
 }
 
+//private struct MissingSpcService: SpcService {
+//    // MARK: Freshness APIs
+//    // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
+//    func latestIssue(for product: GeoJSONProduct) async throws -> Date? { assertionFailure("NOT INJECTED"); throw MissingError() }
+//    func latestIssue(for product: RssProduct) async throws -> Date? { assertionFailure("NOT INJECTED"); throw MissingError() }
+//
+//    // 2) Location-scope: “what’s the ISSUE of the feature that applies here?”
+//    func latestIssue(for product: GeoJSONProduct, at coord: CLLocationCoordinate2D) async throws -> Date? { assertionFailure("NOT INJECTED"); throw MissingError() }
+//    func latestIssue(for product: RssProduct, at coord: CLLocationCoordinate2D) async throws -> Date? { assertionFailure("NOT INJECTED"); throw MissingError() }
+//    
+//    func convectiveIssueUpdates() async -> AsyncStream<Date> {
+//        AsyncStream<Date> { continuation in
+//            // Emit a fake initial value
+//            continuation.yield(Date())
+//            // Optionally emit another update a few seconds later (useful for preview)
+//            Task {
+//                try? await Task.sleep(for: .seconds(3))
+//                continuation.yield(Date().addingTimeInterval(60 * 30)) // “30m later”
+//                continuation.finish()
+//            }
+//        }
+//    }
+//    
+//}
+
 extension EnvironmentValues {
-    @Entry var spcService: SpcService = MissingSpcService()
+//    @Entry var spcService: any SpcService = MissingSpcService()
+    @Entry var spcFreshness: any SpcFreshnessPublishing = EmptyFreshness()
+    @Entry var riskQuery: any SpcRiskQuerying = EmptyRiskQuerying()
+    @Entry var spcSync: any SpcSyncing = EmptySyncing()
+    @Entry var mapData: any SpcMapData = EmptyMapData()
 }

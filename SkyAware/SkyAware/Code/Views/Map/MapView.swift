@@ -10,7 +10,7 @@ import MapKit
 import SwiftData
 
 struct MapView: View {
-    @Environment(\.spcService) private var svc: any SpcService
+    @Environment(\.mapData) private var svc: any SpcMapData
     @Environment(\.locationClient) private var loc
     
     @State private var selected: MapLayer = .categorical
@@ -167,7 +167,7 @@ struct MapView: View {
     
     return NavigationStack {
         MapView()
-            .environment(\.spcService, spcMock)
+            .environment(\.mapData, spcMock)
     }
 }
 

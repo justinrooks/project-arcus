@@ -23,6 +23,7 @@ extension Logger {
     static let riskProductRepo = Logger(subsystem: subsystem, category: "RiskProductRepo")
     
     
+    static let orchestrator = Logger(subsystem: subsystem, category: "BGOrchestrator")
     static let downloader = Logger(subsystem: subsystem, category: "Downloader")
     
 //    static let downloader = Logger(subsystem: subsystem, category: "Downloader")

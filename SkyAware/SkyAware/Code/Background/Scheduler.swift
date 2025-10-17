@@ -7,6 +7,7 @@
 
 import Foundation
 import OSLog
+import BackgroundTasks
 
 enum ScheduleType: String {
     case convective
@@ -16,12 +17,15 @@ enum ScheduleType: String {
 
 struct Scheduler {
     private let logger = Logger.scheduler
-    private let scheduleType: ScheduleType
+    private let scheduleType: ScheduleType = .convective
     
-    init(scheduleType: ScheduleType) {
-        self.logger.info("Initializing Scheduler for \(scheduleType.rawValue)")
-        self.scheduleType = scheduleType
-    }
+    // TODO: This could be handled better
+    private let appRefreshID = "com.skyaware.app.refresh"
+    
+//    init(scheduleType: ScheduleType) {
+//        self.logger.info("Initializing Scheduler for \(scheduleType.rawValue)")
+//        self.scheduleType = scheduleType
+//    }
     
     
     
@@ -99,6 +103,27 @@ struct Scheduler {
         
         logger.warning("Should have a next time... investigate")
         return nil
+    }
+    
+    // MARK: - Schedule Next App Refresh
+    func scheduleNextAppRefresh(_ outcome: BackgroundResult) {
+        logger.debug("Checking if we need to schedule an app refresh")
+        BGTaskScheduler.shared.getPendingTaskRequests { requests in
+            logger.debug("Pending tasks: \(requests.count)")
+            
+            guard requests.isEmpty else { return } // If we don't have any pending requests, schedule a new one
+            
+            let nextRun = getNextRunTime()
+            
+            guard let nextRun else { return } // Ensure we received the next runtime from teh scheduler
+            
+            // Create the task and set its next runtime
+            let request = BGAppRefreshTaskRequest(identifier: appRefreshID)
+            request.earliestBeginDate = nextRun
+            
+            do { try BGTaskScheduler.shared.submit(request) }
+            catch { logger.error("Error submitting background task: \(error.localizedDescription)")}
+        }
     }
     
     func does(_ date: Date, matchHour targetHour: Int) -> Bool {

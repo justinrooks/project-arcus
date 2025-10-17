@@ -10,39 +10,7 @@ import OSLog
 import SwiftData
 import CoreLocation
 
-protocol SpcService: Sendable {
-    func sync() async -> Void
-    func syncTextProducts() async -> Void
-    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel
-    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat
-    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO?
-    
-    func cleanup(daysToKeep: Int) async -> Void
-    
-    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO]
-    
-    func getStormRiskMapData() async throws -> [StormRiskDTO]
-    func getMesoMapData() async throws -> [MdDTO]
-    
-    // MARK: Freshness APIs
-    // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
-    func latestIssue(for product: GeoJSONProduct) async throws -> Date?
-    func latestIssue(for product: RssProduct) async throws -> Date?
-
-    // 2) Location-scope: “what’s the ISSUE of the feature that applies here?”
-    func latestIssue(for product: GeoJSONProduct, at coord: CLLocationCoordinate2D) async throws -> Date?
-    func latestIssue(for product: RssProduct, at coord: CLLocationCoordinate2D) async throws -> Date?
-
-    // MARK: Streams
-    // SIMPLE: convective-only freshness (seed + stream)
-    func convectiveIssueUpdates() async -> AsyncStream<Date>
-    
-    // Optional: a unifying signal if you want push instead of polling
-//    func issueUpdates(for product: GeoJSONProduct) -> AsyncStream<Date>
-//    func issueUpdates(for product: RssProduct) -> AsyncStream<Date>
-}
-
-actor SpcProvider: SpcService {
+actor SpcProvider {
     private let logger = Logger.spcProvider
     private let outlookRepo: ConvectiveOutlookRepo
     private let mesoRepo: MesoRepo
@@ -69,6 +37,7 @@ actor SpcProvider: SpcService {
         self.client = client
     }
     
+    // MARK: SpcSyncing
     func sync() async {
         do {
             await syncTextProducts()
@@ -102,6 +71,7 @@ actor SpcProvider: SpcService {
         try await outlookRepo.current()
     }
     
+    // MARK: SpcRiskQuerying
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
         try await stormRiskRepo.active(for: point)
     }
@@ -110,6 +80,7 @@ actor SpcProvider: SpcService {
         try await severeRiskRepo.active(for: point)
     }
     
+    // MARK: SpcMapData
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
         try await severeRiskRepo.getSevereRiskShapes()
     }
@@ -121,6 +92,7 @@ actor SpcProvider: SpcService {
     func getMesoMapData() async throws -> [MdDTO] {
         try await mesoRepo.getLatestMapData()
     }
+    
     
     // Freshness APIs
     // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
@@ -159,16 +131,7 @@ actor SpcProvider: SpcService {
         }
     }
 
-    private func publishConvectiveIssue(_ date: Date) {
-        latestConvective = date
-        for c in convectiveContinuations.values { c.yield(date) }
-    }
-
-    private func removeConvectiveContinuation(id: UUID) {
-        convectiveContinuations[id] = nil
-    }
-
-        
+    // MARK: SpcCleanup
     func cleanup(daysToKeep: Int = 3) async {
         do {
             try await outlookRepo.purge()
@@ -178,11 +141,19 @@ actor SpcProvider: SpcService {
             // Clean up the geojson
             try await stormRiskRepo.purge()
             try await severeRiskRepo.purge()
-            
-            
         } catch {
             logger.error("Error cleaning up old Spc feed data: \(error.localizedDescription)")
         }
-        
+    }
+    
+    
+    // MARK: Private methods
+    private func publishConvectiveIssue(_ date: Date) {
+        latestConvective = date
+        for c in convectiveContinuations.values { c.yield(date) }
+    }
+
+    private func removeConvectiveContinuation(id: UUID) {
+        convectiveContinuations[id] = nil
     }
 }

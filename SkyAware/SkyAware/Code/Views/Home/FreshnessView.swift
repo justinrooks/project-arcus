@@ -8,10 +8,10 @@
 import SwiftUI
 
 struct FreshnessView: View {
-    @Environment(\.spcService) private var svc: any SpcService
+    @Environment(\.spcFreshness) private var svc: any SpcFreshnessPublishing
     @Environment(\.locationClient) private var locSvc: LocationClient
 
-    @State private var convectiveLoad: Date?
+    @State private var convectiveLoad: String?
     @State private var snap: LocationSnapshot?
     
 //    var lastUpdated: Date? {
@@ -27,8 +27,8 @@ struct FreshnessView: View {
     var body: some View {
         VStack {
             HStack {
-                if let cl = convectiveLoad {
-                    Text("As of \(relativeTime(from: cl))")
+                if let convectiveLoad {
+                    Text("As of \(convectiveLoad)")
                 }
 
 //                if let lastFix = snap?.timestamp,
@@ -50,13 +50,18 @@ struct FreshnessView: View {
         }
         // Seed once for first paint
         .task {
-            convectiveLoad = try? await svc.latestIssue(for: .convective)
+            guard let lastLoad = try? await svc.latestIssue(for: .convective) else {
+                convectiveLoad = "Calculating..."
+                return
+            }
+            
+            await MainActor.run { convectiveLoad = relativeTime(from: lastLoad) }
         }
         // Then react to pushes
         .task {
             let stream = await svc.convectiveIssueUpdates()
             for await d in stream {
-                await MainActor.run { convectiveLoad = d }
+                await MainActor.run { convectiveLoad = relativeTime(from: d) }
             }
         }
 //        .onAppear {
@@ -88,7 +93,8 @@ struct FreshnessView: View {
     }
     
     private func relativeTime(from date: Date) -> String {
-        let seconds = Int(Date().timeIntervalSince(date))
+        let now:Date = .now
+        let seconds = Int(now.timeIntervalSince(date))
         if seconds <= 0 {
             return "just now"
         }
@@ -105,6 +111,6 @@ struct FreshnessView: View {
     
     return FreshnessView()
         .modelContainer(mdPreview.container)
-        .environment(\.spcService, spcMock)
+        .environment(\.spcFreshness, spcMock)
         .environment(\.locationClient, .offline)
 }
