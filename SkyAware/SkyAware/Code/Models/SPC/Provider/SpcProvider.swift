@@ -57,6 +57,7 @@ actor SpcProvider {
             
             // After refresh, fetch the latest and publish (keeps it simple and reactive)
             if let d = try? await latestIssue(for: .convective) {
+                logger.info("Convective outlook published: \(d)")
                 publishConvectiveIssue(d)
             }
             
@@ -94,7 +95,7 @@ actor SpcProvider {
     }
     
     
-    // Freshness APIs
+    // MARK: SpcFreshnessPublishing
     // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
     func latestIssue(for product: GeoJSONProduct) async throws -> Date? {
         return nil
@@ -117,7 +118,8 @@ actor SpcProvider {
 //    func latestConvectiveIssue() async -> Date? { latestConvective }
 
     func convectiveIssueUpdates() async -> AsyncStream<Date> {
-        AsyncStream<Date>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+//        AsyncStream<Date>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        AsyncStream<Date> { continuation in
             // Seed with cached value if we have one
             if let latestConvective { continuation.yield(latestConvective) }
             // Store continuation so we can yield future updates

@@ -40,21 +40,30 @@ struct SkyAwareApp: App {
     let sharedModelContainer: ModelContainer = {
         let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
-        do { return try ModelContainer(for: schema, configurations: config) }
-        catch { fatalError("Could not create ModelContainer: \(error)") }
+        do {
+            let container = try ModelContainer(for: schema, configurations: config)
+            Logger.mainApp.debug("ModelContainer created for schema: SkyAware_Data")
+            return container
+        } catch {
+            Logger.mainApp.fault("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")
+            fatalError("Could not create ModelContainer: \(error)")
+        }
     }()
     
     init() {
 #if DEBUG
         print(URL.applicationSupportDirectory.path(percentEncoded: false))
 #endif
+        logger.info("App init started")
         
         // Setup Location Monitoring
         let sink: LocationSink = { [provider] update in await provider.send(update: update) }
         locationMgr = LocationManager(onUpdate: sink)
+        logger.info("LocationManager configured")
         
         // Configure the network cache
         URLCache.shared = .skyAwareCache
+        logger.debug("URLCache configured for SkyAware")
         
         // Create our data layer repos
         outlookRepo    = ConvectiveOutlookRepo(modelContainer: sharedModelContainer)
@@ -62,6 +71,7 @@ struct SkyAwareApp: App {
         watchRepo      = WatchRepo(modelContainer: sharedModelContainer)
         stormRiskRepo  = StormRiskRepo(modelContainer: sharedModelContainer)
         severeRiskRepo = SevereRiskRepo(modelContainer: sharedModelContainer)
+        logger.debug("Repositories initialized")
         
         let spc = SpcProvider(outlookRepo: outlookRepo,
                                mesoRepo: mesoRepo,
@@ -71,6 +81,7 @@ struct SkyAwareApp: App {
                                client: SpcHttpClient())
         spcProvider = spc
         orchestrator = BackgroundOrchestrator(spcProvider: spc, locationProvider: provider)
+        logger.info("Providers ready; background orchestrator configured")
     }
     
     var body: some Scene {
@@ -83,41 +94,56 @@ struct SkyAwareApp: App {
         }
         .modelContainer(sharedModelContainer)
         .backgroundTask(.appRefresh(appRefreshID)) {
-            // 1. Kick off the tasks
+            logger.info("Background app refresh started (id: \(self.appRefreshID, privacy: .public))")
             let result = await orchestrator.run()
+            logger.info("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
             
             // 2. Schedule the next
-            let scheduler = Scheduler()
+            let scheduler = Scheduler(refreshId: appRefreshID)
             scheduler.scheduleNextAppRefresh(result)
+            logger.info("Scheduled next app refresh after result: \(String(describing: result), privacy: .public)")
         }
         .onChange(of: scenePhase) { _, newPhase in
+            logger.info("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
             locationMgr.updateMode(for: newPhase)
             
-            if newPhase == .background {
-                let scheduler = Scheduler()
+            switch newPhase {
+            case .background:
+                let scheduler = Scheduler(refreshId: appRefreshID)
                 scheduler.scheduleNextAppRefresh(.success)
-            } else if newPhase == .active {
+                logger.info("App entered background; scheduled next app refresh proactively")
+            case .inactive: // Swallow inactive state
+            case .active:
                 Task.detached {
                     let center = UNUserNotificationCenter.current()
                     let settings = await center.notificationSettings()
+                    logger.info("Current notification authorization status: \(String(describing: settings.authorizationStatus), privacy: .public)")
                     if settings.authorizationStatus == .notDetermined {
                         do {
                             try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                            logger.notice("Notification authorization requested: user responded (status may update asynchronously)")
                         } catch {
-                            logger.error("Error requesting notification permission: \(error.localizedDescription)")
+                            logger.error("Error requesting notification permission: \(error.localizedDescription, privacy: .public)")
                         }
                     }
                 }
                 
                 Task {
+                    logger.notice("Starting provider cleanup and sync")
                     await spcProvider.cleanup()
+                    logger.info("Provider cleanup finished")
                     await spcProvider.sync()
+                    logger.info("Provider sync finished")
                 }
+            @unknown default:
+                logger.warning("Phase transition error. Unknown phase")
+                break
             }
         }
     }
     
-    private var isPreview: Bool {
-        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
-    }
+//    private var isPreview: Bool {
+//        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+//    }
 }
+

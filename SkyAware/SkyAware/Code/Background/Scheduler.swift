@@ -18,16 +18,11 @@ enum ScheduleType: String {
 struct Scheduler {
     private let logger = Logger.scheduler
     private let scheduleType: ScheduleType = .convective
+    private let appRefreshID: String
     
-    // TODO: This could be handled better
-    private let appRefreshID = "com.skyaware.app.refresh"
-    
-//    init(scheduleType: ScheduleType) {
-//        self.logger.info("Initializing Scheduler for \(scheduleType.rawValue)")
-//        self.scheduleType = scheduleType
-//    }
-    
-    
+    init(refreshId: String) {
+        appRefreshID = refreshId
+    }
     
     func getNextRunTime() -> Date? {
         let calendar = Calendar.current

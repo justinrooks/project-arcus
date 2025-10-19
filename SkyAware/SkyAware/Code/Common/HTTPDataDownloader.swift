@@ -83,7 +83,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                 }
                 
                 if let mod = http.value(forHTTPHeaderField: "Last-Modified")?.fromRFC1123String(){
-                    logger.trace("LAST MOD: \(mod.toRFC1123String())")
+//                    logger.trace("LAST MOD: \(mod.toRFC1123String())")
                     
                     let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
                     if let suite {
