@@ -8,20 +8,30 @@
 import Foundation
 import OSLog
 
-enum BackgroundResult { case success, cancelled, failed }
+struct Outcome: Sendable {
+//    enum Next: Sendable { case short(minutes: Int), normal(minutes: Int), long(minutes: Int) }
+    enum BackgroundResult: Sendable { case success, cancelled, failed }
+    let next: Date
+//    let earliest: Date
+    let result: BackgroundResult
+    let didNotify: Bool
+    let feedsChanged: Set<Feed> // [.convective, .meso, .watch]
+}
 
 actor BackgroundOrchestrator {
     private let logger = Logger.orchestrator
     private let spcProvider: any SpcSyncing & SpcRiskQuerying
     private let locationProvider: LocationProvider
+    private let refreshPolicy: RefreshPolicy
     
-    init(spcProvider: any SpcSyncing & SpcRiskQuerying, locationProvider: LocationProvider) {
+    init(spcProvider: any SpcSyncing & SpcRiskQuerying, locationProvider: LocationProvider, policy: RefreshPolicy) {
         self.spcProvider = spcProvider
         self.locationProvider = locationProvider
+        refreshPolicy = policy
         logger.info("BackgroundOrchestrator initialized")
     }
     
-    func run() async -> BackgroundResult{
+    func run() async -> Outcome {
         logger.info("Background run started")
         return await withTaskCancellationHandler {
             do {
@@ -40,10 +50,13 @@ actor BackgroundOrchestrator {
                     await mgr.notify(for: outlook, with: message)
                     logger.info("Background notification posted (generic)")
                     logger.info("Background run finished with result: success (no location)")
-                    return BackgroundResult.success
+                    
+                    let nextRun = refreshPolicy.getNextRunTime(for: .normal(60))
+                    return .init(next: nextRun, result: .success, didNotify: true, feedsChanged: [])
                 }
                 
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
+                // TODO: Check for wind, hail, and tornado features, if any then analyze, otherwise drop out
                 async let updatedSnap = locationProvider.ensurePlacemark(for: snap.coordinates)
                 async let severeRisk = spcProvider.getSevereRisk(for: snap.coordinates)
                 async let stormRisk = spcProvider.getStormRisk(for: snap.coordinates)
@@ -54,11 +67,14 @@ actor BackgroundOrchestrator {
                 logger.info("Background notification posted (personalized)")
                 logger.info("Background run finished with result: success")
                 
-                return .success
+                let nextRun = refreshPolicy.getNextRunTime(for: .normal(60))
+                return .init(next: nextRun, result: .success, didNotify: true, feedsChanged: [])
             } catch {
                 logger.error("Error refreshing background data: \(error.localizedDescription, privacy: .public)")
                 logger.info("Background run finished with result: failed")
-                return .failed
+                
+                let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
+                return .init(next: nextRun, result: .failed, didNotify: false, feedsChanged: [])
             }
         } onCancel: {
             logger.notice("Background run cancelled")

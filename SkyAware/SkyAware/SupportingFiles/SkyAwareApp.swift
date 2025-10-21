@@ -17,6 +17,9 @@ struct SkyAwareApp: App {
     private let appRefreshID = "com.skyaware.app.refresh"
     private let logger = Logger.mainApp
     
+    // State
+    @State private var didBootstrapBGRefresh = false
+    
     // Location
     @MainActor private let provider = LocationProvider()
     @MainActor private let locationMgr: LocationManager
@@ -32,6 +35,7 @@ struct SkyAwareApp: App {
     
     // Background
     private let orchestrator: BackgroundOrchestrator
+    private let refreshPolicy: RefreshPolicy
     
     // EnvVars
     @Environment(\.scenePhase) private var scenePhase
@@ -45,7 +49,7 @@ struct SkyAwareApp: App {
             Logger.mainApp.debug("ModelContainer created for schema: SkyAware_Data")
             return container
         } catch {
-            Logger.mainApp.fault("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")
+            Logger.mainApp.critical("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
@@ -79,8 +83,11 @@ struct SkyAwareApp: App {
                                stormRiskRepo: stormRiskRepo,
                                severeRiskRepo: severeRiskRepo,
                                client: SpcHttpClient())
+        let refresh: RefreshPolicy = .init()
+        refreshPolicy = refresh
+        logger.info("Refresh policy configured")
         spcProvider = spc
-        orchestrator = BackgroundOrchestrator(spcProvider: spc, locationProvider: provider)
+        orchestrator = BackgroundOrchestrator(spcProvider: spc, locationProvider: provider, policy: refresh)
         logger.info("Providers ready; background orchestrator configured")
     }
     
@@ -98,10 +105,10 @@ struct SkyAwareApp: App {
             let result = await orchestrator.run()
             logger.info("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
             
-            // 2. Schedule the next
+            // Schedule the next run
             let scheduler = Scheduler(refreshId: appRefreshID)
-            scheduler.scheduleNextAppRefresh(result)
-            logger.info("Scheduled next app refresh after result: \(String(describing: result), privacy: .public)")
+            scheduler.scheduleNextAppRefresh(nextRun: result.next)
+            logger.info("Scheduled next app refresh at: \(result.next)")
         }
         .onChange(of: scenePhase) { _, newPhase in
             logger.info("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
@@ -110,10 +117,42 @@ struct SkyAwareApp: App {
             switch newPhase {
             case .background:
                 let scheduler = Scheduler(refreshId: appRefreshID)
-                scheduler.scheduleNextAppRefresh(.success)
-                logger.info("App entered background; scheduled next app refresh proactively")
+                let next = refreshPolicy.getNextRunTime(for: .normal(60))
+                scheduler.scheduleNextAppRefresh(nextRun: next)
+                logger.info("App entered background; scheduled next app refresh proactively: \(next.toShortTime())")
             case .inactive: // Swallow inactive state
+                break
             case .active:
+                // Spin off a task to clean up and refresh our data
+                // TODO: This needs to be fine tuned so it doesn't
+                //       happen at every single app activation.
+                // We kick one off for the first load, then refresh behind the
+                // scenes via background job.
+//                Task {
+//                    logger.notice("Starting provider cleanup and sync")
+//                    await spcProvider.cleanup()
+//                    logger.info("Provider cleanup finished")
+//                    await spcProvider.sync()
+//                    logger.info("Provider sync finished")
+//                }
+                
+                // If its our first run, spin off a task to set up a background task
+                // so we always have one
+                if !didBootstrapBGRefresh {
+                    didBootstrapBGRefresh = true
+                    
+                    Task.detached(priority: .utility) {
+                        let scheduler = Scheduler(refreshId: appRefreshID)
+                        await scheduler.ensureScheduled(using: refreshPolicy)
+                    }
+                    
+                    Task.detached(priority: .utility) {
+                        let outcome = await orchestrator.run()
+                        Scheduler(refreshId: appRefreshID).scheduleNextAppRefresh(nextRun: outcome.next)
+                    }
+                }
+                
+                // Spin off a task to check notification settings
                 Task.detached {
                     let center = UNUserNotificationCenter.current()
                     let settings = await center.notificationSettings()
@@ -126,14 +165,6 @@ struct SkyAwareApp: App {
                             logger.error("Error requesting notification permission: \(error.localizedDescription, privacy: .public)")
                         }
                     }
-                }
-                
-                Task {
-                    logger.notice("Starting provider cleanup and sync")
-                    await spcProvider.cleanup()
-                    logger.info("Provider cleanup finished")
-                    await spcProvider.sync()
-                    logger.info("Provider sync finished")
                 }
             @unknown default:
                 logger.warning("Phase transition error. Unknown phase")

@@ -40,5 +40,6 @@ extension Logger {
     
     static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")
     static let scheduler = Logger(subsystem: subsystem, category: "Scheduler")
+    static let refreshPolicy = Logger(subsystem: subsystem, category: "RefreshPolicy")
     static let mainApp = Logger(subsystem: subsystem, category: "MainApp")
 }
