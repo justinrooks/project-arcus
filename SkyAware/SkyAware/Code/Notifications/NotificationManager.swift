@@ -12,43 +12,49 @@ import OSLog
 struct NotificationManager: Sendable {
     private let logger = Logger.notifications
     
-    func notify(title: String, subtitle: String, body: String, interval: TimeInterval = 10) async {
+    func notify(
+        title: String,
+        subtitle: String,
+        body: String,
+        interval: TimeInterval = 10,
+        sound: UNNotificationSound = .default,
+        badge: NSNumber = 0,
+        repeats: Bool = false
+    ) async {
         let notificationReq = UNMutableNotificationContent()
         notificationReq.title = title
         notificationReq.subtitle = subtitle
         notificationReq.body = body
-        notificationReq.sound = UNNotificationSound.default
-        notificationReq.badge = 0
+        notificationReq.sound = sound
+        notificationReq.badge = badge
         
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
-        
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: repeats)
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
         
         await internalNotify(request: request)
     }
     
-    func notify(for outlook:ConvectiveOutlookDTO?, with message: String?) async {
-        guard let outlook else { return } // if we don't get an outlook, dont send a notification
-        
-        //        let d = does(outlook.published, matchHour: 7)
-
-        let notificationReq = UNMutableNotificationContent()
-        notificationReq.title = "New Day 1 Convective Outlook"
-        notificationReq.subtitle = "Published: \(outlook.published.toShortTime())"
-        notificationReq.body = "\(message ?? String(outlook.summary.prefix(24)))..."
-        notificationReq.sound = UNNotificationSound.default
-        notificationReq.badge = 0
-        
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
-        
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
-        
-        await internalNotify(request: request)
-    }
+//    @available(*, deprecated, message: "Use the notification engine and infra via NotificationsCore protocols")
+//    func notify(for outlook:ConvectiveOutlookDTO?, with message: String?) async {
+//        guard let outlook else { return } // if we don't get an outlook, dont send a notification
+//        
+//        //        let d = does(outlook.published, matchHour: 7)
+//
+//        let notificationReq = UNMutableNotificationContent()
+//        notificationReq.title = "New Day 1 Convective Outlook"
+//        notificationReq.subtitle = "Published: \(outlook.published.toShortTime())"
+//        notificationReq.body = "\(message ?? String(outlook.summary.prefix(24)))..."
+//        notificationReq.sound = UNNotificationSound.default
+//        notificationReq.badge = 0
+//        
+//        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
+//        
+//        let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
+//        
+//        await internalNotify(request: request)
+//    }
     
-    
-    
-    
+    /// Sends the notification with checks for authorization every time
     private func internalNotify(request: UNNotificationRequest) async {
         let authType = await checkAuthorized()
 

@@ -23,10 +23,12 @@ actor BackgroundOrchestrator {
     private let spcProvider: any SpcSyncing & SpcRiskQuerying
     private let locationProvider: LocationProvider
     private let refreshPolicy: RefreshPolicy
+    private let morningEngine: MorningEngine
     
-    init(spcProvider: any SpcSyncing & SpcRiskQuerying, locationProvider: LocationProvider, policy: RefreshPolicy) {
+    init(spcProvider: any SpcSyncing & SpcRiskQuerying, locationProvider: LocationProvider, policy: RefreshPolicy, engine: MorningEngine) {
         self.spcProvider = spcProvider
         self.locationProvider = locationProvider
+        morningEngine = engine
         refreshPolicy = policy
         logger.info("BackgroundOrchestrator initialized")
     }
@@ -35,7 +37,6 @@ actor BackgroundOrchestrator {
         logger.info("Background run started")
         return await withTaskCancellationHandler {
             do {
-                let mgr = NotificationManager()
                 logger.info("Starting SPC sync")
                 await spcProvider.sync()
                 logger.info("SPC sync completed")
@@ -45,13 +46,15 @@ actor BackgroundOrchestrator {
                 
                 logger.debug("Attempting to obtain latest location snapshot")
                 guard let snap = await locationProvider.snapshot() else {
-                    let message = "New convective outlook available"
-                    logger.notice("No location snapshot available; sending generic outlook notification")
-                    await mgr.notify(for: outlook, with: message)
-                    logger.info("Background notification posted (generic)")
-                    logger.info("Background run finished with result: success (no location)")
-                    
-                    let nextRun = refreshPolicy.getNextRunTime(for: .normal(60))
+//                    let message = "New convective outlook available"
+//                    logger.notice("No location snapshot available; sending generic outlook notification")
+//                    let mgr = NotificationManager()
+//                    await mgr.notify(for: outlook, with: message)
+//                    logger.info("Background notification posted (generic)")
+//                    logger.info("Background run finished with result: success (no location)")
+//                    
+                    logger.info("No location snapshot available; rechecking at 20 past")
+                    let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
                     return .init(next: nextRun, result: .success, didNotify: true, feedsChanged: [])
                 }
                 
@@ -60,11 +63,24 @@ actor BackgroundOrchestrator {
                 async let updatedSnap = locationProvider.ensurePlacemark(for: snap.coordinates)
                 async let severeRisk = spcProvider.getSevereRisk(for: snap.coordinates)
                 async let stormRisk = spcProvider.getStormRisk(for: snap.coordinates)
-                logger.debug("Composing notification message with placemark and risk summaries")
-                let message = "Latest severe weather outlook for \(await updatedSnap.placemarkSummary, default: "Unknown"):\nStorm Activity: \(try await stormRisk.summary)\nSevere Activity: \(try await severeRisk.summary)"
                 
-                await mgr.notify(for: outlook, with: message)
-                logger.info("Background notification posted (personalized)")
+                let morningSummary = await morningEngine.run(
+                    ctx: .init(
+                        now: .now,
+                        lastConvectiveIssue: outlook?.published,
+                        localTZ: TimeZone(identifier: "America/Denver")!,
+                        quietHours: nil,
+                        stormRisk: try await stormRisk,
+                        severeRisk: try await severeRisk,
+                        placeMark: await updatedSnap.placemarkSummary ?? "Unknown"
+                    )
+                )
+                if morningSummary {
+                    logger.info("Morning summary notification posted")
+                } else {
+                    logger.info("Morning summary skipped")
+                }
+                
                 logger.info("Background run finished with result: success")
                 
                 let nextRun = refreshPolicy.getNextRunTime(for: .normal(60))
@@ -81,4 +97,3 @@ actor BackgroundOrchestrator {
         }
     }
 }
-

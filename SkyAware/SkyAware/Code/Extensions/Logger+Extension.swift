@@ -10,11 +10,17 @@ import OSLog
 
 extension Logger {
     static let subsystem = Bundle.main.bundleIdentifier!
-    static let spcClient = Logger(subsystem: subsystem, category: "SpcClient")
-    static let spcService = Logger(subsystem: subsystem, category: "SpcService")
-    static let spcProvider = Logger(subsystem: subsystem, category: "SpcProvider")
-    static let spcRepo = Logger(subsystem: subsystem, category: "SpcRepo")
     
+    // MARK: Main
+    static let mainApp = Logger(subsystem: subsystem, category: "MainApp")
+    
+    // MARK: Plumbing
+    static let spcClient = Logger(subsystem: subsystem, category: "SpcClient")
+    static let downloader = Logger(subsystem: subsystem, category: "Downloader")
+    static let spcProvider = Logger(subsystem: subsystem, category: "SpcProvider")
+    static let rssParser = Logger(subsystem: subsystem, category: "RssParser")
+    
+    // MARK: Repos
     static let convectiveRepo = Logger(subsystem: subsystem, category: "ConvectiveOutlookRepo")
     static let mesoRepo = Logger(subsystem: subsystem, category: "MesoRepo")
     static let watchRepo = Logger(subsystem: subsystem, category: "WatchRepo")
@@ -22,24 +28,27 @@ extension Logger {
     static let severeRiskRepo = Logger(subsystem: subsystem, category: "SevereRiskRepo")
     static let riskProductRepo = Logger(subsystem: subsystem, category: "RiskProductRepo")
     
-    
+    // MARK: Background
     static let orchestrator = Logger(subsystem: subsystem, category: "BGOrchestrator")
-    static let downloader = Logger(subsystem: subsystem, category: "Downloader")
+    static let scheduler = Logger(subsystem: subsystem, category: "Scheduler")
+    static let refreshPolicy = Logger(subsystem: subsystem, category: "RefreshPolicy")
     
-//    static let downloader = Logger(subsystem: subsystem, category: "Downloader")
+    // MARK: Location
     static let locationMgr = Logger(subsystem: subsystem, category: "LocationMgr")
-    
     static let locationPipeline = Logger(subsystem: subsystem, category: "LocationPipeline")
     
-    static let rssParser = Logger(subsystem: subsystem, category: "RssParser")
+    // MARK: Views
     static let alertView = Logger(subsystem: subsystem, category: "AlertView")
     static let convectiveView = Logger(subsystem: subsystem, category: "ConvectiveView")
     static let mainView = Logger(subsystem: subsystem, category: "MainView")
     static let mapping = Logger(subsystem: subsystem, category: "Mapping")
-    static let summaryProvider = Logger(subsystem: subsystem, category: "SummaryProvider")
     
+    // MARK: Notification
     static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")
-    static let scheduler = Logger(subsystem: subsystem, category: "Scheduler")
-    static let refreshPolicy = Logger(subsystem: subsystem, category: "RefreshPolicy")
-    static let mainApp = Logger(subsystem: subsystem, category: "MainApp")
+    
+    static let engine = Logger(subsystem: subsystem, category: "notificationEngine")
+    static let rule = Logger(subsystem: subsystem, category: "notificationRule")
+    static let gate = Logger(subsystem: subsystem, category: "notificationGate")
+    static let composer = Logger(subsystem: subsystem, category: "notificationComposer")
+    static let sender = Logger(subsystem: subsystem, category: "notificationSender")
 }

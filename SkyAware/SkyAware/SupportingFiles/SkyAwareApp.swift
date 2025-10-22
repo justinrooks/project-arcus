@@ -87,7 +87,21 @@ struct SkyAwareApp: App {
         refreshPolicy = refresh
         logger.info("Refresh policy configured")
         spcProvider = spc
-        orchestrator = BackgroundOrchestrator(spcProvider: spc, locationProvider: provider, policy: refresh)
+        
+        logger.debug("Composing morning summary engine")
+        let morning = MorningEngine(
+            rule: SevenAmLocalRule(),
+            gate: MorningGate(store: DefaultStore()),
+            composer: MorningComposer(),
+            sender: MorningSender()
+        )
+        
+        orchestrator = BackgroundOrchestrator(
+            spcProvider: spc,
+            locationProvider: provider,
+            policy: refresh,
+            engine: morning
+        )
         logger.info("Providers ready; background orchestrator configured")
     }
     
@@ -123,32 +137,26 @@ struct SkyAwareApp: App {
             case .inactive: // Swallow inactive state
                 break
             case .active:
-                // Spin off a task to clean up and refresh our data
-                // TODO: This needs to be fine tuned so it doesn't
-                //       happen at every single app activation.
-                // We kick one off for the first load, then refresh behind the
-                // scenes via background job.
-//                Task {
-//                    logger.notice("Starting provider cleanup and sync")
-//                    await spcProvider.cleanup()
-//                    logger.info("Provider cleanup finished")
-//                    await spcProvider.sync()
-//                    logger.info("Provider sync finished")
-//                }
-                
                 // If its our first run, spin off a task to set up a background task
                 // so we always have one
                 if !didBootstrapBGRefresh {
                     didBootstrapBGRefresh = true
                     
+                    // Schedule a background task greedy, so we don't have old data
                     Task.detached(priority: .utility) {
+                        logger.notice("Seeding initial background task")
                         let scheduler = Scheduler(refreshId: appRefreshID)
                         await scheduler.ensureScheduled(using: refreshPolicy)
+                        logger.info("Background refresh scheduled")
                     }
                     
+                    // Initial data cleanup and fetch so we have something to work with
                     Task.detached(priority: .utility) {
-                        let outcome = await orchestrator.run()
-                        Scheduler(refreshId: appRefreshID).scheduleNextAppRefresh(nextRun: outcome.next)
+                        logger.notice("Starting provider cleanup and sync")
+                        await spcProvider.cleanup()
+                        logger.info("Provider cleanup finished")
+                        await spcProvider.sync()
+                        logger.info("Provider sync finished")
                     }
                 }
                 

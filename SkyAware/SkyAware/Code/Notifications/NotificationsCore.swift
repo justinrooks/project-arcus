@@ -1,0 +1,37 @@
+//
+//  NotificationsCore.swift
+//  SkyAware
+//
+//  Created by Justin Rooks on 10/21/25.
+//
+
+import Foundation
+
+enum NotificationKind: Sendable { case morningOutlook }
+
+struct NotificationEvent: Sendable {
+    let kind: NotificationKind
+    let key: String
+    let payload: [String: Sendable]
+}
+
+protocol NotificationRule: Sendable {
+    func evaluate(_ ctx: MorningContext) -> NotificationEvent?
+}
+
+protocol NotificationGate: Sendable {
+    func allow(_ event: NotificationEvent, now: Date) async -> Bool
+}
+
+protocol NotificationComposer: Sendable {
+    func compose(_ event: NotificationEvent) -> (title: String, body: String, subtitle: String)
+}
+
+protocol NotificationSender: Sendable {
+    func send(title: String, body: String, subtitle: String, id: String) async
+}
+
+protocol MorningStateStore: Sendable {
+    func lastMorningStamp() async -> String?
+    func setLastMorningStamp(_ stamp: String) async
+}

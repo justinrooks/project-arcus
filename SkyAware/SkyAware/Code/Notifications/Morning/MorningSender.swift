@@ -1,0 +1,22 @@
+//
+//  Sender.swift
+//  SkyAware
+//
+//  Created by Justin Rooks on 10/21/25.
+//
+
+import Foundation
+import OSLog
+
+struct MorningSender: NotificationSender {
+    private let logger = Logger.sender
+    
+    init() {}
+    
+    func send(title: String, body: String, subtitle: String, id: String) async {
+        logger.debug("Sending notification")
+        let notifier = NotificationManager()
+        await notifier.notify(title: title, subtitle: subtitle, body: body)
+        logger.debug("Notification sent")
+    }
+}
