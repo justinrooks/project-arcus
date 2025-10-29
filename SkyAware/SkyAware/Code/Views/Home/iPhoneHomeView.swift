@@ -60,7 +60,8 @@ struct iPhoneHomeView: View {
                 
                 NavigationStack {
 //                    SettingsView()
-                    LogViewerView()
+//                    LogViewerView()
+                    BgHealthDiagnosticsView()
                 }
                 .tabItem {
                     Image(systemName: "gearshape") //exclamationmark.triangle

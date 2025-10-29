@@ -18,35 +18,24 @@ struct Scheduler {
     }
     
     // MARK: - Schedule Next App Refresh
-    func scheduleNextAppRefresh(nextRun: Date) {
+    func scheduleNextAppRefresh(nextRun: Date) async {
         logger.debug("Checking for any pending app refreshes")
-        BGTaskScheduler.shared.getPendingTaskRequests { requests in
-            // If we don't have any pending SkyAware tasks, we can schedule a new one
-            let hasPending = requests.contains { $0.identifier == appRefreshID }
-            guard !hasPending else {
-                logger.info("Refresh task already pending: \(requests.count), skipping")
-                return
-            }
-            
-            // Create the task and set its next runtime
-            let request = BGAppRefreshTaskRequest(identifier: appRefreshID)
-            request.earliestBeginDate = nextRun
-            
-            do {
-                try BGTaskScheduler.shared.submit(request)
-                logger.info("Refresh task scheduled for: \(nextRun)")
-            }
-            catch { logger.error("Error scheduling background task (\(appRefreshID)): \(error.localizedDescription)")}
-        }
-    }
-}
-
-extension Scheduler {
-    func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async {
+        // If we don't have any pending SkyAware tasks, we can schedule a new one
         let hasPending = await hasPendingRequest(for: appRefreshID)
-        guard !hasPending else { return }
-        let next = policy.getNextRunTime(for: .short(20))
-        scheduleNextAppRefresh(nextRun: next)
+        guard !hasPending else {
+            logger.debug("Refresh task already pending")
+            return
+        }
+        
+        // Create the task and set its next runtime
+        let request = BGAppRefreshTaskRequest(identifier: appRefreshID)
+        request.earliestBeginDate = nextRun
+        
+        do {
+            try BGTaskScheduler.shared.submit(request)
+            logger.notice("Refresh task scheduled for: \(nextRun)")
+        }
+        catch { logger.error("Error scheduling background task (\(appRefreshID)): \(error.localizedDescription)")}
     }
     
     private func hasPendingRequest(for id: String) async -> Bool {
@@ -55,5 +44,12 @@ extension Scheduler {
                 cont.resume(returning: requests.contains { $0.identifier == id })
             }
         }
+    }
+}
+
+extension Scheduler {
+    func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async {
+        let next = policy.getNextRunTime(for: .short(20))
+        await scheduleNextAppRefresh(nextRun: next)
     }
 }

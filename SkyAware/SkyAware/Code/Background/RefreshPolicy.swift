@@ -8,8 +8,6 @@
 import Foundation
 import OSLog
 
-enum Cadence: Sendable { case short(Int), normal(Int), long(Int) }
-
 struct RefreshPolicy: Sendable {
     private let logger = Logger.refreshPolicy
     
@@ -92,16 +90,7 @@ struct RefreshPolicy: Sendable {
     //        logger.warning("Should have a next time... investigate")
     //        return nil
     //    }
-    func cadence(from runDate: Date, now: Date) -> Cadence {
-        // Optional: collapse a date into a simple cadence for the Outcome
-        let mins = Int(runDate.timeIntervalSince(now)/60)
-        switch mins {
-        case ..<30:  return .short(max(5, mins))
-        case ..<90:  return .normal(mins)
-        default:     return .long(mins)
-        }
-    }
-    
+
     /// Compute the next run time in UTC (Zulu), with deterministic per-day minute jitter.
     /// - Parameters:
     ///   - now: current time (inject for testability)
@@ -115,22 +104,28 @@ struct RefreshPolicy: Sendable {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(secondsFromGMT: 0)! // Zulu
 
-        // Offset by cadence
+        // Extract minutes from the provided cadence
         let minutes: Int = switch cadence {
         case .short(let m):  m
         case .normal(let m): m
         case .long(let m):   m
         }
+  
+        // Exactly N minutes from now (no top-of-hour alignment)
+        let target = cal.date(byAdding: .minute, value: minutes, to: now)!
+        // Normalize seconds to :00 to avoid odd quantization
+        return cal.date(bySetting: .second, value: 0, of: target)!
         
-        let startOfThisHour = cal.dateInterval(of: .hour, for: now)!.start
-        let candidate1 = cal.date(byAdding: .minute, value: minutes, to: startOfThisHour)!
-        if candidate1 > now {
-            return cal.date(bySetting: .second, value: 0, of: candidate1)!
-        }
-
-        let startOfNextHour = cal.date(byAdding: .hour, value: 1, to: startOfThisHour)!
-        let candidate2 = cal.date(byAdding: .minute, value: minutes, to: startOfNextHour)!
-        return cal.date(bySetting: .second, value: 0, of: candidate2)!
+//        TOP OF THE HOUR LOGIC
+//        let startOfThisHour = cal.dateInterval(of: .hour, for: now)!.start
+//        let candidate1 = cal.date(byAdding: .minute, value: minutes, to: startOfThisHour)!
+//        if candidate1 > now {
+//            return cal.date(bySetting: .second, value: 0, of: candidate1)!
+//        }
+//
+//        let startOfNextHour = cal.date(byAdding: .hour, value: 1, to: startOfThisHour)!
+//        let candidate2 = cal.date(byAdding: .minute, value: minutes, to: startOfNextHour)!
+//        return cal.date(bySetting: .second, value: 0, of: candidate2)!
     }
     
 //    /// Compute the next run time in UTC (Zulu), with deterministic per-day minute jitter.

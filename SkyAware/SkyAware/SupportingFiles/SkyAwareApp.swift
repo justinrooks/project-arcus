@@ -30,19 +30,22 @@ struct SkyAwareApp: App {
     private let watchRepo: WatchRepo
     private let stormRiskRepo: StormRiskRepo
     private let severeRiskRepo: SevereRiskRepo
+    private let healthStore: BgHealthStore
     
+    // Providers
     private let spcProvider: SpcProvider
     
     // Background
     private let orchestrator: BackgroundOrchestrator
     private let refreshPolicy: RefreshPolicy
+    private let cadencePolicy: CadencePolicy
     
     // EnvVars
     @Environment(\.scenePhase) private var scenePhase
     
     // Shared SwiftData context
     let sharedModelContainer: ModelContainer = {
-        let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self])
+        let schema = Schema([ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self, BgRunSnapshot.self])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         do {
             let container = try ModelContainer(for: schema, configurations: config)
@@ -75,6 +78,8 @@ struct SkyAwareApp: App {
         watchRepo      = WatchRepo(modelContainer: sharedModelContainer)
         stormRiskRepo  = StormRiskRepo(modelContainer: sharedModelContainer)
         severeRiskRepo = SevereRiskRepo(modelContainer: sharedModelContainer)
+        healthStore    = BgHealthStore(modelContainer: sharedModelContainer)
+        
         logger.debug("Repositories initialized")
         
         let spc = SpcProvider(outlookRepo: outlookRepo,
@@ -83,24 +88,28 @@ struct SkyAwareApp: App {
                                stormRiskRepo: stormRiskRepo,
                                severeRiskRepo: severeRiskRepo,
                                client: SpcHttpClient())
+        spcProvider = spc
+        logger.debug("SPC Provider initialized")
+        
         let refresh: RefreshPolicy = .init()
         refreshPolicy = refresh
         logger.info("Refresh policy configured")
-        spcProvider = spc
         
         logger.debug("Composing morning summary engine")
         let morning = MorningEngine(
-            rule: SevenAmLocalRule(),
+            rule: AmRangeLocalRule(),
             gate: MorningGate(store: DefaultStore()),
             composer: MorningComposer(),
             sender: MorningSender()
         )
-        
+        cadencePolicy = CadencePolicy()
         orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
             locationProvider: provider,
             policy: refresh,
-            engine: morning
+            engine: morning,
+            health: healthStore,
+            cadence: cadencePolicy
         )
         logger.info("Providers ready; background orchestrator configured")
     }
@@ -121,7 +130,7 @@ struct SkyAwareApp: App {
             
             // Schedule the next run
             let scheduler = Scheduler(refreshId: appRefreshID)
-            scheduler.scheduleNextAppRefresh(nextRun: result.next)
+            await scheduler.scheduleNextAppRefresh(nextRun: result.next)
             logger.info("Scheduled next app refresh at: \(result.next)")
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -130,10 +139,12 @@ struct SkyAwareApp: App {
             
             switch newPhase {
             case .background:
-                let scheduler = Scheduler(refreshId: appRefreshID)
-                let next = refreshPolicy.getNextRunTime(for: .normal(60))
-                scheduler.scheduleNextAppRefresh(nextRun: next)
-                logger.info("App entered background; scheduled next app refresh proactively: \(next.toShortTime())")
+                Task {
+                    let scheduler = Scheduler(refreshId: appRefreshID)
+                    let next = refreshPolicy.getNextRunTime(for: .normal(60))
+                    logger.info("App entered background; attempting to schedule next app refresh proactively: \(next.toShortTime())")
+                    await scheduler.scheduleNextAppRefresh(nextRun: next)
+                }
             case .inactive: // Swallow inactive state
                 break
             case .active:
@@ -149,15 +160,20 @@ struct SkyAwareApp: App {
                         await scheduler.ensureScheduled(using: refreshPolicy)
                         logger.info("Background refresh scheduled")
                     }
-                    
-                    // Initial data cleanup and fetch so we have something to work with
-                    Task.detached(priority: .utility) {
-                        logger.notice("Starting provider cleanup and sync")
-                        await spcProvider.cleanup()
-                        logger.info("Provider cleanup finished")
-                        await spcProvider.sync()
-                        logger.info("Provider sync finished")
-                    }
+                }
+                
+                // Opportunistically fetch and cleanup when activating the app to get us the
+                // latest data.
+                // TODO: Need to gate this so it only happens every hour or so, doesn't need
+                //       to happen on every single activation.
+                Task {
+                    logger.notice("Starting background job history cleanup")
+                    try? await healthStore.purge()
+                    logger.notice("Starting provider cleanup and sync")
+                    await spcProvider.cleanup()
+                    logger.info("Provider cleanup finished")
+                    await spcProvider.sync()
+                    logger.info("Provider sync finished")
                 }
                 
                 // Spin off a task to check notification settings

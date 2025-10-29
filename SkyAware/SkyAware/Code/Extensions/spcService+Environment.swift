@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import SwiftData
 
 struct MissingError: Error {}
 

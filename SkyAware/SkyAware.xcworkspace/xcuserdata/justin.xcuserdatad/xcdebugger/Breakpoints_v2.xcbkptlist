@@ -352,8 +352,8 @@
             filePath = "SkyAware/SupportingFiles/SkyAwareApp.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "131"
-            endingLineNumber = "131"
+            startingLineNumber = "140"
+            endingLineNumber = "140"
             landmarkName = "body"
             landmarkType = "24">
          </BreakpointContent>
@@ -384,52 +384,38 @@
             filePath = "SkyAware/Code/Background/BackgroundOrchestrator.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "67"
-            endingLineNumber = "67"
+            startingLineNumber = "77"
+            endingLineNumber = "77"
             landmarkName = "run()"
             landmarkType = "7">
             <Locations>
                <Location
-                  uuid = "C0243E4E-2D2D-4BE9-8A8E-808F223420D1 - e4767d6451b42d20"
+                  uuid = "C0243E4E-2D2D-4BE9-8A8E-808F223420D1 - 6031dc90c8045e44"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(7) suspend resume partial function for closure #1 () async -&gt; SkyAware.Outcome in SkyAware.BackgroundOrchestrator.run() async -&gt; SkyAware.Outcome"
+                  symbolName = "(13) suspend resume partial function for closure #1 () async -&gt; SkyAware.Outcome in SkyAware.BackgroundOrchestrator.run() async -&gt; SkyAware.Outcome"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Background/BackgroundOrchestrator.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "67"
-                  endingLineNumber = "67">
+                  startingLineNumber = "77"
+                  endingLineNumber = "77">
                </Location>
                <Location
-                  uuid = "C0243E4E-2D2D-4BE9-8A8E-808F223420D1 - 4b07130f0b991510"
+                  uuid = "C0243E4E-2D2D-4BE9-8A8E-808F223420D1 - c0b82a9ff30061ac"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(11) suspend resume partial function for closure #1 () async -&gt; SkyAware.Outcome in SkyAware.BackgroundOrchestrator.run() async -&gt; SkyAware.Outcome"
+                  symbolName = "(14) await resume partial function for closure #1 () async -&gt; SkyAware.Outcome in SkyAware.BackgroundOrchestrator.run() async -&gt; SkyAware.Outcome"
                   moduleName = "SkyAware.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
                   urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Background/BackgroundOrchestrator.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "67"
-                  endingLineNumber = "67">
-               </Location>
-               <Location
-                  uuid = "C0243E4E-2D2D-4BE9-8A8E-808F223420D1 - f6c9c98e929126f8"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "(12) await resume partial function for closure #1 () async -&gt; SkyAware.Outcome in SkyAware.BackgroundOrchestrator.run() async -&gt; SkyAware.Outcome"
-                  moduleName = "SkyAware.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/justin/Code/project-arcus/SkyAware/SkyAware/Code/Background/BackgroundOrchestrator.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "67"
-                  endingLineNumber = "67">
+                  startingLineNumber = "77"
+                  endingLineNumber = "77">
                </Location>
             </Locations>
          </BreakpointContent>

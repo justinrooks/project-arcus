@@ -12,6 +12,17 @@ import OSLog
 struct NotificationManager: Sendable {
     private let logger = Logger.notifications
     
+    /// Prepares and requests the notification to be sent. Each property after body is optional
+    /// these properties will be assigned appropriately to the UNMutableNotificationContent
+    /// object.
+    /// - Parameters:
+    ///   - title: title of the notification
+    ///   - subtitle: subtitle for the notification
+    ///   - body: body of the notification
+    ///   - interval: delay send, defaults to 10 seconds
+    ///   - sound: sound to use for notification default
+    ///   - badge: badge count for the app icon defaults to 0
+    ///   - repeats: repeats or not, defaults to false
     func notify(
         title: String,
         subtitle: String,
@@ -33,26 +44,6 @@ struct NotificationManager: Sendable {
         
         await internalNotify(request: request)
     }
-    
-//    @available(*, deprecated, message: "Use the notification engine and infra via NotificationsCore protocols")
-//    func notify(for outlook:ConvectiveOutlookDTO?, with message: String?) async {
-//        guard let outlook else { return } // if we don't get an outlook, dont send a notification
-//        
-//        //        let d = does(outlook.published, matchHour: 7)
-//
-//        let notificationReq = UNMutableNotificationContent()
-//        notificationReq.title = "New Day 1 Convective Outlook"
-//        notificationReq.subtitle = "Published: \(outlook.published.toShortTime())"
-//        notificationReq.body = "\(message ?? String(outlook.summary.prefix(24)))..."
-//        notificationReq.sound = UNNotificationSound.default
-//        notificationReq.badge = 0
-//        
-//        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 10, repeats: false)
-//        
-//        let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
-//        
-//        await internalNotify(request: request)
-//    }
     
     /// Sends the notification with checks for authorization every time
     private func internalNotify(request: UNNotificationRequest) async {

@@ -32,6 +32,7 @@ extension Logger {
     static let orchestrator = Logger(subsystem: subsystem, category: "BGOrchestrator")
     static let scheduler = Logger(subsystem: subsystem, category: "Scheduler")
     static let refreshPolicy = Logger(subsystem: subsystem, category: "RefreshPolicy")
+    static let cadencePolicy = Logger(subsystem: subsystem, category: "CadencePolicy")
     
     // MARK: Location
     static let locationMgr = Logger(subsystem: subsystem, category: "LocationMgr")
