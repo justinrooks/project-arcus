@@ -1,8 +1,0 @@
-included:
-    - SkyAware
-
-excluded:
-    - Pods
-
-disabled_rules:
-    - identifier_name

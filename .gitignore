@@ -21,9 +21,6 @@ DerivedData/
 timeline.xctimeline
 playground.xcworkspace
 
-# CocoaPods (if you ever use it; safe to keep ignored even if unused)
-Pods/
-
 # Carthage (if you ever use it)
 Carthage/Build/
 

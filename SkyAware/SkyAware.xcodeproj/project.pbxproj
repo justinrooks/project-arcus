@@ -6,12 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		6541B68C31FDBAA3D3AE61D1 /* Pods_SkyAware_SkyAwareUITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */; };
-		7282DFA7AB8C8CEF71224CD3 /* Pods_SkyAwareTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */; };
-		D0F594752E171DCB002E2BB6 /* .swiftlint.yml in Resources */ = {isa = PBXBuildFile; fileRef = D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXContainerItemProxy section */
 		D095EFB32E16F56A0074F867 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -30,19 +24,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		11170A554A33C91864DDFDE2 /* Pods-SkyAwareTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAwareTests.debug.xcconfig"; path = "Target Support Files/Pods-SkyAwareTests/Pods-SkyAwareTests.debug.xcconfig"; sourceTree = "<group>"; };
-		26070BA9C2AE5CA7186FD299 /* Pods-SkyAware-SkyAwareUITests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware-SkyAwareUITests.debug.xcconfig"; path = "Target Support Files/Pods-SkyAware-SkyAwareUITests/Pods-SkyAware-SkyAwareUITests.debug.xcconfig"; sourceTree = "<group>"; };
-		260B8FC91F5C9ECB5A57928B /* Pods-SkyAware.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware.debug.xcconfig"; path = "Target Support Files/Pods-SkyAware/Pods-SkyAware.debug.xcconfig"; sourceTree = "<group>"; };
-		91BFB16A8B5CC56C5724566E /* Pods-SkyAwareTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAwareTests.release.xcconfig"; path = "Target Support Files/Pods-SkyAwareTests/Pods-SkyAwareTests.release.xcconfig"; sourceTree = "<group>"; };
-		96707DB1EF9FAC956FC13EA0 /* Pods-SkyAware.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware.release.xcconfig"; path = "Target Support Files/Pods-SkyAware/Pods-SkyAware.release.xcconfig"; sourceTree = "<group>"; };
-		A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SkyAware_SkyAwareUITests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		A62666682C922D561CB41D97 /* Pods_SkyAware.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SkyAware.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		CB12C488C26F4DD639DCC5F0 /* Pods-SkyAware-SkyAwareUITests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-SkyAware-SkyAwareUITests.release.xcconfig"; path = "Target Support Files/Pods-SkyAware-SkyAwareUITests/Pods-SkyAware-SkyAwareUITests.release.xcconfig"; sourceTree = "<group>"; };
 		D095EFA32E16F5690074F867 /* SkyAware.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SkyAware.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */ = {isa = PBXFileReference; lastKnownFileType = text.yaml; path = .swiftlint.yml; sourceTree = "<group>"; };
-		FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SkyAwareTests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -102,7 +86,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				7282DFA7AB8C8CEF71224CD3 /* Pods_SkyAwareTests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -110,32 +93,15 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6541B68C31FDBAA3D3AE61D1 /* Pods_SkyAware_SkyAwareUITests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		46CBFA838E2D7CBF2EBC299F /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				260B8FC91F5C9ECB5A57928B /* Pods-SkyAware.debug.xcconfig */,
-				96707DB1EF9FAC956FC13EA0 /* Pods-SkyAware.release.xcconfig */,
-				26070BA9C2AE5CA7186FD299 /* Pods-SkyAware-SkyAwareUITests.debug.xcconfig */,
-				CB12C488C26F4DD639DCC5F0 /* Pods-SkyAware-SkyAwareUITests.release.xcconfig */,
-				11170A554A33C91864DDFDE2 /* Pods-SkyAwareTests.debug.xcconfig */,
-				91BFB16A8B5CC56C5724566E /* Pods-SkyAwareTests.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
 		4FF60265E384AB8FC83C01FB /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				A62666682C922D561CB41D97 /* Pods_SkyAware.framework */,
-				A1A67D32ECFC237AC013EBD3 /* Pods_SkyAware_SkyAwareUITests.framework */,
-				FA4803842D7DB41503902E0F /* Pods_SkyAwareTests.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -143,10 +109,8 @@
 		D095EF9A2E16F5690074F867 = {
 			isa = PBXGroup;
 			children = (
-				D0F5945B2E171DCB002E2BB6 /* .swiftlint.yml */,
 				D095EFA52E16F5690074F867 /* SkyAware */,
 				D095EFA42E16F5690074F867 /* Products */,
-				46CBFA838E2D7CBF2EBC299F /* Pods */,
 				4FF60265E384AB8FC83C01FB /* Frameworks */,
 			);
 			sourceTree = "<group>";
@@ -168,7 +132,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D095EFC62E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAware" */;
 			buildPhases = (
-				DAA7A7BD42419436B5958C81 /* [CP] Check Pods Manifest.lock */,
 				D095EF9F2E16F5690074F867 /* Sources */,
 				D095EFA02E16F5690074F867 /* Frameworks */,
 				D095EFA12E16F5690074F867 /* Resources */,
@@ -189,7 +152,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D095EFC92E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAwareTests" */;
 			buildPhases = (
-				96CA18A116EF1CC00C3FD7DA /* [CP] Check Pods Manifest.lock */,
 				D095EFAE2E16F56A0074F867 /* Sources */,
 				D095EFAF2E16F56A0074F867 /* Frameworks */,
 				D095EFB02E16F56A0074F867 /* Resources */,
@@ -208,7 +170,6 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D095EFCC2E16F56A0074F867 /* Build configuration list for PBXNativeTarget "SkyAwareUITests" */;
 			buildPhases = (
-				C29A7170BB046C2928FB4A7D /* [CP] Check Pods Manifest.lock */,
 				D095EFB82E16F56A0074F867 /* Sources */,
 				D095EFB92E16F56A0074F867 /* Frameworks */,
 				D095EFBA2E16F56A0074F867 /* Resources */,
@@ -274,7 +235,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0F594752E171DCB002E2BB6 /* .swiftlint.yml in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -293,75 +253,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		96CA18A116EF1CC00C3FD7DA /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-SkyAwareTests-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		C29A7170BB046C2928FB4A7D /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-SkyAware-SkyAwareUITests-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-		DAA7A7BD42419436B5958C81 /* [CP] Check Pods Manifest.lock */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
-				"${PODS_ROOT}/Manifest.lock",
-			);
-			name = "[CP] Check Pods Manifest.lock";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(DERIVED_FILE_DIR)/Pods-SkyAware-checkManifestLockResult.txt",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
-			showEnvVarsInLog = 0;
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D095EF9F2E16F5690074F867 /* Sources */ = {
@@ -526,7 +417,6 @@
 		};
 		D095EFC72E16F56A0074F867 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 260B8FC91F5C9ECB5A57928B /* Pods-SkyAware.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -567,7 +457,6 @@
 		};
 		D095EFC82E16F56A0074F867 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 96707DB1EF9FAC956FC13EA0 /* Pods-SkyAware.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -608,7 +497,6 @@
 		};
 		D095EFCA2E16F56A0074F867 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 11170A554A33C91864DDFDE2 /* Pods-SkyAwareTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -628,7 +516,6 @@
 		};
 		D095EFCB2E16F56A0074F867 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 91BFB16A8B5CC56C5724566E /* Pods-SkyAwareTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
@@ -648,7 +535,6 @@
 		};
 		D095EFCD2E16F56A0074F867 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 26070BA9C2AE5CA7186FD299 /* Pods-SkyAware-SkyAwareUITests.debug.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -666,7 +552,6 @@
 		};
 		D095EFCE2E16F56A0074F867 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CB12C488C26F4DD639DCC5F0 /* Pods-SkyAware-SkyAwareUITests.release.xcconfig */;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
