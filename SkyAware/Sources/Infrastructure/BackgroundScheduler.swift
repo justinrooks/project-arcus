@@ -1,5 +1,5 @@
 //
-//  Scheduler.swift
+//  BackgroundScheduler.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 8/28/25.
@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 import BackgroundTasks
 
-struct Scheduler {
+struct BackgroundScheduler {
     private let logger = Logger.scheduler
     private let appRefreshID: String
     
@@ -47,7 +47,7 @@ struct Scheduler {
     }
 }
 
-extension Scheduler {
+extension BackgroundScheduler {
     func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async {
         let next = policy.getNextRunTime(for: .short(20))
         await scheduleNextAppRefresh(nextRun: next)

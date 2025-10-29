@@ -129,7 +129,7 @@ struct SkyAwareApp: App {
             logger.info("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
             
             // Schedule the next run
-            let scheduler = Scheduler(refreshId: appRefreshID)
+            let scheduler = BackgroundScheduler(refreshId: appRefreshID)
             await scheduler.scheduleNextAppRefresh(nextRun: result.next)
             logger.info("Scheduled next app refresh at: \(result.next)")
         }
@@ -140,7 +140,7 @@ struct SkyAwareApp: App {
             switch newPhase {
             case .background:
                 Task {
-                    let scheduler = Scheduler(refreshId: appRefreshID)
+                    let scheduler = BackgroundScheduler(refreshId: appRefreshID)
                     let next = refreshPolicy.getNextRunTime(for: .normal(60))
                     logger.info("App entered background; attempting to schedule next app refresh proactively: \(next.toShortTime())")
                     await scheduler.scheduleNextAppRefresh(nextRun: next)
@@ -156,7 +156,7 @@ struct SkyAwareApp: App {
                     // Schedule a background task greedy, so we don't have old data
                     Task.detached(priority: .utility) {
                         logger.notice("Seeding initial background task")
-                        let scheduler = Scheduler(refreshId: appRefreshID)
+                        let scheduler = BackgroundScheduler(refreshId: appRefreshID)
                         await scheduler.ensureScheduled(using: refreshPolicy)
                         logger.info("Background refresh scheduled")
                     }
