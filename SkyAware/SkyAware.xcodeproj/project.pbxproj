@@ -30,46 +30,70 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		D0F5941A2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAware" target */ = {
+		D03E61212EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAware" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Info.plist,
-				Tests/SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
-				Tests/SkyAwareTests/WatchParserTests.swift,
-				Tests/SkyAwareTests/WatchRepoPurgeTests.swift,
-				Tests/SkyAwareUITests/SkyAwareUITests.swift,
-				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
+				UITests/SkyAwareUITests.swift,
+				UITests/SkyAwareUITestsLaunchTests.swift,
+				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
+				UnitTests/WatchParserTests.swift,
+				UnitTests/WatchRepoPurgeTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
-		D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */ = {
+		D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Tests/SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
-				Tests/SkyAwareTests/WatchParserTests.swift,
-				Tests/SkyAwareTests/WatchRepoPurgeTests.swift,
+				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
+				UnitTests/WatchParserTests.swift,
+				UnitTests/WatchRepoPurgeTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};
-		D0F594212E17075B002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareUITests" target */ = {
+		D03E61232EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Tests/SkyAwareUITests/SkyAwareUITests.swift,
-				Tests/SkyAwareUITests/SkyAwareUITestsLaunchTests.swift,
+				UITests/SkyAwareUITests.swift,
+				UITests/SkyAwareUITestsLaunchTests.swift,
 			);
 			target = D095EFBB2E16F56A0074F867 /* SkyAwareUITests */;
+		};
+		D03E625C2EB2A7D900611081 /* Exceptions for "Config" folder in "SkyAware" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		D095EFA52E16F5690074F867 /* SkyAware */ = {
+		D03E60782EB2A55E00611081 /* Sources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		D03E611B2EB2A57400611081 /* Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				D0F5941A2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAware" target */,
-				D0F5941B2E170759002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareTests" target */,
-				D0F594212E17075B002E2BB6 /* Exceptions for "SkyAware" folder in "SkyAwareUITests" target */,
+				D03E61212EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAware" target */,
+				D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */,
+				D03E61232EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareUITests" target */,
 			);
-			path = SkyAware;
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		D03E625B2EB2A7D300611081 /* Config */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D03E625C2EB2A7D900611081 /* Exceptions for "Config" folder in "SkyAware" target */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		D03E62C92EB2A99900611081 /* Resources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Resources;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -109,7 +133,10 @@
 		D095EF9A2E16F5690074F867 = {
 			isa = PBXGroup;
 			children = (
-				D095EFA52E16F5690074F867 /* SkyAware */,
+				D03E60782EB2A55E00611081 /* Sources */,
+				D03E62C92EB2A99900611081 /* Resources */,
+				D03E625B2EB2A7D300611081 /* Config */,
+				D03E611B2EB2A57400611081 /* Tests */,
 				D095EFA42E16F5690074F867 /* Products */,
 				4FF60265E384AB8FC83C01FB /* Frameworks */,
 			);
@@ -141,7 +168,10 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				D095EFA52E16F5690074F867 /* SkyAware */,
+				D03E60782EB2A55E00611081 /* Sources */,
+				D03E611B2EB2A57400611081 /* Tests */,
+				D03E625B2EB2A7D300611081 /* Config */,
+				D03E62C92EB2A99900611081 /* Resources */,
 			);
 			name = SkyAware;
 			productName = SkyAware;
@@ -426,7 +456,7 @@
 				DEVELOPMENT_TEAM = YVC4WFW94T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SkyAware/Info.plist;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
@@ -466,7 +496,7 @@
 				DEVELOPMENT_TEAM = YVC4WFW94T;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = SkyAware/Info.plist;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";

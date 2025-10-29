@@ -6,6 +6,8 @@ xcuserdata/
 *.xcuserstate
 *.scbkptlist
 *.xcscmblueprint
+*.xccheckout
+*.xcworkspace/
 **UserInterfaceState.xcuserstate
 
 # Build products
@@ -36,3 +38,4 @@ fastlane/test_output
 *.ipa
 *.dSYM.zip
 *.dSYM
+*.log
