@@ -44,6 +44,7 @@ actor BackgroundOrchestrator {
     
     func run() async -> Outcome {
         logger.info("Background run started")
+        let clock = ContinuousClock()
         let start = Date()
         
         return await withTaskCancellationHandler {

@@ -1,5 +1,5 @@
 //
-//  LocationPipeline.swift
+//  LocationProvider.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 10/6/25.
