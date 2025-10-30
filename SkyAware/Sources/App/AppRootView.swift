@@ -18,7 +18,7 @@ struct AppRootView: View {
     let locationProv: LocationProvider
     
     var body: some View {
-        iPhoneHomeView()
+        HomeView()
             .environment(\.riskQuery, spcProvider)
             .environment(\.spcFreshness, spcProvider)
             .environment(\.spcSync, spcProvider)

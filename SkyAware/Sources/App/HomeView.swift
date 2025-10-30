@@ -1,5 +1,5 @@
 //
-//  iPhoneHomeView.swift
+//  HomeView.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 7/3/25.
@@ -9,7 +9,7 @@ import SwiftUI
 import SwiftData
 import CoreLocation
 
-struct iPhoneHomeView: View {
+struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.spcSync) private var svc: any SpcSyncing
     
