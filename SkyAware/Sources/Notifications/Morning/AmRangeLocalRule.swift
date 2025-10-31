@@ -12,15 +12,16 @@ struct AmRangeLocalRule: NotificationRule {
     private let logger = Logger.rule
     
     /// Local-time delivery window [startHour, endHour)
-    /// Default: 06:00–10:00 local
+    /// Default: 07:00–11:00 local
+    /// 7-11 should catch either the 6am (1200z) or 1030 (1630z) run
     let window: Range<Int>
 
-    init(window: Range<Int> = 6..<10) {
+    init(window: Range<Int> = 7..<11) {
         self.window = window
     }
     
     func evaluate(_ ctx: MorningContext) -> NotificationEvent? {
-        logger.debug("Evaluating AM 6 to 10 local rule")
+        logger.debug("Evaluating AM 7 to 11 local rule")
         var cal = Calendar(identifier: .gregorian); cal.timeZone = ctx.localTZ
         let comps = cal.dateComponents([.year, .month, .day, .hour], from: ctx.now)
         

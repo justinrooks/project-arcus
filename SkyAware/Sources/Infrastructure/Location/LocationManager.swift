@@ -31,6 +31,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private let logger = Logger.locationMgr
     private let onUpdate: LocationSink
+    private var streamTask: Task<Void, Never>?
     private(set) var authStatus: CLAuthorizationStatus = .notDetermined
     
     init(onUpdate: @escaping LocationSink) {
@@ -98,10 +99,12 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         case .foreground:
             logger.debug("Starting foreground location services")
             manager.stopMonitoringSignificantLocationChanges()
-            manager.startUpdatingLocation()
+//            manager.startUpdatingLocation()
+            startForegroundStreaming()
         case .background:
             logger.debug("Starting background significant location changes")
-            manager.stopUpdatingLocation()
+//            manager.stopUpdatingLocation()
+            stopForegroundStreaming()
             manager.startMonitoringSignificantLocationChanges()
         case .stopped:
             logger.debug("Stopping location services")
@@ -112,7 +115,8 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     }
     
     func stopAll() {
-        manager.stopUpdatingLocation()
+//        manager.stopUpdatingLocation()
+        stopForegroundStreaming()
         manager.stopMonitoringSignificantLocationChanges()
         logger.debug("Location services stopped")
     }
@@ -124,6 +128,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         }
     }
     
+    
+    /// Delegate location change path. Only intended for Significant Location Change, or legacy live updates
+    /// - Parameters:
+    ///   - manager: self
+    ///   - locations: array of locations from the system
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         
@@ -135,6 +144,40 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                     accuracy: loc.horizontalAccuracy
                 )
             )
+        }
+    }
+    
+    private func startForegroundStreaming() {
+        guard streamTask == nil else { return }
+        logger.debug("Starting CLLocationupdate live update stream")
+        streamTask = Task { [weak self] in
+            do{
+                let updates = CLLocationUpdate.liveUpdates(.otherNavigation)
+                for try await update in updates {
+                    guard let loc = update.location else { continue }
+                    await self?.onUpdate(.init(
+                        coordinates: loc.coordinate,
+                        timestamp: loc.timestamp,
+                        accuracy: loc.horizontalAccuracy
+                    ))
+                }
+            } catch {
+                await MainActor.run {
+                    self?.logger.error("Streaming ended with error: \(String(describing: error))")
+                }
+            }
+            
+            await MainActor.run {
+                self?.streamTask = nil
+            }
+        }
+    }
+    
+    private func stopForegroundStreaming() {
+        if let task = streamTask {
+            logger.debug("Stopping CLLOcation live updates stream")
+            task.cancel()
+            streamTask = nil
         }
     }
 }

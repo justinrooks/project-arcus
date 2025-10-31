@@ -134,8 +134,8 @@ actor BackgroundOrchestrator {
             }
         } onCancel: {
             let end = Date()
-            Task {
-                try? await recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Task was cancelled by iOS", nextRun: end, cadence: 0, cadenceReason: "Task cancelled by iOS")
+            Task.detached(priority: .utility) {
+                try? await self.recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Task was cancelled by iOS", nextRun: end, cadence: 0, cadenceReason: "Task cancelled by iOS")
             }
             
             logger.notice("Background run cancelled")

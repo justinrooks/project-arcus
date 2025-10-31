@@ -15,6 +15,7 @@ enum OtherErrors: Error {
     case nilContext
     case contextFetchError
     case contextSaveError
+    case timeoutError
 }
 
 enum SpcError: Error {

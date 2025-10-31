@@ -103,7 +103,7 @@ private struct RunRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(endTime(snap.endedAt))
+                Text("\(endDate(snap.endedAt)) - \(endTime(snap.endedAt))")
                     .font(.headline)
                 Spacer()
                 Text(outcomeLabel(snap.outcomeCode))
@@ -178,6 +178,14 @@ private func endTime(_ date: Date) -> String {
     f.timeStyle = .short
     f.timeZone = .current
     return f.string(from: date) // e.g., “4:12 PM”
+}
+
+private func endDate(_ date: Date) -> String {
+    let f = DateFormatter()
+    f.dateStyle = .short
+    f.timeStyle = .none
+    f.timeZone = .current
+    return f.string(from: date) // e.g., “11/1/25”
 }
 
 private func timeOrDash(_ date: Date) -> String {

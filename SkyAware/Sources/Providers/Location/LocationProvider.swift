@@ -9,6 +9,7 @@ import Foundation
 import CoreLocation
 import OSLog
 
+// MARK: Supporting Structs
 struct LocationUpdate: Sendable {
     let coordinates: CLLocationCoordinate2D
     let timestamp: Date
@@ -36,12 +37,23 @@ func makeLocationClient(provider: LocationProvider) -> LocationClient {
         updates: { await provider.updates() })
 }
 
+// MARK: LocationProvider Actor
+
 actor LocationProvider {
     private var lastSnapshot: LocationSnapshot?
     private var continuations: [UUID: AsyncStream<LocationSnapshot>.Continuation] = [:]
     
     private let geocoder = CLGeocoder()
     private let logger = Logger.locationPipeline
+    
+    // Throttling
+    private let throttle = LocationThrottleConfig()
+    private lazy var distancePolicy = DistancePolicy(baseMeters: throttle.baseMeters)
+    
+    // Throttle metrics
+    private var totalStreamEvents = 0
+    private var acceptedCount = 0
+    private var suppressedCount = 0
     
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
     func updates() -> AsyncStream<LocationSnapshot> {
@@ -57,23 +69,40 @@ actor LocationProvider {
         }
     }
     
+    /// Consumes both streaming and SLC delegate events
     func send(update: LocationUpdate) {
-        // 1) Gates (distance/time/accuracy/hysteresis). Example stubs:
-//        guard update.accuracy <= 1000 else { return }
-//        if let prev = lastSnapshot, update.timestamp.timeIntervalSince(prev.timestamp) < 30 { /* maybe bail unless moved far */ }
+        totalStreamEvents &+= 1
+        // 1) Accuracy Gate - drop any updates that are less accurate than we desire
+        guard update.accuracy > 0, update.accuracy <= throttle.minAccuracy else {
+            suppressedCount &+= 1
+            return
+        }
         
-        // 2) Accept & update snapshot (placemark can follow)
-        let snap = LocationSnapshot(coordinates: update.coordinates,
-                                    timestamp: update.timestamp,
-                                    accuracy: update.accuracy,
-                                    placemarkSummary: lastSnapshot?.placemarkSummary)
-        saveAndYieldSnapshot(snap)
-        
-        // 3) Reverse geocode (throttled) – fire-and-forget
-        Task { await updatePlacemarkIfNeeded(for: update.coordinates, timestamp: update.timestamp) }
+        // 2) Check accept & update snapshot and task the placemark update
+        let now = update.timestamp
+        if shouldAccept(update, now: now) {
+            acceptedCount &+= 1
+            let snap = LocationSnapshot(coordinates: update.coordinates,
+                                        timestamp: update.timestamp,
+                                        accuracy: update.accuracy,
+                                        placemarkSummary: lastSnapshot?.placemarkSummary)
+            saveAndYieldSnapshot(snap)
+            
+            // 3) Reverse geocode – fire-and-forget
+            Task { await updatePlacemarkIfNeeded(for: update.coordinates, timestamp: update.timestamp) }
+        } else {
+            suppressedCount &+= 1
+        }
     }
     
-    func ensurePlacemark(for coord: CLLocationCoordinate2D, timeout: Double = 3) async -> LocationSnapshot {
+    // MARK: - Placemark/Geocoding
+    
+    /// Entry point for the BackgroundOrchestrator to get a fresh placemark. This gets used in the notifications
+    /// - Parameters:
+    ///   - coord: coordinates to reverse geocode
+    ///   - timeout: timeout so we don't consume all our background budget
+    /// - Returns: updated location snap
+    func ensurePlacemark(for coord: CLLocationCoordinate2D, timeout: Double = 8) async -> LocationSnapshot {
         do {
             let place = try await withTimeout(timeout: timeout) {
                 return try await self.reverseGeocode(coord)
@@ -94,19 +123,15 @@ actor LocationProvider {
         }
     }
     
-    // MARK: - Placemark
+    // MARK: Placemark Helpers
     private func updatePlacemarkIfNeeded(for coord: CLLocationCoordinate2D, timestamp: Date) async {
-        // Throttle: only when city likely changed or distance > 10km, etc.
-        //        if let prev = lastSnapshot {
-        //            let dist = haversine(prev.coordinates, coord)
-        //            guard dist >= 10_000 else { return }
-        //        }
-        
         do {
             let summary = try await reverseGeocode(coord)
             
             // Update snapshot and notify
             if var snap = lastSnapshot {
+                guard snap.placemarkSummary != summary else { return }
+                
                 snap = LocationSnapshot(coordinates: snap.coordinates,
                                         timestamp: snap.timestamp,
                                         accuracy: snap.accuracy,
@@ -118,6 +143,9 @@ actor LocationProvider {
         }
     }
     
+    /// Attempt to reverse geo-code the coordinates into a meaningful location (city/state)
+    /// - Parameter coord: coordinates to map
+    /// - Returns: a city/state or administrative area like county
     private func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
         let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
         let places = try await geocoder.reverseGeocodeLocation(location)
@@ -125,10 +153,30 @@ actor LocationProvider {
         return [p.locality, p.administrativeArea].compactMap{$0}.joined(separator: ", ")
     }
     
-    private func saveAndYieldSnapshot(_ snap: LocationSnapshot) {
-        lastSnapshot = snap
-        logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0), \(self.lastSnapshot?.coordinates.longitude ?? 0.0), \(self.lastSnapshot?.placemarkSummary ?? "unknown")")
-        continuations.values.forEach { $0.yield(snap) }
+    // MARK: Snapshot Validation
+    private func shouldAccept(_ u: LocationUpdate, now: Date) -> Bool {
+        // If we don't have a previous snapshot, just take the first
+        guard let last = lastSnapshot, let lastAt = lastSnapshot?.timestamp else { return true }
+        
+        let dt = now.timeIntervalSince(lastAt)
+        if dt < throttle.minSeconds {
+            // Too soon, drop it. But not forever
+            return dt >= throttle.maxSilenceSeconds
+        }
+        
+        let dMeters = haversine(last.coordinates, u.coordinates)
+        
+        let estSpeed = dt > 0 ? dMeters / dt : nil
+        var threshold = distancePolicy.thresholdMeters(speedMps: estSpeed)
+        
+        threshold = min(max(threshold, throttle.clampForeground.lowerBound),
+                        throttle.clampForeground.upperBound)
+        
+        // Accept the update if we've moved far enough or its been too long
+        if dMeters >= threshold { return true }
+        if dt >= throttle.maxSilenceSeconds { return true }
+        
+        return false
     }
     
     // Simple haversine (meters)
@@ -143,39 +191,14 @@ actor LocationProvider {
         return R * c
     }
     
+    // MARK: Helpers
+    private func saveAndYieldSnapshot(_ snap: LocationSnapshot) {
+        lastSnapshot = snap
+        logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0), \(self.lastSnapshot?.coordinates.longitude ?? 0.0), \(self.lastSnapshot?.placemarkSummary ?? "unknown")")
+        continuations.values.forEach { $0.yield(snap) }
+    }
+    
     private func removeContinuation(id: UUID) {
         continuations[id] = nil
     }
-    
-    private func withTimeout<T: Sendable>(
-        timeout: Double,
-        _ task: @escaping @Sendable () async throws -> T
-    ) async throws -> T {
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask { try await task() }
-            group.addTask {
-                try await Task.sleep(for: .seconds(timeout))
-                throw GeocodeError.noResults
-            }
-            let result = try await group.next()!
-            group.cancelAll()
-            
-            return result
-        }
-    }
-    
-//    private func withTimeout<T>(_ d: Duration, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
-//        try await withThrowingTaskGroup(of: T.self) { group in
-//            group.addTask { try await op() }
-//            group.addTask {
-//                try await Task.sleep(for: d)
-//                throw GeocodeError.noResults
-//            }
-//            let result = try await group.next()!
-//            group.cancelAll()
-//            
-//            return result
-//        }
-//    }
 }
-
