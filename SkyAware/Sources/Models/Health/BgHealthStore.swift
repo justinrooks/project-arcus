@@ -24,7 +24,8 @@ actor BgHealthStore {
         budgetSecUsed: Int,
         nextScheduledAt: Date,
         cadence: Int,
-        cadenceReason: String?
+        cadenceReason: String?,
+        active: Duration
     ) throws {
         let snap = BgRunSnapshot(
             runId: runId,
@@ -36,7 +37,8 @@ actor BgHealthStore {
             budgetSecUsed: budgetSecUsed,
             nextScheduledAt: nextScheduledAt,
             cadence: cadence,
-            cadenceReason: cadenceReason
+            cadenceReason: cadenceReason,
+            active: active
         )
         
         modelContext.insert(snap)

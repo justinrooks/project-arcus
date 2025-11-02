@@ -33,6 +33,17 @@ extension Cadence {
         case (.loosen,  .long):   return .long(Self.defaultLong)
         }
     }
+    
+    
+    /// Convenience function to retrieve the minutes saved with the cadence
+    /// - Returns: minutes as Int
+    func getMinutes() -> Int {
+        switch self {
+        case .short(let m):  m
+        case .normal(let m): m
+        case .long(let m):   m
+        }
+    }
 }
 
 struct CadenceResult: Sendable, Equatable {

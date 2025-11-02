@@ -116,7 +116,7 @@ private struct RunRow: View {
             }
 
             HStack(spacing: 12) {
-                Label("\(formatSeconds(snap.durationSec))", systemImage: "timer")
+                Label("\(formatSecondsInt64(snap.activeSeconds))", systemImage: "timer")
                 Label("Budget \(snap.budgetSecUsed)s", systemImage: "gauge.with.dots.needle.50percent")
                 if snap.didNotify {
                     Label("Notified", systemImage: "bell.badge.fill")
@@ -201,6 +201,20 @@ private func formatSeconds(_ secs: Double) -> String {
     let m = Int(secs) / 60
     let s = Int(secs) % 60
     return "\(m)m \(s)s"
+}
+
+private func formatSecondsInt64(_ secs: Int64) -> String {
+    // If you still want the "X.Ys" format for very short durations
+    if secs < 60 {
+        // Note: This will result in "X.0s" if secs is Int64
+        return String(format: "%.1fs", Double(secs))
+    }
+
+    let m = secs / 60 // Integer division gives minutes
+    let s = secs % 60 // Modulo gives remaining seconds
+    
+    // Cast m and s back to Int for string interpolation, although not strictly necessary as Int64 works too
+    return "\(Int(m))m \(Int(s))s"
 }
 
 // MARK: - Preview

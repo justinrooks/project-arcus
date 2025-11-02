@@ -29,3 +29,24 @@ func withTimeout<T: Sendable>(
         return result
     }
 }
+
+
+/// Reusable timeout function. Includes the ability to provite a clock that can be paused
+/// - Parameters:
+///   - seconds: the timeout
+///   - clock: clock to sleep
+///   - op: operation to perform
+/// - Throws: CancallationError
+/// - Returns: T
+func withTimeout<T: Sendable>(seconds: Double, clock: ContinuousClock, _ op: @Sendable @escaping () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask(operation: op)
+        group.addTask {
+            try await clock.sleep(for: .seconds(seconds))
+            throw CancellationError()
+        }
+        let value = try await group.next()!
+        group.cancelAll()
+        return value
+    }
+}

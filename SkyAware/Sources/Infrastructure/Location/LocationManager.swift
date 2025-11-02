@@ -99,11 +99,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         case .foreground:
             logger.debug("Starting foreground location services")
             manager.stopMonitoringSignificantLocationChanges()
-//            manager.startUpdatingLocation()
             startForegroundStreaming()
         case .background:
             logger.debug("Starting background significant location changes")
-//            manager.stopUpdatingLocation()
             stopForegroundStreaming()
             manager.startMonitoringSignificantLocationChanges()
         case .stopped:
@@ -115,7 +113,6 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     }
     
     func stopAll() {
-//        manager.stopUpdatingLocation()
         stopForegroundStreaming()
         manager.stopMonitoringSignificantLocationChanges()
         logger.debug("Location services stopped")

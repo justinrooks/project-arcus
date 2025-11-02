@@ -12,5 +12,3 @@ protocol SpcRiskQuerying: Sendable {
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat
 }
-
-extension SpcProvider: SpcRiskQuerying {}

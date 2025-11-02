@@ -12,5 +12,3 @@ protocol SpcSyncing: Sendable {
     func syncTextProducts() async -> Void
     func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO?
 }
-
-extension SpcProvider: SpcSyncing {}

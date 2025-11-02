@@ -25,6 +25,8 @@ actor BackgroundOrchestrator {
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
     
+    private let clock = ContinuousClock()
+    
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying,
         locationProvider: LocationProvider,
@@ -42,29 +44,39 @@ actor BackgroundOrchestrator {
         logger.info("BackgroundOrchestrator initialized")
     }
     
+    // MARK: Run Background Job
     func run() async -> Outcome {
         logger.info("Background run started")
-        let clock = ContinuousClock()
+        let startInstant = clock.now
         let start = Date()
         
         return await withTaskCancellationHandler {
             var reasonNoNotify: String?
             
             do {
+                try Task.checkCancellation()
+                
+                // - Get fresh data
                 logger.info("Starting SPC sync")
                 await spcProvider.sync()
                 logger.info("SPC sync completed")
+                
+                // - Get the latest convective outlook details
                 logger.debug("Fetching latest convective outlook")
                 let outlook = try await spcProvider.getLatestConvectiveOutlook()
                 logger.debug("Latest convective outlook fetched")
+
+                try Task.checkCancellation()
                 
+                // - Get location snapshot
                 logger.debug("Attempting to obtain latest location snapshot")
                 guard let snap = await locationProvider.snapshot() else {
-                    logger.info("No location snapshot available; rechecking at 20 past")
+                    logger.info("No location snapshot available; rechecking in 20m")
                     let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
-                    
                     let end = Date()
-                    try? await recordBgRun(start: start, end: end, result: .success, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit")
+                    let active = clock.now - startInstant
+                    
+                    try? await recordBgRun(start: start, end: end, result: .success, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
 
                     return .init(next: nextRun, result: .skipped, didNotify: false, feedsChanged: [])
                 }
@@ -72,10 +84,16 @@ actor BackgroundOrchestrator {
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
                 // TODO: Check for wind, hail, and tornado features, if any then analyze, otherwise drop out
                 let updatedSnap = await locationProvider.ensurePlacemark(for: snap.coordinates)
-                let severeRisk = try await spcProvider.getSevereRisk(for: snap.coordinates)
-                let stormRisk = try await spcProvider.getStormRisk(for: snap.coordinates)
                 
-                let morningSummary = await morningEngine.run(
+                let (severeRisk, stormRisk) = try await withTimeout(seconds: 8, clock: clock) {
+                    async let sr = self.spcProvider.getSevereRisk(for: snap.coordinates)
+                    async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
+                    return try await (sr, cr)
+                }
+//                let severeRisk = try await spcProvider.getSevereRisk(for: snap.coordinates)
+//                let stormRisk = try await spcProvider.getStormRisk(for: snap.coordinates)
+                
+                let didAmNotify = await morningEngine.run(
                     ctx: .init(
                         now: .now,
                         lastConvectiveIssue: outlook?.published,
@@ -86,18 +104,9 @@ actor BackgroundOrchestrator {
                         placeMark: updatedSnap.placemarkSummary ?? "Unknown"
                     )
                 )
-                if morningSummary {
-                    logger.info("Morning summary notification posted")
-                } else {
-                    logger.info("Morning summary skipped")
-                    reasonNoNotify = "Morning summary skipped"
-                }
-                
-                // Build and send out cadence contxt object to the
-                // decider. This will return our cadence based on
-                // the internal logic there. It'll evaluate the
-                // context and is the engine of handling the
-                // determination of our next run.
+                if !didAmNotify { reasonNoNotify = "Morning summary skipped" }
+
+                // Cadence decision
                 let cadenceResult = cadence.decide(
                     for: .init(
                         now: .now,
@@ -110,43 +119,41 @@ actor BackgroundOrchestrator {
                 
                 let nextRun = refreshPolicy.getNextRunTime(for: cadenceResult.cadence)
                 let end = Date()
-                let didNotify = reasonNoNotify == nil ? true : false
-                try? await recordBgRun(start: start, end: end, result: .success, didNotify: didNotify, notificationReason: reasonNoNotify, nextRun: nextRun, cadence: getMinutes(from: cadenceResult.cadence), cadenceReason: cadenceResult.reason)
+                let active = clock.now - startInstant
+
+                try? await recordBgRun(
+                    start: start,
+                    end: end,
+                    result: .success,
+                    didNotify: reasonNoNotify == nil ? true : false,
+                    notificationReason: reasonNoNotify,
+                    nextRun: nextRun,
+                    cadence: cadenceResult.cadence.getMinutes(),
+                    cadenceReason: cadenceResult.reason,
+                    active: active
+                )
                 
                 logger.info("Background run finished with result: success")
                 return .init(next: nextRun, result: .success, didNotify: true, feedsChanged: [])
             } catch {
                 let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
                 let end = Date()
+                let active = clock.now - startInstant
                 
                 if error is CancellationError {
                     logger.warning("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
-                    try? await recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled")
+                    try? await recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled", active: active)
                     return .init(next: nextRun, result: .cancelled, didNotify: false, feedsChanged: [])
                 } else {
                     logger.error("Error refreshing background data: \(error.localizedDescription, privacy: .public)")
                     
-                    try? await recordBgRun(start: start, end: end, result: .failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh failed")
-                    
-                    logger.info("Background run finished with result: failed")
+                    try? await recordBgRun(start: start, end: end, result: .failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh failed", active: active)
+                        
                     return .init(next: nextRun, result: .failed, didNotify: false, feedsChanged: [])
                 }
             }
         } onCancel: {
-            let end = Date()
-            Task.detached(priority: .utility) {
-                try? await self.recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Task was cancelled by iOS", nextRun: end, cadence: 0, cadenceReason: "Task cancelled by iOS")
-            }
-            
             logger.notice("Background run cancelled")
-        }
-    }
-    
-    private func getMinutes(from cadence: Cadence) -> Int {
-        switch cadence {
-        case .short(let m):  m
-        case .normal(let m): m
-        case .long(let m):   m
         }
     }
     
@@ -158,7 +165,8 @@ actor BackgroundOrchestrator {
         notificationReason: String?,
         nextRun: Date,
         cadence: Int,
-        cadenceReason: String?
+        cadenceReason: String?,
+        active: Duration
     ) async throws {
         let duration = Int(end.timeIntervalSince(start))
         let outcome = result == .success ? 0 : 2
@@ -174,7 +182,8 @@ actor BackgroundOrchestrator {
                 budgetSecUsed: duration,
                 nextScheduledAt: nextRun,
                 cadence: cadence,
-                cadenceReason: cadenceReason
+                cadenceReason: cadenceReason,
+                active: active
             )
     }
 }

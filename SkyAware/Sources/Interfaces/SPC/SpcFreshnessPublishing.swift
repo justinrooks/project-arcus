@@ -27,5 +27,3 @@ protocol SpcFreshnessPublishing: Sendable {
 //    func issueUpdates(for product: GeoJSONProduct) -> AsyncStream<Date>
 //    func issueUpdates(for product: RssProduct) -> AsyncStream<Date>
 }
-
-extension SpcProvider: SpcFreshnessPublishing {}

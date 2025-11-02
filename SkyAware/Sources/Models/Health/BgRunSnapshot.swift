@@ -20,6 +20,7 @@ final class BgRunSnapshot {
     var nextScheduledAt: Date
     var cadence: Int
     var cadenceReason: String?
+    var activeSeconds: Int64 = 0
     
     init(
         runId: String,
@@ -31,7 +32,8 @@ final class BgRunSnapshot {
         budgetSecUsed: Int,
         nextScheduledAt: Date,
         cadence: Int,
-        cadenceReason: String? = nil
+        cadenceReason: String? = nil,
+        active: Duration
     ) {
         self.runId = runId
         self.startedAt = startedAt
@@ -43,6 +45,7 @@ final class BgRunSnapshot {
         self.nextScheduledAt = nextScheduledAt
         self.cadence = cadence
         self.cadenceReason = cadenceReason
+        self.activeSeconds = active.components.seconds
     }
     
     var durationSec: Double { endedAt.timeIntervalSince(startedAt) }

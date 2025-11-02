@@ -22,8 +22,6 @@ public struct HTTPResponse {
 }
 
 public protocol HTTPClient: Sendable {
-    @available(*, deprecated, message: "No need for head calls right now, remove")
-    func head(_ url: URL, headers: [String: String]) async throws -> HTTPResponse
     func get (_ url: URL, headers: [String: String]) async throws -> HTTPResponse
     func clearCache()
 }
@@ -41,10 +39,6 @@ public final class URLSessionHTTPClient: HTTPClient {
         config.urlCache = URLCache.shared
        
         self.session = URLSession(configuration: config)
-    }
-        
-    public func head(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
-        try await request(url: url, method: "HEAD", headers: headers)
     }
     
     public func get(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {

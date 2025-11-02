@@ -8,6 +8,7 @@
 import Foundation
 import CoreLocation
 
+/// Settings to control how chatty streaming location updates are.
 struct LocationThrottleConfig: Sendable {
     var minAccuracy: CLLocationAccuracy = 100 // Meters
     var minSeconds: TimeInterval = 8          // Suppress bursting

@@ -10,5 +10,3 @@ import Foundation
 protocol SpcCleanup: Sendable {
     func cleanup(daysToKeep: Int) async -> Void
 }
-
-extension SpcProvider: SpcCleanup {}

@@ -44,7 +44,7 @@ actor LocationProvider {
     private var continuations: [UUID: AsyncStream<LocationSnapshot>.Continuation] = [:]
     
     private let geocoder = CLGeocoder()
-    private let logger = Logger.locationPipeline
+    private let logger = Logger.locationProvider
     
     // Throttling
     private let throttle = LocationThrottleConfig()
@@ -75,6 +75,7 @@ actor LocationProvider {
         // 1) Accuracy Gate - drop any updates that are less accurate than we desire
         guard update.accuracy > 0, update.accuracy <= throttle.minAccuracy else {
             suppressedCount &+= 1
+            logger.trace("Location accuracy too low: \(update.accuracy)")
             return
         }
         
@@ -103,6 +104,7 @@ actor LocationProvider {
     ///   - timeout: timeout so we don't consume all our background budget
     /// - Returns: updated location snap
     func ensurePlacemark(for coord: CLLocationCoordinate2D, timeout: Double = 8) async -> LocationSnapshot {
+        logger.debug("Updating placemark for background task")
         do {
             let place = try await withTimeout(timeout: timeout) {
                 return try await self.reverseGeocode(coord)
@@ -115,6 +117,7 @@ actor LocationProvider {
             saveAndYieldSnapshot(updated)
             return updated
         } catch {
+            logger.debug("Failed to update placemark, falling back to last snapshot")
             // On failure or timeout, return the most recent snapshot if available, otherwise create a minimal one without a placemark.
             if let snap = lastSnapshot { return snap }
             let snap = LocationSnapshot(coordinates: coord, timestamp: Date(), accuracy: kCLLocationAccuracyThreeKilometers, placemarkSummary: nil)
@@ -125,6 +128,7 @@ actor LocationProvider {
     
     // MARK: Placemark Helpers
     private func updatePlacemarkIfNeeded(for coord: CLLocationCoordinate2D, timestamp: Date) async {
+        logger.debug("Starting reverse geocoding")
         do {
             let summary = try await reverseGeocode(coord)
             

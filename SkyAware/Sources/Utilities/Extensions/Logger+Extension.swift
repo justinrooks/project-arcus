@@ -36,7 +36,7 @@ extension Logger {
     
     // MARK: Location
     static let locationMgr = Logger(subsystem: subsystem, category: "LocationMgr")
-    static let locationPipeline = Logger(subsystem: subsystem, category: "LocationPipeline")
+    static let locationProvider = Logger(subsystem: subsystem, category: "LocationProvider")
     
     // MARK: Views
     static let alertView = Logger(subsystem: subsystem, category: "AlertView")
