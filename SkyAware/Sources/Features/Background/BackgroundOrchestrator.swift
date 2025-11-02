@@ -18,6 +18,7 @@ struct Outcome: Sendable {
 
 actor BackgroundOrchestrator {
     private let logger = Logger.orchestrator
+    private let signposter:OSSignposter
     private let spcProvider: any SpcSyncing & SpcRiskQuerying
     private let locationProvider: LocationProvider
     private let refreshPolicy: RefreshPolicy
@@ -41,12 +42,15 @@ actor BackgroundOrchestrator {
         refreshPolicy = policy
         healthStore = health
         self.cadence = cadence
+        signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
     }
     
     // MARK: Run Background Job
     func run() async -> Outcome {
         logger.info("Background run started")
+        // Mark the entire background job
+        let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
         let start = Date()
         
@@ -56,9 +60,11 @@ actor BackgroundOrchestrator {
             do {
                 try Task.checkCancellation()
                 
-                // - Get fresh data
+                // MARK: Get fresh data
                 logger.info("Starting SPC sync")
+                let syncInterval = signposter.beginInterval("SPC Sync")
                 await spcProvider.sync()
+                signposter.endInterval("SPC Sync", syncInterval)
                 logger.info("SPC sync completed")
                 
                 // - Get the latest convective outlook details
@@ -68,7 +74,7 @@ actor BackgroundOrchestrator {
 
                 try Task.checkCancellation()
                 
-                // - Get location snapshot
+                // MARK: Get location snapshot
                 logger.debug("Attempting to obtain latest location snapshot")
                 guard let snap = await locationProvider.snapshot() else {
                     logger.info("No location snapshot available; rechecking in 20m")
@@ -82,17 +88,17 @@ actor BackgroundOrchestrator {
                 }
                 
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
-                // TODO: Check for wind, hail, and tornado features, if any then analyze, otherwise drop out
                 let updatedSnap = await locationProvider.ensurePlacemark(for: snap.coordinates)
                 
+                // MARK: Get Risk Status
                 let (severeRisk, stormRisk) = try await withTimeout(seconds: 8, clock: clock) {
                     async let sr = self.spcProvider.getSevereRisk(for: snap.coordinates)
                     async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
                     return try await (sr, cr)
                 }
-//                let severeRisk = try await spcProvider.getSevereRisk(for: snap.coordinates)
-//                let stormRisk = try await spcProvider.getStormRisk(for: snap.coordinates)
                 
+                // MARK: Send the AM Notification
+                signposter.emitEvent("Morning Summary Notification")
                 let didAmNotify = await morningEngine.run(
                     ctx: .init(
                         now: .now,
@@ -106,7 +112,7 @@ actor BackgroundOrchestrator {
                 )
                 if !didAmNotify { reasonNoNotify = "Morning summary skipped" }
 
-                // Cadence decision
+                // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
                     for: .init(
                         now: .now,
@@ -133,9 +139,11 @@ actor BackgroundOrchestrator {
                     active: active
                 )
                 
+                signposter.endInterval("Background Run", runInterval)
                 logger.info("Background run finished with result: success")
                 return .init(next: nextRun, result: .success, didNotify: true, feedsChanged: [])
             } catch {
+                signposter.endInterval("Background Run", runInterval)
                 let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
                 let end = Date()
                 let active = clock.now - startInstant
@@ -157,6 +165,7 @@ actor BackgroundOrchestrator {
         }
     }
     
+    // MARK: Convenience bg run record
     private func recordBgRun(
         start: Date,
         end: Date,

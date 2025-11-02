@@ -10,6 +10,7 @@ import Foundation
 // MARK: SpcSyncing
 extension SpcProvider: SpcSyncing {
     func sync() async {
+        let runInterval = signposter.beginInterval("Spc Sync")
         do {
             await syncTextProducts()
             
@@ -17,12 +18,15 @@ extension SpcProvider: SpcSyncing {
             try await severeRiskRepo.refreshHailRisk(using: client)
             try await severeRiskRepo.refreshWindRisk(using: client)
             try await severeRiskRepo.refreshTornadoRisk(using: client)
+            signposter.endInterval("Background Run", runInterval)
         } catch {
+            signposter.endInterval("Background Run", runInterval)
             logger.error("Error loading Spc feed: \(error.localizedDescription)")
         }
     }
     
     func syncTextProducts() async {
+        let runInterval = signposter.beginInterval("Spc Sync Text")
         do {
             try await outlookRepo.refreshConvectiveOutlooks(using: client)
             
@@ -34,7 +38,9 @@ extension SpcProvider: SpcSyncing {
             
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
             try await watchRepo.refreshWatches(using: client)
+            signposter.endInterval("Background Run", runInterval)
         } catch {
+            signposter.endInterval("Background Run", runInterval)
             logger.error("Error loading Spc feed: \(error.localizedDescription)")
         }
     }

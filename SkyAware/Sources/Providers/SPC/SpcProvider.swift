@@ -10,6 +10,7 @@ import OSLog
 
 actor SpcProvider {
     let logger = Logger.spcProvider
+    let signposter:OSSignposter
     let outlookRepo: ConvectiveOutlookRepo
     let mesoRepo: MesoRepo
     let watchRepo: WatchRepo
@@ -27,6 +28,7 @@ actor SpcProvider {
          stormRiskRepo: StormRiskRepo,
          severeRiskRepo: SevereRiskRepo,
          client: SpcClient) {
+        signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
         self.mesoRepo = mesoRepo
         self.watchRepo = watchRepo

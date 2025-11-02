@@ -107,54 +107,12 @@ struct SummaryView: View {
     }
 }
 
-//#Preview {
-//    let preview = Preview(ConvectiveOutlook.self)
-//
-//    SummaryView()
-//            .environment(\.locationClient, .init(
-//                snapshot: { .init(
-//                    coordinates: .init(latitude: 39.75, longitude: -104.44),
-//                    timestamp: .now,
-//                    accuracy: 20,
-//                    placemarkSummary: "Bennett, CO"
-//                )},
-//                updates: { AsyncStream { $0.yield(.init(
-//                    coordinates: .init(latitude: 39.75, longitude: -104.44),
-//                    timestamp: .now,
-//                    accuracy: 20,
-//                    placemarkSummary: "Bennett, CO"
-//                )) } }
-//            ))
-//}
-//
+// MARK: Preview
 #Preview("Summary – Slight + 10% Tornado") {
     // Seed some sample Mesos so ActiveMesoSummaryView has content
     let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
     let mdPreview = Preview(MD.self)
     mdPreview.addExamples(MD.sampleDiscussions)
-
-//    let location = LocationManager()
-//    let oneShotPreviewClient = LocationClient(
-//        snapshot: { () async -> LocationSnapshot? in
-//            .init(
-//                coordinates: .init(latitude: 39.75, longitude: -104.44),
-//                timestamp: .now,
-//                accuracy: 20,
-//                placemarkSummary: "Bennett, CO"
-//            )
-//        },
-//        updates: { () -> AsyncStream<LocationSnapshot> in
-//            AsyncStream<LocationSnapshot> { c in
-//                c.yield(.init(
-//                    coordinates: .init(latitude: 39.75, longitude: -104.44),
-//                    timestamp: .now,
-//                    accuracy: 20,
-//                    placemarkSummary: "Bennett, CO"
-//                ))
-//                c.finish()
-//            }
-//        }
-//    )
     
     return NavigationStack {
         SummaryView(
@@ -170,6 +128,6 @@ struct SummaryView: View {
             .modelContainer(mdPreview.container)
             .environment(\.locationClient, .offline)
             .environment(\.riskQuery, spcMock)
-            .padding()
+            .environment(\.spcFreshness, spcMock)
     }
 }
