@@ -23,6 +23,7 @@ actor BackgroundOrchestrator {
     private let locationProvider: LocationProvider
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
+    private let mesoEngine: MesoEngine
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
     
@@ -33,6 +34,7 @@ actor BackgroundOrchestrator {
         locationProvider: LocationProvider,
         policy: RefreshPolicy,
         engine: MorningEngine,
+        mesoEngine: MesoEngine,
         health: BgHealthStore,
         cadence: CadencePolicy
     ) {
@@ -42,6 +44,7 @@ actor BackgroundOrchestrator {
         refreshPolicy = policy
         healthStore = health
         self.cadence = cadence
+        self.mesoEngine = mesoEngine
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
     }
@@ -71,7 +74,7 @@ actor BackgroundOrchestrator {
                 logger.debug("Fetching latest convective outlook")
                 let outlook = try await spcProvider.getLatestConvectiveOutlook()
                 logger.debug("Latest convective outlook fetched")
-
+                
                 try Task.checkCancellation()
                 
                 // MARK: Get location snapshot
@@ -83,7 +86,7 @@ actor BackgroundOrchestrator {
                     let active = clock.now - startInstant
                     
                     try? await recordBgRun(start: start, end: end, result: .success, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
-
+                    
                     return .init(next: nextRun, result: .skipped, didNotify: false, feedsChanged: [])
                 }
                 
@@ -111,7 +114,19 @@ actor BackgroundOrchestrator {
                     )
                 )
                 if !didAmNotify { reasonNoNotify = "Morning summary skipped" }
-
+                
+                // MARK: Send Meso Notification
+                signposter.emitEvent("Meso Notification")
+                let didMesoNotify = await mesoEngine.run(
+                    ctx: .init(
+                        now: .now,
+                        localTZ: TimeZone(identifier: "America/Denver")!,
+                        location: updatedSnap.coordinates,
+                        placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                    )
+                )
+                if !didMesoNotify { reasonNoNotify = "Meso notification skipped" }
+                
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
                     for: .init(

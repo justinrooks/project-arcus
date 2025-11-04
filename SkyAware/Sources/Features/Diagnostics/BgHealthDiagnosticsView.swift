@@ -218,7 +218,6 @@ private func formatSecondsInt64(_ secs: Int64) -> String {
 }
 
 // MARK: - Preview
-//
 #Preview("Diagnostics") {
     let mdPreview = Preview(BgRunSnapshot.self)
     mdPreview.addExamples(BgRunSnapshot.sampleRuns)

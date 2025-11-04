@@ -20,6 +20,9 @@ private struct EmptyRiskQuerying: SpcRiskQuerying {
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
         assertionFailure("⚠️ SpcService not injected into environment"); throw MissingError()
     }
+    func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
+        assertionFailure("⚠️ SpcService not injected into environment"); throw MissingError()
+    }
 }
 
 private struct EmptySyncing: SpcSyncing {

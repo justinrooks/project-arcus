@@ -41,7 +41,7 @@ actor MesoRepo {
         logger.debug("Parsed \(mesos.count) meso discussion\(mesos.count > 1 ? "s" : "") from SPC")
     }
     
-    func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MD] {
+    func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MdDTO] {
         logger.info("Fetching current local mesos")
         
         // Filter by our rough box
@@ -67,7 +67,21 @@ actor MesoRepo {
             }
         }
         
-        return hits
+        return hits.map {
+            MdDTO(
+                number: $0.number,
+                title: $0.title,
+                link: $0.link,
+                issued: $0.issued,
+                validStart: $0.validStart,
+                validEnd: $0.validEnd,
+                areasAffected: $0.areasAffected,
+                summary: $0.summary,
+                watchProbability: $0.watchProbability,
+                threats: $0.threats,
+                coordinates: $0.coordinates
+            )
+        }
     }
     
     func getLatestMapData(asOf date: Date = .init()) throws -> [MdDTO] {

@@ -23,7 +23,7 @@ extension BgRunSnapshot {
             nextScheduledAt: now.addingTimeInterval(TimeInterval(nextOffsetMin * 60)),
             cadence: 20,
             cadenceReason: "Demo cadence",
-            active: .seconds(5)
+            active: .seconds(Int.random(in: 3...27))
         )
     }
     

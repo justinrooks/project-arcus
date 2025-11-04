@@ -93,21 +93,32 @@ struct SkyAwareApp: App {
         
         let refresh: RefreshPolicy = .init()
         refreshPolicy = refresh
-        logger.info("Refresh policy configured")
+        cadencePolicy = CadencePolicy()
+        logger.info("Refresh policy & cadence configured")
         
         logger.debug("Composing morning summary engine")
         let morning = MorningEngine(
             rule: AmRangeLocalRule(),
             gate: MorningGate(store: DefaultStore()),
             composer: MorningComposer(),
-            sender: MorningSender()
+            sender: Sender()
         )
-        cadencePolicy = CadencePolicy()
+        
+        logger.debug("Composing meso notification engine")
+        let meso = MesoEngine(
+            rule: MesoRule(),
+            gate: MesoGate(store: DefaultMesoStore()),
+            composer: MesoComposer(),
+            sender: Sender(),
+            spc: spc
+        )
+        
         orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
             locationProvider: provider,
             policy: refresh,
             engine: morning,
+            mesoEngine: meso,
             health: healthStore,
             cadence: cadencePolicy
         )

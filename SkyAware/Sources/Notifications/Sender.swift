@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-struct MorningSender: NotificationSender {
+struct Sender: NotificationSender {
     private let logger = Logger.sender
     
     init() {}

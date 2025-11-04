@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum NotificationKind: Sendable { case morningOutlook }
+enum NotificationKind: Sendable { case morningOutlook, mesoNotification }
 
 struct NotificationEvent: Sendable {
     let kind: NotificationKind
@@ -17,6 +17,10 @@ struct NotificationEvent: Sendable {
 
 protocol NotificationRule: Sendable {
     func evaluate(_ ctx: MorningContext) -> NotificationEvent?
+}
+
+protocol MesoNotificationRule: Sendable {
+    func evaluate(_ ctx: MesoContext) -> NotificationEvent?
 }
 
 protocol NotificationGate: Sendable {
@@ -34,4 +38,9 @@ protocol NotificationSender: Sendable {
 protocol MorningStateStore: Sendable {
     func lastMorningStamp() async -> String?
     func setLastMorningStamp(_ stamp: String) async
+}
+
+protocol NotificationStateStore: Sendable {
+    func lastStamp() async -> String?
+    func setLastStamp(_ stamp: String) async
 }

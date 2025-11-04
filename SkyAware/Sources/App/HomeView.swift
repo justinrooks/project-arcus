@@ -74,13 +74,14 @@ struct HomeView: View {
     }
 }
 
-// MARK: Previews
-#Preview("Home – Slight + 10% Tornado") {
+// MARK: Preview
+#Preview("Home") {
     // In-memory SwiftData container with sample data for all tabs
     let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self, BgRunSnapshot.self)
     preview.addExamples(MD.sampleDiscussions)
     preview.addExamples(WatchModel.sampleWatches)
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
+    preview.addExamples(BgRunSnapshot.sampleRuns)
     
     // Environment dependencies
     let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
@@ -89,33 +90,4 @@ struct HomeView: View {
         .modelContainer(preview.container)
         .environment(\.spcSync, spcMock)
         .environment(\.spcFreshness, spcMock)
-}
-
-#Preview("Home – All Clear") {
-    let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self)
-    preview.addExamples(MD.sampleDiscussions)
-    preview.addExamples(WatchModel.sampleWatches)
-    preview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    
-    let spcMock = MockSpcService(storm: .allClear, severe: .allClear)
-    
-    return HomeView()
-        .modelContainer(preview.container)
-        .environment(\.spcSync, spcMock)
-        .environment(\.spcFreshness, spcMock)
-}
-
-#Preview("Home – Enhanced + 30% Hail (Dark)") {
-    let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self)
-    preview.addExamples(MD.sampleDiscussions)
-    preview.addExamples(WatchModel.sampleWatches)
-    preview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    
-    let spcMock = MockSpcService(storm: .enhanced, severe: .hail(probability: 0.30))
-    
-    return HomeView()
-        .modelContainer(preview.container)
-        .environment(\.spcSync, spcMock)
-        .environment(\.spcFreshness, spcMock)
-        .environment(\.colorScheme, .dark)
 }

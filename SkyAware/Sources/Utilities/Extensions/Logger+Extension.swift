@@ -47,9 +47,15 @@ extension Logger {
     // MARK: Notification
     static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")
     
+    // MARK: Morning Notification
     static let engine = Logger(subsystem: subsystem, category: "notificationEngine")
     static let rule = Logger(subsystem: subsystem, category: "notificationRule")
     static let gate = Logger(subsystem: subsystem, category: "notificationGate")
     static let composer = Logger(subsystem: subsystem, category: "notificationComposer")
     static let sender = Logger(subsystem: subsystem, category: "notificationSender")
+    
+    // MARK: Meso Notification
+    static let mesoEngine = Logger(subsystem: subsystem, category: "mesoEngine")
+    static let mesoGate = Logger(subsystem: subsystem, category: "mesoGate")
+    static let mesoRule = Logger(subsystem: subsystem, category: "mesoRule")
 }
