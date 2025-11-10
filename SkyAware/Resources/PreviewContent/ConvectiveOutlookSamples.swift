@@ -126,6 +126,14 @@ extension ConvectiveOutlook {
                 day: 2,
                 riskLevel: "SLGT"
             ),
+            ConvectiveOutlook(
+                title: "SPC Nov 9, 2025 0100 UTC Day 1 Convective Outlook",
+                link: URL(string: "https://spc.noaa.gov/products/outlook/day1otlk.html")!,
+                published: Date().addingTimeInterval(-7200),
+                summary: "Day 1 Convective Outlook NWS Storm Prediction Center Norman OK 0651 PM CST Sat Nov 08 2025 Valid 090100Z - 091200Z ...THERE IS A MARGINAL RISK OF SEVERE THUNDERSTORMS ACROSS PARTS OF EASTERN GEORGIA...THE CAROLINAS AND LOWER OHIO VALLEY... ...SUMMARY... Thunderstorms with hail and isolated severe wind gusts will be possible early this evening from eastern Georgia into parts of the Carolinas. Hail may occur after midnight in the lower Ohio Valley. ...Eastern Georgia/Carolinas... The latest water vapor imagery shows a mid-level trough over the Ozarks with west-southwesterly flow located from the trough eastward into the eastern U.S. At the surface, a moist airmass is located from the Gulf Coast states extending northeastward into South Carolina and southern North Carolina. A moist axis is located across South Carolina, where surface dewpoints are in the 60s F. Near this moist axis, the RAP has MLCAPE in the 1000 to 1500 J/kg range. Along the northern edge of the stronger instability, scattered thunderstorms are ongoing. The WSR-88D VWP near Columbia, South Carolina has 0-6 km near 45 knots, which could be enough to support a marginal severe threat early this evening, mainly with cells that exhibit signs of rotation. Hail and isolated severe wind gusts would be the primary threats. The threat is expected to diminish by mid evening. ...Ohio Valley... A mid-level trough will move eastward across the mid Mississippi Valley tonight. Ahead of the trough, an axis of low-level moisture is forecast to setup as a surface low moves eastward into the lower Ohio Valley. Thunderstorm development is expected near the surface low after midnight across northern Kentucky, southern Indiana and far southwestern Ohio. Ahead of the trough, strong large-scale ascent will overspread the lower Ohio Valley. In addition, RAP forecast soundings just ahead of the surface low late tonight have MUCAPE increasing into the 250 to 500 J/kg range, with effective shear increasing to about 30 knots. This, combined with steep lapse rates from 850 to 700 mb could be enough for hail with short-topped cells. ..Broyles.. 11/09/2025",
+                day: 2,
+                riskLevel: "SLGT"
+            )
         ]
     }
 }

@@ -14,8 +14,12 @@ struct AlertView: View {
     
     private let scale: Double = 0.9
     
+    // TODO: These need to come from the parent
     @Query private var mesos: [MD]
     @Query private var watches: [WatchModel]
+    
+    @State private var selectedWatch: WatchModel?
+    @State private var selectedMeso: MD?
     
     var body: some View {
         List {
@@ -25,15 +29,21 @@ struct AlertView: View {
                 .scaleEffect(scale)
             } else {
                 if(watches.isEmpty) {
-                    ContentUnavailableView("No active watches",
-                                           systemImage: "checkmark.seal.fill")
+                    ContentUnavailableView {
+                        Label("No active watches", systemImage: "checkmark.seal.fill")
+                    } description: {
+                        Text("There are no active weather watches.")
+                    }
                     .scaleEffect(scale)
                 } else {
                     Section(header: Text("Watches")) {
                         ForEach(watches) { watch in
-                            NavigationLink(destination: WatchDetailView(watch: watch)) {
-                                AlertRowView(alert: watch)
-                            }
+                            AlertRowView(alert: watch)
+                                .contentShape(Rectangle()) // Makes entire row tappable
+                                .onTapGesture {
+                                    selectedWatch = watch
+                                }
+                                .padding(.horizontal)
                         }
                         .onDelete(perform: { indexSet in
                             indexSet.forEach { index in
@@ -42,6 +52,10 @@ struct AlertView: View {
                             }
                         })
                     }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listSectionSpacing(10)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
                 
                 if(mesos.isEmpty) {
@@ -51,9 +65,12 @@ struct AlertView: View {
                 } else {
                     Section(header: Text("Mesoscale Discussions")) {
                         ForEach(mesos) { meso in
-                            NavigationLink(destination: MesoscaleDiscussionCard(meso: meso)) {
-                                AlertRowView(alert: meso)
-                            }
+                            AlertRowView(alert: meso)
+                                .contentShape(Rectangle()) // Makes entire row tappable
+                                .onTapGesture {
+                                    selectedMeso = meso
+                                }
+                                .padding(.horizontal)
                         }
                         .onDelete(perform: { indexSet in
                             indexSet.forEach { index in
@@ -62,11 +79,27 @@ struct AlertView: View {
                             }
                         })
                     }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listSectionSpacing(10)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
             }
         }
-        .listStyle(.plain)
-        .navigationTitle("Active Alerts")
+        .navigationDestination(item: $selectedWatch) { watch in
+            WatchDetailView(watch: watch)
+        }
+        .navigationDestination(item: $selectedMeso) { meso in
+            // TODO: Need to get a MdDTO here to pass to the discussion card.
+            //            MesoscaleDiscussionCard(meso: meso)
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(15)
+        .listRowBackground(Color.clear)
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
+        
+        .contentMargins(.top, 0, for: .scrollContent)
         .refreshable {
             Task {
                 print("Refreshing Alerts")
@@ -87,6 +120,12 @@ struct AlertView: View {
     return NavigationStack {
         AlertView()
             .modelContainer(preview.container)
+            .navigationTitle("Active Alerts")
+            .navigationBarTitleDisplayMode(.inline)
+//            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
 //            .environment(provider)
     }
 }

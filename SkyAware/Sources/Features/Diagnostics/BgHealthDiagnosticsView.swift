@@ -15,30 +15,34 @@ struct BgHealthDiagnosticsView: View {
     @Query(
         sort: [SortDescriptor(\BgRunSnapshot.endedAt, order: .reverse)]
     ) private var runs: [BgRunSnapshot]
-
+    
     var body: some View {
-        NavigationStack {
-            List {
-                if let latest = runs.first {
-                    Section {
-                        StatusHeader(latest: latest)
-                    }
+        List {
+            if let latest = runs.first {
+                Section {
+                    StatusHeader(latest: latest)
                 }
-
-                Section("Recent Runs") {
-                    if runs.isEmpty {
-                        ContentUnavailableView("No background runs yet",
-                                               systemImage: "waveform.path.ecg",
-                                               description: Text("Once the app has run a background refresh, details will appear here."))
-                    } else {
-                        ForEach(runs, id: \.runId) { snap in
-                            RunRow(snap: snap)
-                        }
+            }
+            
+            Section("Recent Runs") {
+                if runs.isEmpty {
+                    ContentUnavailableView {
+                        Label("No background runs yet", systemImage: "doc.richtext.fill")
+                    } description: {
+                        Text("Once the app has run a background refresh, details will appear here.")
+                    }
+                    //                        ContentUnavailableView("No background runs yet",
+                    //                                               systemImage: "waveform.path.ecg",
+                    //                                               description: Text("Once the app has run a background refresh, details will appear here."))
+                } else {
+                    ForEach(runs, id: \.runId) { snap in
+                        RunRow(snap: snap)
                     }
                 }
             }
-            .navigationTitle("Background Health")
         }
+        .listSectionSpacing(15)
+        .contentMargins(.top, 0, for: .scrollContent)
     }
 }
 
@@ -47,16 +51,16 @@ struct BgHealthDiagnosticsView: View {
 private struct StatusHeader: View {
     let latest: BgRunSnapshot
     @Environment(\.colorScheme) private var scheme
-
+    
     var body: some View {
         let now = Date()
         let status = computeStatus(from: latest, now: now)
-
+        
         HStack(spacing: 16) {
             Circle()
                 .fill(status.color)
                 .frame(width: 12, height: 12)
-
+            
             VStack(alignment: .leading, spacing: 4) {
                 Text("Status: \(status.label)")
                     .font(.headline)
@@ -67,39 +71,37 @@ private struct StatusHeader: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             }
-
-            Spacer()
         }
         .padding(.vertical, 4)
     }
-
+    
     private func computeStatus(from latest: BgRunSnapshot, now: Date) -> (label: String, color: Color) {
         // Tunable thresholds
         let behindGrace: TimeInterval = 45 * 60 // 45m after nextScheduled → "Behind"
         let stalledAfter: TimeInterval = 3 * 60 * 60 // 3h since last run → "Stalled"
-
+        
         // Stalled if we haven't finished a run in a long while
         if now.timeIntervalSince(latest.endedAt) > stalledAfter {
             return ("Stalled", .orange)
         }
-
+        
         // Behind if we're past our next scheduled time by > 45m
         if now.timeIntervalSince(latest.nextScheduledAt) > behindGrace {
             return ("Behind", .yellow)
         }
-
+        
         // Error outcome escalates severity
         if latest.outcomeCode >= 2 {
             return ("Error", .red)
         }
-
+        
         return ("OK", .green)
     }
 }
 
 private struct RunRow: View {
     let snap: BgRunSnapshot
-
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -114,7 +116,7 @@ private struct RunRow: View {
                     .foregroundStyle(outcomeColor(snap.outcomeCode))
                     .clipShape(Capsule())
             }
-
+            
             HStack(spacing: 12) {
                 Label("\(formatSecondsInt64(snap.activeSeconds))", systemImage: "timer")
                 Label("Budget \(snap.budgetSecUsed)s", systemImage: "gauge.with.dots.needle.50percent")
@@ -127,14 +129,14 @@ private struct RunRow: View {
             }
             .font(.subheadline)
             .foregroundStyle(.secondary)
-
+            
             if let reason = snap.reasonNoNotify, !reason.isEmpty {
                 Text(reason)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
-
+            
             Text("Next: \(timeOrDash(snap.nextScheduledAt))")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -145,9 +147,10 @@ private struct RunRow: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
+        
         .accessibilityElement(children: .combine)
     }
-
+    
     private func outcomeLabel(_ code: Int) -> String {
         switch code {
         case 0: return "OK"
@@ -209,7 +212,7 @@ private func formatSecondsInt64(_ secs: Int64) -> String {
         // Note: This will result in "X.0s" if secs is Int64
         return String(format: "%.1fs", Double(secs))
     }
-
+    
     let m = secs / 60 // Integer division gives minutes
     let s = secs % 60 // Modulo gives remaining seconds
     
@@ -219,9 +222,17 @@ private func formatSecondsInt64(_ secs: Int64) -> String {
 
 // MARK: - Preview
 #Preview("Diagnostics") {
-    let mdPreview = Preview(BgRunSnapshot.self)
-    mdPreview.addExamples(BgRunSnapshot.sampleRuns)
+    let preview = Preview(BgRunSnapshot.self)
+    preview.addExamples(BgRunSnapshot.sampleRuns)
     
-    return BgHealthDiagnosticsView()
-        .modelContainer(mdPreview.container)
+    return NavigationStack {
+        BgHealthDiagnosticsView()
+            .modelContainer(preview.container)
+            .navigationTitle("Background Health")
+            .navigationBarTitleDisplayMode(.inline)
+//            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
+    }
 }

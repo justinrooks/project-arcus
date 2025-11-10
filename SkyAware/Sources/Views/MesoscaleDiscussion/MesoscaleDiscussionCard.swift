@@ -16,11 +16,11 @@ struct Neutral {
     static let cardBG = Color(uiColor: .secondarySystemBackground)
     static let stroke = Color.black.opacity(0.08)
     static let labelSecondary = Color.secondary
-    static let accent = Color("AccentIndigo") // Provide in Assets or fallback below
+    static let accent = Color(.skyAwareAccent) // Provide in Assets or fallback below
 }
 
 struct MesoscaleDiscussionCard: View {
-    let meso: MD
+    let meso: MdDTO
     var layout: DetailLayout = .full
     
     // Layout metrics
@@ -163,7 +163,7 @@ struct MesoscaleDiscussionCard: View {
 }
 
 extension MesoscaleDiscussionCard {
-    func getPrimaryThreatLabel(for m: MD) -> String? {
+    func getPrimaryThreatLabel(for m: MdDTO) -> String? {
         guard let threats = m.threats else { return nil }
         
         if let t = threats.tornadoStrength, t.lowercased() != "not expected" { return "Primary threat: Tornado (\(t))" }
@@ -172,7 +172,7 @@ extension MesoscaleDiscussionCard {
         return nil
     }
     
-    func timeRemaining(meso: MD, now: Date = .now) -> TimeInterval { max(0, meso.validEnd.timeIntervalSince(now)) }
+    func timeRemaining(meso: MdDTO, now: Date = .now) -> TimeInterval { max(0, meso.validEnd.timeIntervalSince(now)) }
 }
 
 // MARK: - Preview
@@ -181,6 +181,6 @@ extension MesoscaleDiscussionCard {
     let preview = Preview(MD.self)
     
     return NavigationStack {
-        MesoscaleDiscussionCard(meso: MD.sampleDiscussions[1], layout: .full)
+        MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .full)
     }
 }

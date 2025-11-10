@@ -16,61 +16,64 @@ struct HomeView: View {
     @Query private var mesos: [MD]
     @Query private var watches: [WatchModel]
     
+//    @State private var tab: Tab = .summary
+    
     var body: some View {
         ZStack {
-            Color(.systemGray6)
-                .ignoresSafeArea()
+            Color(.skyAwareBackground).ignoresSafeArea()
             TabView {
                 NavigationStack {
-                    ScrollView{
-                        SummaryView()
-                    }
-                    .refreshable {
-                        Task {
-                            await svc.sync()
-                        }
-                    }
+                    SummaryView()
+                        .toolbar(.hidden, for: .navigationBar)
+                        .background(.skyAwareBackground)
+//                    Spacer()
                 }
-                .tabItem {
-                    Image(systemName: "list.bullet") //sunrise.fill, circle.grid.cross.fill
-                    Text("Summary")
-                }
+                .tabItem { Label("Summary", systemImage: "list.bullet") }
                 
                 NavigationStack {
                     AlertView()
+                        .navigationTitle("Active Alerts")
+                        .navigationBarTitleDisplayMode(.inline)
+            //            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        .scrollContentBackground(.hidden)
+                        .background(.skyAwareBackground)
                 }
-                .tabItem {
-                    Image(systemName: "exclamationmark.triangle") //umbrella
-                    Text("Alerts")
-                }.badge(mesos.count + watches.count)
+                .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
+                    .badge(mesos.count + watches.count)
                 
                 MapView()
-                    .tabItem {
-                        Image(systemName: "map")
-                        Text("Map")
-                    }
+                    .toolbar(.hidden, for: .navigationBar)
+                    .background(.skyAwareBackground)
+                    .tabItem { Label("Map", systemImage: "map") }
                 
                 NavigationStack {
                     ConvectiveOutlookView()
+                        .navigationTitle("Convective Outlooks")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        .scrollContentBackground(.hidden)
+                        .background(.skyAwareBackground)
                 }
-                .tabItem {
-                    Image(systemName: "cloud.bolt.rain.fill") //cloud.bolt.rain.fill
-                    Text("Outlook")
-                }
+                .tabItem { Label("Outlooks", systemImage: "cloud.bolt.rain.fill") }
                 
                 NavigationStack {
-//                    SettingsView()
-//                    LogViewerView()
+                    //                    SettingsView()
+                    //                    LogViewerView()
                     BgHealthDiagnosticsView()
+                        .navigationTitle("Background Health")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        .scrollContentBackground(.hidden)
+                        .background(.skyAwareBackground)
                 }
-                .tabItem {
-                    Image(systemName: "gearshape") //exclamationmark.triangle
-                    Text("Settings")
-                }
+                .tabItem {Label("Settings", systemImage: "gearshape")}
+            
             }
+            .ignoresSafeArea(edges: .bottom)
         }
         .transition(.opacity)
-        .accentColor(.green.opacity(0.80))
+        .tint(.skyAwareAccent)
     }
 }
 

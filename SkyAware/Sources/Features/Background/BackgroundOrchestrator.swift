@@ -16,6 +16,11 @@ struct Outcome: Sendable {
     let feedsChanged: Set<Feed> // [.convective, .meso, .watch]
 }
 
+struct NotificationSettings: Sendable {
+    let morningSummariesEnabled: Bool
+    let mesoNotificationsEnabled: Bool
+}
+
 actor BackgroundOrchestrator {
     private let logger = Logger.orchestrator
     private let signposter:OSSignposter
@@ -29,6 +34,8 @@ actor BackgroundOrchestrator {
     
     private let clock = ContinuousClock()
     
+    private let settings: NotificationSettings
+    
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying,
         locationProvider: LocationProvider,
@@ -36,7 +43,8 @@ actor BackgroundOrchestrator {
         engine: MorningEngine,
         mesoEngine: MesoEngine,
         health: BgHealthStore,
-        cadence: CadencePolicy
+        cadence: CadencePolicy,
+        notificationSettings: NotificationSettings
     ) {
         self.spcProvider = spcProvider
         self.locationProvider = locationProvider
@@ -45,6 +53,7 @@ actor BackgroundOrchestrator {
         healthStore = health
         self.cadence = cadence
         self.mesoEngine = mesoEngine
+        settings = notificationSettings
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
     }
@@ -101,31 +110,35 @@ actor BackgroundOrchestrator {
                 }
                 
                 // MARK: Send the AM Notification
-                signposter.emitEvent("Morning Summary Notification")
-                let didAmNotify = await morningEngine.run(
-                    ctx: .init(
-                        now: .now,
-                        lastConvectiveIssue: outlook?.published,
-                        localTZ: TimeZone(identifier: "America/Denver")!,
-                        quietHours: nil,
-                        stormRisk: stormRisk,
-                        severeRisk: severeRisk,
-                        placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                if settings.morningSummariesEnabled {
+                    signposter.emitEvent("Morning Summary Notification")
+                    let didAmNotify = await morningEngine.run(
+                        ctx: .init(
+                            now: .now,
+                            lastConvectiveIssue: outlook?.published,
+                            localTZ: TimeZone(identifier: "America/Denver")!,
+                            quietHours: nil,
+                            stormRisk: stormRisk,
+                            severeRisk: severeRisk,
+                            placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                        )
                     )
-                )
-                if !didAmNotify { reasonNoNotify = "Morning summary skipped" }
+                    if !didAmNotify { reasonNoNotify = "Morning summary skipped" }
+                } else { reasonNoNotify = "Morning summary disabled" }
                 
-                // MARK: Send Meso Notification
-                signposter.emitEvent("Meso Notification")
-                let didMesoNotify = await mesoEngine.run(
-                    ctx: .init(
-                        now: .now,
-                        localTZ: TimeZone(identifier: "America/Denver")!,
-                        location: updatedSnap.coordinates,
-                        placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                if settings.mesoNotificationsEnabled {
+                    // MARK: Send Meso Notification
+                    signposter.emitEvent("Meso Notification")
+                    let didMesoNotify = await mesoEngine.run(
+                        ctx: .init(
+                            now: .now,
+                            localTZ: TimeZone(identifier: "America/Denver")!,
+                            location: updatedSnap.coordinates,
+                            placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                        )
                     )
-                )
-                if !didMesoNotify { reasonNoNotify = "Meso notification skipped" }
+                    if !didMesoNotify { reasonNoNotify = "Meso notification skipped" }
+                } else { reasonNoNotify = "Meso notification disabled" }
                 
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(

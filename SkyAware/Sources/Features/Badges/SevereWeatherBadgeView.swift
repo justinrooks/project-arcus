@@ -19,6 +19,7 @@ struct SevereWeatherBadgeView: View {
                 .formatMessageText()
             Text(threat.dynamicSummary != "" ? threat.dynamicSummary : threat.summary)
                 .formatSummaryText(for: colorScheme)
+                .monospacedDigit()
         }
         .badgeStyle(background: threat.iconColor(for: colorScheme))
     }

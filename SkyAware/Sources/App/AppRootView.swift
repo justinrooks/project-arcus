@@ -18,6 +18,11 @@ struct AppRootView: View {
     let locationProv: LocationProvider
     
     var body: some View {
+//        RoundedRectangle(cornerRadius: 12)
+//                    .fill(Color("Background"))
+//                    .frame(height: 80)
+//                    .overlay(Text("Background").bold())
+//                    .padding()
         HomeView()
             .environment(\.riskQuery, spcProvider)
             .environment(\.spcFreshness, spcProvider)

@@ -39,6 +39,19 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 
 
 struct SettingsView: View {
+    
+    // MARK: Notification Settings
+    @AppStorage(
+        "morningSummaryEnabled",
+        store: UserDefaults.shared
+    ) private var morningSummaryEnabled: Bool = true
+    
+    @AppStorage(
+        "mesoNotificationEnabled",
+        store: UserDefaults.shared
+    ) private var mesoNotificationEnabled: Bool = true
+    
+    // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
     @AppStorage("aiShareLocation", store: UserDefaults.shared) private var aiShareLocation: Bool = true
     @AppStorage("aiBrevity", store: UserDefaults.shared) private var brevityIndex: Int = 0
@@ -60,9 +73,21 @@ struct SettingsView: View {
     
     var body: some View {
         Form {
-            Section(header: Text("AI PREFERENCES"), content: {
+            Section(header: Text("Notification Preferences")) {
                 HStack{
-                    // Image(uiImage: UIImage(named: "DarkMode")!)
+                    Toggle(isOn: $morningSummaryEnabled) {
+                        Text("Enable Morning Summaries")
+                    }
+                }
+                HStack{
+                    Toggle(isOn: $mesoNotificationEnabled) {
+                        Text("Enable Meso Notifications")
+                    }
+                }
+            }
+            
+            Section(header: Text("AI PREFERENCES")) {
+                HStack{
                     Toggle(isOn: $aiSummariesEnabled) {
                         Text("Enable AI summaries")
                     }
@@ -70,7 +95,6 @@ struct SettingsView: View {
                 
                 if aiSummariesEnabled {
                     HStack{
-                        // Image(uiImage: UIImage(named: "DarkMode")!)
                         Toggle(isOn: $aiShareLocation) {
                             Text("Include location for summary")
                         }
@@ -94,12 +118,18 @@ struct SettingsView: View {
                         // .pickerStyle(SegmentedPickerStyle())
                     }
                 }
-            })
+            }
         }
-        Spacer()
     }
 }
 
 #Preview {
-    SettingsView()
+    return NavigationStack {
+        SettingsView()
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
+    }
 }

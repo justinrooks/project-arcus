@@ -113,6 +113,16 @@ struct SkyAwareApp: App {
             spc: spc
         )
         
+        @AppStorage(
+            "morningSummaryEnabled",
+            store: UserDefaults.shared
+        ) var morningSummaryEnabled: Bool = true
+        
+        @AppStorage(
+            "mesoNotificationEnabled",
+            store: UserDefaults.shared
+        ) var mesoNotificationEnabled: Bool = true
+
         orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
             locationProvider: provider,
@@ -120,7 +130,9 @@ struct SkyAwareApp: App {
             engine: morning,
             mesoEngine: meso,
             health: healthStore,
-            cadence: cadencePolicy
+            cadence: cadencePolicy,
+            notificationSettings: .init(morningSummariesEnabled: morningSummaryEnabled,
+                                        mesoNotificationsEnabled: mesoNotificationEnabled)
         )
         logger.info("Providers ready; background orchestrator configured")
     }
@@ -132,6 +144,7 @@ struct SkyAwareApp: App {
                 locationMgr: locationMgr,
                 locationProv: provider
             )
+            .appBackground()
         }
         .modelContainer(sharedModelContainer)
         .backgroundTask(.appRefresh(appRefreshID)) {

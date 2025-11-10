@@ -9,7 +9,6 @@ import SwiftUI
 
 struct AlertRowView: View {
     let alert: any AlertItem
-    @Environment(\.colorScheme) var colorScheme
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
@@ -34,8 +33,15 @@ struct AlertRowView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            Spacer()
         }
-        .padding(.vertical, 8)
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.cardBackground)
+                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 3)
+        )
+        
     }
 
     // MARK: - Helpers
@@ -59,4 +65,8 @@ struct AlertRowView: View {
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }
+}
+
+#Preview {
+    AlertRowView(alert: MD.sampleDiscussions.first!)
 }

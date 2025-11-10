@@ -8,6 +8,10 @@
 import Foundation
 import SwiftData
 
+// TODO: Remove the riskLevel here
+// TODO: Rename summary to fullText
+// Without a migration of SwiftData, we'll have to remove/reinstall the app to avoid db errors.
+
 @Model
 final class ConvectiveOutlook {
     var id: UUID    // usually the GUID or derived from it

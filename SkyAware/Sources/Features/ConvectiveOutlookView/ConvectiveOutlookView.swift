@@ -9,52 +9,51 @@ import SwiftUI
 import SwiftData
 
 struct ConvectiveOutlookView: View {
-//    @Environment(SpcProvider.self) private var provider: SpcProvider
+    //    @Environment(SpcProvider.self) private var provider: SpcProvider
     @Environment(\.modelContext) private var modelContext
     
     @Query(filter: #Predicate<ConvectiveOutlook> { $0.day == 1 },
-        sort: \ConvectiveOutlook.published, order: .reverse, animation: .smooth)
+           sort: \ConvectiveOutlook.published, order: .reverse, animation: .smooth)
     private var outlooks: [ConvectiveOutlook]
     
     var body: some View {
-        NavigationStack {
-            Group {
-                if outlooks.isEmpty {
-                    ContentUnavailableView("No Convective outlooks found", systemImage: "cloud.sun.fill")
-                } else {
-                    List {
-                        ForEach(outlooks) { outlook in
-                            NavigationLink(destination: ConvectiveOutlookDetailView(outlook:outlook)) {
-                                VStack(alignment: .leading) {
-                                    if let day = simplifyOutlookTitle(outlook.title) {
-                                        Text("\(day)")
-                                            .font(.headline)
-                                            .bold()
-                                    } else {
-                                        Text(outlook.title)
-                                            .font(.title)
-                                            .bold()
-                                    }
-                                    
-                                    Text("Published: \(formattedDate(outlook.published))")
-                                        .font(.subheadline)
+        Group {
+            if outlooks.isEmpty {
+                ContentUnavailableView("No Convective outlooks found", systemImage: "cloud.sun.fill")
+            } else {
+                List {
+                    ForEach(outlooks) { outlook in
+                        NavigationLink(destination: ConvectiveOutlookDetailView(outlook:outlook)) {
+                            VStack(alignment: .leading) {
+                                if let day = simplifyOutlookTitle(outlook.title) {
+                                    Text("\(day)")
+                                        .font(.headline)
+                                        .bold()
+                                } else {
+                                    Text(outlook.title)
+                                        .font(.title)
+                                        .bold()
                                 }
-                                .padding(.vertical, 4)
+                                
+                                Text("Published: \(formattedDate(outlook.published))")
+                                    .font(.subheadline)
                             }
-                            .navigationTitle("Convective Outlooks")
-                            .font(.subheadline)
+                            .padding(.vertical, 4)
                         }
-                        .onDelete(perform: { indexSet in
-                            indexSet.forEach { index in
-                                let outlook = outlooks[index]
-                                modelContext.delete(outlook)
-                            }
-                        })
+                        .navigationTitle("Convective Outlooks")
+                        .font(.subheadline)
                     }
-                    .refreshable {
-                        Task {
-//                            try await provider.fetchOutlooks()
+                    .onDelete(perform: { indexSet in
+                        indexSet.forEach { index in
+                            let outlook = outlooks[index]
+                            modelContext.delete(outlook)
                         }
+                    })
+                }
+                .contentMargins(.top, 0, for: .scrollContent)
+                .refreshable {
+                    Task {
+                        //                            try await provider.fetchOutlooks()
                     }
                 }
             }
@@ -97,12 +96,15 @@ extension ConvectiveOutlookView {
 #Preview {
     let preview = Preview(ConvectiveOutlook.self)
     preview.addExamples(ConvectiveOutlook.sampleOutlooks)
-//    let provider = SpcProvider(client: SpcClient(),
-//                               autoLoad: false)
     
     return NavigationStack {
         ConvectiveOutlookView()
             .modelContainer(preview.container)
-//            .environment(provider)
+            .navigationTitle("Convective Outlooks")
+            .navigationBarTitleDisplayMode(.inline)
+        //            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
     }
 }

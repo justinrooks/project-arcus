@@ -13,6 +13,7 @@ import OSLog
 actor ConvectiveOutlookRepo {
     private let logger = Logger.convectiveRepo
     private let parser: RSSFeedParser = RSSFeedParser()
+    private let dtoParser: convictParser = convictParser()
     
     func refreshConvectiveOutlooks(using client: any SpcClient) async throws {
         let data = try await client.fetchRssData(for: .convective)
@@ -47,6 +48,7 @@ actor ConvectiveOutlookRepo {
                                                        link: $0.link,
                                                        published: $0.published,
                                                        summary: $0.summary,
+                                                       fullText: $0.summary,
                                                        day: $0.day,
                                                        riskLevel: $0.riskLevel) }
         return dtos
@@ -66,10 +68,19 @@ actor ConvectiveOutlookRepo {
         
         guard let outlook = try modelContext.fetch(fetchDescriptor).first else { return nil }
         
+//        let t = ConvectiveOutlook.sampleOutlooks.last!
+        
+        let test: coDTO = dtoParser.makeDto(from: outlook)
+        
+        let y = ConvectiveParser.stripHeader(from: outlook.summary)
+        
+//        logger.debug(test.discussion)
+        
         return ConvectiveOutlookDTO(title: outlook.title,
                                     link: outlook.link,
                                     published: outlook.published,
-                                    summary: outlook.summary,
+                                    summary: test.summary ?? "No summary found",
+                                    fullText: y,
                                     day: outlook.day,
                                     riskLevel: outlook.riskLevel)
     }
