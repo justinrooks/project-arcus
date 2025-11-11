@@ -58,9 +58,7 @@ struct HomeView: View {
                 .tabItem { Label("Outlooks", systemImage: "cloud.bolt.rain.fill") }
                 
                 NavigationStack {
-                    //                    SettingsView()
-                    //                    LogViewerView()
-                    BgHealthDiagnosticsView()
+                    SettingsView()
                         .navigationTitle("Background Health")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.skyAwareBackground, for: .navigationBar)

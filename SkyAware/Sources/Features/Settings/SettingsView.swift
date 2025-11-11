@@ -11,7 +11,7 @@ enum BrevityLevel: Int, CaseIterable, Identifiable, Codable {
     case essential = 0
     case standard = 1
     case detailed = 2
-
+    
     var id: Int { rawValue }
     var title: String {
         switch self {
@@ -26,7 +26,7 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
     case novice = 0
     case enthusiast = 1
     case stormChaser = 2
-
+    
     var id: Int { rawValue }
     var title: String {
         switch self {
@@ -63,7 +63,7 @@ struct SettingsView: View {
             set: { brevityIndex = $0.rawValue }
         )
     }
-
+    
     private var audienceBinding: Binding<AudienceLevel> {
         Binding(
             get: { AudienceLevel(rawValue: audienceIndex) ?? .novice },
@@ -86,39 +86,86 @@ struct SettingsView: View {
                 }
             }
             
-            Section(header: Text("AI PREFERENCES")) {
-                HStack{
-                    Toggle(isOn: $aiSummariesEnabled) {
-                        Text("Enable AI summaries")
-                    }
+            //            Section(header: Text("AI PREFERENCES")) {
+            //                HStack{
+            //                    Toggle(isOn: $aiSummariesEnabled) {
+            //                        Text("Enable AI summaries")
+            //                    }
+            //                }
+            //                
+            //                if aiSummariesEnabled {
+            //                    HStack{
+            //                        Toggle(isOn: $aiShareLocation) {
+            //                            Text("Include location for summary")
+            //                        }
+            //                    }
+            //                    HStack{
+            //                        // Image(uiImage: UIImage(named: "Language")!)
+            //                        Picker(selection: brevityBinding, label: Text("Level of detail")) {
+            //                            ForEach(BrevityLevel.allCases) { level in
+            //                                Text(level.title).tag(level)
+            //                            }
+            //                        }
+            //                        // .pickerStyle(SegmentedPickerStyle())
+            //                    }
+            //                    HStack{
+            //                        // Image(uiImage: UIImage(named: "Language")!)
+            //                        Picker(selection: audienceBinding, label: Text("Interest level")) {
+            //                            ForEach(AudienceLevel.allCases) { level in
+            //                                Text(level.title).tag(level)
+            //                            }
+            //                        }
+            //                        // .pickerStyle(SegmentedPickerStyle())
+            //                    }
+            //                }
+            //            }
+            
+            Section("Diagnostics") {
+                NavigationLink("Background Refresh History") {
+                    BgHealthDiagnosticsView()
+                        .navigationTitle("Background Refresh History")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        .scrollContentBackground(.hidden)
+                        .background(.skyAwareBackground)
                 }
-                
-                if aiSummariesEnabled {
-                    HStack{
-                        Toggle(isOn: $aiShareLocation) {
-                            Text("Include location for summary")
-                        }
-                    }
-                    HStack{
-                        // Image(uiImage: UIImage(named: "Language")!)
-                        Picker(selection: brevityBinding, label: Text("Level of detail")) {
-                            ForEach(BrevityLevel.allCases) { level in
-                                Text(level.title).tag(level)
-                            }
-                        }
-                        // .pickerStyle(SegmentedPickerStyle())
-                    }
-                    HStack{
-                        // Image(uiImage: UIImage(named: "Language")!)
-                        Picker(selection: audienceBinding, label: Text("Interest level")) {
-                            ForEach(AudienceLevel.allCases) { level in
-                                Text(level.title).tag(level)
-                            }
-                        }
-                        // .pickerStyle(SegmentedPickerStyle())
-                    }
+                NavigationLink("Diagnostic Info") {
+                    DiagnosticsView()
+                        .navigationTitle("Diagnostic Info")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        .scrollContentBackground(.hidden)
+                        .background(.skyAwareBackground)
+                }
+                NavigationLink("Log Viewer") {
+                    LogViewerView()
+                        .navigationTitle("Log Viewer")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        .scrollContentBackground(.hidden)
+                        .background(.skyAwareBackground)
                 }
             }
+            .foregroundColor(.orange) // Visual indicator it's debug-only
+            
+            Section("About") {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text(Bundle.main.fullVersion) // e.g., "1.0.0 (1)"
+                        .foregroundColor(.secondary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    //                    tapCount += 1
+                    //                    if tapCount >= 7 {
+                    //                        devMode = true
+                    //                        tapCount = 0
+                    //                    }
+                }
+            }
+            
+            
         }
     }
 }
