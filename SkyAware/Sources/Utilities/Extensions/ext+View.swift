@@ -32,4 +32,30 @@ extension View {
             .opacity(isActive ? 0.8 : 1)
             .animation(.snappy, value: isActive)
     }
+    
+    func cardBackground(
+            cornerRadius: CGFloat = 16,
+            shadowOpacity: Double = 0.22,
+            shadowRadius: CGFloat = 16,
+            shadowY: CGFloat = 6
+        ) -> some View {
+            self.modifier(
+                CardBackground(
+                    cornerRadius: cornerRadius,
+                    shadowOpacity: shadowOpacity,
+                    shadowRadius: shadowRadius,
+                    shadowY: shadowY
+                )
+            )
+        }
+    
+    func cardRowBackground() -> some View {
+            self
+                .cardBackground()
+//                .padding(.vertical, 4)
+//                .padding(.horizontal, 8)
+                .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+        }
 }

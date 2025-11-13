@@ -6,6 +6,10 @@
 	<array>
 		<string>com.skyaware.app.refresh</string>
 	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict/>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>

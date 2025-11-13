@@ -17,7 +17,11 @@ struct ConvectiveOutlookView: View {
     var body: some View {
         List {
             if dtos.isEmpty {
-                ContentUnavailableView("No Convective outlooks found", systemImage: "cloud.sun.fill")
+                ContentUnavailableView {
+                    Label("No convective outlooks found", systemImage: "cloud.sun.fill")
+                } description: {
+                    Text("There are no convective outlooks available.")
+                }
             } else {
                 Section {
                     ForEach(dtos) { dto in
@@ -29,9 +33,9 @@ struct ConvectiveOutlookView: View {
                             .padding(.horizontal)
                     }
                 }
-                .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
+//                .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
+//                .listRowBackground(Color.clear)
+//                .listRowSeparator(.hidden)
             }
         }
         .navigationDestination(item: $selectedOutlook) { outlook in

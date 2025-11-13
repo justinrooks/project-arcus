@@ -27,13 +27,10 @@ struct BgHealthDiagnosticsView: View {
             Section("Recent Runs") {
                 if runs.isEmpty {
                     ContentUnavailableView {
-                        Label("No background runs yet", systemImage: "doc.richtext.fill")
+                        Label("No background runs yet", systemImage: "waveform.path.ecg")
                     } description: {
                         Text("Once the app has run a background refresh, details will appear here.")
                     }
-                    //                        ContentUnavailableView("No background runs yet",
-                    //                                               systemImage: "waveform.path.ecg",
-                    //                                               description: Text("Once the app has run a background refresh, details will appear here."))
                 } else {
                     ForEach(runs, id: \.runId) { snap in
                         RunRow(snap: snap)

@@ -40,12 +40,7 @@ struct OutlookRowView: View {
             Spacer()
         }
         .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.cardBackground)
-                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 3)
-        )
-        
+        .cardRowBackground()
     }
 }
 
@@ -83,7 +78,8 @@ extension OutlookRowView {
         let time = group(1)     // "1630"
         let rest = group(2)     // "Day 1 Convective Outlook"
         
-        return "\(time)z \(rest)"
+//        return "\(time)z \(rest)"
+        return "\(time)z Outlook"
     }
 }
 

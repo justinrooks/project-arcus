@@ -28,7 +28,7 @@ struct HomeView: View {
                         .background(.skyAwareBackground)
 //                    Spacer()
                 }
-                .tabItem { Label("Summary", systemImage: "list.bullet") }
+                .tabItem { Label("Overview", systemImage: "gauge.with.needle.fill") }
                 
                 NavigationStack {
                     AlertView()
@@ -55,7 +55,7 @@ struct HomeView: View {
                         .scrollContentBackground(.hidden)
                         .background(.skyAwareBackground)
                 }
-                .tabItem { Label("Outlooks", systemImage: "cloud.bolt.rain.fill") }
+                .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
                 
                 NavigationStack {
                     SettingsView()

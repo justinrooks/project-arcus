@@ -103,7 +103,11 @@ struct LogViewerView: View {
                 ProgressView("Loading logs…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if lines.isEmpty {
-                ContentUnavailableView("No log entries", systemImage: "doc.text.magnifyingglass")
+                ContentUnavailableView {
+                    Label("No log entries", systemImage: "doc.text.magnifyingglass")
+                } description: {
+                    Text("There are no log entries to display.")
+                }
             } else {
                 List(lines, id: \._id) { line in
                     LogRowView(line: line, includeSubsystem: includeAllSubsystems, dateFormatter: dateFormatter)
