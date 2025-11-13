@@ -35,6 +35,9 @@
 			membershipExceptions = (
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
+				UnitTests/ConvectiveOutlookRepoTests.swift,
+				UnitTests/ParseAsIssueDateTests.swift,
+				UnitTests/ParseSPCValidTime.swift,
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/WatchParserTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
@@ -44,6 +47,9 @@
 		D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				UnitTests/ConvectiveOutlookRepoTests.swift,
+				UnitTests/ParseAsIssueDateTests.swift,
+				UnitTests/ParseSPCValidTime.swift,
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/WatchParserTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
@@ -222,7 +228,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 1640;
+				LastUpgradeCheck = 2610;
 				TargetAttributes = {
 					D095EFA22E16F5690074F867 = {
 						CreatedOnToolsVersion = 16.4;
@@ -381,6 +387,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
@@ -439,6 +446,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_VERSION = 6.0;
 				VALIDATE_PRODUCT = YES;

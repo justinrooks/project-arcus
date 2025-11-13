@@ -25,7 +25,7 @@ struct OutlookSummaryCard: View {
             }
             
             // Preview text
-            Text(outlook.previewText)
+            Text(outlook.summary)
                 .font(.body)
                 .foregroundColor(.primary)
                 .lineSpacing(4)
@@ -55,7 +55,8 @@ struct OutlookSummaryCard: View {
                 .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 3)
         )
         .navigationDestination(isPresented: $navigateToFull) {
-            OutlookView(outlook: outlook)
+            ConvectiveOutlookDetailView(outlook: outlook)
+//            ConvectiveOutlookDetailView(outlook: outlook)
         }
     }
 }
@@ -68,7 +69,9 @@ struct OutlookSummaryCard: View {
         summary: "Isolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast.",
         fullText: "...SUMMARY... \nIsolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast.\n....20z UPDATE... \nThe only adjustment was a northward expansion of the 2% tornado and 5% wind risk probabilities across the far southwest WA coast. Recent imagery from KLGX shows a cluster of semi-discrete cells off the far southwest WA coast with weak, but discernible, mid-level rotation. Regional VWPs continue to show ample low-level shear, and surface temperatures are warming to near/slightly above the upper-end of the ensemble envelope. These kinematic/thermodynamic conditions may support at least a low-end wind and brief tornado threat along the coast.",
         day: 1,
-        riskLevel: "mdt"
+        riskLevel: "mdt",
+        issued: Date(),
+        validUntil: Date()
     )
     
     return NavigationStack {

@@ -24,7 +24,7 @@ struct NotificationSettings: Sendable {
 actor BackgroundOrchestrator {
     private let logger = Logger.orchestrator
     private let signposter:OSSignposter
-    private let spcProvider: any SpcSyncing & SpcRiskQuerying
+    private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
     private let locationProvider: LocationProvider
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
@@ -37,7 +37,7 @@ actor BackgroundOrchestrator {
     private let settings: NotificationSettings
     
     init(
-        spcProvider: any SpcSyncing & SpcRiskQuerying,
+        spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
         locationProvider: LocationProvider,
         policy: RefreshPolicy,
         engine: MorningEngine,

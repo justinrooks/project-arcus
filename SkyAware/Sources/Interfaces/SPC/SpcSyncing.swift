@@ -10,5 +10,4 @@ import Foundation
 protocol SpcSyncing: Sendable {
     func sync() async -> Void
     func syncTextProducts() async -> Void
-    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO?
 }

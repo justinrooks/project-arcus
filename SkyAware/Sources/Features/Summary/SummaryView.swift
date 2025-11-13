@@ -13,6 +13,7 @@ struct SummaryView: View {
     @Environment(\.riskQuery) private var svc: any SpcRiskQuerying
     @Environment(\.spcFreshness) private var fresh: any SpcFreshnessPublishing
     @Environment(\.spcSync) private var sync: any SpcSyncing
+    @Environment(\.outlookQuery) private var outlookSvc: any SpcOutlookQuerying
     
     // MARK: State
     @State private var riskRefreshTask: Task<Void, Never>?
@@ -45,38 +46,46 @@ struct SummaryView: View {
     }
     
     var body: some View {
-        VStack {
-            // Header
-            SummaryStatus(
-                location: snap?.placemarkSummary ?? "Searching...",
-                updatedAt: outlook?.published ?? Date()
-            )
-            .placeholder(outlook == nil || snap == nil)
-            
-            // Badges
-            HStack {
-                StormRiskBadgeView(level: stormRisk ?? .allClear)
-                    .placeholder(stormRisk == nil)
+        ScrollView {
+            VStack {
+                // Header
+                SummaryStatus(
+                    location: snap?.placemarkSummary ?? "Searching...",
+                    updatedAt: outlook?.published ?? Date()
+                )
+                .placeholder(outlook == nil || snap == nil)
+                
+                // Badges
+                HStack {
+                    StormRiskBadgeView(level: stormRisk ?? .allClear)
+                        .placeholder(stormRisk == nil)
+                    Spacer()
+                    SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
+                        .placeholder(severeRisk == nil)
+                }
+                .padding(.bottom, 5)
+                
+                // Alerts
+                if !mesos.isEmpty {
+                    ActiveAlertSummaryView(mesos: mesos)
+                        .toolbar(.hidden, for: .navigationBar)
+                        .background(.skyAwareBackground)
+                }
+                
+                // Current Outlook
+                if let outlook {
+                    OutlookSummaryCard(outlook: outlook)
+                }
                 Spacer()
-                SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
-                    .placeholder(severeRisk == nil)
             }
-            .padding(.bottom, 5)
-
-            // Alerts
-            if !mesos.isEmpty {
-                ActiveAlertSummaryView(mesos: mesos)
-                    .toolbar(.hidden, for: .navigationBar)
-                    .background(.skyAwareBackground)
-            }
-            
-            if let outlook {
-                OutlookSummaryCard(outlook: outlook)
-                //                    .placeholder(outlook == nil)
-            }
-            Spacer()
+            .padding()
         }
-        .padding()
+        .scrollContentBackground(.hidden)
+        .background(Color.skyAwareBackground.ignoresSafeArea())
+        .refreshable {
+            guard let snap else { return }
+            startRefreshTask(for: snap.coordinates)
+        }
         .task {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
             if let first = await locSvc.snapshot() {
@@ -104,7 +113,7 @@ struct SummaryView: View {
         riskRefreshTask?.cancel()
         riskRefreshTask = Task {
             do {
-                async let outlk = sync.getLatestConvectiveOutlook()
+                async let outlk = outlookSvc.getLatestConvectiveOutlook()
                 async let storm = svc.getStormRisk(for: coord)
                 async let severe = svc.getSevereRisk(for: coord)
                 async let meso = svc.getActiveMesos(at: .now, for: coord)
@@ -133,16 +142,6 @@ struct SummaryView: View {
     mdPreview.addExamples(ConvectiveOutlook.sampleOutlooks)
     let last = ConvectiveOutlook.sampleOutlooks.last!
     
-    let dto:ConvectiveOutlookDTO = .init(
-        title: "Outlook Test",
-        link: URL(string: "https://www.weather.gov/severe/outlook/test")!,
-        published: Date(),
-        summary: "Isolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast.",
-        fullText: "...SUMMARY... \nIsolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast.\n....20z UPDATE... \nThe only adjustment was a northward expansion of the 2% tornado and 5% wind risk probabilities across the far southwest WA coast. Recent imagery from KLGX shows a cluster of semi-discrete cells off the far southwest WA coast with weak, but discernible, mid-level rotation. Regional VWPs continue to show ample low-level shear, and surface temperatures are warming to near/slightly above the upper-end of the ensemble envelope. These kinematic/thermodynamic conditions may support at least a low-end wind and brief tornado threat along the coast.",
-        day: 1,
-        riskLevel: "mdt"
-    )
-    
     return NavigationStack {
         SummaryView(
             initialStormRisk: .slight,
@@ -153,7 +152,7 @@ struct SummaryView: View {
                 accuracy: 20,
                 placemarkSummary: "Bennett, CO"
             ),
-            initialOutlook: dto,
+            initialOutlook: ConvectiveOutlook.sampleOutlookDtos.first!,
             initialMesos: MD.sampleDiscussionDTOs
         )
         .toolbar(.hidden, for: .navigationBar)
@@ -163,6 +162,7 @@ struct SummaryView: View {
         .environment(\.riskQuery, spcMock)
         .environment(\.spcFreshness, spcMock)
         .environment(\.spcSync, spcMock)
+        .environment(\.outlookQuery, spcMock)
     }
 }
 
@@ -175,27 +175,14 @@ struct SummaryView: View {
     mdPreview.addExamples(ConvectiveOutlook.sampleOutlooks)
     let last = ConvectiveOutlook.sampleOutlooks.last!
     
-    let dto:ConvectiveOutlookDTO = .init(
-        title: "Outlook Test",
-        link: URL(string: "https://www.weather.gov/severe/outlook/test")!,
-        published: Date(),
-        summary: "Isolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast.",
-        fullText: "...SUMMARY... \nIsolated severe thunderstorms are possible through the day along the western Oregon and far northern California coastal region. Strong to locally severe gusts may accompany shallow convection that develops over parts of the Northeast.\n....20z UPDATE... \nThe only adjustment was a northward expansion of the 2% tornado and 5% wind risk probabilities across the far southwest WA coast. Recent imagery from KLGX shows a cluster of semi-discrete cells off the far southwest WA coast with weak, but discernible, mid-level rotation. Regional VWPs continue to show ample low-level shear, and surface temperatures are warming to near/slightly above the upper-end of the ensemble envelope. These kinematic/thermodynamic conditions may support at least a low-end wind and brief tornado threat along the coast.",
-        day: 1,
-        riskLevel: "mdt"
-    )
-    
     return NavigationStack {
         SummaryView(
-//            initialStormRisk: .slight,
-//            initialSevereRisk: .tornado(probability: 0.10),
             initialSnapshot: .init(
                 coordinates: .init(latitude: 39.75, longitude: -104.44),
                 timestamp: .now,
                 accuracy: 20,
                 placemarkSummary: "Bennett, CO"
-            ),
-//            initialOutlook: dto
+            )
         )
         .toolbar(.hidden, for: .navigationBar)
         .background(.skyAwareBackground)
@@ -204,5 +191,6 @@ struct SummaryView: View {
         .environment(\.riskQuery, spcMock)
         .environment(\.spcFreshness, spcMock)
         .environment(\.spcSync, spcMock)
+        .environment(\.outlookQuery, spcMock)
     }
 }

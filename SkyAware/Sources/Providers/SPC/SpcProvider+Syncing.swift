@@ -45,10 +45,6 @@ extension SpcProvider: SpcSyncing {
         }
     }
     
-    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
-        try await outlookRepo.current()
-    }
-    
     // MARK: Private methods
     private func publishConvectiveIssue(_ date: Date) {
         latestConvective = date

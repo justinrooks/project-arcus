@@ -13,7 +13,7 @@ import OSLog
 actor ConvectiveOutlookRepo {
     private let logger = Logger.convectiveRepo
     private let parser: RSSFeedParser = RSSFeedParser()
-    private let dtoParser: convictParser = convictParser()
+    private let outlookParser = OutlookParser()
     
     func refreshConvectiveOutlooks(using client: any SpcClient) async throws {
         let data = try await client.fetchRssData(for: .convective)
@@ -41,48 +41,47 @@ actor ConvectiveOutlookRepo {
         logger.debug("Parsed \(outlooks.count) outlook\(outlooks.count > 1 ? "s" : "") from SPC")
     }
     
-    func fetchConvectiveOutlooks() throws -> [ConvectiveOutlookDTO] {
-        let fetchDescriptor = FetchDescriptor<ConvectiveOutlook>()
-        let outlooks: [ConvectiveOutlook] = try modelContext.fetch(fetchDescriptor)
+    func fetchConvectiveOutlooks(for day:Int = 1) throws -> [ConvectiveOutlookDTO] {
+        let pred = #Predicate<ConvectiveOutlook> { outlook in
+            outlook.day == day
+        }
+        
+        let outlooks: [ConvectiveOutlook] = try modelContext.fetch(
+            FetchDescriptor<ConvectiveOutlook>(
+                predicate: pred,
+                sortBy: [.init(\.published,order: .reverse)]
+            )
+        )
+        
         let dtos = outlooks.map { ConvectiveOutlookDTO(title: $0.title,
                                                        link: $0.link,
                                                        published: $0.published,
                                                        summary: $0.summary,
-                                                       fullText: $0.summary,
+                                                       fullText: $0.fullText ?? "Full text not yet parsed",
                                                        day: $0.day,
-                                                       riskLevel: $0.riskLevel) }
+                                                       riskLevel: $0.riskLevel,
+                                                       issued: $0.issued,
+                                                       validUntil: $0.validUntil) }
         return dtos
     }
     
     func current() throws -> ConvectiveOutlookDTO? {
         var fetchDescriptor = FetchDescriptor<ConvectiveOutlook>(
-            // Optional: Add a predicate if you want to filter results before sorting
-            // predicate: #Predicate { $0.name == "Specific Name" },
-            
-            // 2. Sort by your date property in descending order
-            sortBy: [SortDescriptor(\.published, order: .reverse)]
+            sortBy: [.init(\.published, order: .reverse)]
         )
-        
-        // 3. Limit the fetch to only one result (the most recent)
         fetchDescriptor.fetchLimit = 1
         
         guard let outlook = try modelContext.fetch(fetchDescriptor).first else { return nil }
-        
-//        let t = ConvectiveOutlook.sampleOutlooks.last!
-        
-        let test: coDTO = dtoParser.makeDto(from: outlook)
-        
-        let y = ConvectiveParser.stripHeader(from: outlook.summary)
-        
-//        logger.debug(test.discussion)
-        
+
         return ConvectiveOutlookDTO(title: outlook.title,
                                     link: outlook.link,
                                     published: outlook.published,
-                                    summary: test.summary ?? "No summary found",
-                                    fullText: y,
+                                    summary: outlook.summary,
+                                    fullText: outlook.fullText ?? "Full text not yet parsed",
                                     day: outlook.day,
-                                    riskLevel: outlook.riskLevel)
+                                    riskLevel: outlook.riskLevel,
+                                    issued: outlook.issued,
+                                    validUntil: outlook.validUntil)
     }
     
     func purge(asOf now: Date = .init()) throws {
@@ -108,6 +107,7 @@ actor ConvectiveOutlookRepo {
         logger.info("Convective outlooks purged")
     }
     
+    // MARK: Helpers
     private func upsert(_ items: [ConvectiveOutlook]) throws {
         for item in items {
             modelContext.insert(item)
@@ -121,22 +121,29 @@ actor ConvectiveOutlookRepo {
             let linkString = rssItem.link,
             let link = URL(string: linkString),
             let pubDateString = rssItem.pubDate,
-            let summary = rssItem.description,
+            let fullText = rssItem.description,
             let published = DateFormatter.rfc822.date(from: pubDateString)
         else { return nil }
         
+        // Derived Properties
         let day = title.contains("Day 1") ? 1 :
-        title.contains("Day 2") ? 2 :
-        title.contains("Day 3") ? 3 : nil
+            title.contains("Day 2") ? 2 :
+            title.contains("Day 3") ? 3 : nil
         
-        let riskLevel = "TBD"//extractRiskLevel(from: summary)
+        let summary = outlookParser.extractSummary(fullText) ?? "Summary not found"
+        let issued = outlookParser.extractIssuedDate(fullText) ?? Date()
+        let validUntil = outlookParser.extractValidUntilDate(fullText) ?? Date()
+        let riskLevel:String? = outlookParser.extractRiskLevel(fullText)
         
         return ConvectiveOutlook(
             title: title,
             link: link,
             published: published,
+            fullText: fullText,
             summary: summary,
             day: day,
-            riskLevel: riskLevel)
+            riskLevel: riskLevel,
+            issued: issued,
+            validUntil: validUntil)
     }
 }

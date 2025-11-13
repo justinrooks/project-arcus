@@ -28,6 +28,7 @@ struct AppRootView: View {
             .environment(\.spcFreshness, spcProvider)
             .environment(\.spcSync, spcProvider)
             .environment(\.mapData, spcProvider)
+            .environment(\.outlookQuery, spcProvider)
             .environment(\.locationClient, makeLocationClient(provider: locationProv))
             .alert("Location Permission Needed",
                    isPresented: $showLocationPermissionAlert) {

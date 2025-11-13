@@ -68,7 +68,16 @@ private struct EmptyFreshness: SpcFreshnessPublishing {
             }
         }
     }
+}
+
+private struct EmptyOutlookQuerying: SpcOutlookQuerying {
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
+        assertionFailure("NOT INJECTED"); throw MissingError()
+    }
     
+    func getConvectiveOutlooks() async throws -> [ConvectiveOutlookDTO] {
+        assertionFailure("NOT INJECTED"); throw MissingError()
+    }
 }
 
 //private struct MissingSpcService: SpcService {
@@ -102,4 +111,5 @@ extension EnvironmentValues {
     @Entry var riskQuery: any SpcRiskQuerying = EmptyRiskQuerying()
     @Entry var spcSync: any SpcSyncing = EmptySyncing()
     @Entry var mapData: any SpcMapData = EmptyMapData()
+    @Entry var outlookQuery: any SpcOutlookQuerying = EmptyOutlookQuerying()
 }

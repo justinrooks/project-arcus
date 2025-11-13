@@ -7,6 +7,7 @@
 
 import Foundation
 
+@available(*, deprecated, message: "Use the OutlookParser instead")
 struct convictParser: Sendable {
     func makeDto(from item: ConvectiveOutlook) -> coDTO {
         let text = item.summary
@@ -86,6 +87,12 @@ struct convictParser: Sendable {
         pattern: #"\.\.\.\s*SUMMARY\s*\.\.\.\s*(?<summary>.*?)(?=(?:[\t\r\n ]*)\.\.\.|$)"#, options: RX.opts
     )
     
+    private let issuedExtractorRegex = try! NSRegularExpression(
+      pattern: #"(?i)Norman\s+OK(?:\s+|\\n+)(?<hhmm>\d{3,4})\s*(?<ampm>AM|PM)\s+(?<tz>C[SD]T)\s+(?<dow>Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(?<mon>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(?<day>\d{1,2})\s+(?<year>\d{4})"#
+//      options: nil
+    )
+    
+    
     private let discussionHeaderRegex = try! NSRegularExpression(
         pattern: #"^\s*(synopsis(?:\s+and\s+discussion)?|discussion)\s*$"#, options: RX.opts
     )
@@ -154,7 +161,8 @@ struct convictParser: Sendable {
     }
     
     private func extractIssued(_ text: String) -> String? {
-        issuedRegex.firstMatch(in: text)?.captured("issued", in: text)?.trimmed()
+        let x = issuedExtractorRegex.firstMatch(in: text)?.captured("issued", in: text)?.trimmed()
+        return x
     }
     
     private func extractAC(_ text: String) -> String? {
@@ -214,6 +222,7 @@ private extension String {
     }
 }
 
+@available(*, deprecated, message: "Use the OutlookParser instead")
 enum ConvectiveParser {
     static func getIssuedDate(from text: String) -> Date? {
         let issuedPattern = #"(?m)^\d{3,4} [AP]M [A-Z]{2,4} .+$"#

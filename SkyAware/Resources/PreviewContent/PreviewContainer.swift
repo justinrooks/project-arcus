@@ -52,7 +52,6 @@ struct Preview {
 extension MockSpcService: SpcSyncing {
     func sync() async {}
     func syncTextProducts() async {}
-    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {nil}
 }
 
 extension MockSpcService: SpcRiskQuerying {
@@ -82,6 +81,16 @@ extension MockSpcService: SpcFreshnessPublishing {
                 continuation.finish()
             }
         }
+    }
+}
+
+extension MockSpcService: SpcOutlookQuerying {
+    func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
+        ConvectiveOutlook.sampleOutlookDtos.last!
+    }
+    
+    func getConvectiveOutlooks() async throws -> [ConvectiveOutlookDTO] {
+        ConvectiveOutlook.sampleOutlookDtos
     }
 }
 
