@@ -35,12 +35,12 @@ struct ConvectiveOutlookDetailView: View {
                 
                 // 🕓 Metadata
                 if let issued = outlook.issued{
-                    Text("Issued: \(issued.toShortDateAndTime())")
+                    Text("Issued: \(issued.shorten())")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 if let until = outlook.validUntil{
-                    Text("Valid Until: \(until.toShortDateAndTime())")
+                    Text("Valid Until: \(until.shorten())")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

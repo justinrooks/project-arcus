@@ -166,7 +166,7 @@ struct SkyAwareApp: App {
                 Task {
                     let scheduler = BackgroundScheduler(refreshId: appRefreshID)
                     let next = refreshPolicy.getNextRunTime(for: .normal(60))
-                    logger.info("App entered background; attempting to schedule next app refresh proactively: \(next.toShortTime())")
+                    logger.info("App entered background; attempting to schedule next app refresh proactively: \(next.shorten(withDateStyle: .none))")
                     await scheduler.scheduleNextAppRefresh(nextRun: next)
                 }
             case .inactive: // Swallow inactive state

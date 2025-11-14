@@ -8,33 +8,23 @@
 import Foundation
 
 extension String {
+    // MARK: String to date converters
     /// Parses SPC/NWS date strings like "202508052000" (UTC) into a Date
     func asUTCDate() -> Date? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMddHHmm"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = .utc
         return formatter.date(from: self)
     }
     
     /// Parses an RFC1123 string into a Date
     func fromRFC1123String() -> Date? {
-        let format = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
-        return rfcConvert(self, format: format)
+        rfcConvert(self, format: "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'")
     }
     
     func fromRFC822() -> Date? {
-        let format = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        return rfcConvert(self, format: format)
+        rfcConvert(self, format: "EEE, dd MMM yyyy HH:mm:ss zzz")
     }
-    
-    private func rfcConvert(_ date: String, format: String) -> Date? {
-        let formatter = DateFormatter()
-        formatter.dateFormat = format
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .utc // TimeZone(secondsFromGMT: 0)
-        return formatter.date(from: date)
-    }
-    
     
     /// Parses a 6 digit day and time into a valid date object based on the current date
     /// - Parameter issueDate: 121630 where 12 is the day of the month and 1630 is the time
@@ -84,10 +74,16 @@ extension String {
         
         guard let localDate = formatter.date(from: self) else { return nil }
 
+        // This returns the UTC somehow already?
         return localDate
-//        // Convert to UTC
-//        let utcOffset = TimeInterval(tz.secondsFromGMT(for: localDate))
-//        let utcDate = localDate.addingTimeInterval(utcOffset)
-//        return utcDate
+    }
+    
+    // MARK: Helpers
+    private func rfcConvert(_ date: String, format: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = format
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .utc // TimeZone(secondsFromGMT: 0)
+        return formatter.date(from: date)
     }
 }

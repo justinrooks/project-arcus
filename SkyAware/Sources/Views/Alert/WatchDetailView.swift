@@ -21,7 +21,7 @@ struct WatchDetailView: View {
                     .multilineTextAlignment(.leading)
                 
                 // 🕓 Published Date
-                Text("Published: \(watch.issued.toShortDateAndTime())")
+                Text("Published: \(watch.issued.shorten())")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 

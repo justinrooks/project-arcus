@@ -31,7 +31,7 @@ struct OutlookRowView: View {
                         .minimumScaleFactor(0.9)
                     
                     if let issued = outlook.issued{
-                        Text("\(issued.toShortDateAndTime()) - \(issued.relativeDate())")
+                        Text("\(issued.shorten()) - \(issued.relativeDate())")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
