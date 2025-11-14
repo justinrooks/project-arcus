@@ -31,7 +31,7 @@ struct OutlookRowView: View {
                         .minimumScaleFactor(0.9)
                     
                     if let issued = outlook.issued{
-                        Text("\(formattedDate(issued)) - \(relativeDate(issued))")
+                        Text("\(issued.toShortDateAndTime()) - \(issued.relativeDate())")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -45,20 +45,6 @@ struct OutlookRowView: View {
 }
 
 extension OutlookRowView {
-    // 📆 Helper for formatting the date
-    func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-    
-    func relativeDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
-    }
-    
     func simplifyOutlookTitle(_ text: String) -> String? {
         let pattern = #"^SPC\s+\w+\s+\d{1,2},\s+\d{4}\s+(\d{4}) UTC (.+)$"#
         

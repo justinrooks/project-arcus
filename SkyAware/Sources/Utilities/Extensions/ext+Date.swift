@@ -1,22 +1,11 @@
 //
-//  ext+DateFormatter.swift
+//  ext+Date.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 8/5/25.
 //
 
 import Foundation
-
-
-extension DateFormatter {
-    static let rfc822: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        return formatter
-    }()
-}
 
 extension Date {
     func toRFC1123String() -> String {
@@ -34,6 +23,19 @@ extension Date {
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter.string(from: self)
+    }
+    // 📆 Helper for formatting the date
+    func toShortDateAndTime() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: self)
+    }
+    
+    func relativeDate() -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: self, relativeTo: Date())
     }
     
     func shortRelativeDescription(to referenceDate: Date = .now) -> String {

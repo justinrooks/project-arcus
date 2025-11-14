@@ -18,11 +18,21 @@ extension String {
     
     /// Parses an RFC1123 string into a Date
     func fromRFC1123String() -> Date? {
+        let format = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
+        return rfcConvert(self, format: format)
+    }
+    
+    func fromRFC822() -> Date? {
+        let format = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return rfcConvert(self, format: format)
+    }
+    
+    private func rfcConvert(_ date: String, format: String) -> Date? {
         let formatter = DateFormatter()
+        formatter.dateFormat = format
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
-        return formatter.date(from: self)
+        formatter.timeZone = .utc // TimeZone(secondsFromGMT: 0)
+        return formatter.date(from: date)
     }
     
     

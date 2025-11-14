@@ -73,7 +73,7 @@ actor WatchRepo {
             let link = URL(string: linkString),
             let pubDateString = rssItem.pubDate,
             let summary = rssItem.description,
-            let issued = DateFormatter.rfc822.date(from: pubDateString)
+            let issued = pubDateString.fromRFC822()
         else { return nil }
         
         let wwNumber = WatchParser.parseWatchNumber(from: link) ?? {

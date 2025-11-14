@@ -122,7 +122,7 @@ actor ConvectiveOutlookRepo {
             let link = URL(string: linkString),
             let pubDateString = rssItem.pubDate,
             let fullText = rssItem.description,
-            let published = DateFormatter.rfc822.date(from: pubDateString)
+            let published = pubDateString.fromRFC822()
         else { return nil }
         
         // Derived Properties

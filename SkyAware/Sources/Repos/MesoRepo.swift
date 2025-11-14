@@ -158,7 +158,7 @@ actor MesoRepo {
             let link = URL(string: linkString),
             let pubDateString = rssItem.pubDate,
             let rawText = rssItem.description, // SPC MD free text lives here in your feed
-            let issued = DateFormatter.rfc822.date(from: pubDateString)
+            let issued = pubDateString.fromRFC822()
         else { return nil }
 
         let mdNumber = MDParser.parseMDNumber(from: link) ?? {

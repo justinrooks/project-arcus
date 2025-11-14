@@ -8,8 +8,8 @@
 import SwiftUI
 
 struct ConvectiveOutlookView: View {
-    @Environment(\.outlookQuery) private var sync: any SpcOutlookQuerying
-    @Environment(\.spcSync) private var ss: any SpcSyncing
+    @Environment(\.outlookQuery) private var outlooks: any SpcOutlookQuerying
+    @Environment(\.spcSync) private var sync: any SpcSyncing
 
     @State private var dtos: [ConvectiveOutlookDTO] = []
     @State private var selectedOutlook: ConvectiveOutlookDTO?
@@ -33,9 +33,6 @@ struct ConvectiveOutlookView: View {
                             .padding(.horizontal)
                     }
                 }
-//                .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
-//                .listRowBackground(Color.clear)
-//                .listRowSeparator(.hidden)
             }
         }
         .navigationDestination(item: $selectedOutlook) { outlook in
@@ -46,8 +43,8 @@ struct ConvectiveOutlookView: View {
         .contentMargins(.top, 0, for: .scrollContent)
         .refreshable {
             Task {
-                await ss.syncTextProducts()
-                dtos = try await sync.getConvectiveOutlooks()
+                await sync.syncTextProducts()
+                dtos = try await outlooks.getConvectiveOutlooks()
             }
         }
         .task {
@@ -56,7 +53,7 @@ struct ConvectiveOutlookView: View {
                 return
             }
             
-            if let outlooks = try? await sync.getConvectiveOutlooks() {
+            if let outlooks = try? await outlooks.getConvectiveOutlooks() {
                 await MainActor.run { dtos = outlooks }
             }
         }

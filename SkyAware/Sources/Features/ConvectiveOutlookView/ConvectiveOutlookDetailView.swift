@@ -35,12 +35,12 @@ struct ConvectiveOutlookDetailView: View {
                 
                 // 🕓 Metadata
                 if let issued = outlook.issued{
-                    Text("Issued: \(formattedDate(issued))")
+                    Text("Issued: \(issued.toShortDateAndTime())")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
                 if let until = outlook.validUntil{
-                    Text("Valid Until: \(formattedDate(until))")
+                    Text("Valid Until: \(until.toShortDateAndTime())")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }
@@ -81,14 +81,6 @@ struct ConvectiveOutlookDetailView: View {
 }
 
 extension ConvectiveOutlookDetailView {
-    // 📆 Helper for formatting the date
-    func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
-    }
-    
     // 🌈 Optional: color code by risk level
     func colorForRisk(_ risk: String) -> Color {
         switch risk.uppercased() {

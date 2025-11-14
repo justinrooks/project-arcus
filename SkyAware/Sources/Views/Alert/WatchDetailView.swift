@@ -21,7 +21,7 @@ struct WatchDetailView: View {
                     .multilineTextAlignment(.leading)
                 
                 // 🕓 Published Date
-                Text("Published: \(formattedDate(watch.issued))")
+                Text("Published: \(watch.issued.toShortDateAndTime())")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
@@ -92,13 +92,6 @@ struct WatchDetailView: View {
         }
         .navigationTitle("Watch Detail")
         .navigationBarTitleDisplayMode(.inline)
-    }
-    
-    private func formattedDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
     }
     
     private func parseKeyThreats(from text: String) -> [ThreatItem]? {
