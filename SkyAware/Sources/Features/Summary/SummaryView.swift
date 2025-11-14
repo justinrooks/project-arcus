@@ -140,7 +140,6 @@ struct SummaryView: View {
     
     mdPreview.addExamples(MD.sampleDiscussions)
     mdPreview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    let last = ConvectiveOutlook.sampleOutlooks.last!
     
     return NavigationStack {
         SummaryView(
@@ -173,7 +172,6 @@ struct SummaryView: View {
     
     mdPreview.addExamples(MD.sampleDiscussions)
     mdPreview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    let last = ConvectiveOutlook.sampleOutlooks.last!
     
     return NavigationStack {
         SummaryView(

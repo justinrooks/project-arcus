@@ -95,9 +95,7 @@ extension ConvectiveOutlookDetailView {
 }
 
 #Preview {
-    let preview = Preview(ConvectiveOutlook.self)
-    
-    return NavigationStack {
+    NavigationStack {
         ConvectiveOutlookDetailView(outlook: ConvectiveOutlook.sampleOutlookDtos[0])
             .navigationTitle("Outlook Details")
             .navigationBarTitleDisplayMode(.inline)

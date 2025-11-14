@@ -62,7 +62,7 @@ extension OutlookRowView {
         }
         
         let time = group(1)     // "1630"
-        let rest = group(2)     // "Day 1 Convective Outlook"
+        //let rest = group(2)     // "Day 1 Convective Outlook"
         
 //        return "\(time)z \(rest)"
         return "\(time)z Outlook"

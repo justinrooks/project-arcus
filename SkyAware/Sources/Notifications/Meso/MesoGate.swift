@@ -18,10 +18,10 @@ struct MesoGate: NotificationGate {
     
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
         logger.debug("Checking meso notification gate")
-        guard let day = event.payload["localDay"] as? String else {
-            logger.debug("Gate missing 'localDay' parameter")
-            return false
-        }
+//        guard let day = event.payload["localDay"] as? String else {
+//            logger.debug("Gate missing 'localDay' parameter")
+//            return false
+//        }
         
         guard let mesoId = event.payload["mesoId"] as? String else {
             logger.debug("Gate missing 'mesoId' parameter")

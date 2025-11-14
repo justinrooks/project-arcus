@@ -178,9 +178,7 @@ extension MesoscaleDiscussionCard {
 // MARK: - Preview
 
 #Preview {
-    let preview = Preview(MD.self)
-    
-    return NavigationStack {
+    NavigationStack {
         MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .full)
     }
 }

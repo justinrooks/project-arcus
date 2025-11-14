@@ -133,8 +133,6 @@ struct WatchDetailView: View {
 }
 
 #Preview {
-    let preview = Preview(WatchModel.self)
-    
     NavigationStack {
         WatchDetailView(watch: WatchModel.sampleWatches[0])
     }
