@@ -47,7 +47,52 @@ extension MD {
                 validStart: Calendar.current.date(byAdding: .minute, value: 60, to: Date())!,
                 validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
                 areasAffected: "Western SD, northeast WY, far southeast MT",
-                summary: "test",
+                summary: """
+                    Mesoscale Discussion 1824
+                       NWS Storm Prediction Center Norman OK
+                       0247 PM CDT Mon Jul 28 2025
+                            Areas affected...parts of south central and southeastern South
+                       Dakota...adjacent north central Nebraska
+                            Concerning...Severe Thunderstorm Watch 580...
+                            Valid 281947Z - 282145Z
+                            Probability of Watch Issuance...60 percent
+                            SUMMARY...Scattered, intensifying thunderstorm development, posing a
+                       risk for a few strong downbursts and perhaps some hail, appears
+                       possible by 4-6 PM CDT.  Timing of a potential severe weather watch
+                       issuance remains unclear, but trends are being monitored for this
+                       possibility.
+                            DISCUSSION...A surface cold front, now advancing south of Pierre,
+                       Philip and Rapid City is becoming better defined, with strengthening
+                       differential heating along and ahead of it, centered near the
+                       western South Dakota/Nebraska state border northeastward across the
+                       Winner toward Huron vicinities.  While temperatures are approaching
+                       100 F within the corridor of stronger boundary-layer heating,
+                       surface dew points have been slower to mix below 70F, and through
+                       the 60s F, than suggested by model forecast soundings at Winner and
+                       Valentine.  Even so, latest objective analysis suggests that the
+                       pre- and post-cold frontal boundary layer remains strongly capped
+                       beneath the warm and elevated mixed-layer air as far north as the
+                       North/South Dakota state border vicinity.
+                            Mid/upper support for sustained boundary-layer based convection
+                       anytime soon remains unclear, although it appears possible that a
+                       subtle perturbation progressing across and east-northeast of the
+                       Black Hills is contributing to ongoing attempts at convective
+                       development.  It appears more probable that with further insolation,
+                       continued heating and deeper mixing within the pre-frontal
+                       boundary-layer may eventually support intensifying, high-based
+                       thunderstorm development late this afternoon.  In the presence of
+                       strong deep-layer shear, this activity could pose a risk for severe
+                       hail and increasing potential for strong downbursts into early
+                       evening.
+                            ..Kerr/Thompson.. 07/28/2025
+                            ...Please see www.spc.noaa.gov for graphic product...
+                            ATTN...WFO...FSD...ABR...LBF...UNR...
+                            LAT...LON   43370091 44049966 44449790 43689659 43239776 42699886
+                                   42500075 43370091
+                            MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH
+                       MOST PROBABLE PEAK WIND GUST...65-80 MPH
+                       MOST PROBABLE PEAK HAIL SIZE...1.50-2.50 IN
+                    """,
                 concerning: "Concerning...Severe Thunderstorm Watch 580...",
                 watchProbability: "20",
                 threats: MDThreats(peakWindMPH: 70, hailRangeInches: 3.5, tornadoStrength: "Up to 95mph"),
@@ -216,7 +261,52 @@ extension MD {
                 validStart: Calendar.current.date(byAdding: .minute, value: 60, to: Date())!,
                 validEnd: Calendar.current.date(byAdding: .hour, value: 2, to: Date())!,
                 areasAffected: "Western SD, northeast WY, far southeast MT",
-                summary: "test",
+                summary: """
+                    Mesoscale Discussion 1824
+                       NWS Storm Prediction Center Norman OK
+                       0247 PM CDT Mon Jul 28 2025
+                            Areas affected...parts of south central and southeastern South
+                       Dakota...adjacent north central Nebraska
+                            Concerning...Severe Thunderstorm Watch 580...
+                            Valid 281947Z - 282145Z
+                            Probability of Watch Issuance...60 percent
+                            SUMMARY...Scattered, intensifying thunderstorm development, posing a
+                       risk for a few strong downbursts and perhaps some hail, appears
+                       possible by 4-6 PM CDT.  Timing of a potential severe weather watch
+                       issuance remains unclear, but trends are being monitored for this
+                       possibility.
+                            DISCUSSION...A surface cold front, now advancing south of Pierre,
+                       Philip and Rapid City is becoming better defined, with strengthening
+                       differential heating along and ahead of it, centered near the
+                       western South Dakota/Nebraska state border northeastward across the
+                       Winner toward Huron vicinities.  While temperatures are approaching
+                       100 F within the corridor of stronger boundary-layer heating,
+                       surface dew points have been slower to mix below 70F, and through
+                       the 60s F, than suggested by model forecast soundings at Winner and
+                       Valentine.  Even so, latest objective analysis suggests that the
+                       pre- and post-cold frontal boundary layer remains strongly capped
+                       beneath the warm and elevated mixed-layer air as far north as the
+                       North/South Dakota state border vicinity.
+                            Mid/upper support for sustained boundary-layer based convection
+                       anytime soon remains unclear, although it appears possible that a
+                       subtle perturbation progressing across and east-northeast of the
+                       Black Hills is contributing to ongoing attempts at convective
+                       development.  It appears more probable that with further insolation,
+                       continued heating and deeper mixing within the pre-frontal
+                       boundary-layer may eventually support intensifying, high-based
+                       thunderstorm development late this afternoon.  In the presence of
+                       strong deep-layer shear, this activity could pose a risk for severe
+                       hail and increasing potential for strong downbursts into early
+                       evening.
+                            ..Kerr/Thompson.. 07/28/2025
+                            ...Please see www.spc.noaa.gov for graphic product...
+                            ATTN...WFO...FSD...ABR...LBF...UNR...
+                            LAT...LON   43370091 44049966 44449790 43689659 43239776 42699886
+                                   42500075 43370091
+                            MOST PROBABLE PEAK TORNADO INTENSITY...UP TO 95 MPH
+                       MOST PROBABLE PEAK WIND GUST...65-80 MPH
+                       MOST PROBABLE PEAK HAIL SIZE...1.50-2.50 IN
+                    """,
                 concerning: "Concerning...Severe Thunderstorm Watch 580...",
                 watchProbability: "20",
                 threats: MDThreats(peakWindMPH: 70, hailRangeInches: 3.5, tornadoStrength: "Up to 95mph"),

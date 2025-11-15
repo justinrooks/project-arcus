@@ -34,28 +34,57 @@ extension View {
     }
     
     func cardBackground(
-            cornerRadius: CGFloat = 16,
-            shadowOpacity: Double = 0.22,
-            shadowRadius: CGFloat = 16,
-            shadowY: CGFloat = 6
-        ) -> some View {
-            self.modifier(
-                CardBackground(
-                    cornerRadius: cornerRadius,
-                    shadowOpacity: shadowOpacity,
-                    shadowRadius: shadowRadius,
-                    shadowY: shadowY
-                )
+        cornerRadius: CGFloat = 16,
+        shadowOpacity: Double = 0.22,
+        shadowRadius: CGFloat = 16,
+        shadowY: CGFloat = 6
+    ) -> some View {
+        self.modifier(
+            CardBackground(
+                cornerRadius: cornerRadius,
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
             )
-        }
+        )
+    }
     
     func cardRowBackground() -> some View {
-            self
-                .cardBackground()
-//                .padding(.vertical, 4)
-//                .padding(.horizontal, 8)
-                .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
+        self
+            .cardBackground()
+        //                .padding(.vertical, 4)
+        //                .padding(.horizontal, 8)
+            .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
+    }
+    
+    func mesoscaleCardChrome(for layout: DetailLayout) -> some View {
+        let cornerRadius: CGFloat = 16
+        let hPad: CGFloat = layout == .sheet ? 16 : 18
+        let vPad: CGFloat = layout == .sheet ? 12 : 24
+        let shadowOpacity: Double = layout == .full ? 0.10 : 0
+        
+        switch layout {
+        case .sheet:
+            return AnyView(
+                self
+                    .padding(.horizontal, hPad)
+                    .padding(.vertical, vPad)
+                    .background() {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .fill(.cardBackground)
+                            .shadow(color: Color.black.opacity(shadowOpacity), radius: 12, x: 0, y: 5)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                )
+        case .full:
+            return AnyView(
+                self
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 24)
+            )
         }
+    }
 }

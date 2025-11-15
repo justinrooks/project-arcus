@@ -15,7 +15,7 @@ struct KeyValueRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(key).labelStyle()
-                .frame(width: 128, alignment: .leading)
+                .frame(width: 75, alignment: .leading)
             Text(value).valueStyle(multiline: true)
             Spacer(minLength: 0)
         }

@@ -88,7 +88,28 @@ struct AlertView: View {
         }
         .navigationDestination(item: $selectedMeso) { meso in
             // TODO: Need to get a MdDTO here to pass to the discussion card.
-            //            MesoscaleDiscussionCard(meso: meso)
+            let tempDto = MdDTO(number: meso.number,
+                                title: meso.title,
+                                link: meso.link,
+                                issued: meso.issued,
+                                validStart: meso.validStart,
+                                validEnd: meso.validEnd,
+                                areasAffected: meso.areasAffected,
+                                summary: meso.summary,
+                                watchProbability: meso.watchProbability,
+                                threats: meso.threats ?? nil,
+                                coordinates:meso.coordinates
+            )
+            ScrollView {
+                MesoscaleDiscussionCard(meso: tempDto, layout: .full)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+            }
+            .navigationTitle("SPC MD \(tempDto.number, format: .number.grouping(.never))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
         }
         .contentMargins(.top, 0, for: .scrollContent)
         .refreshable {

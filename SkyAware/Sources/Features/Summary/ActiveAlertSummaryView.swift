@@ -41,19 +41,31 @@ struct ActiveAlertSummaryView: View {
                 .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 3)
         )
         .sheet(item: $selectedMeso) { meso in
-            VStack {
+            NavigationStack {
                 ScrollView {
-                    MesoscaleDiscussionCard(meso: meso,
-                                            layout: .sheet)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 25)
-                    Spacer()
+                    MesoscaleDiscussionCard(meso: meso, layout: .sheet)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 6)
                 }
+                .background(.skyAwareBackground)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .navigationTitle("Mesoscale Discussion")
+                .navigationBarTitleDisplayMode(.inline)
             }
-            .presentationDetents([.fraction(0.5)])
-            .presentationDragIndicator(.visible)
-            .presentationCornerRadius(24)
-            .presentationBackground(.regularMaterial)
+//            VStack {
+//                ScrollView {
+//                    MesoscaleDiscussionCard(meso: meso,
+//                                            layout: .sheet)
+//                    .padding(.horizontal, 16)
+//                    .padding(.vertical, 25)
+//                    Spacer()
+//                }
+//            }
+//            .presentationDetents([.fraction(0.5)])
+//            .presentationDragIndicator(.visible)
+//            .presentationCornerRadius(24)
+//            .presentationBackground(.regularMaterial)
         }
     }
 }
