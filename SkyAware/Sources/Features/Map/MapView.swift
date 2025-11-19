@@ -47,7 +47,7 @@ struct MapView: View {
                 }
                 .transition(.opacity)
                 .animation(.default, value: selected)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
                 .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)

@@ -47,27 +47,12 @@ enum SevereWeatherThreat: Comparable, Codable {
     }
     
     func iconColor(for colorScheme: ColorScheme) -> LinearGradient {
-        let colors: [Color]
         switch self {
-        case .allClear:
-            colors = colorScheme == .dark
-            ? [.green.opacity(0.4), .green.darken()]
-            : [.green.opacity(0.2), .green]
-        case .wind:
-            colors = colorScheme == .dark
-            ? [Color.windTeal.opacity(0.6), .teal.darken()]
-            : [Color.windTeal.opacity(0.3), .teal]
-        case .hail:
-            colors = colorScheme == .dark
-            ? [Color.hailBlue.opacity(0.6), .blue.darken()]
-            : [Color.hailBlue.opacity(0.3), .blue]
-        case .tornado:
-            colors = colorScheme == .dark
-            ? [Color.tornadoRed.opacity(0.6), .red.darken()]
-            : [Color.tornadoRed.opacity(0.5), .red]
+        case .allClear: return Color.riskAllClear.tileGradient(for: colorScheme)
+        case .wind: return Color.windTeal.tileGradient(for: colorScheme)
+        case .hail: return Color.hailBlue.tileGradient(for: colorScheme)
+        case .tornado: return Color.tornadoRed.tileGradient(for: colorScheme)
         }
-        
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
     
     var message: String {

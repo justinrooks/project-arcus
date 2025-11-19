@@ -12,7 +12,7 @@ import SwiftUI
 enum MapLayer: String, CaseIterable, Identifiable, Sendable {
     case categorical, wind, hail, tornado, meso
     var id: String { rawValue }
-
+    
     var title: String {
         switch self {
         case .categorical: return "Categorical"
@@ -32,7 +32,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .meso:        return "MESO"
         }
     }
-
+    
     /// SF Symbols chosen to read well inside a square tile
     var symbol: String {
         switch self {
@@ -43,23 +43,16 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .meso:        return "binoculars.fill"
         }
     }
-
+    
     /// Simple gradient per layer; tweak colors to match your branding
     func gradient(for scheme: ColorScheme) -> LinearGradient {
-        let colors: [Color]
         switch self {
-        case .categorical:
-            colors = scheme == .dark ? [.green.opacity(0.4), .green.darken()] : [.green.opacity(0.2), .green]
-        case .wind:
-            colors = scheme == .dark ? [Color.windTeal.opacity(0.6), .teal.darken()] : [Color.windTeal.opacity(0.3), .teal]
-        case .hail:
-            colors = scheme == .dark ? [Color.hailBlue.opacity(0.6), .blue.darken()] : [Color.hailBlue.opacity(0.3), .blue]
-        case .tornado:
-            colors = scheme == .dark ? [Color.tornadoRed.opacity(0.6), .red.darken()] : [Color.tornadoRed.opacity(0.5), .red]
-        case .meso:
-            colors = scheme == .dark ? [.indigo.opacity(0.6), .indigo.darken()] : [.indigo.opacity(0.5), .indigo]
+        case .categorical: return Color.riskThunderstorm.tileGradient(for: scheme)
+        case .wind: return Color.windTeal.tileGradient(for: scheme)
+        case .hail: return Color.hailBlue.tileGradient(for: scheme)
+        case .tornado: return Color.tornadoRed.tileGradient(for: scheme)
+        case .meso: return Color.mesoPurple.tileGradient(for: scheme)
         }
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
@@ -77,7 +70,7 @@ struct LayerTile: View {
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }) {
             VStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                     .fill(layer.gradient(for: scheme))
                     .overlay(
                         Image(systemName: layer.symbol).formatBadgeImage()
@@ -85,7 +78,7 @@ struct LayerTile: View {
                     .frame(width: 80, height: 80)
                     .overlay(
                         // selection ring
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                             .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
                     )
                     .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.2), radius: 6, y: 3)

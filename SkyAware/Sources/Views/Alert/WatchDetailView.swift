@@ -9,7 +9,6 @@ import SwiftUI
 
 struct WatchDetailView: View {
     let watch: WatchModel
-    @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded = false
     
     var body: some View {
@@ -21,7 +20,7 @@ struct WatchDetailView: View {
                     .multilineTextAlignment(.leading)
                 
                 // 🕓 Published Date
-                Text("Published: \(watch.issued.shorten())")
+                Text("Issued: \(watch.issued.shorten())")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 
@@ -53,9 +52,10 @@ struct WatchDetailView: View {
                     }
                     .padding()
                     .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(colorScheme == .dark ? Color(.secondarySystemBackground) : Color(.systemGray6))
+                        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
+                            .fill(.cardBackground)
                     )
+                    .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
                 }
                 
                 // 📝 Full Discussion (DisclosureGroup)
@@ -66,24 +66,23 @@ struct WatchDetailView: View {
                         
                         Text(watch.summary)
                             .font(.body)
-                            .foregroundColor(.primary)
+                            .foregroundStyle(.secondary)
                             .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 4)
                     }
                 } label: {
-                    Text("Full Detail")
+                    Text("Full Discussion")
                         .font(.headline)
                 }
                 
                 
                 // 🔗 Link Button
                 Link(destination: watch.link) {
-                    Label("Read Full Watch Details", systemImage: "link")
-                        .font(.headline)
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.accentColor.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Label("Open on SPC", systemImage: "arrow.up.right.square")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
                 }
                 
                 Spacer(minLength: 40)

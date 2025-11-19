@@ -87,34 +87,14 @@ enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
     /// - Parameter colorScheme: light or dark mode
     /// - Returns: a linear gradient to apply to the ui
     func iconColor(for colorScheme: ColorScheme) -> LinearGradient {
-        let colors: [Color]
         switch self {
-        case .allClear, .thunderstorm:
-            colors = colorScheme == .dark
-            ? [.green.opacity(0.4), .green.darken()]
-            : [.green.opacity(0.2), .green]
-        case .marginal:
-            colors = colorScheme == .dark
-            ? [Color(hue: 0.33, saturation: 0.3, brightness: 0.5), .green.darken()]
-            : [Color(hue: 0.33, saturation: 0.5, brightness: 0.8), .green]
-        case .slight:
-            colors = colorScheme == .dark
-            ? [Color(hue: 0.15, saturation: 0.5, brightness: 0.6), .yellow.darken()]
-            : [Color.yellow.opacity(0.3), .yellow]
-        case .enhanced:
-            colors = colorScheme == .dark
-            ? [.orange.opacity(0.6), .orange.darken()]
-            : [.orange.opacity(0.4), .orange]
-        case .moderate:
-            colors = colorScheme == .dark
-            ? [.red.opacity(0.6), .red.darken()]
-            : [.red.opacity(0.5), .red]
-        case .high:
-            colors = colorScheme == .dark
-            ? [.purple.opacity(0.6), .purple.darken()]
-            : [.purple.opacity(0.5), .purple]
+        case .allClear: return Color.riskAllClear.tileGradient(for: colorScheme)
+        case .thunderstorm: return Color.riskThunderstorm.tileGradient(for: colorScheme)
+        case .marginal: return Color.riskMarginal.tileGradient(for: colorScheme)
+        case .slight:return Color.riskSlight.tileGradient(for: colorScheme)
+        case .enhanced: return Color.riskEnhanced.tileGradient(for: colorScheme)
+        case .moderate: return Color.riskModerate.tileGradient(for: colorScheme)
+        case .high: return Color.riskHigh.tileGradient(for: colorScheme)
         }
-        
-        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }

@@ -64,7 +64,7 @@ struct ConvectiveOutlookDetailView: View {
                         .padding()
                         .frame(maxWidth: .infinity)
                         .background(Color.accentColor.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
                         .accentColor(.teal)
                 }
                 

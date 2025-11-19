@@ -11,11 +11,14 @@ extension View {
     func badgeStyle(background: LinearGradient) -> some View {
         self
             .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
-                   minHeight: 130, idealHeight: 145, maxHeight: 145)
+                   minHeight: 150, idealHeight: 150, maxHeight: 160)
             .aspectRatio(1, contentMode: .fit)
             .padding()
+//            .background(
+//                background, in: .rect(cornerRadius: 30, style: .continuous)
+//            )
             .background(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                     .fill(background)
                     .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
             )
@@ -34,9 +37,9 @@ extension View {
     }
     
     func cardBackground(
-        cornerRadius: CGFloat = 16,
+        cornerRadius: CGFloat = 30,
         shadowOpacity: Double = 0.22,
-        shadowRadius: CGFloat = 16,
+        shadowRadius: CGFloat = 30,
         shadowY: CGFloat = 6
     ) -> some View {
         self.modifier(
@@ -60,7 +63,7 @@ extension View {
     }
     
     func mesoscaleCardChrome(for layout: DetailLayout) -> some View {
-        let cornerRadius: CGFloat = 16
+        let cornerRadius: CGFloat = SkyAwareRadius.medium
         let hPad: CGFloat = layout == .sheet ? 16 : 18
         let vPad: CGFloat = layout == .sheet ? 12 : 24
         let shadowOpacity: Double = layout == .full ? 0.10 : 0

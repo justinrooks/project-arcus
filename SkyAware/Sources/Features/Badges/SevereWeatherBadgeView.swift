@@ -26,7 +26,7 @@ struct SevereWeatherBadgeView: View {
 }
 
 #Preview {
-    Group {
+    VStack {
         HStack {
             SevereWeatherBadgeView(threat: .allClear)
             SevereWeatherBadgeView(threat: .wind(probability: 0.15))
@@ -37,4 +37,5 @@ struct SevereWeatherBadgeView: View {
                 .preferredColorScheme(.dark)
         }
     }
+    .background(.skyAwareBackground)
 }

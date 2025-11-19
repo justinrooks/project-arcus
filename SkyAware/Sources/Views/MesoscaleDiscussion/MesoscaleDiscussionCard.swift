@@ -29,18 +29,18 @@ struct MesoscaleDiscussionContent: View {
             probability
             primaryThreat
             footer
-            if layout == .full {
-                Divider().opacity(0.12)
-                Section(header: Text("Full Discussion")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)) {
-                        Text(meso.summary)
-                            .font(.callout.monospaced())
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.top, 12)
-            }
+//            if layout == .full {
+//                Divider().opacity(0.12)
+//                Section(header: Text("Full Discussion")
+//                    .font(.headline)
+//                    .frame(maxWidth: .infinity, alignment: .leading)) {
+//                        Text(meso.summary)
+//                            .font(.callout.monospaced())
+//                            .foregroundStyle(.secondary)
+//                            .fixedSize(horizontal: false, vertical: true)
+//                    }
+//                    .padding(.top, 12)
+//            }
         }
     }
     
@@ -68,7 +68,7 @@ struct MesoscaleDiscussionContent: View {
     }
     
     private var pairs: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if layout == .sheet { KeyValueRow(key: "Areas affected", value: meso.areasAffected) }
             KeyValueRow(key: "Valid", value: "\(meso.validStart.shorten()) – \(meso.validEnd.shorten())")
         }
@@ -80,7 +80,7 @@ struct MesoscaleDiscussionContent: View {
             .padding(.vertical, 8)
             .padding(.horizontal, 6)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.secondary.opacity(0.04)))
+                RoundedRectangle(cornerRadius: SkyAwareRadius.small, style: .continuous).fill(Color.primary.opacity(0.04)))
     }
     
     private var probability: some View {
@@ -90,12 +90,19 @@ struct MesoscaleDiscussionContent: View {
                     .font(.subheadline)
                 Spacer()
                 
-                Text("\(meso.watchProbability)%")
-                    .font(.subheadline.weight(.semibold))
+                let watchInt = Int(meso.watchProbability) ?? 0
+                if watchInt > 0 {
+                    Text("\(watchInt)%")
+                        .font(.subheadline.weight(.semibold))
+                } else {
+                    Text("—")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             // TODO: Make watchProbability a number in the DTO
-            WatchProbabilityBar(progress: Double(meso.watchProbability) ?? 0 / 100.0)
+            WatchProbabilityBar(progress: (Double(meso.watchProbability) ?? 0) / 1)
                 .frame(height: 8)
                 .clipShape(Capsule())
         }
@@ -125,7 +132,7 @@ struct MesoscaleDiscussionContent: View {
                     GridRow {
                         Text("Hail:").labelStyle()
                         Text(meso.threats?.hailRangeInches.map {
-                            String(format: "up to %.2g in", $0)
+                            String(format: "Up to %.2g in", $0)
                         } ?? "—").valueStyle()
                     }
                     GridRow {
@@ -154,7 +161,7 @@ struct MesoscaleDiscussionContent: View {
         Link(destination: meso.link) {
             Label("Open on SPC", systemImage: "arrow.up.right.square")
                 .font(.footnote.weight(.semibold))
-                .foregroundColor(.secondary)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -181,10 +188,10 @@ extension MesoscaleDiscussionContent {
             return "Primary threat: Tornado (\(t))"
         }
         if let hail = threats.hailRangeInches {
-            return "Primary threat: Large hail (up to \(hail) in)"
+            return "Primary threat: Large hail (Up to \(hail) in)"
         }// String(format: "Primary threat: Large hail (%.2g–%.2g in)", hail, hail) }
         if let wind = threats.peakWindMPH {
-            return "Primary threat: Wind (up to \(wind) mph)"
+            return "Primary threat: Wind (Up to \(wind) mph)"
         }
         return nil
     }

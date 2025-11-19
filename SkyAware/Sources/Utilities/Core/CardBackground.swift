@@ -8,15 +8,15 @@
 import SwiftUI
 
 struct CardBackground: ViewModifier {
-    var cornerRadius: CGFloat = 16
+    var cornerRadius: CGFloat = SkyAwareRadius.medium
     var shadowOpacity: Double = 0.12
-    var shadowRadius: CGFloat = 16
+    var shadowRadius: CGFloat = SkyAwareRadius.medium
     var shadowY: CGFloat = 6
 
     func body(content: Content) -> some View {
         content
             .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.cardBackground)
                     .background(
                         RoundedRectangle(cornerRadius: cornerRadius)

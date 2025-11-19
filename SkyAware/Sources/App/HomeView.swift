@@ -28,7 +28,8 @@ struct HomeView: View {
                         .background(.skyAwareBackground)
 //                    Spacer()
                 }
-                .tabItem { Label("Overview", systemImage: "gauge.with.needle.fill") }
+                .tabItem { Label("Today", systemImage: "clock.arrow.trianglehead.2.counterclockwise.rotate.90") //gauge.with.needle.fill
+                }
                 
                 NavigationStack {
                     AlertView()

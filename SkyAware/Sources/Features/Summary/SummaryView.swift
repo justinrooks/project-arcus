@@ -63,18 +63,20 @@ struct SummaryView: View {
                     SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
                         .placeholder(severeRisk == nil)
                 }
-                .padding(.bottom, 5)
+                .padding(.vertical, 24)
                 
                 // Alerts
                 if !mesos.isEmpty {
                     ActiveAlertSummaryView(mesos: mesos)
                         .toolbar(.hidden, for: .navigationBar)
                         .background(.skyAwareBackground)
+                        .padding(.bottom, 12)
                 }
                 
                 // Current Outlook
                 if let outlook {
                     OutlookSummaryCard(outlook: outlook)
+                        .padding(.bottom, 12)
                 }
                 Spacer()
             }

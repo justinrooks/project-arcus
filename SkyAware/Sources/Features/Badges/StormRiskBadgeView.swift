@@ -25,7 +25,7 @@ struct StormRiskBadgeView: View {
 }
 
 #Preview {
-    Group {
+    VStack {
         HStack {
             StormRiskBadgeView(level: .allClear)
             StormRiskBadgeView(level: .thunderstorm)
@@ -42,5 +42,5 @@ struct StormRiskBadgeView: View {
             StormRiskBadgeView(level: .high)
                 .preferredColorScheme(.dark)
         }
-    }
+    }.background(.skyAwareBackground)
 }

@@ -36,7 +36,7 @@ struct ActiveAlertSummaryView: View {
         }
         .padding()
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                 .fill(.cardBackground)
                 .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 3)
         )
