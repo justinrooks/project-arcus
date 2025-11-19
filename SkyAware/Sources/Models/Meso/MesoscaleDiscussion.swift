@@ -44,7 +44,7 @@ final class MD: AlertItem {
             areasAffected: dto.areasAffected,
             summary: dto.summary,
             concerning: dto.concerning,
-            watchProbability: dto.watchProbability,
+            watchProbability: String(dto.watchProbability),
             threats: dto.threats,
             coordinates: dto.coordinates,
             alertType: .mesoscale

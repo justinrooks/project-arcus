@@ -20,7 +20,7 @@ struct MdDTO: Sendable, Identifiable {
     let summary: String         // description / CDATA
     let concerning: String?     // e.g. "Severe potential... Watch unlikely"
     
-    let watchProbability: String
+    let watchProbability: Double
     let threats: MDThreats?
     let coordinates: [Coordinate2D]
     
@@ -35,7 +35,7 @@ struct MdDTO: Sendable, Identifiable {
         self.areasAffected = areasAffected
         self.summary = summary
         self.concerning = concerning
-        self.watchProbability = watchProbability
+        self.watchProbability = Double(watchProbability) ?? 0
         self.threats = threats
         self.coordinates = coordinates
     }
