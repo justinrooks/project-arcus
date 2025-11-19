@@ -20,57 +20,72 @@ struct MesoscaleDiscussionContent: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
-            header
+            SpcProductHeader(title: "Mesoscale Discussion", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: "MD 1913", inZone: false)
+            
             Divider().opacity(0.12)
-            pairs
+            
+            if layout == .sheet { pairs }
+
             if let concerning = meso.concerning {
                 contextNote(concerning)
             }
+            
             probability
             primaryThreat
-            footer
-//            if layout == .full {
-//                Divider().opacity(0.12)
-//                Section(header: Text("Full Discussion")
-//                    .font(.headline)
-//                    .frame(maxWidth: .infinity, alignment: .leading)) {
-//                        Text(meso.summary)
-//                            .font(.callout.monospaced())
-//                            .foregroundStyle(.secondary)
-//                            .fixedSize(horizontal: false, vertical: true)
-//                    }
-//                    .padding(.top, 12)
-//            }
+
+            SpcProductFooter(link: meso.link, validEnd: meso.validEnd)
+            
+            if layout == .full {
+                Divider().opacity(0.12)
+                Section(header: Text("Full Discussion")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, alignment: .leading)) {
+                        Text(meso.summary)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 12)
+            }
         }
     }
     
     // MARK: - Sections
-    private var header: some View {
-        VStack(alignment: .leading, spacing: layout == .sheet ? 2 : 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(layout == .full ? meso.areasAffected : meso.title)
-                    .font(layout == .sheet ? .headline.weight(.semibold)
-                          : .title3.weight(.semibold))
-                    .textCase(.uppercase)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
-                
-                Spacer()
-#warning("TODO: May need a better way. This is based off more 'convention' that the summary/sheet view is localized")
-            InZonePill(inZone: layout == .sheet) // The sheet view is filtered, alters and full are not
-            }
-            
-            Text("Issued: \(meso.issued.shorten())")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(.bottom, layout == .sheet ? 4 : 6)
-    }
+//    private var header: some View {
+//        VStack(alignment: .leading, spacing: layout == .sheet ? 2 : 4) {
+//            HStack(alignment: .firstTextBaseline, spacing: 8) {
+////                Text(layout == .full ? meso.areasAffected : meso.title)
+//                Text("Mesoscale Discussion")
+//                    .font(layout == .sheet ? .headline.weight(.semibold)
+//                          : .title3.weight(.semibold))
+//                    .textCase(.uppercase)
+//                    .lineLimit(2)
+//                    .minimumScaleFactor(0.85)
+//                
+//                Spacer()
+//#warning("TODO: May need a better way. This is based off more 'convention' that the summary/sheet view is localized")
+//            InZonePill(inZone: layout == .sheet) // The sheet view is filtered, alters and full are not
+//            }
+//            
+//            Text("SPC MD 1913")
+//                .font(.headline.weight(.semibold))
+////                .textCase(.uppercase)
+//                
+//            Text("Issued: \(meso.issued.shorten())")
+//                .font(.caption)
+//                .foregroundStyle(.secondary)
+//            
+//            Text("Valid: \(meso.validStart.shorten()) – \(meso.validEnd.shorten())")
+//                .font(.caption)
+//                .foregroundStyle(.secondary)
+//        }
+//        .padding(.bottom, layout == .sheet ? 4 : 6)
+//    }
     
     private var pairs: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if layout == .sheet { KeyValueRow(key: "Areas affected", value: meso.areasAffected) }
-            KeyValueRow(key: "Valid", value: "\(meso.validStart.shorten()) – \(meso.validEnd.shorten())")
+            KeyValueRow(key: "Areas affected", value: meso.areasAffected)
+//            KeyValueRow(key: "Valid", value: "\(meso.validStart.shorten()) – \(meso.validEnd.shorten())")
         }
     }
     
@@ -90,7 +105,7 @@ struct MesoscaleDiscussionContent: View {
                     .font(.subheadline)
                 Spacer()
                 
-                let watchInt = Int(meso.watchProbability) ?? 0
+                let watchInt = Int(meso.watchProbability)
                 if watchInt > 0 {
                     Text("\(watchInt)%")
                         .font(.subheadline.weight(.semibold))
@@ -101,8 +116,7 @@ struct MesoscaleDiscussionContent: View {
                 }
             }
             
-            // TODO: Make watchProbability a number in the DTO
-            WatchProbabilityBar(progress: (Double(meso.watchProbability) ?? 0) / 1)
+            WatchProbabilityBar(progress: (meso.watchProbability / 1))
                 .frame(height: 8)
                 .clipShape(Capsule())
         }
@@ -145,25 +159,22 @@ struct MesoscaleDiscussionContent: View {
         }
     }
     
-    private var footer: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { ctx in
-            let remaining = timeRemaining(meso: meso, now: ctx.date)
-            HStack {
-                spcLink
-                Spacer()
-                ExpiryLabel(remaining: remaining)
-            }
-            .padding(.top, 4)
-        }
-    }
-
-    private var spcLink: some View {
-        Link(destination: meso.link) {
-            Label("Open on SPC", systemImage: "arrow.up.right.square")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-        }
-    }
+//    private var footer: some View {
+//        TimelineView(.periodic(from: .now, by: 60)) { ctx in
+//            let remaining = timeRemaining(meso: meso, now: ctx.date)
+//            HStack {
+//                Link(destination: meso.link) {
+//                    Label("Open on SPC", systemImage: "arrow.up.right.square")
+//                        .font(.footnote.weight(.semibold))
+//                        .foregroundStyle(.secondary)
+//                }
+//                
+//                Spacer()
+//                ExpiryLabel(remaining: remaining)
+//            }
+//            .padding(.top, 4)
+//        }
+//    }
 }
 
 struct MesoscaleDiscussionCard: View {
@@ -196,19 +207,21 @@ extension MesoscaleDiscussionContent {
         return nil
     }
     
-    func timeRemaining(meso: MdDTO, now: Date = .now) -> TimeInterval { max(0, meso.validEnd.timeIntervalSince(now)) }
+//    func timeRemaining(meso: MdDTO, now: Date = .now) -> TimeInterval { max(0, meso.validEnd.timeIntervalSince(now)) }
 }
 
 // MARK: - Preview
 
 #Preview("Full View") {
     NavigationStack {
-        MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .full)
-            .navigationTitle("SPC MD \(MD.sampleDiscussionDTOs[1].number, format: .number.grouping(.never))")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+        ScrollView{
+            MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .full)
+                .navigationTitle("SPC MD \(MD.sampleDiscussionDTOs[1].number, format: .number.grouping(.never))")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                .scrollContentBackground(.hidden)
+                .background(.skyAwareBackground)
+        }
     }
 }
 
