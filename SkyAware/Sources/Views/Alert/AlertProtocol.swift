@@ -8,6 +8,7 @@
 import Foundation
 
 protocol AlertItem: Identifiable, Hashable {
+    var number: Int { get }
     var title: String { get }
     var summary: String { get }
     var issued: Date { get }

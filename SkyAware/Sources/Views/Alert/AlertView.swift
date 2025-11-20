@@ -84,10 +84,30 @@ struct AlertView: View {
             }
         }
         .navigationDestination(item: $selectedWatch) { watch in
-            WatchDetailView(watch: watch)
+            #warning("TODO: Need to get real DTOs here")
+            let tempDto = WatchDTO(
+                number: watch.number,
+                title: watch.title,
+                link: watch.link,
+                issued: watch.issued,
+                validStart: watch.validStart,
+                validEnd: watch.validEnd,
+                summary: watch.summary,
+                type: "Tornado"
+            )
+            
+            ScrollView {
+                WatchDetailView(watch: tempDto, layout: .full)
+            }
+            .navigationTitle("Watch \(watch.number, format: .number.grouping(.never))")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
         }
         .navigationDestination(item: $selectedMeso) { meso in
             // TODO: Need to get a MdDTO here to pass to the discussion card.
+            #warning("TODO: Need to get real DTOs here")
             let tempDto = MdDTO(number: meso.number,
                                 title: meso.title,
                                 link: meso.link,
@@ -102,8 +122,8 @@ struct AlertView: View {
             )
             ScrollView {
                 MesoscaleDiscussionCard(meso: tempDto, layout: .full)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
+//                    .padding(.horizontal, 16)
+//                    .padding(.top, 16)
             }
             .navigationTitle("SPC MD \(tempDto.number, format: .number.grouping(.never))")
             .navigationBarTitleDisplayMode(.inline)

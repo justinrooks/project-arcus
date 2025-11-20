@@ -13,22 +13,32 @@ struct AlertRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             // Type Badge
-            Image(systemName: iconForType(alert.alertType))
-                .foregroundColor(colorForType(alert.alertType))
+            let title = parseWatchType(from: alert.summary)
+            let (icon, color) = styleForType(alert.alertType, title)
+            Image(systemName: icon)
+                .foregroundColor(color)
                 .font(.title3)
                 .frame(width: 36, height: 36)
                 .background(
                     Circle()
-                        .fill(colorForType(alert.alertType).opacity(0.15))
+                        .fill(color.opacity(0.15))
                 )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(alert.title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.9)
-
+                if alert.alertType == .watch {
+                    Text("\(title ?? "Watch") \(alert.number)")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.9)
+                } else {
+                    Text(alert.title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.9)
+                }
+                
                 Text(relativeDate(alert.issued))
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -41,27 +51,39 @@ struct AlertRowView: View {
 
     // MARK: - Helpers
 
-    func iconForType(_ type: AlertType) -> String {
+    func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
         switch type {
-        case .watch: return "exclamationmark.triangle"
-        case .mesoscale: return "waveform.path.ecg"
+        case .watch:
+            if let watchType {
+                return watchType == "Tornado Watch" ? ("tornado", .tornadoRed) : ("cloud.bolt.fill", .severeTstormWarn)
+            } else {
+                return ("exclamationmark.triangle", .red)
+            }
+        case .mesoscale: return ("waveform.path.ecg.magnifyingglass", .mesoPurple)
         }
     }
-
-    func colorForType(_ type: AlertType) -> Color {
-        switch type {
-        case .watch: return .red
-        case .mesoscale: return .orange
-        }
-    }
-
+    
     func relativeDate(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }
+    
+    private func parseWatchType(from text: String) -> String? {
+        let pattern = #"(.+?)\s+Watch\b"#
+
+        if let match = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+            let issued = String(text[match])
+            
+            return issued.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return nil
+    }
 }
 
 #Preview {
     AlertRowView(alert: MD.sampleDiscussions.first!)
+    AlertRowView(alert: WatchModel.sampleWatches.last!)
+    AlertRowView(alert: WatchModel.sampleWatches[0])
 }

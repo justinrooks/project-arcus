@@ -20,7 +20,7 @@ struct MesoscaleDiscussionContent: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
-            SpcProductHeader(title: "Mesoscale Discussion", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: "MD 1913", inZone: false)
+            SpcProductHeader(title: "Mesoscale Discussion", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: nil, inZone: false)
             
             Divider().opacity(0.12)
             
@@ -51,37 +51,6 @@ struct MesoscaleDiscussionContent: View {
     }
     
     // MARK: - Sections
-//    private var header: some View {
-//        VStack(alignment: .leading, spacing: layout == .sheet ? 2 : 4) {
-//            HStack(alignment: .firstTextBaseline, spacing: 8) {
-////                Text(layout == .full ? meso.areasAffected : meso.title)
-//                Text("Mesoscale Discussion")
-//                    .font(layout == .sheet ? .headline.weight(.semibold)
-//                          : .title3.weight(.semibold))
-//                    .textCase(.uppercase)
-//                    .lineLimit(2)
-//                    .minimumScaleFactor(0.85)
-//                
-//                Spacer()
-//#warning("TODO: May need a better way. This is based off more 'convention' that the summary/sheet view is localized")
-//            InZonePill(inZone: layout == .sheet) // The sheet view is filtered, alters and full are not
-//            }
-//            
-//            Text("SPC MD 1913")
-//                .font(.headline.weight(.semibold))
-////                .textCase(.uppercase)
-//                
-//            Text("Issued: \(meso.issued.shorten())")
-//                .font(.caption)
-//                .foregroundStyle(.secondary)
-//            
-//            Text("Valid: \(meso.validStart.shorten()) – \(meso.validEnd.shorten())")
-//                .font(.caption)
-//                .foregroundStyle(.secondary)
-//        }
-//        .padding(.bottom, layout == .sheet ? 4 : 6)
-//    }
-    
     private var pairs: some View {
         VStack(alignment: .leading, spacing: 8) {
             KeyValueRow(key: "Areas affected", value: meso.areasAffected)
@@ -158,23 +127,6 @@ struct MesoscaleDiscussionContent: View {
             }
         }
     }
-    
-//    private var footer: some View {
-//        TimelineView(.periodic(from: .now, by: 60)) { ctx in
-//            let remaining = timeRemaining(meso: meso, now: ctx.date)
-//            HStack {
-//                Link(destination: meso.link) {
-//                    Label("Open on SPC", systemImage: "arrow.up.right.square")
-//                        .font(.footnote.weight(.semibold))
-//                        .foregroundStyle(.secondary)
-//                }
-//                
-//                Spacer()
-//                ExpiryLabel(remaining: remaining)
-//            }
-//            .padding(.top, 4)
-//        }
-//    }
 }
 
 struct MesoscaleDiscussionCard: View {
@@ -206,8 +158,6 @@ extension MesoscaleDiscussionContent {
         }
         return nil
     }
-    
-//    func timeRemaining(meso: MdDTO, now: Date = .now) -> TimeInterval { max(0, meso.validEnd.timeIntervalSince(now)) }
 }
 
 // MARK: - Preview

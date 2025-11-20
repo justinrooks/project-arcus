@@ -13,7 +13,7 @@ struct SpcProductHeader: View {
     let issued: Date
     let validStart: Date
     let validEnd: Date
-    let subtitle: String
+    let subtitle: String?
     let inZone: Bool
     
     var body: some View {
@@ -29,10 +29,10 @@ struct SpcProductHeader: View {
                 Spacer()
                 InZonePill(inZone: inZone) // The sheet view is filtered, alters and full are not
             }
-            
-            Text(subtitle)
-                .font(.headline.weight(.semibold))
-                
+            if let subtitle {
+                Text(subtitle)
+                    .font(.headline.weight(.semibold))
+            }
             Text("Issued: \(issued.shorten())")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -49,6 +49,10 @@ struct SpcProductHeader: View {
     }
 }
 
-#Preview {
+#Preview("Full") {
     SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: "MD 1913", inZone: false)
+}
+
+#Preview("No subtitle") {
+    SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: nil, inZone: false)
 }

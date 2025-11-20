@@ -9,14 +9,16 @@ import SwiftUI
 
 struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
+    let watches: [WatchDTO]
 
     @State private var selectedMeso: MdDTO? = nil
+    @State private var selectedWatch: WatchDTO? = nil
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // MARK: Header
             HStack {
-                Image(systemName: "exclamationmark.triangle.fill")//"cloud.bolt.rain.fill")
+                Image(systemName: "exclamationmark.circle.fill")//"cloud.bolt.rain.fill")
                     .foregroundColor(.skyAwareAccent)
                 Text("Active Alerts Nearby")
                     .font(.headline)
@@ -25,12 +27,29 @@ struct ActiveAlertSummaryView: View {
             }
             
             // MARK: Active Alerts
-            VStack(spacing: 8) {
-                ForEach(mesos) { meso in
-                    Button { selectedMeso = meso } label: { MesoRowView(meso: meso) }
-                        .buttonStyle(.plain)
-                    
-                    if meso.number != mesos.last?.number { Divider() }
+            VStack(alignment: .leading, spacing: 10) {
+                if !watches.isEmpty {
+                    Text("WATCHES")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    ForEach(watches) { watch in
+                        Button { selectedWatch = watch } label: { WatchRowView(watch: watch) }
+                            .buttonStyle(.plain)
+                        
+                        if watch.number != watches.last?.number { Divider() }
+                    }
+                }
+                
+                if !mesos.isEmpty {
+                    Text("MESOS")
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    ForEach(mesos) { meso in
+                        Button { selectedMeso = meso } label: { MesoRowView(meso: meso) }
+                            .buttonStyle(.plain)
+                        
+                        if meso.number != mesos.last?.number { Divider() }
+                    }
                 }
             }
         }
@@ -49,23 +68,25 @@ struct ActiveAlertSummaryView: View {
                 }
                 .background(.skyAwareBackground)
                 .presentationDetents([.medium, .large])
+                //            .presentationDetents([.fraction(0.5)])
                 .presentationDragIndicator(.visible)
                 .navigationTitle("Mesoscale Discussion")
                 .navigationBarTitleDisplayMode(.inline)
             }
-//            VStack {
-//                ScrollView {
-//                    MesoscaleDiscussionCard(meso: meso,
-//                                            layout: .sheet)
-//                    .padding(.horizontal, 16)
-//                    .padding(.vertical, 25)
-//                    Spacer()
-//                }
-//            }
-//            .presentationDetents([.fraction(0.5)])
-//            .presentationDragIndicator(.visible)
-//            .presentationCornerRadius(24)
-//            .presentationBackground(.regularMaterial)
+        }
+        .sheet(item: $selectedWatch) { watch in
+            NavigationStack {
+                ScrollView {
+                    WatchDetailView(watch: watch, layout: .sheet)
+                        .padding(.top, 8)
+                        .padding(.horizontal, 6)
+                }
+                .background(.skyAwareBackground)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .navigationTitle("Watch")
+                .navigationBarTitleDisplayMode(.inline)
+            }
         }
     }
 }
@@ -76,28 +97,39 @@ private struct MesoRowView: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
-            if let threats = meso.threats {
-                ThreatIconsCol(threats: threats)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
+//            if let threats = meso.threats, let icon = getHighestThreat(for: threats) {
+//                icon
+//                    .font(.subheadline)
+//                    .foregroundStyle(
+//                        threats.tornadoStrength != nil && !(threats.tornadoStrength ?? "").isEmpty ? Color.tornadoRed : (
+//                            threats.hailRangeInches != nil ? Color.hailBlue : Color.windTeal
+//                        )
+//                    )
+//            } else {
+//                Image(systemName: "tornado")
+//                    .font(.subheadline)
+//                    .foregroundStyle(Color.tornadoRed)
+//            }
+            Image(systemName: "waveform.path.ecg.magnifyingglass")
+                .font(.subheadline)
+                .foregroundStyle(Color.mesoPurple)
             VStack(alignment: .leading, spacing: 2) {
                 Text("MD \(meso.number.formatted(.number.grouping(.never)))")
-                    .fontWeight(.medium)
+                    .font(.subheadline.weight(.semibold))
                 Text(meso.areasAffected.isEmpty ? meso.title : meso.areasAffected)
                     .lineLimit(3)
                     .truncationMode(.tail)
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
             
             Spacer()
-            VStack(alignment: .leading) {
-                Text("Ends: \(meso.validEnd, style: .time)")
+            VStack(alignment: .trailing) {
+                Text("Prob: \(Int(meso.watchProbability))%")
                     .monospacedDigit()
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                Text("Watch Probability: \(meso.watchProbability)%")
+                Text("Ends: \(meso.validEnd, style: .time)")
                     .monospacedDigit()
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -106,46 +138,92 @@ private struct MesoRowView: View {
     }
 }
 
-private struct ThreatIconsCol: View {
-    let showWind: Bool
-    let showHail: Bool
-    let showTornado: Bool
-    
-    init(threats: MDThreats) {
-        self.showWind = threats.peakWindMPH != nil
-        self.showHail = threats.hailRangeInches != nil
-        if let ts = threats.tornadoStrength, !ts.isEmpty {
-            self.showTornado = true
-        } else {
-            self.showTornado = false
-        }
-    }
-    
-    @ViewBuilder
-    private func slot(_ name: String, show: Bool) -> some View {
-        if show {
-            Image(systemName: name)
-        } else {
-            Image(systemName: name).hidden() // reserve space for alignment
-        }
-    }
+private struct WatchRowView: View {
+    let watch: WatchDTO
     
     var body: some View {
-        VStack(spacing: 5) {
-            slot("wind", show: showWind)
-            slot("cloud.hail.fill", show: showHail)
-            slot("tornado", show: showTornado)
+        HStack(alignment: .top, spacing: 15) {
+            Image(systemName: watch.type == "Tornado" ? "tornado" : "cloud.bolt.fill")
+                .font(.subheadline)
+                .foregroundStyle(watch.type == "Tornado" ? Color.tornadoRed : Color.severeTstormWarn)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(watch.type) \(watch.number.formatted(.number.grouping(.never)))")
+                    .font(.subheadline.weight(.semibold))
+//                Text(meso.areasAffected.isEmpty ? meso.title : meso.areasAffected)
+                Text("Western Kansas, Southwest Nebraska - TBD")
+                    .lineLimit(3)
+                    .truncationMode(.tail)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            VStack(alignment: .trailing) {
+                Text("Ends: \(watch.validEnd, style: .time)")
+                    .monospacedDigit()
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .frame(width: 15, alignment: .leading) // fixed cluster width for perfect alignment
     }
 }
 
+private func getHighestThreat(for threats: MDThreats) -> Image? {
+    // Highest priority: tornado > hail > wind
+    let hasTornado: Bool = {
+        if let ts = threats.tornadoStrength, !ts.isEmpty { return true }
+        return false
+    }()
+    let hasHail: Bool = threats.hailRangeInches != nil
+    let hasWind: Bool = threats.peakWindMPH != nil
+
+    if hasTornado { return Image(systemName: "tornado") }
+    if hasHail { return Image(systemName: "cloud.hail.fill") }
+    if hasWind { return Image(systemName: "wind") }
+    return nil
+}
+
+//private struct ThreatIconsCol: View {
+//    let showWind: Bool
+//    let showHail: Bool
+//    let showTornado: Bool
+//    
+//    init(threats: MDThreats) {
+//        self.showWind = threats.peakWindMPH != nil
+//        self.showHail = threats.hailRangeInches != nil
+//        if let ts = threats.tornadoStrength, !ts.isEmpty {
+//            self.showTornado = true
+//        } else {
+//            self.showTornado = false
+//        }
+//    }
+//    
+//    @ViewBuilder
+//    private func slot(_ name: String, show: Bool) -> some View {
+//        if show {
+//            Image(systemName: name)
+//        } else {
+//            Image(systemName: name).hidden() // reserve space for alignment
+//        }
+//    }
+//    
+//    var body: some View {
+//        VStack(spacing: 5) {
+//            slot("wind", show: showWind)
+//            slot("cloud.hail.fill", show: showHail)
+//            slot("tornado", show: showTornado)
+//        }
+//        .font(.subheadline)
+//        .foregroundStyle(.secondary)
+//        .frame(width: 15, alignment: .leading) // fixed cluster width for perfect alignment
+//    }
+//}
+
 #Preview {
     NavigationStack {
-        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs)
+        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, watches: WatchModel.sampleWatcheDtos)
             .toolbar(.hidden, for: .navigationBar)
             .background(.skyAwareBackground)
     }
 }
+

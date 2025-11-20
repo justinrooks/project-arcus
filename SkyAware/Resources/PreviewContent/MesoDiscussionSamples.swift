@@ -241,7 +241,7 @@ extension MD {
                 summary: "test",
                 concerning: "Concerning...Severe Thunderstorm Watch 580...",
                 watchProbability: "5",
-                threats: MDThreats(peakWindMPH: 65, hailRangeInches: 2.5, tornadoStrength: "Not expected"),
+                threats: MDThreats(peakWindMPH: 65, hailRangeInches: 2.5, tornadoStrength: nil),
                 coordinates: buildCoords(for: """
                        ATTN...WFO...BYZ...GGW...TFX...
         

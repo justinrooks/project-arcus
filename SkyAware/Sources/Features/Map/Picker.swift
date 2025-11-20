@@ -40,7 +40,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .wind:        return "wind"
         case .hail:        return "cloud.hail.fill"
         case .tornado:     return "tornado"
-        case .meso:        return "binoculars.fill"
+        case .meso:        return "waveform.path.ecg.magnifyingglass"
         }
     }
     

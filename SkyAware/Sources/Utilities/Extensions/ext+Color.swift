@@ -24,6 +24,8 @@ extension Color {
     static let tornadoRed        = Color(red: 0.8, green: 0.2, blue: 0.4)
     static let hailBlue          = Color(red: 0.3, green: 0.6, blue: 0.9)
     static let windTeal          = Color(red: 0.2, green: 0.7, blue: 0.7)
+    
+    static let severeTstormWarn  = Color(red: 0.38, green: 0.48, blue: 0.92)
         
     static let mesoPurple        = Color(red: 0.45, green: 0.35, blue: 0.85)
     
