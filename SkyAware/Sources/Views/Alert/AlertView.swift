@@ -99,7 +99,7 @@ struct AlertView: View {
             ScrollView {
                 WatchDetailView(watch: tempDto, layout: .full)
             }
-            .navigationTitle("Watch \(watch.number, format: .number.grouping(.never))")
+            .navigationTitle("Weather Watch")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
             .scrollContentBackground(.hidden)
@@ -125,7 +125,7 @@ struct AlertView: View {
 //                    .padding(.horizontal, 16)
 //                    .padding(.top, 16)
             }
-            .navigationTitle("SPC MD \(tempDto.number, format: .number.grouping(.never))")
+            .navigationTitle("Mesoscale Discussion")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
             .scrollContentBackground(.hidden)

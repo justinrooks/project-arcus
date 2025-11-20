@@ -200,7 +200,7 @@ actor MesoRepo {
             validStart: validStart,
             validEnd: validEnd,
             areasAffected: areasAffected,
-            summary: summaryParsed.isEmpty ? rawText : summaryParsed,
+            summary: rawText, //summaryParsed.isEmpty ? rawText : summaryParsed,
             concerning: concerningLine,
             watchProbability: watchProb,
             threats: threats,

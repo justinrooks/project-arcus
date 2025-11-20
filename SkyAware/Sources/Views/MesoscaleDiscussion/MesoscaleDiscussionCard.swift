@@ -20,7 +20,7 @@ struct MesoscaleDiscussionContent: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
-            SpcProductHeader(title: "Mesoscale Discussion", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: nil, inZone: false)
+            SpcProductHeader(title: "MD \(meso.number)", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: nil, inZone: false)
             
             Divider().opacity(0.12)
             
@@ -166,7 +166,7 @@ extension MesoscaleDiscussionContent {
     NavigationStack {
         ScrollView{
             MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .full)
-                .navigationTitle("SPC MD \(MD.sampleDiscussionDTOs[1].number, format: .number.grouping(.never))")
+                .navigationTitle("Mesoscale Discussion")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)

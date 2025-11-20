@@ -18,7 +18,7 @@ struct WatchDetailView: View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             // 🔷 Header
             let type = parseWatchType(from: watch.summary)
-            SpcProductHeader(title: "\(type ?? "Watch")", issued: watch.issued, validStart: watch.validStart, validEnd: watch.validEnd, subtitle: nil, inZone: false)
+            SpcProductHeader(title: "\(type ?? "Watch") \(watch.number)", issued: watch.issued, validStart: watch.validStart, validEnd: watch.validEnd, subtitle: nil, inZone: false)
             
             Divider().opacity(0.12)
             
@@ -106,7 +106,7 @@ struct WatchDetailView: View {
                     let value = String(text[matchRange])
                     let detail: String
                     switch threat.title {
-                    case "Tornado": detail = "Estimated up to \(value) mph"
+                    case "Tornado": detail = ""//"Estimated up to \(value) mph"
                     case "Wind Gusts": detail = "Expected range: \(value) mph"
                     case "Hail Size": detail = "Estimated size: \(value) in"
                     default: detail = value
@@ -131,7 +131,7 @@ struct WatchDetailView: View {
     NavigationStack {
         ScrollView {
             WatchDetailView(watch: WatchModel.sampleWatcheDtos.last!, layout: .full)
-                .navigationTitle("Watch \(WatchModel.sampleWatcheDtos.last!.number, format: .number.grouping(.never))")
+                .navigationTitle("Weather Watch")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)
@@ -144,7 +144,7 @@ struct WatchDetailView: View {
     NavigationStack {
         ScrollView {
             WatchDetailView(watch: WatchModel.sampleWatcheDtos[0], layout: .full)
-                .navigationTitle("Watch \(WatchModel.sampleWatcheDtos[0].number, format: .number.grouping(.never))")
+                .navigationTitle("Weather Watch")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)
