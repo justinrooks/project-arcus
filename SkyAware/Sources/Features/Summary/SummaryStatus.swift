@@ -29,12 +29,13 @@ private struct TimeView: View {
     @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
-        let (textString, color, weight) = relativeTime()
-
-        Text("\(textString)")
-            .font(.callout.weight(weight))
-            .foregroundStyle(color)
-            .monospacedDigit()
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let (textString, color, weight) = relativeTime()
+            Text(textString)
+                .font(.callout.weight(weight))
+                .foregroundStyle(color)
+                .monospacedDigit()
+        }
     }
     
     private func relativeTime() -> (String, Color, Font.Weight)  {
@@ -65,13 +66,13 @@ private struct TimeView: View {
     private func getColor(for mode:ColorScheme, with level: FreshnessState) -> Color {
         let c:Color = {
             switch(mode, level) {
-            case (.light, .healthy): return Color(red: 0.1, green: 0.5, blue: 0.1)
-            case (.dark, .healthy):  return Color(red: 0.4, green: 0.8, blue: 0.4)
-            case (.light, .warning): return Color(red: 0.8, green: 0.5, blue: 0.0)
-            case (.dark, .warning):  return Color(red: 1.0, green: 0.7, blue: 0.0)
-            case (.light, .expired): return Color(red: 0.6, green: 0.1, blue: 0.1)
-            case (.dark, .expired):  return Color(red: 1.0, green: 0.3, blue: 0.3)
-            case (_, _):             return Color(red: 0.1, green: 0.5, blue: 0.1)
+            case (.light, .healthy): return Color(red: 0.22, green: 0.65, blue: 0.41)
+            case (.dark, .healthy):  return Color(red: 0.48, green: 0.86, blue: 0.56)
+            case (.light, .warning): return Color(red: 0.92, green: 0.70, blue: 0.30)
+            case (.dark, .warning):  return Color(red: 0.98, green: 0.8, blue: 0.46)
+            case (.light, .expired): return Color(red: 0.8, green: 0.32, blue: 0.32)
+            case (.dark, .expired):  return Color(red: 1.0, green: 0.56, blue: 0.56)
+            case (_, _):             return getColor(for: mode, with: .healthy)
             }
         }()
         
