@@ -51,6 +51,17 @@ struct SettingsView: View {
         store: UserDefaults.shared
     ) private var mesoNotificationEnabled: Bool = true
     
+    // MARK: Debugging
+    @AppStorage(
+        "onboardingComplete",
+        store: UserDefaults.shared
+    ) private var onboardingComplete: Bool = false
+    
+    @AppStorage(
+        "disclaimerAcceptedVersion",
+        store: UserDefaults.shared
+    ) private var disclaimerVersion = 0
+    
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
     @AppStorage("aiShareLocation", store: UserDefaults.shared) private var aiShareLocation: Bool = true
@@ -74,14 +85,31 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section(header: Text("Notification Preferences")) {
-                HStack{
+                HStack {
                     Toggle(isOn: $morningSummaryEnabled) {
                         Text("Enable Morning Summaries")
                     }
                 }
-                HStack{
+                HStack {
                     Toggle(isOn: $mesoNotificationEnabled) {
                         Text("Enable Meso Notifications")
+                    }
+                }
+            }
+            
+            Section(header: Text("Onboarding Debug")) {
+                HStack {
+                    Toggle(isOn: $onboardingComplete) {
+                        Text("Onboarding flow complete")
+                    }
+                }
+                HStack {
+                    Text("Disclaimer Accepted Version: \(disclaimerVersion)")
+                }
+                HStack {
+                    Button("Reset disclaimer") {
+                        UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
+                        UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
                     }
                 }
             }
@@ -153,6 +181,20 @@ struct SettingsView: View {
                     Text("Version")
                     Spacer()
                     Text(Bundle.main.fullVersion) // e.g., "1.0.0 (1)"
+                        .foregroundColor(.secondary)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    //                    tapCount += 1
+                    //                    if tapCount >= 7 {
+                    //                        devMode = true
+                    //                        tapCount = 0
+                    //                    }
+                }
+                HStack {
+                    Text("Disclaimer")
+                    Spacer()
+                    Text("\(disclaimerVersion)") // e.g., "1.0.0 (1)"
                         .foregroundColor(.secondary)
                 }
                 .contentShape(Rectangle())

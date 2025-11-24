@@ -90,4 +90,20 @@ extension View {
             )
         }
     }
+    
+    func getHeight(for height: Binding<CGFloat>) -> some View {
+        self
+            .fixedSize(horizontal: false, vertical: true)
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear {
+                            height.wrappedValue = geo.size.height
+                        }
+                        .onChange(of: geo.size.height) { _, newValue in
+                            height.wrappedValue = newValue
+                        }
+                }
+            )
+    }
 }

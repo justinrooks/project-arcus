@@ -19,6 +19,7 @@ struct SkyAwareApp: App {
     
     // State
     @State private var didBootstrapBGRefresh = false
+    @State private var showDisclaimerUpdate = false
     
     // Location
     @MainActor private let provider = LocationProvider()
@@ -42,6 +43,15 @@ struct SkyAwareApp: App {
     
     // EnvVars
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(
+        "onboardingComplete",
+        store: UserDefaults.shared
+    ) private var onboardingComplete: Bool = false
+    
+    @AppStorage(
+        "disclaimerAcceptedVersion",
+        store: UserDefaults.shared
+    ) private var disclaimerVersion = 0
     
     // Shared SwiftData context
     let sharedModelContainer: ModelContainer = {
@@ -137,14 +147,37 @@ struct SkyAwareApp: App {
         logger.info("Providers ready; background orchestrator configured")
     }
     
+    let currentDisclaimerVersion = 1
+    
     var body: some Scene {
         WindowGroup {
-            AppRootView(
-                spcProvider: spcProvider,
-                locationMgr: locationMgr,
-                locationProv: provider
-            )
-            .appBackground()
+            if onboardingComplete {
+                AppRootView(
+                    spcProvider: spcProvider,
+                    locationMgr: locationMgr,
+                    locationProv: provider
+                )
+                .appBackground()
+                .onAppear {
+                    if disclaimerVersion < currentDisclaimerVersion {
+                        showDisclaimerUpdate = true
+                    }
+                }
+                .sheet(isPresented: $showDisclaimerUpdate) {
+                    // Just show the disclaimer screen in a sheet
+                    NavigationStack {
+                        DisclaimerView {
+                            disclaimerVersion = currentDisclaimerVersion
+                            showDisclaimerUpdate = false
+                        }
+                        .navigationTitle("Updated Disclaimer")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .interactiveDismissDisabled() // Can't swipe away
+                }
+            } else {
+                OnboardingView(locationMgr: locationMgr)
+            }
         }
         .modelContainer(sharedModelContainer)
         .backgroundTask(.appRefresh(appRefreshID)) {

@@ -13,6 +13,7 @@ struct ActiveAlertSummaryView: View {
 
     @State private var selectedMeso: MdDTO? = nil
     @State private var selectedWatch: WatchDTO? = nil
+    @State private var sheetHeight: CGFloat = .zero
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -55,11 +56,6 @@ struct ActiveAlertSummaryView: View {
         }
         .padding()
         .cardBackground()
-//        .background(
-//            RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-//                .fill(.cardBackground)
-//                .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 3)
-//        )
         .sheet(item: $selectedMeso) { meso in
             NavigationStack {
                 ScrollView {
@@ -68,7 +64,9 @@ struct ActiveAlertSummaryView: View {
                         .padding(.horizontal, 6)
                 }
                 .background(.skyAwareBackground)
-                .presentationDetents([.medium, .large])
+                .getHeight(for: $sheetHeight)
+                .presentationDetents([.height(sheetHeight)])
+//                .presentationDetents([.medium, .large])
                 //            .presentationDetents([.fraction(0.5)])
                 .presentationDragIndicator(.visible)
 //                .navigationTitle("Mesoscale Discussion")
@@ -83,7 +81,9 @@ struct ActiveAlertSummaryView: View {
                         .padding(.horizontal, 6)
                 }
                 .background(.skyAwareBackground)
-                .presentationDetents([.medium, .large])
+                .getHeight(for: $sheetHeight)
+                .presentationDetents([.height(sheetHeight)])
+//                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
 //                .navigationTitle("Watch")
                 .navigationBarTitleDisplayMode(.inline)
