@@ -15,7 +15,7 @@ actor WatchRepo {
     private let parser: RSSFeedParser = RSSFeedParser()
     
     func refreshWatches(using client: any SpcClient) async throws {
-        let data = try await client.fetchRssData(for: .convective)
+        let data = try await client.fetchRssData(for: .watch)
 
         guard let data else {
             logger.warning("No severe watches found")
