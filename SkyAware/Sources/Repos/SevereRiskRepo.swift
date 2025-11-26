@@ -23,6 +23,11 @@ actor SevereRiskRepo {
         
         let decoded = GeoJsonParser.decode(from: data)
         
+        if decoded.features.count == 0 {
+            logger.debug("No hail risk features to parse")
+            return
+        }
+        
         let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .hail, with: $0)
         }
@@ -39,6 +44,11 @@ actor SevereRiskRepo {
         } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
+        
+        if decoded.features.count == 0 {
+            logger.debug("No wind risk features to parse")
+            return
+        }
         
         let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .wind, with: $0)
@@ -57,6 +67,11 @@ actor SevereRiskRepo {
         } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
+        
+        if decoded.features.count == 0 {
+            logger.debug("No tornado risk features to parse")
+            return
+        }
         
         let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .tornado, with: $0)

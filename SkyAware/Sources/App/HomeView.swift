@@ -13,10 +13,9 @@ struct HomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.spcSync) private var svc: any SpcSyncing
     
+    #warning("TODO: Remove swift data and call the repo properly")
     @Query private var mesos: [MD]
     @Query private var watches: [WatchModel]
-    
-//    @State private var tab: Tab = .summary
     
     var body: some View {
         ZStack {
@@ -26,7 +25,6 @@ struct HomeView: View {
                     SummaryView()
                         .toolbar(.hidden, for: .navigationBar)
                         .background(.skyAwareBackground)
-//                    Spacer()
                 }
                 .tabItem { Label("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted")
 //                    "clock.arrow.trianglehead.2.counterclockwise.rotate.90") //gauge.with.needle.fill

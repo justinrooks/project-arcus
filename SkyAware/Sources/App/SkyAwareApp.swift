@@ -20,6 +20,7 @@ struct SkyAwareApp: App {
     // State
     @State private var didBootstrapBGRefresh = false
     @State private var showDisclaimerUpdate = false
+    @State private var showLocationPermissionAlert = false
     
     // Location
     @MainActor private let provider = LocationProvider()
@@ -43,6 +44,8 @@ struct SkyAwareApp: App {
     
     // EnvVars
     @Environment(\.scenePhase) private var scenePhase
+    
+    // App Storage
     @AppStorage(
         "onboardingComplete",
         store: UserDefaults.shared
@@ -66,6 +69,8 @@ struct SkyAwareApp: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
+    
+    let currentDisclaimerVersion = 1
     
     init() {
 #if DEBUG
@@ -147,8 +152,6 @@ struct SkyAwareApp: App {
         logger.info("Providers ready; background orchestrator configured")
     }
     
-    let currentDisclaimerVersion = 1
-    
     var body: some Scene {
         WindowGroup {
             if onboardingComplete {
@@ -161,6 +164,9 @@ struct SkyAwareApp: App {
                 .onAppear {
                     if disclaimerVersion < currentDisclaimerVersion {
                         showDisclaimerUpdate = true
+                    }
+                    if locationMgr.authStatus == .denied || locationMgr.authStatus == .restricted {
+                        showLocationPermissionAlert = true
                     }
                 }
                 .sheet(isPresented: $showDisclaimerUpdate) {
@@ -175,8 +181,20 @@ struct SkyAwareApp: App {
                     }
                     .interactiveDismissDisabled() // Can't swipe away
                 }
+                .sheet(isPresented: $showLocationPermissionAlert) {
+                    // Just show the location screen in a sheet
+                    NavigationStack {
+                        LocationPermissionView(locationMgr: locationMgr) {
+                            showLocationPermissionAlert = false
+                        }
+                        .navigationTitle("Location Restricted")
+                        .navigationBarTitleDisplayMode(.inline)
+                    }
+                    .interactiveDismissDisabled() // Can't swipe away
+                }
             } else {
                 OnboardingView(locationMgr: locationMgr)
+                    .environment(\.spcSync, spcProvider)
             }
         }
         .modelContainer(sharedModelContainer)
@@ -223,28 +241,15 @@ struct SkyAwareApp: App {
                 // latest data.
                 // TODO: Need to gate this so it only happens every hour or so, doesn't need
                 //       to happen on every single activation.
-                Task {
-                    logger.notice("Starting background job history cleanup")
-                    try? await healthStore.purge()
-                    logger.notice("Starting provider cleanup and sync")
-                    await spcProvider.cleanup()
-                    logger.info("Provider cleanup finished")
-                    await spcProvider.sync()
-                    logger.info("Provider sync finished")
-                }
-                
-                // Spin off a task to check notification settings
-                Task.detached {
-                    let center = UNUserNotificationCenter.current()
-                    let settings = await center.notificationSettings()
-                    logger.info("Current notification authorization status: \(String(describing: settings.authorizationStatus), privacy: .public)")
-                    if settings.authorizationStatus == .notDetermined {
-                        do {
-                            try await center.requestAuthorization(options: [.alert, .sound, .badge])
-                            logger.notice("Notification authorization requested: user responded (status may update asynchronously)")
-                        } catch {
-                            logger.error("Error requesting notification permission: \(error.localizedDescription, privacy: .public)")
-                        }
+                if onboardingComplete {
+                    Task {
+                        logger.notice("Starting background job history cleanup")
+                        try? await healthStore.purge()
+                        logger.notice("Starting provider cleanup and sync")
+                        await spcProvider.cleanup()
+                        logger.info("Provider cleanup finished")
+                        await spcProvider.sync()
+                        logger.info("Provider sync finished")
                     }
                 }
             @unknown default:
@@ -253,9 +258,4 @@ struct SkyAwareApp: App {
             }
         }
     }
-    
-//    private var isPreview: Bool {
-//        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
-//    }
 }
-

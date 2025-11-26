@@ -43,6 +43,16 @@ struct NotificationPermissionView: View {
             
             Spacer()
             
+            // TODO: Adapt this code to use here, and helpfully navigate to the settings
+            //            .alert("Location Permission Needed",
+            //                   isPresented: $showLocationPermissionAlert) {
+            //                Button("Settings") { locationMgr.openSettings() }
+            //                Button("Cancel", role: .cancel) {}
+            //            } message: {
+            //                Text("Enable location to see nearby weather risks and alerts.")
+            //            }
+            //showLocationPermissionAlert = (locationMgr.authStatus == .denied || locationMgr.authStatus == .restricted)
+            
             Button(action: {
                 requestNotificationPermission()
                 // Small delay, then complete onboarding

@@ -118,7 +118,7 @@ struct SummaryView: View {
         riskRefreshTask?.cancel()
         riskRefreshTask = Task {
             do {
-                await sync.sync()
+//                await sync.sync()
                 async let outlk = outlookSvc.getLatestConvectiveOutlook()
                 async let storm = svc.getStormRisk(for: coord)
                 async let severe = svc.getSevereRisk(for: coord)

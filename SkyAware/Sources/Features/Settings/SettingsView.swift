@@ -86,14 +86,16 @@ struct SettingsView: View {
         Form {
             Section(header: Text("Notification Preferences")) {
                 HStack {
-                    Toggle(isOn: $morningSummaryEnabled) {
-                        Text("Enable Morning Summaries")
-                    }
+                    Toggle("Enable Morning Summaries", isOn: $morningSummaryEnabled)
+                        .onChange(of: morningSummaryEnabled) { oldValue, newValue in
+                            handleNotificationToggle(newValue, for: "Morning Summaries")
+                        }
                 }
                 HStack {
-                    Toggle(isOn: $mesoNotificationEnabled) {
-                        Text("Enable Meso Notifications")
-                    }
+                    Toggle("Enable Meso Notifications", isOn: $mesoNotificationEnabled)
+                        .onChange(of: mesoNotificationEnabled) { oldValue, newValue in
+                            handleNotificationToggle(newValue, for: "Meso Notifications")
+                        }
                 }
             }
             
@@ -208,6 +210,31 @@ struct SettingsView: View {
             }
             
             
+        }
+    }
+}
+
+extension SettingsView {
+    func handleNotificationToggle(_ enabled: Bool, for notificationType: String) {
+        if !enabled { return }
+        
+        print("Notification enabled for \(notificationType)")
+        Task {
+            await checkAuthorization()
+        }
+    }
+    
+    func checkAuthorization() async {
+        let center = UNUserNotificationCenter.current()
+        let settings = await center.notificationSettings()
+//        logger.info("Current notification authorization status: \(String(describing: settings.authorizationStatus), privacy: .public)")
+        if settings.authorizationStatus == .notDetermined {
+            do {
+                try await center.requestAuthorization(options: [.alert, .sound, .badge])
+//                logger.notice("Notification authorization requested: user responded (status may update asynchronously)")
+            } catch {
+//                logger.error("Error requesting notification permission: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 }
