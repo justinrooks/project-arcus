@@ -52,7 +52,7 @@ struct SummaryView: View {
                 // Header
                 SummaryStatus(
                     location: snap?.placemarkSummary ?? "Searching...",
-                    updatedAt: outlook?.published ?? Date()
+                    updatedAt: outlook?.published
                 )
                 .placeholder(outlook == nil || snap == nil)
                 

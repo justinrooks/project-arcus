@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SummaryStatus: View {
     let location: String
-    let updatedAt: Date
+    let updatedAt: Date?
     
     var body: some View {
         HStack {
@@ -17,7 +17,14 @@ struct SummaryStatus: View {
                 .font(.callout.weight(.semibold))
             Text("-")
                 .foregroundStyle(.secondary)
-            TimeView(time: updatedAt)
+            if let updatedAt {
+                TimeView(time: updatedAt)
+            } else {
+                Text("Updating…")
+                    .font(.callout.weight(.regular))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
         }
         .lineLimit(1)
         .truncationMode(.tail)
