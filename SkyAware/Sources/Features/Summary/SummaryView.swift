@@ -16,9 +16,6 @@ struct SummaryView: View {
     @Environment(\.spcSync) private var sync: any SpcSyncing
     @Environment(\.outlookQuery) private var outlookSvc: any SpcOutlookQuerying
     
-    // MARK: State
-    @State private var riskRefreshTask: Task<Void, Never>?
-    
     // Header State
     @State private var snap: LocationSnapshot?
     
@@ -32,10 +29,6 @@ struct SummaryView: View {
     
     // Outlook State
     @State private var outlook: ConvectiveOutlookDTO?
-    
-    @State private var outlookRefreshTask: Task<Void, Never>?
-    @State private var lastRefreshCoord: CLLocationCoordinate2D?
-    @State private var lastRefreshAt: Date?
     
     init( // This is purely for Preview functionality.
         initialStormRisk: StormRiskLevel? = nil,
@@ -95,95 +88,55 @@ struct SummaryView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color.skyAwareBackground.ignoresSafeArea())
-        .task {
+        .task(id: scenePhase) {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
-            if Task.isCancelled { return }
-            refreshOutlook()
-            if let first = await locSvc.snapshot() {
-                await MainActor.run { snap = first }
-                startRefreshTask(for: first.coordinates)
-            }
+            guard scenePhase == .active else { return }
+            
+            let initial = await locSvc.snapshot()
+            await MainActor.run { snap = initial }
+            await refresh(for: initial)
             
             // Whenever a location snapshot hits, refresh the data with
-            // the newest location. We have a filter here so it is at
-            // least 1k meters, city to city changes, not across the
-            // street.
+            // the newest location.
             let stream = await locSvc.updates()
             for await s in stream {
                 if Task.isCancelled { break }
                 await MainActor.run { snap = s }
-                startRefreshTask(for: s.coordinates)
+                await refresh(for: s)
             }
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            if newPhase == .active { refresh(for: snap) }
+        .refreshable {
+            await refresh(for: snap)
         }
-        .refreshable { refresh(for: snap) }
     }
     
     
-    private func refresh(for snap: LocationSnapshot?) {
-        guard let snap else {
-            refreshOutlook()
-            return
-        }
-        refreshOutlook()
-        startRefreshTask(for: snap.coordinates)
-    }
-    
-    /// Manages data refreshes for outlook, storm, severe, and mesos for a given location
-    /// - Parameter coord: coordinates to provide to downstream location based checking
-    private func startRefreshTask(for coord: CLLocationCoordinate2D) {
-        riskRefreshTask?.cancel()
-        riskRefreshTask = Task {
-            do {
-//                await sync.sync()
-                async let storm = svc.getStormRisk(for: coord)
-                async let severe = svc.getSevereRisk(for: coord)
-                async let meso = svc.getActiveMesos(at: .now, for: coord)
+    /// Refreshes outlook plus location-scoped data together
+    private func refresh(for snap: LocationSnapshot?) async {
+        do {
+            async let outlookFetch = outlookSvc.getLatestConvectiveOutlook()
+            
+            if let snap {
+                async let storm = svc.getStormRisk(for: snap.coordinates)
+                async let severe = svc.getSevereRisk(for: snap.coordinates)
+                async let meso = svc.getActiveMesos(at: .now, for: snap.coordinates)
                 #warning("Add a fetch for active watches here")
                 
-                let (s, v, m) = try await (storm, severe, meso)
+                let (o, s, v, m) = try await (outlookFetch, storm, severe, meso)
                 if Task.isCancelled { return }
                 await MainActor.run {
+                    self.outlook = o
                     self.stormRisk = s
                     self.severeRisk = v
                     self.mesos = m
-                    self.lastRefreshCoord = coord
-                    self.lastRefreshAt = Date()
                 }
-            } catch {
-                
+            } else {
+                let o = try await outlookFetch
+                if Task.isCancelled { return }
+                await MainActor.run { self.outlook = o }
             }
-        }
-    }
-    
-    /// Determines whether we should refresh based on distance moved or time elapsed
-    private func shouldRefresh(for coord: CLLocationCoordinate2D) -> Bool {
-        if let last = lastRefreshCoord, let lastAt = lastRefreshAt {
-            let lastLoc = CLLocation(latitude: last.latitude, longitude: last.longitude)
-            let newLoc = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            let distance = newLoc.distance(from: lastLoc) // meters
-            // Only refresh if we've moved >= 1km or it's been >= 5 minutes
-            if distance < 1000 && Date().timeIntervalSince(lastAt) < 300 {
-                return false
-            }
-        }
-        return true
-    }
-
-    /// Fetches the latest convective outlook independently of location updates
-    private func refreshOutlook() {
-        outlookRefreshTask?.cancel()
-        outlookRefreshTask = Task {
-            do {
-                let o = try await outlookSvc.getLatestConvectiveOutlook()
-                await MainActor.run {
-                    self.outlook = o
-                }
-            } catch {
-                // Swallow for now; consider logging
-            }
+        } catch {
+            // Swallow for now; consider logging
         }
     }
 }

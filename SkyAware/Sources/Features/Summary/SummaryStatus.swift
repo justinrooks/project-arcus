@@ -30,7 +30,7 @@ private struct TimeView: View {
     
     var body: some View {
         TimelineView(.periodic(from: .now, by: 60)) { context in
-            let (textString, color, weight) = relativeTime()
+            let (textString, color, weight) = relativeTime(at: context.date)
             Text(textString)
                 .font(.callout.weight(weight))
                 .foregroundStyle(color)
@@ -38,20 +38,17 @@ private struct TimeView: View {
         }
     }
     
-    private func relativeTime() -> (String, Color, Font.Weight)  {
-        let now:Date = .now
+    private func relativeTime(at now: Date) -> (String, Color, Font.Weight)  {
         let seconds = Int(now.timeIntervalSince(time))
         if seconds <= 0 {
             return ("just now", Color(red: 0.4, green: 0.8, blue: 0.4) , .thin)
         }
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        let relative = formatter.localizedString(for: time, relativeTo: Date())
+        let relative = Self.formatter.localizedString(for: time, relativeTo: now)
         
         let freshness:FreshnessState = {
             switch(seconds) {
-            case 0..<7200: return .healthy // 1 hr
-            case 7200..<14400: return .warning // 2-4 hrs
+            case 0..<3600: return .healthy // <1 hr old
+            case 3600..<14400: return .warning // 1-4 hrs
             default: return .expired // over 4 hrs
             }
         }()
@@ -62,6 +59,12 @@ private struct TimeView: View {
     }
     
     enum FreshnessState { case healthy, warning, expired}
+    
+    private static let formatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
     
     private func getColor(for mode:ColorScheme, with level: FreshnessState) -> Color {
         let c:Color = {
@@ -83,4 +86,3 @@ private struct TimeView: View {
 #Preview {
     SummaryStatus(location: "Denver, CO", updatedAt: .now.addingTimeInterval(-16000))
 }
-
