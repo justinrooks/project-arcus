@@ -168,7 +168,7 @@ actor MesoRepo {
 
         // Areas / Summary (block captures)
         let areasAffected = MDParser.parseAreas(rawText)
-        let summaryParsed = MDParser.parseSummary(rawText)
+//        let summaryParsed = MDParser.parseSummary(rawText)
 
         // Valid range (UTC), fallback to issued+2h if missing
         let validPair = MDParser.parseValid(rawText, issued: issued)

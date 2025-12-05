@@ -81,6 +81,6 @@ private struct TimeView: View {
 }
 
 #Preview {
-    SummaryStatus(location: "Denver, CO", updatedAt: .now.addingTimeInterval(-10000))
+    SummaryStatus(location: "Denver, CO", updatedAt: .now.addingTimeInterval(-16000))
 }
 

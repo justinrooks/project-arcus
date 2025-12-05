@@ -36,8 +36,10 @@ struct SkyAwareApp: App {
     
     // Providers
     private let spcProvider: SpcProvider
+    private let nwsProvider: NwsProvider
     
     // Background
+    private let scheduler:BackgroundScheduler
     private let orchestrator: BackgroundOrchestrator
     private let refreshPolicy: RefreshPolicy
     private let cadencePolicy: CadencePolicy
@@ -106,6 +108,12 @@ struct SkyAwareApp: App {
         spcProvider = spc
         logger.debug("SPC Provider initialized")
         
+        let nws = NwsProvider(
+            watchRepo: watchRepo,
+            client: NwsHttpClient())
+        nwsProvider = nws
+        logger.debug("NWS Provider initialized")
+        
         let refresh: RefreshPolicy = .init()
         refreshPolicy = refresh
         cadencePolicy = CadencePolicy()
@@ -149,6 +157,8 @@ struct SkyAwareApp: App {
             notificationSettings: .init(morningSummariesEnabled: morningSummaryEnabled,
                                         mesoNotificationsEnabled: mesoNotificationEnabled)
         )
+        
+        scheduler = BackgroundScheduler(refreshId: appRefreshID)
         logger.info("Providers ready; background orchestrator configured")
     }
     
@@ -157,6 +167,7 @@ struct SkyAwareApp: App {
             if onboardingComplete {
                 AppRootView(
                     spcProvider: spcProvider,
+                    nwsProvider: nwsProvider,
                     locationMgr: locationMgr,
                     locationProv: provider
                 )
@@ -204,7 +215,7 @@ struct SkyAwareApp: App {
             logger.info("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
             
             // Schedule the next run
-            let scheduler = BackgroundScheduler(refreshId: appRefreshID)
+//            let scheduler = BackgroundScheduler(refreshId: appRefreshID)
             await scheduler.scheduleNextAppRefresh(nextRun: result.next)
             logger.info("Scheduled next app refresh at: \(result.next)")
         }
@@ -228,8 +239,8 @@ struct SkyAwareApp: App {
                 if !didBootstrapBGRefresh {
                     didBootstrapBGRefresh = true
                     
-                    // Schedule a background task greedy, so we don't have old data
-                    Task.detached(priority: .utility) {
+                    // Schedule a background task greedy, so we start on the right foot
+                    Task(priority: .background) {
                         logger.notice("Seeding initial background task")
                         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
                         await scheduler.ensureScheduled(using: refreshPolicy)
@@ -243,7 +254,7 @@ struct SkyAwareApp: App {
                 //       to happen on every single activation.
                 if onboardingComplete {
                     Task {
-                        logger.notice("Starting background job history cleanup")
+                        logger.notice("Starting data  cleanup")
                         try? await healthStore.purge()
                         logger.notice("Starting provider cleanup and sync")
                         await spcProvider.cleanup()

@@ -18,6 +18,10 @@ enum OtherErrors: Error {
     case timeoutError
 }
 
+enum NwsError: Error {
+    case invalidUrl
+}
+
 enum SpcError: Error {
     case missingData
     case missingRssData

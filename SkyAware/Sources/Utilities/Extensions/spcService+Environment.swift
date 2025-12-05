@@ -80,6 +80,18 @@ private struct EmptyOutlookQuerying: SpcOutlookQuerying {
     }
 }
 
+private struct EmptyNwsRiskQuerying: NwsRiskQuerying {
+    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchDTO] {
+        assertionFailure("NOT INJECTED"); throw MissingError()
+    }
+}
+
+private struct EmptyNwsSyncing: NwsSyncing {
+    func sync() async {
+        assertionFailure("⚠️ NwsSyncing not injected into environment")
+    }
+}
+
 //private struct MissingSpcService: SpcService {
 //    // MARK: Freshness APIs
 //    // 1) Layer-scope: “what’s the latest ISSUE among what we’re showing?”
@@ -112,4 +124,7 @@ extension EnvironmentValues {
     @Entry var spcSync: any SpcSyncing = EmptySyncing()
     @Entry var mapData: any SpcMapData = EmptyMapData()
     @Entry var outlookQuery: any SpcOutlookQuerying = EmptyOutlookQuerying()
+    
+    @Entry var nwsRiskQuery: any NwsRiskQuerying = EmptyNwsRiskQuerying()
+    @Entry var nwsSyncing: any NwsSyncing = EmptyNwsSyncing()
 }

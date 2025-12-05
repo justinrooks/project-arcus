@@ -21,7 +21,7 @@ struct ActiveAlertSummaryView: View {
             HStack {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundColor(.skyAwareAccent)
-                Text("Active Alerts Nearby")
+                Text("Local Alerts")
                     .font(.headline)
                     .foregroundColor(.skyAwareAccent)
                 Spacer()

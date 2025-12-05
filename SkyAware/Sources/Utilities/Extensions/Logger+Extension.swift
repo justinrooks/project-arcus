@@ -19,6 +19,8 @@ extension Logger {
     static let downloader = Logger(subsystem: subsystem, category: "Downloader")
     static let spcProvider = Logger(subsystem: subsystem, category: "SpcProvider")
     static let rssParser = Logger(subsystem: subsystem, category: "RssParser")
+    static let nwsClient = Logger(subsystem: subsystem, category: "NwsClient")
+    static let nwsProvider = Logger(subsystem: subsystem, category: "NwsProvider")
     
     // MARK: Repos
     static let convectiveRepo = Logger(subsystem: subsystem, category: "ConvectiveOutlookRepo")

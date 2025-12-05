@@ -43,6 +43,15 @@ actor WatchRepo {
         logger.debug("Parsed \(watches.count) watch\(watches.count > 1 ? "es" : "") from SPC")
     }
     
+    func refreshWatchesNws(using client: any NwsClient, for location: Coordinate2D) async throws {
+        let data = try await client.fetchActiveAlertsJsonData(for: location)
+        
+        guard let data else {
+            logger.debug("No active watches found")
+            return
+        }
+    }
+    
     /// Removes any expired mesoscale discussions from datastore
     /// - Parameter now: defaults to now
     func purge(asOf now: Date = .init()) throws {

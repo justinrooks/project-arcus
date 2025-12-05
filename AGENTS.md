@@ -13,10 +13,10 @@
 - Open in Xcode: `xed SkyAware`
 
 ## Coding Style & Naming Conventions
-- Swift 5.9+, SwiftUI-first; prefer `struct` for views/models, `final class` for services.
+- Swift 6.0+, SwiftUI-first; prefer `struct` for views/models, `final class` for services.
 - Indent with 4 spaces; wrap lines at ~120 cols; keep imports ordered (Foundation before project modules).
 - Avoid force unwraps; use `guard` for early exits and explicit error handling.
-- Minimize nesting within functions
+- Minimize nesting when possible, especially within functions
 - Naming: types in PascalCase, functions/properties in lowerCamelCase; test cases suffixed with `Tests`/`UITests`.
 
 ## Testing Guidelines

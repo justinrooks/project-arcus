@@ -11,6 +11,7 @@ struct AppRootView: View {
     @Environment(\.scenePhase) private var scenePhase
     
     let spcProvider: SpcProvider
+    let nwsProvider: NwsProvider
     let locationMgr: LocationManager
     let locationProv: LocationProvider
     
@@ -21,6 +22,8 @@ struct AppRootView: View {
             .environment(\.spcSync, spcProvider)
             .environment(\.mapData, spcProvider)
             .environment(\.outlookQuery, spcProvider)
+            .environment(\.nwsRiskQuery, nwsProvider)
+            .environment(\.nwsSyncing, nwsProvider)
             .environment(\.locationClient, makeLocationClient(provider: locationProv))
             .task {
                 locationMgr.checkLocationAuthorization(isActive: true)
