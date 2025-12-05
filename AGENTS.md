@@ -25,7 +25,7 @@
 - When adding UI, include a smoke UI test for navigation/happy path; keep identifiers stable for accessibility and UITest hooks.
 
 ## Commit & Pull Request Guidelines
-- Commits follow the current history: short, imperative summaries (e.g., "Fix bug preventing watches from loading").
+- Commits follow the current history: single-line, short, imperative summaries prefixed with `- ` (e.g., "- Fix bug preventing watches from loading").
 - PRs should describe intent, list user-visible changes, and note testing performed (`xcodebuild … test`, manual device checks, screenshots for UI changes).
 - Link related issues/roadmap items; call out risk areas (offline StormSafe mode, alert syncing) and rollback steps when applicable.
 
