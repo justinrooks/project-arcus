@@ -113,30 +113,42 @@ struct SummaryView: View {
     
     /// Refreshes outlook plus location-scoped data together
     private func refresh(for snap: LocationSnapshot?) async {
+        await refreshOutlook()
+        guard let snap else { return }
+        await refreshRisk(for: snap.coordinates)
+    }
+    
+    private func refreshOutlook() async {
         do {
-            async let outlookFetch = outlookSvc.getLatestConvectiveOutlook()
-            
-            if let snap {
-                async let storm = svc.getStormRisk(for: snap.coordinates)
-                async let severe = svc.getSevereRisk(for: snap.coordinates)
-                async let meso = svc.getActiveMesos(at: .now, for: snap.coordinates)
-                #warning("Add a fetch for active watches here")
-                
-                let (o, s, v, m) = try await (outlookFetch, storm, severe, meso)
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    self.outlook = o
-                    self.stormRisk = s
-                    self.severeRisk = v
-                    self.mesos = m
-                }
-            } else {
-                let o = try await outlookFetch
-                if Task.isCancelled { return }
-                await MainActor.run { self.outlook = o }
-            }
+            let o = try await outlookSvc.getLatestConvectiveOutlook()
+            if Task.isCancelled { return }
+            await MainActor.run { self.outlook = o }
         } catch {
             // Swallow for now; consider logging
+        }
+    }
+    
+    private func refreshRisk(for coord: CLLocationCoordinate2D) async {
+        async let stormResult = capture { try await svc.getStormRisk(for: coord) }
+        async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
+        async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
+        #warning("Add a fetch for active watches here")
+        
+        let (storm, severe, mesos) = await (stormResult, severeResult, mesosResult)
+        if Task.isCancelled { return }
+        
+        await MainActor.run {
+            if case let .success(value) = storm { self.stormRisk = value }
+            if case let .success(value) = severe { self.severeRisk = value }
+            if case let .success(value) = mesos { self.mesos = value }
+        }
+    }
+    
+    private func capture<T>(_ operation: @Sendable () async throws -> T) async -> Result<T, Error> {
+        do {
+            return .success(try await operation())
+        } catch {
+            return .failure(error)
         }
     }
 }
