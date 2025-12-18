@@ -52,6 +52,7 @@ struct Preview {
 extension MockSpcService: SpcSyncing {
     func sync() async {}
     func syncTextProducts() async {}
+    func syncMapProducts() async {}
 }
 
 extension MockSpcService: SpcRiskQuerying {

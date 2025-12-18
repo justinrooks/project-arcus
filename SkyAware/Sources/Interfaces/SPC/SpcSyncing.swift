@@ -9,5 +9,6 @@ import Foundation
 
 protocol SpcSyncing: Sendable {
     func sync() async -> Void
+    func syncMapProducts() async -> Void
     func syncTextProducts() async -> Void
 }

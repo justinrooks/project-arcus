@@ -20,6 +20,7 @@ enum OtherErrors: Error {
 
 enum NwsError: Error {
     case invalidUrl
+    case parsingError
 }
 
 enum SpcError: Error {

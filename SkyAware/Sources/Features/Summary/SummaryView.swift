@@ -12,9 +12,9 @@ struct SummaryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.locationClient) private var locSvc
     @Environment(\.riskQuery) private var svc: any SpcRiskQuerying
-//    @Environment(\.spcFreshness) private var fresh: any SpcFreshnessPublishing
     @Environment(\.spcSync) private var sync: any SpcSyncing
     @Environment(\.outlookQuery) private var outlookSvc: any SpcOutlookQuerying
+    @Environment(\.nwsRiskQuery) private var nwsSvc: any NwsRiskQuerying
     
     // Header State
     @State private var snap: LocationSnapshot?
@@ -26,6 +26,9 @@ struct SummaryView: View {
     // Alert State
     @State private var mesos: [MdDTO]
     @State private var watches: [WatchDTO]
+    
+    // Refresh State
+    @State private var lastRefreshKey: RefreshKey?
     
     // Outlook State
     @State private var outlook: ConvectiveOutlookDTO?
@@ -72,9 +75,9 @@ struct SummaryView: View {
                         mesos: mesos,
                         watches: watches
                     )
-                        .toolbar(.hidden, for: .navigationBar)
-                        .background(.skyAwareBackground)
-                        .padding(.bottom, 12)
+                    .toolbar(.hidden, for: .navigationBar)
+                    .background(.skyAwareBackground)
+                    .padding(.bottom, 12)
                 }
                 
                 // Current Outlook
@@ -92,9 +95,9 @@ struct SummaryView: View {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
             guard scenePhase == .active else { return }
             
-            let initial = await locSvc.snapshot()
-            await MainActor.run { snap = initial }
-            await refresh(for: initial)
+            //            let initial = await locSvc.snapshot()
+            //            await MainActor.run { snap = initial }
+            //            await refresh(for: initial)
             
             // Whenever a location snapshot hits, refresh the data with
             // the newest location.
@@ -106,15 +109,18 @@ struct SummaryView: View {
             }
         }
         .refreshable {
+            print("*** REFRESHIN ***")
+            lastRefreshKey = nil
             await refresh(for: snap)
         }
     }
     
-    
     /// Refreshes outlook plus location-scoped data together
     private func refresh(for snap: LocationSnapshot?) async {
+        await sync.syncTextProducts() // This was moved from app init (SkyAwareApp), if timing is an issue, may need to put it back
         await refreshOutlook()
         guard let snap else { return }
+        guard shouldRefresh(for: snap) else { return }
         await refreshRisk(for: snap.coordinates)
     }
     
@@ -128,13 +134,20 @@ struct SummaryView: View {
         }
     }
     
+    private func shouldRefresh(for snap: LocationSnapshot) -> Bool {
+        let key = RefreshKey(coord: snap.coordinates, timestamp: snap.timestamp)
+        guard key != lastRefreshKey else { return false } // skip placemark-only or repeated initial yield
+        lastRefreshKey = key
+        return true
+    }
+    
     private func refreshRisk(for coord: CLLocationCoordinate2D) async {
         async let stormResult = capture { try await svc.getStormRisk(for: coord) }
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
-        #warning("Add a fetch for active watches here")
+        async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
         
-        let (storm, severe, mesos) = await (stormResult, severeResult, mesosResult)
+        let (storm, severe, mesos, watch) = await (stormResult, severeResult, mesosResult, watchResult)
         if Task.isCancelled { return }
         
         await MainActor.run {
@@ -149,6 +162,17 @@ struct SummaryView: View {
             return .success(try await operation())
         } catch {
             return .failure(error)
+        }
+    }
+    
+    private struct RefreshKey: Equatable {
+        let coord: CLLocationCoordinate2D
+        let timestamp: Date
+        
+        static func == (lhs: RefreshKey, rhs: RefreshKey) -> Bool {
+            lhs.coord.latitude == rhs.coord.latitude &&
+            lhs.coord.longitude == rhs.coord.longitude &&
+            lhs.timestamp == rhs.timestamp
         }
     }
 }
@@ -181,7 +205,7 @@ struct SummaryView: View {
         .modelContainer(mdPreview.container)
         .environment(\.locationClient, .offline)
         .environment(\.riskQuery, spcMock)
-        .environment(\.spcFreshness, spcMock)
+        //        .environment(\.spcFreshness, spcMock)
         .environment(\.spcSync, spcMock)
         .environment(\.outlookQuery, spcMock)
     }
@@ -210,7 +234,7 @@ struct SummaryView: View {
         .modelContainer(mdPreview.container)
         .environment(\.locationClient, .offline)
         .environment(\.riskQuery, spcMock)
-        .environment(\.spcFreshness, spcMock)
+        //        .environment(\.spcFreshness, spcMock)
         .environment(\.spcSync, spcMock)
         .environment(\.outlookQuery, spcMock)
     }

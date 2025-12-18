@@ -30,6 +30,10 @@ private struct EmptySyncing: SpcSyncing {
         assertionFailure("⚠️ SpcService not injected into environment")
     }
     
+    func syncMapProducts() async {
+        assertionFailure("⚠️ SpcService not injected into environment")
+    }
+    
     func syncTextProducts() async {
         assertionFailure("⚠️ SpcService not injected into environment")
     }

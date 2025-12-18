@@ -38,6 +38,8 @@ extension NwsProvider: NwsSyncing {
 
 extension NwsProvider: NwsRiskQuerying {
     func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchDTO] {
+        let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
+        try await watchRepo.refreshWatchesNws(using: client, for: coordinates)
         
         
         

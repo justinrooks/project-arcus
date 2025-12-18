@@ -70,6 +70,13 @@ public final class URLSessionHTTPClient: HTTPClient {
                 var req = URLRequest(url: url)
                 req.httpMethod = method
                 
+                headers.forEach { header in
+                    req.setValue(
+                            header.value,
+                            forHTTPHeaderField: header.key
+                        )
+                }
+
                 let (data, response) = try await session.data(for: req, delegate: nil)
                 
                 guard let http = response as? HTTPURLResponse else {

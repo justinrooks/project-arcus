@@ -23,11 +23,12 @@ actor WatchRepo {
         }
                 
         guard let rss = try parser.parse(data: data) else {
+            logger.warning("Error parsing severe watch items")
             throw SpcError.parsingError
         }
         
         guard let channel = rss.channel else {
-            logger.warning("Error parsing severe watch channel items")
+            logger.warning("Watch channel data not found")
             return
         }
         
@@ -47,9 +48,18 @@ actor WatchRepo {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
         
         guard let data else {
-            logger.debug("No active watches found")
+            logger.debug("No watch data found")
             return
         }
+        
+        guard let decoded = NWSWatchParser.decode(from: data) else {
+            logger.debug("Unable to parse NWS Json watch data")
+            throw NwsError.parsingError
+        }
+        
+        
+        
+        let d = decoded.features?.count
     }
     
     /// Removes any expired mesoscale discussions from datastore

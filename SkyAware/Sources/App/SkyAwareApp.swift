@@ -256,11 +256,18 @@ struct SkyAwareApp: App {
                     Task {
                         logger.notice("Starting data  cleanup")
                         try? await healthStore.purge()
-                        logger.notice("Starting provider cleanup and sync")
+                        logger.notice("Starting spc provider cleanup and sync")
                         await spcProvider.cleanup()
-                        logger.info("Provider cleanup finished")
-                        await spcProvider.sync()
-                        logger.info("Provider sync finished")
+                        logger.info("Spc provider cleanup finished")
+                        
+                        // Changed this to just grab the mapping products in the background
+                        // the summary view will load the text products for now. May need to
+                        // tweak this if timing is an issue, that that flow seems better.
+                        await spcProvider.syncMapProducts()
+                        logger.info("Spc map product sync finished")
+//                        await spcProvider.sync()
+//                        logger.info("Provider sync finished")
+//                        logger.info("Need to grab watches here too...")
                     }
                 }
             @unknown default:

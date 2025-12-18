@@ -11,9 +11,15 @@ import Foundation
 extension SpcProvider: SpcSyncing {
     func sync() async {
         let runInterval = signposter.beginInterval("Spc Sync")
+        
+        await syncTextProducts()
+        await syncMapProducts()
+        
+        signposter.endInterval("Background Run", runInterval)    }
+    
+    func syncMapProducts() async {
+        let runInterval = signposter.beginInterval("Spc Sync Map Products")
         do {
-            await syncTextProducts()
-            
             try await stormRiskRepo.refreshStormRisk(using: client)
             try await severeRiskRepo.refreshHailRisk(using: client)
             try await severeRiskRepo.refreshWindRisk(using: client)
@@ -21,7 +27,7 @@ extension SpcProvider: SpcSyncing {
             signposter.endInterval("Background Run", runInterval)
         } catch {
             signposter.endInterval("Background Run", runInterval)
-            logger.error("Error loading Spc feed: \(error.localizedDescription)")
+            logger.error("Error loading Spc map feed: \(error.localizedDescription)")
         }
     }
     

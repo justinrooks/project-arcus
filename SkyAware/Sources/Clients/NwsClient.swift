@@ -25,21 +25,24 @@ struct NwsHttpClient: NwsClient {
     }
     
     func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data? {
-        logger.info("Fetching active alerts for \(location.latitude), \(location.longitude)")
-        let url = try makeNwsUrl(path: "alerts/active?point=\(location.latitude),\(location.longitude)")
+        let lat = location.latitude.truncated(to: 4)
+        let lon = location.longitude.truncated(to: 4)
+        logger.info("Fetching active alerts for \(lat), \(lon)")
+        let url = try makeNwsUrl(path: "alerts/active?point=\(lat),\(lon)")
         
         return try await fetch(from: url)
     }
     
     func fetchActiveAlertsJsonData() async throws -> Data? {
         logger.info("Fetching all active alerts")
-        let url = try makeNwsUrl(path: "/active?status=actual&message_type=alert,update")
+        let url = try makeNwsUrl(path: "active?status=actual&message_type=alert,update")
         
         return try await fetch(from: url)
     }
     
-    private func fetch(from url: URL) async throws -> Data?{
-        let resp = try await http.get(url, headers: [:])
+    private func fetch(from url: URL) async throws -> Data? {
+        let headers = ["User-Agent": "SkyAware/0.1 (skyaware.app, contact: justinrooks@me.com)", "Accept": "application/geo+json"]
+        let resp = try await http.get(url, headers: headers)
         
         guard (200...299).contains(resp.status), let data = resp.data else {
             logger.error("Error fetching NWS alert data: \(resp.status)")
