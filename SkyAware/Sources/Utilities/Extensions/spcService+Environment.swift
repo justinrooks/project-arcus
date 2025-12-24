@@ -91,7 +91,11 @@ private struct EmptyNwsRiskQuerying: NwsRiskQuerying {
 }
 
 private struct EmptyNwsSyncing: NwsSyncing {
-    func sync() async {
+    func fetchPointMetadata(for point: CLLocationCoordinate2D) async {
+        assertionFailure("⚠️ NwsSyncing not injected into environment")
+    }
+    
+    func sync(for point: CLLocationCoordinate2D) async {
         assertionFailure("⚠️ NwsSyncing not injected into environment")
     }
 }

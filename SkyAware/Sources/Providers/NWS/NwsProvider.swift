@@ -9,14 +9,6 @@ import Foundation
 import CoreLocation
 import OSLog
 
-protocol NwsRiskQuerying: Sendable {
-    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchDTO]
-}
-
-protocol NwsSyncing: Sendable {
-    func sync() async
-}
-
 actor NwsProvider {
     let logger = Logger.nwsProvider
     let client: NwsClient
@@ -31,8 +23,24 @@ actor NwsProvider {
 }
 
 extension NwsProvider: NwsSyncing {
-    func sync() async {
-        
+    func sync(for point: CLLocationCoordinate2D) async {
+        do {
+            let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
+            try await watchRepo.refreshWatchesNws(using: client, for: coordinates)
+        }
+        catch {
+            logger.error("Error syncing NWS Watches: \(error)")
+        }
+    }
+    
+    func fetchPointMetadata(for point: CLLocationCoordinate2D) async {
+        let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
+        do {
+            try await watchRepo.getPointMetadata(using: client, for: coordinates)
+        }
+        catch {
+            logger.error("Error fetching point metadata: \(error)")
+        }
     }
 }
 

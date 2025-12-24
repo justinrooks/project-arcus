@@ -14,11 +14,12 @@ actor WatchRepo {
     private let logger = Logger.watchRepo
     private let parser: RSSFeedParser = RSSFeedParser()
     
+    @available(*, deprecated, message: "Migrate to refreshWatchesNws instead")
     func refreshWatches(using client: any SpcClient) async throws {
         let data = try await client.fetchRssData(for: .watch)
 
         guard let data else {
-            logger.warning("No severe watches found")
+            logger.info("No severe watches found")
             return
         }
                 
@@ -44,6 +45,14 @@ actor WatchRepo {
         logger.debug("Parsed \(watches.count) watch\(watches.count > 1 ? "es" : "") from SPC")
     }
     
+    func active(for location: Coordinate2D) async throws -> [WatchDTO] {
+        []
+    }
+    
+    func getPointMetadata(using client: any NwsClient,for location: Coordinate2D) async throws {
+        let data = try await client.fetchPointMetadata(for: location)
+    }
+    
     func refreshWatchesNws(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
         
@@ -57,14 +66,44 @@ actor WatchRepo {
             throw NwsError.parsingError
         }
         
+        guard let features = decoded.features else {
+            logger.debug("No NWS watch features found")
+            return
+        }
         
+        let watches = features
+            .compactMap { makeWatch(from: $0) }
         
-        let d = decoded.features?.count
+        try upsert(watches)
+        logger.debug("Parsed \(watches.count) watch\(watches.count > 1 ? "es" : "") from NWS")
+    }
+    
+    /// Removes any expired watches from the database
+    func purgeNwsWatches(asOf now: Date = .init()) throws {
+        logger.info("Purging expired NWS watches")
+        
+        // Fetch in batches to avoid large in-memory sets
+        let predicate = #Predicate<Watch> { $0.ends < now }
+        var desc = FetchDescriptor<Watch>(predicate: predicate)
+        desc.fetchLimit = 50
+        
+        while true {
+            let batch = try modelContext.fetch(desc)
+            if batch.isEmpty { break }
+            logger.debug("Found \(batch.count) watches to purge")
+            
+            for obj in batch { modelContext.delete(obj) }
+            
+            try modelContext.save()
+        }
+        
+        logger.info("Expired watches purged")
     }
     
     /// Removes any expired mesoscale discussions from datastore
     /// - Parameter now: defaults to now
-    func purge(asOf now: Date = .init()) throws {
+    @available(*, deprecated, message: "Migrate to purge1 instead")
+    func purgeSpcWatches(asOf now: Date = .init()) throws {
         logger.info("Purging expired watches")
         
         // Fetch in batches to avoid large in-memory sets
@@ -85,6 +124,50 @@ actor WatchRepo {
         logger.info("Expired watches purged")
     }
     
+    private func makeWatch(from item: NWSWatchFeatureDTO) -> Watch? {
+        guard
+            let ugcZones         = item.properties.geocode?.ugc,
+            let sameCodes        = item.properties.geocode?.same,
+            let sent             = item.properties.sent,
+            let effective        = item.properties.effective,
+            let onset            = item.properties.onset,
+            let expires          = item.properties.expires,
+            let ends             = item.properties.ends,
+            let status           = item.properties.status,
+            let messageType      = item.properties.messageType,
+            let severity         = item.properties.severity,
+            let certainty        = item.properties.certainty,
+            let urgency          = item.properties.urgency,
+            let event            = item.properties.event,
+            let headline         = item.properties.headline,
+            let watchDescription = item.properties.description
+        else {
+            logger.debug("Required watch property missing, returning null.")
+            return nil
+        }
+        
+        return .init(
+            nwsId: item.properties.id,
+            areaDesc: item.properties.areaDesc,
+            ugcZones: ugcZones,
+            sameCodes: sameCodes,
+            sent: sent,
+            effective: effective,
+            onset: onset,
+            expires: expires,
+            ends: ends,
+            status: status,
+            messageType: messageType,
+            severity: severity,
+            certainty: certainty,
+            urgency: urgency,
+            event: event,
+            headline: headline,
+            watchDescription: watchDescription
+        )
+    }
+    
+    @available(*, deprecated, message: "Migrate to makeWatch instead")
     private func makeWatchModel(from rssItem: Item) -> WatchModel? {
         guard
             let title = rssItem.title,
@@ -117,6 +200,14 @@ actor WatchRepo {
         )
     }
     
+    private func upsert(_ items: [Watch]) throws {
+        for item in items {
+            modelContext.insert(item)
+        }
+        try modelContext.save()
+    }
+    
+    @available(*, deprecated, message: "Migrate to Watch instead")
     private func upsert(_ items: [WatchModel]) throws {
         for item in items {
             modelContext.insert(item)

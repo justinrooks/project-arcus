@@ -13,6 +13,7 @@ extension Logger {
     
     // MARK: Main
     static let mainApp = Logger(subsystem: subsystem, category: "MainApp")
+    static let deps = Logger(subsystem: subsystem, category: "Deps")
     
     // MARK: Plumbing
     static let spcClient = Logger(subsystem: subsystem, category: "SpcClient")
@@ -21,6 +22,8 @@ extension Logger {
     static let rssParser = Logger(subsystem: subsystem, category: "RssParser")
     static let nwsClient = Logger(subsystem: subsystem, category: "NwsClient")
     static let nwsProvider = Logger(subsystem: subsystem, category: "NwsProvider")
+    static let nwsGridProvider = Logger(subsystem: subsystem, category: "NwsGridProvider")
+    
     
     // MARK: Repos
     static let convectiveRepo = Logger(subsystem: subsystem, category: "ConvectiveOutlookRepo")

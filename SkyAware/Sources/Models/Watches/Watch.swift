@@ -2,46 +2,88 @@
 //  Watch.swift
 //  SkyAware
 //
-//  Created by Justin Rooks on 7/11/25.
+//  Created by Justin Rooks on 12/18/25.
 //
 
 import Foundation
 import SwiftData
 
+extension Watch {
+    // Derived values
+    nonisolated var isWatch: Bool { true }
+    nonisolated var isConvective: Bool { true }
+    nonisolated var isActive: Bool { true }
+}
+
+extension Watch: AlertItem {
+    // Alert Item - Derived
+    nonisolated var number: Int          {0}
+    nonisolated var title: String        {"tbd"}      // e.g., "Day 1 Convective Outlook"
+    nonisolated var link: URL            {URL("")!}      // link to full outlook page
+    nonisolated var issued: Date         {.now}      // pubDate
+    nonisolated var validStart: Date     {.now}      // Valid start
+    nonisolated var validEnd: Date       {.now}      // Valid end
+    nonisolated var summary: String      {"tbd"}      // description / CDATA
+    nonisolated var alertType: AlertType { AlertType.watch }      // Type of alert to conform to alert item
+}
+
 @Model
-final class WatchModel: AlertItem {
-    var id: UUID              // usually the GUID or derived from it
-    @Attribute(.unique) var number: Int
-    var title: String           // e.g., "Day 1 Convective Outlook"
-    var link: URL               // link to full outlook page
-    var issued: Date         // pubDate
-    var validStart: Date        // Valid start
-    var validEnd: Date          // Valid end
-    var summary: String         // description / CDATA
-    var alertType: AlertType    // Type of alert to conform to alert item
+final class Watch {
+    @Attribute(.unique) var nwsId: String
+
+    // properties.geocode
+    var areaDesc: String        // human-readable region
+    var ugcZones: [String]      // from geocode.UGC
+    var sameCodes: [String]     // from geocode.SAME
+
+    // properties
+    var sent: Date
+    var effective: Date
+    var onset: Date
+    var expires: Date
+    var ends: Date
+    var status: String          // "actual"
+    var messageType: String     // "alert" | "update" | "cancel"
+    var severity: String
+    var certainty: String
+    var urgency: String
+    var event: String           // "Tornado Watch"
+    var headline: String
+    var watchDescription: String
     
-    convenience init? (from dto: WatchDTO) {
-        self.init(
-            number: dto.number,
-            title: dto.title,
-            link: dto.link,
-            issued: dto.issued,
-            validStart: dto.validStart,
-            validEnd: dto.validEnd,
-            summary: dto.summary,
-            alertType: .watch
-        )
+//    var rawGeometry: Data?
+      
+    init(nwsId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, rawGeometry: Data? = nil) {
+        self.nwsId = nwsId
+        self.areaDesc = areaDesc
+        self.ugcZones = ugcZones
+        self.sameCodes = sameCodes
+        self.sent = sent
+        self.effective = effective
+        self.onset = onset
+        self.expires = expires
+        self.ends = ends
+        self.status = status
+        self.messageType = messageType
+        self.severity = severity
+        self.certainty = certainty
+        self.urgency = urgency
+        self.event = event
+        self.headline = headline
+        self.watchDescription = watchDescription
+//        self.rawGeometry = rawGeometry
     }
     
-    init(number: Int, title: String, link: URL, issued: Date, validStart: Date, validEnd: Date, summary: String, alertType: AlertType) {
-        self.id = UUID()
-        self.number = number
-        self.title = title
-        self.link = link
-        self.issued = issued
-        self.validStart = validStart
-        self.validEnd = validEnd
-        self.summary = summary
-        self.alertType = alertType
-    }
+//    convenience init? (from dto: WatchDTO) {
+//        self.init(
+//            number: dto.number,
+//            title: dto.title,
+//            link: dto.link,
+//            issued: dto.issued,
+//            validStart: dto.validStart,
+//            validEnd: dto.validEnd,
+//            summary: dto.summary,
+//            alertType: .watch
+//        )
+//    }
 }

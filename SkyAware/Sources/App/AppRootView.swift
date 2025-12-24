@@ -9,25 +9,26 @@ import SwiftUI
 
 struct AppRootView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dependencies) private var dependencies
     
-    let spcProvider: SpcProvider
-    let nwsProvider: NwsProvider
-    let locationMgr: LocationManager
-    let locationProv: LocationProvider
+//    let spcProvider: SpcProvider
+//    let nwsProvider: NwsProvider
+//    let locationMgr: LocationManager
+//    let locationProv: LocationProvider
     
     var body: some View {
         HomeView()
-            .environment(\.riskQuery, spcProvider)
-            .environment(\.spcFreshness, spcProvider)
-            .environment(\.spcSync, spcProvider)
-            .environment(\.mapData, spcProvider)
-            .environment(\.outlookQuery, spcProvider)
-            .environment(\.nwsRiskQuery, nwsProvider)
-            .environment(\.nwsSyncing, nwsProvider)
-            .environment(\.locationClient, makeLocationClient(provider: locationProv))
+            .environment(\.riskQuery, dependencies.spcProvider)
+            .environment(\.spcFreshness, dependencies.spcProvider)
+            .environment(\.spcSync, dependencies.spcProvider)
+            .environment(\.mapData, dependencies.spcProvider)
+            .environment(\.outlookQuery, dependencies.spcProvider)
+            .environment(\.nwsRiskQuery, dependencies.nwsProvider)
+            .environment(\.nwsSyncing, dependencies.nwsProvider)
+            .environment(\.locationClient, makeLocationClient(provider: dependencies.locationProvider))
             .task {
-                locationMgr.checkLocationAuthorization(isActive: true)
-                locationMgr.updateMode(for: scenePhase)
+                dependencies.locationManager.checkLocationAuthorization(isActive: true)
+                dependencies.locationManager.updateMode(for: scenePhase)
             }
     }
 }

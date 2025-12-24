@@ -10,7 +10,7 @@ import OSLog
 
 protocol NwsClient: Sendable {
     func fetchActiveAlertsJsonData(for location:Coordinate2D) async throws -> Data?
-    func fetchActiveAlertsJsonData() async throws -> Data?
+    func fetchPointMetadata(for location:Coordinate2D) async throws -> Data?
 }
 
 //https://api.weather.gov/alerts/active?point=39%2C-104
@@ -25,7 +25,7 @@ struct NwsHttpClient: NwsClient {
     }
     
     func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data? {
-        let lat = location.latitude.truncated(to: 4)
+        let lat = location.latitude.truncated(to: 4) // NWS api only accepts 4 points of precision
         let lon = location.longitude.truncated(to: 4)
         logger.info("Fetching active alerts for \(lat), \(lon)")
         let url = try makeNwsUrl(path: "alerts/active?point=\(lat),\(lon)")
@@ -33,9 +33,11 @@ struct NwsHttpClient: NwsClient {
         return try await fetch(from: url)
     }
     
-    func fetchActiveAlertsJsonData() async throws -> Data? {
-        logger.info("Fetching all active alerts")
-        let url = try makeNwsUrl(path: "active?status=actual&message_type=alert,update")
+    func fetchPointMetadata(for location: Coordinate2D) async throws -> Data? {
+        let lat = location.latitude.truncated(to: 4) // NWS api only accepts 4 points of precision
+        let lon = location.longitude.truncated(to: 4)
+        logger.info("Fetching location metadata for \(lat), \(lon)")
+        let url = try makeNwsUrl(path: "points/\(lat),\(lon)")
         
         return try await fetch(from: url)
     }

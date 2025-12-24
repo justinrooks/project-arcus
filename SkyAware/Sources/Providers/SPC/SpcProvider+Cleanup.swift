@@ -13,7 +13,7 @@ extension SpcProvider: SpcCleanup {
         do {
             try await outlookRepo.purge()
             try await mesoRepo.purge()
-            try await watchRepo.purge()
+            try await watchRepo.purgeSpcWatches()
             
             // Clean up the geojson
             try await stormRiskRepo.purge()
