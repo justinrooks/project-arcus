@@ -51,6 +51,7 @@ actor GridPointProvider {
     private let client: NwsClient
     private var lastSnapshot: GridPointSnapshot?
     private let locationProvider: LocationProvider
+    private var lastRefreshKey: GridRefreshKey?
 
     init(client: NwsClient, locationProvider: LocationProvider) {
         self.client = client
@@ -63,7 +64,6 @@ actor GridPointProvider {
     }
     
     func resolveGridPoint(for point: CLLocationCoordinate2D) async throws -> GridPointSnapshot {
-        // If you want, short-circuit if close enough to previous coord
         let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
         let data = try await client.fetchPointMetadata(for: coordinates)
         
@@ -86,6 +86,13 @@ actor GridPointProvider {
         lastSnapshot
     }
     
+    private func shouldRefresh(for snap: CLLocationCoordinate2D) -> Bool {
+        let key = GridRefreshKey(coord: snap)
+        guard key != lastRefreshKey else { return false }
+        lastRefreshKey = key
+        return true
+    }
+    
     private func startListening() async {
         let stream = await locationProvider.updates()
         for await s in stream {
@@ -96,6 +103,7 @@ actor GridPointProvider {
     
     private func handleLocation(_ snapshot: LocationSnapshot) async {
         do {
+            guard shouldRefresh(for: snapshot.coordinates) else { print("Fall out"); return; }
             try await resolveGridPoint(for: snapshot.coordinates)
         } catch {
             logger.error("Failed to handle location update: \(error)")

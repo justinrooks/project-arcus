@@ -9,13 +9,18 @@ import SwiftUI
 import CoreLocation
 
 struct SummaryView: View {
+    // MARK: Environment
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.locationClient) private var locSvc
-    @Environment(\.riskQuery) private var svc: any SpcRiskQuerying
-    @Environment(\.spcSync) private var sync: any SpcSyncing
-    @Environment(\.outlookQuery) private var outlookSvc: any SpcOutlookQuerying
-    @Environment(\.nwsRiskQuery) private var nwsSvc: any NwsRiskQuerying
+    @Environment(\.dependencies) private var deps
     
+    // MARK: Local handles
+    private var sync: any SpcSyncing { deps.spcSync }
+    private var locSvc: LocationClient { deps.locationClient }
+    private var svc: any SpcRiskQuerying { deps.spcRisk }
+    private var outlookSvc: any SpcOutlookQuerying { deps.spcOutlook }
+    private var nwsSvc: any NwsRiskQuerying { deps.nwsRisk  }
+
+    // MARK: State
     // Header State
     @State private var snap: LocationSnapshot?
     
@@ -164,17 +169,6 @@ struct SummaryView: View {
             return .failure(error)
         }
     }
-    
-    private struct RefreshKey: Equatable {
-        let coord: CLLocationCoordinate2D
-        let timestamp: Date
-        
-        static func == (lhs: RefreshKey, rhs: RefreshKey) -> Bool {
-            lhs.coord.latitude == rhs.coord.latitude &&
-            lhs.coord.longitude == rhs.coord.longitude &&
-            lhs.timestamp == rhs.timestamp
-        }
-    }
 }
 
 // MARK: Previews
@@ -203,11 +197,6 @@ struct SummaryView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(.skyAwareBackground)
         .modelContainer(mdPreview.container)
-        .environment(\.locationClient, .offline)
-        .environment(\.riskQuery, spcMock)
-        //        .environment(\.spcFreshness, spcMock)
-        .environment(\.spcSync, spcMock)
-        .environment(\.outlookQuery, spcMock)
     }
 }
 
@@ -232,10 +221,5 @@ struct SummaryView: View {
         .toolbar(.hidden, for: .navigationBar)
         .background(.skyAwareBackground)
         .modelContainer(mdPreview.container)
-        .environment(\.locationClient, .offline)
-        .environment(\.riskQuery, spcMock)
-        //        .environment(\.spcFreshness, spcMock)
-        .environment(\.spcSync, spcMock)
-        .environment(\.outlookQuery, spcMock)
     }
 }

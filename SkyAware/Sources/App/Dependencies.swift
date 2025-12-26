@@ -10,12 +10,12 @@ import OSLog
 import SwiftData
 
 final class Dependencies: Sendable {
-    // MARK: - Core config
-    
+    // MARK: Core config
+
     let appRefreshID: String
     let logger: Logger
     
-    // MARK: - Data / persistence
+    // MARK: Data / persistence
     
     private let _modelContainer: ModelContainer?
     
@@ -26,18 +26,18 @@ final class Dependencies: Sendable {
     private let _severeRiskRepo: SevereRiskRepo?
     private let _healthStore: BgHealthStore?
     
-    // MARK: - Location / grid
+    // MARK: Location / grid
     
     private let _locationProvider: LocationProvider?
     private let _locationManager: LocationManager?
     private let _gridProvider: GridPointProvider?
     
-    // MARK: - Providers
+    // MARK: Providers
     
     private let _spcProvider: SpcProvider?
     private let _nwsProvider: NwsProvider?
     
-    // MARK: - Background orchestration
+    // MARK: Background orchestration
     
     private let _refreshPolicy: RefreshPolicy?
     private let _cadencePolicy: CadencePolicy?
@@ -140,6 +140,51 @@ final class Dependencies: Sendable {
             fatalError("Dependencies.scheduler used while unconfigured")
         }
         return value
+    }
+    
+    // MARK: Protocol surfaces - SPC
+    var spcSync: any SpcSyncing {
+        guard let _spcProvider else {
+            fatalError("Dependencies.spcSync used while unconfigured")
+        }
+        return _spcProvider
+    }
+    
+    var spcRisk: any SpcRiskQuerying {
+        guard let _spcProvider else {
+            fatalError("Dependencies.spcRisk used while unconfigured")
+        }
+        return _spcProvider
+    }
+    
+    var spcMapData: any SpcMapData {
+        guard let _spcProvider else {
+            fatalError("Dependencies.spcMapData used while unconfigured")
+        }
+        return _spcProvider
+    }
+    
+    var spcOutlook: any SpcOutlookQuerying {
+        guard let _spcProvider else {
+            fatalError("Dependencies.spcOulook used while unconfigured")
+        }
+        return _spcProvider
+    }
+    
+    // MARK: Protocol surfaces - NWS
+    var nwsRisk: any NwsRiskQuerying {
+        guard let _nwsProvider else {
+            fatalError("Dependencies.nwsRisk used while unconfigured")
+        }
+        return _nwsProvider
+    }
+    
+    // MARK: Protocol surfaces - Location
+    var locationClient: LocationClient {
+        guard let _locationProvider else {
+            fatalError("Dependencies.locationClient used while unconfigured")
+        }
+        return makeLocationClient(provider: _locationProvider)
     }
     
     

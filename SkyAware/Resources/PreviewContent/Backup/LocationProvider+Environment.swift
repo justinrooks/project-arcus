@@ -43,5 +43,5 @@ extension LocationClient {
 }
 
 extension EnvironmentValues {
-    @Entry var locationClient: LocationClient = .offline //.init(snapshot: {nil }, updates: {AsyncStream { _ in } } )
+//    @Entry var locationClient: LocationClient = .offline //.init(snapshot: {nil }, updates: {AsyncStream { _ in } } )
 }

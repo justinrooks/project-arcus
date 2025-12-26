@@ -24,13 +24,13 @@ actor NwsProvider {
 
 extension NwsProvider: NwsSyncing {
     func sync(for point: CLLocationCoordinate2D) async {
-        do {
-            let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
-            try await watchRepo.refreshWatchesNws(using: client, for: coordinates)
-        }
-        catch {
-            logger.error("Error syncing NWS Watches: \(error)")
-        }
+//        do {
+//            let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
+//            try await watchRepo.refreshWatchesNws(using: client, for: coordinates)
+//        }
+//        catch {
+//            logger.error("Error syncing NWS Watches: \(error)")
+//        }
     }
     
     func fetchPointMetadata(for point: CLLocationCoordinate2D) async {

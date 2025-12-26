@@ -10,8 +10,11 @@ import MapKit
 import SwiftData
 
 struct MapView: View {
-    @Environment(\.mapData) private var svc: any SpcMapData
-    @Environment(\.locationClient) private var loc
+    @Environment(\.dependencies) private var deps
+    
+    // MARK: Local handles
+    private var svc: any SpcMapData { deps.spcMapData }
+    private var loc: LocationClient { deps.locationClient }
     
     @State private var selected: MapLayer = .categorical
     @State private var showLayerPicker = false
@@ -161,13 +164,6 @@ struct MapView: View {
 }
 
 #Preview {
-    let preview = Preview(MD.self)
-    preview.addExamples(MD.sampleDiscussions)
-    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
-    
-    return NavigationStack {
-        MapView()
-            .environment(\.mapData, spcMock)
-    }
+    MapView()
 }
 

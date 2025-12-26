@@ -10,9 +10,9 @@ import SwiftData
 import CoreLocation
 
 struct HomeView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.spcSync) private var svc: any SpcSyncing
-    
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dependencies) private var dependencies
+
     #warning("TODO: Remove swift data and call the repo properly")
     @Query private var mesos: [MD]
     @Query private var watches: [WatchModel]
@@ -72,23 +72,14 @@ struct HomeView: View {
         }
         .transition(.opacity)
         .tint(.skyAwareAccent)
+        .task {
+            dependencies.locationManager.checkLocationAuthorization(isActive: true)
+            dependencies.locationManager.updateMode(for: scenePhase)
+        }
     }
 }
 
 // MARK: Preview
 #Preview("Home") {
-    // In-memory SwiftData container with sample data for all tabs
-    let preview = Preview(ConvectiveOutlook.self, MD.self, WatchModel.self, StormRisk.self, SevereRisk.self, BgRunSnapshot.self)
-    preview.addExamples(MD.sampleDiscussions)
-    preview.addExamples(WatchModel.sampleWatches)
-    preview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    preview.addExamples(BgRunSnapshot.sampleRuns)
-    
-    // Environment dependencies
-    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
-    
-    return HomeView()
-        .modelContainer(preview.container)
-        .environment(\.spcSync, spcMock)
-        .environment(\.spcFreshness, spcMock)
+    HomeView()
 }

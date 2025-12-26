@@ -8,7 +8,10 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @Environment(\.spcSync) private var sync: any SpcSyncing
+    @Environment(\.dependencies) private var deps
+    
+    // MARK: Local handles
+    private var sync: any SpcSyncing { deps.spcSync }
     
 //    @AppStorage("onboardingCompleted") private var onboardingCompleted = false
     @AppStorage(
@@ -77,5 +80,5 @@ struct OnboardingView: View {
     let locationMgr = LocationManager(onUpdate: sink)
     
     OnboardingView(locationMgr: locationMgr)
-        .environment(\.spcSync, spcMock)
+//        .environment(\.spcSync, spcMock)
 }

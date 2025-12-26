@@ -8,8 +8,11 @@
 import SwiftUI
 
 struct ConvectiveOutlookView: View {
-    @Environment(\.outlookQuery) private var outlooks: any SpcOutlookQuerying
-    @Environment(\.spcSync) private var sync: any SpcSyncing
+    @Environment(\.dependencies) private var deps
+    
+    // MARK: Local handles
+    private var sync: any SpcSyncing { deps.spcSync }
+    private var outlookSvc: any SpcOutlookQuerying { deps.spcOutlook }
 
     @State private var dtos: [ConvectiveOutlookDTO] = []
     @State private var selectedOutlook: ConvectiveOutlookDTO?
@@ -44,7 +47,7 @@ struct ConvectiveOutlookView: View {
         .refreshable {
             Task {
                 await sync.syncTextProducts()
-                dtos = try await outlooks.getConvectiveOutlooks()
+                dtos = try await outlookSvc.getConvectiveOutlooks()
             }
         }
         .task {
@@ -53,7 +56,7 @@ struct ConvectiveOutlookView: View {
                 return
             }
             
-            if let outlooks = try? await outlooks.getConvectiveOutlooks() {
+            if let outlooks = try? await outlookSvc.getConvectiveOutlooks() {
                 await MainActor.run { dtos = outlooks }
             }
         }
@@ -65,8 +68,6 @@ struct ConvectiveOutlookView: View {
 
     return NavigationStack {
         ConvectiveOutlookView()
-            .environment(\.outlookQuery, spcMock)
-            .environment(\.spcSync, spcMock)
             .navigationTitle("Convective Outlooks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
