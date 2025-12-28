@@ -14,6 +14,10 @@ import OSLog
 
 @main
 struct SkyAwareApp: App {
+    // EnvVars
+    @Environment(\.scenePhase) private var scenePhase
+    
+    // Dependencies
     private let deps = Dependencies.live()
     private let logger = Logger.mainApp
     
@@ -21,10 +25,7 @@ struct SkyAwareApp: App {
     @State private var didBootstrapBGRefresh = false
     @State private var showDisclaimerUpdate = false
     @State private var showLocationPermissionAlert = false
-    let currentDisclaimerVersion = 1
-    
-    // EnvVars
-    @Environment(\.scenePhase) private var scenePhase
+    private let currentDisclaimerVersion = 1
     
     // App Storage
     @AppStorage(
@@ -137,6 +138,7 @@ struct SkyAwareApp: App {
                         logger.notice("Starting spc provider cleanup and sync")
                         await deps.spcProvider.cleanup()
                         logger.info("Spc provider cleanup finished")
+                        #warning("Enable nws data cleanup here")
                         //                        await nwsProvider.cleanup()
                         logger.info("Nws provider cleanup finished")
                         

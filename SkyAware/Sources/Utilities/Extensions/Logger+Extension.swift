@@ -32,6 +32,7 @@ extension Logger {
     static let stormRiskRepo = Logger(subsystem: subsystem, category: "StormRiskRepo")
     static let severeRiskRepo = Logger(subsystem: subsystem, category: "SevereRiskRepo")
     static let riskProductRepo = Logger(subsystem: subsystem, category: "RiskProductRepo")
+    static let nwsMetadataRepo = Logger(subsystem: subsystem, category: "NwsMetadataRepo")
     
     // MARK: Background
     static let orchestrator = Logger(subsystem: subsystem, category: "BGOrchestrator")
@@ -47,7 +48,8 @@ extension Logger {
     static let alertView = Logger(subsystem: subsystem, category: "AlertView")
     static let convectiveView = Logger(subsystem: subsystem, category: "ConvectiveView")
     static let mainView = Logger(subsystem: subsystem, category: "MainView")
-    static let mapping = Logger(subsystem: subsystem, category: "Mapping")
+    static let mapping = Logger(subsystem: subsystem, category: "MappingView")
+    static let summaryView = Logger(subsystem: subsystem, category: "SummaryView")
     
     // MARK: Notification
     static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")

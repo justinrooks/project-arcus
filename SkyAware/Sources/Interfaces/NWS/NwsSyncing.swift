@@ -10,5 +10,4 @@ import CoreLocation
 
 protocol NwsSyncing: Sendable {
     func sync(for point: CLLocationCoordinate2D) async -> Void
-    func fetchPointMetadata(for point: CLLocationCoordinate2D) async -> Void
 }

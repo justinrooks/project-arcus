@@ -45,16 +45,58 @@ actor WatchRepo {
         logger.debug("Parsed \(watches.count) watch\(watches.count > 1 ? "es" : "") from SPC")
     }
     
-    func active(for location: Coordinate2D) async throws -> [WatchDTO] {
-        []
+    func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchDTO] {
+        logger.info("Fetching current local watches")
+//        let pred = #Predicate<Watch> { watch in
+//            watch.effective <= date && date <= watch.ends &&
+//        }
+        let pred = #Predicate<Watch> { _ in true }
+        let candidates = try modelContext.fetch(FetchDescriptor(predicate: pred))
+        
+        var hits: [Watch] = []
+        hits.reserveCapacity(candidates.count)
+        
+        for watch in candidates {
+            let ugc = watch.ugcZones
+            guard !ugc.isEmpty else { continue }
+            
+            if ugc.contains(county) || ugc.contains(zone) {
+                hits.append(watch)
+            }
+        }
+        
+        return hits.map {
+                WatchDTO(
+                    number: 100,
+                    title: $0.headline,
+                    link: URL(string:"https://api.weather.gov/alerts/\($0.nwsId)")!,
+                    issued: $0.issued,
+                    validStart: $0.effective,
+                    validEnd: $0.ends,
+                    summary: $0.watchDescription,
+                    type: $0.event
+                )
+        }
     }
-    
-    func getPointMetadata(using client: any NwsClient,for location: Coordinate2D) async throws {
-        let data = try await client.fetchPointMetadata(for: location)
-    }
-    
+        
     func refreshWatchesNws(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
+        
+//        let x = WatchModel.buildNwsTornadoSample()
+//        if let coded:Data = x.data(using: .utf8) {
+//            let testingCode = NWSWatchParser.decode(from: coded)
+//            let count = testingCode?.features?.count ?? 0
+//        }
+//        let jsonString = """
+//        {
+//          "type": "FeatureCollection",
+//          "features": []
+//        }
+//        """
+//
+//        guard let data = jsonString.data(using: .utf8) else {
+//            fatalError("Failed to create Data from JSON string")
+//        }
         
         guard let data else {
             logger.debug("No watch data found")

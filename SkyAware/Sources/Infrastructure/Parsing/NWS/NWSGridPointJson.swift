@@ -8,7 +8,7 @@
 import Foundation
 
 /// Top-level feature for /points
-struct NWSGridPoint: Decodable {
+struct NWSGridPoint: Decodable, Sendable {
 //    let context: [String]?
     let id: String
     let type: String
@@ -25,7 +25,7 @@ struct NWSGridPoint: Decodable {
 }
 
 /// Properties block of the /points response
-struct NWSGridPointProperties: Decodable {
+struct NWSGridPointProperties: Decodable, Sendable {
     let context: [String]?
     let geometry: String?
     let id: String?
@@ -80,7 +80,7 @@ struct NWSGridPointProperties: Decodable {
 }
 
 /// Nested "relativeLocation" feature
-struct NWSRelativeLocation: Decodable {
+struct NWSRelativeLocation: Decodable, Sendable {
     let context: [String]?
     let id: String?
     let type: String?
@@ -96,7 +96,7 @@ struct NWSRelativeLocation: Decodable {
     }
 }
 
-struct NWSRelativeLocationProperties: Decodable {
+struct NWSRelativeLocationProperties: Decodable, Sendable {
     let city: String?
     let state: String?
     let distance: NWSMeasurement?
@@ -104,7 +104,7 @@ struct NWSRelativeLocationProperties: Decodable {
 }
 
 /// Used for "distance" and "bearing"
-struct NWSMeasurement: Decodable {
+struct NWSMeasurement: Decodable, Sendable {
     let value: Double?
     let maxValue: Double?
     let minValue: Double?

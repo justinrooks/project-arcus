@@ -24,6 +24,8 @@ struct GridPointSnapshot {
     let state: String?
     let timeZoneId: String?
     let radarStationId: String?
+    let zone: String?
+    let county: String?
     
     init(from: NWSGridPoint, with coordinates: Coordinate2D) {
         let props = from.properties
@@ -42,6 +44,8 @@ struct GridPointSnapshot {
         self.state                  = props.relativeLocation?.properties.state
         self.timeZoneId             = props.timeZone
         self.radarStationId         = props.radarStation
+        self.zone                   = props.forecastZone?.lastPathComponent
+        self.county                 = props.county?.lastPathComponent
     }
 }
 
@@ -49,13 +53,15 @@ struct GridPointSnapshot {
 actor GridPointProvider {
     let logger = Logger.nwsGridProvider
     private let client: NwsClient
+    private let metadataRepo: NwsMetadataRepo
     private var lastSnapshot: GridPointSnapshot?
     private let locationProvider: LocationProvider
     private var lastRefreshKey: GridRefreshKey?
 
-    init(client: NwsClient, locationProvider: LocationProvider) {
+    init(client: NwsClient, locationProvider: LocationProvider, repo: NwsMetadataRepo) {
         self.client = client
         self.locationProvider = locationProvider
+        metadataRepo = repo
         
         Task { [weak self] in
             guard let self else { return }
@@ -63,26 +69,21 @@ actor GridPointProvider {
         }
     }
     
-    func resolveGridPoint(for point: CLLocationCoordinate2D) async throws -> GridPointSnapshot {
-        let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
-        let data = try await client.fetchPointMetadata(for: coordinates)
-        
-        guard let data else {
-            logger.debug("No grid point data found")
-            throw NwsError.parsingError
+    func resolveGridPoint(for point: CLLocationCoordinate2D) async -> GridPointSnapshot?{
+        do {
+            let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
+            let decoded = try await metadataRepo.getPointMetadata(using: client, for: coordinates)
+            let snapshot = GridPointSnapshot(from: decoded, with: coordinates)
+            lastSnapshot = snapshot
+            
+            return snapshot
+        } catch {
+            logger.error("Failed to fetch gridpoint metadata: \(error)")
+            return nil
         }
-        
-        guard let decoded = NWSGridPointParser.decode(from: data) else {
-            logger.debug("Unable to parse NWS Json grid point data")
-            throw NwsError.parsingError
-        }
-        
-        let snapshot = GridPointSnapshot(from: decoded, with: coordinates)
-        lastSnapshot = snapshot
-        return snapshot
     }
 
-    func currentGridPoint() -> GridPointSnapshot? {
+    func currentGridPointMetadata() -> GridPointSnapshot? {
         lastSnapshot
     }
     
@@ -102,11 +103,9 @@ actor GridPointProvider {
     }
     
     private func handleLocation(_ snapshot: LocationSnapshot) async {
-        do {
-            guard shouldRefresh(for: snapshot.coordinates) else { print("Fall out"); return; }
-            try await resolveGridPoint(for: snapshot.coordinates)
-        } catch {
-            logger.error("Failed to handle location update: \(error)")
+        guard shouldRefresh(for: snapshot.coordinates) else {
+            return
         }
+        _ = await resolveGridPoint(for: snapshot.coordinates)
     }
 }

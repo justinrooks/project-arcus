@@ -179,6 +179,20 @@ final class Dependencies: Sendable {
         return _nwsProvider
     }
     
+    var nwsSync: any NwsSyncing {
+        guard let _nwsProvider else {
+            fatalError("Dependencies.nwsRisk used while unconfigured")
+        }
+        return _nwsProvider
+    }
+    
+    var nwsMetadata: any NwsMetadataProviding {
+        guard let _nwsProvider else {
+            fatalError("Dependencies.nwsMetadata used while unconfigured")
+        }
+        return _nwsProvider
+    }
+    
     // MARK: Protocol surfaces - Location
     var locationClient: LocationClient {
         guard let _locationProvider else {
@@ -268,10 +282,6 @@ final class Dependencies: Sendable {
         let nwsClient = NwsHttpClient()
         let spcClient = SpcHttpClient()
         
-        // Grid provider
-        let gridProvider = GridPointProvider(client: nwsClient, locationProvider: locationProvider)
-        logger.info("GridPoint provider configured")
-        
         // Create our data layer repos
         let outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)
         let mesoRepo       = MesoRepo(modelContainer: container)
@@ -279,6 +289,7 @@ final class Dependencies: Sendable {
         let stormRiskRepo  = StormRiskRepo(modelContainer: container)
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
+        let metadataRepo   = NwsMetadataRepo()
         
         logger.debug("Repositories initialized")
         
@@ -288,15 +299,20 @@ final class Dependencies: Sendable {
                               watchRepo: watchRepo,
                               stormRiskRepo: stormRiskRepo,
                               severeRiskRepo: severeRiskRepo,
-                              client: SpcHttpClient())
+                              client: spcClient)
         let spcProvider = spc
-        logger.debug("SPC Provider initialized")
+        logger.debug("SPC provider initialized")
+
+        let gridProvider = GridPointProvider(client: nwsClient, locationProvider: locationProvider, repo: metadataRepo)
+        logger.info("GridPoint provider initialized")
         
         let nws = NwsProvider(
             watchRepo: watchRepo,
+            metadataRepo: metadataRepo,
+            gridMetadataProvider: gridProvider,
             client: nwsClient)
         let nwsProvider = nws
-        logger.debug("NWS Provider initialized")
+        logger.debug("NWS provider initialized")
         
         // Background policies
         let refreshPolicy = RefreshPolicy()

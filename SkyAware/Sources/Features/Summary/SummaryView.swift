@@ -7,11 +7,14 @@
 
 import SwiftUI
 import CoreLocation
+import OSLog
 
 struct SummaryView: View {
     // MARK: Environment
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var deps
+    
+    private let logger = Logger.summaryView
     
     // MARK: Local handles
     private var sync: any SpcSyncing { deps.spcSync }
@@ -19,6 +22,7 @@ struct SummaryView: View {
     private var svc: any SpcRiskQuerying { deps.spcRisk }
     private var outlookSvc: any SpcOutlookQuerying { deps.spcOutlook }
     private var nwsSvc: any NwsRiskQuerying { deps.nwsRisk  }
+    private var nwsSync: any NwsSyncing { deps.nwsSync }
 
     // MARK: State
     // Header State
@@ -75,7 +79,7 @@ struct SummaryView: View {
                 .padding(.vertical, 24)
                 
                 // Alerts
-                if !mesos.isEmpty {
+                if !mesos.isEmpty || !watches.isEmpty {
                     ActiveAlertSummaryView(
                         mesos: mesos,
                         watches: watches
@@ -114,7 +118,6 @@ struct SummaryView: View {
             }
         }
         .refreshable {
-            print("*** REFRESHIN ***")
             lastRefreshKey = nil
             await refresh(for: snap)
         }
@@ -122,10 +125,20 @@ struct SummaryView: View {
     
     /// Refreshes outlook plus location-scoped data together
     private func refresh(for snap: LocationSnapshot?) async {
+        guard let snap else {
+            logger.warning("No location snapshot, skipping refresh")
+            return
+        }
+        guard shouldRefresh(for: snap) else {
+            logger.info("Refresh denied, no change detected")
+            return
+        }
+
+        logger.info("Refreshing summary data")
+        
         await sync.syncTextProducts() // This was moved from app init (SkyAwareApp), if timing is an issue, may need to put it back
         await refreshOutlook()
-        guard let snap else { return }
-        guard shouldRefresh(for: snap) else { return }
+        await nwsSync.sync(for: snap.coordinates)
         await refreshRisk(for: snap.coordinates)
     }
     
@@ -159,6 +172,7 @@ struct SummaryView: View {
             if case let .success(value) = storm { self.stormRisk = value }
             if case let .success(value) = severe { self.severeRisk = value }
             if case let .success(value) = mesos { self.mesos = value }
+            if case let .success(value) = watch { self.watches = value }
         }
     }
     
