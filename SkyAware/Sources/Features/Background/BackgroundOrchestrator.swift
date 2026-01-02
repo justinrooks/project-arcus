@@ -21,6 +21,7 @@ struct Outcome: Sendable {
 struct NotificationSettings: Sendable {
     let morningSummariesEnabled: Bool
     let mesoNotificationsEnabled: Bool
+    let watchNotificationsEnabled: Bool
 }
 
 actor BackgroundOrchestrator {
@@ -31,6 +32,7 @@ actor BackgroundOrchestrator {
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
     private let mesoEngine: MesoEngine
+    private let watchEngine: WatchEngine
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
     
@@ -44,6 +46,7 @@ actor BackgroundOrchestrator {
         policy: RefreshPolicy,
         engine: MorningEngine,
         mesoEngine: MesoEngine,
+        watchEngine: WatchEngine,
         health: BgHealthStore,
         cadence: CadencePolicy,
         notificationSettings: NotificationSettings
@@ -55,6 +58,7 @@ actor BackgroundOrchestrator {
         healthStore = health
         self.cadence = cadence
         self.mesoEngine = mesoEngine
+        self.watchEngine = watchEngine
         settings = notificationSettings
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
@@ -71,6 +75,7 @@ actor BackgroundOrchestrator {
         return await withTaskCancellationHandler {
             var didMorningNotify = false
             var didMesoNotify = false
+            var didWatchNotify = false
             var noNotifyReasons: [String] = []
             var feedsChanged: Set<Feed> = []
             
@@ -146,6 +151,20 @@ actor BackgroundOrchestrator {
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                 } else { noNotifyReasons.append("Meso notification disabled") }
                 
+                if settings.watchNotificationsEnabled {
+                    // MARK: Send Watch Notification
+                    signposter.emitEvent("Watch Notification")
+                    didWatchNotify = await watchEngine.run(
+                        ctx: .init(
+                            now: .now,
+                            localTZ: .current,
+                            location: updatedSnap.coordinates,
+                            placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                        )
+                    )
+                    if !didWatchNotify { noNotifyReasons.append("Watch notification skipped") }
+                } else { noNotifyReasons.append("Watch notification disabled") }
+                
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
                     for: .init(
@@ -160,7 +179,7 @@ actor BackgroundOrchestrator {
                 let nextRun = refreshPolicy.getNextRunTime(for: cadenceResult.cadence)
                 let end = Date()
                 let active = clock.now - startInstant
-                let didNotify = didMorningNotify || didMesoNotify
+                let didNotify = didMorningNotify || didMesoNotify || didWatchNotify
                 let reasonNoNotify = didNotify ? nil : noNotifyReasons.joined(separator: "; ")
 
                 try? await recordBgRun(
