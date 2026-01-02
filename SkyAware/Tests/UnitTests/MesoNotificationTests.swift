@@ -3,120 +3,108 @@ import Testing
 import CoreLocation
 import Foundation
 
-@Suite("Watch Notification")
-struct WatchNotificationTests {
+@Suite("Meso Notification")
+struct MesoNotificationTests {
     private let centralTime: TimeZone = TimeZone(secondsFromGMT: -6 * 3600)!
-
+    
     private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0, tz: TimeZone) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = tz
         let components = DateComponents(calendar: calendar, timeZone: tz, year: year, month: month, day: day, hour: hour, minute: minute)
         return calendar.date(from: components)!
     }
-
-    private func makeWatch(
-        id: String = "abc123",
+    
+    private func makeMeso(
+        number: Int = 1234,
         issued: Date,
-        expires: Date,
-        sender: String = "NWS Norman",
-        severity: String = "Severe",
-        urgency: String = "Immediate",
-        certainty: String = "Observed",
-        title: String = "Tornado Watch",
-        headline: String = "Severe threat",
-        area: String = "Oklahoma"
-    ) -> WatchRowDTO {
-        WatchRowDTO(
-            id: id,
+        validEnd: Date,
+        title: String = "Mesoscale Discussion",
+        summary: String = "Potential severe storms",
+        watchProbability: String = "30",
+        place: String = "Oklahoma"
+    ) -> MdDTO {
+        MdDTO(
+            number: number,
             title: title,
-            headline: headline,
+            link: URL(string: "https://example.com/md")!,
             issued: issued,
-            expires: expires,
-            messageType: "Alert",
-            sender: sender,
-            severity: severity,
-            urgency: urgency,
-            certainty: certainty,
-            description: "",
-            instruction: nil,
-            response: nil,
-            areaSummary: area
+            validStart: issued,
+            validEnd: validEnd,
+            areasAffected: place,
+            summary: summary,
+            watchProbability: watchProbability,
+            threats: nil,
+            coordinates: []
         )
     }
-
+    
     @Test
-    func ruleCreatesEventForActiveWatch() {
+    func ruleCreatesEventForActiveMeso() {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
-        let watch = makeWatch(
+        let meso = makeMeso(
             issued: now.addingTimeInterval(-3_600),
-            expires: now.addingTimeInterval(10_800)
+            validEnd: now.addingTimeInterval(3_600)
         )
-
-        let ctx = WatchContext(
+        
+        let ctx = MesoContext(
             now: now,
             localTZ: centralTime,
             location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
             placeMark: "Oklahoma City, OK",
-            watches: [watch]
+            mesos: [meso]
         )
-
-        let rule = WatchRule()
+        
+        let rule = MesoRule()
         do {
             let event = try #require(rule.evaluate(ctx))
             
-            #expect(event.kind == .watchNotification)
-            #expect(event.key == "watch:2026-01-02-\(watch.id)")
-            #expect(event.payload["watchId"] as? String == watch.id)
+            #expect(event.kind == .mesoNotification)
+            #expect(event.key == "meso:2026-01-02-\(meso.number)")
+            #expect(event.payload["mesoId"] as? Int == meso.number)
             #expect(event.payload["localDay"] as? String == "2026-01-02")
-            #expect(event.payload["headline"] as? String == watch.headline)
             #expect(event.payload["placeMark"] as? String == "Oklahoma City, OK")
         } catch {
-            #expect(Bool(false), "Unexpected error: \(error)")
+            #expect(false, "Unexpected error: \(error)")
         }
     }
-
+    
     @Test
-    func ruleSkipsExpiredOrOldWatches() {
+    func ruleSkipsExpiredMesos() {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
-        let expired = makeWatch(
+        let expired = makeMeso(
             issued: now.addingTimeInterval(-7_200),
-            expires: now.addingTimeInterval(-3_600)
+            validEnd: now.addingTimeInterval(-3_600)
         )
-        let tooOld = makeWatch(
-            id: "old",
-            issued: now.addingTimeInterval(-26 * 3_600),
-            expires: now.addingTimeInterval(1_800)
-        )
-
-        let ctx = WatchContext(
+        
+        let ctx = MesoContext(
             now: now,
             localTZ: centralTime,
             location: CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
             placeMark: "Norman, OK",
-            watches: [expired, tooOld]
+            mesos: [expired]
         )
-
-        let rule = WatchRule()
+        
+        let rule = MesoRule()
         let event = rule.evaluate(ctx)
-
+        
         #expect(event == nil)
     }
-
+    
     @Test
     func gateBlocksDuplicateEvents() async {
-        let gate = WatchGate(store: InMemoryNotificationStore())
+        let gate = MesoGate(store: InMemoryMesoStore())
         let event = NotificationEvent(
-            kind: .watchNotification,
-            key: "watch:2026-01-02-abc123",
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
             payload: [
                 "localDay": "2026-01-02",
-                "watchId": "abc123"
+                "mesoId": 1234
             ]
         )
-
+        
         let firstPass = await gate.allow(event, now: .now)
         let secondPass = await gate.allow(event, now: .now)
-
+        
         #expect(firstPass == true)
         #expect(secondPass == false)
     }
@@ -124,9 +112,9 @@ struct WatchNotificationTests {
 
 // MARK: - Test Doubles
 
-actor InMemoryNotificationStore: NotificationStateStore {
+actor InMemoryMesoStore: NotificationStateStore {
     private var stamp: String?
-
+    
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }
