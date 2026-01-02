@@ -344,14 +344,11 @@ final class Dependencies: Sendable {
             nws: nws
         )
         
-        let notificationSettings = NotificationSettings(
-            morningSummariesEnabled: readBoolSetting(forKey: "morningSummaryEnabled", defaultValue: true),
-            mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true),
-            watchNotificationsEnabled: readBoolSetting(forKey: "watchNotificationEnabled", defaultValue: true)
-        )
+        let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
+            nwsProvider: nws,
             locationProvider: locationProvider,
             policy: refreshPolicy,
             engine: morning,
@@ -359,7 +356,7 @@ final class Dependencies: Sendable {
             watchEngine: watch,
             health: healthStore,
             cadence: cadencePolicy,
-            notificationSettings: notificationSettings
+            notificationSettingsProvider: notificationSettingsProvider
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
@@ -407,10 +404,23 @@ final class Dependencies: Sendable {
                                                          scheduler: nil)
     }
 
-    @MainActor private static func readBoolSetting(forKey key: String, defaultValue: Bool) -> Bool {
-        if let value = UserDefaults.shared?.object(forKey: key) as? Bool {
-            return value
+    private struct UserDefaultsNotificationSettingsProvider: NotificationSettingsProviding {
+        func current() async -> NotificationSettings {
+            await MainActor.run {
+                NotificationSettings(
+                    morningSummariesEnabled: readBoolSetting(forKey: "morningSummaryEnabled", defaultValue: true),
+                    mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true),
+                    watchNotificationsEnabled: readBoolSetting(forKey: "watchNotificationEnabled", defaultValue: true)
+                )
+            }
         }
-        return defaultValue
+
+        @MainActor
+        private func readBoolSetting(forKey key: String, defaultValue: Bool) -> Bool {
+            if let value = UserDefaults.shared?.object(forKey: key) as? Bool {
+                return value
+            }
+            return defaultValue
+        }
     }
 }

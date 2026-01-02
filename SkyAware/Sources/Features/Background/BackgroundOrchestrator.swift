@@ -24,10 +24,15 @@ struct NotificationSettings: Sendable {
     let watchNotificationsEnabled: Bool
 }
 
+protocol NotificationSettingsProviding: Sendable {
+    func current() async -> NotificationSettings
+}
+
 actor BackgroundOrchestrator {
     private let logger = Logger.orchestrator
     private let signposter:OSSignposter
     private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
+    private let nwsProvider: any NwsSyncing & NwsRiskQuerying
     private let locationProvider: LocationProvider
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
@@ -35,13 +40,13 @@ actor BackgroundOrchestrator {
     private let watchEngine: WatchEngine
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
+    private let notificationSettingsProvider: NotificationSettingsProviding
     
     private let clock = ContinuousClock()
     
-    private let settings: NotificationSettings
-    
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
+        nwsProvider: any NwsSyncing & NwsRiskQuerying,
         locationProvider: LocationProvider,
         policy: RefreshPolicy,
         engine: MorningEngine,
@@ -49,9 +54,10 @@ actor BackgroundOrchestrator {
         watchEngine: WatchEngine,
         health: BgHealthStore,
         cadence: CadencePolicy,
-        notificationSettings: NotificationSettings
+        notificationSettingsProvider: NotificationSettingsProviding
     ) {
         self.spcProvider = spcProvider
+        self.nwsProvider = nwsProvider
         self.locationProvider = locationProvider
         morningEngine = engine
         refreshPolicy = policy
@@ -59,7 +65,7 @@ actor BackgroundOrchestrator {
         self.cadence = cadence
         self.mesoEngine = mesoEngine
         self.watchEngine = watchEngine
-        settings = notificationSettings
+        self.notificationSettingsProvider = notificationSettingsProvider
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
     }
@@ -81,6 +87,7 @@ actor BackgroundOrchestrator {
             
             do {
                 try Task.checkCancellation()
+                let settings = await notificationSettingsProvider.current()
                 
                 // MARK: Get fresh data
                 logger.info("Starting SPC sync")
@@ -140,6 +147,7 @@ actor BackgroundOrchestrator {
                 if settings.mesoNotificationsEnabled {
                     // MARK: Send Meso Notification
                     signposter.emitEvent("Meso Notification")
+                    await nwsProvider.sync(for: updatedSnap.coordinates)
                     didMesoNotify = await mesoEngine.run(
                         ctx: .init(
                             now: .now,
