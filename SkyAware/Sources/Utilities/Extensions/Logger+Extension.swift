@@ -65,4 +65,10 @@ extension Logger {
     static let mesoEngine = Logger(subsystem: subsystem, category: "mesoEngine")
     static let mesoGate = Logger(subsystem: subsystem, category: "mesoGate")
     static let mesoRule = Logger(subsystem: subsystem, category: "mesoRule")
+    
+    // MARK: Watch Notification
+    static let watchEngine = Logger(subsystem: subsystem, category: "watchNotificationEngine")
+    static let watchRule = Logger(subsystem: subsystem, category: "watchRule")
+    static let watchComposer = Logger(subsystem: subsystem, category: "watchNotificationComposer")
+    static let watchGate = Logger(subsystem: subsystem, category: "watchGate")
 }
