@@ -15,8 +15,7 @@ struct Sender: NotificationSender {
     
     func send(title: String, body: String, subtitle: String, id: String) async {
         logger.debug("Sending notification")
-        let notifier = NotificationManager()
-        await notifier.notify(title: title, subtitle: subtitle, body: body)
+        await NotificationManager.shared.notify(title: title, subtitle: subtitle, body: body)
         logger.debug("Notification sent")
     }
 }

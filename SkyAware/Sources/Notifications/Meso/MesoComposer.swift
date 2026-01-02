@@ -34,23 +34,19 @@ struct MesoComposer: NotificationComposer {
     
     // MARK: Build Strings
     private func buildThreatString(from threats: MDThreats?) -> String {
-        var threatString: String = "Threats: unknown"
+        guard let t = threats else { return "Threats: unknown" }
         
-        if let t = threats {
-            threatString = "Threats: "
-            if let w = t.peakWindMPH {
-                threatString = "\nPeak Wind: \(w)"
-            }
-            
-            if let h = t.hailRangeInches {
-                threatString = "\nHail Range: \(h)"
-            }
-            
-            if let ts = t.tornadoStrength, !ts.isEmpty {
-                threatString = "\nTornado Strength: \(ts)"
-            }
+        var lines: [String] = ["Threats:"]
+        if let w = t.peakWindMPH {
+            lines.append("Peak Wind: \(w)")
+        }
+        if let h = t.hailRangeInches {
+            lines.append("Hail Range: \(h)")
+        }
+        if let ts = t.tornadoStrength, !ts.isEmpty {
+            lines.append("Tornado Strength: \(ts)")
         }
         
-        return threatString
+        return lines.count == 1 ? "Threats: unknown" : lines.joined(separator: "\n")
     }
 }

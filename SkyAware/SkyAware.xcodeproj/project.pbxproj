@@ -36,9 +36,12 @@
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
+				UnitTests/MesoNotificationTests.swift,
+				UnitTests/MorningNotificationTests.swift,
 				UnitTests/ParseAsIssueDateTests.swift,
 				UnitTests/ParseSPCValidTime.swift,
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
+				UnitTests/WatchNotificationTests.swift,
 				UnitTests/WatchParserTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
 			);
@@ -48,9 +51,12 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				UnitTests/ConvectiveOutlookRepoTests.swift,
+				UnitTests/MesoNotificationTests.swift,
+				UnitTests/MorningNotificationTests.swift,
 				UnitTests/ParseAsIssueDateTests.swift,
 				UnitTests/ParseSPCValidTime.swift,
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
+				UnitTests/WatchNotificationTests.swift,
 				UnitTests/WatchParserTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
 			);

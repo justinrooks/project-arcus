@@ -335,22 +335,28 @@ final class Dependencies: Sendable {
             spc: spc
         )
         
-        // TODO: If you want the `@AppStorage` flags here, you'll replace these with
-        // real values passed in or read via a config object.
-        let notificationSettings = NotificationSettings(
-            morningSummariesEnabled: true,
-            mesoNotificationsEnabled: true
+        logger.debug("Composing watch notification engine")
+        let watch = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: DefaultWatchStore()),
+            composer: WatchComposer(),
+            sender: Sender(),
+            nws: nws
         )
+        
+        let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
+            nwsProvider: nws,
             locationProvider: locationProvider,
             policy: refreshPolicy,
             engine: morning,
             mesoEngine: meso,
+            watchEngine: watch,
             health: healthStore,
             cadence: cadencePolicy,
-            notificationSettings: notificationSettings
+            notificationSettingsProvider: notificationSettingsProvider
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
@@ -396,5 +402,25 @@ final class Dependencies: Sendable {
                                                          cadencePolicy: nil,
                                                          orchestrator: nil,
                                                          scheduler: nil)
+    }
+
+    private struct UserDefaultsNotificationSettingsProvider: NotificationSettingsProviding {
+        func current() async -> NotificationSettings {
+            await MainActor.run {
+                NotificationSettings(
+                    morningSummariesEnabled: readBoolSetting(forKey: "morningSummaryEnabled", defaultValue: true),
+                    mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true),
+                    watchNotificationsEnabled: readBoolSetting(forKey: "watchNotificationEnabled", defaultValue: true)
+                )
+            }
+        }
+
+        @MainActor
+        private func readBoolSetting(forKey key: String, defaultValue: Bool) -> Bool {
+            if let value = UserDefaults.shared?.object(forKey: key) as? Bool {
+                return value
+            }
+            return defaultValue
+        }
     }
 }

@@ -21,13 +21,14 @@ struct MesoRule: MesoNotificationRule {
         guard let y = comps.year, let m = comps.month, let d = comps.day else { return nil}
         
         // MARK: Rule
-        if ctx.mesos.isEmpty {
+        let activeMesos = ctx.mesos.filter { $0.validEnd >= ctx.now }
+        if activeMesos.isEmpty {
             logger.debug("No active mesos for current time and location")
             return nil
         }
-        if ctx.mesos.count > 1 { logger.warning("Multiple mesos found, only using first") }
+        if activeMesos.count > 1 { logger.warning("Multiple mesos found, only using most recent") }
         
-        let meso: MdDTO? = ctx.mesos.sorted(by: { $0.issued < $1.issued }).first // Get the most recently issued meso
+        let meso: MdDTO? = activeMesos.max(by: { $0.issued < $1.issued }) // Get the most recently issued meso
         
         guard let meso else { return nil }
         

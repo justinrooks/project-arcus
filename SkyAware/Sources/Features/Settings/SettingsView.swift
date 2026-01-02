@@ -51,6 +51,11 @@ struct SettingsView: View {
         store: UserDefaults.shared
     ) private var mesoNotificationEnabled: Bool = true
     
+    @AppStorage(
+        "watchNotificationEnabled",
+        store: UserDefaults.shared
+    ) private var watchNotificationEnabled: Bool = true
+    
     // MARK: Debugging
     @AppStorage(
         "onboardingComplete",
@@ -95,6 +100,12 @@ struct SettingsView: View {
                     Toggle("Enable Meso Notifications", isOn: $mesoNotificationEnabled)
                         .onChange(of: mesoNotificationEnabled) { oldValue, newValue in
                             handleNotificationToggle(newValue, for: "Meso Notifications")
+                        }
+                }
+                HStack {
+                    Toggle("Enable Watch Notifications", isOn: $watchNotificationEnabled)
+                        .onChange(of: watchNotificationEnabled) { oldValue, newValue in
+                            handleNotificationToggle(newValue, for: "Watch Notifications")
                         }
                 }
             }
