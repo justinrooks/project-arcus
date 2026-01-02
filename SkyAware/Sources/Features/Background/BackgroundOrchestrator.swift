@@ -147,7 +147,6 @@ actor BackgroundOrchestrator {
                 if settings.mesoNotificationsEnabled {
                     // MARK: Send Meso Notification
                     signposter.emitEvent("Meso Notification")
-                    await nwsProvider.sync(for: updatedSnap.coordinates)
                     didMesoNotify = await mesoEngine.run(
                         ctx: .init(
                             now: .now,
@@ -162,6 +161,7 @@ actor BackgroundOrchestrator {
                 if settings.watchNotificationsEnabled {
                     // MARK: Send Watch Notification
                     signposter.emitEvent("Watch Notification")
+                    await nwsProvider.sync(for: updatedSnap.coordinates)
                     didWatchNotify = await watchEngine.run(
                         ctx: .init(
                             now: .now,
