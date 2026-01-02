@@ -8,7 +8,7 @@
 import Foundation
 
 // MARK: - Feeds we plan/schedule
-enum Feed: String, CaseIterable { case outlookDay1, meso }
+enum FeedRM: String, CaseIterable { case outlookDay1, meso, watch, warning }
 
 // MARK: - Risk tiers (categorical outlook at user location)
 enum RiskTier: Int, CaseIterable, CustomStringConvertible {
@@ -53,7 +53,7 @@ struct DerivedState: Equatable {
 
 // MARK: - Planned check result
 struct CheckPlan: Equatable {
-    let feed: Feed
+    let feed: FeedRM
     let interval: TimeInterval
     let earliestBeginDate: Date
     let reason: String

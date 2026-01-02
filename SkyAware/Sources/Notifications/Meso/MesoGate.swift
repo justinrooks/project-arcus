@@ -23,7 +23,7 @@ struct MesoGate: NotificationGate {
 //            return false
 //        }
         
-        guard let mesoId = event.payload["mesoId"] as? String else {
+        guard let mesoId = event.payload["mesoId"] as? Int else {
             logger.debug("Gate missing 'mesoId' parameter")
             return false
         }

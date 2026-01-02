@@ -8,6 +8,8 @@
 import Foundation
 import OSLog
 
+enum Feed: String, CaseIterable { case outlookDay1, meso, watch, warning }
+
 struct Outcome: Sendable {
     enum BackgroundResult: Sendable { case success, cancelled, failed, skipped }
     let next: Date
@@ -67,7 +69,10 @@ actor BackgroundOrchestrator {
         let start = Date()
         
         return await withTaskCancellationHandler {
-            var reasonNoNotify: String?
+            var didMorningNotify = false
+            var didMesoNotify = false
+            var noNotifyReasons: [String] = []
+            var feedsChanged: Set<Feed> = []
             
             do {
                 try Task.checkCancellation()
@@ -78,6 +83,7 @@ actor BackgroundOrchestrator {
                 await spcProvider.sync()
                 signposter.endInterval("SPC Sync", syncInterval)
                 logger.info("SPC sync completed")
+                feedsChanged.formUnion([.outlookDay1, .meso])
                 
                 // - Get the latest convective outlook details
                 logger.debug("Fetching latest convective outlook")
@@ -94,9 +100,9 @@ actor BackgroundOrchestrator {
                     let end = Date()
                     let active = clock.now - startInstant
                     
-                    try? await recordBgRun(start: start, end: end, result: .success, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
+                    try? await recordBgRun(start: start, end: end, result: .skipped, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
                     
-                    return .init(next: nextRun, result: .skipped, didNotify: false, feedsChanged: [])
+                    return .init(next: nextRun, result: .skipped, didNotify: false, feedsChanged: feedsChanged)
                 }
                 
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
@@ -112,33 +118,33 @@ actor BackgroundOrchestrator {
                 // MARK: Send the AM Notification
                 if settings.morningSummariesEnabled {
                     signposter.emitEvent("Morning Summary Notification")
-                    let didAmNotify = await morningEngine.run(
+                    didMorningNotify = await morningEngine.run(
                         ctx: .init(
                             now: .now,
                             lastConvectiveIssue: outlook?.published,
-                            localTZ: TimeZone(identifier: "America/Denver")!,
+                            localTZ: .current,
                             quietHours: nil,
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
                             placeMark: updatedSnap.placemarkSummary ?? "Unknown"
                         )
                     )
-                    if !didAmNotify { reasonNoNotify = "Morning summary skipped" }
-                } else { reasonNoNotify = "Morning summary disabled" }
+                    if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
+                } else { noNotifyReasons.append("Morning summary disabled") }
                 
                 if settings.mesoNotificationsEnabled {
                     // MARK: Send Meso Notification
                     signposter.emitEvent("Meso Notification")
-                    let didMesoNotify = await mesoEngine.run(
+                    didMesoNotify = await mesoEngine.run(
                         ctx: .init(
                             now: .now,
-                            localTZ: TimeZone(identifier: "America/Denver")!,
+                            localTZ: .current,
                             location: updatedSnap.coordinates,
                             placeMark: updatedSnap.placemarkSummary ?? "Unknown"
                         )
                     )
-                    if !didMesoNotify { reasonNoNotify = "Meso notification skipped" }
-                } else { reasonNoNotify = "Meso notification disabled" }
+                    if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
+                } else { noNotifyReasons.append("Meso notification disabled") }
                 
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
@@ -154,12 +160,14 @@ actor BackgroundOrchestrator {
                 let nextRun = refreshPolicy.getNextRunTime(for: cadenceResult.cadence)
                 let end = Date()
                 let active = clock.now - startInstant
+                let didNotify = didMorningNotify || didMesoNotify
+                let reasonNoNotify = didNotify ? nil : noNotifyReasons.joined(separator: "; ")
 
                 try? await recordBgRun(
                     start: start,
                     end: end,
                     result: .success,
-                    didNotify: reasonNoNotify == nil ? true : false,
+                    didNotify: didNotify,
                     notificationReason: reasonNoNotify,
                     nextRun: nextRun,
                     cadence: cadenceResult.cadence.getMinutes(),
@@ -169,7 +177,7 @@ actor BackgroundOrchestrator {
                 
                 signposter.endInterval("Background Run", runInterval)
                 logger.info("Background run finished with result: success")
-                return .init(next: nextRun, result: .success, didNotify: true, feedsChanged: [])
+                return .init(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)
             } catch {
                 signposter.endInterval("Background Run", runInterval)
                 let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
@@ -179,13 +187,13 @@ actor BackgroundOrchestrator {
                 if error is CancellationError {
                     logger.warning("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
                     try? await recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled", active: active)
-                    return .init(next: nextRun, result: .cancelled, didNotify: false, feedsChanged: [])
+                    return .init(next: nextRun, result: .cancelled, didNotify: false, feedsChanged: feedsChanged)
                 } else {
                     logger.error("Error refreshing background data: \(error.localizedDescription, privacy: .public)")
                     
                     try? await recordBgRun(start: start, end: end, result: .failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh failed", active: active)
                         
-                    return .init(next: nextRun, result: .failed, didNotify: false, feedsChanged: [])
+                    return .init(next: nextRun, result: .failed, didNotify: false, feedsChanged: feedsChanged)
                 }
             }
         } onCancel: {
