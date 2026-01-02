@@ -9,14 +9,15 @@ import SwiftUI
 
 struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
-    let watches: [WatchDTO]
-
+    let watches: [WatchRowDTO]
+    
     @State private var selectedMeso: MdDTO? = nil
-    @State private var selectedWatch: WatchDTO? = nil
-    @State private var sheetHeight: CGFloat = .zero
+    @State private var selectedWatch: WatchRowDTO? = nil
+    @State private var mesoSheetHeight: CGFloat = .zero
+    @State private var watchSheetHeight: CGFloat = .zero
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 15) {
             // MARK: Header
             HStack {
                 Image(systemName: "exclamationmark.circle.fill")
@@ -28,87 +29,111 @@ struct ActiveAlertSummaryView: View {
             }
             
             // MARK: Active Alerts
-            VStack(alignment: .leading, spacing: 10) {
-                if !watches.isEmpty {
-                    Text("WATCHES")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    ForEach(watches) { watch in
-                        Button { selectedWatch = watch } label: { WatchRowView(watch: watch) }
-                            .buttonStyle(.plain)
-                        
-                        if watch.number != watches.last?.number { Divider() }
-                    }
+            VStack(alignment: .leading, spacing: 15) {
+                ActiveAlertSection(
+                    label: "Watches",
+                    items: watches,
+                    limit: 3,
+                    sort: { $0.expires < $1.expires },
+                    onSelect: { selectedWatch = $0 }
+                ) { watch in
+                    WatchRowView(watch: watch)
                 }
                 
-                if !mesos.isEmpty {
-                    Text("MESOS")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    ForEach(mesos) { meso in
-                        Button { selectedMeso = meso } label: { MesoRowView(meso: meso) }
-                            .buttonStyle(.plain)
-                        
-                        if meso.number != mesos.last?.number { Divider() }
-                    }
+                ActiveAlertSection(
+                    label: "Mesos",
+                    items: mesos,
+                    limit: 3,
+                    sort: { $0.validEnd < $1.validEnd },
+                    onSelect: { selectedMeso = $0 }
+                ) { meso in
+                    MesoRowView(meso: meso)
                 }
             }
         }
         .padding()
         .cardBackground()
         .sheet(item: $selectedMeso) { meso in
-            NavigationStack {
-                ScrollView {
-                    MesoscaleDiscussionCard(meso: meso, layout: .sheet)
-                        .padding(.top, 8)
-                        .padding(.horizontal, 6)
-                }
-                .background(.skyAwareBackground)
-                .getHeight(for: $sheetHeight)
-                .presentationDetents([.height(sheetHeight)])
-//                .presentationDetents([.medium, .large])
-                //            .presentationDetents([.fraction(0.5)])
-                .presentationDragIndicator(.visible)
-//                .navigationTitle("Mesoscale Discussion")
-                .navigationBarTitleDisplayMode(.inline)
+            sheetContent(height: $mesoSheetHeight) {
+                MesoscaleDiscussionCard(meso: meso, layout: .sheet)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 6)
             }
         }
         .sheet(item: $selectedWatch) { watch in
-            NavigationStack {
-                ScrollView {
-                    WatchDetailView(watch: watch, layout: .sheet)
-                        .padding(.top, 8)
-                        .padding(.horizontal, 6)
-                }
-                .background(.skyAwareBackground)
-                .getHeight(for: $sheetHeight)
-                .presentationDetents([.height(sheetHeight)])
-//                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-//                .navigationTitle("Watch")
-                .navigationBarTitleDisplayMode(.inline)
+            sheetContent(height: $watchSheetHeight) {
+                WatchDetailView(watch: watch, layout: .sheet)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 6)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func sheetContent<Content: View>(
+        height: Binding<CGFloat>,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        NavigationStack {
+            ScrollView {
+                content()
+            }
+            .background(.skyAwareBackground)
+            .getHeight(for: height)
+            .presentationDetents([.height(height.wrappedValue)])
+            .presentationDragIndicator(.visible)
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 }
 
 // MARK: Components
+private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
+    let label: String
+    let items: [Item]
+    let limit: Int
+    let sort: (Item, Item) -> Bool
+    let onSelect: (Item) -> Void
+    @ViewBuilder let row: (Item) -> Row
+    
+    var body: some View {
+        if !items.isEmpty {
+            let visibleItems = items.sorted(by: sort).prefix(limit)
+            
+            Text(label.uppercased())
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+            
+            ForEach(visibleItems) { item in
+                Button { onSelect(item) } label: { row(item) }
+                    .buttonStyle(.plain)
+            }
+            
+            if items.count > visibleItems.count {
+                Text("Showing \(visibleItems.count) of \(items.count) \(label.lowercased())")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 private struct MesoRowView: View {
     let meso: MdDTO
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
             Image(systemName: "waveform.path.ecg.magnifyingglass")
-//                .font(.subheadline)
+            //                .font(.subheadline)
                 .foregroundStyle(Color.mesoPurple)
             VStack(alignment: .leading, spacing: 2) {
                 Text("MD \(meso.number.formatted(.number.grouping(.never)))")
                     .font(.subheadline.weight(.semibold))
-                Text(meso.areasAffected.isEmpty ? meso.title : meso.areasAffected)
-                    .lineLimit(3)
-                    .truncationMode(.tail)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+//                Text(meso.areasAffected.isEmpty ? meso.title : meso.areasAffected)
+//                    .lineLimit(3)
+//                    .truncationMode(.tail)
+//                    .font(.subheadline.weight(.semibold))
+//                    .foregroundStyle(.secondary)
             }
             
             Spacer()
@@ -127,26 +152,25 @@ private struct MesoRowView: View {
 }
 
 private struct WatchRowView: View {
-    let watch: WatchDTO
+    let watch: WatchRowDTO
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
-            Image(systemName: watch.type == "Tornado" ? "tornado" : "cloud.bolt.fill")
-//                .font(.subheadline)
-                .foregroundStyle(watch.type == "Tornado" ? Color.tornadoRed : Color.severeTstormWarn)
+            Image(systemName: watch.title == "Tornado Watch" ? "tornado" : "cloud.bolt.fill")
+                .foregroundStyle(watch.title == "Tornado Watch" ? Color.tornadoRed : Color.severeTstormWarn)
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(watch.type) \(watch.number.formatted(.number.grouping(.never)))")
+                Text("\(watch.title)")
                     .font(.subheadline.weight(.semibold))
-                Text("Western Kansas, Southwest Nebraska - TBD")
-                    .lineLimit(3)
-                    .truncationMode(.tail)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+//                Text("\(watch.title)-title")
+//                    .lineLimit(3)
+//                    .truncationMode(.tail)
+//                    .font(.subheadline.weight(.semibold))
+//                    .foregroundStyle(.secondary)
             }
             
             Spacer()
             VStack(alignment: .trailing) {
-                Text("Expires: \(watch.validEnd, style: .time)")
+                Text("Until: \(watch.expires, style: .time)")
                     .monospacedDigit()
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -157,9 +181,9 @@ private struct WatchRowView: View {
 
 #Preview {
     NavigationStack {
-        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, watches: WatchModel.sampleWatcheDtos)
+        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, watches: Watch.sampleWatchRows)
             .toolbar(.hidden, for: .navigationBar)
             .background(.skyAwareBackground)
+            .environment(\.dependencies, Dependencies.unconfigured)
     }
 }
-

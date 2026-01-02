@@ -38,10 +38,9 @@ extension NwsProvider: NwsMetadataProviding {
 
 extension NwsProvider: NwsSyncing {
     func sync(for point: CLLocationCoordinate2D) async {
-        logger.debug("****** SYNCING NWS *******")
         do {
             let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
-            try await watchRepo.refreshWatchesNws(using: client, for: coordinates)
+            try await watchRepo.refresh(using: client, for: coordinates)
         }
         catch {
             logger.error("Error syncing NWS Watches: \(error)")
@@ -50,7 +49,7 @@ extension NwsProvider: NwsSyncing {
 }
 
 extension NwsProvider: NwsRiskQuerying {
-    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchDTO] {
+    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchRowDTO] {
         guard let gridMetadata = await gridPointProvider.currentGridPointMetadata() else {
             logger.error("No grid metadata available")
             return []

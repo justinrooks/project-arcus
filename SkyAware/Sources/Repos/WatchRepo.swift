@@ -12,46 +12,11 @@ import OSLog
 @ModelActor
 actor WatchRepo {
     private let logger = Logger.watchRepo
-    private let parser: RSSFeedParser = RSSFeedParser()
     
-    @available(*, deprecated, message: "Migrate to refreshWatchesNws instead")
-    func refreshWatches(using client: any SpcClient) async throws {
-        let data = try await client.fetchRssData(for: .watch)
+    func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
+        logger.info("Fetching current local watches for \(county), \(zone)")
 
-        guard let data else {
-            logger.info("No severe watches found")
-            return
-        }
-                
-        guard let rss = try parser.parse(data: data) else {
-            logger.warning("Error parsing severe watch items")
-            throw SpcError.parsingError
-        }
-        
-        guard let channel = rss.channel else {
-            logger.warning("Watch channel data not found")
-            return
-        }
-        
-        // Filters out some odd contents
-        let watches = channel.items
-            .filter {
-                guard let t = $0.title else { return false }
-                return t.contains("Watch") && !t.contains("Status Reports")
-            }
-            .compactMap { makeWatchModel(from: $0) }
-        
-        try upsert(watches)
-        logger.debug("Parsed \(watches.count) watch\(watches.count > 1 ? "es" : "") from SPC")
-    }
-    
-    func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchDTO] {
-        logger.info("Fetching current local watches")
-//        let pred = #Predicate<Watch> { watch in
-//            watch.effective <= date && date <= watch.ends &&
-//        }
-        let pred = #Predicate<Watch> { _ in true }
-        let candidates = try modelContext.fetch(FetchDescriptor(predicate: pred))
+        let candidates = try modelContext.fetch(allWatchesDescriptor())
         
         var hits: [Watch] = []
         hits.reserveCapacity(candidates.count)
@@ -65,38 +30,11 @@ actor WatchRepo {
             }
         }
         
-        return hits.map {
-                WatchDTO(
-                    number: 100,
-                    title: $0.headline,
-                    link: URL(string:"https://api.weather.gov/alerts/\($0.nwsId)")!,
-                    issued: $0.issued,
-                    validStart: $0.effective,
-                    validEnd: $0.ends,
-                    summary: $0.watchDescription,
-                    type: $0.event
-                )
-        }
+        return hits.map { WatchRowDTO.init(from: $0) }
     }
         
-    func refreshWatchesNws(using client: any NwsClient, for location: Coordinate2D) async throws {
+    func refresh(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
-        
-//        let x = WatchModel.buildNwsTornadoSample()
-//        if let coded:Data = x.data(using: .utf8) {
-//            let testingCode = NWSWatchParser.decode(from: coded)
-//            let count = testingCode?.features?.count ?? 0
-//        }
-//        let jsonString = """
-//        {
-//          "type": "FeatureCollection",
-//          "features": []
-//        }
-//        """
-//
-//        guard let data = jsonString.data(using: .utf8) else {
-//            fatalError("Failed to create Data from JSON string")
-//        }
         
         guard let data else {
             logger.debug("No watch data found")
@@ -108,9 +46,18 @@ actor WatchRepo {
             throw NwsError.parsingError
         }
         
-        guard let features = decoded.features else {
+        guard var features = decoded.features else {
             logger.debug("No NWS watch features found")
             return
+        }
+        
+        #warning("This is injecting a sample tornado nws warning into the pipeline. REMOVE ME BEFORE LAUNCHING")
+        let x = Watch.buildNwsTornadoSample()
+        if let coded:Data = x.data(using: .utf8) {
+            let slug = NWSWatchParser.decode(from: coded)
+            let f1 = slug?.features
+            
+            features.append(f1!.first!)
         }
         
         let watches = features
@@ -121,51 +68,22 @@ actor WatchRepo {
     }
     
     /// Removes any expired watches from the database
-    func purgeNwsWatches(asOf now: Date = .init()) throws {
+    func purge(asOf now: Date = .init()) throws {
         logger.info("Purging expired NWS watches")
         
-        // Fetch in batches to avoid large in-memory sets
-        let predicate = #Predicate<Watch> { $0.ends < now }
-        var desc = FetchDescriptor<Watch>(predicate: predicate)
-        desc.fetchLimit = 50
-        
-        while true {
-            let batch = try modelContext.fetch(desc)
-            if batch.isEmpty { break }
-            logger.debug("Found \(batch.count) watches to purge")
-            
-            for obj in batch { modelContext.delete(obj) }
-            
-            try modelContext.save()
+        let expired = try modelContext.fetch(expiredWatchesDescriptor(asOf: now))
+        if expired.isEmpty {
+            logger.info("No expired watches to purge")
+            return
         }
+        
+        logger.debug("Found \(expired.count) watches to purge")
+        for obj in expired { modelContext.delete(obj) }
+        try modelContext.save()
         
         logger.info("Expired watches purged")
     }
-    
-    /// Removes any expired mesoscale discussions from datastore
-    /// - Parameter now: defaults to now
-    @available(*, deprecated, message: "Migrate to purge1 instead")
-    func purgeSpcWatches(asOf now: Date = .init()) throws {
-        logger.info("Purging expired watches")
         
-        // Fetch in batches to avoid large in-memory sets
-        let predicate = #Predicate<WatchModel> { $0.validEnd < now }
-        var desc = FetchDescriptor<WatchModel>(predicate: predicate)
-        desc.fetchLimit = 50
-        
-        while true {
-            let batch = try modelContext.fetch(desc)
-            if batch.isEmpty { break }
-            logger.debug("Found \(batch.count) to purge")
-            
-            for obj in batch { modelContext.delete(obj) }
-            
-            try modelContext.save()
-        }
-        
-        logger.info("Expired watches purged")
-    }
-    
     private func makeWatch(from item: NWSWatchFeatureDTO) -> Watch? {
         guard
             let ugcZones         = item.properties.geocode?.ugc,
@@ -182,7 +100,10 @@ actor WatchRepo {
             let urgency          = item.properties.urgency,
             let event            = item.properties.event,
             let headline         = item.properties.headline,
-            let watchDescription = item.properties.description
+            let watchDescription = item.properties.description,
+            let sender           = item.properties.senderName,
+            let instruction      = item.properties.instruction,
+            let response         = item.properties.response
         else {
             logger.debug("Required watch property missing, returning null.")
             return nil
@@ -205,55 +126,31 @@ actor WatchRepo {
             urgency: urgency,
             event: event,
             headline: headline,
-            watchDescription: watchDescription
+            watchDescription: watchDescription,
+            sender: sender,
+            instruction: instruction,
+            response: response
         )
     }
-    
-    @available(*, deprecated, message: "Migrate to makeWatch instead")
-    private func makeWatchModel(from rssItem: Item) -> WatchModel? {
-        guard
-            let title = rssItem.title,
-            let linkString = rssItem.link,
-            let link = URL(string: linkString),
-            let pubDateString = rssItem.pubDate,
-            let summary = rssItem.description,
-            let issued = pubDateString.fromRFC822()
-        else { return nil }
-        
-        let wwNumber = WatchParser.parseWatchNumber(from: link) ?? {
-            // Fallback: try to read from title if present
-            if let r = title.range(of: #"\b(\d{3,4})\b"#, options: .regularExpression) { return Int(title[r]) } else { return nil }
-        }() ?? -1
-        
-        // Valid range (UTC), fallback to issued+2h if missing
-        let validPair = WatchParser.parseValid(summary, issued: issued)
-        let validStart = validPair?.0 ?? issued
-        let validEnd   = validPair?.1 ?? Calendar.current.date(byAdding: .hour, value: 2, to: issued)!
-        
-        return WatchModel(
-            number: wwNumber,
-            title: title,
-            link: link,
-            issued: issued,
-            validStart: validStart,
-            validEnd: validEnd,
-            summary: summary,
-            alertType: .watch
-        )
-    }
-    
+
     private func upsert(_ items: [Watch]) throws {
         for item in items {
             modelContext.insert(item)
         }
         try modelContext.save()
     }
-    
-    @available(*, deprecated, message: "Migrate to Watch instead")
-    private func upsert(_ items: [WatchModel]) throws {
-        for item in items {
-            modelContext.insert(item)
-        }
-        try modelContext.save()
+
+    private func allWatchesDescriptor() -> FetchDescriptor<Watch> {
+        #warning("Activate this date filter when done testing watch functionality")
+//        let pred = #Predicate<Watch> { watch in
+//            watch.effective <= date && date <= watch.ends &&
+//        }
+        let predicate = #Predicate<Watch> { _ in true }
+        return FetchDescriptor(predicate: predicate)
+    }
+
+    private func expiredWatchesDescriptor(asOf now: Date) -> FetchDescriptor<Watch> {
+        let predicate = #Predicate<Watch> { $0.ends < now }
+        return FetchDescriptor(predicate: predicate)
     }
 }

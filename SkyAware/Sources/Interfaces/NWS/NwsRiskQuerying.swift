@@ -9,5 +9,5 @@ import Foundation
 import CoreLocation
 
 protocol NwsRiskQuerying: Sendable {
-    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchDTO]
+    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchRowDTO]
 }

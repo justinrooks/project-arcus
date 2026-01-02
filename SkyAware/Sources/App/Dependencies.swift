@@ -252,7 +252,6 @@ final class Dependencies: Sendable {
         let schema = Schema([
             ConvectiveOutlook.self,
             MD.self,
-            WatchModel.self,
             StormRisk.self,
             SevereRisk.self,
             BgRunSnapshot.self,

@@ -15,9 +15,9 @@ struct AlertView: View {
     
     // TODO: These need to come from the parent
     @Query private var mesos: [MD]
-    @Query private var watches: [WatchModel]
+    @Query private var watches: [Watch]
     
-    @State private var selectedWatch: WatchModel?
+    @State private var selectedWatch: Watch?
     @State private var selectedMeso: MD?
     
     var body: some View {
@@ -85,16 +85,7 @@ struct AlertView: View {
         }
         .navigationDestination(item: $selectedWatch) { watch in
             #warning("TODO: Need to get real DTOs here")
-            let tempDto = WatchDTO(
-                number: watch.number,
-                title: watch.title,
-                link: watch.link,
-                issued: watch.issued,
-                validStart: watch.validStart,
-                validEnd: watch.validEnd,
-                summary: watch.summary,
-                type: "Tornado"
-            )
+            let tempDto = WatchRowDTO(from: watch)
             
             ScrollView {
                 WatchDetailView(watch: tempDto, layout: .full)
@@ -143,9 +134,9 @@ struct AlertView: View {
 }
 
 #Preview {
-    let preview = Preview(MD.self, WatchModel.self)
+    let preview = Preview(MD.self, Watch.self)
     preview.addExamples(MD.sampleDiscussions)
-    preview.addExamples(WatchModel.sampleWatches)
+    preview.addExamples(Watch.sampleWatches)
     
     return NavigationStack {
         AlertView()

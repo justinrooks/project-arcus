@@ -10,7 +10,7 @@ import Foundation
 extension NwsProvider: NwsCleanup {
     func cleanup(daysToKeep: Int = 3) async {
         do {
-            try await watchRepo.purgeNwsWatches()
+            try await watchRepo.purge()
         } catch {
             logger.error("Error cleaning up old NWS data: \(error.localizedDescription)")
         }

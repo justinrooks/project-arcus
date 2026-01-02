@@ -34,7 +34,7 @@ struct SummaryView: View {
     
     // Alert State
     @State private var mesos: [MdDTO]
-    @State private var watches: [WatchDTO]
+    @State private var watches: [WatchRowDTO]
     
     // Refresh State
     @State private var lastRefreshKey: RefreshKey?
@@ -48,7 +48,7 @@ struct SummaryView: View {
         initialSnapshot: LocationSnapshot? = nil,
         initialOutlook: ConvectiveOutlookDTO? = nil,
         initialMesos: [MdDTO] = [],
-        initialWatches: [WatchDTO] = []
+        initialWatches: [WatchRowDTO] = []
     ) {
         _stormRisk = State(initialValue: initialStormRisk)
         _severeRisk = State(initialValue: initialSevereRisk)
@@ -206,7 +206,7 @@ struct SummaryView: View {
             ),
             initialOutlook: ConvectiveOutlook.sampleOutlookDtos.first!,
             initialMesos: MD.sampleDiscussionDTOs,
-            initialWatches: WatchModel.sampleWatcheDtos
+            initialWatches: Watch.sampleWatchRows
         )
         .toolbar(.hidden, for: .navigationBar)
         .background(.skyAwareBackground)
@@ -217,11 +217,6 @@ struct SummaryView: View {
 #Preview("Summary – Loading") {
     // Seed some sample Mesos so ActiveMesoSummaryView has content
     let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
-    let mdPreview = Preview(MD.self, ConvectiveOutlook.self, WatchModel.self)
-    
-    mdPreview.addExamples(MD.sampleDiscussions)
-    mdPreview.addExamples(ConvectiveOutlook.sampleOutlooks)
-    mdPreview.addExamples(WatchModel.sampleWatches)
     
     return NavigationStack {
         SummaryView(
@@ -234,6 +229,5 @@ struct SummaryView: View {
         )
         .toolbar(.hidden, for: .navigationBar)
         .background(.skyAwareBackground)
-        .modelContainer(mdPreview.container)
     }
 }

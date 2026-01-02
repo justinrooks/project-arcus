@@ -43,7 +43,6 @@ extension SpcProvider: SpcSyncing {
             }
             
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
-            try await watchRepo.refreshWatches(using: client)
             signposter.endInterval("Background Run", runInterval)
         } catch {
             signposter.endInterval("Background Run", runInterval)

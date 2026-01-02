@@ -15,6 +15,7 @@ struct SpcProductHeader: View {
     let validEnd: Date
     let subtitle: String?
     let inZone: Bool
+    let sender: String?
     
     var body: some View {
         VStack(alignment: .leading, spacing: layout == .sheet ? 2 : 4) {
@@ -41,6 +42,12 @@ struct SpcProductHeader: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
+            if let sender {
+                Text("Issued by \(sender)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
 //            Text("Valid: \(validStart.shorten(withDateStyle: .short)) – \(validEnd.shorten(withDateStyle: .short))")
 //                .font(.caption)
 //                .foregroundStyle(.secondary)
@@ -50,9 +57,9 @@ struct SpcProductHeader: View {
 }
 
 #Preview("Full") {
-    SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: "MD 1913", inZone: false)
+    SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: "MD 1913", inZone: false, sender: "NWS Boulder CO")
 }
 
 #Preview("No subtitle") {
-    SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: nil, inZone: false)
+    SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: nil, inZone: false, sender: nil)
 }

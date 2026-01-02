@@ -13,7 +13,7 @@ struct AlertRowView: View {
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             // Type Badge
-            let title = parseWatchType(from: alert.summary)
+            let title = parseWatchType(from: alert.title)
             let (icon, color) = styleForType(alert.alertType, title)
             Image(systemName: icon)
                 .foregroundColor(color)
@@ -25,19 +25,11 @@ struct AlertRowView: View {
                 )
 
             VStack(alignment: .leading, spacing: 4) {
-                if alert.alertType == .watch {
-                    Text("\(title ?? "Watch") \(alert.number)")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.9)
-                } else {
-                    Text(alert.title)
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.9)
-                }
+                Text(alert.title)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.9)
                 
                 Text(relativeDate(alert.issued))
                     .font(.caption)
@@ -84,6 +76,6 @@ struct AlertRowView: View {
 
 #Preview {
     AlertRowView(alert: MD.sampleDiscussions.first!)
-    AlertRowView(alert: WatchModel.sampleWatches.last!)
-    AlertRowView(alert: WatchModel.sampleWatches[0])
+    AlertRowView(alert: Watch.sampleWatches.last!)
+    AlertRowView(alert: Watch.sampleWatches[0])
 }

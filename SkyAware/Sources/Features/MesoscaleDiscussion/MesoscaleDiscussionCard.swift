@@ -20,7 +20,7 @@ struct MesoscaleDiscussionContent: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
-            SpcProductHeader(title: "MD \(meso.number)", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: nil, inZone: false)
+            SpcProductHeader(title: "MD \(meso.number)", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: nil, inZone: false, sender: nil)
             
             Divider().opacity(0.12)
             

@@ -18,12 +18,12 @@ extension Watch {
 extension Watch: AlertItem {
     // Alert Item - Derived
     nonisolated var number: Int          {0}
-    nonisolated var title: String        {"tbd"}      // e.g., "Day 1 Convective Outlook"
-    nonisolated var link: URL            {URL("")!}      // link to full outlook page
-    nonisolated var issued: Date         {.now}      // pubDate
-    nonisolated var validStart: Date     {.now}      // Valid start
-    nonisolated var validEnd: Date       {.now}      // Valid end
-    nonisolated var summary: String      {"tbd"}      // description / CDATA
+    nonisolated var title: String        {self.event}      // e.g., "Day 1 Convective Outlook"
+    nonisolated var link: URL            {URL(string:"\(self.nwsId)")!}      // link to full outlook page
+    nonisolated var issued: Date         {self.sent}      // pubDate
+    nonisolated var validStart: Date     {self.effective}      // Valid start
+    nonisolated var validEnd: Date       {self.ends}      // Valid end
+    nonisolated var summary: String      {self.watchDescription}      // description / CDATA
     nonisolated var alertType: AlertType { AlertType.watch }      // Type of alert to conform to alert item
 }
 
@@ -50,10 +50,13 @@ final class Watch {
     var event: String           // "Tornado Watch"
     var headline: String
     var watchDescription: String
+    var sender: String?
+    var instruction: String?
+    var response: String?
     
 //    var rawGeometry: Data?
       
-    init(nwsId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, rawGeometry: Data? = nil) {
+    init(nwsId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, sender: String, instruction: String, response: String, rawGeometry: Data? = nil) {
         self.nwsId = nwsId
         self.areaDesc = areaDesc
         self.ugcZones = ugcZones
@@ -71,19 +74,9 @@ final class Watch {
         self.event = event
         self.headline = headline
         self.watchDescription = watchDescription
+        self.sender = sender
+        self.instruction = instruction
+        self.response = response
 //        self.rawGeometry = rawGeometry
     }
-    
-//    convenience init? (from dto: WatchDTO) {
-//        self.init(
-//            number: dto.number,
-//            title: dto.title,
-//            link: dto.link,
-//            issued: dto.issued,
-//            validStart: dto.validStart,
-//            validEnd: dto.validEnd,
-//            summary: dto.summary,
-//            alertType: .watch
-//        )
-//    }
 }

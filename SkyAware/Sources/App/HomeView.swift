@@ -15,7 +15,7 @@ struct HomeView: View {
 
     #warning("TODO: Remove swift data and call the repo properly")
     @Query private var mesos: [MD]
-    @Query private var watches: [WatchModel]
+    @Query private var watches: [Watch]
     
     var body: some View {
         ZStack {
