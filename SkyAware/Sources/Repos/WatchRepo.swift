@@ -16,7 +16,7 @@ actor WatchRepo {
     func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
         logger.info("Fetching current local watches for \(county), \(zone)")
 
-        let candidates = try modelContext.fetch(allWatchesDescriptor())
+        let candidates = try modelContext.fetch(allWatchesDescriptor(on: date))
         
         var hits: [Watch] = []
         hits.reserveCapacity(candidates.count)
@@ -140,12 +140,10 @@ actor WatchRepo {
         try modelContext.save()
     }
 
-    private func allWatchesDescriptor() -> FetchDescriptor<Watch> {
-        #warning("Activate this date filter when done testing watch functionality")
-//        let pred = #Predicate<Watch> { watch in
-//            watch.effective <= date && date <= watch.ends &&
-//        }
-        let predicate = #Predicate<Watch> { _ in true }
+    private func allWatchesDescriptor(on date: Date) -> FetchDescriptor<Watch> {
+        let predicate = #Predicate<Watch> { watch in
+            watch.effective <= date && date <= watch.ends
+        }
         return FetchDescriptor(predicate: predicate)
     }
 

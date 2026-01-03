@@ -12,7 +12,12 @@ extension Watch {
     // Derived values
     nonisolated var isWatch: Bool { true }
     nonisolated var isConvective: Bool { true }
-    nonisolated var isActive: Bool { true }
+
+    nonisolated var isActive: Bool { isActive(at: .init()) }
+
+    nonisolated func isActive(at date: Date) -> Bool {
+        effective <= date && date <= ends
+    }
 }
 
 //extension Watch: AlertItem {
