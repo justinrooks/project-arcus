@@ -10,9 +10,6 @@ import CoreLocation
 import OSLog
 
 struct SummaryView: View {
-    // MARK: Environment
-    @Environment(\.scenePhase) private var scenePhase
-    
     private let logger = Logger.summaryView
     
     let snap: LocationSnapshot?
