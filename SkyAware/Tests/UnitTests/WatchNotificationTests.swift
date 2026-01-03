@@ -124,7 +124,7 @@ struct WatchNotificationTests {
 
 // MARK: - Test Doubles
 
-actor InMemoryNotificationStore: NotificationStateStore {
+actor InMemoryNotificationStore: NotificationStateStoring {
     private var stamp: String?
 
     func lastStamp() async -> String? { stamp }

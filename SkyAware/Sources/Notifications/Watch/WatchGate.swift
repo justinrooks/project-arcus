@@ -8,11 +8,11 @@
 import Foundation
 import OSLog
 
-struct WatchGate: NotificationGate {
+struct WatchGate: NotificationGating {
     private let logger = Logger.watchGate
-    private let store: NotificationStateStore
+    private let store: NotificationStateStoring
     
-    init(store: NotificationStateStore) {
+    init(store: NotificationStateStoring) {
         self.store = store
     }
 
@@ -42,10 +42,8 @@ struct WatchGate: NotificationGate {
     }
 }
 
-struct DefaultWatchStore: NotificationStateStore {
+struct DefaultWatchStore: NotificationStateStoring {
     private let key = "skyaware.lastWatchNotifyLocalDay"
-    
-    init() {}
     
     func lastStamp() async -> String? { UserDefaults.standard.string(forKey: key) }
     func setLastStamp(_ stamp: String) async { UserDefaults.standard.set(stamp, forKey: key) }

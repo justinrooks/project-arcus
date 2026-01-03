@@ -321,7 +321,7 @@ final class Dependencies: Sendable {
         logger.debug("Composing morning summary engine")
         let morning = MorningEngine(
             rule: AmRangeLocalRule(),
-            gate: MorningGate(store: DefaultStore()),
+            gate: MorningGate(store: DefaultMorningStore()),
             composer: MorningComposer(),
             sender: Sender()
         )

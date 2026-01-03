@@ -11,17 +11,17 @@ import OSLog
 struct MesoEngine: Sendable {
     private let logger = Logger.mesoEngine
     
-    let rule: MesoNotificationRule
-    let gate: NotificationGate
-    let composer: NotificationComposer
-    let sender: NotificationSender
+    let rule: MesoNotificationRuleEvaluating
+    let gate: NotificationGating
+    let composer: NotificationComposing
+    let sender: NotificationSending
     let spc: SpcRiskQuerying
     
     init(
-        rule: MesoNotificationRule,
-        gate: NotificationGate,
-        composer: NotificationComposer,
-        sender: NotificationSender,
+        rule: MesoNotificationRuleEvaluating,
+        gate: NotificationGating,
+        composer: NotificationComposing,
+        sender: NotificationSending,
         spc: SpcRiskQuerying
     ) {
         self.rule = rule

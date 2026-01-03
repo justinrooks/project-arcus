@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-struct WatchComposer: NotificationComposer {
+struct WatchComposer: NotificationComposing {
     private let logger = Logger.watchComposer
     
     func compose(_ event: NotificationEvent) -> (title: String, body: String, subtitle: String) {

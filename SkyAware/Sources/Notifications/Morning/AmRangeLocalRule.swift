@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-struct AmRangeLocalRule: NotificationRule {
+struct AmRangeLocalRule: NotificationRuleEvaluating {
     private let logger = Logger.rule
     
     /// Local-time delivery window [startHour, endHour)

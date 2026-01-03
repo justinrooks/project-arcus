@@ -112,7 +112,7 @@ struct MesoNotificationTests {
 
 // MARK: - Test Doubles
 
-actor InMemoryMesoStore: NotificationStateStore {
+actor InMemoryMesoStore: NotificationStateStoring {
     private var stamp: String?
     
     func lastStamp() async -> String? { stamp }
