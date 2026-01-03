@@ -6,19 +6,15 @@
 //
 
 import SwiftUI
-import SwiftData
 
 struct AlertView: View {
-    @Environment(\.modelContext) private var modelContext
+    let mesos: [MdDTO]
+    let watches: [WatchRowDTO]
+    
+    @State private var selectedWatch: WatchRowDTO?
+    @State private var selectedMeso: MdDTO?
     
     private let scale: Double = 0.9
-    
-    // TODO: These need to come from the parent
-    @Query private var mesos: [MD]
-    @Query private var watches: [Watch]
-    
-    @State private var selectedWatch: Watch?
-    @State private var selectedMeso: MD?
     
     var body: some View {
         List {
@@ -47,12 +43,12 @@ struct AlertView: View {
                                 }
                                 .padding(.horizontal)
                         }
-                        .onDelete(perform: { indexSet in
-                            indexSet.forEach { index in
-                                let watch = watches[index]
-                                modelContext.delete(watch)
-                            }
-                        })
+//                        .onDelete(perform: { indexSet in
+//                            indexSet.forEach { index in
+//                                let watch = watches[index]
+//                                modelContext.delete(watch)
+//                            }
+//                        })
                     }
                 }
                 
@@ -73,22 +69,13 @@ struct AlertView: View {
                                 }
                                 .padding(.horizontal)
                         }
-                        .onDelete(perform: { indexSet in
-                            indexSet.forEach { index in
-                                let meso = mesos[index]
-                                modelContext.delete(meso)
-                            }
-                        })
                     }
                 }
             }
         }
         .navigationDestination(item: $selectedWatch) { watch in
-            #warning("TODO: Need to get real DTOs here")
-            let tempDto = WatchRowDTO(from: watch)
-            
             ScrollView {
-                WatchDetailView(watch: tempDto, layout: .full)
+                WatchDetailView(watch: watch, layout: .full)
             }
             .navigationTitle("Weather Watch")
             .navigationBarTitleDisplayMode(.inline)
@@ -97,22 +84,8 @@ struct AlertView: View {
             .background(.skyAwareBackground)
         }
         .navigationDestination(item: $selectedMeso) { meso in
-            // TODO: Need to get a MdDTO here to pass to the discussion card.
-            #warning("TODO: Need to get real DTOs here")
-            let tempDto = MdDTO(number: meso.number,
-                                title: meso.title,
-                                link: meso.link,
-                                issued: meso.issued,
-                                validStart: meso.validStart,
-                                validEnd: meso.validEnd,
-                                areasAffected: meso.areasAffected,
-                                summary: meso.summary,
-                                watchProbability: meso.watchProbability,
-                                threats: meso.threats ?? nil,
-                                coordinates:meso.coordinates
-            )
             ScrollView {
-                MesoscaleDiscussionCard(meso: tempDto, layout: .full)
+                MesoscaleDiscussionCard(meso: meso, layout: .full)
 //                    .padding(.horizontal, 16)
 //                    .padding(.top, 16)
             }
@@ -123,24 +96,12 @@ struct AlertView: View {
             .background(.skyAwareBackground)
         }
         .contentMargins(.top, 0, for: .scrollContent)
-        .refreshable {
-            Task {
-                print("Refreshing Alerts")
-//                try await provider.fetchMesoDiscussions()
-//                try await provider.fetchWatches()
-            }
-        }
     }
 }
 
 #Preview {
-    let preview = Preview(MD.self, Watch.self)
-    preview.addExamples(MD.sampleDiscussions)
-    preview.addExamples(Watch.sampleWatches)
-    
-    return NavigationStack {
-        AlertView()
-            .modelContainer(preview.container)
+    NavigationStack {
+        AlertView(mesos: MD.sampleDiscussionDTOs, watches: Watch.sampleWatchRows)
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)

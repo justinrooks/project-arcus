@@ -8,7 +8,7 @@
 import Foundation
 import CoreLocation
 
-struct Coordinate2D: Sendable, Codable {
+struct Coordinate2D: Sendable, Codable, Hashable {
     let latitude: Double
     let longitude: Double
 

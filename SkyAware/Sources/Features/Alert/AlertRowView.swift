@@ -75,7 +75,7 @@ struct AlertRowView: View {
 }
 
 #Preview {
-    AlertRowView(alert: MD.sampleDiscussions.first!)
-    AlertRowView(alert: Watch.sampleWatches.last!)
-    AlertRowView(alert: Watch.sampleWatches[0])
+    AlertRowView(alert: MD.sampleDiscussionDTOs.first!)
+    AlertRowView(alert: Watch.sampleWatchRows.last!)
+    AlertRowView(alert: Watch.sampleWatchRows[0])
 }

@@ -8,13 +8,8 @@
 import SwiftUI
 
 struct ConvectiveOutlookView: View {
-    @Environment(\.dependencies) private var deps
+    let dtos: [ConvectiveOutlookDTO]
     
-    // MARK: Local handles
-    private var sync: any SpcSyncing { deps.spcSync }
-    private var outlookSvc: any SpcOutlookQuerying { deps.spcOutlook }
-
-    @State private var dtos: [ConvectiveOutlookDTO] = []
     @State private var selectedOutlook: ConvectiveOutlookDTO?
     
     var body: some View {
@@ -41,33 +36,12 @@ struct ConvectiveOutlookView: View {
         .navigationDestination(item: $selectedOutlook) { outlook in
             ConvectiveOutlookDetailView(outlook:outlook)
         }
-        .scrollContentBackground(.hidden)
-        .background(.skyAwareBackground)
-        .contentMargins(.top, 0, for: .scrollContent)
-        .refreshable {
-            Task {
-                await sync.syncTextProducts()
-                dtos = try await outlookSvc.getConvectiveOutlooks()
-            }
-        }
-        .task {
-            if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
-                dtos = ConvectiveOutlook.sampleOutlookDtos
-                return
-            }
-            
-            if let outlooks = try? await outlookSvc.getConvectiveOutlooks() {
-                await MainActor.run { dtos = outlooks }
-            }
-        }
     }
 }
 
 #Preview {
-    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
-
-    return NavigationStack {
-        ConvectiveOutlookView()
+    NavigationStack {
+        ConvectiveOutlookView(dtos: ConvectiveOutlook.sampleOutlookDtos)
             .navigationTitle("Convective Outlooks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)

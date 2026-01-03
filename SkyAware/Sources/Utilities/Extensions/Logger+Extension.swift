@@ -50,6 +50,7 @@ extension Logger {
     static let mainView = Logger(subsystem: subsystem, category: "MainView")
     static let mapping = Logger(subsystem: subsystem, category: "MappingView")
     static let summaryView = Logger(subsystem: subsystem, category: "SummaryView")
+    static let homeView = Logger(subsystem: subsystem, category: "HomeView")
     
     // MARK: Notification
     static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")
