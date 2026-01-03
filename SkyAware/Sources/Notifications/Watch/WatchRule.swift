@@ -9,10 +9,8 @@ import Foundation
 import OSLog
 import MapKit
 
-struct WatchRule: WatchNotificationRule {
+struct WatchRule: WatchNotificationRuleEvaluating {
     private let logger = Logger.watchRule
-    
-//    init () {}
     
     func evaluate(_ ctx: WatchContext) -> NotificationEvent? {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = ctx.localTZ

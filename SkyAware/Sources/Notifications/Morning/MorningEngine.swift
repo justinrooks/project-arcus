@@ -11,16 +11,16 @@ import OSLog
 struct MorningEngine: Sendable {
     private let logger = Logger.engine
     
-    let rule: NotificationRule
-    let gate: NotificationGate
-    let composer: NotificationComposer
-    let sender: NotificationSender
+    let rule: NotificationRuleEvaluating
+    let gate: NotificationGating
+    let composer: NotificationComposing
+    let sender: NotificationSending
     
     init(
-        rule: NotificationRule,
-        gate: NotificationGate,
-        composer: NotificationComposer,
-        sender: NotificationSender
+        rule: NotificationRuleEvaluating,
+        gate: NotificationGating,
+        composer: NotificationComposing,
+        sender: NotificationSending
     ) {
         self.rule = rule
         self.gate = gate

@@ -8,10 +8,8 @@
 import Foundation
 import OSLog
 
-struct Sender: NotificationSender {
+struct Sender: NotificationSending {
     private let logger = Logger.sender
-    
-    init() {}
     
     func send(title: String, body: String, subtitle: String, id: String) async {
         logger.debug("Sending notification")

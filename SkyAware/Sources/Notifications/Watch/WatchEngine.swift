@@ -11,17 +11,17 @@ import OSLog
 struct WatchEngine: Sendable {
     private let logger = Logger.watchEngine
     
-    let rule: WatchNotificationRule
-    let gate: NotificationGate
-    let composer: NotificationComposer
-    let sender: NotificationSender
+    let rule: WatchNotificationRuleEvaluating
+    let gate: NotificationGating
+    let composer: NotificationComposing
+    let sender: NotificationSending
     let nws: NwsRiskQuerying
     
     init(
-        rule: WatchNotificationRule,
-        gate: NotificationGate,
-        composer: NotificationComposer,
-        sender: NotificationSender,
+        rule: WatchNotificationRuleEvaluating,
+        gate: NotificationGating,
+        composer: NotificationComposing,
+        sender: NotificationSending,
         nws: NwsRiskQuerying
     ) {
         self.rule = rule
