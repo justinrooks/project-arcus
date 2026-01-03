@@ -31,7 +31,7 @@ func withTimeout<T: Sendable>(
 }
 
 
-/// Reusable timeout function. Includes the ability to provite a clock that can be paused
+/// Reusable timeout function. Includes the ability to provide a clock that can be paused
 /// - Parameters:
 ///   - seconds: the timeout
 ///   - clock: clock to sleep
