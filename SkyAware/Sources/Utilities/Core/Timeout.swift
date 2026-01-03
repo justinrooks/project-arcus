@@ -11,7 +11,7 @@ import Foundation
 /// - Parameters:
 ///   - timeout: seconds to wait
 ///   - task: the closure with a task to perform
-/// - Throws: OtherError.TimeoutError
+/// - Throws: ``OtherErrors.timeoutError`` if the task does not complete before the timeout elapses
 /// - Returns: T
 func withTimeout<T: Sendable>(
     timeout: Double,
