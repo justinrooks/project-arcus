@@ -7,12 +7,17 @@
 
 import Foundation
 
-extension WatchRowDTO {
-    // Derived
+extension WatchRowDTO: AlertItem {
+    // Alert Item - Derived
+    nonisolated var number: Int          {0}
     nonisolated var link: URL { URL(string:"https://api.weather.gov/alerts/\(self.id)")! } // link to full page
+    nonisolated var validStart: Date     {self.issued}      // Valid start
+    nonisolated var validEnd: Date       {self.expires}      // Valid end
+    nonisolated var summary: String      {self.description}      // description / CDATA
+    nonisolated var alertType: AlertType { AlertType.watch }      // Type of alert to conform to alert item
 }
 
-struct WatchRowDTO: Identifiable, Sendable {
+struct WatchRowDTO: Identifiable, Sendable, Hashable {
     // Identity
     let id: String              // nwsId
     

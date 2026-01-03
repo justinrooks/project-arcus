@@ -10,7 +10,7 @@ import SwiftData
 import CoreLocation
 
 @Model
-final class MD: AlertItem {
+final class MD {
     var id: UUID                // usually the GUID or derived from it
     @Attribute(.unique) var number: Int             // the MD number 1895
     var title: String           // e.g., "Day 1 Convective Outlook"
@@ -85,7 +85,7 @@ final class MD: AlertItem {
     }
 }
 
-struct MDThreats: Sendable, Codable {
+struct MDThreats: Sendable, Codable, Hashable {
     var peakWindMPH: Int?            // e.g. 60
     var hailRangeInches: Double? // e.g. 1.5...2.5
     var tornadoStrength: String?     // e.g. "Brief / weak", "EF1+ possible", or nil
