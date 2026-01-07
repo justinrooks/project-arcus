@@ -62,8 +62,7 @@ extension NwsProvider: NwsRiskQuerying {
         print("*****Testing Grid Values: \(county), \(zone)*****")
         
         //COZ246
-        #warning("REMOVE THIS HARD CODING!")
-        let watches = try await watchRepo.active(county: county, zone: "COZ246")
+        let watches = try await watchRepo.active(county: county, zone: zone)
         
         return watches
     }

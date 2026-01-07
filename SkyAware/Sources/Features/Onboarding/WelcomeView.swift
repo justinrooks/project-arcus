@@ -28,7 +28,7 @@ struct WelcomeView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            Text("Should you worry about the weather today? SkyAware can tell you in seconds.")
+            Text("How weather-aware do you need to be today? SkyAware tells you in seconds.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)

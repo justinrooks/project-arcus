@@ -35,7 +35,7 @@ struct NotificationPermissionView: View {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.skyAwareAccent)
-                    Text("Mesoscale Discussions and watches issued for your location")
+                    Text("Watches and mesoscale discussions issued for your location")
                 }
             }
             .font(.body)

@@ -15,8 +15,9 @@ actor WatchRepo {
     
     func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
         logger.info("Fetching current local watches for \(county), \(zone)")
-
-        let candidates = try modelContext.fetch(allWatchesDescriptor())
+        
+//        let candidates = try modelContext.fetch(allWatchesDescriptor())
+        let candidates = try modelContext.fetch(currentWatchesDescriptor())
         
         var hits: [Watch] = []
         hits.reserveCapacity(candidates.count)
@@ -32,7 +33,7 @@ actor WatchRepo {
         
         return hits.map { WatchRowDTO.init(from: $0) }
     }
-        
+    
     func refresh(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
         
@@ -51,7 +52,9 @@ actor WatchRepo {
             return
         }
         
-        #warning("This is injecting a sample tornado nws warning into the pipeline. REMOVE ME BEFORE LAUNCHING")
+#if DEBUG
+        // Temporarily we are injecting a sample tornado watch
+        // this can eventually go away, but may be valuable.
         let x = Watch.buildNwsTornadoSample()
         if let coded:Data = x.data(using: .utf8) {
             let slug = NWSWatchParser.decode(from: coded)
@@ -59,7 +62,7 @@ actor WatchRepo {
             
             features.append(f1!.first!)
         }
-        
+#endif // DEBUG
         let watches = features
             .compactMap { makeWatch(from: $0) }
         
@@ -83,7 +86,7 @@ actor WatchRepo {
         
         logger.info("Expired watches purged")
     }
-        
+    
     private func makeWatch(from item: NWSWatchFeatureDTO) -> Watch? {
         guard
             let ugcZones         = item.properties.geocode?.ugc,
@@ -132,23 +135,31 @@ actor WatchRepo {
             response: response
         )
     }
-
+    
     private func upsert(_ items: [Watch]) throws {
         for item in items {
             modelContext.insert(item)
         }
         try modelContext.save()
     }
-
+    
+    /// Returns a descriptor that filters watches that active
+    /// - Parameter date: current date
+    /// - Returns: fetch descriptor
+    private func currentWatchesDescriptor(date: Date = .now) -> FetchDescriptor<Watch> {
+        let predicate = #Predicate<Watch> { watch in
+            watch.effective <= date && date <= watch.ends
+        }
+        return FetchDescriptor(predicate: predicate)
+    }
+    
+    /// Returns a fetch descriptor that gets all watches
+    /// - Returns: fetch descriptor
     private func allWatchesDescriptor() -> FetchDescriptor<Watch> {
-        #warning("Activate this date filter when done testing watch functionality")
-//        let pred = #Predicate<Watch> { watch in
-//            watch.effective <= date && date <= watch.ends &&
-//        }
         let predicate = #Predicate<Watch> { _ in true }
         return FetchDescriptor(predicate: predicate)
     }
-
+    
     private func expiredWatchesDescriptor(asOf now: Date) -> FetchDescriptor<Watch> {
         let predicate = #Predicate<Watch> { $0.ends < now }
         return FetchDescriptor(predicate: predicate)
