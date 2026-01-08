@@ -74,11 +74,9 @@ struct OnboardingView: View {
 }
 
 #Preview {
-    let spcMock = MockSpcService(storm: .slight, severe: .tornado(probability: 0.10))
     let provider = LocationProvider()
     let sink: LocationSink = { [provider] update in await provider.send(update: update) }
     let locationMgr = LocationManager(onUpdate: sink)
     
     OnboardingView(locationMgr: locationMgr)
-//        .environment(\.spcSync, spcMock)
 }

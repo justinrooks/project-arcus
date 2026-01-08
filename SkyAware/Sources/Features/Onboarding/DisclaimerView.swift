@@ -35,8 +35,8 @@ struct DisclaimerView: View {
                 .foregroundColor(.secondary)
                 
                 Text("This app is not a substitute for official weather alerts. Always verify critical information with official sources.")
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
+                    .font(.callout)
+                    .fontWeight(.bold)
                     .foregroundColor(.orange)
                     .padding(.top, 8)
             }

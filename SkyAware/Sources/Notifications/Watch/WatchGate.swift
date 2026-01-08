@@ -18,10 +18,10 @@ struct WatchGate: NotificationGating {
 
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
         logger.debug("Checking watch notification gate")
-        guard let day = event.payload["localDay"] as? String else {
-            logger.debug("Gate missing 'localDay' parameter")
-            return false
-        }
+//        guard let day = event.payload["localDay"] as? String else {
+//            logger.debug("Gate missing 'localDay' parameter")
+//            return false
+//        }
         
         guard let watchId = event.payload["watchId"] as? String else {
             logger.debug("Gate missing 'watchId' parameter")

@@ -138,8 +138,7 @@ struct SkyAwareApp: App {
                         logger.notice("Starting spc provider cleanup and sync")
                         await deps.spcProvider.cleanup()
                         logger.info("Spc provider cleanup finished")
-                        #warning("Enable nws data cleanup here")
-                        // await nwsProvider.cleanup()
+                        await deps.nwsProvider.cleanup()
                         logger.info("Nws provider cleanup finished")
                         
                         // Changed this to just grab the mapping products in the background

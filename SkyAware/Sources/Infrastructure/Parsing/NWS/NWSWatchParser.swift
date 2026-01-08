@@ -16,12 +16,6 @@ enum NWSWatchParser {
         let decoder = DecoderFactory.iso8601
         
         do {
-            if let body = String(data: data, encoding: .utf8) {
-                print(body)
-            } else {
-                print("Unable to decode response as UTF-8 text")
-            }
-            
             return try decoder.decode(NWSWatchJson.self, from: data)
         } catch let DecodingError.dataCorrupted(context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NWSWatchParser")
