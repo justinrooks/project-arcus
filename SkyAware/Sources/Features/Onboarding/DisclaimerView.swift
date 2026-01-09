@@ -34,8 +34,19 @@ struct DisclaimerView: View {
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 
-                Text("This app is not a substitute for official weather alerts. Always verify critical information with official sources.")
-                    .font(.callout)
+                Text("""
+                    SkyAware provides severe weather awareness using public data from the Storm Prediction Center and National Weather Service.
+                    
+                    Risk levels and badges shown in the app are **computed estimates** based on that data.
+                    
+                    SkyAware:
+                        - Does not issue official weather warnings
+                        - May not always refresh in the background
+                        - Should not be relied upon as your only source of severe weather information
+                    
+                    Always follow official guidance from the National Weather Service, NOAA Weather Radio, and local authorities.
+                    """)
+                    .font(.footnote)
                     .fontWeight(.bold)
                     .foregroundColor(.orange)
                     .padding(.top, 8)
