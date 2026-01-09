@@ -14,18 +14,12 @@ enum WatchChipKind {
     case severity(String)
     case certainty(String)
     case urgency(String)
-    case sender(String)
-    case instruction(String)
-    case response(String)
 
     var title: String {
         switch self {
         case .severity(let v):    return "Severity: \(v)"
         case .certainty(let v):   return "Certainty: \(v)"
         case .urgency(let v):     return "Urgency: \(v)"
-        case .sender(let v):      return "Sender: \(v)"
-        case .instruction(let v): return "Instruction"
-        case .response(let v):    return "Response: \(v)"
         }
     }
 
@@ -34,9 +28,6 @@ enum WatchChipKind {
         case .severity:    return "exclamationmark.triangle"
         case .certainty:   return "checkmark.seal"
         case .urgency:     return "clock"
-        case .sender:      return "person.crop.circle"
-        case .instruction: return "list.bullet.rectangle"
-        case .response:    return "waveform.path.ecg"
         }
     }
 
@@ -72,15 +63,6 @@ enum WatchChipKind {
             case "future":    return c(.hailBlue.opacity(0.60), .hailBlue.opacity(0.50))
             default:          return c(.secondary.opacity(0.6), .secondary.opacity(0.5))
             }
-
-        case .sender:
-            return c(.mesoPurple.opacity(0.55), .mesoPurple.opacity(0.45))
-
-        case .instruction:
-            return c(.windTeal.opacity(0.55), .windTeal.opacity(0.45))
-
-        case .response:
-            return c(.mesoPurple.opacity(0.55), .mesoPurple.opacity(0.45))
         }
     }
 }
