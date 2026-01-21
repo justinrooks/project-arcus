@@ -108,6 +108,16 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		D048DFB02F2138D80037C3D4 /* TestFlight */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TestFlight;
+			sourceTree = "<group>";
+		};
+		D048DFB42F21395F0037C3D4 /* ci_scripts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = ci_scripts;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -145,9 +155,11 @@
 		D095EF9A2E16F5690074F867 = {
 			isa = PBXGroup;
 			children = (
+				D048DFB42F21395F0037C3D4 /* ci_scripts */,
 				D03E60782EB2A55E00611081 /* Sources */,
 				D03E62C92EB2A99900611081 /* Resources */,
 				D03E625B2EB2A7D300611081 /* Config */,
+				D048DFB02F2138D80037C3D4 /* TestFlight */,
 				D03E611B2EB2A57400611081 /* Tests */,
 				D095EFA42E16F5690074F867 /* Products */,
 				4FF60265E384AB8FC83C01FB /* Frameworks */,
@@ -184,6 +196,8 @@
 				D03E611B2EB2A57400611081 /* Tests */,
 				D03E625B2EB2A7D300611081 /* Config */,
 				D03E62C92EB2A99900611081 /* Resources */,
+				D048DFB02F2138D80037C3D4 /* TestFlight */,
+				D048DFB42F21395F0037C3D4 /* ci_scripts */,
 			);
 			name = SkyAware;
 			productName = SkyAware;
