@@ -17,7 +17,7 @@ struct WatchDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             // 🔷 Header
-            SpcProductHeader(title: "\(watch.title)", issued: watch.issued, validStart: watch.issued, validEnd: watch.expires, subtitle: watch.messageType == "UPDATE" ? "Updated" : nil, inZone: false, sender: watch.sender)
+            SpcProductHeader(title: "\(watch.title)", issued: watch.issued, validStart: watch.issued, validEnd: watch.validEnd, subtitle: watch.messageType == "UPDATE" ? "Updated" : nil, inZone: false, sender: watch.sender)
             
             Divider().opacity(0.12)
             
@@ -41,7 +41,7 @@ struct WatchDetailView: View {
                     .lineLimit(layout == .sheet ? 3 : nil)
                 
             }
-            SpcProductFooter(link: watch.link, validEnd: watch.expires)
+            SpcProductFooter(link: watch.link, validEnd: watch.validEnd)
             
             if layout == .full {
                 Section(header: Text("Areas Effected")

@@ -123,9 +123,10 @@ private struct MesoRowView: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
-            Image(systemName: "waveform.path.ecg.magnifyingglass")
+            let (icon, color) = styleForType(.mesoscale, "")
+            Image(systemName: icon)
             //                .font(.subheadline)
-                .foregroundStyle(Color.mesoPurple)
+                .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("MD \(meso.number.formatted(.number.grouping(.never)))")
                     .font(.subheadline.weight(.semibold))
@@ -156,26 +157,28 @@ private struct WatchRowView: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
-            Image(systemName: watch.title == "Tornado Watch" ? "tornado" : "cloud.bolt.fill")
-                .foregroundStyle(watch.title == "Tornado Watch" ? Color.tornadoRed : Color.severeTstormWarn)
+            let (icon, color) = styleForType(.watch, watch.title)
+            Image(systemName: icon)
+                .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(watch.title)")
                     .font(.subheadline.weight(.semibold))
-//                Text("\(watch.title)-title")
-//                    .lineLimit(3)
-//                    .truncationMode(.tail)
-//                    .font(.subheadline.weight(.semibold))
-//                    .foregroundStyle(.secondary)
             }
             
             Spacer()
             VStack(alignment: .trailing) {
-                Text("Until: \(watch.expires, style: .time)")
+                let txt = buildDisplay(watch: watch)
+                Text("Until: \(txt) \(watch.validEnd, style: .time)")
                     .monospacedDigit()
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
+    }
+    func buildDisplay(watch: WatchRowDTO) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "E"
+        return f.string(from: watch.validEnd)
     }
 }
 

@@ -12,7 +12,7 @@ extension WatchRowDTO: AlertItem {
     nonisolated var number: Int          {0}
     nonisolated var link: URL { URL(string:"https://api.weather.gov/alerts/\(self.id)")! } // link to full page
     nonisolated var validStart: Date     {self.issued}      // Valid start
-    nonisolated var validEnd: Date       {self.expires}      // Valid end
+    nonisolated var validEnd: Date       {self.ends}      // Valid end
     nonisolated var summary: String      {self.description}      // description / CDATA
     nonisolated var alertType: AlertType { AlertType.watch }      // Type of alert to conform to alert item
 }
@@ -28,6 +28,7 @@ struct WatchRowDTO: Identifiable, Sendable, Hashable {
     // Timing
     let issued: Date
     let expires: Date
+    let ends: Date
     
     // Classification
     let messageType: String
@@ -53,7 +54,8 @@ extension WatchRowDTO {
         self.title = watch.event
         self.headline = watch.headline
         self.issued = watch.sent
-        self.expires = watch.ends
+        self.expires = watch.expires
+        self.ends = watch.ends
         self.severity = watch.severity
         self.urgency = watch.urgency
         self.certainty = watch.certainty

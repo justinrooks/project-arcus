@@ -15,20 +15,13 @@ extension Watch {
     nonisolated var isActive: Bool { true }
 }
 
-//extension Watch: AlertItem {
-//    // Alert Item - Derived
-//    nonisolated var number: Int          {0}
-//    nonisolated var title: String        {self.event}      // e.g., "Day 1 Convective Outlook"
-//    nonisolated var link: URL            {URL(string:"\(self.nwsId)")!}      // link to full outlook page
-//    nonisolated var issued: Date         {self.sent}      // pubDate
-//    nonisolated var validStart: Date     {self.effective}      // Valid start
-//    nonisolated var validEnd: Date       {self.ends}      // Valid end
-//    nonisolated var summary: String      {self.watchDescription}      // description / CDATA
-//    nonisolated var alertType: AlertType { AlertType.watch }      // Type of alert to conform to alert item
-//}
-
 @Model
 final class Watch {
+    // 1/23/26 - updated the incomming value to be vtec.
+    //           using the VTECDescriptor.eventKey allows
+    //           us to get the event itself including updates
+    //           and not just each message.
+    // TODO: Need to rename this property some day
     @Attribute(.unique) var nwsId: String
 
     // properties.geocode

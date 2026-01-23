@@ -28,6 +28,10 @@ struct SpcProductFooter: View {
     }
 }
 
-#Preview {
+#Preview("MD") {
     SpcProductFooter(link: MD.sampleDiscussionDTOs[1].link, validEnd: MD.sampleDiscussionDTOs[1].validEnd)
+}
+
+#Preview("Watch") {
+    SpcProductFooter(link: Watch.sampleWatchRows[1].link, validEnd: Watch.sampleWatchRows[1].validEnd)
 }

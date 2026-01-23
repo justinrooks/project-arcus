@@ -58,8 +58,8 @@ struct ExpiryLabel: View {
         if remaining <= 0 { return "Expired" }
         let minutes = Int(remaining / 60) % 60
         let hours = Int(remaining / 3600)
-        if hours > 0 { return "Expires in \(hours)h \(minutes)m" }
-        return "Expires in \(minutes)m"
+        if hours > 0 { return "Ends in \(hours)h \(minutes)m" }
+        return "Ends in \(minutes)m"
     }
     
     var body: some View {

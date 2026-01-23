@@ -136,6 +136,7 @@ extension Watch {
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-11-25T22:20:00Z")!,   // 4:20 PM CST
             expires: ISO8601DateFormatter().date(from: "2025-11-26T00:00:00Z")!,  // 6:00 PM CST
+            ends: ISO8601DateFormatter().date(from: "2026-01-23T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Alert",
             sender: "NWS Boulder CO",
             severity: "Extreme",
@@ -152,6 +153,7 @@ extension Watch {
             headline: "Severe T-Storm Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-06-18T19:05:00Z")!,   // ~2:05 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-06-18T23:00:00Z")!,  // ~6:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2026-01-23T23:23:00Z")!,  // 5:00 PM CST,
             messageType: "Update",
             sender: "NWS Boulder CO",
             severity: "Severe",
@@ -169,6 +171,7 @@ extension Watch {
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-05-06T20:10:00Z")!,   // ~3:10 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-05-07T01:00:00Z")!,  // ~8:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Alert",
             sender: "NWS Boulder CO",
             severity: "Extreme",
@@ -186,6 +189,7 @@ extension Watch {
             headline: "Severe T-Storm Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-08-12T21:30:00Z")!,   // ~4:30 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-08-13T02:00:00Z")!,  // ~9:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Alert",
             sender: "NWS Boulder CO",
             severity: "Severe",
@@ -203,6 +207,7 @@ extension Watch {
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-09-27T23:45:00Z")!,   // ~6:45 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-09-28T04:00:00Z")!,  // ~11:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Update",
             sender: "NWS Boulder CO",
             severity: "Extreme",
