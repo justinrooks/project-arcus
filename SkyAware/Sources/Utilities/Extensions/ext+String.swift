@@ -78,6 +78,59 @@ extension String {
         return localDate
     }
     
+    /// Parse a single VTEC string into a VTECDescriptor.
+    /// Returns nil if the string doesn't match the expected format.
+    func parseVTEC() -> VTECDescriptor? {
+//        guard let raw else { return nil }
+        let trimmed = self.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        // Strip leading/trailing "/" if present
+        let core: String
+        if trimmed.hasPrefix("/") && trimmed.hasSuffix("/") && trimmed.count >= 2 {
+            core = String(trimmed.dropFirst().dropLast())
+        } else {
+            core = trimmed
+        }
+
+        // Expected format:
+        // ACTION.STATUS.OFFICE.PHEN.SIG.EVENTNUM.BEGINTIME-ENDTIME
+        // e.g. O.CON.KBOU.CW.Y.0001.260123T1000Z-260125T1600Z
+        let parts = core.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 7 else {
+            // Unexpected format
+            return nil
+        }
+
+        let action        = String(parts[0])  // "O"
+        let status        = String(parts[1])  // "CON"
+        let office        = String(parts[2])  // "KBOU"
+        let phenomenon    = String(parts[3])  // "CW"
+        let significance  = String(parts[4])  // "Y"
+        let eventNumber   = String(parts[5])  // "0001"
+        let timePart      = String(parts[6])  // "260123T1000Z-260125T1600Z" or "000000T0000Z-..."
+
+        let timeParts = timePart.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        guard timeParts.count == 2 else {
+            return nil
+        }
+
+        let beginToken = String(timeParts[0]) // "260123T1000Z" or "000000T0000Z"
+        let endToken   = String(timeParts[1]) // "260125T1600Z"
+
+        return VTECDescriptor(
+            raw: trimmed,
+            action: action,
+            status: status,
+            office: office,
+            phenomenon: phenomenon,
+            significance: significance,
+            eventNumber: eventNumber,
+            beginTimeToken: beginToken,
+            endTimeToken: endToken
+        )
+    }
+    
     // MARK: Helpers
     private func rfcConvert(_ date: String, format: String) -> Date? {
         let formatter = DateFormatter()

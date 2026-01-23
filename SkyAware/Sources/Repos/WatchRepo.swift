@@ -112,8 +112,12 @@ actor WatchRepo {
             return nil
         }
         
+        let vtec = item.properties.parameters?["VTEC"]?.first ?? ""
+        let vtecP = vtec.parseVTEC()
+        let key = vtecP?.eventKey
+        
         return .init(
-            nwsId: item.properties.id,
+            nwsId: key ?? item.properties.id, // Uses vtec as a key, if we don't have a vtec, then fall back to messasge id
             areaDesc: item.properties.areaDesc,
             ugcZones: ugcZones,
             sameCodes: sameCodes,
