@@ -21,7 +21,7 @@ struct WatchRule: WatchNotificationRuleEvaluating {
         
         // MARK: Rule
         let activeWatches = ctx.watches.filter {
-            $0.expires >= ctx.now && ctx.now.timeIntervalSince($0.issued) <= maxIssueAge
+            $0.validEnd >= ctx.now && ctx.now.timeIntervalSince($0.issued) <= maxIssueAge
         }
         if activeWatches.isEmpty {
             logger.debug("No active watches for current time and location")

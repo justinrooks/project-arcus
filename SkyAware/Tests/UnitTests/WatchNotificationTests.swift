@@ -18,6 +18,7 @@ struct WatchNotificationTests {
         id: String = "abc123",
         issued: Date,
         expires: Date,
+        ends: Date,
         sender: String = "NWS Norman",
         severity: String = "Severe",
         urgency: String = "Immediate",
@@ -32,6 +33,7 @@ struct WatchNotificationTests {
             headline: headline,
             issued: issued,
             expires: expires,
+            ends: ends,
             messageType: "Alert",
             sender: sender,
             severity: severity,
@@ -49,7 +51,8 @@ struct WatchNotificationTests {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
         let watch = makeWatch(
             issued: now.addingTimeInterval(-3_600),
-            expires: now.addingTimeInterval(10_800)
+            expires: now.addingTimeInterval(10_800),
+            ends: now.addingTimeInterval(11_500)
         )
 
         let ctx = WatchContext(
@@ -80,12 +83,14 @@ struct WatchNotificationTests {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
         let expired = makeWatch(
             issued: now.addingTimeInterval(-7_200),
-            expires: now.addingTimeInterval(-3_600)
+            expires: now.addingTimeInterval(-3_600),
+            ends: now.addingTimeInterval(-3_200)
         )
         let tooOld = makeWatch(
             id: "old",
             issued: now.addingTimeInterval(-26 * 3_600),
-            expires: now.addingTimeInterval(1_800)
+            expires: now.addingTimeInterval(1_800),
+            ends: now.addingTimeInterval(1_900)
         )
 
         let ctx = WatchContext(
