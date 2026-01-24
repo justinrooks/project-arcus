@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct WatchEngine: Sendable {
-    private let logger = Logger.watchEngine
+    private let logger = Logger.notificationsWatchEngine
     
     let rule: WatchNotificationRuleEvaluating
     let gate: NotificationGating

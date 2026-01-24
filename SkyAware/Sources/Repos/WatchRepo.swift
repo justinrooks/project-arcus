@@ -11,7 +11,7 @@ import OSLog
 
 @ModelActor
 actor WatchRepo {
-    private let logger = Logger.watchRepo
+    private let logger = Logger.reposWatch
     
     func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
         logger.info("Fetching current local watches for \(county), \(zone)")

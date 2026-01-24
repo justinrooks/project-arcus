@@ -13,7 +13,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     
-    private let logger = Logger.homeView
+    private let logger = Logger.uiHome
     
     // MARK: Local handles
     private var sync: any SpcSyncing { dependencies.spcSync }

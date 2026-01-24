@@ -60,7 +60,7 @@ struct CadenceContext: Sendable {
 }
 
 struct CadencePolicy: Sendable {
-    private let logger = Logger.cadencePolicy
+    private let logger = Logger.backgroundCadencePolicy
     
     /// Decides the cadence based on evaluation of context. Rules are processed top to
     /// bottom, and short circuit for meso/watch, categorical

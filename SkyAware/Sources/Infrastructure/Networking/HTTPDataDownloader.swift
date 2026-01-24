@@ -27,7 +27,7 @@ public protocol HTTPClient: Sendable {
 }
 
 public final class URLSessionHTTPClient: HTTPClient {
-    private let logger = Logger.downloader
+    private let logger = Logger.networkDownloader
     private let session: URLSession
     private let delays: [UInt64] = [0, 5, 10, 15] // seconds
     

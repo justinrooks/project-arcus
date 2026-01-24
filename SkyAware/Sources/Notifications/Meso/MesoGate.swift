@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct MesoGate: NotificationGating {
-    private let logger = Logger.mesoGate
+    private let logger = Logger.notificationsMesoGate
     private let store: NotificationStateStoring
     
     init(store: NotificationStateStoring) {

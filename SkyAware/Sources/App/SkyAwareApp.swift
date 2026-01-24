@@ -19,7 +19,7 @@ struct SkyAwareApp: App {
     
     // Dependencies
     private let deps = Dependencies.live()
-    private let logger = Logger.mainApp
+    private let logger = Logger.appMain
     
     // State
     @State private var didBootstrapBGRefresh = false

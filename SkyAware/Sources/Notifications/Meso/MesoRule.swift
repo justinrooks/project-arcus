@@ -10,7 +10,7 @@ import OSLog
 import MapKit
 
 struct MesoRule: MesoNotificationRuleEvaluating {
-    private let logger = Logger.mesoRule
+    private let logger = Logger.notificationsMesoRule
     
     func evaluate(_ ctx: MesoContext) -> NotificationEvent? {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = ctx.localTZ

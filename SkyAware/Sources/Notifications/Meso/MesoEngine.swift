@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct MesoEngine: Sendable {
-    private let logger = Logger.mesoEngine
+    private let logger = Logger.notificationsMesoEngine
     
     let rule: MesoNotificationRuleEvaluating
     let gate: NotificationGating

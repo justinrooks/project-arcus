@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct WatchGate: NotificationGating {
-    private let logger = Logger.watchGate
+    private let logger = Logger.notificationsWatchGate
     private let store: NotificationStateStoring
     
     init(store: NotificationStateStoring) {

@@ -12,7 +12,7 @@ import OSLog
 
 @ModelActor
 actor StormRiskRepo {
-    private let logger = Logger.stormRiskRepo
+    private let logger = Logger.reposStormRisk
     
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)

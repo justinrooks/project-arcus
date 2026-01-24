@@ -11,7 +11,7 @@ import OSLog
 
 @ModelActor
 actor ConvectiveOutlookRepo {
-    private let logger = Logger.convectiveRepo
+    private let logger = Logger.reposConvectiveOutlook
     private let parser: RSSFeedParser = RSSFeedParser()
     private let outlookParser = OutlookParser()
     

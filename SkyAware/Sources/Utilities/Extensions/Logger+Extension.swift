@@ -12,64 +12,67 @@ extension Logger {
     static let subsystem = Bundle.main.bundleIdentifier!
     
     // MARK: Main
-    static let mainApp = Logger(subsystem: subsystem, category: "MainApp")
-    static let deps = Logger(subsystem: subsystem, category: "Deps")
+    static let appMain = Logger(subsystem: subsystem, category: "app.main")
+    static let appDependencies = Logger(subsystem: subsystem, category: "app.dependencies")
     
     // MARK: Plumbing
-    static let spcClient = Logger(subsystem: subsystem, category: "SpcClient")
-    static let downloader = Logger(subsystem: subsystem, category: "Downloader")
-    static let spcProvider = Logger(subsystem: subsystem, category: "SpcProvider")
-    static let rssParser = Logger(subsystem: subsystem, category: "RssParser")
-    static let nwsClient = Logger(subsystem: subsystem, category: "NwsClient")
-    static let nwsProvider = Logger(subsystem: subsystem, category: "NwsProvider")
-    static let nwsGridProvider = Logger(subsystem: subsystem, category: "NwsGridProvider")
+    static let providersSpcClient = Logger(subsystem: subsystem, category: "providers.spc.client")
+    static let networkDownloader = Logger(subsystem: subsystem, category: "network.downloader")
+    static let providersSpc = Logger(subsystem: subsystem, category: "providers.spc")
+    static let parsingRss = Logger(subsystem: subsystem, category: "parsing.rss")
+    static let providersNwsClient = Logger(subsystem: subsystem, category: "providers.nws.client")
+    static let providersNws = Logger(subsystem: subsystem, category: "providers.nws")
+    static let providersNwsGrid = Logger(subsystem: subsystem, category: "providers.nws.grid")
     
     
     // MARK: Repos
-    static let convectiveRepo = Logger(subsystem: subsystem, category: "ConvectiveOutlookRepo")
-    static let mesoRepo = Logger(subsystem: subsystem, category: "MesoRepo")
-    static let watchRepo = Logger(subsystem: subsystem, category: "WatchRepo")
-    static let stormRiskRepo = Logger(subsystem: subsystem, category: "StormRiskRepo")
-    static let severeRiskRepo = Logger(subsystem: subsystem, category: "SevereRiskRepo")
-    static let riskProductRepo = Logger(subsystem: subsystem, category: "RiskProductRepo")
-    static let nwsMetadataRepo = Logger(subsystem: subsystem, category: "NwsMetadataRepo")
+    static let reposConvectiveOutlook = Logger(subsystem: subsystem, category: "repos.convectiveOutlook")
+    static let reposMeso = Logger(subsystem: subsystem, category: "repos.meso")
+    static let reposWatch = Logger(subsystem: subsystem, category: "repos.watch")
+    static let reposStormRisk = Logger(subsystem: subsystem, category: "repos.stormRisk")
+    static let reposSevereRisk = Logger(subsystem: subsystem, category: "repos.severeRisk")
+    static let reposRiskProduct = Logger(subsystem: subsystem, category: "repos.riskProduct")
+    static let reposNwsMetadata = Logger(subsystem: subsystem, category: "repos.nwsMetadata")
     
     // MARK: Background
-    static let orchestrator = Logger(subsystem: subsystem, category: "BGOrchestrator")
-    static let scheduler = Logger(subsystem: subsystem, category: "Scheduler")
-    static let refreshPolicy = Logger(subsystem: subsystem, category: "RefreshPolicy")
-    static let cadencePolicy = Logger(subsystem: subsystem, category: "CadencePolicy")
+    static let backgroundOrchestrator = Logger(subsystem: subsystem, category: "background.orchestrator")
+    static let backgroundScheduler = Logger(subsystem: subsystem, category: "background.scheduler")
+    static let backgroundRefreshPolicy = Logger(subsystem: subsystem, category: "background.refreshPolicy")
+    static let backgroundCadencePolicy = Logger(subsystem: subsystem, category: "background.cadencePolicy")
     
     // MARK: Location
-    static let locationMgr = Logger(subsystem: subsystem, category: "LocationMgr")
-    static let locationProvider = Logger(subsystem: subsystem, category: "LocationProvider")
+    static let locationManager = Logger(subsystem: subsystem, category: "location.manager")
+    static let locationProvider = Logger(subsystem: subsystem, category: "location.provider")
     
     // MARK: Views
-    static let alertView = Logger(subsystem: subsystem, category: "AlertView")
-    static let convectiveView = Logger(subsystem: subsystem, category: "ConvectiveView")
-    static let mainView = Logger(subsystem: subsystem, category: "MainView")
-    static let mapping = Logger(subsystem: subsystem, category: "MappingView")
-    static let summaryView = Logger(subsystem: subsystem, category: "SummaryView")
-    static let homeView = Logger(subsystem: subsystem, category: "HomeView")
+    static let uiAlert = Logger(subsystem: subsystem, category: "ui.alert")
+    static let uiConvective = Logger(subsystem: subsystem, category: "ui.convective")
+    static let uiMain = Logger(subsystem: subsystem, category: "ui.main")
+    static let uiMap = Logger(subsystem: subsystem, category: "ui.map")
+    static let uiSummary = Logger(subsystem: subsystem, category: "ui.summary")
+    static let uiHome = Logger(subsystem: subsystem, category: "ui.home")
     
     // MARK: Notification
-    static let notifications = Logger(subsystem: subsystem, category: "NotificationManager")
+    static let notificationsManager = Logger(subsystem: subsystem, category: "notifications.manager")
     
     // MARK: Morning Notification
-    static let engine = Logger(subsystem: subsystem, category: "notificationEngine")
-    static let rule = Logger(subsystem: subsystem, category: "notificationRule")
-    static let gate = Logger(subsystem: subsystem, category: "notificationGate")
-    static let composer = Logger(subsystem: subsystem, category: "notificationComposer")
-    static let sender = Logger(subsystem: subsystem, category: "notificationSender")
+    static let notificationsMorningEngine = Logger(subsystem: subsystem, category: "notifications.morning.engine")
+    static let notificationsMorningRule = Logger(subsystem: subsystem, category: "notifications.morning.rule")
+    static let notificationsMorningGate = Logger(subsystem: subsystem, category: "notifications.morning.gate")
+    static let notificationsMorningComposer = Logger(subsystem: subsystem, category: "notifications.morning.composer")
     
     // MARK: Meso Notification
-    static let mesoEngine = Logger(subsystem: subsystem, category: "mesoEngine")
-    static let mesoGate = Logger(subsystem: subsystem, category: "mesoGate")
-    static let mesoRule = Logger(subsystem: subsystem, category: "mesoRule")
+    static let notificationsMesoEngine = Logger(subsystem: subsystem, category: "notifications.meso.engine")
+    static let notificationsMesoGate = Logger(subsystem: subsystem, category: "notifications.meso.gate")
+    static let notificationsMesoRule = Logger(subsystem: subsystem, category: "notifications.meso.rule")
+    static let notificationsMesoComposer = Logger(subsystem: subsystem, category: "notifications.meso.composer")
     
     // MARK: Watch Notification
-    static let watchEngine = Logger(subsystem: subsystem, category: "watchNotificationEngine")
-    static let watchRule = Logger(subsystem: subsystem, category: "watchRule")
-    static let watchComposer = Logger(subsystem: subsystem, category: "watchNotificationComposer")
-    static let watchGate = Logger(subsystem: subsystem, category: "watchGate")
+    static let notificationsWatchEngine = Logger(subsystem: subsystem, category: "notifications.watch.engine")
+    static let notificationsWatchRule = Logger(subsystem: subsystem, category: "notifications.watch.rule")
+    static let notificationsWatchComposer = Logger(subsystem: subsystem, category: "notifications.watch.composer")
+    static let notificationsWatchGate = Logger(subsystem: subsystem, category: "notifications.watch.gate")
+
+    // MARK: Notification Delivery
+    static let notificationsSender = Logger(subsystem: subsystem, category: "notifications.sender")
 }

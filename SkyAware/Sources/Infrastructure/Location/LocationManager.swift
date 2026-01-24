@@ -29,7 +29,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private var lastPhase: ScenePhase = .inactive
     
     private let manager = CLLocationManager()
-    private let logger = Logger.locationMgr
+    private let logger = Logger.locationManager
     private let onUpdate: LocationSink
     private var streamTask: Task<Void, Never>?
     private(set) var authStatus: CLAuthorizationStatus = .notDetermined

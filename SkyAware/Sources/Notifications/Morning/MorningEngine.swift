@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct MorningEngine: Sendable {
-    private let logger = Logger.engine
+    private let logger = Logger.notificationsMorningEngine
     
     let rule: NotificationRuleEvaluating
     let gate: NotificationGating

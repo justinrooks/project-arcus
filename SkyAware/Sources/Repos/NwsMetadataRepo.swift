@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 actor NwsMetadataRepo {
-    private let logger = Logger.nwsMetadataRepo
+    private let logger = Logger.reposNwsMetadata
 
     func getPointMetadata(using client: any NwsClient,for location: Coordinate2D) async throws -> NWSGridPoint {
         let data = try await client.fetchPointMetadata(for: location)

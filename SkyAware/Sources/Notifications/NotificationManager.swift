@@ -10,7 +10,7 @@ import UserNotifications
 import OSLog
 
 struct NotificationManager: Sendable {
-    private let logger = Logger.notifications
+    private let logger = Logger.notificationsManager
     static let shared = NotificationManager()
     
     /// Prepares and requests the notification to be sent. Each property after body is optional

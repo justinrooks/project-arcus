@@ -10,7 +10,7 @@ import OSLog
 
 final class RSSFeedParser: NSObject, XMLParserDelegate, @unchecked Sendable {
     // MARK: - Properties
-    private let logger = Logger.rssParser
+    private let logger = Logger.parsingRss
     private var feed: RSS?
     private var currentChannel: Channel?
     private var currentItem: Item?

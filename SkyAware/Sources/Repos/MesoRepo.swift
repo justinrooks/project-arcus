@@ -12,7 +12,7 @@ import OSLog
 
 @ModelActor
 actor MesoRepo {
-    private let logger = Logger.mesoRepo
+    private let logger = Logger.reposMeso
     private let parser: RSSFeedParser = RSSFeedParser()
  
     func refreshMesoscaleDiscussions(using client: SpcClient) async throws {

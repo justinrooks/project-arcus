@@ -29,7 +29,7 @@ protocol NotificationSettingsProviding: Sendable {
 }
 
 actor BackgroundOrchestrator {
-    private let logger = Logger.orchestrator
+    private let logger = Logger.backgroundOrchestrator
     private let signposter:OSSignposter
     private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
     private let nwsProvider: any NwsSyncing & NwsRiskQuerying

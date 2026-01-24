@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct AmRangeLocalRule: NotificationRuleEvaluating {
-    private let logger = Logger.rule
+    private let logger = Logger.notificationsMorningRule
     
     /// Local-time delivery window [startHour, endHour)
     /// Default: 07:00–11:00 local

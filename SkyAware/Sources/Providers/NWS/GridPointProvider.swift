@@ -11,7 +11,7 @@ import OSLog
 
 // TODO: Create a stream like the location provider for grid point metadata changes. may be able to fuse these
 actor GridPointProvider {
-    let logger = Logger.nwsGridProvider
+    let logger = Logger.providersNwsGrid
     private let client: NwsClient
     private let metadataRepo: NwsMetadataRepo
     private var lastSnapshot: GridPointSnapshot?

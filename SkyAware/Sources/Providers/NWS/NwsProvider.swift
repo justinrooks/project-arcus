@@ -10,7 +10,7 @@ import CoreLocation
 import OSLog
 
 actor NwsProvider {
-    let logger = Logger.nwsProvider
+    let logger = Logger.providersNws
     let client: NwsClient
     let watchRepo: WatchRepo
     let metadataRepo: NwsMetadataRepo

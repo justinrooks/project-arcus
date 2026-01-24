@@ -10,7 +10,7 @@ import OSLog
 import BackgroundTasks
 
 struct BackgroundScheduler {
-    private let logger = Logger.scheduler
+    private let logger = Logger.backgroundScheduler
     private let appRefreshID: String
     
     init(refreshId: String) {

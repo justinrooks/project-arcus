@@ -18,7 +18,7 @@ protocol NwsClient: Sendable {
 
 struct NwsHttpClient: NwsClient {
     private let http: HTTPClient
-    private let logger = Logger.nwsClient
+    private let logger = Logger.providersNwsClient
     
     init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http

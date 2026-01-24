@@ -54,7 +54,7 @@ protocol SpcClient: Sendable {
 
 struct SpcHttpClient: SpcClient {
     private let http: HTTPClient
-    private let logger = Logger.spcClient
+    private let logger = Logger.providersSpcClient
     
     init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http

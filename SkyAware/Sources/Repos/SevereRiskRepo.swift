@@ -12,7 +12,7 @@ import CoreLocation
 
 @ModelActor
 actor SevereRiskRepo {
-    private let logger = Logger.severeRiskRepo
+    private let logger = Logger.reposSevereRisk
 
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
