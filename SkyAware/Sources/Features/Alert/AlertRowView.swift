@@ -42,18 +42,6 @@ struct AlertRowView: View {
     }
 
     // MARK: - Helpers
-
-    func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
-        switch type {
-        case .watch:
-            if let watchType {
-                return watchType == "Tornado Watch" ? ("tornado", .tornadoRed) : ("cloud.bolt.fill", .severeTstormWarn)
-            } else {
-                return ("exclamationmark.triangle", .red)
-            }
-        case .mesoscale: return ("waveform.path.ecg.magnifyingglass", .mesoPurple)
-        }
-    }
     
     func relativeDate(_ date: Date) -> String {
         let formatter = RelativeDateTimeFormatter()
