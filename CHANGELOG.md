@@ -2,7 +2,35 @@
 
 ## Unreleased
 
-## v0.1.0
+## v0.1.0(10)
+
+### Background & Notifications
+- Use watch end time when determining active watch notifications.
+<!-- evidence: 26cf27d -->
+
+### Data & Repos
+- Use VTEC event keys as stable watch IDs (falling back to message IDs when unavailable).
+<!-- evidence: 4e447b2 -->
+
+### UI / UX
+- Fix watch icon styling for tornado vs severe thunderstorm watches across alert surfaces.
+<!-- evidence: 61703e5 -->
+- Show watch end times in watch details and summary rows, with "Ends in" copy for time remaining.
+<!-- evidence: 61703e5 -->
+- Watch alert links now open the correct NWS alert page; footer label reads "Open in browser."
+<!-- evidence: 1129370 -->
+
+### Tests / QA
+- Update watch notification and purge tests for watch end-time handling and message ID support.
+<!-- evidence: 26cf27d, 1129370 -->
+
+### Maintenance / Cleanup
+- Add CI/TestFlight notes automation assets and fix CI post-build script permissions.
+<!-- evidence: 12bfca3, a1380bd -->
+- Add and update pull request templates.
+<!-- evidence: a93a766, 707dea4 -->
+
+## v0.1.0(3)
 
 ### Features
 - Background scheduling and notification pipeline for morning summaries, meso alerts, and watches.
