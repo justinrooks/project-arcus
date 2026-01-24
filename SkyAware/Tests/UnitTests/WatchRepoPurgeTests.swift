@@ -21,6 +21,7 @@ struct WatchRepoPurgeTests {
         let iso = ISO8601DateFormatter()
         return Watch(
             nwsId: "\(number)",
+            messageId: "\(number)",
             areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
             ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
             sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],

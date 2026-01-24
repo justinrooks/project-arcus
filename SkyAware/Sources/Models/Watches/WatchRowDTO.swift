@@ -10,7 +10,7 @@ import Foundation
 extension WatchRowDTO: AlertItem {
     // Alert Item - Derived
     nonisolated var number: Int          {0}
-    nonisolated var link: URL { URL(string:"https://api.weather.gov/alerts/\(self.id)")! } // link to full page
+    nonisolated var link: URL { URL(string:"https://api.weather.gov/alerts/\(self.messageId ?? "")")! } // link to full page
     nonisolated var validStart: Date     {self.issued}      // Valid start
     nonisolated var validEnd: Date       {self.ends}      // Valid end
     nonisolated var summary: String      {self.description}      // description / CDATA
@@ -20,6 +20,7 @@ extension WatchRowDTO: AlertItem {
 struct WatchRowDTO: Identifiable, Sendable, Hashable {
     // Identity
     let id: String              // nwsId
+    let messageId: String?
     
     // Primary display
     let title: String           // "Tornado Watch"
@@ -51,6 +52,7 @@ struct WatchRowDTO: Identifiable, Sendable, Hashable {
 extension WatchRowDTO {
     init(from watch: Watch) {
         self.id = watch.nwsId
+        self.messageId = watch.messageId
         self.title = watch.event
         self.headline = watch.headline
         self.issued = watch.sent

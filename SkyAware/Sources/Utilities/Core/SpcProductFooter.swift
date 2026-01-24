@@ -16,7 +16,7 @@ struct SpcProductFooter: View {
             let remaining = max(0, validEnd.timeIntervalSince(ctx.date))
             HStack {
                 Link(destination: link) {
-                    Label("Open on SPC", systemImage: "arrow.up.right.square")
+                    Label("Open in browser", systemImage: "arrow.up.right.square")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }

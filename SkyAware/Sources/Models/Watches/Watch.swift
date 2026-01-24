@@ -23,6 +23,7 @@ final class Watch {
     //           and not just each message.
     // TODO: Need to rename this property some day
     @Attribute(.unique) var nwsId: String
+    var messageId: String?
 
     // properties.geocode
     var areaDesc: String        // human-readable region
@@ -49,8 +50,9 @@ final class Watch {
     
 //    var rawGeometry: Data?
       
-    init(nwsId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, sender: String, instruction: String, response: String, rawGeometry: Data? = nil) {
+    init(nwsId: String, messageId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, sender: String, instruction: String, response: String, rawGeometry: Data? = nil) {
         self.nwsId = nwsId
+        self.messageId = messageId
         self.areaDesc = areaDesc
         self.ugcZones = ugcZones
         self.sameCodes = sameCodes

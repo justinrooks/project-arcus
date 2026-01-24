@@ -16,6 +16,7 @@ struct WatchNotificationTests {
 
     private func makeWatch(
         id: String = "abc123",
+        messageId: String = "abc123",
         issued: Date,
         expires: Date,
         ends: Date,
@@ -29,6 +30,7 @@ struct WatchNotificationTests {
     ) -> WatchRowDTO {
         WatchRowDTO(
             id: id,
+            messageId: messageId,
             title: title,
             headline: headline,
             issued: issued,
