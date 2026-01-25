@@ -40,6 +40,7 @@ struct LogViewerView: View {
     @State private var window: Window = .thirtyMin
     @State private var query = ""
     @State private var includeAllSubsystems = false
+    @State private var maxEntriesSelection = 1000
     @State private var loadTask: Task<Void, Never>?
     @State private var exportCache: String = ""
 
@@ -78,6 +79,7 @@ struct LogViewerView: View {
             .task(id: window) { triggerLoad(debounced: false) }
             .task(id: includeAllSubsystems) { triggerLoad(debounced: false) }
             .task(id: query) { triggerLoad(debounced: true) }
+            .task(id: maxEntriesSelection) { triggerLoad(debounced: false) }
         }
     }
 
@@ -98,6 +100,14 @@ struct LogViewerView: View {
 
             TextField("Filter text…", text: $query)
                 .textFieldStyle(.roundedBorder)
+
+            Picker("Max Entries", selection: $maxEntriesSelection) {
+                Text("250").tag(250)
+                Text("500").tag(500)
+                Text("1000").tag(1000)
+                Text("2000").tag(2000)
+            }
+            .pickerStyle(.segmented)
         }
     }
 
@@ -131,7 +141,7 @@ struct LogViewerView: View {
                 since: window.rawValue,
                 subsystem: includeAllSubsystems ? nil : (Bundle.main.bundleIdentifier ?? ""),
                 contains: query.isEmpty ? nil : query,
-                maxEntries: maxEntries
+                maxEntries: maxEntriesSelection
             )
             lines = fetched
             exportCache = exportText()
