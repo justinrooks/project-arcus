@@ -21,6 +21,7 @@ struct LogLine: Identifiable, Sendable {
 
 @MainActor
 struct LogViewerView: View {
+    private let logger = Logger.uiDiagnostics
     enum Window: TimeInterval, CaseIterable, Identifiable {
         case fiveMin = 300, thirtyMin = 1800, twoHours = 7200
         var id: Self { self }
@@ -133,7 +134,7 @@ struct LogViewerView: View {
         } catch {
             lines = []
             // You can also surface a toast here.
-            print("Failed to read logs: \(error)")
+            logger.error("Failed to read logs: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -218,4 +219,3 @@ private func fetchLogs(since seconds: TimeInterval,
         return result.reversed()
     }.value
 }
-

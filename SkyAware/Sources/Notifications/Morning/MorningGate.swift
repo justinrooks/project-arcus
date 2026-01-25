@@ -32,7 +32,7 @@ struct MorningGate: NotificationGating {
         logger.debug("Updating the morning store stamp")
         await store.setLastStamp(day)
         
-        logger.info("Passed the gate")
+        logger.notice("Passed the gate")
         return true
     }
 }

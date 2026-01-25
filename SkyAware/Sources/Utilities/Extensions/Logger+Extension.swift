@@ -51,6 +51,9 @@ extension Logger {
     static let uiMap = Logger(subsystem: subsystem, category: "ui.map")
     static let uiSummary = Logger(subsystem: subsystem, category: "ui.summary")
     static let uiHome = Logger(subsystem: subsystem, category: "ui.home")
+    static let uiSettings = Logger(subsystem: subsystem, category: "ui.settings")
+    static let uiDiagnostics = Logger(subsystem: subsystem, category: "ui.diagnostics")
+    static let uiOnboarding = Logger(subsystem: subsystem, category: "ui.onboarding")
     
     // MARK: Notification
     static let notificationsManager = Logger(subsystem: subsystem, category: "notifications.manager")

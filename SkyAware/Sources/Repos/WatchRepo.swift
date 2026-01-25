@@ -14,7 +14,7 @@ actor WatchRepo {
     private let logger = Logger.reposWatch
     
     func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
-        logger.info("Fetching current local watches for \(county), \(zone)")
+        logger.info("Fetching current local watches for \(county, privacy: .public), \(zone, privacy: .public)")
         
 //        let candidates = try modelContext.fetch(allWatchesDescriptor())
         let candidates = try modelContext.fetch(currentWatchesDescriptor())
@@ -43,7 +43,7 @@ actor WatchRepo {
         }
         
         guard let decoded = NWSWatchParser.decode(from: data) else {
-            logger.debug("Unable to parse NWS Json watch data")
+            logger.error("Unable to parse NWS Json watch data")
             throw NwsError.parsingError
         }
         
@@ -67,7 +67,7 @@ actor WatchRepo {
             .compactMap { makeWatch(from: $0) }
         
         try upsert(watches)
-        logger.debug("Parsed \(watches.count) watch\(watches.count > 1 ? "es" : "") from NWS")
+        logger.debug("Parsed \(watches.count, privacy: .public) watch\(watches.count > 1 ? "es" : "", privacy: .public) from NWS")
     }
     
     /// Removes any expired watches from the database
@@ -76,11 +76,11 @@ actor WatchRepo {
         
         let expired = try modelContext.fetch(expiredWatchesDescriptor(asOf: now))
         if expired.isEmpty {
-            logger.info("No expired watches to purge")
+            logger.debug("No expired watches to purge")
             return
         }
         
-        logger.debug("Found \(expired.count) watches to purge")
+        logger.debug("Found \(expired.count, privacy: .public) watches to purge")
         for obj in expired { modelContext.delete(obj) }
         try modelContext.save()
         

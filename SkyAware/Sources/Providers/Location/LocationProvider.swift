@@ -117,7 +117,7 @@ actor LocationProvider {
             saveAndYieldSnapshot(updated)
             return updated
         } catch {
-            logger.debug("Failed to update placemark, falling back to last snapshot")
+            logger.info("Failed to update placemark, falling back to last snapshot")
             // On failure or timeout, return the most recent snapshot if available, otherwise create a minimal one without a placemark.
             if let snap = lastSnapshot { return snap }
             let snap = LocationSnapshot(coordinates: coord, timestamp: Date(), accuracy: kCLLocationAccuracyThreeKilometers, placemarkSummary: nil)
@@ -143,7 +143,7 @@ actor LocationProvider {
                 saveAndYieldSnapshot(snap)
             }
         } catch {
-            logger.error("Reverse geocoding failed: \(error.localizedDescription)")
+            logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
         }
     }
     
@@ -198,7 +198,7 @@ actor LocationProvider {
     // MARK: Helpers
     private func saveAndYieldSnapshot(_ snap: LocationSnapshot) {
         lastSnapshot = snap
-        logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0), \(self.lastSnapshot?.coordinates.longitude ?? 0.0), \(self.lastSnapshot?.placemarkSummary ?? "unknown")")
+        logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.coordinates.longitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.placemarkSummary ?? "unknown", privacy: .public)")
         continuations.values.forEach { $0.yield(snap) }
     }
     

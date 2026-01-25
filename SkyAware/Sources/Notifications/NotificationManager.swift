@@ -70,7 +70,7 @@ struct NotificationManager: Sendable {
                 return
             }
         } catch {
-            logger.error("Error sending notification: \(error.localizedDescription)")
+            logger.error("Error sending notification: \(error.localizedDescription, privacy: .public)")
         }
     }
     
@@ -92,11 +92,11 @@ struct NotificationManager: Sendable {
         
         do {
             try await center.requestAuthorization(options: [.alert, .badge, .sound])
-            logger.debug("Notification authorization successful")
+            logger.info("Notification authorization successful")
             return true
             
         } catch {
-            logger.error("Error requesting notification authorization: \(error.localizedDescription)")
+            logger.error("Error requesting notification authorization: \(error.localizedDescription, privacy: .public)")
             return false
         }
     }

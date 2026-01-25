@@ -30,14 +30,14 @@ struct WatchGate: NotificationGating {
   
         let last = await store.lastStamp()
         guard last != event.key else {
-            logger.debug("Already sent a notification for watch \(watchId) today")
+        logger.debug("Already sent a notification for watch \(watchId, privacy: .public) today")
             return false
         }
         
         logger.debug("Updating the store stamp")
         await store.setLastStamp(event.key)
         
-        logger.info("Passed the gate")
+        logger.notice("Passed the gate")
         return true
     }
 }

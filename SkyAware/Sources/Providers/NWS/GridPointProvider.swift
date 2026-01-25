@@ -38,7 +38,7 @@ actor GridPointProvider {
             
             return snapshot
         } catch {
-            logger.error("Failed to fetch gridpoint metadata: \(error)")
+            logger.error("Failed to fetch gridpoint metadata: \(error, privacy: .public)")
             return nil
         }
     }

@@ -15,12 +15,12 @@ actor NwsMetadataRepo {
         let data = try await client.fetchPointMetadata(for: location)
         
         guard let data else {
-            logger.debug("No grid point data found")
+            logger.error("No grid point data found")
             throw NwsError.parsingError
         }
         
         guard let decoded = NWSGridPointParser.decode(from: data) else {
-            logger.debug("Unable to parse NWS Json grid point data")
+            logger.error("Unable to parse NWS Json grid point data")
             throw NwsError.parsingError
         }
         

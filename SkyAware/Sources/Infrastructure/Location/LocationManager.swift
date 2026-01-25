@@ -108,7 +108,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             logger.debug("Stopping location services")
             stopAll()
         }
-        logger.debug("Phase = \(String(describing: phase)) auth = \(status.rawValue) -> mode = \(String(describing: desired))")
+        logger.debug("Phase = \(String(describing: phase), privacy: .public) auth = \(status.rawValue, privacy: .public) -> mode = \(String(describing: desired), privacy: .public)")
         currentMode = desired
     }
     
@@ -160,7 +160,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 }
             } catch {
                 await MainActor.run {
-                    self?.logger.error("Streaming ended with error: \(String(describing: error))")
+                    self?.logger.error("Streaming ended with error: \(String(describing: error), privacy: .public)")
                 }
             }
             

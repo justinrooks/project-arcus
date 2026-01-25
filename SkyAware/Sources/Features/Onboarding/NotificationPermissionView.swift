@@ -6,9 +6,11 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct NotificationPermissionView: View {
     let onComplete: () -> Void
+    private let logger = Logger.uiOnboarding
     
     var body: some View {
         VStack(spacing: 24) {
@@ -87,7 +89,7 @@ struct NotificationPermissionView: View {
     private func requestNotificationPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
-                print("Notification permission error: \(error)")
+                logger.error("Notification permission error: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

@@ -99,18 +99,18 @@ public final class URLSessionHTTPClient: HTTPClient {
                                     data: data.isEmpty ? nil : data)
             } catch {
                 if isTransient(error) {
-                    logger.debug("Triggering retry. Retries: \(attempt)")
+                    logger.debug("Triggering retry. Retries: \(attempt, privacy: .public)")
                     // If this was the last attempt, bubble up the error.
                     if attempt >= delays.count - 1 { throw error }
                     
                     // Otherwise, wait the configured backoff before retrying.
                     let wait = delays[attempt + 1]
-                    logger.debug("Sleeping for \(wait) seconds")
+                    logger.debug("Sleeping for \(wait, privacy: .public) seconds")
                     try? await Task.sleep(for: .seconds(Int(wait)))
                     logger.debug("Retrying query...")
                     continue
                 } else {
-                    logger.error("Non transient request error. Fatal: \(error)")
+                    logger.error("Non transient request error. Fatal: \(error, privacy: .public)")
                     throw error
                 }
             }

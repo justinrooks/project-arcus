@@ -27,7 +27,7 @@ struct NwsHttpClient: NwsClient {
     func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data? {
         let lat = location.latitude.truncated(to: 4) // NWS api only accepts 4 points of precision
         let lon = location.longitude.truncated(to: 4)
-        logger.info("Fetching active alerts for \(lat), \(lon)")
+        logger.info("Fetching active alerts for \(lat, privacy: .public), \(lon, privacy: .public)")
         let url = try makeNwsUrl(path: "alerts/active?point=\(lat),\(lon)")
         
         return try await fetch(from: url)
@@ -36,7 +36,7 @@ struct NwsHttpClient: NwsClient {
     func fetchPointMetadata(for location: Coordinate2D) async throws -> Data? {
         let lat = location.latitude.truncated(to: 4) // NWS api only accepts 4 points of precision
         let lon = location.longitude.truncated(to: 4)
-        logger.info("Fetching location metadata for \(lat), \(lon)")
+        logger.info("Fetching location metadata for \(lat, privacy: .public), \(lon, privacy: .public)")
         let url = try makeNwsUrl(path: "points/\(lat),\(lon)")
         
         return try await fetch(from: url)
@@ -47,7 +47,7 @@ struct NwsHttpClient: NwsClient {
         let resp = try await http.get(url, headers: headers)
         
         guard (200...299).contains(resp.status), let data = resp.data else {
-            logger.error("Error fetching NWS alert data: \(resp.status)")
+            logger.error("Error fetching NWS alert data: \(resp.status, privacy: .public)")
             throw SpcError.networkError
         }
 

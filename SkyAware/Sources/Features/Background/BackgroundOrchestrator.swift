@@ -72,7 +72,7 @@ actor BackgroundOrchestrator {
     
     // MARK: Run Background Job
     func run() async -> Outcome {
-        logger.info("Background run started")
+        logger.notice("Background run started")
         // Mark the entire background job
         let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
@@ -203,7 +203,7 @@ actor BackgroundOrchestrator {
                 )
                 
                 signposter.endInterval("Background Run", runInterval)
-                logger.info("Background run finished with result: success")
+                logger.notice("Background run finished with result: success")
                 return .init(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)
             } catch {
                 signposter.endInterval("Background Run", runInterval)
@@ -212,7 +212,7 @@ actor BackgroundOrchestrator {
                 let active = clock.now - startInstant
                 
                 if error is CancellationError {
-                    logger.warning("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
+                    logger.notice("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
                     try? await recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled", active: active)
                     return .init(next: nextRun, result: .cancelled, didNotify: false, feedsChanged: feedsChanged)
                 } else {

@@ -33,7 +33,7 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
         }
         
         guard window.contains(h) else {
-            logger.debug("Hour \(h) not in window: \(window); skipping")
+            logger.debug("Hour \(h, privacy: .public) not in window: \(window, privacy: .public); skipping")
             return nil
         }
         if let issue = ctx.lastConvectiveIssue, ctx.now.timeIntervalSince(issue) > maxIssueAge {

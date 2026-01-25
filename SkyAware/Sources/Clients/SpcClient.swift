@@ -64,7 +64,7 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the Data
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data? {
-        logger.info("Fetching GeoJSON for \(String(describing: product))")
+        logger.info("Fetching GeoJSON for \(String(describing: product), privacy: .public)")
         let url = try getGeoJSONUrl(for: product)
         return try await fetchSpcData(for: url)
     }
@@ -73,7 +73,7 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: product to obtain data for
     /// - Returns: the Data
     func fetchRssData(for product: RssProduct) async throws -> Data? {
-        logger.info("Fetching data for \(String(describing: product))")
+        logger.info("Fetching data for \(String(describing: product), privacy: .public)")
         let url = try getRssUrl(for: product)
         return try await fetchSpcData(for: url)
     }
@@ -83,7 +83,7 @@ struct SpcHttpClient: SpcClient {
         let resp = try await http.get(url, headers: [:])
         
         guard (200...299).contains(resp.status), let data = resp.data else {
-            logger.error("Error fetching SPC Data: \(resp.status)")
+            logger.error("Error fetching SPC Data: \(resp.status, privacy: .public)")
             throw SpcError.networkError
         }
 

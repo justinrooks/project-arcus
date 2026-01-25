@@ -19,7 +19,7 @@ actor ConvectiveOutlookRepo {
         let data = try await client.fetchRssData(for: .convective)
 
         guard let data else {
-            logger.warning("No convective outlooks found")
+            logger.info("No convective outlooks found")
             return
         }
                 
@@ -28,7 +28,7 @@ actor ConvectiveOutlookRepo {
         }
         
         guard let channel = rss.channel else {
-            logger.warning("Error parsing convective channel items")
+            logger.error("Error parsing convective channel items")
             return
         }
         
@@ -38,7 +38,7 @@ actor ConvectiveOutlookRepo {
             .compactMap { makeConvectiveOutlook(from: $0) }
         
         try upsert(outlooks)
-        logger.debug("Parsed \(outlooks.count) outlook\(outlooks.count > 1 ? "s" : "") from SPC")
+        logger.debug("Parsed \(outlooks.count, privacy: .public) outlook\(outlooks.count > 1 ? "s" : "", privacy: .public) from SPC")
     }
     
     func fetchConvectiveOutlooks(for day:Int = 1) throws -> [ConvectiveOutlookDTO] {
@@ -97,7 +97,7 @@ actor ConvectiveOutlookRepo {
         while true {
             let batch = try modelContext.fetch(desc)
             if batch.isEmpty { break }
-            logger.debug("Found \(batch.count) to purge")
+            logger.debug("Found \(batch.count, privacy: .public) to purge")
             
             for obj in batch { modelContext.delete(obj) }
             

@@ -360,7 +360,7 @@ final class Dependencies: Sendable {
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
-        logger.info("Providers ready; background orchestrator configured")
+        logger.notice("Providers ready; background orchestrator configured")
         
         return Dependencies(
             appRefreshID: appRefreshID,

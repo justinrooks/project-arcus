@@ -17,7 +17,7 @@ actor StormRiskRepo {
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
         guard let data else {
-            logger.warning("No categorical storm risk data returned")
+            logger.info("No categorical storm risk data returned")
             return
         } // if we don't have any items, just return
         
@@ -35,7 +35,7 @@ actor StormRiskRepo {
         }
         
         try upsert(dtos)
-        logger.debug("Updated \(dtos.count) categorical storm risk feature\(dtos.count > 1 ? "s" : "")")
+        logger.debug("Updated \(dtos.count, privacy: .public) categorical storm risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
     }
     
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
@@ -105,7 +105,7 @@ actor StormRiskRepo {
         while true {
             let batch = try modelContext.fetch(desc)
             if batch.isEmpty { break }
-            logger.debug("Found \(batch.count) to purge")
+            logger.debug("Found \(batch.count, privacy: .public) to purge")
             
             for obj in batch { modelContext.delete(obj) }
             
@@ -122,4 +122,3 @@ actor StormRiskRepo {
         try modelContext.save()
     }
 }
-

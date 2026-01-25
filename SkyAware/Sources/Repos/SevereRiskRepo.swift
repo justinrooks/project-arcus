@@ -17,7 +17,7 @@ actor SevereRiskRepo {
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
         guard let data else {
-            logger.warning("No hail risk data returned")
+            logger.info("No hail risk data returned")
             return
         } // if we don't have any items, just return
         
@@ -33,13 +33,13 @@ actor SevereRiskRepo {
         }
         
         try upsert(dtos)
-        logger.debug("Updated \(dtos.count) hail risk feature\(dtos.count > 1 ? "s" : "")")
+        logger.debug("Updated \(dtos.count, privacy: .public) hail risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
     }
     
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
         guard let data else {
-            logger.warning("No wind risk data returned")
+            logger.info("No wind risk data returned")
             return
         } // if we don't have any items, just return
         
@@ -55,14 +55,14 @@ actor SevereRiskRepo {
         }
         
         try upsert(dtos)
-        logger.debug("Updated \(dtos.count) wind risk feature\(dtos.count > 1 ? "s" : "")")
+        logger.debug("Updated \(dtos.count, privacy: .public) wind risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
     }
     
     /// Testable overload that allows injecting a client
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
         guard let data else {
-            logger.warning("No tornado risk data returned")
+            logger.info("No tornado risk data returned")
             return
         } // if we don't have any items, just return
         
@@ -78,7 +78,7 @@ actor SevereRiskRepo {
         }
         
         try upsert(dtos)
-        logger.debug("Updated \(dtos.count) tornado risk feature\(dtos.count > 1 ? "s" : "")")
+        logger.debug("Updated \(dtos.count, privacy: .public) tornado risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
     }
     
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
@@ -155,7 +155,7 @@ actor SevereRiskRepo {
         while true {
             let batch = try modelContext.fetch(desc)
             if batch.isEmpty { break }
-            logger.debug("Found \(batch.count) to purge")
+            logger.debug("Found \(batch.count, privacy: .public) to purge")
             
             for obj in batch { modelContext.delete(obj) }
             
@@ -224,4 +224,3 @@ actor SevereRiskRepo {
         try modelContext.save()
     }
 }
-
