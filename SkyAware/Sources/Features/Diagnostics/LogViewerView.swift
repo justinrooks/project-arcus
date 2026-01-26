@@ -40,7 +40,7 @@ struct LogViewerView: View {
     @State private var window: Window = .thirtyMin
     @State private var query = ""
     @State private var includeAllSubsystems = false
-    @State private var maxEntriesSelection = 1000
+    @State private var maxEntriesSelection = 250
     @State private var loadTask: Task<Void, Never>?
     @State private var exportCache: String = ""
 
@@ -165,7 +165,7 @@ struct LogViewerView: View {
         loadTask?.cancel()
         loadTask = Task {
             if debounced {
-                try? await Task.sleep(nanoseconds: 300_000_000)
+                try? await Task.sleep(nanoseconds: 400_000_000)
                 if Task.isCancelled { return }
             }
             await load()
@@ -205,14 +205,14 @@ private struct LogRowView: View {
 
 private func logBadge(for level: OSLogEntryLog.Level) -> String {
     switch level {
-    case .debug:   return "◻︎"
-    case .info:    return "ℹ︎"
-    case .notice:  return "●"
-    case .error:   return "⚠︎"
+    case .debug:   return "🐜"
+    case .info:    return "ℹ️"
+    case .notice:  return "✅"
+    case .error:   return "❌"
     case .fault:   return "⛔️"
     case .undefined:
-        return "•"
-    @unknown default: return "•"
+        return "❓"
+    @unknown default: return "➟"
     }
 }
 
