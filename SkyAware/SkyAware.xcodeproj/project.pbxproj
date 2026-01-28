@@ -36,6 +36,7 @@
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
+				UnitTests/GeoJsonParserTests.swift,
 				UnitTests/MesoNotificationTests.swift,
 				UnitTests/MorningNotificationTests.swift,
 				UnitTests/NWSGridPointParserTests.swift,
@@ -52,6 +53,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				UnitTests/ConvectiveOutlookRepoTests.swift,
+				UnitTests/GeoJsonParserTests.swift,
 				UnitTests/MesoNotificationTests.swift,
 				UnitTests/MorningNotificationTests.swift,
 				UnitTests/NWSGridPointParserTests.swift,
