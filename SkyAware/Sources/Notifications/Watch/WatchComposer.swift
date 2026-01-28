@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct WatchComposer: NotificationComposing {
-    private let logger = Logger.watchComposer
+    private let logger = Logger.notificationsWatchComposer
     
     func compose(_ event: NotificationEvent) -> (title: String, body: String, subtitle: String) {
         logger.debug("Building watch notification")

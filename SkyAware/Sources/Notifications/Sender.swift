@@ -9,11 +9,11 @@ import Foundation
 import OSLog
 
 struct Sender: NotificationSending {
-    private let logger = Logger.sender
+    private let logger = Logger.notificationsSender
     
     func send(title: String, body: String, subtitle: String, id: String) async {
-        logger.debug("Sending notification")
+        logger.info("Sending notification")
         await NotificationManager.shared.notify(title: title, subtitle: subtitle, body: body)
-        logger.debug("Notification sent")
+        logger.notice("Notification sent")
     }
 }

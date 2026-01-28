@@ -245,7 +245,7 @@ final class Dependencies: Sendable {
     
     @MainActor
     static func live() -> Dependencies {
-        let logger = Logger.deps
+        let logger = Logger.appDependencies
         let appRefreshID = "com.skyaware.app.refresh"
         
         // Shared SwiftData context
@@ -261,9 +261,9 @@ final class Dependencies: Sendable {
         let container: ModelContainer
         do {
             container = try ModelContainer(for: schema, configurations: config)
-            Logger.mainApp.debug("ModelContainer created for schema: SkyAware_Data")
+            Logger.appMain.debug("ModelContainer created for schema: SkyAware_Data")
         } catch {
-            Logger.mainApp.critical("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")
+            Logger.appMain.critical("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")
             fatalError("Could not create ModelContainer: \(error)")
         }
         
@@ -360,7 +360,7 @@ final class Dependencies: Sendable {
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
-        logger.info("Providers ready; background orchestrator configured")
+        logger.notice("Providers ready; background orchestrator configured")
         
         return Dependencies(
             appRefreshID: appRefreshID,

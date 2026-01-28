@@ -10,7 +10,7 @@ import CoreLocation
 import OSLog
 
 actor NwsProvider {
-    let logger = Logger.nwsProvider
+    let logger = Logger.providersNws
     let client: NwsClient
     let watchRepo: WatchRepo
     let metadataRepo: NwsMetadataRepo
@@ -31,7 +31,7 @@ extension NwsProvider: NwsMetadataProviding {
             _ = try await metadataRepo.getPointMetadata(using: client, for: coordinates)
         }
         catch {
-            logger.error("Error fetching point metadata: \(error)")
+            logger.error("Error fetching point metadata: \(error, privacy: .public)")
         }
     }
 }
@@ -43,7 +43,7 @@ extension NwsProvider: NwsSyncing {
             try await watchRepo.refresh(using: client, for: coordinates)
         }
         catch {
-            logger.error("Error syncing NWS Watches: \(error)")
+            logger.error("Error syncing NWS Watches: \(error, privacy: .public)")
         }
     }
 }
@@ -51,15 +51,14 @@ extension NwsProvider: NwsSyncing {
 extension NwsProvider: NwsRiskQuerying {
     func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchRowDTO] {
         guard let gridMetadata = await gridPointProvider.currentGridPointMetadata() else {
-            logger.error("No grid metadata available")
+            logger.warning("No grid metadata available")
             return []
         }
         
         guard let county = gridMetadata.county, let zone = gridMetadata.zone else {
-            logger.error("No county or zone data available")
+            logger.warning("No county or zone data available")
             return []
         }
-        print("*****Testing Grid Values: \(county), \(zone)*****")
         
         //COZ246
         let watches = try await watchRepo.active(county: county, zone: zone)

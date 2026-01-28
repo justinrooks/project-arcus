@@ -19,7 +19,7 @@ struct SkyAwareApp: App {
     
     // Dependencies
     private let deps = Dependencies.live()
-    private let logger = Logger.mainApp
+    private let logger = Logger.appMain
     
     // State
     @State private var didBootstrapBGRefresh = false
@@ -88,16 +88,16 @@ struct SkyAwareApp: App {
         }
         .modelContainer(deps.modelContainer)
         .backgroundTask(.appRefresh(deps.appRefreshID)) {
-            logger.info("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
+            logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
             let result = await deps.orchestrator.run()
-            logger.info("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
+            logger.notice("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
             
             // Schedule the next run
             await deps.scheduler.scheduleNextAppRefresh(nextRun: result.next)
-            logger.info("Scheduled next app refresh at: \(result.next)")
+            logger.notice("Scheduled next app refresh at: \(result.next, privacy: .public)")
         }
         .onChange(of: scenePhase) { _, newPhase in
-            logger.info("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
+            logger.debug("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
             deps.locationManager.updateMode(for: newPhase)
             
             switch newPhase {
@@ -105,7 +105,7 @@ struct SkyAwareApp: App {
                 Task {
                     let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
                     let next = deps.refreshPolicy.getNextRunTime(for: .normal(60))
-                    logger.info("App entered background; attempting to schedule next app refresh proactively: \(next.shorten(withDateStyle: .none))")
+                    logger.notice("App entered background; attempting to schedule next app refresh proactively: \(next.shorten(withDateStyle: .none), privacy: .public)")
                     await scheduler.scheduleNextAppRefresh(nextRun: next)
                 }
             case .inactive: // Swallow inactive state
@@ -121,7 +121,7 @@ struct SkyAwareApp: App {
                         logger.notice("Seeding initial background task")
                         let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
                         await scheduler.ensureScheduled(using: deps.refreshPolicy)
-                        logger.info("Background refresh scheduled")
+                        logger.notice("Background refresh scheduled")
                     }
                 }
                 

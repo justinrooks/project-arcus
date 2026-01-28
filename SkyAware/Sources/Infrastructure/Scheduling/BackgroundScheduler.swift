@@ -10,7 +10,7 @@ import OSLog
 import BackgroundTasks
 
 struct BackgroundScheduler {
-    private let logger = Logger.scheduler
+    private let logger = Logger.backgroundScheduler
     private let appRefreshID: String
     
     init(refreshId: String) {
@@ -33,9 +33,9 @@ struct BackgroundScheduler {
         
         do {
             try BGTaskScheduler.shared.submit(request)
-            logger.notice("Refresh task scheduled for: \(nextRun)")
+            logger.notice("Refresh task scheduled for: \(nextRun, privacy: .public)")
         }
-        catch { logger.error("Error scheduling background task (\(appRefreshID)): \(error.localizedDescription)")}
+        catch { logger.error("Error scheduling background task (\(appRefreshID, privacy: .public)): \(error.localizedDescription, privacy: .public)")}
     }
     
     private func hasPendingRequest(for id: String) async -> Bool {

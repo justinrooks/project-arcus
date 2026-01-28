@@ -12,14 +12,14 @@ import OSLog
 
 @ModelActor
 actor MesoRepo {
-    private let logger = Logger.mesoRepo
+    private let logger = Logger.reposMeso
     private let parser: RSSFeedParser = RSSFeedParser()
  
     func refreshMesoscaleDiscussions(using client: SpcClient) async throws {
         let data = try await client.fetchRssData(for: .meso)
 
         guard let data else {
-            logger.warning("No mesoscale discussions found")
+            logger.info("No mesoscale discussions found")
             return
         }
                 
@@ -28,7 +28,7 @@ actor MesoRepo {
         }
         
         guard let channel = rss.channel else {
-            logger.warning("Error parsing mesoscale items")
+            logger.error("Error parsing mesoscale items")
             return
         }
         
@@ -38,7 +38,7 @@ actor MesoRepo {
             .compactMap { makeMD(from: $0) }
         
         try upsert(mesos)
-        logger.debug("Parsed \(mesos.count) meso discussion\(mesos.count > 1 ? "s" : "") from SPC")
+        logger.debug("Parsed \(mesos.count, privacy: .public) meso discussion\(mesos.count > 1 ? "s" : "", privacy: .public) from SPC")
     }
     
     func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MdDTO] {
@@ -134,7 +134,7 @@ actor MesoRepo {
         while true {
             let batch = try modelContext.fetch(desc)
             if batch.isEmpty { break }
-            logger.debug("Found \(batch.count) to purge")
+            logger.debug("Found \(batch.count, privacy: .public) to purge")
             
             for obj in batch { modelContext.delete(obj) }
             

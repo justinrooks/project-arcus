@@ -27,7 +27,7 @@ extension SpcProvider: SpcSyncing {
             signposter.endInterval("Background Run", runInterval)
         } catch {
             signposter.endInterval("Background Run", runInterval)
-            logger.error("Error loading Spc map feed: \(error.localizedDescription)")
+            logger.error("Error loading Spc map feed: \(error.localizedDescription, privacy: .public)")
         }
     }
     
@@ -38,7 +38,7 @@ extension SpcProvider: SpcSyncing {
             
             // After refresh, fetch the latest and publish (keeps it simple and reactive)
             if let d = try? await latestIssue(for: .convective) {
-                logger.info("Convective outlook published: \(d)")
+                logger.info("Convective outlook published: \(d, privacy: .public)")
                 publishConvectiveIssue(d)
             }
             
@@ -46,7 +46,7 @@ extension SpcProvider: SpcSyncing {
             signposter.endInterval("Background Run", runInterval)
         } catch {
             signposter.endInterval("Background Run", runInterval)
-            logger.error("Error loading Spc feed: \(error.localizedDescription)")
+            logger.error("Error loading Spc feed: \(error.localizedDescription, privacy: .public)")
         }
     }
     

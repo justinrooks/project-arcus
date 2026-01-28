@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct SevenAmLocalRule: NotificationRuleEvaluating {
-    private let logger = Logger.rule
+    private let logger = Logger.notificationsMorningRule
     
     func evaluate(_ ctx: MorningContext) -> NotificationEvent? {
         logger.debug("Evaluating 7am local rule")

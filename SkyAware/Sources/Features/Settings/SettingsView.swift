@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 enum BrevityLevel: Int, CaseIterable, Identifiable, Codable {
     case essential = 0
@@ -39,6 +40,7 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 
 
 struct SettingsView: View {
+    private let logger = Logger.uiSettings
     
     // MARK: Notification Settings
     @AppStorage(
@@ -229,7 +231,7 @@ extension SettingsView {
     func handleNotificationToggle(_ enabled: Bool, for notificationType: String) {
         if !enabled { return }
         
-        print("Notification enabled for \(notificationType)")
+        logger.info("Notification enabled for \(notificationType, privacy: .public)")
         Task {
             await checkAuthorization()
         }

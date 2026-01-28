@@ -49,6 +49,7 @@ private struct StatusHeader: View {
     let latest: BgRunSnapshot
     @Environment(\.colorScheme) private var scheme
     
+    
     var body: some View {
         let now = Date()
         let status = computeStatus(from: latest, now: now)
@@ -169,31 +170,44 @@ private struct RunRow: View {
 private func relative(_ date: Date, now: Date = .now) -> String {
     let f = RelativeDateTimeFormatter()
     f.unitsStyle = .abbreviated
+    
     return f.localizedString(for: date, relativeTo: now) // e.g., “12m ago”
 }
 
+private enum BgHealthFormatters {
+    static let endTime: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        f.timeZone = .current
+        return f
+    }()
+    static let endDate: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        f.timeZone = .current
+        return f
+    }()
+    static let timeOrDash: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        f.timeZone = .current
+        return f
+    }()
+}
+
 private func endTime(_ date: Date) -> String {
-    let f = DateFormatter()
-    f.dateStyle = .none
-    f.timeStyle = .short
-    f.timeZone = .current
-    return f.string(from: date) // e.g., “4:12 PM”
+    BgHealthFormatters.endTime.string(from: date) // e.g., “4:12 PM”
 }
 
 private func endDate(_ date: Date) -> String {
-    let f = DateFormatter()
-    f.dateStyle = .short
-    f.timeStyle = .none
-    f.timeZone = .current
-    return f.string(from: date) // e.g., “11/1/25”
+    BgHealthFormatters.endDate.string(from: date) // e.g., “11/1/25”
 }
 
 private func timeOrDash(_ date: Date) -> String {
-    let f = DateFormatter()
-    f.dateStyle = .none
-    f.timeStyle = .short
-    f.timeZone = .current
-    return f.string(from: date)
+    BgHealthFormatters.timeOrDash.string(from: date)
 }
 
 private func formatSeconds(_ secs: Double) -> String {
@@ -227,7 +241,7 @@ private func formatSecondsInt64(_ secs: Int64) -> String {
             .modelContainer(preview.container)
             .navigationTitle("Background Health")
             .navigationBarTitleDisplayMode(.inline)
-//            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
+        //            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
             .scrollContentBackground(.hidden)
             .background(.skyAwareBackground)

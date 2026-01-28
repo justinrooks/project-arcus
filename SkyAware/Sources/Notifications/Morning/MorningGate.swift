@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct MorningGate: NotificationGating {
-    private let logger = Logger.gate
+    private let logger = Logger.notificationsMorningGate
     private let store: NotificationStateStoring
     
     init(store: NotificationStateStoring) {
@@ -32,7 +32,7 @@ struct MorningGate: NotificationGating {
         logger.debug("Updating the morning store stamp")
         await store.setLastStamp(day)
         
-        logger.info("Passed the gate")
+        logger.notice("Passed the gate")
         return true
     }
 }

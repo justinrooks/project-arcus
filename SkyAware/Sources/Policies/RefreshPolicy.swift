@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct RefreshPolicy: Sendable {
-    private let logger = Logger.refreshPolicy
+    private let logger = Logger.backgroundRefreshPolicy
     
     init() {}
 

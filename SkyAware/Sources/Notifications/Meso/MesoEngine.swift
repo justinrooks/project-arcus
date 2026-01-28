@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 struct MesoEngine: Sendable {
-    private let logger = Logger.mesoEngine
+    private let logger = Logger.notificationsMesoEngine
     
     let rule: MesoNotificationRuleEvaluating
     let gate: NotificationGating
@@ -52,13 +52,13 @@ struct MesoEngine: Sendable {
             logger.debug("Building notification")
             let msg = composer.compose(event)
             
-            logger.debug("Sending notification")
+            logger.info("Sending notification")
             await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
             
-            logger.debug("Notification sent")
+            logger.notice("Notification sent")
             return true
         } catch {
-            logger.error("Error in MesoEngine: \(error.localizedDescription)")
+            logger.error("Error in MesoEngine: \(error.localizedDescription, privacy: .public)")
             return false
         }
     }

@@ -12,7 +12,7 @@ extension NwsProvider: NwsCleanup {
         do {
             try await watchRepo.purge()
         } catch {
-            logger.error("Error cleaning up old NWS data: \(error.localizedDescription)")
+            logger.error("Error cleaning up old NWS data: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
