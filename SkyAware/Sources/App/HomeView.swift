@@ -13,7 +13,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     
-    private let logger = Logger.homeView
+    private let logger = Logger.uiHome
     
     // MARK: Local handles
     private var sync: any SpcSyncing { dependencies.spcSync }
@@ -159,11 +159,11 @@ struct HomeView: View {
     /// Refreshes outlook plus location-scoped data together
     private func refresh(for snap: LocationSnapshot?) async {
         guard let snap else {
-            logger.warning("No location snapshot, skipping refresh")
+            logger.info("No location snapshot, skipping refresh")
             return
         }
         guard shouldRefresh(for: snap) else {
-            logger.info("Refresh denied, no change detected")
+            logger.debug("Refresh denied, no change detected")
             return
         }
 

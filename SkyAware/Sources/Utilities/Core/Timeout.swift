@@ -11,7 +11,7 @@ import Foundation
 /// - Parameters:
 ///   - timeout: seconds to wait
 ///   - task: the closure with a task to perform
-/// - Throws: OtherError.TimeoutError
+/// - Throws: ``OtherErrors.timeoutError`` if the task does not complete before the timeout elapses
 /// - Returns: T
 func withTimeout<T: Sendable>(
     timeout: Double,
@@ -31,7 +31,7 @@ func withTimeout<T: Sendable>(
 }
 
 
-/// Reusable timeout function. Includes the ability to provite a clock that can be paused
+/// Reusable timeout function. Includes the ability to provide a clock that can be paused
 /// - Parameters:
 ///   - seconds: the timeout
 ///   - clock: clock to sleep

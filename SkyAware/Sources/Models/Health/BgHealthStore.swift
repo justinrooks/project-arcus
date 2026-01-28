@@ -12,7 +12,7 @@ import OSLog
 
 @ModelActor
 actor BgHealthStore {
-    private let logger = Logger.orchestrator
+    private let logger = Logger.backgroundOrchestrator
     
     func record(
         runId: String,

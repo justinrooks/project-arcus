@@ -7,11 +7,13 @@
 
 import SwiftUI
 import UIKit
+import OSLog
 
 /// Where the color will be shown. Legend needs stronger contrast than map fills.
 enum ColorContext { case map, legend }
 
 enum PolygonStyleProvider {
+    private static let logger = Logger.uiMap
     
     /// Returns the Fill and stroke based on the polygon title
     /// - Parameters:
@@ -58,7 +60,7 @@ enum PolygonStyleProvider {
                 UIColor(red: 0.4, green: 0.7, blue: 0.4, alpha: 1.0)
             )
         default:
-            print("Unknown Polygon Title. Investigate!")
+            logger.warning("Unknown polygon title encountered while styling")
             return (UIColor.systemOrange, UIColor.systemOrange.withAlphaComponent(0.15))
         }
     }

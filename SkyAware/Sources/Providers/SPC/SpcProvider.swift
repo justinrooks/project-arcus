@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 actor SpcProvider {
-    let logger = Logger.spcProvider
+    let logger = Logger.providersSpc
     let signposter:OSSignposter
     let outlookRepo: ConvectiveOutlookRepo
     let mesoRepo: MesoRepo

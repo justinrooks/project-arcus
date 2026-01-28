@@ -9,10 +9,8 @@ import Foundation
 import OSLog
 import MapKit
 
-struct WatchRule: WatchNotificationRule {
-    private let logger = Logger.watchRule
-    
-//    init () {}
+struct WatchRule: WatchNotificationRuleEvaluating {
+    private let logger = Logger.notificationsWatchRule
     
     func evaluate(_ ctx: WatchContext) -> NotificationEvent? {
         var cal = Calendar(identifier: .gregorian); cal.timeZone = ctx.localTZ
@@ -23,7 +21,7 @@ struct WatchRule: WatchNotificationRule {
         
         // MARK: Rule
         let activeWatches = ctx.watches.filter {
-            $0.expires >= ctx.now && ctx.now.timeIntervalSince($0.issued) <= maxIssueAge
+            $0.validEnd >= ctx.now && ctx.now.timeIntervalSince($0.issued) <= maxIssueAge
         }
         if activeWatches.isEmpty {
             logger.debug("No active watches for current time and location")

@@ -132,10 +132,12 @@ extension Watch {
     static let sampleWatchRows: [WatchRowDTO] = [
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
+            messageId: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
             title: "Tornado Watch",
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-11-25T22:20:00Z")!,   // 4:20 PM CST
             expires: ISO8601DateFormatter().date(from: "2025-11-26T00:00:00Z")!,  // 6:00 PM CST
+            ends: ISO8601DateFormatter().date(from: "2026-01-23T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Alert",
             sender: "NWS Boulder CO",
             severity: "Extreme",
@@ -148,10 +150,12 @@ extension Watch {
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
+            messageId: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
             title: "Severe Thunderstorm Watch",
             headline: "Severe T-Storm Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-06-18T19:05:00Z")!,   // ~2:05 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-06-18T23:00:00Z")!,  // ~6:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2026-01-23T23:23:00Z")!,  // 5:00 PM CST,
             messageType: "Update",
             sender: "NWS Boulder CO",
             severity: "Severe",
@@ -165,10 +169,12 @@ extension Watch {
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
+            messageId: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
             title: "Tornado Watch",
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-05-06T20:10:00Z")!,   // ~3:10 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-05-07T01:00:00Z")!,  // ~8:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Alert",
             sender: "NWS Boulder CO",
             severity: "Extreme",
@@ -182,10 +188,12 @@ extension Watch {
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
+            messageId: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
             title: "Severe Thunderstorm Watch",
             headline: "Severe T-Storm Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-08-12T21:30:00Z")!,   // ~4:30 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-08-13T02:00:00Z")!,  // ~9:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Alert",
             sender: "NWS Boulder CO",
             severity: "Severe",
@@ -199,10 +207,12 @@ extension Watch {
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.0d1c2b3a4e5f60718293a4b5c6d7e8f901234567.001.1",
+            messageId: "urn:oid:2.49.0.1.840.0.0d1c2b3a4e5f60718293a4b5c6d7e8f901234567.001.1",
             title: "Tornado Watch",
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-09-27T23:45:00Z")!,   // ~6:45 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-09-28T04:00:00Z")!,  // ~11:00 PM CDT
+            ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
             messageType: "Update",
             sender: "NWS Boulder CO",
             severity: "Extreme",
@@ -222,6 +232,7 @@ extension Watch {
             // Tornado Watch (evening CST)
             Watch(
                 nwsId: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
+                messageId: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
                 areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
                 ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
                 sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
@@ -246,6 +257,7 @@ extension Watch {
             // Severe Thunderstorm Watch (afternoon CDT)
             Watch(
                 nwsId: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
+                messageId: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
                 areaDesc: "Sedgwick, KS; Butler, KS; Harvey, KS",
                 ugcZones: ["KSZ047", "KSZ048", "KSZ049"],
                 sameCodes: ["020173", "020015", "020079"],
@@ -270,6 +282,7 @@ extension Watch {
             // Tornado Watch (spring outbreak window)
             Watch(
                 nwsId: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
+                messageId: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
                 areaDesc: "Cleveland, OK; McClain, OK; Oklahoma, OK; Pottawatomie, OK",
                 ugcZones: ["OKC027", "OKC087", "OKC109", "OKC125"],
                 sameCodes: ["040027", "040087", "040109", "040125"],
@@ -294,6 +307,7 @@ extension Watch {
             // Severe Thunderstorm Watch (late summer)
             Watch(
                 nwsId: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
+                messageId: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
                 areaDesc: "Douglas, NE; Sarpy, NE; Cass, NE; Pottawattamie, IA",
                 ugcZones: ["NEC055", "NEC153", "NEC025", "IAC155"],
                 sameCodes: ["031055", "031153", "031025", "019155"],

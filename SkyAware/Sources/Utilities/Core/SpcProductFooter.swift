@@ -16,7 +16,7 @@ struct SpcProductFooter: View {
             let remaining = max(0, validEnd.timeIntervalSince(ctx.date))
             HStack {
                 Link(destination: link) {
-                    Label("Open on SPC", systemImage: "arrow.up.right.square")
+                    Label("Open in browser", systemImage: "arrow.up.right.square")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -28,6 +28,10 @@ struct SpcProductFooter: View {
     }
 }
 
-#Preview {
+#Preview("MD") {
     SpcProductFooter(link: MD.sampleDiscussionDTOs[1].link, validEnd: MD.sampleDiscussionDTOs[1].validEnd)
+}
+
+#Preview("Watch") {
+    SpcProductFooter(link: Watch.sampleWatchRows[1].link, validEnd: Watch.sampleWatchRows[1].validEnd)
 }

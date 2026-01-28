@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import OSLog
 
 // MARK: - Domain
 
@@ -171,6 +172,7 @@ private struct DismissButton: View {
 struct MapWithLayerPickerDemo: View {
     @State private var showPicker = true
     @State private var selected: MapLayer = .categorical // default
+    private let logger = Logger.uiMap
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -194,7 +196,7 @@ struct MapWithLayerPickerDemo: View {
         // Use `selected` to drive which overlays you render
         .onChange(of: selected) { _, newValue in
             // update overlays via your provider; debounce as needed
-            print("Selected layer: \(newValue.rawValue)")
+            logger.debug("Selected layer: \(newValue.rawValue, privacy: .public)")
         }
     }
 }

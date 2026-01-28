@@ -8,8 +8,8 @@
 import Foundation
 import OSLog
 
-struct AmRangeLocalRule: NotificationRule {
-    private let logger = Logger.rule
+struct AmRangeLocalRule: NotificationRuleEvaluating {
+    private let logger = Logger.notificationsMorningRule
     
     /// Local-time delivery window [startHour, endHour)
     /// Default: 07:00–11:00 local
@@ -33,7 +33,7 @@ struct AmRangeLocalRule: NotificationRule {
         }
         
         guard window.contains(h) else {
-            logger.debug("Hour \(h) not in window: \(window); skipping")
+            logger.debug("Hour \(h, privacy: .public) not in window: \(window, privacy: .public); skipping")
             return nil
         }
         if let issue = ctx.lastConvectiveIssue, ctx.now.timeIntervalSince(issue) > maxIssueAge {

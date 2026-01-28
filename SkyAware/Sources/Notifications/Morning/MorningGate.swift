@@ -8,11 +8,11 @@
 import Foundation
 import OSLog
 
-struct MorningGate: NotificationGate {
-    private let logger = Logger.gate
-    private let store: MorningStateStore
+struct MorningGate: NotificationGating {
+    private let logger = Logger.notificationsMorningGate
+    private let store: NotificationStateStoring
     
-    init(store: MorningStateStore) {
+    init(store: NotificationStateStoring) {
         self.store = store
     }
     
@@ -23,25 +23,23 @@ struct MorningGate: NotificationGate {
             return false
         }
         
-        let last = await store.lastMorningStamp()
+        let last = await store.lastStamp()
         guard last != day else {
             logger.debug("Already sent a notification for today")
             return false
         }
         
         logger.debug("Updating the morning store stamp")
-        await store.setLastMorningStamp(day)
+        await store.setLastStamp(day)
         
-        logger.info("Passed the gate")
+        logger.notice("Passed the gate")
         return true
     }
 }
 
-struct DefaultStore: MorningStateStore {
+struct DefaultMorningStore: NotificationStateStoring {
     private let key = "skyaware.lastMorningNotifyLocalDay"
     
-    init() {}
-    
-    func lastMorningStamp() async -> String? { UserDefaults.standard.string(forKey: key) }
-    func setLastMorningStamp(_ stamp: String) async { UserDefaults.standard.set(stamp, forKey: key) }
+    func lastStamp() async -> String? { UserDefaults.standard.string(forKey: key) }
+    func setLastStamp(_ stamp: String) async { UserDefaults.standard.set(stamp, forKey: key) }
 }

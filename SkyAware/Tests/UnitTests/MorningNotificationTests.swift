@@ -104,9 +104,9 @@ struct MorningNotificationTests {
 
 // MARK: - Test Doubles
 
-actor InMemoryMorningStore: MorningStateStore {
+actor InMemoryMorningStore: NotificationStateStoring {
     private var stamp: String?
     
-    func lastMorningStamp() async -> String? { stamp }
-    func setLastMorningStamp(_ stamp: String) async { self.stamp = stamp }
+    func lastStamp() async -> String? { stamp }
+    func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }

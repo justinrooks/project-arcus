@@ -16,32 +16,26 @@ enum NWSWatchParser {
         let decoder = DecoderFactory.iso8601
         
         do {
-            if let body = String(data: data, encoding: .utf8) {
-                print(body)
-            } else {
-                print("Unable to decode response as UTF-8 text")
-            }
-            
             return try decoder.decode(NWSWatchJson.self, from: data)
         } catch let DecodingError.dataCorrupted(context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NWSWatchParser")
-            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription, privacy: .public)")
             return nil
         } catch let DecodingError.keyNotFound(key, context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NWSWatchParser")
-            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue)' – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return nil
         } catch let DecodingError.typeMismatch(type, context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NWSWatchParser")
-            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type)' – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return nil
         } catch let DecodingError.valueNotFound(value, context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NWSWatchParser")
-            logger.error("GeoJSON decoding failed: Missing value '\(value)' – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Missing value '\(value, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return nil
         } catch {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "NWSWatchParser")
-            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription)")
+            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription, privacy: .public)")
             return nil
         }
     }

@@ -18,23 +18,23 @@ enum GeoJsonParser {
             return try decoder.decode(GeoJSONFeatureCollection.self, from: data)
         } catch let DecodingError.dataCorrupted(context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch let DecodingError.keyNotFound(key, context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue)' – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch let DecodingError.typeMismatch(type, context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type)' – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch let DecodingError.valueNotFound(value, context) {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Missing value '\(value)' – \(context.debugDescription)")
+            logger.error("GeoJSON decoding failed: Missing value '\(value, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch {
             let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription)")
+            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription, privacy: .public)")
             return .empty
         }
     }

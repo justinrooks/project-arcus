@@ -8,10 +8,8 @@
 import Foundation
 import OSLog
 
-struct MorningComposer: NotificationComposer {
-    private let logger = Logger.composer
-    
-    init() {}
+struct MorningComposer: NotificationComposing {
+    private let logger = Logger.notificationsMorningComposer
     
     func compose(_ event: NotificationEvent) -> (title: String, body: String, subtitle: String) {
         logger.debug("Building morning summary notification")

@@ -8,9 +8,11 @@
 import SwiftUI
 import MapKit
 import SwiftData
+import OSLog
 
 struct MapView: View {
     @Environment(\.dependencies) private var deps
+    private let logger = Logger.uiMap
     
     // MARK: Local handles
     private var svc: any SpcMapData { deps.spcMapData }
@@ -66,7 +68,7 @@ struct MapView: View {
                     stormRisk = try await svc.getStormRiskMapData()
                     mesos = try await svc.getMesoMapData()
                 } catch {
-                    print(error.localizedDescription)
+                    logger.error("Failed to load map data: \(error.localizedDescription, privacy: .public)")
                 }
             }
         }
@@ -166,4 +168,3 @@ struct MapView: View {
 #Preview {
     MapView()
 }
-

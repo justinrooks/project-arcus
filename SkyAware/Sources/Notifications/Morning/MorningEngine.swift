@@ -9,18 +9,18 @@ import Foundation
 import OSLog
 
 struct MorningEngine: Sendable {
-    private let logger = Logger.engine
+    private let logger = Logger.notificationsMorningEngine
     
-    let rule: NotificationRule
-    let gate: NotificationGate
-    let composer: NotificationComposer
-    let sender: NotificationSender
+    let rule: NotificationRuleEvaluating
+    let gate: NotificationGating
+    let composer: NotificationComposing
+    let sender: NotificationSending
     
     init(
-        rule: NotificationRule,
-        gate: NotificationGate,
-        composer: NotificationComposer,
-        sender: NotificationSender
+        rule: NotificationRuleEvaluating,
+        gate: NotificationGating,
+        composer: NotificationComposing,
+        sender: NotificationSending
     ) {
         self.rule = rule
         self.gate = gate
@@ -38,10 +38,10 @@ struct MorningEngine: Sendable {
         logger.debug("Building notification")
         let msg = composer.compose(event)
         
-        logger.debug("Sending notification")
+        logger.info("Sending notification")
         await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
         
-        logger.debug("Notification sent")
+        logger.notice("Notification sent")
         return true
     }
 }

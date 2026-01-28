@@ -8,10 +8,8 @@
 import Foundation
 import OSLog
 
-struct MesoComposer: NotificationComposer {
-    private let logger = Logger.composer
-    
-    init() {}
+struct MesoComposer: NotificationComposing {
+    private let logger = Logger.notificationsMesoComposer
     
     func compose(_ event: NotificationEvent) -> (title: String, body: String, subtitle: String) {
         logger.debug("Building meso notification")

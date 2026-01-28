@@ -8,11 +8,11 @@
 import Foundation
 import OSLog
 
-struct MesoGate: NotificationGate {
-    private let logger = Logger.mesoGate
-    private let store: NotificationStateStore
+struct MesoGate: NotificationGating {
+    private let logger = Logger.notificationsMesoGate
+    private let store: NotificationStateStoring
     
-    init(store: NotificationStateStore) {
+    init(store: NotificationStateStoring) {
         self.store = store
     }
     
@@ -30,22 +30,20 @@ struct MesoGate: NotificationGate {
   
         let last = await store.lastStamp()
         guard last != event.key else {
-            logger.debug("Already sent a notification for meso \(mesoId) today")
+        logger.debug("Already sent a notification for meso \(mesoId, privacy: .public) today")
             return false
         }
         
         logger.debug("Updating the store stamp")
         await store.setLastStamp(event.key)
         
-        logger.info("Passed the gate")
+        logger.notice("Passed the gate")
         return true
     }
 }
 
-struct DefaultMesoStore: NotificationStateStore {
+struct DefaultMesoStore: NotificationStateStoring {
     private let key = "skyaware.lastMesoNotifyLocalDay"
-    
-    init() {}
     
     func lastStamp() async -> String? { UserDefaults.standard.string(forKey: key) }
     func setLastStamp(_ stamp: String) async { UserDefaults.standard.set(stamp, forKey: key) }

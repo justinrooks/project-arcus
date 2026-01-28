@@ -33,16 +33,6 @@ private struct FakeSpcClient: SpcClient {
 
 private enum TestError: Error { case boom }
 
-// MARK: - In-memory SwiftData helpers
-@MainActor
-private func makeInMemoryModelContainer() throws -> ModelContainer {
-    let schema = Schema([
-        ConvectiveOutlook.self
-    ])
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    return try ModelContainer(for: schema, configurations: config)
-}
-
 // MARK: - Sample RSS payloads
 private let sampleValidRSS: String = {
     // Two valid Convective Outlook items (Day 1, Day 2), one non-matching title, and one malformed item
@@ -106,12 +96,13 @@ private let sampleMalformedRSS: String = {
 }()
 
 // MARK: - Tests
-@Suite("ConvectiveOutlookRepo")
+@Suite("ConvectiveOutlookRepo", .serialized)
 struct ConvectiveOutlookRepoTests {
 
     @Test("refresh inserts parsed outlooks and filters titles containing ' Convective Outlook'")
     func refresh_parsesAndUpserts() async throws {
-        let container = try await MainActor.run { try makeInMemoryModelContainer() }
+        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
+        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
         let data = sampleValidRSS.data(using: .utf8)
@@ -139,7 +130,8 @@ struct ConvectiveOutlookRepoTests {
 
     @Test("refresh handles nil data without throwing and logs warning")
     func refresh_nilDataNoCrash() async throws {
-        let container = try await MainActor.run { try makeInMemoryModelContainer() }
+        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
+        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
         let client = FakeSpcClient(mode: .success(nil))
@@ -153,7 +145,8 @@ struct ConvectiveOutlookRepoTests {
 
     @Test("refresh with malformed but parseable channel yields zero upserts")
     func refresh_malformedItemsFilteredOut() async throws {
-        let container = try await MainActor.run { try makeInMemoryModelContainer() }
+        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
+        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
         let data = sampleOnlyNonMatchingTitlesRSS.data(using: .utf8)
@@ -171,7 +164,8 @@ struct ConvectiveOutlookRepoTests {
     @Test("current returns the most recently published outlook")
     @MainActor
     func current_returnsLatest() async throws {
-        let container = try await MainActor.run { try makeInMemoryModelContainer() }
+        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
+        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let ctx = container.mainContext
 
         // Manually insert two items with different published dates
@@ -210,7 +204,8 @@ struct ConvectiveOutlookRepoTests {
     @Test("fetchConvectiveOutlooks(for:) filters by day and sorts by published desc")
     @MainActor
     func fetch_filtersAndSorts() async throws {
-        let container = try await MainActor.run { try makeInMemoryModelContainer() }
+        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
+        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let ctx = container.mainContext
 
         let base = Date()
@@ -258,7 +253,8 @@ struct ConvectiveOutlookRepoTests {
     @Test("purge deletes items older than two days from reference date")
     @MainActor
     func purge_removesOldItems() async throws {
-        let container = try await MainActor.run { try makeInMemoryModelContainer() }
+        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
+        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let ctx = container.mainContext
 
         let now = Date()

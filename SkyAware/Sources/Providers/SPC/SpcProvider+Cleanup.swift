@@ -18,7 +18,7 @@ extension SpcProvider: SpcCleanup {
             try await stormRiskRepo.purge()
             try await severeRiskRepo.purge()
         } catch {
-            logger.error("Error cleaning up old Spc feed data: \(error.localizedDescription)")
+            logger.error("Error cleaning up old Spc feed data: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
