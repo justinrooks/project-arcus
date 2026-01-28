@@ -21,8 +21,9 @@
 
 ## Testing Guidelines
 - Use Swift Testing (import Testing); place new specs alongside the feature they cover (mirror folder names under `UnitTests`/`UITests`).
-- Prefer small, deterministic tests; stub network/providers and avoid hitting live WeatherKit or SPC feeds.
+- Prefer small, deterministic tests; stub network/providers and avoid hitting live WeatherKit, NWS, or SPC feeds.
 - When adding UI, include a smoke UI test for navigation/happy path; keep identifiers stable for accessibility and UITest hooks.
+- Coverage: Aim for 75%+
 - Please use iPhone 17 or iPhone 17 Pro and iOS 26.2 when running unit tests
 - Always analyze the .xcresult and report coverage after running tests
 
