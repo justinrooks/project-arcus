@@ -9,6 +9,22 @@ import Foundation
 import CoreLocation
 import OSLog
 
+// MARK: - Geocoding Abstraction
+protocol LocationGeocoding: Sendable {
+    func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String
+}
+
+actor CoreLocationGeocoder: LocationGeocoding {
+    private let geocoder = CLGeocoder()
+
+    func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+        let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        let places = try await geocoder.reverseGeocodeLocation(location)
+        guard let p = places.first else { throw GeocodeError.noResults }
+        return [p.locality, p.administrativeArea].compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
 // MARK: Supporting Structs
 struct LocationUpdate: Sendable {
     let coordinates: CLLocationCoordinate2D
@@ -42,8 +58,8 @@ func makeLocationClient(provider: LocationProvider) -> LocationClient {
 actor LocationProvider {
     private var lastSnapshot: LocationSnapshot?
     private var continuations: [UUID: AsyncStream<LocationSnapshot>.Continuation] = [:]
-    
-    private let geocoder = CLGeocoder()
+
+    private let geocoder: LocationGeocoding
     private let logger = Logger.locationProvider
     
     // Throttling
@@ -55,6 +71,10 @@ actor LocationProvider {
     private var acceptedCount = 0
     private var suppressedCount = 0
     
+    init(geocoder: LocationGeocoding = CoreLocationGeocoder()) {
+        self.geocoder = geocoder
+    }
+
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
     func updates() -> AsyncStream<LocationSnapshot> {
         AsyncStream { cont in
@@ -107,7 +127,7 @@ actor LocationProvider {
         logger.debug("Updating placemark for background task")
         do {
             let place = try await withTimeout(timeout: timeout) {
-                return try await self.reverseGeocode(coord)
+                return try await self.geocoder.reverseGeocode(coord)
             }
             let base = lastSnapshot ?? LocationSnapshot(coordinates: coord, timestamp: Date(), accuracy: kCLLocationAccuracyThreeKilometers, placemarkSummary: nil)
             let updated = LocationSnapshot(coordinates: base.coordinates,
@@ -130,7 +150,7 @@ actor LocationProvider {
     private func updatePlacemarkIfNeeded(for coord: CLLocationCoordinate2D, timestamp: Date) async {
         logger.debug("Starting reverse geocoding")
         do {
-            let summary = try await reverseGeocode(coord)
+            let summary = try await geocoder.reverseGeocode(coord)
             
             // Update snapshot and notify
             if var snap = lastSnapshot {
@@ -145,16 +165,6 @@ actor LocationProvider {
         } catch {
             logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
         }
-    }
-    
-    /// Attempt to reverse geo-code the coordinates into a meaningful location (city/state)
-    /// - Parameter coord: coordinates to map
-    /// - Returns: a city/state or administrative area like county
-    private func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
-        let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-        let places = try await geocoder.reverseGeocodeLocation(location)
-        guard let p = places.first else { throw GeocodeError.noResults }
-        return [p.locality, p.administrativeArea].compactMap{$0}.joined(separator: ", ")
     }
     
     // MARK: Snapshot Validation

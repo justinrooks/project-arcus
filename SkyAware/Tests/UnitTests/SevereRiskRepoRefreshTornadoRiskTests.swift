@@ -20,20 +20,14 @@ private struct MockClient: SpcClient {
     }
 }
 
-@Suite("SevereRiskRepo.refreshTornadoRisk")
+@Suite("SevereRiskRepo.refreshTornadoRisk", .serialized)
 struct SevereRiskRepoRefreshTornadoRiskTests {
-    let container: ModelContainer
-    let repo: SevereRiskRepo
-
-    init() throws {
-        let schema = Schema([SevereRisk.self])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(for: schema, configurations: config)
-        repo = SevereRiskRepo(modelContainer: container)
-    }
 
     @Test("Does nothing when client returns nil")
     func nilResultNoInsert() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
         let mock = MockClient(tornadoData: nil)
         try await repo.refreshTornadoRisk(using: mock)
         let count = try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>())
@@ -42,6 +36,9 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
 
     @Test("Empty feature collection results in no inserts")
     func emptyCollectionNoInsert() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
         let emptyFC = makeFeatureCollection(features: [])
         let data = try JSONEncoder().encode(emptyFC)
         let mock = MockClient(tornadoData: data)
@@ -53,6 +50,9 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
 
     @Test("Inserts models for each feature returned")
     func insertsForEachFeature() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
         // Build two minimal features with properties sufficient for makeSevereRisk
         let props1 = makeProperties(label: "0.10", label2: "tornado", issue: "2025-09-20T00:00:00Z", valid: "2025-09-20T00:00:00Z", expire: "2025-09-20T02:00:00Z", dn: 10)
         let props2 = makeProperties(label: "SIGN", label2: "10% Significant Tornado Risk", issue: "2025-09-20T00:00:00Z", valid: "2025-09-20T00:00:00Z", expire: "2025-09-20T02:00:00Z", dn: 99)

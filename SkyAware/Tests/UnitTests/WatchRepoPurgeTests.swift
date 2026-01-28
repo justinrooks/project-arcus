@@ -3,25 +3,14 @@ import Testing
 import SwiftData
 import Foundation
 
-@Suite("WatchRepo purge()")
+@Suite("WatchRepo purge()", .serialized)
 struct WatchRepoPurgeTests {
-    let container: ModelContainer
-    let repo: WatchRepo
-
-    init() throws {
-        // In-memory container with only the WatchModel schema to keep tests lightweight
-        let schema = Schema([Watch.self])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        container = try ModelContainer(for: schema, configurations: config)
-        repo = WatchRepo(modelContainer: container)
-    }
-
     // Helper to quickly build a WatchModel
-    private func makeWatch(number: Int, issued: Date, validEnd: Date) -> Watch {
+    private func makeWatch(number: String, issued: Date, validEnd: Date) -> Watch {
         let iso = ISO8601DateFormatter()
         return Watch(
-            nwsId: "\(number)",
-            messageId: "\(number)",
+            nwsId: number,
+            messageId: number,
             areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
             ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
             sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
@@ -44,14 +33,28 @@ struct WatchRepoPurgeTests {
         )
     }
 
+    private func fetchWatches(tag: String, in context: ModelContext) throws -> [Watch] {
+        let descriptor = FetchDescriptor<Watch>(predicate: #Predicate { $0.nwsId.contains(tag) })
+        return try context.fetch(descriptor)
+    }
+
+    private func fetchCount(tag: String, in context: ModelContext) throws -> Int {
+        let descriptor = FetchDescriptor<Watch>(predicate: #Predicate { $0.nwsId.contains(tag) })
+        return try context.fetchCount(descriptor)
+    }
+
     @Test("Deletes only records with validEnd < now (== now stays)")
     func deletesExpiredOnly() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
+        try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
+        let repo = WatchRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let tag = "-D"
 
-        let expired = makeWatch(number: 1, issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(-1)) // < now
-        let boundary = makeWatch(number: 2, issued: now.addingTimeInterval(-3600), validEnd: now)                       // == now
-        let future = makeWatch(number: 3, issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))  // > now
+        let expired = makeWatch(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(-1)) // < now
+        let boundary = makeWatch(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)                       // == now
+        let future = makeWatch(number: "3\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))  // > now
 
         ctx.insert(expired)
         ctx.insert(boundary)
@@ -60,65 +63,77 @@ struct WatchRepoPurgeTests {
 
         try await repo.purge(asOf: now)
 
-        let remaining = try ctx.fetch(FetchDescriptor<Watch>())
+        let remaining = try fetchWatches(tag: tag, in: ctx)
         let remainingIds = Set(remaining.map { $0.nwsId })
-        #expect(!remainingIds.contains("1"), "Expired (< now) should be deleted")
-        #expect(remainingIds.contains("2"), "Boundary (== now) should remain")
-        #expect(remainingIds.contains("3"), "Future (> now) should remain")
+        #expect(!remainingIds.contains("1\(tag)"), "Expired (< now) should be deleted")
+        #expect(remainingIds.contains("2\(tag)"), "Boundary (== now) should remain")
+        #expect(remainingIds.contains("3\(tag)"), "Future (> now) should remain")
     }
 
     @Test("Deletes multiple expired records in one pass")
     func deletesMultipleExpired() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
+        try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
+        let repo = WatchRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = Date()
+        let tag = "-M"
 
         for i in 1...8 {
-            let model = makeWatch(number: i, issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
+            let model = makeWatch(number: "\(i)\(tag)", issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
             ctx.insert(model)
         }
         try ctx.save()
 
         try await repo.purge(asOf: now)
 
-        let count = try ctx.fetchCount(FetchDescriptor<Watch>())
+        let count = try fetchCount(tag: tag, in: ctx)
         #expect(count == 0, "All expired watches should be purged")
     }
 
     @Test("No-op when nothing is expired")
     func noExpired() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
+        try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
+        let repo = WatchRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = Date()
+        let tag = "-N"
 
-        let boundary = makeWatch(number: 1, issued: now.addingTimeInterval(-3600), validEnd: now)
-        let future = makeWatch(number: 2, issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))
+        let boundary = makeWatch(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)
+        let future = makeWatch(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))
         ctx.insert(boundary)
         ctx.insert(future)
         try ctx.save()
 
         try await repo.purge(asOf: now)
 
-        let remaining = try ctx.fetch(FetchDescriptor<Watch>())
+        let remaining = try fetchWatches(tag: tag, in: ctx)
         let remainingIds = Set(remaining.map { $0.nwsId })
-        #expect(remainingIds.contains("1"))
-        #expect(remainingIds.contains("2"))
+        #expect(remainingIds.contains("1\(tag)"))
+        #expect(remainingIds.contains("2\(tag)"))
     }
 
     @Test("Idempotency: second purge immediately is a no-op")
     func idempotent() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
+        try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
+        let repo = WatchRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = Date()
+        let tag = "-I"
 
-        let expired = makeWatch(number: 999, issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
+        let expired = makeWatch(number: "999\(tag)", issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
         ctx.insert(expired)
         try ctx.save()
 
         try await repo.purge(asOf: now)
-        var count = try ctx.fetchCount(FetchDescriptor<Watch>())
+        var count = try fetchCount(tag: tag, in: ctx)
         #expect(count == 0)
 
         // Second purge should not throw and should keep store unchanged
         try await repo.purge(asOf: now)
-        count = try ctx.fetchCount(FetchDescriptor<Watch>())
+        count = try fetchCount(tag: tag, in: ctx)
         #expect(count == 0)
     }
 }
