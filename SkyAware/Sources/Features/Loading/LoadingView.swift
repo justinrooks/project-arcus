@@ -8,33 +8,36 @@
 import SwiftUI
 
 struct LoadingView: View {
-    var message: String = "Fetching Data..."
+    var message: String = "Refreshing data..."
 
     var body: some View {
         ZStack {
-            Color(.systemBackground)
-                .opacity(0.5)
+            Color.skyAwareBackground
+                .opacity(0.6)
                 .ignoresSafeArea()
 
             VStack(spacing: 8) {
                 ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .gray))
-                    .scaleEffect(1.3)
+                    .tint(.skyAwareAccent)
+                    .scaleEffect(1.2)
 
                 Text(message)
                     .font(.footnote)
-                    .foregroundColor(.gray)
+                    .foregroundStyle(.secondary)
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
-            .shadow(radius: 4)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 6)
         }
         .transition(.opacity.combined(with: .scale)) // Smooth fade & scale
     }
 }
 
 #Preview {
-    LoadingView(message: "Fetching SPC Data...")
+    LoadingView(message: "Syncing outlooks...")
 }
