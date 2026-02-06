@@ -37,6 +37,7 @@
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
+				UnitTests/HomeViewLoadingOverlayStateTests.swift,
 				UnitTests/LocationProviderTests.swift,
 				UnitTests/MesoNotificationTests.swift,
 				UnitTests/MorningNotificationTests.swift,
@@ -57,6 +58,7 @@
 			membershipExceptions = (
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
+				UnitTests/HomeViewLoadingOverlayStateTests.swift,
 				UnitTests/LocationProviderTests.swift,
 				UnitTests/MesoNotificationTests.swift,
 				UnitTests/MorningNotificationTests.swift,
