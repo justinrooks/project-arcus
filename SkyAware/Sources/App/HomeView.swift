@@ -61,7 +61,9 @@ struct HomeView: View {
     
     // Refresh State
     @State private var lastRefreshKey: RefreshKey?
+    @State private var lastOutlookSyncAt: Date?
     @State private var loadingState = LoadingOverlayState()
+    private let outlookRefreshPolicy = OutlookRefreshPolicy()
     
     // Outlook State
     @State private var outlooks: [ConvectiveOutlookDTO] = []
@@ -147,7 +149,11 @@ struct HomeView: View {
                         .refreshable {
                             logger.debug("refreshing outlooks")
                             await withLoading(message: "Syncing outlooks...") {
-                                await sync.syncTextProducts()
+                                let now = Date()
+                                await MainActor.run {
+                                    _ = markOutlookSyncIfNeeded(force: true, now: now)
+                                }
+                                await sync.syncConvectiveOutlooks()
                                 await refreshOutlooks()
                             }
                         }
@@ -204,19 +210,31 @@ struct HomeView: View {
         }
 
         logger.info("Refreshing summary data")
+        let now = Date()
+        let shouldSyncOutlookNow = await MainActor.run {
+            markOutlookSyncIfNeeded(force: force, now: now)
+        }
 
         if showsLoading {
             await MainActor.run { startRefresh(message: "Refreshing data...") }
         }
 
-        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing outlooks...") } }
-        await sync.syncTextProducts() // This was moved from app init (SkyAwareApp), if timing is an issue, may need to put it back
-        if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
-        await refreshOutlooks()
         if showsLoading { await MainActor.run { updateRefreshMessage("Syncing alerts...") } }
         await nwsSync.sync(for: snap.coordinates)
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing mesos...") } }
+        await sync.syncMesoscaleDiscussions()
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing map products...") } }
+        await sync.syncMapProducts()
         if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks...") } }
         await refreshRisk(for: snap.coordinates)
+        if shouldSyncOutlookNow {
+            if showsLoading { await MainActor.run { updateRefreshMessage("Syncing outlooks...") } }
+            await sync.syncConvectiveOutlooks()
+        } else {
+            logger.debug("Skipping convective outlook sync due to refresh throttle")
+        }
+        if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
+        await refreshOutlooks()
         if showsLoading {
             await MainActor.run { endRefresh() }
         }
@@ -246,6 +264,19 @@ struct HomeView: View {
         guard key != lastRefreshKey else { return false } // skip placemark-only or repeated initial yield
         lastRefreshKey = key
         return true
+    }
+
+    @MainActor
+    private func markOutlookSyncIfNeeded(force: Bool, now: Date) -> Bool {
+        let shouldSync = outlookRefreshPolicy.shouldSync(
+            now: now,
+            lastSync: lastOutlookSyncAt,
+            force: force
+        )
+        if shouldSync {
+            lastOutlookSyncAt = now
+        }
+        return shouldSync
     }
     
     private func refreshRisk(for coord: CLLocationCoordinate2D) async {
