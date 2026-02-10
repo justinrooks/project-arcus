@@ -35,6 +35,7 @@
 			membershipExceptions = (
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
+				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
 				UnitTests/HomeViewLoadingOverlayStateTests.swift,
@@ -57,6 +58,7 @@
 		D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
 				UnitTests/HomeViewLoadingOverlayStateTests.swift,

@@ -120,12 +120,19 @@ actor BackgroundOrchestrator {
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
                 let updatedSnap = await locationProvider.ensurePlacemark(for: snap.coordinates)
                 
+                // Keep watch data current each run so cadence decisions can react to active watches.
+                await nwsProvider.sync(for: updatedSnap.coordinates)
+                
                 // MARK: Get Risk Status
-                let (severeRisk, stormRisk) = try await withTimeout(seconds: 8, clock: clock) {
+                let (severeRisk, stormRisk, activeMesos, activeWatches) = try await withTimeout(seconds: 8, clock: clock) {
                     async let sr = self.spcProvider.getSevereRisk(for: snap.coordinates)
                     async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
-                    return try await (sr, cr)
+                    async let mesos = self.spcProvider.getActiveMesos(at: .now, for: updatedSnap.coordinates)
+                    async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
+                    return try await (sr, cr, mesos, watches)
                 }
+                let inMeso = activeMesos.isEmpty == false
+                let inWatch = activeWatches.isEmpty == false
                 
                 // MARK: Send the AM Notification
                 if settings.morningSummariesEnabled {
@@ -161,7 +168,6 @@ actor BackgroundOrchestrator {
                 if settings.watchNotificationsEnabled {
                     // MARK: Send Watch Notification
                     signposter.emitEvent("Watch Notification")
-                    await nwsProvider.sync(for: updatedSnap.coordinates)
                     didWatchNotify = await watchEngine.run(
                         ctx: .init(
                             now: .now,
@@ -179,8 +185,8 @@ actor BackgroundOrchestrator {
                         now: .now,
                         categorical: stormRisk,
                         recentlyChangedLocation: false,
-                        inMeso: false,
-                        inWatch: false
+                        inMeso: inMeso,
+                        inWatch: inWatch
                     )
                 )
                 
