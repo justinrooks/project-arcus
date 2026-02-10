@@ -119,8 +119,10 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     }
     
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
         // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
         Task { @MainActor in
+            authStatus = status
             updateMode(for: lastPhase)
         }
     }

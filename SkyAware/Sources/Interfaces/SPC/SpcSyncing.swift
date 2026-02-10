@@ -11,4 +11,6 @@ protocol SpcSyncing: Sendable {//where Self: Actor {
     func sync() async -> Void
     func syncMapProducts() async -> Void
     func syncTextProducts() async -> Void
+    func syncConvectiveOutlooks() async -> Void
+    func syncMesoscaleDiscussions() async -> Void
 }

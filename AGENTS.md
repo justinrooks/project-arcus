@@ -5,6 +5,7 @@
 - App source lives in `SkyAware/Sources` with feature areas (App, Features, Providers, Repos, Utilities, Views) grouped by responsibility; keep new code inside the closest matching module.
 - Shared assets and previews sit in `SkyAware/Resources`; config plist lives in `SkyAware/Config`.
 - Tests live in `SkyAware/Tests/UnitTests` and `SkyAware/Tests/UITests`; mirror production namespaces when adding coverage.
+- Screenshots live in `docs/images`. These are a few of the screens and will be used as visual reference for building future features and components. 
 
 ## Build, Test, and Development Commands
 - Build (debug):

@@ -33,6 +33,13 @@ extension SpcProvider: SpcSyncing {
     
     func syncTextProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Text")
+        await syncConvectiveOutlooks()
+        await syncMesoscaleDiscussions()
+        signposter.endInterval("Background Run", runInterval)
+    }
+
+    func syncConvectiveOutlooks() async {
+        let runInterval = signposter.beginInterval("Spc Sync Convective Outlooks")
         do {
             try await outlookRepo.refreshConvectiveOutlooks(using: client)
             
@@ -41,12 +48,21 @@ extension SpcProvider: SpcSyncing {
                 logger.info("Convective outlook published: \(d, privacy: .public)")
                 publishConvectiveIssue(d)
             }
-            
+            signposter.endInterval("Background Run", runInterval)
+        } catch {
+            signposter.endInterval("Background Run", runInterval)
+            logger.error("Error syncing convective outlook text products: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    func syncMesoscaleDiscussions() async {
+        let runInterval = signposter.beginInterval("Spc Sync Mesos")
+        do {
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
             signposter.endInterval("Background Run", runInterval)
         } catch {
             signposter.endInterval("Background Run", runInterval)
-            logger.error("Error loading Spc feed: \(error.localizedDescription, privacy: .public)")
+            logger.error("Error syncing mesoscale discussion text products: \(error.localizedDescription, privacy: .public)")
         }
     }
     

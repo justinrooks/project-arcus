@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Overview
+This update focuses on startup flow polish, more reliable location state handling, and safer background cadence decisions during active severe-weather conditions.
+
+### Highlights
+- Added a dedicated loading overlay on Home and refined `LoadingView` styling.
+- Improved location authorization accuracy by updating `authStatus` directly from authorization callbacks.
+- Hardened placemark lookups by preventing overlapping geocode behavior and stale completion regressions.
+- Throttled convective outlook syncing to reduce redundant refresh work.
+- Fixed a cadence bug where active mesos/watches were ignored, which could delay follow-up background refreshes during higher-risk periods.
+
+### Reliability & Performance
+- Reordered SPC product sync flow and introduced an outlook refresh throttle.
+- Location provider now uses request-scoped geocoders and guards snapshot recency during geocode completion.
+- Background cadence now evaluates real active meso/watch presence before scheduling the next run.
+
+### UI / UX
+- Home loading surfaces now present a cleaner, more consistent visual state during data bootstrapping.
+
+### Tests / QA
+- Added and expanded unit tests for loading overlay behavior, location provider/manager logic, and outlook throttling.
+- Added `BackgroundOrchestratorCadenceTests` to verify short cadence under active meso/watch and long cadence for all-clear.
+
 ## v0.1.0(10)
 
 ### Overview
