@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(16)
+
 ### Overview
 This update focuses on startup flow polish, more reliable location state handling, and safer background cadence decisions during active severe-weather conditions.
 
