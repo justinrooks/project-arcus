@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(16)
+
 ### Background & Refresh
 - Reorder SPC product syncing and add throttling for convective outlook refreshes to reduce redundant update churn.
 <!-- evidence: 5f1326f -->
