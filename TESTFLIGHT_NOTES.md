@@ -1,3 +1,11 @@
+SkyAware v0.1.0(15) focuses on startup polish and reliability for location + background sync behavior.
+
+Highlights:
+- New Home loading overlay with updated loading visuals
+- More accurate location permission state updates from authorization callbacks
+- Improved placemark stability by preventing overlapping/stale geocode results
+- Smarter SPC sync ordering with convective outlook throttling to reduce redundant refreshes
+
 SkyAware v0.1.0(10) focuses on watch accuracy and presentation, including timing display and links to the correct NWS alert page.
 
 Highlights:
