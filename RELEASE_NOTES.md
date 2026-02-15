@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(18)
+
 ### Overview
 This update focuses on map rendering correctness and safer background refresh rescheduling behavior.
 
