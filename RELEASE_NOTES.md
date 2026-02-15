@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Overview
+This update focuses on map rendering correctness and safer background refresh rescheduling behavior.
+
+### Highlights
+- Map overlays now stay in sync more reliably, and the map auto-centers only on the first location fix.
+- Categorical outlook polygons now render by severity so higher-risk areas appear above lower-risk areas.
+- Background refresh scheduling now replaces pending requests only when the newly requested run is materially earlier.
+- If a replacement refresh request fails to submit, the prior scheduled refresh request is restored.
+
+### Reliability & Performance
+- Map overlay updates now avoid unnecessary remove/add churn while keeping geometry-synced rendering.
+- App refresh replacement now uses a timing threshold to avoid frequent schedule churn.
+
+### UI / UX
+- The Map tab now uses a dedicated screen/canvas flow for more stable layer rendering behavior.
+
+### Tests / QA
+- Added regression coverage for map polygon ordering/filtering and background scheduler replacement-policy decisions.
+
 ## v0.1.0(16)
 
 ### Overview
