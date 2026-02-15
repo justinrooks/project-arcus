@@ -24,11 +24,12 @@ struct MapView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
     
     var body: some View {
         ZStack {
-            CONUSMapView(polygonList: polygonsForLayer(named: selected), coordinates: snap?.coordinates)
+            CONUSMapView(polygonList: activePolygons, coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.all)
             
             VStack {
@@ -61,16 +62,11 @@ struct MapView: View {
             LayerPickerSheet(selection: $selected,
                              title: "Map Layers")
         }
-        .onAppear {
-            Task {
-                do {
-                    severeRisks = try await svc.getSevereRiskShapes()
-                    stormRisk = try await svc.getStormRiskMapData()
-                    mesos = try await svc.getMesoMapData()
-                } catch {
-                    logger.error("Failed to load map data: \(error.localizedDescription, privacy: .public)")
-                }
-            }
+        .task {
+            await loadMapData()
+        }
+        .onChange(of: selected) { _, _ in
+            rebuildPolygons()
         }
         .task {
             if let first = await loc.snapshot() {
@@ -116,7 +112,10 @@ struct MapView: View {
     private func polygonsForLayer(named layer: MapLayer) -> MKMultiPolygon {
         switch layer {
         case .categorical:
-            let source = stormRisk.flatMap { $0.polygons }
+            // Draw lower categories first so higher severity sits on top.
+            let source = stormRisk
+                .sorted { $0.riskLevel < $1.riskLevel }
+                .flatMap { $0.polygons }
             let polygons = makeMKPolygons(
                 from: source,
                 coordinates: { $0.ringCoordinates },
@@ -162,6 +161,67 @@ struct MapView: View {
             )
             return MKMultiPolygon(polygons)
         }
+    }
+
+    @MainActor
+    private func loadMapData() async {
+        async let severeTask = fetchSevereRiskShapes()
+        async let stormTask = fetchStormRiskShapes()
+        async let mesoTask = fetchMesoShapes()
+
+        let (severeResult, stormResult, mesoResult) = await (severeTask, stormTask, mesoTask)
+
+        switch severeResult {
+        case .success(let data):
+            severeRisks = data
+        case .failure(let error):
+            logger.error("Failed to load severe risk map data: \(error.localizedDescription, privacy: .public)")
+        }
+
+        switch stormResult {
+        case .success(let data):
+            stormRisk = data
+        case .failure(let error):
+            logger.error("Failed to load categorical map data: \(error.localizedDescription, privacy: .public)")
+        }
+
+        switch mesoResult {
+        case .success(let data):
+            mesos = data
+        case .failure(let error):
+            logger.error("Failed to load mesoscale map data: \(error.localizedDescription, privacy: .public)")
+        }
+
+        rebuildPolygons()
+    }
+
+    private func fetchSevereRiskShapes() async -> Result<[SevereRiskShapeDTO], any Error> {
+        do {
+            return .success(try await svc.getSevereRiskShapes())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func fetchStormRiskShapes() async -> Result<[StormRiskDTO], any Error> {
+        do {
+            return .success(try await svc.getStormRiskMapData())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    private func fetchMesoShapes() async -> Result<[MdDTO], any Error> {
+        do {
+            return .success(try await svc.getMesoMapData())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    @MainActor
+    private func rebuildPolygons() {
+        activePolygons = polygonsForLayer(named: selected)
     }
 }
 
