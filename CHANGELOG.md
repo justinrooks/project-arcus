@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### UI / UX
+- Update the Map tab to use a dedicated screen/canvas flow that keeps overlays in sync by geometry and auto-centers only on the first location fix.
+<!-- evidence: 35a47a2 -->
+- Fix categorical outlook layering so higher-severity risk polygons render above lower-severity polygons.
+<!-- evidence: 35a47a2 -->
+
+### Background & Refresh
+- Change app refresh scheduling to replace a pending request only when the new run time is materially earlier, and restore the previous request if replacement submission fails.
+<!-- evidence: 35a47a2 -->
+
+### Tests / QA
+- Add regression tests for map polygon ordering/filtering and for background scheduler replacement-policy thresholds.
+<!-- evidence: 35a47a2 -->
+
 ## v0.1.0(16)
 
 ### Background & Refresh
