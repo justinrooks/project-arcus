@@ -4,6 +4,54 @@ import SwiftData
 import CoreLocation
 @testable import SkyAware
 
+@Suite("BackgroundScheduler replacement policy", .serialized)
+struct BackgroundSchedulerReplacementPolicyTests {
+    @Test("Replaces pending request when requested run is materially earlier")
+    func replaceWhenRequestedIsEarlier() {
+        let base = Date(timeIntervalSince1970: 0)
+        let existing = base.addingTimeInterval(60 * 60)
+        let requested = base.addingTimeInterval(20 * 60)
+        
+        #expect(
+            BackgroundScheduler.shouldReplace(
+                existing: existing,
+                requested: requested,
+                minimumAdvance: 120
+            )
+        )
+    }
+    
+    @Test("Does not replace when requested run is later")
+    func doNotReplaceWhenRequestedIsLater() {
+        let base = Date(timeIntervalSince1970: 0)
+        let existing = base.addingTimeInterval(20 * 60)
+        let requested = base.addingTimeInterval(60 * 60)
+        
+        #expect(
+            BackgroundScheduler.shouldReplace(
+                existing: existing,
+                requested: requested,
+                minimumAdvance: 120
+            ) == false
+        )
+    }
+    
+    @Test("Does not replace when request is only slightly earlier than pending")
+    func doNotReplaceForTinyTimingDifference() {
+        let base = Date(timeIntervalSince1970: 0)
+        let existing = base.addingTimeInterval(60 * 60)
+        let requested = base.addingTimeInterval((60 * 60) - 60)
+        
+        #expect(
+            BackgroundScheduler.shouldReplace(
+                existing: existing,
+                requested: requested,
+                minimumAdvance: 120
+            ) == false
+        )
+    }
+}
+
 @Suite("BackgroundOrchestrator Cadence", .serialized)
 struct BackgroundOrchestratorCadenceTests {
     @Test("Active meso tightens cadence to short")

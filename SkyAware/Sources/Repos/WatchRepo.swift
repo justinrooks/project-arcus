@@ -56,11 +56,12 @@ actor WatchRepo {
         // Temporarily we are injecting a sample tornado watch
         // this can eventually go away, but may be valuable.
         let x = Watch.buildNwsTornadoSample()
-        if let coded:Data = x.data(using: .utf8) {
-            let slug = NWSWatchParser.decode(from: coded)
-            let f1 = slug?.features
-            
-            features.append(f1!.first!)
+        if let coded: Data = x.data(using: .utf8),
+           let slug = NWSWatchParser.decode(from: coded),
+           let sample = slug.features?.first {
+            features.append(sample)
+        } else {
+            logger.debug("Sample watch injection failed to decode")
         }
 #endif // DEBUG
         let watches = features
