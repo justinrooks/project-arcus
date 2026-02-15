@@ -28,6 +28,8 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash**: map layer fetches were sequential and all-or-nothing. If one feed failed, the whole map looked empty. We moved to parallel fetches with per-source error handling so successful layers still render.
 - **Aha!**: identity-based overlay diffs only work when the same overlay instances survive render cycles. Caching the active polygon set in `MapView` and syncing overlays by geometry signature stopped unnecessary churn.
 - **Bug squash**: categorical risk shading could hide higher-risk pockets under lower-risk overlays. We now explicitly render in severity order (`TSTM -> MRGL -> SLGT -> ENH -> MDT -> HIGH`) so the dangerous areas stay visually on top.
+- **Architecture checkpoint**: we split the map feature into a screen (`MapScreenView`), a render canvas (`MapCanvasView`), and a geometry mapper (`MapPolygonMapper`). The view now orchestrates state and async work, while geometry conversion has one home.
+- **Pitfall**: when adding new Swift Testing files, verify target membership immediately. A misplaced file can compile into the app target and fail on `import Testing`.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
@@ -35,6 +37,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - Prefer dependency injection so you can test scheduling logic without touching real OS APIs.
 - In map UIs, “follow user location” should be explicit state, not a side effect of every position update.
 - When multiple upstream data sources feed one screen, degrade gracefully: fail one panel, not the whole page.
+- If one SwiftUI file starts doing networking, UI composition, and geometry transformation, split it before it becomes a kitchen-sink file.
 
 ## 7) If I Were Starting Over...
 - I’d design background scheduling as a policy engine from day one, with clear rules for “tighten/relax cadence” and easy unit test hooks.

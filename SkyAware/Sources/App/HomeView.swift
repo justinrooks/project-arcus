@@ -134,7 +134,7 @@ struct HomeView: View {
                 .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
                     .badge(mesos.count + watches.count)
                 
-                MapView()
+                MapScreenView()
                     .toolbar(.hidden, for: .navigationBar)
                     .background(.skyAwareBackground)
                     .tabItem { Label("Map", systemImage: "map") }

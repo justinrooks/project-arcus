@@ -1,5 +1,5 @@
 //
-//  CONUSView.swift
+//  MapCanvasView.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 7/18/25.
@@ -8,8 +8,8 @@
 import SwiftUI
 import MapKit
 
-struct CONUSMapView: UIViewRepresentable {
-    let polygonList: MKMultiPolygon
+struct MapCanvasView: UIViewRepresentable {
+    let polygons: MKMultiPolygon
     let coordinates: CLLocationCoordinate2D?
     
     func makeUIView(context: Context) -> MKMapView {
@@ -25,12 +25,12 @@ struct CONUSMapView: UIViewRepresentable {
             context.coordinator.lastCenteredCoordinate = coord
         }
 
-        mapView.addOverlays(polygonList.polygons)
+        mapView.addOverlays(polygons.polygons)
         return mapView
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        let incoming = polygonList.polygons
+        let incoming = polygons.polygons
         if !overlaysMatchByIdentity(existing: uiView.overlays, incoming: incoming) {
             syncOverlays(on: uiView, incoming: incoming)
         }
