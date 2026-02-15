@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(18)
+
 ### UI / UX
 - Update the Map tab to use a dedicated screen/canvas flow that keeps overlays in sync by geometry and auto-centers only on the first location fix.
 <!-- evidence: 35a47a2 -->
