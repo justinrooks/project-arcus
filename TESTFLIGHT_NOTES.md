@@ -1,4 +1,4 @@
-SkyAware post-v0.1.0(16) build focuses on map layering correctness and safer background refresh rescheduling behavior.
+SkyAware post-v0.1.0(18) build focuses on map layering correctness and safer background refresh rescheduling behavior.
 
 Highlights:
 - Categorical outlook polygons now layer correctly so higher-risk areas render above lower-risk areas
@@ -6,7 +6,7 @@ Highlights:
 - Pending app refresh tasks are replaced only when the new run time is materially earlier
 - If refresh replacement fails, the previous scheduled refresh request is restored
 
-SkyAware v0.1.0(15) focuses on startup polish and reliability for location + background sync behavior.
+SkyAware v0.1.0(16) focuses on startup polish and reliability for location + background sync behavior.
 
 Highlights:
 - New Home loading overlay with updated loading visuals
