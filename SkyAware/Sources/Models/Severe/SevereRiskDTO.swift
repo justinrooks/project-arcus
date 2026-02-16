@@ -17,9 +17,11 @@ struct SevereRiskDTO: Sendable, Identifiable {
     let expires: Date
     let dn: Int
     let label: String
+    let stroke: String?
+    let fill: String?
     let polygons: [GeoPolygonEntity]
     
-    init(id: UUID = UUID(), type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, valid: Date, expires: Date, dn: Int, polygons: [GeoPolygonEntity], label: String) {
+    init(id: UUID = UUID(), type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, valid: Date, expires: Date, dn: Int, polygons: [GeoPolygonEntity], label: String, stroke: String?, fill: String?) {
         self.id = id
         self.type = type
         self.probability = probability
@@ -30,5 +32,7 @@ struct SevereRiskDTO: Sendable, Identifiable {
         self.dn = dn
         self.polygons = polygons
         self.label = label
+        self.stroke = stroke
+        self.fill = fill
     }
 }

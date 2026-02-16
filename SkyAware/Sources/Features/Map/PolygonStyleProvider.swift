@@ -9,7 +9,7 @@ import SwiftUI
 import UIKit
 import OSLog
 
-/// Where the color will be shown. Legend needs stronger contrast than map fills.
+/// Where the color will be shown.
 enum ColorContext { case map, legend }
 
 enum PolygonStyleProvider {
@@ -37,8 +37,19 @@ enum PolygonStyleProvider {
         return (fill, stroke)
     }
 
-    static func getPolygonStyleForLegend(risk: String, probability: String) -> (UIColor, UIColor) {
-        getPolygonStyle(risk: risk, probability: probability, context: .legend)
+    static func getPolygonStyleForLegend(
+        risk: String,
+        probability: String,
+        spcFillHex: String? = nil,
+        spcStrokeHex: String? = nil
+    ) -> (UIColor, UIColor) {
+        getPolygonStyle(
+            risk: risk,
+            probability: probability,
+            context: .map,
+            spcFillHex: spcFillHex,
+            spcStrokeHex: spcStrokeHex
+        )
     }
 
 

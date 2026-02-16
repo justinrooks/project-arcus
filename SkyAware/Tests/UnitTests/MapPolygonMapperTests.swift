@@ -38,9 +38,27 @@ struct MapPolygonMapperTests {
     @Test("Severe layers only include polygons for selected threat type")
     func severePolygons_areFilteredByThreatType() {
         let severeRisks: [SevereRiskShapeDTO] = [
-            SevereRiskShapeDTO(type: .wind, probabilities: .percent(0.15), polygons: [makeGeoPolygon(title: "15% Wind Risk")]),
-            SevereRiskShapeDTO(type: .hail, probabilities: .percent(0.05), polygons: [makeGeoPolygon(title: "5% Hail Risk")]),
-            SevereRiskShapeDTO(type: .wind, probabilities: .significant(30), polygons: [makeGeoPolygon(title: "30% Significant Wind Risk")])
+            SevereRiskShapeDTO(
+                type: .wind,
+                probabilities: .percent(0.15),
+                stroke: nil,
+                fill: nil,
+                polygons: [makeGeoPolygon(title: "15% Wind Risk")]
+            ),
+            SevereRiskShapeDTO(
+                type: .hail,
+                probabilities: .percent(0.05),
+                stroke: nil,
+                fill: nil,
+                polygons: [makeGeoPolygon(title: "5% Hail Risk")]
+            ),
+            SevereRiskShapeDTO(
+                type: .wind,
+                probabilities: .significant(30),
+                stroke: nil,
+                fill: nil,
+                polygons: [makeGeoPolygon(title: "30% Significant Wind Risk")]
+            )
         ]
 
         let wind = mapper.polygons(
@@ -60,6 +78,32 @@ struct MapPolygonMapperTests {
 
         #expect(wind.polygons.compactMap { $0.title } == ["15% Wind Risk", "30% Significant Wind Risk"])
         #expect(hail.polygons.compactMap { $0.title } == ["5% Hail Risk"])
+    }
+
+    @Test("Severe polygons include encoded SPC style metadata")
+    func severePolygons_includeStyleMetadata() {
+        let severeRisks: [SevereRiskShapeDTO] = [
+            SevereRiskShapeDTO(
+                type: .tornado,
+                probabilities: .percent(0.10),
+                stroke: "#654321",
+                fill: "#FEDCBA",
+                polygons: [makeGeoPolygon(title: "10% Tornado Risk")]
+            )
+        ]
+
+        let result = mapper.polygons(
+            for: .tornado,
+            stormRisk: [],
+            severeRisks: severeRisks,
+            mesos: [],
+            fires: []
+        )
+
+        #expect(result.polygons.count == 1)
+        let metadata = StormRiskPolygonStyleMetadata.decode(from: result.polygons.first?.subtitle)
+        #expect(metadata?.strokeHex == "#654321")
+        #expect(metadata?.fillHex == "#FEDCBA")
     }
 
     @Test("Meso polygons are titled MESO for consistent map styling")

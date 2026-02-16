@@ -10,5 +10,7 @@ import Foundation
 struct SevereRiskShapeDTO: Sendable {
     let type: ThreatType
     let probabilities: ThreatProbability
+    let stroke: String?
+    let fill: String?
     let polygons: [GeoPolygonEntity]
 }
