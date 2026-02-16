@@ -41,6 +41,11 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash**: categorical polygons now carry StormRisk style metadata into `MKPolygon` overlays, and the renderer consumes SPC colors first, then falls back to legacy style parsing only when needed.
 - **Aha! (overlay identity)**: style-only updates can be invisible if your overlay diff key only hashes geometry. Including subtitle/style metadata in the map signature made color refreshes deterministic instead of “why didn’t it repaint?”
 - **Follow-through (Fire layer)**: we applied the same style-metadata pipeline to Fire Risk polygons, so fire overlays now honor upstream SPC `stroke`/`fill` instead of defaulting to generic fire colors.
+- **Final map style pass (Severe layer)**: hail, wind, and tornado overlays now carry SPC `stroke`/`fill` from persistence into map polygons, so severe shading follows upstream styling instead of only title/probability heuristics.
+- **Legend parity fix**: the severe legend now consumes the same SPC `stroke`/`fill` metadata as the map polygons, and legend style resolution uses map alpha so chips match on-map overlays exactly instead of rendering a denser preview tint.
+- **War story (Startup echo bug)**: on launch we saw logs like `Updated 1 wind risk feature` multiple times, which looked like a haunted refresh loop.
+- **Bug squash (Single owner + coalescing)**: startup map sync was being kicked off in both `SkyAwareApp` and `HomeView`. We removed the app-level startup map sync and added an in-provider coalescing guard/cooldown so overlapping `syncMapProducts()` calls join the same work instead of replaying the full SPC map pipeline.
+- **Aha!**: duplicate startup work often comes from lifecycle fan-out, not one bad loop. The clean fix is ownership clarity first, then a defensive coalescing layer at the provider boundary.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
