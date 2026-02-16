@@ -16,9 +16,11 @@ struct FireRiskDTO: Sendable, Identifiable {
     let riskLevel: Int
     let riskLevelDescription: String
     let label: String
+    let stroke: String?
+    let fill: String?
     let polygons: [GeoPolygonEntity]
     
-    init(id: UUID = UUID(), product: String, issued: Date, expires: Date, valid: Date, riskLevel: Int, riskLevelDescription: String, label: String, polygons: [GeoPolygonEntity]) {
+    init(id: UUID = UUID(), product: String, issued: Date, expires: Date, valid: Date, riskLevel: Int, riskLevelDescription: String, label: String, stroke: String?, fill: String?, polygons: [GeoPolygonEntity]) {
         self.id = id
         self.product = product
         self.issued = issued
@@ -27,6 +29,8 @@ struct FireRiskDTO: Sendable, Identifiable {
         self.riskLevel = riskLevel
         self.riskLevelDescription = riskLevelDescription
         self.label = label
+        self.stroke = stroke
+        self.fill = fill
         self.polygons = polygons
     }
 }

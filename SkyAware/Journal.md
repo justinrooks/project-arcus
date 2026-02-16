@@ -37,6 +37,10 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Side-effect containment**: downloader-level `Last-Modified` persistence moved behind an injected observer instead of hidden global writes. The network pipe is now transport-focused, and policy hooks are explicit at composition time.
 - **Architecture checkpoint**: we split the map feature into a screen (`MapScreenView`), a render canvas (`MapCanvasView`), and a geometry mapper (`MapPolygonMapper`). The view now orchestrates state and async work, while geometry conversion has one home.
 - **Pitfall**: when adding new Swift Testing files, verify target membership immediately. A misplaced file can compile into the app target and fail on `import Testing`.
+- **War story (StormRisk colors)**: we had SPC `stroke`/`fill` values in storage, but the map still painted by parsing polygon titles like “SLGT” and “MDT.” It was like buying paint and then ignoring the color labels.
+- **Bug squash**: categorical polygons now carry StormRisk style metadata into `MKPolygon` overlays, and the renderer consumes SPC colors first, then falls back to legacy style parsing only when needed.
+- **Aha! (overlay identity)**: style-only updates can be invisible if your overlay diff key only hashes geometry. Including subtitle/style metadata in the map signature made color refreshes deterministic instead of “why didn’t it repaint?”
+- **Follow-through (Fire layer)**: we applied the same style-metadata pipeline to Fire Risk polygons, so fire overlays now honor upstream SPC `stroke`/`fill` instead of defaulting to generic fire colors.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
@@ -45,6 +49,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - In map UIs, “follow user location” should be explicit state, not a side effect of every position update.
 - When multiple upstream data sources feed one screen, degrade gracefully: fail one panel, not the whole page.
 - If one SwiftUI file starts doing networking, UI composition, and geometry transformation, split it before it becomes a kitchen-sink file.
+- When a style value comes from upstream data, pass it as explicit metadata instead of reverse-engineering it from display text.
 
 ## 7) If I Were Starting Over...
 - I’d design background scheduling as a policy engine from day one, with clear rules for “tighten/relax cadence” and easy unit test hooks.

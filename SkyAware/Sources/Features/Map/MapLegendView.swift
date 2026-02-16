@@ -53,10 +53,13 @@ private struct CategoricalLegendRow: View {
     let risk: String
 
     var body: some View {
-        let (_, stroke) = PolygonStyleProvider.getPolygonStyle(risk: risk, probability: "0%")
+        let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk, probability: "0%")
         HStack {
             Circle()
-                .fill(Color(stroke))
+                .fill(Color(fill))
+                .overlay(
+                    Circle().stroke(Color(stroke), lineWidth: 1.5)
+                )
                 .frame(width: 15, height: 15)
             Text(risk)
                 .font(.caption)
@@ -69,13 +72,16 @@ private struct SevereLegendRow: View {
     let probability: ThreatProbability
 
     var body: some View {
-        let (fill, _) = PolygonStyleProvider.getPolygonStyleForLegend(
+        let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(
             risk: "\(layer.key) - \(probability)",
             probability: String(probability.intValue)
         )
         HStack {
             Circle()
                 .fill(Color(fill))
+                .overlay(
+                    Circle().stroke(Color(stroke), lineWidth: 0.15)
+                )
                 .frame(width: 15, height: 15)
             switch probability {
             case .significant:

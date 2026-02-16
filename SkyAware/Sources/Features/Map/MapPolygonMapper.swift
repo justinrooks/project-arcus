@@ -18,15 +18,19 @@ struct MapPolygonMapper {
         switch layer {
         case .categorical:
             // Draw lower categories first so higher severity sits on top.
-            let source = stormRisk
-                .sorted { $0.riskLevel < $1.riskLevel }
-                .flatMap { $0.polygons }
-
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
+            let source = stormRisk.sorted { $0.riskLevel < $1.riskLevel }
+            let polygons = source.flatMap { risk -> [MKPolygon] in
+                risk.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: risk.fill,
+                        strokeHex: risk.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
 
         case .tornado:
@@ -74,14 +78,18 @@ struct MapPolygonMapper {
             return MKMultiPolygon(polygons)
             
         case .fire:
-            let source = fires
-                .flatMap { $0.polygons }
-
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
+            let polygons = fires.flatMap { fire -> [MKPolygon] in
+                fire.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: fire.fill,
+                        strokeHex: fire.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
         }
     }

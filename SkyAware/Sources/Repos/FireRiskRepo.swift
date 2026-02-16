@@ -28,6 +28,8 @@ actor FireRiskRepo {
                 valid: props.VALID.asUTCDate() ?? Date(),
                 riskLevel: props.DN,
                 label: props.LABEL2,
+                stroke: props.stroke,
+                fill: props.fill,
                 polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
             )
         }
@@ -96,6 +98,8 @@ actor FireRiskRepo {
                 riskLevel: $0.riskLevel,
                 riskLevelDescription: $0.riskLevelDescription,
                 label: $0.label,
+                stroke: $0.stroke,
+                fill: $0.fill,
                 polygons: $0.polygons
             )
         }

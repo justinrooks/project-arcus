@@ -26,6 +26,8 @@ actor StormRiskRepo {
                              issued: props.ISSUE.asUTCDate() ?? Date(),
                              expires: props.EXPIRE.asUTCDate() ?? Date(),
                              valid: props.VALID.asUTCDate() ?? Date(),
+                             stroke: props.stroke,
+                             fill: props.fill,
                              polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
             )
         }
@@ -86,6 +88,8 @@ actor StormRiskRepo {
                          issued: $0.issued,
                          expires: $0.expires,
                          valid: $0.valid,
+                         stroke: $0.stroke,
+                         fill: $0.fill,
                          polygons: $0.polygons)
         }
     }

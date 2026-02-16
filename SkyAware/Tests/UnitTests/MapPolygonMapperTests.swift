@@ -27,10 +27,11 @@ struct MapPolygonMapperTests {
             for: .categorical,
             stormRisk: stormRisk,
             severeRisks: [],
-            mesos: []
+            mesos: [],
+            fires: []
         )
 
-        let titles = result.polygons.compactMap(\.title)
+        let titles = result.polygons.compactMap { $0.title }
         #expect(titles == ["TSTM", "MRGL", "SLGT", "HIGH"])
     }
 
@@ -46,17 +47,19 @@ struct MapPolygonMapperTests {
             for: .wind,
             stormRisk: [],
             severeRisks: severeRisks,
-            mesos: []
+            mesos: [],
+            fires: []
         )
         let hail = mapper.polygons(
             for: .hail,
             stormRisk: [],
             severeRisks: severeRisks,
-            mesos: []
+            mesos: [],
+            fires: []
         )
 
-        #expect(wind.polygons.compactMap(\.title) == ["15% Wind Risk", "30% Significant Wind Risk"])
-        #expect(hail.polygons.compactMap(\.title) == ["5% Hail Risk"])
+        #expect(wind.polygons.compactMap { $0.title } == ["15% Wind Risk", "30% Significant Wind Risk"])
+        #expect(hail.polygons.compactMap { $0.title } == ["5% Hail Risk"])
     }
 
     @Test("Meso polygons are titled MESO for consistent map styling")
@@ -74,11 +77,43 @@ struct MapPolygonMapperTests {
             for: .meso,
             stormRisk: [],
             severeRisks: [],
-            mesos: mesos
+            mesos: mesos,
+            fires: []
         )
 
         #expect(result.polygons.count == 2)
         #expect(result.polygons.allSatisfy { $0.title == MapLayer.meso.key })
+    }
+
+    @Test("Fire polygons include encoded SPC style metadata")
+    func firePolygons_includeStyleMetadata() {
+        let fires: [FireRiskDTO] = [
+            FireRiskDTO(
+                product: "WindRH",
+                issued: now,
+                expires: now.addingTimeInterval(3600),
+                valid: now,
+                riskLevel: 8,
+                riskLevelDescription: "Critical",
+                label: "Critical Fire Weather Area",
+                stroke: "#123456",
+                fill: "#ABCDEF",
+                polygons: [makeGeoPolygon(title: "Critical Fire Weather Area")]
+            )
+        ]
+
+        let result = mapper.polygons(
+            for: .fire,
+            stormRisk: [],
+            severeRisks: [],
+            mesos: [],
+            fires: fires
+        )
+
+        #expect(result.polygons.count == 1)
+        let metadata = StormRiskPolygonStyleMetadata.decode(from: result.polygons.first?.subtitle)
+        #expect(metadata?.strokeHex == "#123456")
+        #expect(metadata?.fillHex == "#ABCDEF")
     }
 
     private func makeStormRisk(level: StormRiskLevel, title: String) -> StormRiskDTO {
@@ -87,6 +122,8 @@ struct MapPolygonMapperTests {
             issued: now,
             expires: now.addingTimeInterval(3600),
             valid: now,
+            stroke: nil,
+            fill: nil,
             polygons: [makeGeoPolygon(title: title)]
         )
     }

@@ -29,6 +29,8 @@ final class FireRisk {
     var expires: Date
     var riskLevel: Int
     var label: String
+    var stroke: String?
+    var fill: String?
     var polygons: [GeoPolygonEntity]
     
     convenience init?(from dto: FireRiskDTO) {
@@ -38,11 +40,13 @@ final class FireRisk {
                   valid: dto.valid,
                   riskLevel: dto.riskLevel,
                   label: dto.label,
+                  stroke: dto.stroke,
+                  fill: dto.fill,
                   polygons: dto.polygons
         )
     }
     
-    init(product: String, issued: Date, expires: Date, valid: Date, riskLevel: Int, label: String, polygons: [GeoPolygonEntity]) {
+    init(product: String, issued: Date, expires: Date, valid: Date, riskLevel: Int, label: String, stroke: String?, fill: String?, polygons: [GeoPolygonEntity]) {
         id = UUID()
         self.key = "\(product)_\(issued.timeIntervalSince1970)"
         self.product = product
@@ -51,6 +55,8 @@ final class FireRisk {
         self.expires = expires
         self.riskLevel = riskLevel
         self.label = label
+        self.stroke = stroke
+        self.fill = fill
         self.polygons = polygons
     }
 }
