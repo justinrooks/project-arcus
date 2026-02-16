@@ -18,31 +18,53 @@ extension SpcProvider: SpcSyncing {
         signposter.endInterval("Background Run", runInterval)    }
     
     func syncMapProducts() async {
+        if let inFlight = mapSyncTask {
+            logger.debug("SPC map sync already in-flight; joining existing task")
+            await inFlight.value
+            return
+        }
+
+        if shouldSkipMapSync() {
+            logger.debug("Skipping SPC map sync because a recent run already completed")
+            return
+        }
+
+        let task = Task { [self] in
+            await runMapProductsSync()
+        }
+        mapSyncTask = task
+        await task.value
+    }
+
+    private func runMapProductsSync() async {
         let runInterval = signposter.beginInterval("Spc Sync Map Products")
+        defer {
+            signposter.endInterval("Background Run", runInterval)
+            mapSyncTask = nil
+            if !Task.isCancelled {
+                lastMapSyncFinishedAt = Date()
+            }
+        }
 
         if Task.isCancelled {
-            signposter.endInterval("Background Run", runInterval)
             return
         }
         await refreshMapProduct(named: "categorical") {
             try await stormRiskRepo.refreshStormRisk(using: client)
         }
         if Task.isCancelled {
-            signposter.endInterval("Background Run", runInterval)
             return
         }
         await refreshMapProduct(named: "hail") {
             try await severeRiskRepo.refreshHailRisk(using: client)
         }
         if Task.isCancelled {
-            signposter.endInterval("Background Run", runInterval)
             return
         }
         await refreshMapProduct(named: "wind") {
             try await severeRiskRepo.refreshWindRisk(using: client)
         }
         if Task.isCancelled {
-            signposter.endInterval("Background Run", runInterval)
             return
         }
         await refreshMapProduct(named: "tornado") {
@@ -50,14 +72,11 @@ extension SpcProvider: SpcSyncing {
         }
         
         if Task.isCancelled {
-            signposter.endInterval("Background Run", runInterval)
             return
         }
         await refreshMapProduct(named: "fire") {
             try await fireRiskRepo.refreshFireRisk(using: client)
         }
-
-        signposter.endInterval("Background Run", runInterval)
     }
     
     func syncTextProducts() async {

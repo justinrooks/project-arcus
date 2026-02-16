@@ -124,3 +124,94 @@ private func makeMultiPolygonGeometry(squareAtLonLat origin: (Double, Double), s
     let coordinates = [[ring]]
     return GeoJSONGeometry(type: "MultiPolygon", coordinates: coordinates)
 }
+
+@Suite("SpcProvider.syncMapProducts", .serialized)
+struct SpcProviderSyncMapProductsTests {
+    @Test("Concurrent calls share one in-flight map sync run")
+    func concurrentCallsShareOneRun() async throws {
+        let container = try await makeMapSyncContainer()
+        let client = CountingMapSyncClient(delayNanoseconds: 50_000_000)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await provider.syncMapProducts() }
+            group.addTask { await provider.syncMapProducts() }
+            await group.waitForAll()
+        }
+
+        let calls = await client.geoJsonCallCount()
+        #expect(calls == 5)
+    }
+
+    @Test("Back-to-back calls are throttled by map sync cooldown")
+    func backToBackCallsAreThrottled() async throws {
+        let container = try await makeMapSyncContainer()
+        let client = CountingMapSyncClient()
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        await provider.syncMapProducts()
+        await provider.syncMapProducts()
+
+        let calls = await client.geoJsonCallCount()
+        #expect(calls == 5)
+    }
+}
+
+private actor CountingMapSyncClient: SpcClient {
+    private var geoJsonCalls = 0
+    private let delayNanoseconds: UInt64
+
+    init(delayNanoseconds: UInt64 = 0) {
+        self.delayNanoseconds = delayNanoseconds
+    }
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        Data()
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        geoJsonCalls += 1
+        if delayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        return Data("{}".utf8)
+    }
+
+    func geoJsonCallCount() -> Int {
+        geoJsonCalls
+    }
+}
+
+private func makeSpcProviderForMapSyncTests(container: ModelContainer, client: any SpcClient) -> SpcProvider {
+    let outlookRepo = ConvectiveOutlookRepo(modelContainer: container)
+    let mesoRepo = MesoRepo(modelContainer: container)
+    let watchRepo = WatchRepo(modelContainer: container)
+    let stormRiskRepo = StormRiskRepo(modelContainer: container)
+    let severeRiskRepo = SevereRiskRepo(modelContainer: container)
+    let fireRiskRepo = FireRiskRepo(modelContainer: container)
+
+    return SpcProvider(
+        outlookRepo: outlookRepo,
+        mesoRepo: mesoRepo,
+        watchRepo: watchRepo,
+        stormRiskRepo: stormRiskRepo,
+        severeRiskRepo: severeRiskRepo,
+        fireRiskRepo: fireRiskRepo,
+        client: client
+    )
+}
+
+private func makeMapSyncContainer() async throws -> ModelContainer {
+    try await MainActor.run {
+        let container = try TestStore.container(
+            for: [ConvectiveOutlook.self, MD.self, Watch.self, StormRisk.self, SevereRisk.self, FireRisk.self]
+        )
+        try TestStore.reset(ConvectiveOutlook.self, in: container)
+        try TestStore.reset(MD.self, in: container)
+        try TestStore.reset(Watch.self, in: container)
+        try TestStore.reset(StormRisk.self, in: container)
+        try TestStore.reset(SevereRisk.self, in: container)
+        try TestStore.reset(FireRisk.self, in: container)
+        return container
+    }
+}
