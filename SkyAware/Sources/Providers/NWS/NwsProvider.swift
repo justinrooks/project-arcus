@@ -55,13 +55,13 @@ extension NwsProvider: NwsRiskQuerying {
             return []
         }
         
-        guard let county = gridMetadata.county, let zone = gridMetadata.zone else {
-            logger.warning("No county or zone data available")
+        guard let county = gridMetadata.county, let zone = gridMetadata.zone, let fireZone = gridMetadata.fireZone else {
+            logger.warning("No county, zone, or fire zone data available")
             return []
         }
         
         //COZ246
-        let watches = try await watchRepo.active(county: county, zone: zone)
+        let watches = try await watchRepo.active(county: county, zone: zone, fireZone: fireZone)
         
         return watches
     }
