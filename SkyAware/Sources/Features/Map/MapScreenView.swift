@@ -24,6 +24,7 @@ struct MapScreenView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
     
@@ -100,8 +101,9 @@ struct MapScreenView: View {
         async let severeTask = fetchSevereRiskShapes()
         async let stormTask = fetchStormRiskShapes()
         async let mesoTask = fetchMesoShapes()
+        async let fireTask = fetchFireRiskShapes()
 
-        let (severeResult, stormResult, mesoResult) = await (severeTask, stormTask, mesoTask)
+        let (severeResult, stormResult, mesoResult, fireResult) = await (severeTask, stormTask, mesoTask, fireTask)
 
         switch severeResult {
         case .success(let data):
@@ -122,6 +124,13 @@ struct MapScreenView: View {
             mesos = data
         case .failure(let error):
             logger.error("Failed to load mesoscale map data: \(error.localizedDescription, privacy: .public)")
+        }
+        
+        switch fireResult {
+        case .success(let data):
+            fireRisk = data
+        case .failure(let error):
+            logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
         }
 
         rebuildPolygons()
@@ -150,6 +159,14 @@ struct MapScreenView: View {
             return .failure(error)
         }
     }
+    
+    private func fetchFireRiskShapes() async -> Result<[FireRiskDTO], any Error> {
+        do {
+            return .success(try await svc.getFireRisk())
+        } catch {
+            return .failure(error)
+        }
+    }
 
     @MainActor
     private func rebuildPolygons() {
@@ -157,7 +174,8 @@ struct MapScreenView: View {
             for: selected,
             stormRisk: stormRisk,
             severeRisks: severeRisks,
-            mesos: mesos
+            mesos: mesos,
+            fires: fireRisk
         )
     }
 }

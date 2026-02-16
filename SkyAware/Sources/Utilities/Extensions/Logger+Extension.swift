@@ -32,6 +32,7 @@ extension Logger {
     static let reposStormRisk = Logger(subsystem: subsystem, category: "repos.stormRisk")
     static let reposSevereRisk = Logger(subsystem: subsystem, category: "repos.severeRisk")
     static let reposRiskProduct = Logger(subsystem: subsystem, category: "repos.riskProduct")
+    static let reposFireRisk = Logger(subsystem: subsystem, category: "repos.fireRisk")
     static let reposNwsMetadata = Logger(subsystem: subsystem, category: "repos.nwsMetadata")
     
     // MARK: Background

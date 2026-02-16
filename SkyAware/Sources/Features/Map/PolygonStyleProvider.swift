@@ -35,6 +35,8 @@ enum PolygonStyleProvider {
             return (UIColor.purple.withAlphaComponent(0.5), .purple)
         case let r where r.contains("MESO"):
             return (UIColor.systemIndigo.withAlphaComponent(0.3), .systemIndigo)
+        case let r where r.contains("FIRE"):
+            return (UIColor.systemOrange.withAlphaComponent(0.3), .systemOrange)
             
         case let r where r.contains("WIND"):
             let isSignificant = r.contains("SIGN")
@@ -61,7 +63,7 @@ enum PolygonStyleProvider {
             )
         default:
             logger.warning("Unknown polygon title encountered while styling")
-            return (UIColor.systemOrange, UIColor.systemOrange.withAlphaComponent(0.15))
+            return (UIColor.systemPink.withAlphaComponent(0.15), UIColor.systemPink)
         }
     }
     

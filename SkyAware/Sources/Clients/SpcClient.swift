@@ -14,6 +14,7 @@ enum GeoJSONProduct: String, CustomStringConvertible {
     case tornado     = "torn"
     case hail        = "hail"
     case wind        = "wind"
+    case fireRH      = "windrh"
     
     var description: String {
         switch self {
@@ -21,6 +22,7 @@ enum GeoJSONProduct: String, CustomStringConvertible {
         case .tornado:     return "tornado"
         case .hail:        return "hail"
         case .wind:        return "wind"
+        case .fireRH:      return "fireRH"
         }
     }
 }
@@ -116,7 +118,10 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: the product to fetch
     /// - Returns: a url to use to fetch geojson data for the provided product
     private func getGeoJSONUrl(for product: GeoJSONProduct) throws -> URL {
-        try makeSPCURL(path: "/products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
+        switch product {
+        case .fireRH: return try makeSPCURL(path: "/products/fire_wx/day1fw_\(product.rawValue).lyr.geojson")
+        default: return try makeSPCURL(path: "/products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
+        }
     }
     
     /// Build an absolute URL for a SPC RSS products

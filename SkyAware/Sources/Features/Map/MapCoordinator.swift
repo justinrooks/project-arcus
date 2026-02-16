@@ -40,7 +40,8 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
             "enhanced": "enh",
             "moderate": "mdt",
             "high": "high",
-            "meso": "meso"
+            "meso": "meso",
+            "fire": "fire"
         ]
 
         for (key, value) in keywords {

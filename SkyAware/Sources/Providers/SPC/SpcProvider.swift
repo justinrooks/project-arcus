@@ -16,6 +16,7 @@ actor SpcProvider {
     let watchRepo: WatchRepo
     let stormRiskRepo: StormRiskRepo
     let severeRiskRepo: SevereRiskRepo
+    let fireRiskRepo: FireRiskRepo
     let client: SpcClient
     
     // Convective freshness Stream
@@ -27,6 +28,7 @@ actor SpcProvider {
          watchRepo: WatchRepo,
          stormRiskRepo: StormRiskRepo,
          severeRiskRepo: SevereRiskRepo,
+         fireRiskRepo: FireRiskRepo,
          client: SpcClient) {
         signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
@@ -34,6 +36,7 @@ actor SpcProvider {
         self.watchRepo = watchRepo
         self.stormRiskRepo = stormRiskRepo
         self.severeRiskRepo = severeRiskRepo
+        self.fireRiskRepo = fireRiskRepo
         self.client = client
     }
 

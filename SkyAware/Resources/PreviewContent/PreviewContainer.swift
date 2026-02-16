@@ -105,6 +105,9 @@ extension MockSpcService: SpcMapData {
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
     func getStormRiskMapData() async throws -> [StormRiskDTO] {[StormRiskDTO]()}
     func getMesoMapData() async throws -> [MdDTO] { [MdDTO]() }
+    func getFireRisk() async throws -> [FireRiskDTO] {
+        []
+    }
 }
 
 struct MockSpcService {

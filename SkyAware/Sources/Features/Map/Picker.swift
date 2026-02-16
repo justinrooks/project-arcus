@@ -11,7 +11,7 @@ import OSLog
 // MARK: - Domain
 
 enum MapLayer: String, CaseIterable, Identifiable, Sendable {
-    case categorical, wind, hail, tornado, meso
+    case categorical, wind, hail, tornado, meso, fire
     var id: String { rawValue }
     
     var title: String {
@@ -21,6 +21,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .hail:        return "Hail"
         case .tornado:     return "Tornado"
         case .meso:        return "Mesoscale"
+        case .fire:        return "Fire"
         }
     }
     
@@ -31,6 +32,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .hail:        return "HAIL"
         case .tornado:     return "TOR"
         case .meso:        return "MESO"
+        case .fire:        return "FIRE"
         }
     }
     
@@ -42,6 +44,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .hail:        return "cloud.hail.fill"
         case .tornado:     return "tornado"
         case .meso:        return "waveform.path.ecg.magnifyingglass"
+        case .fire:        return "flame.fill"
         }
     }
     
@@ -53,6 +56,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
         case .hail: return Color.hailBlue.tileGradient(for: scheme)
         case .tornado: return Color.tornadoRed.tileGradient(for: scheme)
         case .meso: return Color.mesoPurple.tileGradient(for: scheme)
+        case .fire: return Color.fireWeather.tileGradient(for: scheme)
         }
     }
 }

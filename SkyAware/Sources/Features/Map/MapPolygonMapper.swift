@@ -12,7 +12,8 @@ struct MapPolygonMapper {
         for layer: MapLayer,
         stormRisk: [StormRiskDTO],
         severeRisks: [SevereRiskShapeDTO],
-        mesos: [MdDTO]
+        mesos: [MdDTO],
+        fires: [FireRiskDTO]
     ) -> MKMultiPolygon {
         switch layer {
         case .categorical:
@@ -69,6 +70,17 @@ struct MapPolygonMapper {
                 from: mesos,
                 coordinates: { $0.coordinates.map { $0.location } },
                 title: { _ in layer.key }
+            )
+            return MKMultiPolygon(polygons)
+            
+        case .fire:
+            let source = fires
+                .flatMap { $0.polygons }
+
+            let polygons = makeMKPolygons(
+                from: source,
+                coordinates: { $0.ringCoordinates },
+                title: { $0.title }
             )
             return MKMultiPolygon(polygons)
         }

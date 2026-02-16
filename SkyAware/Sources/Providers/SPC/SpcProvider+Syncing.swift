@@ -48,6 +48,14 @@ extension SpcProvider: SpcSyncing {
         await refreshMapProduct(named: "tornado") {
             try await severeRiskRepo.refreshTornadoRisk(using: client)
         }
+        
+        if Task.isCancelled {
+            signposter.endInterval("Background Run", runInterval)
+            return
+        }
+        await refreshMapProduct(named: "fire") {
+            try await fireRiskRepo.refreshFireRisk(using: client)
+        }
 
         signposter.endInterval("Background Run", runInterval)
     }

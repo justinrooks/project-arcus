@@ -20,6 +20,12 @@ struct MapLegend: View {
                     .font(.caption)
                     .fontWeight(.bold)
                 CategoricalLegendRow(risk: layer.key.capitalized) // MESO
+            
+            case .fire:
+                Text("Legend")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                CategoricalLegendRow(risk: layer.key.capitalized) // Fire
 
             case .tornado, .hail, .wind:
                 let probs = probabilities ?? []
