@@ -16,10 +16,6 @@ actor SevereRiskRepo {
 
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
-        guard let data else {
-            logger.info("No hail risk data returned")
-            return
-        } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
         
@@ -38,10 +34,6 @@ actor SevereRiskRepo {
     
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
-        guard let data else {
-            logger.info("No wind risk data returned")
-            return
-        } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
         
@@ -61,10 +53,6 @@ actor SevereRiskRepo {
     /// Testable overload that allows injecting a client
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
-        guard let data else {
-            logger.info("No tornado risk data returned")
-            return
-        } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
         

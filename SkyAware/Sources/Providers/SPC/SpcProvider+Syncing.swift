@@ -19,16 +19,37 @@ extension SpcProvider: SpcSyncing {
     
     func syncMapProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Map Products")
-        do {
-            try await stormRiskRepo.refreshStormRisk(using: client)
-            try await severeRiskRepo.refreshHailRisk(using: client)
-            try await severeRiskRepo.refreshWindRisk(using: client)
-            try await severeRiskRepo.refreshTornadoRisk(using: client)
+
+        if Task.isCancelled {
             signposter.endInterval("Background Run", runInterval)
-        } catch {
-            signposter.endInterval("Background Run", runInterval)
-            logger.error("Error loading Spc map feed: \(error.localizedDescription, privacy: .public)")
+            return
         }
+        await refreshMapProduct(named: "categorical") {
+            try await stormRiskRepo.refreshStormRisk(using: client)
+        }
+        if Task.isCancelled {
+            signposter.endInterval("Background Run", runInterval)
+            return
+        }
+        await refreshMapProduct(named: "hail") {
+            try await severeRiskRepo.refreshHailRisk(using: client)
+        }
+        if Task.isCancelled {
+            signposter.endInterval("Background Run", runInterval)
+            return
+        }
+        await refreshMapProduct(named: "wind") {
+            try await severeRiskRepo.refreshWindRisk(using: client)
+        }
+        if Task.isCancelled {
+            signposter.endInterval("Background Run", runInterval)
+            return
+        }
+        await refreshMapProduct(named: "tornado") {
+            try await severeRiskRepo.refreshTornadoRisk(using: client)
+        }
+
+        signposter.endInterval("Background Run", runInterval)
     }
     
     func syncTextProducts() async {
@@ -70,5 +91,15 @@ extension SpcProvider: SpcSyncing {
     private func publishConvectiveIssue(_ date: Date) {
         latestConvective = date
         for c in convectiveContinuations.values { c.yield(date) }
+    }
+
+    private func refreshMapProduct(named name: String, operation: () async throws -> Void) async {
+        do {
+            try await operation()
+        } catch is CancellationError {
+            logger.notice("SPC map product sync cancelled for \(name, privacy: .public)")
+        } catch {
+            logger.error("Error loading SPC map feed product=\(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

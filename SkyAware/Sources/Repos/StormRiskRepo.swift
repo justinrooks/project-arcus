@@ -16,10 +16,6 @@ actor StormRiskRepo {
     
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
-        guard let data else {
-            logger.info("No categorical storm risk data returned")
-            return
-        } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
         

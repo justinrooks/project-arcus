@@ -33,6 +33,8 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Resilience upgrade**: we preserved HTTP response headers in the shared downloader so clients can finally react to upstream hints like `Retry-After` instead of treating every non-200 the same.
 - **Privacy + observability tradeoff**: we tightened NWS logging by hashing coordinate logs while still emitting structured endpoint/status fields, so diagnostics stay useful without leaking precise location traces.
 - **Aha! (cancellation semantics)**: swallowing `Task.sleep` cancellation during retries quietly fights structured concurrency. Letting cancellation bubble keeps networking cooperative with SwiftUI task lifecycles.
+- **Consistency cleanup (SPC vs NWS)**: SPC and NWS now speak the same language at the client boundary (`async throws -> Data` with status-aware mapping). That removed misleading “nil means no data” branches and made error handling deterministic in repos/providers.
+- **Side-effect containment**: downloader-level `Last-Modified` persistence moved behind an injected observer instead of hidden global writes. The network pipe is now transport-focused, and policy hooks are explicit at composition time.
 - **Architecture checkpoint**: we split the map feature into a screen (`MapScreenView`), a render canvas (`MapCanvasView`), and a geometry mapper (`MapPolygonMapper`). The view now orchestrates state and async work, while geometry conversion has one home.
 - **Pitfall**: when adding new Swift Testing files, verify target membership immediately. A misplaced file can compile into the app target and fail on `import Testing`.
 

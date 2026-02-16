@@ -20,7 +20,6 @@ struct NwsHttpClient: NwsClient {
     private let http: HTTPClient
     private let logger = Logger.providersNwsClient
     private static let baseURL = URL(string: "https://api.weather.gov")!
-    private static let geoJSONAcceptHeader = "application/geo+json"
     
     init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http
@@ -54,10 +53,7 @@ struct NwsHttpClient: NwsClient {
     }
 
     private var requestHeaders: [String: String] {
-        [
-            "User-Agent": Self.makeUserAgent(from: .main),
-            "Accept": Self.geoJSONAcceptHeader
-        ]
+        HTTPRequestHeaders.nws()
     }
     
     private func fetch(from url: URL) async throws -> Data {
@@ -66,9 +62,20 @@ struct NwsHttpClient: NwsClient {
         let resp = try await http.get(url, headers: requestHeaders)
         try Task.checkCancellation()
         
-        guard (200...299).contains(resp.status) else {
-            let error = mappedError(for: resp)
+        switch resp.classifyStatus() {
+        case .success:
+            break
+        case .rateLimited(let retryAfter):
+            let error = NwsError.rateLimited(retryAfterSeconds: retryAfter)
             logFailure(error: error, endpoint: url.path, status: resp.status)
+            throw error
+        case .serviceUnavailable(let retryAfter):
+            let error = NwsError.serviceUnavailable(retryAfterSeconds: retryAfter)
+            logFailure(error: error, endpoint: url.path, status: resp.status)
+            throw error
+        case .failure(let status):
+            let error = NwsError.networkError(status: status)
+            logFailure(error: error, endpoint: url.path, status: status)
             throw error
         }
         
@@ -80,34 +87,6 @@ struct NwsHttpClient: NwsClient {
         return data
     }
 
-    private func mappedError(for response: HTTPResponse) -> NwsError {
-        let retryAfter = retryAfterSeconds(from: response.header("Retry-After"))
-
-        switch response.status {
-        case 429:
-            return .rateLimited(retryAfterSeconds: retryAfter)
-        case 503:
-            return .serviceUnavailable(retryAfterSeconds: retryAfter)
-        default:
-            return .networkError(status: response.status)
-        }
-    }
-
-    private func retryAfterSeconds(from value: String?, now: Date = .now) -> Int? {
-        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
-            return nil
-        }
-
-        if let seconds = Int(value) {
-            return max(0, seconds)
-        }
-
-        let retryAt = value.fromRFC1123String() ?? value.fromRFC822()
-        guard let retryAt else { return nil }
-
-        return max(0, Int(ceil(retryAt.timeIntervalSince(now))))
-    }
-
     private func logFailure(error: NwsError, endpoint: String, status: Int) {
         switch error {
         case .rateLimited(let retryAfter):
@@ -117,12 +96,6 @@ struct NwsHttpClient: NwsClient {
         default:
             logger.error("NWS request failed endpoint=\(endpoint, privacy: .public) status=\(status, privacy: .public)")
         }
-    }
-
-    private static func makeUserAgent(from bundle: Bundle) -> String {
-        let appName = (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? "SkyAware"
-        let bundleID = bundle.bundleIdentifier ?? "skyaware.app"
-        return "\(appName)/\(bundle.appVersion) (\(bundleID); build:\(bundle.buildNumber))"
     }
     
     /// Build an absolute NWS URL from a relative path, or throw on failure.

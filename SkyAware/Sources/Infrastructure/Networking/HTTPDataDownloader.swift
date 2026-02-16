@@ -7,9 +7,59 @@
 
 import Foundation
 import OSLog
-import SwiftUI
 
-let validStatus = 200...299
+public enum HTTPStatusClassification: Sendable, Equatable {
+    case success
+    case rateLimited(retryAfterSeconds: Int?)
+    case serviceUnavailable(retryAfterSeconds: Int?)
+    case failure(status: Int)
+}
+
+public enum HTTPRetryAfterParser {
+    public static func seconds(from value: String?, now: Date = .now) -> Int? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else {
+            return nil
+        }
+
+        if let seconds = Int(value) {
+            return max(0, seconds)
+        }
+
+        let retryAt = value.fromRFC1123String() ?? value.fromRFC822()
+        guard let retryAt else { return nil }
+
+        return max(0, Int(ceil(retryAt.timeIntervalSince(now))))
+    }
+}
+
+public enum HTTPRequestHeaders {
+    public static func userAgent(bundle: Bundle = .main, fallbackName: String = "SkyAware") -> String {
+        let appName = (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String) ?? fallbackName
+        let bundleID = bundle.bundleIdentifier ?? "skyaware.app"
+        return "\(appName)/\(bundle.appVersion) (\(bundleID); build:\(bundle.buildNumber))"
+    }
+
+    public static func nws(bundle: Bundle = .main) -> [String: String] {
+        [
+            "User-Agent": userAgent(bundle: bundle),
+            "Accept": "application/geo+json"
+        ]
+    }
+
+    public static func spcRss(bundle: Bundle = .main) -> [String: String] {
+        [
+            "User-Agent": userAgent(bundle: bundle),
+            "Accept": "application/rss+xml, application/xml;q=0.9, */*;q=0.8"
+        ]
+    }
+
+    public static func spcGeoJSON(bundle: Bundle = .main) -> [String: String] {
+        [
+            "User-Agent": userAgent(bundle: bundle),
+            "Accept": "application/geo+json, application/json;q=0.9, */*;q=0.8"
+        ]
+    }
+}
 
 public struct HTTPResponse {
     public let status: Int
@@ -18,6 +68,48 @@ public struct HTTPResponse {
     
     public func header(_ name: String) -> String? {
         headers.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+
+    public func classifyStatus(now: Date = .now) -> HTTPStatusClassification {
+        guard !(200...299).contains(status) else { return .success }
+
+        let retryAfter = HTTPRetryAfterParser.seconds(from: header("Retry-After"), now: now)
+        switch status {
+        case 429:
+            return .rateLimited(retryAfterSeconds: retryAfter)
+        case 503:
+            return .serviceUnavailable(retryAfterSeconds: retryAfter)
+        default:
+            return .failure(status: status)
+        }
+    }
+}
+
+public protocol HTTPResponseObserving: Sendable {
+    func didReceive(response: HTTPURLResponse, for requestURL: URL) async
+}
+
+public struct NoOpHTTPResponseObserver: HTTPResponseObserving {
+    public init() {}
+    public func didReceive(response: HTTPURLResponse, for requestURL: URL) async {}
+}
+
+public actor LastGlobalSuccessHTTPObserver: HTTPResponseObserving {
+    private let store: UserDefaults?
+    private let key: String
+
+    public init(
+        store: UserDefaults? = UserDefaults(suiteName: "com.justinrooks.skyaware"),
+        key: String = "lastGlobalSuccessAt"
+    ) {
+        self.store = store
+        self.key = key
+    }
+
+    public func didReceive(response: HTTPURLResponse, for requestURL: URL) async {
+        guard (200...299).contains(response.statusCode) else { return }
+        guard let lastModified = response.value(forHTTPHeaderField: "Last-Modified")?.fromRFC1123String() else { return }
+        store?.set(lastModified.timeIntervalSince1970, forKey: key)
     }
 }
 
@@ -30,8 +122,10 @@ public final class URLSessionHTTPClient: HTTPClient {
     private let logger = Logger.networkDownloader
     private let session: URLSession
     private let delays: [UInt64] = [0, 5, 10, 15] // seconds
+    private let observer: any HTTPResponseObserving
     
-    public init() {
+    public init(observer: any HTTPResponseObserving = NoOpHTTPResponseObserver()) {
+        self.observer = observer
         let config = URLSessionConfiguration.default
         config.requestCachePolicy = .useProtocolCachePolicy
         config.timeoutIntervalForRequest = 15
@@ -57,10 +151,6 @@ public final class URLSessionHTTPClient: HTTPClient {
         return nil
     }
     
-    private func updateLastModified(date: Date) {
-        
-    }
-    
     private func request(url: URL, method: String, headers: [String: String]) async throws -> HTTPResponse {
         // Try up to `delays.count` attempts. Delays array encodes backoff for retries,
         // where index+1 corresponds to the wait before the next attempt.
@@ -83,16 +173,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                     throw URLError(.badServerResponse)
                 }
                 
-                if let mod = http.value(forHTTPHeaderField: "Last-Modified")?.fromRFC1123String(){
-//                    logger.trace("LAST MOD: \(mod.toRFC1123String())")
-                    
-                    let suite = UserDefaults(suiteName: "com.justinrooks.skyaware")
-                    if let suite {
-                        let lastGlobalSuccessAtKey = "lastGlobalSuccessAt"
-                        
-                        suite.set(mod.timeIntervalSince1970, forKey: lastGlobalSuccessAtKey)
-                    }
-                }
+                await observer.didReceive(response: http, for: url)
 
                 let responseHeaders = normalizedHeaders(from: http.allHeaderFields)
 
@@ -101,7 +182,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                                     data: data.isEmpty ? nil : data)
             } catch {
                 if error is CancellationError || Task.isCancelled {
-                    logger.debug("Request cancelled for \(url.absoluteString, privacy: .public)")
+                    logger.debug("Request cancelled for host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
                     throw CancellationError()
                 }
 

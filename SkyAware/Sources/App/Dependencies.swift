@@ -278,8 +278,10 @@ final class Dependencies: Sendable {
         logger.debug("URLCache configured for SkyAware")
         
         // HTTP clients
-        let nwsClient = NwsHttpClient()
-        let spcClient = SpcHttpClient()
+        let responseObserver = LastGlobalSuccessHTTPObserver()
+        let httpClient = URLSessionHTTPClient(observer: responseObserver)
+        let nwsClient = NwsHttpClient(http: httpClient)
+        let spcClient = SpcHttpClient(http: httpClient)
         
         // Create our data layer repos
         let outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)

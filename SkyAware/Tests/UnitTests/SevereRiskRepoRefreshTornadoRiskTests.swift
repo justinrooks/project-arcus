@@ -4,18 +4,28 @@ import SwiftData
 import Foundation
 
 private struct MockClient: SpcClient {
-    var tornadoData: Data?
-
-    func fetchRssData(for product: RssProduct) async throws -> Data? {
-        return nil
+    enum Mode {
+        case success(Data)
+        case failure(Error)
     }
 
-    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data? {
+    var mode: Mode
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        throw SpcError.missingRssData
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
         switch product {
         case .tornado:
-            return tornadoData
+            switch mode {
+            case .success(let data):
+                return data
+            case .failure(let error):
+                throw error
+            }
         default:
-            return nil
+            throw SpcError.missingGeoJsonData
         }
     }
 }
@@ -23,13 +33,22 @@ private struct MockClient: SpcClient {
 @Suite("SevereRiskRepo.refreshTornadoRisk", .serialized)
 struct SevereRiskRepoRefreshTornadoRiskTests {
 
-    @Test("Does nothing when client returns nil")
-    func nilResultNoInsert() async throws {
+    @Test("Propagates client failures and inserts nothing")
+    func clientFailureNoInsert() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
         try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
         let repo = SevereRiskRepo(modelContainer: container)
-        let mock = MockClient(tornadoData: nil)
-        try await repo.refreshTornadoRisk(using: mock)
+        let mock = MockClient(mode: .failure(SpcError.missingData))
+
+        do {
+            try await repo.refreshTornadoRisk(using: mock)
+            #expect(Bool(false), "Expected client failure to propagate")
+        } catch let error as SpcError {
+            #expect(error == .missingData)
+        } catch {
+            #expect(Bool(false), "Unexpected error type: \(error)")
+        }
+
         let count = try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>())
         #expect(count == 0)
     }
@@ -41,7 +60,7 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         let repo = SevereRiskRepo(modelContainer: container)
         let emptyFC = makeFeatureCollection(features: [])
         let data = try JSONEncoder().encode(emptyFC)
-        let mock = MockClient(tornadoData: data)
+        let mock = MockClient(mode: .success(data))
 
         try await repo.refreshTornadoRisk(using: mock)
         let count = try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>())
@@ -63,7 +82,7 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
 
         let fc = makeFeatureCollection(features: [f1, f2])
         let data = try JSONEncoder().encode(fc)
-        let mock = MockClient(tornadoData: data)
+        let mock = MockClient(mode: .success(data))
 
         try await repo.refreshTornadoRisk(using: mock)
 
