@@ -36,12 +36,7 @@ actor WatchRepo {
     
     func refresh(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
-        
-        guard let data else {
-            logger.debug("No watch data found")
-            return
-        }
-        
+
         guard let decoded = NWSWatchParser.decode(from: data) else {
             logger.error("Unable to parse NWS Json watch data")
             throw NwsError.parsingError

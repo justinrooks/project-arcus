@@ -65,7 +65,7 @@ public final class URLSessionHTTPClient: HTTPClient {
         // Try up to `delays.count` attempts. Delays array encodes backoff for retries,
         // where index+1 corresponds to the wait before the next attempt.
         for attempt in 0..<delays.count {
-            //if Task.isCancelled { throw CancellationError() }
+            try Task.checkCancellation()
             do {
                 var req = URLRequest(url: url)
                 req.httpMethod = method
@@ -94,10 +94,17 @@ public final class URLSessionHTTPClient: HTTPClient {
                     }
                 }
 
+                let responseHeaders = normalizedHeaders(from: http.allHeaderFields)
+
                 return HTTPResponse(status: http.statusCode,
-                                    headers: [:],
+                                    headers: responseHeaders,
                                     data: data.isEmpty ? nil : data)
             } catch {
+                if error is CancellationError || Task.isCancelled {
+                    logger.debug("Request cancelled for \(url.absoluteString, privacy: .public)")
+                    throw CancellationError()
+                }
+
                 if isTransient(error) {
                     logger.debug("Triggering retry. Retries: \(attempt, privacy: .public)")
                     // If this was the last attempt, bubble up the error.
@@ -106,7 +113,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                     // Otherwise, wait the configured backoff before retrying.
                     let wait = delays[attempt + 1]
                     logger.debug("Sleeping for \(wait, privacy: .public) seconds")
-                    try? await Task.sleep(for: .seconds(Int(wait)))
+                    try await Task.sleep(for: .seconds(Int(wait)))
                     logger.debug("Retrying query...")
                     continue
                 } else {
@@ -118,6 +125,19 @@ public final class URLSessionHTTPClient: HTTPClient {
         
         // Defensive fallback; loop should either return or throw earlier.
         throw URLError(.cannotLoadFromNetwork)
+    }
+
+    private func normalizedHeaders(from raw: [AnyHashable: Any]) -> [String: String] {
+        var output: [String: String] = [:]
+        output.reserveCapacity(raw.count)
+
+        for (key, value) in raw {
+            let headerName = String(describing: key)
+            let headerValue = String(describing: value)
+            output[headerName] = headerValue
+        }
+
+        return output
     }
     
     private func isTransient(_ error: Error) -> Bool {
