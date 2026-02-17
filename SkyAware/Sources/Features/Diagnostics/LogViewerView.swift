@@ -22,7 +22,7 @@ struct LogLine: Identifiable, Sendable {
 @MainActor
 struct LogViewerView: View {
     private let logger = Logger.uiDiagnostics
-    private let maxEntries = 1000
+
     enum Window: TimeInterval, CaseIterable, Identifiable {
         case fiveMin = 300, thirtyMin = 1800, twoHours = 7200
         var id: Self { self }
@@ -44,6 +44,8 @@ struct LogViewerView: View {
     @State private var loadTask: Task<Void, Never>?
     @State private var exportCache: String = ""
 
+    private let dateFormatter = LogViewerView.makeDateFormatter()
+
     private var toolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
             Button {
@@ -64,23 +66,20 @@ struct LogViewerView: View {
         f.timeStyle = .medium
         return f
     }
-    @State private var dateFormatter = LogViewerView.makeDateFormatter()
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                controls
-                contentList
-            }
-            .padding()
-            .navigationTitle("Logs")
-            .toolbar { toolbarItems }
-            .task { triggerLoad(debounced: false) }
-            .task(id: window) { triggerLoad(debounced: false) }
-            .task(id: includeAllSubsystems) { triggerLoad(debounced: false) }
-            .task(id: query) { triggerLoad(debounced: true) }
-            .task(id: maxEntriesSelection) { triggerLoad(debounced: false) }
+        VStack(spacing: 12) {
+            controls
+            contentList
         }
+        .padding()
+        .navigationTitle("Logs")
+        .toolbar { toolbarItems }
+        .task { triggerLoad(debounced: false) }
+        .task(id: window) { triggerLoad(debounced: false) }
+        .task(id: includeAllSubsystems) { triggerLoad(debounced: false) }
+        .task(id: query) { triggerLoad(debounced: true) }
+        .task(id: maxEntriesSelection) { triggerLoad(debounced: false) }
     }
 
     private var controls: some View {

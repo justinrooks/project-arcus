@@ -6,12 +6,8 @@
 //
 
 import SwiftUI
-import CoreLocation
-import OSLog
 
 struct SummaryView: View {
-    private let logger = Logger.uiSummary
-    
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?

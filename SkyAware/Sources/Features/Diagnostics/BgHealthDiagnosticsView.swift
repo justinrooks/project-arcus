@@ -52,9 +52,7 @@ struct BgHealthDiagnosticsView: View {
 
 private struct StatusHeader: View {
     let latest: BgRunSnapshot
-    @Environment(\.colorScheme) private var scheme
-    
-    
+
     var body: some View {
         let now = Date()
         let status = computeStatus(from: latest, now: now)
@@ -214,13 +212,6 @@ private func endDate(_ date: Date) -> String {
 
 private func timeOrDash(_ date: Date) -> String {
     BgHealthFormatters.timeOrDash.string(from: date)
-}
-
-private func formatSeconds(_ secs: Double) -> String {
-    if secs < 60 { return String(format: "%.1fs", secs) }
-    let m = Int(secs) / 60
-    let s = Int(secs) % 60
-    return "\(m)m \(s)s"
 }
 
 private func formatSecondsInt64(_ secs: Int64) -> String {

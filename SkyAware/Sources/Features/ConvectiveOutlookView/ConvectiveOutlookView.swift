@@ -11,33 +11,39 @@ struct ConvectiveOutlookView: View {
     let dtos: [ConvectiveOutlookDTO]
     
     @State private var selectedOutlook: ConvectiveOutlookDTO?
+
+    private var hasNoOutlooks: Bool {
+        dtos.isEmpty
+    }
     
     var body: some View {
         List {
-            if dtos.isEmpty {
+            if hasNoOutlooks {
                 ContentUnavailableView {
                     Label("No convective outlooks found", systemImage: "cloud.sun.fill")
                 } description: {
                     Text("There are no convective outlooks available.")
                 }
+                .listRowBackground(Color.clear)
             } else {
                 Section {
                     ForEach(dtos) { dto in
-                        OutlookRowView(outlook: dto)
-                            .contentShape(Rectangle()) // Makes entire row tappable
-                            .onTapGesture {
-                                selectedOutlook = dto
-                            }
-                            .padding(.horizontal, 2)
+                        Button {
+                            selectedOutlook = dto
+                        } label: {
+                            OutlookRowView(outlook: dto)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
         }
         .listStyle(.insetGrouped)
+        .listSectionSpacing(12)
         .scrollContentBackground(.hidden)
         .background(.skyAwareBackground)
         .navigationDestination(item: $selectedOutlook) { outlook in
-            ConvectiveOutlookDetailView(outlook:outlook)
+            ConvectiveOutlookDetailView(outlook: outlook)
         }
     }
 }

@@ -164,6 +164,11 @@ private struct MesoRowView: View {
 
 private struct WatchRowView: View {
     let watch: WatchRowDTO
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
+        return formatter
+    }()
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
@@ -189,10 +194,9 @@ private struct WatchRowView: View {
         }
         .padding(.vertical, 3)
     }
-    func buildDisplay(watch: WatchRowDTO) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "E"
-        return f.string(from: watch.validEnd)
+
+    private func buildDisplay(watch: WatchRowDTO) -> String {
+        Self.dayFormatter.string(from: watch.validEnd)
     }
 }
 

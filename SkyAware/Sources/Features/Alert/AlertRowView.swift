@@ -9,22 +9,26 @@ import SwiftUI
 
 struct AlertRowView: View {
     let alert: any AlertItem
+
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter
     }()
 
+    private var iconAndColor: (icon: String, color: Color) {
+        let title = parseWatchType(from: alert.title)
+        let style = styleForType(alert.alertType, title)
+        return (style.0, style.1)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // Type Badge
-            let title = parseWatchType(from: alert.title)
-            let (icon, color) = styleForType(alert.alertType, title)
-            Image(systemName: icon)
-                .foregroundColor(color)
+            Image(systemName: iconAndColor.icon)
+                .foregroundStyle(iconAndColor.color)
                 .font(.headline.weight(.semibold))
                 .frame(width: 36, height: 36)
-                .skyAwareChip(cornerRadius: 12, tint: color.opacity(0.16))
+                .skyAwareChip(cornerRadius: 12, tint: iconAndColor.color.opacity(0.16))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
@@ -44,7 +48,7 @@ struct AlertRowView: View {
 
     // MARK: - Helpers
     
-    func relativeDate(_ date: Date) -> String {
+    private func relativeDate(_ date: Date) -> String {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
     

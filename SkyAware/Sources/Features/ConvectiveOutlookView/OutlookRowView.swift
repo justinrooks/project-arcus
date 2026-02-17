@@ -9,10 +9,12 @@ import SwiftUI
 
 struct OutlookRowView: View {
     let outlook: ConvectiveOutlookDTO
+    private static let titleRegex = try? NSRegularExpression(
+        pattern: #"^SPC\s+\w+\s+\d{1,2},\s+\d{4}\s+(\d{4}) UTC (.+)$"#
+    )
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // Type Badge
             Image(systemName: "pencil.and.list.clipboard")
                 .foregroundColor(.skyAwareAccent)
                 .font(.headline.weight(.semibold))
@@ -41,11 +43,9 @@ struct OutlookRowView: View {
 }
 
 extension OutlookRowView {
-    func simplifyOutlookTitle(_ text: String) -> String? {
-        let pattern = #"^SPC\s+\w+\s+\d{1,2},\s+\d{4}\s+(\d{4}) UTC (.+)$"#
-        
+    private func simplifyOutlookTitle(_ text: String) -> String? {
         guard
-            let regex = try? NSRegularExpression(pattern: pattern),
+            let regex = Self.titleRegex,
             let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
             match.numberOfRanges == 3
         else {
@@ -57,10 +57,7 @@ extension OutlookRowView {
             return String(text[r])
         }
         
-        let time = group(1)     // "1630"
-        //let rest = group(2)     // "Day 1 Convective Outlook"
-        
-//        return "\(time)z \(rest)"
+        let time = group(1)
         return "\(time)z Outlook"
     }
 }

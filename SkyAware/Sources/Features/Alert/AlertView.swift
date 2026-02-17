@@ -10,70 +10,59 @@ import SwiftUI
 struct AlertView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
-    
+
     @State private var selectedWatch: WatchRowDTO?
     @State private var selectedMeso: MdDTO?
-    
-    private let scale: Double = 0.9
-    
+
+    private var hasNoAlerts: Bool {
+        watches.isEmpty && mesos.isEmpty
+    }
+
     var body: some View {
         List {
-            if watches.isEmpty && mesos.isEmpty {
-                ContentUnavailableView {
-                    Label("No active watches or mesos", systemImage: "checkmark.seal.fill")
-                } description: {
-                    Text("There are no active weather watches.")
-                }
-                .scaleEffect(scale)
-                .listRowBackground(Color.clear)
+            if hasNoAlerts {
+                emptyRow(
+                    title: "No active watches or mesos",
+                    subtitle: "There are no active weather watches."
+                )
             } else {
                 if watches.isEmpty {
-                    ContentUnavailableView {
-                        Label("No active watches", systemImage: "checkmark.seal.fill")
-                    } description: {
-                        Text("There are no active weather watches.")
-                    }
-                    .scaleEffect(scale)
-                    .listRowBackground(Color.clear)
+                    emptyRow(
+                        title: "No active watches",
+                        subtitle: "There are no active weather watches."
+                    )
                 } else {
                     Section {
                         ForEach(watches) { watch in
-                            AlertRowView(alert: watch)
-                                .contentShape(Rectangle()) // Makes entire row tappable
-                                .onTapGesture {
-                                    selectedWatch = watch
-                                }
-                                .padding(.horizontal, 2)
+                            Button {
+                                selectedWatch = watch
+                            } label: {
+                                AlertRowView(alert: watch)
+                            }
+                            .buttonStyle(.plain)
                         }
                     } header: {
-                        Text("Watches")
-                            .font(.caption.weight(.semibold))
-                            .textCase(.uppercase)
+                        sectionHeader("Watches")
                     }
                 }
-                
+
                 if mesos.isEmpty {
-                    ContentUnavailableView {
-                        Label("No active mesoscale discussions", systemImage: "checkmark.seal.fill")
-                    } description: {
-                        Text("There are no active mesoscale discussions.")
-                    }
-                    .scaleEffect(scale)
-                    .listRowBackground(Color.clear)
+                    emptyRow(
+                        title: "No active mesoscale discussions",
+                        subtitle: "There are no active mesoscale discussions."
+                    )
                 } else {
                     Section {
                         ForEach(mesos) { meso in
-                            AlertRowView(alert: meso)
-                                .contentShape(Rectangle()) // Makes entire row tappable
-                                .onTapGesture {
-                                    selectedMeso = meso
-                                }
-                                .padding(.horizontal, 2)
+                            Button {
+                                selectedMeso = meso
+                            } label: {
+                                AlertRowView(alert: meso)
+                            }
+                            .buttonStyle(.plain)
                         }
                     } header: {
-                        Text("Mesoscale Discussions")
-                            .font(.caption.weight(.semibold))
-                            .textCase(.uppercase)
+                        sectionHeader("Mesoscale Discussions")
                     }
                 }
             }
@@ -95,8 +84,6 @@ struct AlertView: View {
         .navigationDestination(item: $selectedMeso) { meso in
             ScrollView {
                 MesoscaleDiscussionCard(meso: meso, layout: .full)
-//                    .padding(.horizontal, 16)
-//                    .padding(.top, 16)
             }
             .navigationTitle("Mesoscale Discussion")
             .navigationBarTitleDisplayMode(.inline)
@@ -105,6 +92,23 @@ struct AlertView: View {
             .background(.skyAwareBackground)
         }
         .contentMargins(.top, 0, for: .scrollContent)
+    }
+
+    @ViewBuilder
+    private func emptyRow(title: String, subtitle: String) -> some View {
+        ContentUnavailableView {
+            Label(title, systemImage: "checkmark.seal.fill")
+        } description: {
+            Text(subtitle)
+        }
+        .scaleEffect(0.9)
+        .listRowBackground(Color.clear)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .textCase(.uppercase)
     }
 }
 

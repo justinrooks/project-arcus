@@ -9,27 +9,19 @@ import SwiftUI
 
 struct ConvectiveOutlookDetailView: View {
     let outlook: ConvectiveOutlookDTO
+
+    private var trimmedDiscussion: String? {
+        outlook.cleanText?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 8) {
-                    if let issued = outlook.issued {
-                        Text("Issued: \(issued.shorten())")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.secondary)
-                    }
-                    if let until = outlook.validUntil {
-                        Text("Valid Until: \(until.shorten())")
-                            .font(.subheadline.weight(.medium))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding()
-                .cardBackground(cornerRadius: 20, shadowOpacity: 0.1, shadowRadius: 10, shadowY: 4)
+                metadataCard
 
-                if let fullText = outlook.cleanText {
-                    Text(fullText.trimmingCharacters(in: .whitespacesAndNewlines))
+                if let trimmedDiscussion {
+                    Text(trimmedDiscussion)
                         .font(.body)
                         .multilineTextAlignment(.leading)
                         .padding()
@@ -53,19 +45,22 @@ struct ConvectiveOutlookDetailView: View {
         .scrollContentBackground(.hidden)
         .background(.skyAwareBackground)
     }
-}
-
-extension ConvectiveOutlookDetailView {
-    // 🌈 Optional: color code by risk level
-    func colorForRisk(_ risk: String) -> Color {
-        switch risk.uppercased() {
-        case "MRGL": return .green
-        case "SLGT": return .yellow
-        case "ENH": return .orange
-        case "MDT": return .red
-        case "HIGH": return .purple
-        default: return .gray
+    
+    private var metadataCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let issued = outlook.issued {
+                Text("Issued: \(issued.shorten())")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            if let until = outlook.validUntil {
+                Text("Valid Until: \(until.shorten())")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
         }
+        .padding()
+        .cardBackground(cornerRadius: 20, shadowOpacity: 0.1, shadowRadius: 10, shadowY: 4)
     }
 }
 
@@ -74,10 +69,8 @@ extension ConvectiveOutlookDetailView {
         ConvectiveOutlookDetailView(outlook: ConvectiveOutlook.sampleOutlookDtos[0])
             .navigationTitle("Outlook Details")
             .navigationBarTitleDisplayMode(.inline)
-        //            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
             .scrollContentBackground(.hidden)
             .background(.skyAwareBackground)
-//        ConvectiveOutlookDetailView(outlook: ConvectiveOutlook.sampleOutlookDtos[0])
     }
 }

@@ -84,9 +84,9 @@ extension View {
     @ViewBuilder
     func cardBackground(
         cornerRadius: CGFloat = 30,
-        shadowOpacity: Double = 0.22,
-        shadowRadius: CGFloat = 30,
-        shadowY: CGFloat = 6
+        shadowOpacity: Double = 0.14,
+        shadowRadius: CGFloat = 14,
+        shadowY: CGFloat = 4
     ) -> some View {
         self.skyAwareSurface(
             cornerRadius: cornerRadius,
@@ -97,12 +97,20 @@ extension View {
         )
     }
     
-    func cardRowBackground() -> some View {
+    func cardRowBackground(
+        cornerRadius: CGFloat = 20,
+        shadowOpacity: Double = 0.03,
+        shadowRadius: CGFloat = 6,
+        shadowY: CGFloat = 2
+    ) -> some View {
         self
-            .cardBackground()
-        //                .padding(.vertical, 4)
-        //                .padding(.horizontal, 8)
-            .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
+            .cardBackground(
+                cornerRadius: cornerRadius,
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
+            )
+            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
     }

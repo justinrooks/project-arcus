@@ -52,6 +52,9 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash (API sharp edges)**: the iOS 26-only `glassEffect` APIs compiled fine once we gated every usage with `#available(iOS 26, *)`, but one seemingly harmless style helper (`LinearGradient.stops`) broke compilation in this project setup. We replaced that with explicit per-layer tint tokens.
 - **Aha! (design system > one-off polish)**: moving glass/fallback behavior into shared view extensions (`skyAwareSurface`, `skyAwareChip`, `skyAwareGlassButtonStyle`) gave us consistent depth and reduced copy/paste modifier soup.
 - **Pitfall**: test + coverage workflows can fail if you diff against a failed `.xcresult` bundle. Always diff against two successful results, or report the current coverage snapshot only.
+- **Bug squash (row shadow halos)**: list rows in Alerts/Outlooks looked fuzzy because `cardRowBackground` inherited heavy card shadows plus negative row insets. We introduced row-specific shadow defaults (tiny radius/opacity) and sane positive insets so cards look crisp instead of “double-shadowed.”
+- **Aha! (interaction hygiene)**: replacing row `onTapGesture` with `Button` + `.buttonStyle(.plain)` gave cleaner accessibility semantics and more predictable tap behavior without changing visuals.
+- **Refactor pass**: we removed nested `NavigationStack`s in diagnostics screens and trimmed dead/unused helpers in view files. Result: cleaner view trees, fewer side effects, easier reasoning.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
