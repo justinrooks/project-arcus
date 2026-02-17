@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Overview
+This update adds Fire Weather map and local-alert coverage, and fixes overlapping refresh-load behavior that could trigger repeated network calls.
+
+### Highlights
+- Fire Weather risk data from SPC wind/RH products is now available in map layers and legend output.
+- Fire and Categorical map overlays now use feed-provided stroke/fill styling with alpha tuning for readability.
+- Local alert inclusion now evaluates Fire Weather zones.
+- Refresh/load ownership now prevents overlapping load requests from repeatedly hitting the network.
+
+### Reliability & Performance
+- Refresh request ownership is now coordinated to avoid redundant network bursts during concurrent load paths.
+
+### UI / UX
+- Fire and Categorical polygons now render with feed-derived styling instead of static map-only styling.
+
+### Tests / QA
+- Added an XCTest plan and fixed affected unit tests for map polygon mapping and severe-risk refresh behavior.
+
 ## v0.1.0(18)
 
 ### Overview

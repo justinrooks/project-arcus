@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Features
+- Add Fire Weather risk support for SPC wind/RH products, including map layer and legend coverage.
+<!-- evidence: ef9bf56 -->
+
+### Background & Notifications
+- Include Fire Weather zones when evaluating local alert inclusion.
+<!-- evidence: 40c4f0b -->
+
+### Data & Repos
+- Fix duplicated load ownership so concurrent refresh paths do not trigger repeated SPC load requests that can spike network traffic.
+<!-- evidence: ba98ab2 -->
+
+### UI / UX
+- Apply feed-provided stroke/fill styling to Fire and Categorical map polygons, with automatic alpha adjustment for overlay readability.
+<!-- evidence: c247389, 42dda37 -->
+
+### Tests / QA
+- Add an XCTest plan and fix affected unit tests for map polygon mapping and severe-risk refresh coverage.
+<!-- evidence: e635427 -->
+
+### Maintenance / Cleanup
+- Internal maintenance (details not available from commit messages)
+<!-- evidence: bf0e6c0, ff2ea7f, 8a1db94, 4d4150c -->
+
 ## v0.1.0(18)
 
 ### UI / UX
