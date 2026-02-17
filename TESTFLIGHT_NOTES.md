@@ -1,10 +1,11 @@
-SkyAware UNRELEASED build adds Fire Weather map/alert coverage and fixes overlapping refresh-load behavior.
+SkyAware UNRELEASED build adds Fire Weather map/alert coverage, feed-driven polygon styling updates, and safer sync/network request handling.
 
 Highlights:
 - Fire Weather risk is now included in map layers and legend data from SPC wind/RH products
-- Fire and Categorical map overlays now use feed-provided fill/stroke styling with tuned alpha
+- Fire, Categorical, and Severe map overlays now use feed-provided fill/stroke styling with tuned alpha
 - Local alert inclusion now accounts for Fire Weather zones
-- Overlapping load requests no longer trigger repeated network bursts during refresh
+- Overlapping map sync requests now coalesce instead of replaying full SPC map-product loads
+- SPC/NWS request failures now handle rate-limit/service-unavailable responses more consistently
 
 SkyAware v0.1.0(18) build focuses on map layering correctness and safer background refresh rescheduling behavior.
 
