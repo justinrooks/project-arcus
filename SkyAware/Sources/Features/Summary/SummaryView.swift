@@ -18,9 +18,21 @@ struct SummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let outlook: ConvectiveOutlookDTO?
+
+    @ViewBuilder
+    private var badgeRow: some View {
+        HStack {
+            StormRiskBadgeView(level: stormRisk ?? .allClear)
+                .placeholder(stormRisk == nil)
+            Spacer()
+            SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
+                .placeholder(severeRisk == nil)
+        }
+        .padding(.vertical, 8)
+    }
     
     var body: some View {
-        VStack {
+        VStack(spacing: 16) {
             // Header
             SummaryStatus(
                 location: snap?.placemarkSummary ?? "Searching...",
@@ -29,14 +41,13 @@ struct SummaryView: View {
             .placeholder(outlook == nil || snap == nil)
             
             // Badges
-            HStack {
-                StormRiskBadgeView(level: stormRisk ?? .allClear)
-                    .placeholder(stormRisk == nil)
-                Spacer()
-                SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
-                    .placeholder(severeRisk == nil)
+            if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 14) {
+                    badgeRow
+                }
+            } else {
+                badgeRow
             }
-            .padding(.vertical, 24)
             
             // Alerts
             if !mesos.isEmpty || !watches.isEmpty {
@@ -54,7 +65,7 @@ struct SummaryView: View {
                 OutlookSummaryCard(outlook: outlook)
                     .padding(.bottom, 12)
             }
-            Spacer()
+            Spacer(minLength: 6)
         }
         .padding()
     }

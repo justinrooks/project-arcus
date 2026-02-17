@@ -18,61 +18,70 @@ struct AlertView: View {
     
     var body: some View {
         List {
-            if(watches.isEmpty && mesos.isEmpty){
+            if watches.isEmpty && mesos.isEmpty {
                 ContentUnavailableView {
                     Label("No active watches or mesos", systemImage: "checkmark.seal.fill")
                 } description: {
                     Text("There are no active weather watches.")
                 }
                 .scaleEffect(scale)
+                .listRowBackground(Color.clear)
             } else {
-                if(watches.isEmpty) {
+                if watches.isEmpty {
                     ContentUnavailableView {
                         Label("No active watches", systemImage: "checkmark.seal.fill")
                     } description: {
                         Text("There are no active weather watches.")
                     }
                     .scaleEffect(scale)
+                    .listRowBackground(Color.clear)
                 } else {
-                    Section(header: Text("Watches")) {
+                    Section {
                         ForEach(watches) { watch in
                             AlertRowView(alert: watch)
                                 .contentShape(Rectangle()) // Makes entire row tappable
                                 .onTapGesture {
                                     selectedWatch = watch
                                 }
-                                .padding(.horizontal)
+                                .padding(.horizontal, 2)
                         }
-//                        .onDelete(perform: { indexSet in
-//                            indexSet.forEach { index in
-//                                let watch = watches[index]
-//                                modelContext.delete(watch)
-//                            }
-//                        })
+                    } header: {
+                        Text("Watches")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
                     }
                 }
                 
-                if(mesos.isEmpty) {
+                if mesos.isEmpty {
                     ContentUnavailableView {
                         Label("No active mesoscale discussions", systemImage: "checkmark.seal.fill")
                     } description: {
                         Text("There are no active mesoscale discussions.")
                     }
                     .scaleEffect(scale)
+                    .listRowBackground(Color.clear)
                 } else {
-                    Section(header: Text("Mesoscale Discussions")) {
+                    Section {
                         ForEach(mesos) { meso in
                             AlertRowView(alert: meso)
                                 .contentShape(Rectangle()) // Makes entire row tappable
                                 .onTapGesture {
                                     selectedMeso = meso
                                 }
-                                .padding(.horizontal)
+                                .padding(.horizontal, 2)
                         }
+                    } header: {
+                        Text("Mesoscale Discussions")
+                            .font(.caption.weight(.semibold))
+                            .textCase(.uppercase)
                     }
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(12)
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
         .navigationDestination(item: $selectedWatch) { watch in
             ScrollView {
                 WatchDetailView(watch: watch, layout: .full)

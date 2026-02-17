@@ -17,36 +17,31 @@ struct OutlookSummaryCard: View {
             // Header
             HStack {
                 Image(systemName: "sun.max.fill")
-                    .foregroundColor(.skyAwareAccent)
+                    .foregroundStyle(.skyAwareAccent)
                 Text("Outlook Summary")
-                    .font(.headline)
-                    .foregroundColor(.skyAwareAccent)
+                    .font(.headline.weight(.semibold))
                 Spacer()
             }
             
             // Preview text
             Text(outlook.summary)
                 .font(.body)
-                .foregroundColor(.primary)
                 .lineSpacing(4)
+                .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
             
             // Read more link
-//            if outlook.previewText.count < outlook.summary.count {
-                Button(action: {
-                    navigateToFull = true
-                }) {
-                    HStack(spacing: 4) {
-                        Text("Read full outlook")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Image(systemName: "arrow.right")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.skyAwareAccent)
+            Button(action: {
+                navigateToFull = true
+            }) {
+                HStack(spacing: 6) {
+                    Text("Read full outlook")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(PlainButtonStyle())
-//            }
+            }
+            .skyAwareGlassButtonStyle()
         }
         .padding()
         .cardBackground()

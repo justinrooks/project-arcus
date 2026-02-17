@@ -90,10 +90,7 @@ struct StatusChip: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background {
-            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(.ultraThinMaterial)
-        }
+        .skyAwareChip(cornerRadius: 26, tint: tint.opacity(0.18), interactive: true)
         .overlay {
             RoundedRectangle(cornerRadius: 26, style: .continuous)
                 .stroke(tint.opacity(scheme == .dark ? 0.35 : 0.25), lineWidth: 1)

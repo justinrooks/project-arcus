@@ -29,12 +29,15 @@ struct InZonePill: View {
             .font(.caption.weight(.semibold))
             .padding(.vertical, 4)
             .padding(.horizontal, 10)
-            .background(Capsule().fill(Color.primary.opacity(0.08)))
+            .skyAwareChip(
+                cornerRadius: 16,
+                tint: inZone ? .green.opacity(0.14) : .white.opacity(0.08)
+            )
     }
 }
 
 struct WatchProbabilityBar: View {
-    let progress: Double // 0...1
+    let progress: Double // 0...100
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -66,6 +69,8 @@ struct ExpiryLabel: View {
         Text(text)
             .font(.caption)
             .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .skyAwareChip(cornerRadius: 10, tint: .white.opacity(0.08))
     }
 }
-

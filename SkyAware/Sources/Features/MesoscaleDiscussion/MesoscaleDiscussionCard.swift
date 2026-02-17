@@ -63,8 +63,7 @@ struct MesoscaleDiscussionContent: View {
             .font(.callout)
             .padding(.vertical, 8)
             .padding(.horizontal, 6)
-            .background(
-                RoundedRectangle(cornerRadius: SkyAwareRadius.small, style: .continuous).fill(Color.primary.opacity(0.04)))
+            .skyAwareChip(cornerRadius: SkyAwareRadius.small, tint: .white.opacity(0.08))
     }
     
     private var probability: some View {
@@ -103,7 +102,7 @@ struct MesoscaleDiscussionContent: View {
                 }
                 .padding(.vertical, 6)
                 .padding(.horizontal, 10)
-                .background(Capsule().fill(Color.primary.opacity(0.06)))
+                .skyAwareChip(cornerRadius: 16, tint: .skyAwareAccent.opacity(0.15))
             } else {
                 // Grid of simple label:value pairs when there is no standout threat
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {

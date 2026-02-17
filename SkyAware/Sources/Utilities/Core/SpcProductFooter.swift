@@ -18,8 +18,8 @@ struct SpcProductFooter: View {
                 Link(destination: link) {
                     Label("Open in browser", systemImage: "arrow.up.right.square")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
                 }
+                .skyAwareGlassButtonStyle()
                 
                 Spacer()
                 ExpiryLabel(remaining: remaining)
