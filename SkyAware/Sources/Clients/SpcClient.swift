@@ -14,6 +14,7 @@ enum GeoJSONProduct: String, CustomStringConvertible {
     case tornado     = "torn"
     case hail        = "hail"
     case wind        = "wind"
+    case fireRH      = "windrh"
     
     var description: String {
         switch self {
@@ -21,6 +22,7 @@ enum GeoJSONProduct: String, CustomStringConvertible {
         case .tornado:     return "tornado"
         case .hail:        return "hail"
         case .wind:        return "wind"
+        case .fireRH:      return "fireRH"
         }
     }
 }
@@ -45,16 +47,17 @@ enum RssProduct: String, CustomStringConvertible {
 protocol SpcClient: Sendable {
     /// Fetches  the backing data for rss product
     ///  includes Convective outlook, Meso Discussions, Severe Watches
-    func fetchRssData(for product: RssProduct) async throws -> Data?
+    func fetchRssData(for product: RssProduct) async throws -> Data
     
     /// Fetches the backing data for geojson
     /// includes Categorical, Hail, Wind, Tornado geojson polygons
-    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data?
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data
 }
 
 struct SpcHttpClient: SpcClient {
     private let http: HTTPClient
     private let logger = Logger.providersSpcClient
+    private static let baseURL = URL(string: "https://www.spc.noaa.gov")!
     
     init(http: HTTPClient = URLSessionHTTPClient()) {
         self.http = http
@@ -63,28 +66,45 @@ struct SpcHttpClient: SpcClient {
     /// Tries to get GeoJSON data for the provided product
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the Data
-    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data? {
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
         logger.info("Fetching GeoJSON for \(String(describing: product), privacy: .public)")
         let url = try getGeoJSONUrl(for: product)
-        return try await fetchSpcData(for: url)
+        return try await fetchSpcData(for: url, headers: HTTPRequestHeaders.spcGeoJSON())
     }
     
     /// Wrapper func that pulls the rss data from spc
     /// - Parameter product: product to obtain data for
     /// - Returns: the Data
-    func fetchRssData(for product: RssProduct) async throws -> Data? {
+    func fetchRssData(for product: RssProduct) async throws -> Data {
         logger.info("Fetching data for \(String(describing: product), privacy: .public)")
         let url = try getRssUrl(for: product)
-        return try await fetchSpcData(for: url)
+        return try await fetchSpcData(for: url, headers: HTTPRequestHeaders.spcRss())
     }
     
     /// Fetches  data using the http session
-    private func fetchSpcData(for url: URL) async throws -> Data? {
-        let resp = try await http.get(url, headers: [:])
-        
-        guard (200...299).contains(resp.status), let data = resp.data else {
-            logger.error("Error fetching SPC Data: \(resp.status, privacy: .public)")
-            throw SpcError.networkError
+    private func fetchSpcData(for url: URL, headers: [String: String]) async throws -> Data {
+        try Task.checkCancellation()
+
+        let resp = try await http.get(url, headers: headers)
+        try Task.checkCancellation()
+
+        switch resp.classifyStatus() {
+        case .success:
+            break
+        case .rateLimited(let retryAfter):
+            logger.warning("SPC rate limited endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) retryAfterSeconds=\(retryAfter ?? -1, privacy: .public)")
+            throw SpcError.rateLimited(retryAfterSeconds: retryAfter)
+        case .serviceUnavailable(let retryAfter):
+            logger.warning("SPC service unavailable endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) retryAfterSeconds=\(retryAfter ?? -1, privacy: .public)")
+            throw SpcError.serviceUnavailable(retryAfterSeconds: retryAfter)
+        case .failure(let status):
+            logger.error("SPC request failed endpoint=\(url.path, privacy: .public) status=\(status, privacy: .public)")
+            throw SpcError.networkError(status: status)
+        }
+
+        guard let data = resp.data else {
+            logger.error("SPC response missing body endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public)")
+            throw SpcError.missingData
         }
 
         return data
@@ -98,20 +118,26 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: the product to fetch
     /// - Returns: a url to use to fetch geojson data for the provided product
     private func getGeoJSONUrl(for product: GeoJSONProduct) throws -> URL {
-        try makeSPCURL(path: "products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
+        switch product {
+        case .fireRH: return try makeSPCURL(path: "/products/fire_wx/day1fw_\(product.rawValue).lyr.geojson")
+        default: return try makeSPCURL(path: "/products/outlook/day1otlk_\(product.rawValue).lyr.geojson")
+        }
     }
     
     /// Build an absolute URL for a SPC RSS products
     /// - Parameter product: the product to fetch
     /// - Returns: a url to use to fetch rss data for the provided product
     private func getRssUrl(for product: RssProduct) throws -> URL {
-        try makeSPCURL(path: "products/\(product.rawValue).xml")
+        try makeSPCURL(path: "/products/\(product.rawValue).xml")
     }
     
     /// Build an absolute SPC URL from a relative path, or throw on failure.
     private func makeSPCURL(path: String) throws -> URL {
-        let base = "https://www.spc.noaa.gov/"
-        guard let url = URL(string: base + path) else { throw SpcError.invalidUrl }
+        guard var components = URLComponents(url: Self.baseURL, resolvingAgainstBaseURL: false) else {
+            throw SpcError.invalidUrl
+        }
+        components.path = path
+        guard let url = components.url else { throw SpcError.invalidUrl }
         return url
     }
 }

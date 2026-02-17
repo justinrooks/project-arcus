@@ -63,7 +63,8 @@ struct AlertRowView: View {
 }
 
 #Preview {
-    AlertRowView(alert: MD.sampleDiscussionDTOs.first!)
-    AlertRowView(alert: Watch.sampleWatchRows.last!)
-    AlertRowView(alert: Watch.sampleWatchRows[0])
+    if let sample = MD.sampleDiscussionDTOs.first {
+        AlertRowView(alert: sample)
+    }
+    AlertRowView(alert: Watch.sampleWatchRows.last ?? Watch.sampleWatchRows[0])
 }

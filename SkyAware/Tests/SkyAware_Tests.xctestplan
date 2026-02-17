@@ -1,0 +1,32 @@
+{
+  "configurations" : [
+    {
+      "id" : "77E60EFE-51EF-4C8F-A26F-4AA2F566F562",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "skippedTests" : {
+        "suites" : [
+          {
+            "name" : "LocationManagerTests"
+          }
+        ]
+      },
+      "target" : {
+        "containerPath" : "container:SkyAware.xcodeproj",
+        "identifier" : "D095EFB12E16F56A0074F867",
+        "name" : "SkyAwareTests"
+      }
+    }
+  ],
+  "version" : 2
+}

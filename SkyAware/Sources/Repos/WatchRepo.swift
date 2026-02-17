@@ -13,8 +13,8 @@ import OSLog
 actor WatchRepo {
     private let logger = Logger.reposWatch
     
-    func active(county: String, zone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
-        logger.info("Fetching current local watches for \(county, privacy: .public), \(zone, privacy: .public)")
+    func active(county: String, zone: String, fireZone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
+        logger.info("Fetching current local watches for \(county, privacy: .public), \(zone, privacy: .public), \(fireZone, privacy: .public)")
         
 //        let candidates = try modelContext.fetch(allWatchesDescriptor())
         let candidates = try modelContext.fetch(currentWatchesDescriptor())
@@ -26,7 +26,7 @@ actor WatchRepo {
             let ugc = watch.ugcZones
             guard !ugc.isEmpty else { continue }
             
-            if ugc.contains(county) || ugc.contains(zone) {
+            if ugc.contains(county) || ugc.contains(zone) || ugc.contains(fireZone) {
                 hits.append(watch)
             }
         }
@@ -36,12 +36,7 @@ actor WatchRepo {
     
     func refresh(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
-        
-        guard let data else {
-            logger.debug("No watch data found")
-            return
-        }
-        
+
         guard let decoded = NWSWatchParser.decode(from: data) else {
             logger.error("Unable to parse NWS Json watch data")
             throw NwsError.parsingError

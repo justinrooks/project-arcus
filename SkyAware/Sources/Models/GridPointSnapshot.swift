@@ -24,6 +24,7 @@ struct GridPointSnapshot {
     let radarStationId: String?
     let zone: String?
     let county: String?
+    let fireZone: String?
     
     init(from: NWSGridPoint, with coordinates: Coordinate2D) {
         let props = from.properties
@@ -44,5 +45,6 @@ struct GridPointSnapshot {
         self.radarStationId         = props.radarStation
         self.zone                   = props.forecastZone?.lastPathComponent
         self.county                 = props.county?.lastPathComponent
+        self.fireZone               = props.fireWeatherZone?.lastPathComponent
     }
 }

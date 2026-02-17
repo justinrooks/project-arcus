@@ -55,6 +55,8 @@ final class SevereRisk {
     var issued: Date
     var valid: Date
     var expires: Date
+    var stroke: String?
+    var fill: String?
     var polygons: [GeoPolygonEntity]
     
     convenience init?(from dto: SevereRiskDTO) {
@@ -65,12 +67,14 @@ final class SevereRisk {
                   valid: dto.valid,
                   expires: dto.expires,
                   dn: dto.dn,
+                  stroke: dto.stroke,
+                  fill: dto.fill,
                   polygons: dto.polygons,
                   label: dto.label
         )
     }
     
-    init(type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, valid: Date, expires: Date, dn: Int, polygons: [GeoPolygonEntity], label: String) {
+    init(type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, valid: Date, expires: Date, dn: Int, stroke: String?, fill: String?, polygons: [GeoPolygonEntity], label: String) {
         self.id = UUID()
         
         if(label == "SIGN") {
@@ -85,6 +89,8 @@ final class SevereRisk {
         self.issued = issued
         self.valid = valid
         self.expires = expires
+        self.stroke = stroke
+        self.fill = fill
         self.polygons = polygons
     }
 }

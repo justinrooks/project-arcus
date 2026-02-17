@@ -15,11 +15,6 @@ SkyAware is an iOS app that keeps users aware of severe weather (SPC outlooks, m
 - Prefer `guard` and explicit error handling; avoid force unwraps.
 - Tests live in `SkyAware/Tests/UnitTests` and `SkyAware/Tests/UITests` and mirror production namespaces.
 
-## Build / Run
-- Build: `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 15" build`
-- Test:  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 15" test`
-- Open:  `xed SkyAware`
-
 ## Quirks / Gotchas
 - Background scheduling is opportunistic; reschedule every run and keep handlers short.
 - Location-driven behavior depends on authorization state; force-quit suppresses background execution until relaunch.

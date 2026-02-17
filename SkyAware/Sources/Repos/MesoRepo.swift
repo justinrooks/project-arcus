@@ -17,11 +17,6 @@ actor MesoRepo {
  
     func refreshMesoscaleDiscussions(using client: SpcClient) async throws {
         let data = try await client.fetchRssData(for: .meso)
-
-        guard let data else {
-            logger.info("No mesoscale discussions found")
-            return
-        }
                 
         guard let rss = try parser.parse(data: data) else {
             throw SpcError.parsingError

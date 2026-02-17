@@ -11,4 +11,5 @@ protocol SpcMapData: Sendable {
     func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO]
     func getStormRiskMapData() async throws -> [StormRiskDTO]
     func getMesoMapData() async throws -> [MdDTO]
+    func getFireRisk() async throws -> [FireRiskDTO]
 }
