@@ -48,6 +48,10 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash (Single owner + coalescing)**: startup map sync was being kicked off in both `SkyAwareApp` and `HomeView`. We removed the app-level startup map sync and added an in-provider coalescing guard/cooldown so overlapping `syncMapProducts()` calls join the same work instead of replaying the full SPC map pipeline.
 - **Aha!**: duplicate startup work often comes from lifecycle fan-out, not one bad loop. The clean fix is ownership clarity first, then a defensive coalescing layer at the provider boundary.
 - **Bug squash (time-traveling tests)**: `WatchRepo.active(county:zone:fireZone:on:)` accepted a clock value but silently filtered with `.now`. Tests that pinned `on` to a fixture date were effectively arguing with wall-clock time. We now thread the passed `on` date into the fetch descriptor so active/expired/upcoming watch filtering is deterministic in tests and production call sites that provide a custom date.
+- **War story (Liquid Glass migration)**: the first pass looked shiny but inconsistent because every card/view invented its own blur recipe. It felt like a weather dashboard assembled from five different apps.
+- **Bug squash (API sharp edges)**: the iOS 26-only `glassEffect` APIs compiled fine once we gated every usage with `#available(iOS 26, *)`, but one seemingly harmless style helper (`LinearGradient.stops`) broke compilation in this project setup. We replaced that with explicit per-layer tint tokens.
+- **Aha! (design system > one-off polish)**: moving glass/fallback behavior into shared view extensions (`skyAwareSurface`, `skyAwareChip`, `skyAwareGlassButtonStyle`) gave us consistent depth and reduced copy/paste modifier soup.
+- **Pitfall**: test + coverage workflows can fail if you diff against a failed `.xcresult` bundle. Always diff against two successful results, or report the current coverage snapshot only.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
@@ -57,6 +61,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - When multiple upstream data sources feed one screen, degrade gracefully: fail one panel, not the whole page.
 - If one SwiftUI file starts doing networking, UI composition, and geometry transformation, split it before it becomes a kitchen-sink file.
 - When a style value comes from upstream data, pass it as explicit metadata instead of reverse-engineering it from display text.
+- For visual refactors, treat style as infrastructure: centralize “new API + fallback” paths once, then apply them broadly with minimal per-view custom logic.
 
 ## 7) If I Were Starting Over...
 - I’d design background scheduling as a policy engine from day one, with clear rules for “tighten/relax cadence” and easy unit test hooks.
