@@ -10,6 +10,11 @@ import CoreLocation
 import OSLog
 
 struct HomeView: View {
+    private struct RefreshContext {
+        let coordinates: CLLocationCoordinate2D
+        let refreshedAt: Date
+    }
+
     struct LoadingOverlayState {
         private(set) var activeRefreshes: Int = 0
         private(set) var message: String?
@@ -60,9 +65,11 @@ struct HomeView: View {
     @State private var watches: [WatchRowDTO] = []
     
     // Refresh State
-    @State private var lastRefreshKey: RefreshKey?
+    @State private var lastRefreshContext: RefreshContext?
     @State private var lastOutlookSyncAt: Date?
     @State private var loadingState = LoadingOverlayState()
+    private let minimumForegroundRefreshInterval: TimeInterval = 3 * 60
+    private let minimumRefreshDistanceMeters: CLLocationDistance = 800
     private let outlookRefreshPolicy = OutlookRefreshPolicy()
     
     // Outlook State
@@ -89,6 +96,7 @@ struct HomeView: View {
 
     var body: some View {
         ZStack {
+            Color(.skyAwareBackground).ignoresSafeArea()
             TabView {
                 NavigationStack {
                     ScrollView {
@@ -100,12 +108,16 @@ struct HomeView: View {
                             watches: watches,
                             outlook: outlook
                         )
+                        .toolbar(.hidden, for: .navigationBar)
+                        .background(.skyAwareBackground)
                     }
+                    .background(Color(.skyAwareBackground).ignoresSafeArea())
                     .refreshable {
-                        lastRefreshKey = nil
+                        lastRefreshContext = nil
                         await refresh(for: snap, force: true, showsLoading: true)
                     }
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem { Label("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted")
 //                    "clock.arrow.trianglehead.2.counterclockwise.rotate.90") //gauge.with.needle.fill
                 }
@@ -116,17 +128,19 @@ struct HomeView: View {
                         watches: watches,
                         onRefresh: {
                             logger.debug("refreshing alerts")
-                            lastRefreshKey = nil
+                            lastRefreshContext = nil
                             await withLoading(message: "Refreshing alerts...") {
                                 await refresh(for: snap, force: true, showsLoading: false)
                             }
                         }
                     )
+                        .background(.skyAwareBackground)
                         .navigationTitle("Active Alerts")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
                     .badge(mesos.count + watches.count)
                 
@@ -149,25 +163,30 @@ struct HomeView: View {
                             }
                         }
                     )
+                        .background(.skyAwareBackground)
                         .navigationTitle("Convective Outlooks")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
                 
                 NavigationStack {
                     SettingsView()
+                        .background(.skyAwareBackground)
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem {Label("Settings", systemImage: "gearshape")}
             
             }
+            .background(Color(.skyAwareBackground).ignoresSafeArea())
             .toolbarBackground(.visible, for: .tabBar)
-            .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+            .toolbarBackground(.skyAwareBackground, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
             if loadingState.isVisible {
                 LoadingView(message: loadingState.displayMessage)
@@ -253,13 +272,28 @@ struct HomeView: View {
     
     @MainActor
     private func shouldRefresh(for snap: LocationSnapshot, force: Bool = false) -> Bool {
-        let key = RefreshKey(coord: snap.coordinates, timestamp: snap.timestamp)
+        let current = RefreshContext(coordinates: snap.coordinates, refreshedAt: snap.timestamp)
+
         if force {
-            lastRefreshKey = key
+            lastRefreshContext = current
             return true
         }
-        guard key != lastRefreshKey else { return false } // skip placemark-only or repeated initial yield
-        lastRefreshKey = key
+
+        guard let lastRefreshContext else {
+            self.lastRefreshContext = current
+            return true
+        }
+
+        let elapsed = current.refreshedAt.timeIntervalSince(lastRefreshContext.refreshedAt)
+        let currentLocation = CLLocation(latitude: current.coordinates.latitude, longitude: current.coordinates.longitude)
+        let previousLocation = CLLocation(latitude: lastRefreshContext.coordinates.latitude, longitude: lastRefreshContext.coordinates.longitude)
+        let distance = currentLocation.distance(from: previousLocation)
+
+        guard elapsed >= minimumForegroundRefreshInterval || distance >= minimumRefreshDistanceMeters else {
+            return false
+        }
+
+        self.lastRefreshContext = current
         return true
     }
 

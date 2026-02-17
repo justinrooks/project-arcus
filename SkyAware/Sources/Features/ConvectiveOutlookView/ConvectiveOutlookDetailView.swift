@@ -58,10 +58,11 @@ struct ConvectiveOutlookDetailView: View {
             .padding(.top, 10)
             .padding(.bottom, 24)
         }
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
         .navigationTitle("Day \(outlook.day ?? 1) Outlook")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
     }
     
     private var headerCard: some View {

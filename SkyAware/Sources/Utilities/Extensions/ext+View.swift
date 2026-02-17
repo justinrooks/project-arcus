@@ -204,17 +204,22 @@ extension View {
         }
     }
     
-    func getHeight(for height: Binding<CGFloat>) -> some View {
+    func getHeight(for height: Binding<CGFloat>, tolerance: CGFloat = 1) -> some View {
         self
             .fixedSize(horizontal: false, vertical: true)
             .background(
                 GeometryReader { geo in
                     Color.clear
                         .onAppear {
-                            height.wrappedValue = geo.size.height
+                            let measuredHeight = geo.size.height
+                            if abs(measuredHeight - height.wrappedValue) > tolerance {
+                                height.wrappedValue = measuredHeight
+                            }
                         }
                         .onChange(of: geo.size.height) { _, newValue in
-                            height.wrappedValue = newValue
+                            if abs(newValue - height.wrappedValue) > tolerance {
+                                height.wrappedValue = newValue
+                            }
                         }
                 }
             )

@@ -83,7 +83,7 @@ struct NotificationPermissionView: View {
             Spacer()
         }
         .padding()
-        .background(Color.skyAwareBackground.ignoresSafeArea())
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
     
     private func requestNotificationPermission() {

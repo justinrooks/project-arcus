@@ -24,6 +24,7 @@ struct MapScreenView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var selectedSevereRisks: [SevereRiskShapeDTO]? = nil
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
@@ -80,7 +81,7 @@ struct MapScreenView: View {
             VStack {
                 Spacer()
                 Group {
-                    MapLegend(layer: selected, severeRisks: severeRisksForSelectedLayer())
+                    MapLegend(layer: selected, severeRisks: selectedSevereRisks, fireRisks: fireRisk)
                 }
                 .transition(.opacity)
                 .animation(.default, value: selected)
@@ -98,7 +99,7 @@ struct MapScreenView: View {
             await loadMapData()
         }
         .onChange(of: selected) { _, _ in
-            rebuildPolygons()
+            rebuildMapState()
         }
         .task {
             if let first = await loc.snapshot() {
@@ -112,17 +113,24 @@ struct MapScreenView: View {
         }
     }
     
-    private func severeRisksForSelectedLayer() -> [SevereRiskShapeDTO]? {
-        switch selected {
-        case .tornado: return getSevereRisks(for: .tornado)
-        case .hail:    return getSevereRisks(for: .hail)
-        case .wind:    return getSevereRisks(for: .wind)
-        default:       return nil
+    private func severeRisksForSelectedLayer(for layer: MapLayer) -> [SevereRiskShapeDTO]? {
+        let sortedSevereRisks: [SevereRiskShapeDTO]
+        switch layer {
+        case .tornado:
+            sortedSevereRisks = severeRisksForType(.tornado)
+        case .hail:
+            sortedSevereRisks = severeRisksForType(.hail)
+        case .wind:
+            sortedSevereRisks = severeRisksForType(.wind)
+        default:
+            return nil
         }
+        return sortedSevereRisks
     }
-    
-    private func getSevereRisks(for type: ThreatType) -> [SevereRiskShapeDTO] {
-        severeRisks.filter { $0.type == type }
+
+    private func severeRisksForType(_ type: ThreatType) -> [SevereRiskShapeDTO] {
+        severeRisks
+            .filter { $0.type == type }
             .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
     }
     
@@ -163,7 +171,7 @@ struct MapScreenView: View {
             logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
         }
 
-        rebuildPolygons()
+        rebuildMapState()
     }
 
     private func fetchSevereRiskShapes() async -> Result<[SevereRiskShapeDTO], any Error> {
@@ -199,7 +207,7 @@ struct MapScreenView: View {
     }
 
     @MainActor
-    private func rebuildPolygons() {
+    private func rebuildMapState() {
         activePolygons = polygonMapper.polygons(
             for: selected,
             stormRisk: stormRisk,
@@ -207,6 +215,7 @@ struct MapScreenView: View {
             mesos: mesos,
             fires: fireRisk
         )
+        selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
     }
 }
 

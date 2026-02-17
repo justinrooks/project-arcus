@@ -172,10 +172,7 @@ private struct RunRow: View {
 // MARK: - Formatting Helpers
 
 private func relative(_ date: Date, now: Date = .now) -> String {
-    let f = RelativeDateTimeFormatter()
-    f.unitsStyle = .abbreviated
-    
-    return f.localizedString(for: date, relativeTo: now) // e.g., “12m ago”
+    date.relativeDate(to: now, with: .abbreviated) // e.g., "12m ago"
 }
 
 private enum BgHealthFormatters {

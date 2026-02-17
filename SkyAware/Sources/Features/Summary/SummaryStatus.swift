@@ -13,7 +13,7 @@ struct SummaryStatus: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Current Conditions")
+            Text("Current Location")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)

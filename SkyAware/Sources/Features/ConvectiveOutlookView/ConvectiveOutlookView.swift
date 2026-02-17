@@ -56,6 +56,7 @@ struct ConvectiveOutlookView: View {
             await onRefresh()
         }
         .scrollIndicators(.hidden)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationDestination(item: $selectedOutlook) { outlook in
             ConvectiveOutlookDetailView(outlook: outlook)
         }

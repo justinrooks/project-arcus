@@ -71,7 +71,7 @@ struct DisclaimerView: View {
             Spacer()
         }
         .padding()
-        .background(Color.skyAwareBackground.ignoresSafeArea())
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
 }
 

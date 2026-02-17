@@ -63,6 +63,15 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash (scroll layering + taps)**: Alerts, Outlooks, and Settings showed a ghosted top region on first load and occasional missed taps. We moved pull-to-refresh ownership into each screen’s own `ScrollView`, switched key content stacks to `LazyVStack`, tightened nav title display mode where needed, and marked decorative glass border overlays as non-hit-testable so gestures land on intended controls.
 - **Bug squash (small tap zones on rows)**: in custom card lists, taps initially favored text/icon pixels instead of the entire row. We expanded row hit regions with full-width frames plus explicit `.contentShape(Rectangle())` so Alerts, Outlooks, and Settings navigation rows all respond across the whole surface.
 - **Consistency pass (detail screens)**: we aligned Convective Outlook details to the same composition language as Watch details: strong header card using shared SPC header/footer components, metadata chips, and monospaced detail sections. The result feels like one design system instead of separate feature implementations.
+- **War story (performance paper cuts)**: diagnostics looked fine in isolation, but the app still felt busy because several tiny inefficiencies were stacking up: formatter churn, over-eager task triggers, render-time sorting/filtering, and geometry feedback updates.
+- **Bug squash (refresh throttle policy)**: summary refreshes now gate on both elapsed time and distance moved, so the app avoids repeated full refresh cycles for tiny location jitter while still supporting explicit force refresh.
+- **Bug squash (formatter hotspots)**: date and relative-date formatters now use thread-local caches instead of being recreated repeatedly in hot UI paths, reducing allocation churn during scrolling and diagnostics rendering.
+- **Bug squash (log viewer load fan-out)**: we replaced multiple competing `.task(id:)` reload triggers with a single initial load plus focused `onChange` triggers, and we cancel in-flight work on disappear to avoid stale overlapping loads.
+- **Bug squash (map render-path work)**: severe legend data is now derived during state recomputation rather than filtered/sorted inside the render path, so map-related body recomputation stays lighter.
+- **Bug squash (sheet height jitter)**: dynamic sheet height updates now respect a tolerance threshold, preventing tiny geometry fluctuations from causing unnecessary invalidation loops.
+- **Aha!**: performance wins in SwiftUI are often architectural hygiene, not one magic optimization. Moving work out of `body` and into explicit state transitions is usually the highest ROI change.
+- **Pitfall**: coverage comparisons are noisy if executable-line counts changed between runs. Track both percentage and covered/executable line totals to avoid false confidence (or false panic).
+- **Legend parity fix (Fire layer)**: the fire legend used to show a single generic "Fire" chip, which hid what SPC was actually saying. We now build legend rows from unique `riskLevel`s (sorted high-to-low) and render each chip with upstream `stroke`/`fill`, so the legend finally mirrors the map overlays instead of acting like a placeholder.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
@@ -73,8 +82,12 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - If one SwiftUI file starts doing networking, UI composition, and geometry transformation, split it before it becomes a kitchen-sink file.
 - When a style value comes from upstream data, pass it as explicit metadata instead of reverse-engineering it from display text.
 - For visual refactors, treat style as infrastructure: centralize “new API + fallback” paths once, then apply them broadly with minimal per-view custom logic.
+- Keep formatter allocation out of hot paths; cache or centralize formatting helpers before profiling gets noisy.
+- Stable list identity is a performance feature. Random IDs make diffing expensive and can degrade scroll smoothness.
+- Prefer one clear async trigger pipeline over several reactive hooks that can race or duplicate work.
 
 ## 7) If I Were Starting Over...
 - I’d design background scheduling as a policy engine from day one, with clear rules for “tighten/relax cadence” and easy unit test hooks.
 - I’d add a small diagnostics surface in-app early so it’s obvious when background work is being throttled or suppressed.
 - I’d separate map data transforms into a dedicated mapper layer up front so polygon construction and caching are deterministic and testable outside SwiftUI.
+- I’d add a lightweight performance checklist early (render-path work, identity stability, async trigger fan-out, geometry feedback loops) and enforce it in review.

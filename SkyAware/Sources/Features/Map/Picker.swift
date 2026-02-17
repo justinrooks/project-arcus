@@ -173,7 +173,7 @@ struct LayerPickerSheet: View {
                 .padding(.bottom, 8)
         }
         .padding(.top, 8)
-        .background(Color.clear)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
         .presentationDetents([.height(410), .medium])
         .interactiveDismissDisabled(false)
     }

@@ -10,19 +10,27 @@ import SwiftUI
 struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
+    private let sortedMesos: [MdDTO]
+    private let sortedWatches: [WatchRowDTO]
     
     @State private var selectedMeso: MdDTO? = nil
     @State private var selectedWatch: WatchRowDTO? = nil
     @State private var mesoSheetHeight: CGFloat = .zero
     @State private var watchSheetHeight: CGFloat = .zero
 
+    init(mesos: [MdDTO], watches: [WatchRowDTO]) {
+        self.mesos = mesos
+        self.watches = watches
+        self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
+        self.sortedWatches = watches.sorted { $0.expires < $1.expires }
+    }
+
     @ViewBuilder
     private var alertsContent: some View {
         ActiveAlertSection(
             label: "Watches",
-            items: watches,
+            items: sortedWatches,
             limit: 3,
-            sort: { $0.expires < $1.expires },
             onSelect: { selectedWatch = $0 }
         ) { watch in
             WatchRowView(watch: watch)
@@ -30,9 +38,8 @@ struct ActiveAlertSummaryView: View {
 
         ActiveAlertSection(
             label: "Mesos",
-            items: mesos,
+            items: sortedMesos,
             limit: 3,
-            sort: { $0.validEnd < $1.validEnd },
             onSelect: { selectedMeso = $0 }
         ) { meso in
             MesoRowView(meso: meso)
@@ -93,13 +100,12 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     let label: String
     let items: [Item]
     let limit: Int
-    let sort: (Item, Item) -> Bool
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
     
     var body: some View {
         if !items.isEmpty {
-            let visibleItems = items.sorted(by: sort).prefix(limit)
+            let visibleItems = items.prefix(limit)
             
             Text(label.uppercased())
                 .font(.caption2.weight(.medium))

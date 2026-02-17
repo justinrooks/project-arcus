@@ -139,8 +139,7 @@ struct SettingsView: View {
                         BgHealthDiagnosticsView()
                             .navigationTitle("Background Refresh History")
                             .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.visible, for: .navigationBar)
-                            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                     } label: {
                         settingsNavRow("Background Refresh History", systemImage: "waveform.path.ecg")
                     }
@@ -152,8 +151,7 @@ struct SettingsView: View {
                         DiagnosticsView()
                             .navigationTitle("Diagnostic Info")
                             .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.visible, for: .navigationBar)
-                            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                     } label: {
                         settingsNavRow("Diagnostic Info", systemImage: "stethoscope")
                     }
@@ -165,8 +163,7 @@ struct SettingsView: View {
                         LogViewerView()
                             .navigationTitle("Log Viewer")
                             .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.visible, for: .navigationBar)
-                            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                     } label: {
                         settingsNavRow("Log Viewer", systemImage: "doc.text.magnifyingglass")
                     }
@@ -195,7 +192,7 @@ struct SettingsView: View {
             .padding(.bottom, 24)
         }
         .scrollIndicators(.hidden)
-        .background(Color.clear)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
 
     private func sectionCard<Content: View>(

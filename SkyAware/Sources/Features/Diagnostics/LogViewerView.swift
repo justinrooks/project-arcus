@@ -10,13 +10,28 @@ import OSLog
 
 // A Sendable DTO so we don’t pass OSLogEntry (not Sendable) around.
 struct LogLine: Identifiable, Sendable {
-    let id = UUID()
-    var _id: UUID { id }
+    let id: String
     let date: Date
     let level: OSLogEntryLog.Level
     let subsystem: String
     let category: String
     let message: String
+
+    init(
+        date: Date,
+        level: OSLogEntryLog.Level,
+        subsystem: String,
+        category: String,
+        message: String
+    ) {
+        self.date = date
+        self.level = level
+        self.subsystem = subsystem
+        self.category = category
+        self.message = message
+        // Keep identity stable across refreshes when content does not change.
+        self.id = "\(date.timeIntervalSinceReferenceDate)|\(level.rawValue)|\(subsystem)|\(category)|\(message)"
+    }
 }
 
 @MainActor
@@ -35,6 +50,12 @@ struct LogViewerView: View {
         }
     }
 
+    private struct LoadConfiguration: Equatable {
+        let window: Window
+        let includeAllSubsystems: Bool
+        let maxEntries: Int
+    }
+
     @State private var lines: [LogLine] = []
     @State private var isLoading = false
     @State private var window: Window = .thirtyMin
@@ -45,6 +66,13 @@ struct LogViewerView: View {
     @State private var exportCache: String = ""
 
     private let dateFormatter = LogViewerView.makeDateFormatter()
+    private var loadConfiguration: LoadConfiguration {
+        LoadConfiguration(
+            window: window,
+            includeAllSubsystems: includeAllSubsystems,
+            maxEntries: maxEntriesSelection
+        )
+    }
 
     private var toolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -73,13 +101,20 @@ struct LogViewerView: View {
             contentList
         }
         .padding()
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationTitle("Logs")
         .toolbar { toolbarItems }
         .task { triggerLoad(debounced: false) }
-        .task(id: window) { triggerLoad(debounced: false) }
-        .task(id: includeAllSubsystems) { triggerLoad(debounced: false) }
-        .task(id: query) { triggerLoad(debounced: true) }
-        .task(id: maxEntriesSelection) { triggerLoad(debounced: false) }
+        .onChange(of: loadConfiguration) { _, _ in
+            triggerLoad(debounced: false)
+        }
+        .onChange(of: query) { _, _ in
+            triggerLoad(debounced: true)
+        }
+        .onDisappear {
+            loadTask?.cancel()
+            loadTask = nil
+        }
     }
 
     private var controls: some View {
@@ -124,10 +159,12 @@ struct LogViewerView: View {
                     Text("There are no log entries to display.")
                 }
             } else {
-                List(lines, id: \._id) { line in
+                List(lines) { line in
                     LogRowView(line: line, includeSubsystem: includeAllSubsystems, dateFormatter: dateFormatter)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(.skyAwareBackground)
             }
         }
     }

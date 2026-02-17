@@ -99,17 +99,18 @@ struct AlertView: View {
             await onRefresh()
         }
         .scrollIndicators(.hidden)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationDestination(item: $selectedWatch) { watch in
             ScrollView {
                 WatchDetailView(watch: watch, layout: .full)
                     .padding(.top, 8)
                     .padding(.bottom, 24)
             }
-            .background(Color.clear)
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
             .navigationTitle("Weather Watch")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
         }
         .navigationDestination(item: $selectedMeso) { meso in
             ScrollView {
@@ -117,10 +118,11 @@ struct AlertView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 24)
             }
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
             .navigationTitle("Mesoscale Discussion")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
         }
     }
 

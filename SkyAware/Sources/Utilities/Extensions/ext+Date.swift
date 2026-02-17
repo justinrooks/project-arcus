@@ -7,15 +7,53 @@
 
 import Foundation
 
-extension Date {
-//    func toRFC1123String() -> String {
-//        let formatter = DateFormatter()
-//        formatter.locale = Locale(identifier: "en_US_POSIX")
-//        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-//        formatter.dateFormat = "EEE',' dd MMM yyyy HH':'mm':'ss 'GMT'"
-//        return formatter.string(from: self)
-//    }
+private enum DateFormattingCache {
+    static func formatter(dateStyle: DateFormatter.Style, timeStyle: DateFormatter.Style) -> DateFormatter {
+        let key = "SkyAware.DateFormatter.\(dateStyle.rawValue).\(timeStyle.rawValue)"
+        let threadDictionary = Thread.current.threadDictionary
+        if let cached = threadDictionary[key] as? DateFormatter {
+            return cached
+        }
 
+        let formatter = DateFormatter()
+        formatter.dateStyle = dateStyle
+        formatter.timeStyle = timeStyle
+        threadDictionary[key] = formatter
+        return formatter
+    }
+
+    static func relativeFormatter(style: RelativeDateTimeFormatter.UnitsStyle) -> RelativeDateTimeFormatter {
+        let key = "SkyAware.RelativeDateTimeFormatter.\(style.cacheKey)"
+        let threadDictionary = Thread.current.threadDictionary
+        if let cached = threadDictionary[key] as? RelativeDateTimeFormatter {
+            return cached
+        }
+
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = style
+        threadDictionary[key] = formatter
+        return formatter
+    }
+}
+
+private extension RelativeDateTimeFormatter.UnitsStyle {
+    var cacheKey: String {
+        switch self {
+        case .full:
+            return "full"
+        case .short:
+            return "short"
+        case .abbreviated:
+            return "abbreviated"
+        case .spellOut:
+            return "spellOut"
+        @unknown default:
+            return "unknown"
+        }
+    }
+}
+
+extension Date {
     /// Conveniently wraps a date formatter with accessible date and time styles that are configurable
     /// - Parameters:
     ///   - dateStyle: defaults to medium (Nov 14, 2025)
@@ -25,35 +63,17 @@ extension Date {
         withDateStyle dateStyle: DateFormatter.Style = .medium,
         withTimeStyle timeStyle: DateFormatter.Style = .short
     ) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = dateStyle
-        formatter.timeStyle = timeStyle
+        let formatter = DateFormattingCache.formatter(dateStyle: dateStyle, timeStyle: timeStyle)
         return formatter.string(from: self)
     }
-    
-    
+
     /// Computes a date and time relative to the provided date
     /// - Parameters:
     ///   - date: defaults to now, or can be specified
     ///   - style: defaults to abbreviated, or can be specified
     /// - Returns: a string like 4h ago
     func relativeDate(to date: Date = .now, with style: RelativeDateTimeFormatter.UnitsStyle = .abbreviated) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = style
+        let formatter = DateFormattingCache.relativeFormatter(style: style)
         return formatter.localizedString(for: self, relativeTo: date)
     }
-    
-//    func shortRelativeDescription(to referenceDate: Date = .now) -> String {
-//            let seconds = Int(referenceDate.timeIntervalSince(self))
-//            switch seconds {
-//            case ..<60:
-//                return "\(seconds)s"
-//            case ..<3600:
-//                return "\(seconds / 60)m"
-//            case ..<86_400:
-//                return "\(seconds / 3600)h"
-//            default:
-//                return "\(seconds / 86_400)d"
-//            }
-//        }
 }

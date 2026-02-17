@@ -12,8 +12,8 @@ struct LoadingView: View {
 
     var body: some View {
         ZStack {
-            Color.black
-                .opacity(0.24)
+            Color.skyAwareBackground
+                .opacity(0.62)
                 .ignoresSafeArea()
 
             VStack(spacing: 10) {
