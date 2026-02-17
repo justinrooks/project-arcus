@@ -29,6 +29,8 @@ extension Color {
         
     static let mesoPurple        = Color(red: 0.45, green: 0.35, blue: 0.85)
     
+    static let fireWeather       = Color(red: 0.80, green: 0.36, blue: 0.16) // ~#CC5C29
+    
     func tileGradient(for scheme: ColorScheme) -> LinearGradient {
         let top: Color
         let bottom: Color

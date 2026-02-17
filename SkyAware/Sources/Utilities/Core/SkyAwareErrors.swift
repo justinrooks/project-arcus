@@ -18,18 +18,24 @@ enum OtherErrors: Error {
     case timeoutError
 }
 
-enum NwsError: Error {
+enum NwsError: Error, Equatable {
     case invalidUrl
     case parsingError
+    case missingData
+    case networkError(status: Int)
+    case rateLimited(retryAfterSeconds: Int?)
+    case serviceUnavailable(retryAfterSeconds: Int?)
 }
 
-enum SpcError: Error {
+enum SpcError: Error, Equatable {
     case missingData
     case missingRssData
     case missingGeoJsonData
-    case networkError
+    case networkError(status: Int)
     case parsingError
     case invalidUrl
+    case rateLimited(retryAfterSeconds: Int?)
+    case serviceUnavailable(retryAfterSeconds: Int?)
 }
 
 enum GeocodeError: Error {
@@ -62,12 +68,47 @@ extension SpcError: LocalizedError {
             return "SPC RSS data is missing."
         case .missingGeoJsonData:
             return "GeoJSON data is missing."
-        case .networkError:
-            return "SPC data network error."
+        case .networkError(let status):
+            return "SPC data network error (HTTP \(status))."
         case .parsingError:
             return "SPC data parsing error."
         case .invalidUrl:
             return "Url is nil or invalid"
+        case .rateLimited(let retryAfter):
+            if let retryAfter {
+                return "SPC rate limited (429). Retry after \(retryAfter) seconds."
+            }
+            return "SPC rate limited (429)."
+        case .serviceUnavailable(let retryAfter):
+            if let retryAfter {
+                return "SPC service unavailable (503). Retry after \(retryAfter) seconds."
+            }
+            return "SPC service unavailable (503)."
+        }
+    }
+}
+
+extension NwsError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .invalidUrl:
+            return "NWS URL is nil or invalid."
+        case .parsingError:
+            return "NWS data parsing error."
+        case .missingData:
+            return "NWS response data is missing."
+        case .networkError(let status):
+            return "NWS network request failed with HTTP status \(status)."
+        case .rateLimited(let retryAfter):
+            if let retryAfter {
+                return "NWS rate limited (429). Retry after \(retryAfter) seconds."
+            }
+            return "NWS rate limited (429)."
+        case .serviceUnavailable(let retryAfter):
+            if let retryAfter {
+                return "NWS service unavailable (503). Retry after \(retryAfter) seconds."
+            }
+            return "NWS service unavailable (503)."
         }
     }
 }

@@ -90,6 +90,7 @@ struct MapCanvasView: UIViewRepresentable {
     private func polygonSignature(_ polygon: MKPolygon) -> Int {
         var hasher = Hasher()
         hasher.combine(polygon.title ?? "")
+        hasher.combine(polygon.subtitle ?? "")
         hasher.combine(polygon.pointCount)
 
         var coordinates = [CLLocationCoordinate2D](

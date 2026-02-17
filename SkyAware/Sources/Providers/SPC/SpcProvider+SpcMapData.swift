@@ -20,4 +20,8 @@ extension SpcProvider: SpcMapData {
     func getMesoMapData() async throws -> [MdDTO] {
         try await mesoRepo.getLatestMapData()
     }
+    
+    func getFireRisk() async throws -> [FireRiskDTO] {
+        try await fireRiskRepo.getLatestMapData()
+    }
 }

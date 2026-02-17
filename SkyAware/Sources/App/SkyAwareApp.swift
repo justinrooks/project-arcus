@@ -141,14 +141,9 @@ struct SkyAwareApp: App {
                         await deps.nwsProvider.cleanup()
                         logger.info("Nws provider cleanup finished")
                         
-                        // Changed this to just grab the mapping products in the background
-                        // the summary view will load the text products for now. May need to
-                        // tweak this if timing is an issue, that that flow seems better.
-                        await deps.spcProvider.syncMapProducts()
-                        logger.info("Spc map product sync finished")
-                        //                        await spcProvider.sync()
-                        //                        logger.info("Provider sync finished")
-                        //                        logger.info("Need to grab watches here too...")
+                        // HomeView owns foreground startup refresh and map product sync.
+                        // Keep app-level activation work focused on cleanup/scheduling.
+                        logger.info("Startup cleanup finished; HomeView will drive foreground data refresh")
                     }
                 }
             @unknown default:

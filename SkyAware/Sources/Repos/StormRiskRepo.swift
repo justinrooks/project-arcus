@@ -16,10 +16,6 @@ actor StormRiskRepo {
     
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
-        guard let data else {
-            logger.info("No categorical storm risk data returned")
-            return
-        } // if we don't have any items, just return
         
         let decoded = GeoJsonParser.decode(from: data)
         
@@ -30,6 +26,8 @@ actor StormRiskRepo {
                              issued: props.ISSUE.asUTCDate() ?? Date(),
                              expires: props.EXPIRE.asUTCDate() ?? Date(),
                              valid: props.VALID.asUTCDate() ?? Date(),
+                             stroke: props.stroke,
+                             fill: props.fill,
                              polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
             )
         }
@@ -90,6 +88,8 @@ actor StormRiskRepo {
                          issued: $0.issued,
                          expires: $0.expires,
                          valid: $0.valid,
+                         stroke: $0.stroke,
+                         fill: $0.fill,
                          polygons: $0.polygons)
         }
     }

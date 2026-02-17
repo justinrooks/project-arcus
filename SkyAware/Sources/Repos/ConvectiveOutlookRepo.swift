@@ -17,11 +17,6 @@ actor ConvectiveOutlookRepo {
     
     func refreshConvectiveOutlooks(using client: any SpcClient) async throws {
         let data = try await client.fetchRssData(for: .convective)
-
-        guard let data else {
-            logger.info("No convective outlooks found")
-            return
-        }
                 
         guard let rss = try parser.parse(data: data) else {
             throw SpcError.parsingError

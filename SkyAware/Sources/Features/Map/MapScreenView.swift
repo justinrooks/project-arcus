@@ -24,6 +24,7 @@ struct MapScreenView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
     
@@ -49,7 +50,7 @@ struct MapScreenView: View {
             VStack {
                 Spacer()
                 Group {
-                    MapLegend(layer: selected, probabilities: severeProbabilitiesForSelectedLayer())
+                    MapLegend(layer: selected, severeRisks: severeRisksForSelectedLayer())
                 }
                 .transition(.opacity)
                 .animation(.default, value: selected)
@@ -80,19 +81,18 @@ struct MapScreenView: View {
         }
     }
     
-    private func severeProbabilitiesForSelectedLayer() -> [ThreatProbability]? {
+    private func severeRisksForSelectedLayer() -> [SevereRiskShapeDTO]? {
         switch selected {
-        case .tornado: return getProbability(for: .tornado)
-        case .hail:    return getProbability(for: .hail)
-        case .wind:    return getProbability(for: .wind)
+        case .tornado: return getSevereRisks(for: .tornado)
+        case .hail:    return getSevereRisks(for: .hail)
+        case .wind:    return getSevereRisks(for: .wind)
         default:       return nil
         }
     }
     
-    private func getProbability(for type:ThreatType) -> [ThreatProbability] {
+    private func getSevereRisks(for type: ThreatType) -> [SevereRiskShapeDTO] {
         severeRisks.filter { $0.type == type }
-            .compactMap { $0.probabilities }
-            .sorted { $0.intValue < $1.intValue }
+            .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
     }
     
     @MainActor
@@ -100,8 +100,9 @@ struct MapScreenView: View {
         async let severeTask = fetchSevereRiskShapes()
         async let stormTask = fetchStormRiskShapes()
         async let mesoTask = fetchMesoShapes()
+        async let fireTask = fetchFireRiskShapes()
 
-        let (severeResult, stormResult, mesoResult) = await (severeTask, stormTask, mesoTask)
+        let (severeResult, stormResult, mesoResult, fireResult) = await (severeTask, stormTask, mesoTask, fireTask)
 
         switch severeResult {
         case .success(let data):
@@ -122,6 +123,13 @@ struct MapScreenView: View {
             mesos = data
         case .failure(let error):
             logger.error("Failed to load mesoscale map data: \(error.localizedDescription, privacy: .public)")
+        }
+        
+        switch fireResult {
+        case .success(let data):
+            fireRisk = data
+        case .failure(let error):
+            logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
         }
 
         rebuildPolygons()
@@ -150,6 +158,14 @@ struct MapScreenView: View {
             return .failure(error)
         }
     }
+    
+    private func fetchFireRiskShapes() async -> Result<[FireRiskDTO], any Error> {
+        do {
+            return .success(try await svc.getFireRisk())
+        } catch {
+            return .failure(error)
+        }
+    }
 
     @MainActor
     private func rebuildPolygons() {
@@ -157,7 +173,8 @@ struct MapScreenView: View {
             for: selected,
             stormRisk: stormRisk,
             severeRisks: severeRisks,
-            mesos: mesos
+            mesos: mesos,
+            fires: fireRisk
         )
     }
 }

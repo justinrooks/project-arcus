@@ -255,7 +255,8 @@ final class Dependencies: Sendable {
             StormRisk.self,
             SevereRisk.self,
             BgRunSnapshot.self,
-            Watch.self
+            Watch.self,
+            FireRisk.self
         ])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         let container: ModelContainer
@@ -278,8 +279,10 @@ final class Dependencies: Sendable {
         logger.debug("URLCache configured for SkyAware")
         
         // HTTP clients
-        let nwsClient = NwsHttpClient()
-        let spcClient = SpcHttpClient()
+        let responseObserver = LastGlobalSuccessHTTPObserver()
+        let httpClient = URLSessionHTTPClient(observer: responseObserver)
+        let nwsClient = NwsHttpClient(http: httpClient)
+        let spcClient = SpcHttpClient(http: httpClient)
         
         // Create our data layer repos
         let outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)
@@ -287,6 +290,7 @@ final class Dependencies: Sendable {
         let watchRepo      = WatchRepo(modelContainer: container)
         let stormRiskRepo  = StormRiskRepo(modelContainer: container)
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
+        let fireRiskRepo   = FireRiskRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
         let metadataRepo   = NwsMetadataRepo()
         
@@ -298,6 +302,7 @@ final class Dependencies: Sendable {
                               watchRepo: watchRepo,
                               stormRiskRepo: stormRiskRepo,
                               severeRiskRepo: severeRiskRepo,
+                              fireRiskRepo: fireRiskRepo,
                               client: spcClient)
         let spcProvider = spc
         logger.debug("SPC provider initialized")

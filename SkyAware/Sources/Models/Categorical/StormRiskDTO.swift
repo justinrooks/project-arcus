@@ -13,14 +13,18 @@ struct StormRiskDTO: Sendable, Identifiable {
     let issued: Date
     let valid: Date
     let expires: Date
+    let stroke: String?
+    let fill: String?
     let polygons: [GeoPolygonEntity]
     
-    init(id: UUID = UUID(), riskLevel: StormRiskLevel, issued: Date, expires: Date, valid: Date, polygons: [GeoPolygonEntity]) {
+    init(id: UUID = UUID(), riskLevel: StormRiskLevel, issued: Date, expires: Date, valid: Date, stroke: String?, fill: String?, polygons: [GeoPolygonEntity]) {
         self.id = id
         self.riskLevel = riskLevel
         self.issued = issued
         self.valid = valid
         self.expires = expires
         self.polygons = polygons
+        self.stroke = stroke
+        self.fill = fill
     }
 }

@@ -16,17 +16,22 @@ actor SpcProvider {
     let watchRepo: WatchRepo
     let stormRiskRepo: StormRiskRepo
     let severeRiskRepo: SevereRiskRepo
+    let fireRiskRepo: FireRiskRepo
     let client: SpcClient
     
     // Convective freshness Stream
     var latestConvective: Date?
     var convectiveContinuations: [UUID: AsyncStream<Date>.Continuation] = [:]
+    var mapSyncTask: Task<Void, Never>?
+    var lastMapSyncFinishedAt: Date?
+    private let mapSyncCooldownSeconds: TimeInterval = 20
     
     init(outlookRepo: ConvectiveOutlookRepo,
          mesoRepo: MesoRepo,
          watchRepo: WatchRepo,
          stormRiskRepo: StormRiskRepo,
          severeRiskRepo: SevereRiskRepo,
+         fireRiskRepo: FireRiskRepo,
          client: SpcClient) {
         signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
@@ -34,6 +39,7 @@ actor SpcProvider {
         self.watchRepo = watchRepo
         self.stormRiskRepo = stormRiskRepo
         self.severeRiskRepo = severeRiskRepo
+        self.fireRiskRepo = fireRiskRepo
         self.client = client
     }
 
@@ -56,5 +62,10 @@ actor SpcProvider {
     // MARK: Private methods
     private func removeConvectiveContinuation(id: UUID) {
         convectiveContinuations[id] = nil
+    }
+
+    func shouldSkipMapSync(now: Date = Date()) -> Bool {
+        guard let lastMapSyncFinishedAt else { return false }
+        return now.timeIntervalSince(lastMapSyncFinishedAt) < mapSyncCooldownSeconds
     }
 }

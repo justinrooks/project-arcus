@@ -28,8 +28,25 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash**: map layer fetches were sequential and all-or-nothing. If one feed failed, the whole map looked empty. We moved to parallel fetches with per-source error handling so successful layers still render.
 - **Aha!**: identity-based overlay diffs only work when the same overlay instances survive render cycles. Caching the active polygon set in `MapView` and syncing overlays by geometry signature stopped unnecessary churn.
 - **Bug squash**: categorical risk shading could hide higher-risk pockets under lower-risk overlays. We now explicitly render in severity order (`TSTM -> MRGL -> SLGT -> ENH -> MDT -> HIGH`) so the dangerous areas stay visually on top.
+- **Bug squash (NWS client)**: we found an error-domain mix-up where NWS request failures were throwing `SpcError.networkError` (wrong subsystem). We moved to typed `NwsError` failures (`networkError(status:)`, `missingData`) so logs and call-site handling stay honest.
+- **Aha! (URL building)**: hand-built URL strings work until they don’t. Switching NWS endpoints to `URLComponents` eliminated brittle query concatenation and made point-parameter encoding deterministic.
+- **Resilience upgrade**: we preserved HTTP response headers in the shared downloader so clients can finally react to upstream hints like `Retry-After` instead of treating every non-200 the same.
+- **Privacy + observability tradeoff**: we tightened NWS logging by hashing coordinate logs while still emitting structured endpoint/status fields, so diagnostics stay useful without leaking precise location traces.
+- **Aha! (cancellation semantics)**: swallowing `Task.sleep` cancellation during retries quietly fights structured concurrency. Letting cancellation bubble keeps networking cooperative with SwiftUI task lifecycles.
+- **Consistency cleanup (SPC vs NWS)**: SPC and NWS now speak the same language at the client boundary (`async throws -> Data` with status-aware mapping). That removed misleading “nil means no data” branches and made error handling deterministic in repos/providers.
+- **Side-effect containment**: downloader-level `Last-Modified` persistence moved behind an injected observer instead of hidden global writes. The network pipe is now transport-focused, and policy hooks are explicit at composition time.
 - **Architecture checkpoint**: we split the map feature into a screen (`MapScreenView`), a render canvas (`MapCanvasView`), and a geometry mapper (`MapPolygonMapper`). The view now orchestrates state and async work, while geometry conversion has one home.
 - **Pitfall**: when adding new Swift Testing files, verify target membership immediately. A misplaced file can compile into the app target and fail on `import Testing`.
+- **War story (StormRisk colors)**: we had SPC `stroke`/`fill` values in storage, but the map still painted by parsing polygon titles like “SLGT” and “MDT.” It was like buying paint and then ignoring the color labels.
+- **Bug squash**: categorical polygons now carry StormRisk style metadata into `MKPolygon` overlays, and the renderer consumes SPC colors first, then falls back to legacy style parsing only when needed.
+- **Aha! (overlay identity)**: style-only updates can be invisible if your overlay diff key only hashes geometry. Including subtitle/style metadata in the map signature made color refreshes deterministic instead of “why didn’t it repaint?”
+- **Follow-through (Fire layer)**: we applied the same style-metadata pipeline to Fire Risk polygons, so fire overlays now honor upstream SPC `stroke`/`fill` instead of defaulting to generic fire colors.
+- **Final map style pass (Severe layer)**: hail, wind, and tornado overlays now carry SPC `stroke`/`fill` from persistence into map polygons, so severe shading follows upstream styling instead of only title/probability heuristics.
+- **Legend parity fix**: the severe legend now consumes the same SPC `stroke`/`fill` metadata as the map polygons, and legend style resolution uses map alpha so chips match on-map overlays exactly instead of rendering a denser preview tint.
+- **Testing hardening**: we added focused tests to guard severe style metadata propagation and map-vs-legend alpha/color parity, because UI color regressions are easy to miss in manual checks and expensive to debug later.
+- **War story (Startup echo bug)**: on launch we saw logs like `Updated 1 wind risk feature` multiple times, which looked like a haunted refresh loop.
+- **Bug squash (Single owner + coalescing)**: startup map sync was being kicked off in both `SkyAwareApp` and `HomeView`. We removed the app-level startup map sync and added an in-provider coalescing guard/cooldown so overlapping `syncMapProducts()` calls join the same work instead of replaying the full SPC map pipeline.
+- **Aha!**: duplicate startup work often comes from lifecycle fan-out, not one bad loop. The clean fix is ownership clarity first, then a defensive coalescing layer at the provider boundary.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
@@ -38,6 +55,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - In map UIs, “follow user location” should be explicit state, not a side effect of every position update.
 - When multiple upstream data sources feed one screen, degrade gracefully: fail one panel, not the whole page.
 - If one SwiftUI file starts doing networking, UI composition, and geometry transformation, split it before it becomes a kitchen-sink file.
+- When a style value comes from upstream data, pass it as explicit metadata instead of reverse-engineering it from display text.
 
 ## 7) If I Were Starting Over...
 - I’d design background scheduling as a policy engine from day one, with clear rules for “tighten/relax cadence” and easy unit test hooks.

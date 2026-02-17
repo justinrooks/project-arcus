@@ -13,11 +13,11 @@ import SwiftData
 // MARK: - Test Doubles
 private struct FakeSpcClient: SpcClient {
     enum Mode {
-        case success(Data?)
+        case success(Data)
         case failure(Error)
     }
     var mode: Mode
-    func fetchRssData(for feed: RssProduct) async throws -> Data? {
+    func fetchRssData(for feed: RssProduct) async throws -> Data {
         switch mode {
         case .success(let data):
             return data
@@ -26,8 +26,8 @@ private struct FakeSpcClient: SpcClient {
         }
     }
     
-    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data? {
-        return nil
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        throw SpcError.missingGeoJsonData
     }
 }
 
@@ -105,7 +105,7 @@ struct ConvectiveOutlookRepoTests {
         try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
-        let data = sampleValidRSS.data(using: .utf8)
+        let data = try #require(sampleValidRSS.data(using: .utf8))
         let client = FakeSpcClient(mode: .success(data))
 
         try await repo.refreshConvectiveOutlooks(using: client)
@@ -128,15 +128,21 @@ struct ConvectiveOutlookRepoTests {
         #expect(d1.validUntil != .distantPast)
     }
 
-    @Test("refresh handles nil data without throwing and logs warning")
-    func refresh_nilDataNoCrash() async throws {
+    @Test("refresh propagates client failure and does not insert")
+    func refresh_clientFailureNoInsert() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
         try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
-        let client = FakeSpcClient(mode: .success(nil))
-        // Should not throw
-        try await repo.refreshConvectiveOutlooks(using: client)
+        let client = FakeSpcClient(mode: .failure(SpcError.missingData))
+        do {
+            try await repo.refreshConvectiveOutlooks(using: client)
+            #expect(Bool(false), "Expected client failure to propagate")
+        } catch let error as SpcError {
+            #expect(error == .missingData)
+        } catch {
+            #expect(Bool(false), "Unexpected error type: \(error)")
+        }
 
         // Nothing inserted
         let results = try await repo.fetchConvectiveOutlooks(for: 1)
@@ -149,7 +155,7 @@ struct ConvectiveOutlookRepoTests {
         try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
-        let data = sampleOnlyNonMatchingTitlesRSS.data(using: .utf8)
+        let data = try #require(sampleOnlyNonMatchingTitlesRSS.data(using: .utf8))
         let client = FakeSpcClient(mode: .success(data))
 
         try await repo.refreshConvectiveOutlooks(using: client)
@@ -289,5 +295,122 @@ struct ConvectiveOutlookRepoTests {
         let remaining = try await repo.fetchConvectiveOutlooks(for: 1)
         #expect(remaining.count == 1)
         #expect(remaining[0].title.contains("Recent"))
+    }
+}
+
+private actor SpcMockHTTPClientState {
+    var requests: [(url: URL, headers: [String: String])] = []
+
+    func record(url: URL, headers: [String: String]) {
+        requests.append((url: url, headers: headers))
+    }
+
+    func firstRequest() -> (url: URL, headers: [String: String])? {
+        requests.first
+    }
+}
+
+private final class SpcMockHTTPClient: HTTPClient, @unchecked Sendable {
+    private let state = SpcMockHTTPClientState()
+    private let response: HTTPResponse
+    private let error: Error?
+
+    init(response: HTTPResponse, error: Error? = nil) {
+        self.response = response
+        self.error = error
+    }
+
+    func get(_ url: URL, headers: [String : String]) async throws -> HTTPResponse {
+        await state.record(url: url, headers: headers)
+        if let error { throw error }
+        return response
+    }
+
+    func clearCache() {}
+
+    func firstRequest() async -> (url: URL, headers: [String: String])? {
+        await state.firstRequest()
+    }
+}
+
+@Suite("SpcHttpClient")
+struct SpcHttpClientTests {
+    @Test("fetchRssData builds RSS endpoint and xml accept headers")
+    func fetchRssData_buildsRequest() async throws {
+        let payload = Data("<rss/>".utf8)
+        let http = SpcMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: payload))
+        let client = SpcHttpClient(http: http)
+
+        let data = try await client.fetchRssData(for: .convective)
+        #expect(data == payload)
+
+        let request = try #require(await http.firstRequest())
+        #expect(request.url.host == "www.spc.noaa.gov")
+        #expect(request.url.path == "/products/spcacrss.xml")
+        #expect(request.headers["User-Agent"]?.isEmpty == false)
+        #expect((request.headers["Accept"] ?? "").contains("application/rss+xml"))
+    }
+
+    @Test("fetchGeoJsonData builds outlook path and geojson accept headers")
+    func fetchGeoJsonData_buildsRequest() async throws {
+        let payload = Data("{\"type\":\"FeatureCollection\",\"features\":[]}".utf8)
+        let http = SpcMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: payload))
+        let client = SpcHttpClient(http: http)
+
+        let data = try await client.fetchGeoJsonData(for: .tornado)
+        #expect(data == payload)
+
+        let request = try #require(await http.firstRequest())
+        #expect(request.url.path == "/products/outlook/day1otlk_torn.lyr.geojson")
+        #expect((request.headers["Accept"] ?? "").contains("application/geo+json"))
+    }
+
+    @Test("429 maps to SpcError.rateLimited")
+    func status429_throwsRateLimited() async throws {
+        let http = SpcMockHTTPClient(
+            response: HTTPResponse(status: 429, headers: ["Retry-After": "45"], data: nil)
+        )
+        let client = SpcHttpClient(http: http)
+
+        do {
+            _ = try await client.fetchRssData(for: .meso)
+            #expect(Bool(false), "Expected SpcError.rateLimited(retryAfterSeconds:)")
+        } catch let error as SpcError {
+            #expect(error == .rateLimited(retryAfterSeconds: 45))
+        } catch {
+            #expect(Bool(false), "Unexpected error type: \(error)")
+        }
+    }
+
+    @Test("503 maps to SpcError.serviceUnavailable")
+    func status503_throwsServiceUnavailable() async throws {
+        let http = SpcMockHTTPClient(
+            response: HTTPResponse(status: 503, headers: ["Retry-After": "30"], data: nil)
+        )
+        let client = SpcHttpClient(http: http)
+
+        do {
+            _ = try await client.fetchGeoJsonData(for: .hail)
+            #expect(Bool(false), "Expected SpcError.serviceUnavailable(retryAfterSeconds:)")
+        } catch let error as SpcError {
+            #expect(error == .serviceUnavailable(retryAfterSeconds: 30))
+        } catch {
+            #expect(Bool(false), "Unexpected error type: \(error)")
+        }
+    }
+
+    @Test("empty successful response maps to SpcError.missingData")
+    func emptyBody_throwsMissingData() async throws {
+        let http = SpcMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: nil))
+        let client = SpcHttpClient(http: http)
+
+        do {
+            _ = try await client.fetchRssData(for: .watch)
+            #expect(Bool(false), "Expected SpcError.missingData")
+        } catch let error as SpcError {
+            #expect(error == .missingData)
+        } catch {
+            #expect(Bool(false), "Unexpected error type: \(error)")
+        }
     }
 }

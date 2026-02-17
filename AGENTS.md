@@ -27,6 +27,7 @@
 
 ## Testing Guidelines
 - Use Swift Testing (`import Testing`); place new specs alongside the feature they cover (mirror folder names under `UnitTests`/`UITests`).
+- When adding new test files, ensure that they have the correct Target membership of SkyAwareTests. You can automatically add them yourself.
 - Prefer small, deterministic tests; stub network/providers and avoid hitting live WeatherKit, NWS, or SPC feeds.
 - When adding UI, include a smoke UI test for navigation/happy path; keep identifiers stable for accessibility and UITest hooks.
 - Coverage goal: 75%+ when reasonable for the change.

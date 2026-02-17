@@ -12,56 +12,73 @@ struct MapPolygonMapper {
         for layer: MapLayer,
         stormRisk: [StormRiskDTO],
         severeRisks: [SevereRiskShapeDTO],
-        mesos: [MdDTO]
+        mesos: [MdDTO],
+        fires: [FireRiskDTO]
     ) -> MKMultiPolygon {
         switch layer {
         case .categorical:
             // Draw lower categories first so higher severity sits on top.
-            let source = stormRisk
-                .sorted { $0.riskLevel < $1.riskLevel }
-                .flatMap { $0.polygons }
-
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
+            let source = stormRisk.sorted { $0.riskLevel < $1.riskLevel }
+            let polygons = source.flatMap { risk -> [MKPolygon] in
+                risk.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: risk.fill,
+                        strokeHex: risk.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
 
         case .tornado:
-            let source = severeRisks
-                .filter { $0.type == .tornado }
-                .flatMap { $0.polygons }
-
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
+            let source = severeRisks.filter { $0.type == .tornado }
+            let polygons = source.flatMap { severe -> [MKPolygon] in
+                severe.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: severe.fill,
+                        strokeHex: severe.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
 
         case .hail:
-            let source = severeRisks
-                .filter { $0.type == .hail }
-                .flatMap { $0.polygons }
-
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
+            let source = severeRisks.filter { $0.type == .hail }
+            let polygons = source.flatMap { severe -> [MKPolygon] in
+                severe.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: severe.fill,
+                        strokeHex: severe.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
 
         case .wind:
-            let source = severeRisks
-                .filter { $0.type == .wind }
-                .flatMap { $0.polygons }
-
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
+            let source = severeRisks.filter { $0.type == .wind }
+            let polygons = source.flatMap { severe -> [MKPolygon] in
+                severe.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: severe.fill,
+                        strokeHex: severe.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
 
         case .meso:
@@ -70,6 +87,21 @@ struct MapPolygonMapper {
                 coordinates: { $0.coordinates.map { $0.location } },
                 title: { _ in layer.key }
             )
+            return MKMultiPolygon(polygons)
+            
+        case .fire:
+            let polygons = fires.flatMap { fire -> [MKPolygon] in
+                fire.polygons.map { polygon in
+                    let coordinates = polygon.ringCoordinates
+                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                    mkPolygon.title = polygon.title
+                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                        fillHex: fire.fill,
+                        strokeHex: fire.stroke
+                    ).encoded
+                    return mkPolygon
+                }
+            }
             return MKMultiPolygon(polygons)
         }
     }

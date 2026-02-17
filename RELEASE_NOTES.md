@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Overview
+This update adds Fire Weather map and local-alert coverage, extends feed-based polygon styling across map overlays, and tightens sync/network request handling.
+
+### Highlights
+- Fire Weather risk data from SPC wind/RH products is now available in a dedicated Fire map layer and legend output.
+- Fire, Categorical, and Severe map overlays now use feed-provided stroke/fill styling with alpha tuning for readable map and legend presentation.
+- Local alert inclusion now evaluates Fire Weather zones.
+- SPC map sync ownership now coalesces overlapping refresh paths instead of replaying repeated map-product loads.
+
+### Reliability & Performance
+- SPC/NWS request handling now uses status-aware failures (including 429/503), Retry-After parsing, shared headers, and cancellation-aware retries.
+- Map sync request ownership is coordinated to avoid redundant network bursts during concurrent refresh paths.
+
+### UI / UX
+- Fire, Categorical, and Severe polygons now render with feed-derived styling instead of static fallback-only map styling.
+
+### Tests / QA
+- Added an XCTest plan and expanded unit coverage for map style metadata propagation, map sync coalescing/cooldown, and HTTP client status mapping.
+
 ## v0.1.0(18)
 
 ### Overview

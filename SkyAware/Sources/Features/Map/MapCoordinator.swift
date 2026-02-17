@@ -40,7 +40,8 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
             "enhanced": "enh",
             "moderate": "mdt",
             "high": "high",
-            "meso": "meso"
+            "meso": "meso",
+            "fire": "fire"
         ]
 
         for (key, value) in keywords {
@@ -57,16 +58,18 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
             let renderer = MKPolygonRenderer(polygon: polygon)
             renderer.lineWidth = 1
 
-            if let polygonTitle = polygon.title {
-                let (risk, probability) = parseRiskLabel(polygonTitle) ?? ("unknown", "0%")
-                let (fill, stroke) = PolygonStyleProvider.getPolygonStyle(
-                    risk: risk.uppercased(),
-                    probability: probability
-                )
-                
-                renderer.strokeColor = stroke
-                renderer.fillColor = fill
-            }
+            let polygonTitle = polygon.title ?? ""
+            let (risk, probability) = parseRiskLabel(polygonTitle) ?? ("unknown", "0%")
+            let styleMetadata = StormRiskPolygonStyleMetadata.decode(from: polygon.subtitle)
+            let (fill, stroke) = PolygonStyleProvider.getPolygonStyle(
+                risk: risk.uppercased(),
+                probability: probability,
+                spcFillHex: styleMetadata?.fillHex,
+                spcStrokeHex: styleMetadata?.strokeHex
+            )
+
+            renderer.strokeColor = stroke
+            renderer.fillColor = fill
 
             return renderer
         }
