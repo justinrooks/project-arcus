@@ -15,9 +15,10 @@ protocol LocationGeocoding: Sendable {
 }
 
 actor CoreLocationGeocoder: LocationGeocoding {
-    private let geocoder = CLGeocoder()
-
     func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+        // Use a request-scoped geocoder to avoid overlapping operations on a shared
+        // CLGeocoder instance, which can cancel in-flight requests unexpectedly.
+        let geocoder = CLGeocoder()
         let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
         let places = try await geocoder.reverseGeocodeLocation(location)
         guard let p = places.first else { throw GeocodeError.noResults }
@@ -129,9 +130,15 @@ actor LocationProvider {
             let place = try await withTimeout(timeout: timeout) {
                 return try await self.geocoder.reverseGeocode(coord)
             }
-            let base = lastSnapshot ?? LocationSnapshot(coordinates: coord, timestamp: Date(), accuracy: kCLLocationAccuracyThreeKilometers, placemarkSummary: nil)
-            let updated = LocationSnapshot(coordinates: base.coordinates,
-                                           timestamp: base.timestamp,
+            let base = lastSnapshot ?? LocationSnapshot(
+                coordinates: coord,
+                timestamp: Date(),
+                accuracy: kCLLocationAccuracyThreeKilometers,
+                placemarkSummary: nil
+            )
+            let coordChanged = base.coordinates.latitude != coord.latitude || base.coordinates.longitude != coord.longitude
+            let updated = LocationSnapshot(coordinates: coord,
+                                           timestamp: coordChanged ? Date() : base.timestamp,
                                            accuracy: base.accuracy,
                                            placemarkSummary: place)
             saveAndYieldSnapshot(updated)
@@ -154,6 +161,8 @@ actor LocationProvider {
             
             // Update snapshot and notify
             if var snap = lastSnapshot {
+                // Ignore late geocoder completions that would regress snapshot recency.
+                guard timestamp >= snap.timestamp else { return }
                 guard snap.placemarkSummary != summary else { return }
                 
                 snap = LocationSnapshot(coordinates: snap.coordinates,

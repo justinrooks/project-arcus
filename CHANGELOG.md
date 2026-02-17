@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+## v0.1.0(18)
+
+### UI / UX
+- Update the Map tab to use a dedicated screen/canvas flow that keeps overlays in sync by geometry and auto-centers only on the first location fix.
+<!-- evidence: 35a47a2 -->
+- Fix categorical outlook layering so higher-severity risk polygons render above lower-severity polygons.
+<!-- evidence: 35a47a2 -->
+
+### Background & Refresh
+- Change app refresh scheduling to replace a pending request only when the new run time is materially earlier, and restore the previous request if replacement submission fails.
+<!-- evidence: 35a47a2 -->
+
+### Tests / QA
+- Add regression tests for map polygon ordering/filtering and for background scheduler replacement-policy thresholds.
+<!-- evidence: 35a47a2 -->
+
+## v0.1.0(16)
+
+### Background & Refresh
+- Reorder SPC product syncing and add throttling for convective outlook refreshes to reduce redundant update churn.
+<!-- evidence: 5f1326f -->
+- Fix background cadence evaluation to use live active meso/watch state (instead of hardcoded false flags), so hazardous conditions correctly tighten refresh interval.
+
+### Location & Authorization
+- Update location `authStatus` directly from authorization callbacks so permission state stays accurate.
+<!-- evidence: 2be882f -->
+- Improve placemark resolution reliability with request-scoped geocoders, coordinate-consistent snapshots, and stale-result protection.
+<!-- evidence: b54881e -->
+
+### UI / UX
+- Add a Home loading overlay and restyle `LoadingView` to better match the app visual language.
+<!-- evidence: 0b7de41, 742e6cb -->
+
+### Tests / QA
+- Add unit coverage for loading overlay state, location provider/manager behavior, and convective outlook throttling.
+<!-- evidence: 0b7de41, e9c8d10, 5f1326f -->
+- Add `BackgroundOrchestratorCadenceTests` to lock cadence behavior for active meso/watch vs all-clear scenarios.
+
+### Maintenance / Cleanup
+- Update repository agent instructions.
+<!-- evidence: 61e3933 -->
+
 ## v0.1.0(10)
 
 ### Background & Notifications

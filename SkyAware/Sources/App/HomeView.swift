@@ -10,6 +10,30 @@ import CoreLocation
 import OSLog
 
 struct HomeView: View {
+    struct LoadingOverlayState {
+        private(set) var activeRefreshes: Int = 0
+        private(set) var message: String?
+
+        var isVisible: Bool { activeRefreshes > 0 }
+        var displayMessage: String { message ?? "Refreshing data..." }
+
+        mutating func begin(message: String) {
+            self.message = message
+            activeRefreshes += 1
+        }
+
+        mutating func setMessage(_ message: String) {
+            self.message = message
+        }
+
+        mutating func end() {
+            activeRefreshes = max(0, activeRefreshes - 1)
+            if activeRefreshes == 0 {
+                message = nil
+            }
+        }
+    }
+
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     
@@ -37,6 +61,9 @@ struct HomeView: View {
     
     // Refresh State
     @State private var lastRefreshKey: RefreshKey?
+    @State private var lastOutlookSyncAt: Date?
+    @State private var loadingState = LoadingOverlayState()
+    private let outlookRefreshPolicy = OutlookRefreshPolicy()
     
     // Outlook State
     @State private var outlooks: [ConvectiveOutlookDTO] = []
@@ -81,7 +108,7 @@ struct HomeView: View {
                     .background(Color.skyAwareBackground.ignoresSafeArea())
                     .refreshable {
                         lastRefreshKey = nil
-                        await refresh(for: snap)
+                        await refresh(for: snap, force: true, showsLoading: true)
                     }
                 }
                 .tabItem { Label("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted")
@@ -98,13 +125,16 @@ struct HomeView: View {
                         .background(.skyAwareBackground)
                         .refreshable {
                             logger.debug("refreshing alerts")
-                            await refresh(for: snap)
+                            lastRefreshKey = nil
+                            await withLoading(message: "Refreshing alerts...") {
+                                await refresh(for: snap, force: true, showsLoading: false)
+                            }
                         }
                 }
                 .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
                     .badge(mesos.count + watches.count)
                 
-                MapView()
+                MapScreenView()
                     .toolbar(.hidden, for: .navigationBar)
                     .background(.skyAwareBackground)
                     .tabItem { Label("Map", systemImage: "map") }
@@ -118,8 +148,14 @@ struct HomeView: View {
                         .background(.skyAwareBackground)
                         .refreshable {
                             logger.debug("refreshing outlooks")
-                            await sync.syncTextProducts()
-                            await refreshOutlooks()
+                            await withLoading(message: "Syncing outlooks...") {
+                                let now = Date()
+                                await MainActor.run {
+                                    _ = markOutlookSyncIfNeeded(force: true, now: now)
+                                }
+                                await sync.syncConvectiveOutlooks()
+                                await refreshOutlooks()
+                            }
                         }
                 }
                 .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
@@ -136,6 +172,12 @@ struct HomeView: View {
             
             }
             .ignoresSafeArea(edges: .bottom)
+            if loadingState.isVisible {
+                LoadingView(message: loadingState.displayMessage)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale))
+                    .zIndex(1)
+            }
         }
         .transition(.opacity)
         .tint(.skyAwareAccent)
@@ -151,28 +193,51 @@ struct HomeView: View {
             for await s in stream {
                 if Task.isCancelled { break }
                 await MainActor.run { snap = s }
-                await refresh(for: s)
+                await refresh(for: s, showsLoading: true)
             }
         }
     }
     
     /// Refreshes outlook plus location-scoped data together
-    private func refresh(for snap: LocationSnapshot?) async {
+    private func refresh(for snap: LocationSnapshot?, force: Bool = false, showsLoading: Bool = true) async {
         guard let snap else {
             logger.info("No location snapshot, skipping refresh")
             return
         }
-        guard shouldRefresh(for: snap) else {
+        guard shouldRefresh(for: snap, force: force) else {
             logger.debug("Refresh denied, no change detected")
             return
         }
 
         logger.info("Refreshing summary data")
-        
-        await sync.syncTextProducts() // This was moved from app init (SkyAwareApp), if timing is an issue, may need to put it back
-        await refreshOutlooks()
+        let now = Date()
+        let shouldSyncOutlookNow = await MainActor.run {
+            markOutlookSyncIfNeeded(force: force, now: now)
+        }
+
+        if showsLoading {
+            await MainActor.run { startRefresh(message: "Refreshing data...") }
+        }
+
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing alerts...") } }
         await nwsSync.sync(for: snap.coordinates)
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing mesos...") } }
+        await sync.syncMesoscaleDiscussions()
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing map products...") } }
+        await sync.syncMapProducts()
+        if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks...") } }
         await refreshRisk(for: snap.coordinates)
+        if shouldSyncOutlookNow {
+            if showsLoading { await MainActor.run { updateRefreshMessage("Syncing outlooks...") } }
+            await sync.syncConvectiveOutlooks()
+        } else {
+            logger.debug("Skipping convective outlook sync due to refresh throttle")
+        }
+        if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
+        await refreshOutlooks()
+        if showsLoading {
+            await MainActor.run { endRefresh() }
+        }
     }
     
     private func refreshOutlooks() async {
@@ -189,11 +254,29 @@ struct HomeView: View {
         }
     }
     
-    private func shouldRefresh(for snap: LocationSnapshot) -> Bool {
+    @MainActor
+    private func shouldRefresh(for snap: LocationSnapshot, force: Bool = false) -> Bool {
         let key = RefreshKey(coord: snap.coordinates, timestamp: snap.timestamp)
+        if force {
+            lastRefreshKey = key
+            return true
+        }
         guard key != lastRefreshKey else { return false } // skip placemark-only or repeated initial yield
         lastRefreshKey = key
         return true
+    }
+
+    @MainActor
+    private func markOutlookSyncIfNeeded(force: Bool, now: Date) -> Bool {
+        let shouldSync = outlookRefreshPolicy.shouldSync(
+            now: now,
+            lastSync: lastOutlookSyncAt,
+            force: force
+        )
+        if shouldSync {
+            lastOutlookSyncAt = now
+        }
+        return shouldSync
     }
     
     private func refreshRisk(for coord: CLLocationCoordinate2D) async {
@@ -219,6 +302,27 @@ struct HomeView: View {
         } catch {
             return .failure(error)
         }
+    }
+
+    private func withLoading(message: String, operation: @escaping () async -> Void) async {
+        await MainActor.run { startRefresh(message: message) }
+        await operation()
+        await MainActor.run { endRefresh() }
+    }
+
+    @MainActor
+    private func startRefresh(message: String) {
+        loadingState.begin(message: message)
+    }
+
+    @MainActor
+    private func updateRefreshMessage(_ message: String) {
+        loadingState.setMessage(message)
+    }
+
+    @MainActor
+    private func endRefresh() {
+        loadingState.end()
     }
 }
 

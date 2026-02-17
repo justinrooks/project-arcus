@@ -1,5 +1,5 @@
 //
-//  MapView.swift
+//  MapScreenView.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 7/18/25.
@@ -7,12 +7,12 @@
 
 import SwiftUI
 import MapKit
-import SwiftData
 import OSLog
 
-struct MapView: View {
+struct MapScreenView: View {
     @Environment(\.dependencies) private var deps
     private let logger = Logger.uiMap
+    private let polygonMapper = MapPolygonMapper()
     
     // MARK: Local handles
     private var svc: any SpcMapData { deps.spcMapData }
@@ -24,11 +24,12 @@ struct MapView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
     
     var body: some View {
         ZStack {
-            CONUSMapView(polygonList: polygonsForLayer(named: selected), coordinates: snap?.coordinates)
+            MapCanvasView(polygons: activePolygons, coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.all)
             
             VStack {
@@ -61,16 +62,11 @@ struct MapView: View {
             LayerPickerSheet(selection: $selected,
                              title: "Map Layers")
         }
-        .onAppear {
-            Task {
-                do {
-                    severeRisks = try await svc.getSevereRiskShapes()
-                    stormRisk = try await svc.getStormRiskMapData()
-                    mesos = try await svc.getMesoMapData()
-                } catch {
-                    logger.error("Failed to load map data: \(error.localizedDescription, privacy: .public)")
-                }
-            }
+        .task {
+            await loadMapData()
+        }
+        .onChange(of: selected) { _, _ in
+            rebuildPolygons()
         }
         .task {
             if let first = await loc.snapshot() {
@@ -99,72 +95,73 @@ struct MapView: View {
             .sorted { $0.intValue < $1.intValue }
     }
     
-    // Helper to build MKPolygons from arbitrary sources
-    private func makeMKPolygons<Element>(
-        from source: [Element],
-        coordinates: (Element) -> [CLLocationCoordinate2D],
-        title: (Element) -> String?
-    ) -> [MKPolygon] {
-        source.map { element in
-            let coords = coordinates(element)
-            let mkPolygon = MKPolygon(coordinates: coords, count: coords.count)
-            mkPolygon.title = title(element)
-            return mkPolygon
+    @MainActor
+    private func loadMapData() async {
+        async let severeTask = fetchSevereRiskShapes()
+        async let stormTask = fetchStormRiskShapes()
+        async let mesoTask = fetchMesoShapes()
+
+        let (severeResult, stormResult, mesoResult) = await (severeTask, stormTask, mesoTask)
+
+        switch severeResult {
+        case .success(let data):
+            severeRisks = data
+        case .failure(let error):
+            logger.error("Failed to load severe risk map data: \(error.localizedDescription, privacy: .public)")
+        }
+
+        switch stormResult {
+        case .success(let data):
+            stormRisk = data
+        case .failure(let error):
+            logger.error("Failed to load categorical map data: \(error.localizedDescription, privacy: .public)")
+        }
+
+        switch mesoResult {
+        case .success(let data):
+            mesos = data
+        case .failure(let error):
+            logger.error("Failed to load mesoscale map data: \(error.localizedDescription, privacy: .public)")
+        }
+
+        rebuildPolygons()
+    }
+
+    private func fetchSevereRiskShapes() async -> Result<[SevereRiskShapeDTO], any Error> {
+        do {
+            return .success(try await svc.getSevereRiskShapes())
+        } catch {
+            return .failure(error)
         }
     }
-    
-    private func polygonsForLayer(named layer: MapLayer) -> MKMultiPolygon {
-        switch layer {
-        case .categorical:
-            let source = stormRisk.flatMap { $0.polygons }
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
-            return MKMultiPolygon(polygons)
-        case .tornado:
-            //            return MKMultiPolygon(provider.tornado.flatMap {$0.polygons})
-            let source = severeRisks
-                .filter { $0.type == .tornado }
-                .flatMap { $0.polygons }
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
-            return MKMultiPolygon(polygons)
-        case .hail:
-            let source = severeRisks
-                .filter { $0.type == .hail }
-                .flatMap { $0.polygons }
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
-            return MKMultiPolygon(polygons)
-        case .wind:
-            let source = severeRisks
-                .filter { $0.type == .wind }
-                .flatMap { $0.polygons }
-            let polygons = makeMKPolygons(
-                from: source,
-                coordinates: { $0.ringCoordinates },
-                title: { $0.title }
-            )
-            return MKMultiPolygon(polygons)
-        case .meso:
-            let polygons = makeMKPolygons(
-                from: mesos,
-                coordinates: { $0.coordinates.map { $0.location } },
-                title: { _ in layer.key }
-            )
-            return MKMultiPolygon(polygons)
+
+    private func fetchStormRiskShapes() async -> Result<[StormRiskDTO], any Error> {
+        do {
+            return .success(try await svc.getStormRiskMapData())
+        } catch {
+            return .failure(error)
         }
+    }
+
+    private func fetchMesoShapes() async -> Result<[MdDTO], any Error> {
+        do {
+            return .success(try await svc.getMesoMapData())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    @MainActor
+    private func rebuildPolygons() {
+        activePolygons = polygonMapper.polygons(
+            for: selected,
+            stormRisk: stormRisk,
+            severeRisks: severeRisks,
+            mesos: mesos
+        )
     }
 }
 
 #Preview {
-    MapView()
+    MapScreenView()
 }

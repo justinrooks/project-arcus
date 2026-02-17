@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D0AFC5F12F412BAB001F331A /* Journal.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5F02F412BAB001F331A /* Journal.md */; };
+		D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5EF2F412BAB001F331A /* AGENTS.md */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		D095EFB32E16F56A0074F867 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -27,6 +32,8 @@
 		D095EFA32E16F5690074F867 /* SkyAware.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SkyAware.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D0AFC5EF2F412BAB001F331A /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
+		D0AFC5F02F412BAB001F331A /* Journal.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Journal.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -35,9 +42,13 @@
 			membershipExceptions = (
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
+				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
+				UnitTests/HomeViewLoadingOverlayStateTests.swift,
+				UnitTests/LocationManagerTests.swift,
 				UnitTests/LocationProviderTests.swift,
+				UnitTests/MapPolygonMapperTests.swift,
 				UnitTests/MesoNotificationTests.swift,
 				UnitTests/MorningNotificationTests.swift,
 				UnitTests/NWSGridPointParserTests.swift,
@@ -55,9 +66,13 @@
 		D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
+				UnitTests/HomeViewLoadingOverlayStateTests.swift,
+				UnitTests/LocationManagerTests.swift,
 				UnitTests/LocationProviderTests.swift,
+				UnitTests/MapPolygonMapperTests.swift,
 				UnitTests/MesoNotificationTests.swift,
 				UnitTests/MorningNotificationTests.swift,
 				UnitTests/NWSGridPointParserTests.swift,
@@ -165,6 +180,8 @@
 		D095EF9A2E16F5690074F867 = {
 			isa = PBXGroup;
 			children = (
+				D0AFC5EF2F412BAB001F331A /* AGENTS.md */,
+				D0AFC5F02F412BAB001F331A /* Journal.md */,
 				D048DFB42F21395F0037C3D4 /* ci_scripts */,
 				D03E60782EB2A55E00611081 /* Sources */,
 				D03E62C92EB2A99900611081 /* Resources */,
@@ -301,6 +318,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0AFC5F12F412BAB001F331A /* Journal.md in Resources */,
+				D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
