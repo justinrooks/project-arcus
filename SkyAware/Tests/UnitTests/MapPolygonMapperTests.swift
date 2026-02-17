@@ -7,6 +7,7 @@
 
 import Foundation
 import Testing
+import UIKit
 @testable import SkyAware
 
 @Suite("MapPolygonMapper")
@@ -160,6 +161,68 @@ struct MapPolygonMapperTests {
         #expect(metadata?.fillHex == "#ABCDEF")
     }
 
+    @Test("Severe polygons without style metadata keep subtitle nil")
+    func severePolygons_withoutStyleMetadataHaveNilSubtitle() {
+        let severeRisks: [SevereRiskShapeDTO] = [
+            SevereRiskShapeDTO(
+                type: .wind,
+                probabilities: .percent(0.15),
+                stroke: nil,
+                fill: nil,
+                polygons: [makeGeoPolygon(title: "15% Wind Risk")]
+            )
+        ]
+
+        let result = mapper.polygons(
+            for: .wind,
+            stormRisk: [],
+            severeRisks: severeRisks,
+            mesos: [],
+            fires: []
+        )
+
+        #expect(result.polygons.count == 1)
+        #expect(result.polygons.first?.subtitle == nil)
+    }
+
+    @Test("Legend severe styles match map styles including alpha")
+    func legendSevereStyle_matchesMapStyle() {
+        let mapStyle = PolygonStyleProvider.getPolygonStyle(
+            risk: "TOR",
+            probability: "10",
+            context: .map,
+            spcFillHex: "#112233",
+            spcStrokeHex: "#445566"
+        )
+        let legendStyle = PolygonStyleProvider.getPolygonStyleForLegend(
+            risk: "TOR",
+            probability: "10",
+            spcFillHex: "#112233",
+            spcStrokeHex: "#445566"
+        )
+
+        #expect(rgba(of: mapStyle.0) == rgba(of: legendStyle.0))
+        #expect(rgba(of: mapStyle.1) == rgba(of: legendStyle.1))
+    }
+
+    @Test("SPC fill alpha is normalized to overlay alpha for map and legend")
+    func spcFillAlpha_isNormalizedForMapAndLegend() {
+        let mapStyle = PolygonStyleProvider.getPolygonStyle(
+            risk: "HAIL",
+            probability: "30",
+            context: .map,
+            spcFillHex: "#80112233"
+        )
+        let legendStyle = PolygonStyleProvider.getPolygonStyleForLegend(
+            risk: "HAIL",
+            probability: "30",
+            spcFillHex: "#80112233"
+        )
+
+        #expect(abs(alpha(of: mapStyle.0) - 0.3) < 0.0001)
+        #expect(abs(alpha(of: legendStyle.0) - 0.3) < 0.0001)
+    }
+
     private func makeStormRisk(level: StormRiskLevel, title: String) -> StormRiskDTO {
         StormRiskDTO(
             riskLevel: level,
@@ -198,5 +261,20 @@ struct MapPolygonMapperTests {
             threats: nil,
             coordinates: coordinates
         )
+    }
+
+    private func rgba(of color: UIColor) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return (red, green, blue, alpha)
+    }
+
+    private func alpha(of color: UIColor) -> CGFloat {
+        var alpha: CGFloat = 0
+        color.getRed(nil, green: nil, blue: nil, alpha: &alpha)
+        return alpha
     }
 }

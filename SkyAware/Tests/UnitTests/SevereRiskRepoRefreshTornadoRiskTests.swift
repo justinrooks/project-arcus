@@ -73,8 +73,8 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
         let repo = SevereRiskRepo(modelContainer: container)
         // Build two minimal features with properties sufficient for makeSevereRisk
-        let props1 = makeProperties(label: "0.10", label2: "tornado", issue: "2025-09-20T00:00:00Z", valid: "2025-09-20T00:00:00Z", expire: "2025-09-20T02:00:00Z", dn: 10)
-        let props2 = makeProperties(label: "SIGN", label2: "10% Significant Tornado Risk", issue: "2025-09-20T00:00:00Z", valid: "2025-09-20T00:00:00Z", expire: "2025-09-20T02:00:00Z", dn: 99)
+        let props1 = makeProperties(label: "0.10", label2: "tornado", issue: "202509200000", valid: "202509200000", expire: "202509200200", dn: 10)
+        let props2 = makeProperties(label: "SIGN", label2: "10% Significant Tornado Risk", issue: "202509200000", valid: "202509200000", expire: "202509200200", dn: 99)
 
         let geom = makeMultiPolygonGeometry(squareAtLonLat: (-100.0, 40.0), size: 1.0)
         let f1 = makeFeature(properties: props1, geometry: geom)
@@ -92,6 +92,37 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         // Spot check: both are tornado type
         #expect(items.allSatisfy { $0.type == .tornado })
     }
+
+    @Test("Severe shape DTO includes SPC stroke and fill from persistence")
+    func shapeDtoIncludesStrokeAndFill() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        let props = makeProperties(
+            label: "0.10",
+            label2: "10% Tornado Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 10,
+            stroke: "#ABCDEF",
+            fill: "#123456"
+        )
+        let geom = makeMultiPolygonGeometry(squareAtLonLat: (-100.0, 40.0), size: 1.0)
+        let feature = makeFeature(properties: props, geometry: geom)
+        let data = try JSONEncoder().encode(makeFeatureCollection(features: [feature]))
+        let mock = MockClient(mode: .success(data))
+
+        try await repo.refreshTornadoRisk(using: mock)
+        let activeAt = Date(timeIntervalSince1970: 1_758_326_400) // 2025-09-20 01:00:00 UTC
+        let shapes = try await repo.getSevereRiskShapes(asOf: activeAt)
+
+        #expect(shapes.count == 1)
+        #expect(shapes.first?.stroke == "#ABCDEF")
+        #expect(shapes.first?.fill == "#123456")
+        #expect(shapes.first?.probabilities == .percent(0.10))
+    }
 }
 
 // MARK: - Test JSON Builders
@@ -106,9 +137,18 @@ private func makeFeature(properties: GeoJSONProperties, geometry: GeoJSONGeometr
     return GeoJSONFeature(type: "Feature", geometry: geometry, properties: properties)
 }
 
-private func makeProperties(label: String, label2: String, issue: String, valid: String, expire: String, dn: Int) -> GeoJSONProperties {
+private func makeProperties(
+    label: String,
+    label2: String,
+    issue: String,
+    valid: String,
+    expire: String,
+    dn: Int,
+    stroke: String = "#000000",
+    fill: String = "#000000"
+) -> GeoJSONProperties {
     // Include required stroke/fill fields to satisfy Decodable shape
-    return GeoJSONProperties(DN: dn, VALID: valid, EXPIRE: expire, ISSUE: issue, LABEL: label, LABEL2: label2, stroke: "#000000", fill: "#000000")
+    return GeoJSONProperties(DN: dn, VALID: valid, EXPIRE: expire, ISSUE: issue, LABEL: label, LABEL2: label2, stroke: stroke, fill: fill)
 }
 
 private func makeMultiPolygonGeometry(squareAtLonLat origin: (Double, Double), size: Double) -> GeoJSONGeometry {

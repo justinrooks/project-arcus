@@ -7,22 +7,12 @@
 		<key>SkyAware.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>4</integer>
+			<integer>1</integer>
 		</dict>
 	</dict>
 	<key>SuppressBuildableAutocreation</key>
 	<dict>
 		<key>D095EFA22E16F5690074F867</key>
-		<dict>
-			<key>primary</key>
-			<true/>
-		</dict>
-		<key>D095EFB12E16F56A0074F867</key>
-		<dict>
-			<key>primary</key>
-			<true/>
-		</dict>
-		<key>D095EFBB2E16F56A0074F867</key>
 		<dict>
 			<key>primary</key>
 			<true/>
