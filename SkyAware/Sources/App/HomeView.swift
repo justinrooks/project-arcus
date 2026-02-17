@@ -89,7 +89,6 @@ struct HomeView: View {
 
     var body: some View {
         ZStack {
-            Color(.skyAwareBackground).ignoresSafeArea()
             TabView {
                 NavigationStack {
                     ScrollView {
@@ -101,11 +100,7 @@ struct HomeView: View {
                             watches: watches,
                             outlook: outlook
                         )
-                        .toolbar(.hidden, for: .navigationBar)
-                        .background(.skyAwareBackground)
                     }
-                    .scrollContentBackground(.hidden)
-                    .background(Color.skyAwareBackground.ignoresSafeArea())
                     .refreshable {
                         lastRefreshKey = nil
                         await refresh(for: snap, force: true, showsLoading: true)
@@ -116,37 +111,33 @@ struct HomeView: View {
                 }
                 
                 NavigationStack {
-                    AlertView(mesos: mesos, watches: watches)
-                        .navigationTitle("Active Alerts")
-                        .navigationBarTitleDisplayMode(.inline)
-            //            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                        .refreshable {
+                    AlertView(
+                        mesos: mesos,
+                        watches: watches,
+                        onRefresh: {
                             logger.debug("refreshing alerts")
                             lastRefreshKey = nil
                             await withLoading(message: "Refreshing alerts...") {
                                 await refresh(for: snap, force: true, showsLoading: false)
                             }
                         }
+                    )
+                        .navigationTitle("Active Alerts")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 }
                 .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
                     .badge(mesos.count + watches.count)
                 
                 MapScreenView()
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(.skyAwareBackground)
                     .tabItem { Label("Map", systemImage: "map") }
                 
                 NavigationStack {
-                    ConvectiveOutlookView(dtos: outlooks)
-                        .navigationTitle("Convective Outlooks")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                        .refreshable {
+                    ConvectiveOutlookView(
+                        dtos: outlooks,
+                        onRefresh: {
                             logger.debug("refreshing outlooks")
                             await withLoading(message: "Syncing outlooks...") {
                                 let now = Date()
@@ -157,20 +148,26 @@ struct HomeView: View {
                                 await refreshOutlooks()
                             }
                         }
+                    )
+                        .navigationTitle("Convective Outlooks")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 }
                 .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
                 
                 NavigationStack {
                     SettingsView()
-                        .navigationTitle("Background Health")
+                        .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
                 }
                 .tabItem {Label("Settings", systemImage: "gearshape")}
             
             }
+            .toolbarBackground(.visible, for: .tabBar)
+            .toolbarBackground(.ultraThinMaterial, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
             if loadingState.isVisible {
                 LoadingView(message: loadingState.displayMessage)

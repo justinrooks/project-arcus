@@ -10,6 +10,7 @@ import SwiftUI
 struct AlertView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
+    let onRefresh: (() async -> Void)?
 
     @State private var selectedWatch: WatchRowDTO?
     @State private var selectedMeso: MdDTO?
@@ -18,97 +19,147 @@ struct AlertView: View {
         watches.isEmpty && mesos.isEmpty
     }
 
-    var body: some View {
-        List {
-            if hasNoAlerts {
-                emptyRow(
-                    title: "No active watches or mesos",
-                    subtitle: "There are no active weather watches."
-                )
-            } else {
-                if watches.isEmpty {
-                    emptyRow(
-                        title: "No active watches",
-                        subtitle: "There are no active weather watches."
-                    )
-                } else {
-                    Section {
-                        ForEach(watches) { watch in
-                            Button {
-                                selectedWatch = watch
-                            } label: {
-                                AlertRowView(alert: watch)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    } header: {
-                        sectionHeader("Watches")
-                    }
-                }
+    init(
+        mesos: [MdDTO],
+        watches: [WatchRowDTO],
+        onRefresh: (() async -> Void)? = nil
+    ) {
+        self.mesos = mesos
+        self.watches = watches
+        self.onRefresh = onRefresh
+    }
 
-                if mesos.isEmpty {
-                    emptyRow(
-                        title: "No active mesoscale discussions",
-                        subtitle: "There are no active mesoscale discussions."
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                if hasNoAlerts {
+                    emptySectionCard(
+                        title: "No active watches or mesos",
+                        subtitle: "There are currently no active weather watches or mesoscale discussions.",
+                        symbol: "checkmark.shield"
                     )
                 } else {
-                    Section {
-                        ForEach(mesos) { meso in
-                            Button {
-                                selectedMeso = meso
-                            } label: {
-                                AlertRowView(alert: meso)
+                    if watches.isEmpty {
+                        emptySectionCard(
+                            title: "No active watches",
+                            subtitle: "There are no active weather watches.",
+                            symbol: "checkmark.seal"
+                        )
+                    } else {
+                        alertSection(
+                            title: "Watches",
+                            subtitle: "\(watches.count) active",
+                            symbol: "exclamationmark.triangle.fill"
+                        ) {
+                            ForEach(watches) { watch in
+                                Button {
+                                    selectedWatch = watch
+                                } label: {
+                                    AlertRowView(alert: watch)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
-                    } header: {
-                        sectionHeader("Mesoscale Discussions")
+                    }
+
+                    if mesos.isEmpty {
+                        emptySectionCard(
+                            title: "No active mesoscale discussions",
+                            subtitle: "There are no active mesoscale discussions.",
+                            symbol: "checkmark.seal"
+                        )
+                    } else {
+                        alertSection(
+                            title: "Mesoscale Discussions",
+                            subtitle: "\(mesos.count) active",
+                            symbol: "waveform.path.ecg"
+                        ) {
+                            ForEach(mesos) { meso in
+                                Button {
+                                    selectedMeso = meso
+                                } label: {
+                                    AlertRowView(alert: meso)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
         }
-        .listStyle(.insetGrouped)
-        .listSectionSpacing(12)
-        .scrollContentBackground(.hidden)
-        .background(.skyAwareBackground)
+        .refreshable {
+            guard let onRefresh else { return }
+            await onRefresh()
+        }
+        .scrollIndicators(.hidden)
         .navigationDestination(item: $selectedWatch) { watch in
             ScrollView {
                 WatchDetailView(watch: watch, layout: .full)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
             }
+            .background(Color.clear)
             .navigationTitle("Weather Watch")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
         .navigationDestination(item: $selectedMeso) { meso in
             ScrollView {
                 MesoscaleDiscussionCard(meso: meso, layout: .full)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
             }
             .navigationTitle("Mesoscale Discussion")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         }
-        .contentMargins(.top, 0, for: .scrollContent)
     }
 
-    @ViewBuilder
-    private func emptyRow(title: String, subtitle: String) -> some View {
-        ContentUnavailableView {
-            Label(title, systemImage: "checkmark.seal.fill")
-        } description: {
+    private func alertSection<Content: View>(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: symbol)
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Text(subtitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .skyAwareChip(cornerRadius: 11, tint: .white.opacity(0.08))
+            }
+
+            content()
+        }
+        .padding(16)
+        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+    }
+
+    private func emptySectionCard(title: String, subtitle: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.headline.weight(.semibold))
             Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
-        .scaleEffect(0.9)
-        .listRowBackground(Color.clear)
-    }
-
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.caption.weight(.semibold))
-            .textCase(.uppercase)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .cardBackground(cornerRadius: 22, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 
@@ -116,9 +167,8 @@ struct AlertView: View {
     NavigationStack {
         AlertView(mesos: MD.sampleDiscussionDTOs, watches: Watch.sampleWatchRows)
             .navigationTitle("Active Alerts")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
 }

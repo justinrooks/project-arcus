@@ -34,31 +34,47 @@ struct MapScreenView: View {
             MapCanvasView(polygons: activePolygons, coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.all)
             
-            VStack {
-                Button {
-                    showLayerPicker = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 44, height: 44)
-                        .foregroundStyle(.primary)
+            VStack(alignment: .trailing) {
+                HStack(spacing: 10) {
+                    Label(selected.title, systemImage: selected.symbol)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .skyAwareSurface(
+                            cornerRadius: 16,
+                            tint: .white.opacity(0.10),
+                            shadowOpacity: 0.12,
+                            shadowRadius: 8,
+                            shadowY: 3
+                        )
+
+                    Button {
+                        showLayerPicker = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.headline.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel("Map layers")
+                    .skyAwareSurface(
+                        cornerRadius: 22,
+                        tint: .skyAwareAccent.opacity(0.18),
+                        interactive: true,
+                        shadowOpacity: 0.16,
+                        shadowRadius: 10,
+                        shadowY: 6
+                    )
+                    .modifier(MapLayerButtonMorph(namespace: layerNamespace))
                 }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .accessibilityLabel("Map layers")
-                .skyAwareSurface(
-                    cornerRadius: 22,
-                    tint: .skyAwareAccent.opacity(0.18),
-                    interactive: true,
-                    shadowOpacity: 0.2,
-                    shadowRadius: 12,
-                    shadowY: 8
-                )
-                .modifier(MapLayerButtonMorph(namespace: layerNamespace))
-                .padding(26)
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .zIndex(2)
+            .zIndex(3)
             
             // Legend in bottom-right (stable container)
             VStack {

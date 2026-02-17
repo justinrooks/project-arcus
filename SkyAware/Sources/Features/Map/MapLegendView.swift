@@ -5,11 +5,12 @@ struct MapLegend: View {
     let severeRisks: [SevereRiskShapeDTO]?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             switch layer {
             case .categorical:
                 Text("Severe Storm Risk")
                     .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
                 ForEach(categoricalLevels, id: \.self) { level in
                     CategoricalLegendRow(risk: level)
                 }
@@ -17,30 +18,33 @@ struct MapLegend: View {
             case .meso:
                 Text("Legend")
                     .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
                 CategoricalLegendRow(risk: layer.key.capitalized) // MESO
             
             case .fire:
                 Text("Legend")
                     .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
                 CategoricalLegendRow(risk: layer.key.capitalized) // Fire
 
             case .tornado, .hail, .wind:
                 let risks = severeRisks ?? []
                 Text(risks.isEmpty ? "No \(layer.title.lowercased()) risk" : "\(layer.title) Risk")
                     .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
 
                 ForEach(risks.indices, id: \.self) { index in
                     SevereLegendRow(layer: layer, risk: risks[index])
                 }
             }
         }
-        .padding(14)
-        .skyAwareSurface(
-            cornerRadius: 16,
-            tint: .white.opacity(0.08),
-            shadowOpacity: 0.16,
-            shadowRadius: 10,
-            shadowY: 5
+        .padding(16)
+        .frame(minWidth: 144, alignment: .leading)
+        .cardBackground(
+            cornerRadius: 18,
+            shadowOpacity: 0.10,
+            shadowRadius: 8,
+            shadowY: 3
         )
     }
 
@@ -63,7 +67,7 @@ private struct CategoricalLegendRow: View {
                 .overlay(
                     Circle().stroke(Color(stroke), lineWidth: 1.15)
                 )
-                .frame(width: 15, height: 15)
+                .frame(width: 14, height: 14)
             Text(risk)
                 .font(.caption)
                 .fontWeight(["HIGH", "MDT", "ENH"].contains(risk) ? .semibold : .regular)
@@ -89,7 +93,7 @@ private struct SevereLegendRow: View {
                 .overlay(
                     Circle().stroke(Color(stroke), lineWidth: 1.15)
                 )
-                .frame(width: 15, height: 15)
+                .frame(width: 14, height: 14)
             switch probability {
             case .significant:
                 Text(probability.description)

@@ -15,6 +15,10 @@ struct SummaryView: View {
     let watches: [WatchRowDTO]
     let outlook: ConvectiveOutlookDTO?
 
+    private var hasActiveAlerts: Bool {
+        !mesos.isEmpty || !watches.isEmpty
+    }
+
     @ViewBuilder
     private var badgeRow: some View {
         HStack {
@@ -28,42 +32,74 @@ struct SummaryView: View {
     }
     
     var body: some View {
-        VStack(spacing: 16) {
-            // Header
+        VStack(spacing: 18) {
             SummaryStatus(
                 location: snap?.placemarkSummary ?? "Searching...",
                 updatedAt: outlook?.published
             )
             .placeholder(outlook == nil || snap == nil)
-            
-            // Badges
-            if #available(iOS 26, *) {
-                GlassEffectContainer(spacing: 14) {
+
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
+                if #available(iOS 26, *) {
+                    GlassEffectContainer(spacing: 14) {
+                        badgeRow
+                    }
+                } else {
                     badgeRow
                 }
-            } else {
-                badgeRow
             }
-            
-            // Alerts
-            if !mesos.isEmpty || !watches.isEmpty {
+            .padding(16)
+            .cardBackground(cornerRadius: 26, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+
+            if hasActiveAlerts {
                 ActiveAlertSummaryView(
                     mesos: mesos,
                     watches: watches
                 )
-                .toolbar(.hidden, for: .navigationBar)
-                .background(.skyAwareBackground)
-                .padding(.bottom, 12)
+            } else {
+                emptySectionCard(
+                    title: "No Active Alerts",
+                    message: "Your local area currently has no active watches or mesoscale discussions.",
+                    symbol: "checkmark.shield"
+                )
             }
-            
-            // Current Outlook
+
             if let outlook {
                 OutlookSummaryCard(outlook: outlook)
-                    .padding(.bottom, 12)
+            } else {
+                emptySectionCard(
+                    title: "Outlook Pending",
+                    message: "Convective outlook text has not been synced yet.",
+                    symbol: "clock.arrow.circlepath"
+                )
             }
-            Spacer(minLength: 6)
+
+            Spacer(minLength: 14)
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 20)
+    }
+
+    private func sectionTitle(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+    }
+
+    private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.headline.weight(.semibold))
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .cardBackground(cornerRadius: 24, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 
@@ -84,7 +120,6 @@ struct SummaryView: View {
             outlook: ConvectiveOutlook.sampleOutlookDtos.first
         )
         .toolbar(.hidden, for: .navigationBar)
-        .background(.skyAwareBackground)
     }
 }
 
@@ -104,6 +139,5 @@ struct SummaryView: View {
             outlook: nil
         )
         .toolbar(.hidden, for: .navigationBar)
-        .background(.skyAwareBackground)
     }
 }

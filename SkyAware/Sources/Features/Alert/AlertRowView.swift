@@ -27,23 +27,29 @@ struct AlertRowView: View {
             Image(systemName: iconAndColor.icon)
                 .foregroundStyle(iconAndColor.color)
                 .font(.headline.weight(.semibold))
-                .frame(width: 36, height: 36)
-                .skyAwareChip(cornerRadius: 12, tint: iconAndColor.color.opacity(0.16))
+                .frame(width: 40, height: 40)
+                .skyAwareChip(cornerRadius: 14, tint: iconAndColor.color.opacity(0.16))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
                     .font(.headline.weight(.semibold))
                     .lineLimit(2)
-                    .minimumScaleFactor(0.9)
+                    .minimumScaleFactor(0.85)
                 
                 Text("Issued \(relativeDate(alert.issued))")
                     .font(.caption.weight(.medium))
                     .foregroundColor(.secondary)
             }
             Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .padding()
-        .cardRowBackground()
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(14)
+        .cardBackground(cornerRadius: 18, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Helpers

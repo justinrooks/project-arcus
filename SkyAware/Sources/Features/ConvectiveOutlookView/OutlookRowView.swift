@@ -18,8 +18,8 @@ struct OutlookRowView: View {
             Image(systemName: "pencil.and.list.clipboard")
                 .foregroundColor(.skyAwareAccent)
                 .font(.headline.weight(.semibold))
-                .frame(width: 36, height: 36)
-                .skyAwareChip(cornerRadius: 12, tint: Color.skyAwareAccent.opacity(0.18))
+                .frame(width: 40, height: 40)
+                .skyAwareChip(cornerRadius: 14, tint: Color.skyAwareAccent.opacity(0.18))
 
             if let day = simplifyOutlookTitle(outlook.title) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -34,11 +34,25 @@ struct OutlookRowView: View {
                             .foregroundColor(.secondary)
                     }
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(outlook.title)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(2)
+                    Text("Published \(outlook.published.relativeDate())")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondary)
+                }
             }
             Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .padding()
-        .cardRowBackground()
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(14)
+        .cardBackground(cornerRadius: 18, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .contentShape(Rectangle())
     }
 }
 

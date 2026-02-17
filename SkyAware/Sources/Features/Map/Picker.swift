@@ -85,24 +85,24 @@ struct LayerTile: View {
             action()
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }) {
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                     .fill(layer.gradient(for: scheme))
                     .overlay(
                         Image(systemName: layer.symbol).formatBadgeImage()
                     )
-                    .frame(width: 80, height: 80)
+                    .frame(width: 74, height: 74)
                     .skyAwareSurface(
                         cornerRadius: SkyAwareRadius.medium,
                         tint: tint,
                         interactive: true,
-                        shadowOpacity: scheme == .dark ? 0.25 : 0.12,
-                        shadowRadius: 6,
-                        shadowY: 3
+                        shadowOpacity: scheme == .dark ? 0.20 : 0.10,
+                        shadowRadius: 5,
+                        shadowY: 2
                     )
                     .overlay {
                         RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-                            .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
+                            .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
                     }
 
                 Text(layer.title)
@@ -128,11 +128,10 @@ struct LayerPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     
-    private let columns = [GridItem(.flexible()), GridItem(.flexible()),
-                           GridItem(.flexible()), GridItem(.flexible())]
+    private let columns = [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 14)]
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack {
                 HStack(spacing: 8) {
                     Image(systemName: "slider.horizontal.3")
@@ -148,27 +147,34 @@ struct LayerPickerSheet: View {
             }
             .padding()
 
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(MapLayer.allCases) { layer in
-                    LayerTile(layer: layer, isSelected: selection == layer) {
-                        toggle(layer)
+            Text("Active: \(selection.title)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .skyAwareChip(cornerRadius: 12, tint: .white.opacity(0.09))
+
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(MapLayer.allCases) { layer in
+                        LayerTile(layer: layer, isSelected: selection == layer) {
+                            toggle(layer)
+                        }
                     }
                 }
+                .padding(.horizontal)
+                .padding(.top, 2)
+                .padding(.bottom, 14)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 14)
 
-            // optional helper text
             Text("Choose a layer")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.bottom, 5)
+                .padding(.bottom, 8)
         }
         .padding(.top, 8)
-        .background(.skyAwareBackground)
-        .presentationDetents([.height(375)]) // looks like the Apple Maps panel
-//        .presentationDetents([.medium])
-//        .presentationCornerRadius(24)
+        .background(Color.clear)
+        .presentationDetents([.height(410), .medium])
         .interactiveDismissDisabled(false)
     }
 

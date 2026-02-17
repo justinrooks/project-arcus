@@ -13,9 +13,9 @@ extension View {
         cornerRadius: CGFloat = SkyAwareRadius.medium,
         tint: Color = .white.opacity(0.06),
         interactive: Bool = false,
-        shadowOpacity: Double = 0.12,
-        shadowRadius: CGFloat = SkyAwareRadius.medium,
-        shadowY: CGFloat = 6
+        shadowOpacity: Double = 0.10,
+        shadowRadius: CGFloat = 10,
+        shadowY: CGFloat = 4
     ) -> some View {
         if #available(iOS 26, *) {
             if interactive {
@@ -24,6 +24,11 @@ extension View {
                         .regular.tint(tint).interactive(),
                         in: .rect(cornerRadius: cornerRadius)
                     )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.16), lineWidth: 0.8)
+                            .allowsHitTesting(false)
+                    }
                     .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             } else {
                 self
@@ -31,6 +36,11 @@ extension View {
                         .regular.tint(tint),
                         in: .rect(cornerRadius: cornerRadius)
                     )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.16), lineWidth: 0.8)
+                            .allowsHitTesting(false)
+                    }
                     .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             }
         } else {
@@ -48,6 +58,11 @@ extension View {
                                     y: shadowY
                                 )
                         )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                                .allowsHitTesting(false)
+                        }
                         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 )
         }
@@ -83,14 +98,14 @@ extension View {
     
     @ViewBuilder
     func cardBackground(
-        cornerRadius: CGFloat = 30,
-        shadowOpacity: Double = 0.14,
-        shadowRadius: CGFloat = 14,
+        cornerRadius: CGFloat = 26,
+        shadowOpacity: Double = 0.10,
+        shadowRadius: CGFloat = 10,
         shadowY: CGFloat = 4
     ) -> some View {
         self.skyAwareSurface(
             cornerRadius: cornerRadius,
-            tint: .white.opacity(0.08),
+            tint: .white.opacity(0.10),
             shadowOpacity: shadowOpacity,
             shadowRadius: shadowRadius,
             shadowY: shadowY
@@ -98,10 +113,10 @@ extension View {
     }
     
     func cardRowBackground(
-        cornerRadius: CGFloat = 20,
-        shadowOpacity: Double = 0.03,
-        shadowRadius: CGFloat = 6,
-        shadowY: CGFloat = 2
+        cornerRadius: CGFloat = 18,
+        shadowOpacity: Double = 0.0,
+        shadowRadius: CGFloat = 0,
+        shadowY: CGFloat = 0
     ) -> some View {
         self
             .cardBackground(
@@ -110,7 +125,7 @@ extension View {
                 shadowRadius: shadowRadius,
                 shadowY: shadowY
             )
-            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+            .listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
     }

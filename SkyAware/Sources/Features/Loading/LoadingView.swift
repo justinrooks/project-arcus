@@ -12,11 +12,11 @@ struct LoadingView: View {
 
     var body: some View {
         ZStack {
-            Color.skyAwareBackground
-                .opacity(0.6)
+            Color.black
+                .opacity(0.24)
                 .ignoresSafeArea()
 
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 ProgressView()
                     .tint(.skyAwareAccent)
                     .scaleEffect(1.2)
@@ -28,15 +28,9 @@ struct LoadingView: View {
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
-            .skyAwareSurface(
-                cornerRadius: 16,
-                tint: .skyAwareAccent.opacity(0.18),
-                shadowOpacity: 0.2,
-                shadowRadius: 12,
-                shadowY: 8
-            )
+            .cardBackground(cornerRadius: 18, shadowOpacity: 0.16, shadowRadius: 10, shadowY: 6)
         }
-        .transition(.opacity.combined(with: .scale)) // Smooth fade & scale
+        .transition(.opacity.combined(with: .scale))
     }
 }
 

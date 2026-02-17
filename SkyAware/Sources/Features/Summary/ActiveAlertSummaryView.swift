@@ -40,29 +40,20 @@ struct ActiveAlertSummaryView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            // MARK: Header
-            HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.skyAwareAccent)
-                Text("Local Alerts")
-                    .font(.headline.weight(.semibold))
-                Spacer()
-            }
-            
-            // MARK: Active Alerts
-            VStack(alignment: .leading, spacing: 15) {
-                if #available(iOS 26, *) {
-                    GlassEffectContainer(spacing: 12) {
-                        alertsContent
-                    }
-                } else {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline.weight(.semibold))
+
+            if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 12) {
                     alertsContent
                 }
+            } else {
+                alertsContent
             }
         }
-        .padding()
-        .cardBackground()
+        .padding(18)
+        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(height: $mesoSheetHeight) {
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet)
@@ -113,9 +104,9 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
             Text(label.uppercased())
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .skyAwareChip(cornerRadius: 10, tint: .white.opacity(0.07))
+                .skyAwareChip(cornerRadius: 12, tint: .white.opacity(0.09))
             
             ForEach(visibleItems) { item in
                 Button { onSelect(item) } label: { row(item) }
@@ -124,7 +115,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
             
             if items.count > visibleItems.count {
                 Text("Showing \(visibleItems.count) of \(items.count) \(label.lowercased())")
-                    .font(.footnote)
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
             }
         }

@@ -10,36 +10,32 @@ import SwiftUI
 struct SummaryStatus: View {
     let location: String
     let updatedAt: Date?
-    
-    private var tint: Color {
-        guard let updatedAt else { return .skyAwareAccent.opacity(0.14) }
-        let age = Date().timeIntervalSince(updatedAt)
-        switch age {
-        case ..<3600: return .green.opacity(0.16)
-        case ..<14400: return .orange.opacity(0.16)
-        default: return .red.opacity(0.16)
-        }
-    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Label(location, systemImage: "location")
-                .font(.callout.weight(.semibold))
-                .lineLimit(1)
-            if let updatedAt {
-                TimeView(time: updatedAt)
-            } else {
-                Text("Updating…")
-                    .font(.callout.weight(.regular))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Current Conditions")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+
+            HStack(spacing: 10) {
+                Label(location, systemImage: "location.fill")
+                    .font(.headline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                if let updatedAt {
+                    TimeView(time: updatedAt)
+                } else {
+                    Text("Updating…")
+                        .font(.callout.weight(.regular))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .skyAwareChip(cornerRadius: 16, tint: tint)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .cardBackground(cornerRadius: 22, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 }
 

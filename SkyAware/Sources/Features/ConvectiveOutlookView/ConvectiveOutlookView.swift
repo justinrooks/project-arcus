@@ -9,42 +9,82 @@ import SwiftUI
 
 struct ConvectiveOutlookView: View {
     let dtos: [ConvectiveOutlookDTO]
+    let onRefresh: (() async -> Void)?
     
     @State private var selectedOutlook: ConvectiveOutlookDTO?
 
     private var hasNoOutlooks: Bool {
         dtos.isEmpty
     }
+
+    init(
+        dtos: [ConvectiveOutlookDTO],
+        onRefresh: (() async -> Void)? = nil
+    ) {
+        self.dtos = dtos
+        self.onRefresh = onRefresh
+    }
     
     var body: some View {
-        List {
-            if hasNoOutlooks {
-                ContentUnavailableView {
-                    Label("No convective outlooks found", systemImage: "cloud.sun.fill")
-                } description: {
-                    Text("There are no convective outlooks available.")
-                }
-                .listRowBackground(Color.clear)
-            } else {
-                Section {
-                    ForEach(dtos) { dto in
-                        Button {
-                            selectedOutlook = dto
-                        } label: {
-                            OutlookRowView(outlook: dto)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                sectionTitle
+
+                if hasNoOutlooks {
+                    emptyCard
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(dtos) { dto in
+                            Button {
+                                selectedOutlook = dto
+                            } label: {
+                                OutlookRowView(outlook: dto)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
         }
-        .listStyle(.insetGrouped)
-        .listSectionSpacing(12)
-        .scrollContentBackground(.hidden)
-        .background(.skyAwareBackground)
+        .refreshable {
+            guard let onRefresh else { return }
+            await onRefresh()
+        }
+        .scrollIndicators(.hidden)
         .navigationDestination(item: $selectedOutlook) { outlook in
             ConvectiveOutlookDetailView(outlook: outlook)
         }
+    }
+
+    private var sectionTitle: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Forecast Discussions")
+                .font(.headline.weight(.semibold))
+            Text("Latest convective outlook products from SPC.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+    }
+
+    private var emptyCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("No convective outlooks found", systemImage: "cloud.sun.fill")
+                .font(.headline.weight(.semibold))
+            Text("There are no convective outlooks available.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .cardBackground(cornerRadius: 22, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 
@@ -52,9 +92,8 @@ struct ConvectiveOutlookView: View {
     NavigationStack {
         ConvectiveOutlookView(dtos: ConvectiveOutlook.sampleOutlookDtos)
             .navigationTitle("Convective Outlooks")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
 }
