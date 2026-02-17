@@ -32,11 +32,15 @@ struct DiagnosticsView: View {
                     Button("Clear Cache") {
 //                        clearCache()
                     }
+                    .skyAwareGlassButtonStyle()
                     Button("Force Refresh") {
 //                        forceRefresh()
                     }
+                    .skyAwareGlassButtonStyle(prominent: true)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
         }
     }
 }

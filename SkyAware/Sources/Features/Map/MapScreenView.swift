@@ -27,6 +27,7 @@ struct MapScreenView: View {
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
+    @Namespace private var layerNamespace
     
     var body: some View {
         ZStack {
@@ -38,10 +39,20 @@ struct MapScreenView: View {
                     showLayerPicker = true
                 } label: {
                     Image(systemName: "slider.horizontal.3")
-                        .padding()
+                        .font(.headline.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
-                .background(.ultraThickMaterial, in: Circle())
+                .skyAwareSurface(
+                    cornerRadius: 22,
+                    tint: .skyAwareAccent.opacity(0.18),
+                    interactive: true,
+                    shadowOpacity: 0.2,
+                    shadowRadius: 12,
+                    shadowY: 8
+                )
+                .modifier(MapLayerButtonMorph(namespace: layerNamespace))
                 .padding(26)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -54,14 +65,14 @@ struct MapScreenView: View {
                 }
                 .transition(.opacity)
                 .animation(.default, value: selected)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
                 .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(selection: $selected,
-                             title: "Map Layers")
+                             title: "Map Layers",
+                             triggerNamespace: layerNamespace)
         }
         .task {
             await loadMapData()
@@ -176,6 +187,19 @@ struct MapScreenView: View {
             mesos: mesos,
             fires: fireRisk
         )
+    }
+}
+
+private struct MapLayerButtonMorph: ViewModifier {
+    let namespace: Namespace.ID
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffectID("map-layer-button", in: namespace)
+        } else {
+            content
+        }
     }
 }
 

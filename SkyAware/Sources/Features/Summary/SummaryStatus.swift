@@ -98,6 +98,7 @@ private struct TimeView: View {
         case (.dark, .warning):  return Color(red: 0.98, green: 0.8, blue: 0.46)
         case (.light, .expired): return Color(red: 0.8, green: 0.32, blue: 0.32)
         case (.dark, .expired):  return Color(red: 1.0, green: 0.56, blue: 0.56)
+        @unknown default: return .secondary
         }
     }
 }

@@ -109,6 +109,8 @@ struct LogViewerView: View {
             }
             .pickerStyle(.segmented)
         }
+        .padding(10)
+        .cardBackground(cornerRadius: 20, shadowOpacity: 0.12, shadowRadius: 10, shadowY: 4)
     }
 
     private var contentList: some View {
@@ -181,8 +183,11 @@ private struct LogRowView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(logBadge(for: line.level))
-                .font(.system(.headline, design: .rounded))
-                .frame(width: 24)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(logColor(for: line.level))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .skyAwareChip(cornerRadius: 10, tint: logColor(for: line.level).opacity(0.16))
             VStack(alignment: .leading, spacing: 2) {
                 Text(line.message)
                     .font(.callout)
@@ -205,14 +210,26 @@ private struct LogRowView: View {
 
 private func logBadge(for level: OSLogEntryLog.Level) -> String {
     switch level {
-    case .debug:   return "🐜"
-    case .info:    return "ℹ️"
-    case .notice:  return "✅"
-    case .error:   return "❌"
-    case .fault:   return "⛔️"
+    case .debug:   return "DBG"
+    case .info:    return "INF"
+    case .notice:  return "OK"
+    case .error:   return "ERR"
+    case .fault:   return "FLT"
     case .undefined:
-        return "❓"
-    @unknown default: return "➟"
+        return "UNK"
+    @unknown default: return "OTH"
+    }
+}
+
+private func logColor(for level: OSLogEntryLog.Level) -> Color {
+    switch level {
+    case .debug: return .secondary
+    case .info: return .blue
+    case .notice: return .green
+    case .error: return .orange
+    case .fault: return .red
+    case .undefined: return .secondary
+    @unknown default: return .secondary
     }
 }
 

@@ -21,6 +21,7 @@ struct BgHealthDiagnosticsView: View {
             if let latest = runs.first {
                 Section {
                     StatusHeader(latest: latest)
+                        .cardRowBackground()
                 }
             }
             
@@ -34,11 +35,15 @@ struct BgHealthDiagnosticsView: View {
                 } else {
                     ForEach(runs, id: \.runId) { snap in
                         RunRow(snap: snap)
+                            .cardRowBackground()
                     }
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .listSectionSpacing(15)
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
         .contentMargins(.top, 0, for: .scrollContent)
     }
 }
@@ -60,7 +65,7 @@ private struct StatusHeader: View {
                 .frame(width: 12, height: 12)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Status: \(status.label)")
+                Text("Background Status: \(status.label)")
                     .font(.headline)
                 HStack(spacing: 12) {
                     Label("Last \(relative(latest.endedAt, now: now))", systemImage: "clock")
@@ -70,7 +75,8 @@ private struct StatusHeader: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
     }
     
     private func computeStatus(from latest: BgRunSnapshot, now: Date) -> (label: String, color: Color) {

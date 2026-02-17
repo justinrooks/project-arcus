@@ -92,107 +92,68 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section(header: Text("Notification Preferences")) {
-                HStack {
-                    Toggle("Enable Morning Summaries", isOn: $morningSummaryEnabled)
-                        .onChange(of: morningSummaryEnabled) { oldValue, newValue in
-                            handleNotificationToggle(newValue, for: "Morning Summaries")
-                        }
-                }
-                HStack {
-                    Toggle("Enable Meso Notifications", isOn: $mesoNotificationEnabled)
-                        .onChange(of: mesoNotificationEnabled) { oldValue, newValue in
-                            handleNotificationToggle(newValue, for: "Meso Notifications")
-                        }
-                }
-                HStack {
-                    Toggle("Enable Watch Notifications", isOn: $watchNotificationEnabled)
-                        .onChange(of: watchNotificationEnabled) { oldValue, newValue in
-                            handleNotificationToggle(newValue, for: "Watch Notifications")
-                        }
-                }
+                Toggle("Enable Morning Summaries", isOn: $morningSummaryEnabled)
+                    .onChange(of: morningSummaryEnabled) { _, newValue in
+                        handleNotificationToggle(newValue, for: "Morning Summaries")
+                    }
+                Toggle("Enable Meso Notifications", isOn: $mesoNotificationEnabled)
+                    .onChange(of: mesoNotificationEnabled) { _, newValue in
+                        handleNotificationToggle(newValue, for: "Meso Notifications")
+                    }
+                Toggle("Enable Watch Notifications", isOn: $watchNotificationEnabled)
+                    .onChange(of: watchNotificationEnabled) { _, newValue in
+                        handleNotificationToggle(newValue, for: "Watch Notifications")
+                    }
             }
             
             Section(header: Text("Onboarding Debug")) {
-                HStack {
-                    Toggle(isOn: $onboardingComplete) {
-                        Text("Onboarding flow complete")
-                    }
+                Toggle(isOn: $onboardingComplete) {
+                    Text("Onboarding flow complete")
                 }
-                HStack {
-                    Text("Disclaimer Accepted Version: \(disclaimerVersion)")
+                Text("Disclaimer Accepted Version: \(disclaimerVersion)")
+                Button("Reset disclaimer") {
+                    UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
+                    UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
                 }
-                HStack {
-                    Button("Reset disclaimer") {
-                        UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
-                        UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
-                    }
-                }
+                .skyAwareGlassButtonStyle()
             }
-            
-            //            Section(header: Text("AI PREFERENCES")) {
-            //                HStack{
-            //                    Toggle(isOn: $aiSummariesEnabled) {
-            //                        Text("Enable AI summaries")
-            //                    }
-            //                }
-            //                
-            //                if aiSummariesEnabled {
-            //                    HStack{
-            //                        Toggle(isOn: $aiShareLocation) {
-            //                            Text("Include location for summary")
-            //                        }
-            //                    }
-            //                    HStack{
-            //                        // Image(uiImage: UIImage(named: "Language")!)
-            //                        Picker(selection: brevityBinding, label: Text("Level of detail")) {
-            //                            ForEach(BrevityLevel.allCases) { level in
-            //                                Text(level.title).tag(level)
-            //                            }
-            //                        }
-            //                        // .pickerStyle(SegmentedPickerStyle())
-            //                    }
-            //                    HStack{
-            //                        // Image(uiImage: UIImage(named: "Language")!)
-            //                        Picker(selection: audienceBinding, label: Text("Interest level")) {
-            //                            ForEach(AudienceLevel.allCases) { level in
-            //                                Text(level.title).tag(level)
-            //                            }
-            //                        }
-            //                        // .pickerStyle(SegmentedPickerStyle())
-            //                    }
-            //                }
-            //            }
-            
+
             Section("Diagnostics") {
-                NavigationLink("Background Refresh History") {
+                NavigationLink {
                     BgHealthDiagnosticsView()
                         .navigationTitle("Background Refresh History")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                         .scrollContentBackground(.hidden)
                         .background(.skyAwareBackground)
+                } label: {
+                    Label("Background Refresh History", systemImage: "waveform.path.ecg")
                 }
-                NavigationLink("Diagnostic Info") {
+                NavigationLink {
                     DiagnosticsView()
                         .navigationTitle("Diagnostic Info")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                         .scrollContentBackground(.hidden)
                         .background(.skyAwareBackground)
+                } label: {
+                    Label("Diagnostic Info", systemImage: "stethoscope")
                 }
-                NavigationLink("Log Viewer") {
+                NavigationLink {
                     LogViewerView()
                         .navigationTitle("Log Viewer")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                         .scrollContentBackground(.hidden)
                         .background(.skyAwareBackground)
+                } label: {
+                    Label("Log Viewer", systemImage: "doc.text.magnifyingglass")
                 }
             }
             .foregroundColor(.orange) // Visual indicator it's debug-only
             
             Section("About") {
-                HStack {
+                HStack(spacing: 8) {
                     Text("Version")
                     Spacer()
                     Text(Bundle.main.fullVersion) // e.g., "1.0.0 (1)"
@@ -206,7 +167,7 @@ struct SettingsView: View {
                     //                        tapCount = 0
                     //                    }
                 }
-                HStack {
+                HStack(spacing: 8) {
                     Text("Disclaimer")
                     Spacer()
                     Text("\(disclaimerVersion)") // e.g., "1.0.0 (1)"
@@ -221,9 +182,9 @@ struct SettingsView: View {
                     //                    }
                 }
             }
-            
-            
         }
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
     }
 }
 

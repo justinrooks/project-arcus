@@ -28,11 +28,14 @@ struct ConvectiveOutlookView: View {
                             .onTapGesture {
                                 selectedOutlook = dto
                             }
-                            .padding(.horizontal)
+                            .padding(.horizontal, 2)
                     }
                 }
             }
         }
+        .listStyle(.insetGrouped)
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
         .navigationDestination(item: $selectedOutlook) { outlook in
             ConvectiveOutlookDetailView(outlook:outlook)
         }

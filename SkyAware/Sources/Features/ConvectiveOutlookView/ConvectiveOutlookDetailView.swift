@@ -13,61 +13,36 @@ struct ConvectiveOutlookDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                
-                // 🔷 Header
-//                VStack(alignment: .leading, spacing: 4) {
-//                    if let day = outlook.day {
-//                        Text("Day \(day) Convective Outlook")
-//                            .font(.title)
-//                            .bold()
-//                    } else {
-//                        Text(outlook.title)
-//                            .font(.title)
-//                            .bold()
-//                    }
-//                    
-//                    if let risk = outlook.riskLevel {
-//                        Text("Risk Level: \(risk)")
-//                            .font(.headline)
-//                            .foregroundColor(colorForRisk(risk))
-//                    }
-//                }
-                
-                // 🕓 Metadata
-                if let issued = outlook.issued{
-                    Text("Issued: \(issued.shorten())")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    if let issued = outlook.issued {
+                        Text("Issued: \(issued.shorten())")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
+                    if let until = outlook.validUntil {
+                        Text("Valid Until: \(until.shorten())")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundColor(.secondary)
+                    }
                 }
-                if let until = outlook.validUntil{
-                    Text("Valid Until: \(until.shorten())")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                Divider()
-                
-                // 📝 Summary
+                .padding()
+                .cardBackground(cornerRadius: 20, shadowOpacity: 0.1, shadowRadius: 10, shadowY: 4)
+
                 if let fullText = outlook.cleanText {
-                    Text(fullText)
+                    Text(fullText.trimmingCharacters(in: .whitespacesAndNewlines))
                         .font(.body)
-                        .foregroundColor(.primary)
                         .multilineTextAlignment(.leading)
+                        .padding()
+                        .cardBackground(cornerRadius: 20, shadowOpacity: 0.1, shadowRadius: 10, shadowY: 4)
                 }
 
-                
-                Divider()
-                
-                // 🔗 Link Button
                 Link(destination: outlook.link) {
-                    Label("View Outlook Online", systemImage: "link")
-                        .font(.headline)
-                        .padding()
+                    Label("View Outlook Online", systemImage: "arrow.up.right.square")
+                        .font(.headline.weight(.semibold))
                         .frame(maxWidth: .infinity)
-                        .background(Color.accentColor.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
-                        .accentColor(.teal)
                 }
-                
+                .skyAwareGlassButtonStyle(prominent: true)
+
                 Spacer(minLength: 40)
             }
             .padding()

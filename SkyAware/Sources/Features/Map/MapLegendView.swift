@@ -9,36 +9,39 @@ struct MapLegend: View {
             switch layer {
             case .categorical:
                 Text("Severe Storm Risk")
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.caption.weight(.semibold))
                 ForEach(categoricalLevels, id: \.self) { level in
                     CategoricalLegendRow(risk: level)
                 }
 
             case .meso:
                 Text("Legend")
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.caption.weight(.semibold))
                 CategoricalLegendRow(risk: layer.key.capitalized) // MESO
             
             case .fire:
                 Text("Legend")
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.caption.weight(.semibold))
                 CategoricalLegendRow(risk: layer.key.capitalized) // Fire
 
             case .tornado, .hail, .wind:
                 let risks = severeRisks ?? []
                 Text(risks.isEmpty ? "No \(layer.title.lowercased()) risk" : "\(layer.title) Risk")
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.caption.weight(.semibold))
 
                 ForEach(risks.indices, id: \.self) { index in
                     SevereLegendRow(layer: layer, risk: risks[index])
                 }
             }
         }
-        .padding()
+        .padding(14)
+        .skyAwareSurface(
+            cornerRadius: 16,
+            tint: .white.opacity(0.08),
+            shadowOpacity: 0.16,
+            shadowRadius: 10,
+            shadowY: 5
+        )
     }
 
     // Categorical ordering; mirrors SPC scale from highest to lowest, plus TSTM
@@ -63,6 +66,7 @@ private struct CategoricalLegendRow: View {
                 .frame(width: 15, height: 15)
             Text(risk)
                 .font(.caption)
+                .fontWeight(["HIGH", "MDT", "ENH"].contains(risk) ? .semibold : .regular)
         }
     }
 }

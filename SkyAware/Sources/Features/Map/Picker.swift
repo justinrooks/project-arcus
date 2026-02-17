@@ -69,6 +69,17 @@ struct LayerTile: View {
     let isSelected: Bool
     let action: () -> Void
 
+    private var tint: Color {
+        switch layer {
+        case .categorical: return .riskThunderstorm.opacity(0.20)
+        case .wind: return .windTeal.opacity(0.20)
+        case .hail: return .hailBlue.opacity(0.20)
+        case .tornado: return .tornadoRed.opacity(0.20)
+        case .meso: return .mesoPurple.opacity(0.20)
+        case .fire: return .fireWeather.opacity(0.20)
+        }
+    }
+
     var body: some View {
         Button(action: {
             action()
@@ -81,12 +92,18 @@ struct LayerTile: View {
                         Image(systemName: layer.symbol).formatBadgeImage()
                     )
                     .frame(width: 80, height: 80)
-                    .overlay(
-                        // selection ring
+                    .skyAwareSurface(
+                        cornerRadius: SkyAwareRadius.medium,
+                        tint: tint,
+                        interactive: true,
+                        shadowOpacity: scheme == .dark ? 0.25 : 0.12,
+                        shadowRadius: 6,
+                        shadowY: 3
+                    )
+                    .overlay {
                         RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                             .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
-                    )
-                    .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.2), radius: 6, y: 3)
+                    }
 
                 Text(layer.title)
                     .font(.subheadline.weight(.semibold))
@@ -107,6 +124,7 @@ struct LayerPickerSheet: View {
     /// Use a Set for multi-select; for single-select pass allowsMultipleSelection = false
     @Binding var selection: MapLayer
     var title: String = "Map Layers"
+    var triggerNamespace: Namespace.ID? = nil
 
     @Environment(\.dismiss) private var dismiss
     
@@ -116,10 +134,16 @@ struct LayerPickerSheet: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack {
-                Spacer()
-                Text(title)
-                    .font(.title3.weight(.semibold))
-                Spacer()
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 26, height: 26)
+                        .skyAwareChip(cornerRadius: 10, tint: .skyAwareAccent.opacity(0.18))
+                        .modifier(LayerPickerMorph(namespace: triggerNamespace))
+                    Text(title)
+                        .font(.title3.weight(.semibold))
+                }
+                Spacer(minLength: 6)
                 DismissButton()
             }
             .padding()
@@ -140,6 +164,8 @@ struct LayerPickerSheet: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 5)
         }
+        .padding(.top, 8)
+        .background(.skyAwareBackground)
         .presentationDetents([.height(375)]) // looks like the Apple Maps panel
 //        .presentationDetents([.medium])
 //        .presentationCornerRadius(24)
@@ -161,13 +187,26 @@ private struct DismissButton: View {
             dismiss()
         } label: {
             Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 35, weight: .semibold))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.secondary, .tertiary)
+                .font(.headline.weight(.bold))
+                .frame(width: 34, height: 34)
                 .accessibilityLabel("Close")
         }
         .buttonStyle(.plain)
+        .skyAwareChip(cornerRadius: 17, tint: .white.opacity(0.1), interactive: true)
         .contentShape(.rect)
+    }
+}
+
+private struct LayerPickerMorph: ViewModifier {
+    let namespace: Namespace.ID?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *), let namespace {
+            content.glassEffectID("map-layer-button", in: namespace)
+        } else {
+            content
+        }
     }
 }
 

@@ -15,24 +15,20 @@ struct OutlookRowView: View {
             // Type Badge
             Image(systemName: "pencil.and.list.clipboard")
                 .foregroundColor(.skyAwareAccent)
-                .font(.title3)
+                .font(.headline.weight(.semibold))
                 .frame(width: 36, height: 36)
-                .background(
-                    Circle()
-                        .fill(Color.skyAwareAccent.opacity(0.15))
-                )
+                .skyAwareChip(cornerRadius: 12, tint: Color.skyAwareAccent.opacity(0.18))
 
             if let day = simplifyOutlookTitle(outlook.title) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(day)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                        .font(.headline.weight(.semibold))
                         .lineLimit(2)
                         .minimumScaleFactor(0.9)
                     
                     if let issued = outlook.issued{
-                        Text("\(issued.shorten()) - \(issued.relativeDate())")
-                            .font(.caption)
+                        Text("\(issued.shorten()) • \(issued.relativeDate())")
+                            .font(.caption.weight(.medium))
                             .foregroundColor(.secondary)
                     }
                 }
