@@ -57,7 +57,7 @@ struct WatchRepoActiveTests {
         ctx.insert(upcoming)
         try ctx.save()
 
-        let hits = try await repo.active(county: "ALC013", zone: "ALC013", on: now)
+        let hits = try await repo.active(county: "ALC013", zone: "ALC013", fireZone: "COZ245", on: now)
         let ids = Set(hits.map { $0.id })
 
         #expect(ids.contains("1\(tag)"))

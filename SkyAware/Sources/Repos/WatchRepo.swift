@@ -17,7 +17,7 @@ actor WatchRepo {
         logger.info("Fetching current local watches for \(county, privacy: .public), \(zone, privacy: .public), \(fireZone, privacy: .public)")
         
 //        let candidates = try modelContext.fetch(allWatchesDescriptor())
-        let candidates = try modelContext.fetch(currentWatchesDescriptor())
+        let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
         
         var hits: [Watch] = []
         hits.reserveCapacity(candidates.count)
