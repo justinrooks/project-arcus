@@ -59,6 +59,7 @@
 				UnitTests/TestStore.swift,
 				UnitTests/WatchNotificationTests.swift,
 				UnitTests/WatchParserTests.swift,
+				UnitTests/WatchRepoActiveTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
@@ -83,6 +84,7 @@
 				UnitTests/TestStore.swift,
 				UnitTests/WatchNotificationTests.swift,
 				UnitTests/WatchParserTests.swift,
+				UnitTests/WatchRepoActiveTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;

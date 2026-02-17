@@ -15,10 +15,11 @@ struct WatchRepoActiveTests {
         repo = WatchRepo(modelContainer: container)
     }
 
-    private func makeWatch(number: Int, issued: Date, effective: Date, validEnd: Date) -> Watch {
+    private func makeWatch(number: String, issued: Date, effective: Date, validEnd: Date) -> Watch {
         let iso = ISO8601DateFormatter()
         return Watch(
-            nwsId: "\(number)",
+            nwsId: number,
+            messageId: number,
             areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
             ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
             sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
@@ -45,10 +46,11 @@ struct WatchRepoActiveTests {
     func filtersByValidityWindow() async throws {
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let tag = "-E"
 
-        let active = makeWatch(number: 1, issued: now.addingTimeInterval(-3600), effective: now.addingTimeInterval(-300), validEnd: now.addingTimeInterval(600))
-        let expired = makeWatch(number: 2, issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
-        let upcoming = makeWatch(number: 3, issued: now.addingTimeInterval(-600), effective: now.addingTimeInterval(600), validEnd: now.addingTimeInterval(3600))
+        let active = makeWatch(number: "1\(tag)", issued: now.addingTimeInterval(-3600), effective: now.addingTimeInterval(-300), validEnd: now.addingTimeInterval(600))
+        let expired = makeWatch(number: "2\(tag)", issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
+        let upcoming = makeWatch(number: "3\(tag)", issued: now.addingTimeInterval(-600), effective: now.addingTimeInterval(600), validEnd: now.addingTimeInterval(3600))
 
         ctx.insert(active)
         ctx.insert(expired)
@@ -58,8 +60,8 @@ struct WatchRepoActiveTests {
         let hits = try await repo.active(county: "ALC013", zone: "ALC013", on: now)
         let ids = Set(hits.map { $0.id })
 
-        #expect(ids.contains("1"))
-        #expect(!ids.contains("2"))
-        #expect(!ids.contains("3"))
+        #expect(ids.contains("1\(tag)"))
+        #expect(!ids.contains("2\(tag)"))
+        #expect(!ids.contains("3\(tag)"))
     }
 }
