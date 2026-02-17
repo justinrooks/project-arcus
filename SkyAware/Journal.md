@@ -47,6 +47,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **War story (Startup echo bug)**: on launch we saw logs like `Updated 1 wind risk feature` multiple times, which looked like a haunted refresh loop.
 - **Bug squash (Single owner + coalescing)**: startup map sync was being kicked off in both `SkyAwareApp` and `HomeView`. We removed the app-level startup map sync and added an in-provider coalescing guard/cooldown so overlapping `syncMapProducts()` calls join the same work instead of replaying the full SPC map pipeline.
 - **Aha!**: duplicate startup work often comes from lifecycle fan-out, not one bad loop. The clean fix is ownership clarity first, then a defensive coalescing layer at the provider boundary.
+- **Bug squash (time-traveling tests)**: `WatchRepo.active(county:zone:fireZone:on:)` accepted a clock value but silently filtered with `.now`. Tests that pinned `on` to a fixture date were effectively arguing with wall-clock time. We now thread the passed `on` date into the fetch descriptor so active/expired/upcoming watch filtering is deterministic in tests and production call sites that provide a custom date.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
