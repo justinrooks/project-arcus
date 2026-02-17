@@ -44,6 +44,8 @@ struct MapScreenView: View {
                         .foregroundStyle(.primary)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Map layers")
                 .skyAwareSurface(
                     cornerRadius: 22,
                     tint: .skyAwareAccent.opacity(0.18),
@@ -56,6 +58,7 @@ struct MapScreenView: View {
                 .padding(26)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .zIndex(2)
             
             // Legend in bottom-right (stable container)
             VStack {
@@ -68,6 +71,7 @@ struct MapScreenView: View {
                 .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .allowsHitTesting(false)
         }
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(selection: $selected,

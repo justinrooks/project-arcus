@@ -55,6 +55,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Bug squash (row shadow halos)**: list rows in Alerts/Outlooks looked fuzzy because `cardRowBackground` inherited heavy card shadows plus negative row insets. We introduced row-specific shadow defaults (tiny radius/opacity) and sane positive insets so cards look crisp instead of “double-shadowed.”
 - **Aha! (interaction hygiene)**: replacing row `onTapGesture` with `Button` + `.buttonStyle(.plain)` gave cleaner accessibility semantics and more predictable tap behavior without changing visuals.
 - **Refactor pass**: we removed nested `NavigationStack`s in diagnostics screens and trimmed dead/unused helpers in view files. Result: cleaner view trees, fewer side effects, easier reasoning.
+- **Bug squash (Map layer button hit-testing)**: the map layer picker button sometimes needed multiple taps. Root cause was overlay stacking: a full-frame legend container sat above the button and could steal taps in edge cases. Fix was to move the button to a higher z-index and mark the legend overlay as non-interactive with `.allowsHitTesting(false)`.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
