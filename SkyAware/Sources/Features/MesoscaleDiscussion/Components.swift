@@ -30,7 +30,7 @@ struct InZonePill: View {
             .padding(.vertical, 4)
             .padding(.horizontal, 10)
             .skyAwareChip(
-                cornerRadius: 16,
+                cornerRadius: SkyAwareRadius.tile,
                 tint: inZone ? .green.opacity(0.14) : .white.opacity(0.08)
             )
     }
@@ -71,6 +71,6 @@ struct ExpiryLabel: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .skyAwareChip(cornerRadius: 10, tint: .white.opacity(0.08))
+            .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.08))
     }
 }

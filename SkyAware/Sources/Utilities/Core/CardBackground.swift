@@ -10,7 +10,7 @@ import SwiftUI
 struct CardBackground: ViewModifier {
     var cornerRadius: CGFloat = SkyAwareRadius.medium
     var shadowOpacity: Double = 0.12
-    var shadowRadius: CGFloat = SkyAwareRadius.medium
+    var shadowRadius: CGFloat = 10
     var shadowY: CGFloat = 6
 
     func body(content: Content) -> some View {
@@ -19,7 +19,7 @@ struct CardBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.cardBackground)
                     .background(
-                        RoundedRectangle(cornerRadius: cornerRadius)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(Color.clear)
                             .shadow(
                                 color: .black.opacity(shadowOpacity),
@@ -28,7 +28,7 @@ struct CardBackground: ViewModifier {
                                 y: shadowY
                             )
                     )
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             )
     }
 }

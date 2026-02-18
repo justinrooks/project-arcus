@@ -37,7 +37,7 @@ struct OutlookSummaryCard: View {
             .skyAwareGlassButtonStyle()
         }
         .padding(18)
-        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
         .navigationDestination(isPresented: $navigateToFull) {
             ConvectiveOutlookDetailView(outlook: outlook)
         }

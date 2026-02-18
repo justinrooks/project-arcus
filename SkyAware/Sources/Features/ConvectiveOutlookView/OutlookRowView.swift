@@ -19,7 +19,7 @@ struct OutlookRowView: View {
                 .foregroundColor(.skyAwareAccent)
                 .font(.headline.weight(.semibold))
                 .frame(width: 40, height: 40)
-                .skyAwareChip(cornerRadius: 14, tint: Color.skyAwareAccent.opacity(0.18))
+                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
 
             if let day = simplifyOutlookTitle(outlook.title) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -51,7 +51,7 @@ struct OutlookRowView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .padding(14)
-        .cardBackground(cornerRadius: 18, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .contentShape(Rectangle())
     }
 }

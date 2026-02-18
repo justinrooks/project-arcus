@@ -60,7 +60,7 @@ struct ActiveAlertSummaryView: View {
             }
         }
         .padding(18)
-        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(height: $mesoSheetHeight) {
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet)
@@ -112,7 +112,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .skyAwareChip(cornerRadius: 12, tint: .white.opacity(0.09))
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
             
             ForEach(visibleItems) { item in
                 Button { onSelect(item) } label: { row(item) }
@@ -153,7 +153,7 @@ private struct MesoRowView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .skyAwareChip(cornerRadius: 12, tint: color.opacity(0.16))
+            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
         }
         .padding(.vertical, 3)
     }
@@ -187,7 +187,7 @@ private struct WatchRowView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .skyAwareChip(cornerRadius: 12, tint: color.opacity(0.16))
+            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
         }
         .padding(.vertical, 3)
     }

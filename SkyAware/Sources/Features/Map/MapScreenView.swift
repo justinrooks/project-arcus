@@ -42,7 +42,7 @@ struct MapScreenView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .skyAwareSurface(
-                            cornerRadius: 16,
+                            cornerRadius: SkyAwareRadius.tile,
                             tint: .white.opacity(0.10),
                             shadowOpacity: 0.12,
                             shadowRadius: 8,
@@ -61,7 +61,7 @@ struct MapScreenView: View {
                     .contentShape(Rectangle())
                     .accessibilityLabel("Map layers")
                     .skyAwareSurface(
-                        cornerRadius: 22,
+                        cornerRadius: SkyAwareRadius.section,
                         tint: .skyAwareAccent.opacity(0.18),
                         interactive: true,
                         shadowOpacity: 0.16,

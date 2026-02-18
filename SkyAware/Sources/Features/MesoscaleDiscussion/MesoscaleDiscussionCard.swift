@@ -102,7 +102,7 @@ struct MesoscaleDiscussionContent: View {
                 }
                 .padding(.vertical, 6)
                 .padding(.horizontal, 10)
-                .skyAwareChip(cornerRadius: 16, tint: .skyAwareAccent.opacity(0.15))
+                .skyAwareChip(cornerRadius: SkyAwareRadius.tile, tint: .skyAwareAccent.opacity(0.15))
             } else {
                 // Grid of simple label:value pairs when there is no standout threat
                 Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {

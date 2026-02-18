@@ -144,7 +144,7 @@ struct LogViewerView: View {
             .pickerStyle(.segmented)
         }
         .padding(10)
-        .cardBackground(cornerRadius: 20, shadowOpacity: 0.12, shadowRadius: 10, shadowY: 4)
+        .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.12, shadowRadius: 10, shadowY: 4)
     }
 
     private var contentList: some View {
@@ -223,7 +223,7 @@ private struct LogRowView: View {
                 .foregroundStyle(logColor(for: line.level))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .skyAwareChip(cornerRadius: 10, tint: logColor(for: line.level).opacity(0.16))
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: logColor(for: line.level).opacity(0.16))
             VStack(alignment: .leading, spacing: 2) {
                 Text(line.message)
                     .font(.callout)

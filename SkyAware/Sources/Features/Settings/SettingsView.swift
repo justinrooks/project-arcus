@@ -209,7 +209,7 @@ struct SettingsView: View {
             content()
         }
         .padding(16)
-        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 
     private func infoRow(_ title: String, _ value: String) -> some View {

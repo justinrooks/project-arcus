@@ -45,7 +45,7 @@ struct MapLegend: View {
         .padding(16)
         .frame(minWidth: 144, alignment: .leading)
         .cardBackground(
-            cornerRadius: 18,
+            cornerRadius: SkyAwareRadius.row,
             shadowOpacity: 0.10,
             shadowRadius: 8,
             shadowY: 3

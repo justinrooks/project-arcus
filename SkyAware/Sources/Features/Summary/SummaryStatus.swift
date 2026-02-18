@@ -35,7 +35,7 @@ struct SummaryStatus: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .cardBackground(cornerRadius: 22, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 }
 

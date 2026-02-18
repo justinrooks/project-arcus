@@ -17,7 +17,7 @@ struct WatchDetailView: View {
         LazyVStack(alignment: .leading, spacing: sectionSpacing) {
             headerCard
             .padding()
-            .cardBackground(cornerRadius: 24, shadowOpacity: 0.12, shadowRadius: 16, shadowY: 8)
+            .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.12, shadowRadius: 16, shadowY: 8)
 
             if layout == .full {
                 detailSection(title: "Areas Affected", text: watch.areaSummary)
@@ -74,7 +74,7 @@ struct WatchDetailView: View {
                 .foregroundStyle(.secondary)
         }
         .padding()
-        .cardBackground(cornerRadius: 20, shadowOpacity: 0.1, shadowRadius: 12, shadowY: 6)
+        .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.1, shadowRadius: 12, shadowY: 6)
     }
 }
 

@@ -139,13 +139,13 @@ struct AlertView: View {
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .skyAwareChip(cornerRadius: 11, tint: .white.opacity(0.08))
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
             }
 
             content()
         }
         .padding(16)
-        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 
     private func emptySectionCard(title: String, subtitle: String, symbol: String) -> some View {
@@ -158,7 +158,7 @@ struct AlertView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .cardBackground(cornerRadius: 22, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 

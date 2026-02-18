@@ -64,7 +64,7 @@ struct SummaryView: View {
                 }
             }
             .padding(16)
-            .cardBackground(cornerRadius: 26, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+            .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
 
             if hasActiveAlerts {
                 ActiveAlertSummaryView(
@@ -113,7 +113,7 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .cardBackground(cornerRadius: 24, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 

@@ -137,7 +137,7 @@ struct LayerPickerSheet: View {
                     Image(systemName: "slider.horizontal.3")
                         .font(.caption.weight(.bold))
                         .frame(width: 26, height: 26)
-                        .skyAwareChip(cornerRadius: 10, tint: .skyAwareAccent.opacity(0.18))
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .skyAwareAccent.opacity(0.18))
                         .modifier(LayerPickerMorph(namespace: triggerNamespace))
                     Text(title)
                         .font(.title3.weight(.semibold))
@@ -152,7 +152,7 @@ struct LayerPickerSheet: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .skyAwareChip(cornerRadius: 12, tint: .white.opacity(0.09))
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
@@ -198,7 +198,7 @@ private struct DismissButton: View {
                 .accessibilityLabel("Close")
         }
         .buttonStyle(.plain)
-        .skyAwareChip(cornerRadius: 17, tint: .white.opacity(0.1), interactive: true)
+        .skyAwareChip(cornerRadius: SkyAwareRadius.circularButton, tint: .white.opacity(0.1), interactive: true)
         .contentShape(.rect)
     }
 }

@@ -28,7 +28,7 @@ struct LoadingView: View {
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
-            .cardBackground(cornerRadius: 18, shadowOpacity: 0.16, shadowRadius: 10, shadowY: 6)
+            .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.16, shadowRadius: 10, shadowY: 6)
         }
         .transition(.opacity.combined(with: .scale))
     }

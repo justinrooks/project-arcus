@@ -68,7 +68,7 @@ struct NotificationPermissionView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
                             .fill(Color.skyAwareAccent)
                     )
             }

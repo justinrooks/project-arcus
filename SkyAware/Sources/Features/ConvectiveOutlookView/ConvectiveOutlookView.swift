@@ -72,7 +72,7 @@ struct ConvectiveOutlookView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(cornerRadius: 24, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 
     private var emptyCard: some View {
@@ -85,7 +85,7 @@ struct ConvectiveOutlookView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .cardBackground(cornerRadius: 22, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 

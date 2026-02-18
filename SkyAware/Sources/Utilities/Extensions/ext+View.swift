@@ -112,7 +112,7 @@ extension View {
     
     @ViewBuilder
     func cardBackground(
-        cornerRadius: CGFloat = 26,
+        cornerRadius: CGFloat = SkyAwareRadius.hero,
         shadowOpacity: Double = 0.10,
         shadowRadius: CGFloat = 10,
         shadowY: CGFloat = 4
@@ -127,7 +127,7 @@ extension View {
     }
     
     func cardRowBackground(
-        cornerRadius: CGFloat = 18,
+        cornerRadius: CGFloat = SkyAwareRadius.row,
         shadowOpacity: Double = 0.0,
         shadowRadius: CGFloat = 0,
         shadowY: CGFloat = 0
@@ -193,7 +193,7 @@ extension View {
 
     @ViewBuilder
     func skyAwareChip(
-        cornerRadius: CGFloat = 26,
+        cornerRadius: CGFloat = SkyAwareRadius.hero,
         tint: Color = .white.opacity(0.10),
         interactive: Bool = false
     ) -> some View {

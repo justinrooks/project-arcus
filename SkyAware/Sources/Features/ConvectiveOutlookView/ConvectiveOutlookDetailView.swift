@@ -46,7 +46,7 @@ struct ConvectiveOutlookDetailView: View {
             VStack(alignment: .leading, spacing: sectionSpacing) {
                 headerCard
                     .padding()
-                    .cardBackground(cornerRadius: 24, shadowOpacity: 0.12, shadowRadius: 16, shadowY: 8)
+                    .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.12, shadowRadius: 16, shadowY: 8)
                 
                 detailSection(title: "Summary", text: outlook.summary)
                 
@@ -107,7 +107,7 @@ struct ConvectiveOutlookDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
-        .cardBackground(cornerRadius: 20, shadowOpacity: 0.10, shadowRadius: 12, shadowY: 6)
+        .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.10, shadowRadius: 12, shadowY: 6)
     }
 }
 
@@ -126,7 +126,7 @@ private struct OutlookMetaChip: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .skyAwareChip(cornerRadius: 26, tint: .white.opacity(0.10), interactive: true)
+        .skyAwareChip(cornerRadius: SkyAwareRadius.hero, tint: .white.opacity(0.10), interactive: true)
     }
 }
 

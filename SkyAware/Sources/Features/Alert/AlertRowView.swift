@@ -28,7 +28,7 @@ struct AlertRowView: View {
                 .foregroundStyle(iconAndColor.color)
                 .font(.headline.weight(.semibold))
                 .frame(width: 40, height: 40)
-                .skyAwareChip(cornerRadius: 14, tint: iconAndColor.color.opacity(0.16))
+                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: iconAndColor.color.opacity(0.16))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
@@ -48,7 +48,7 @@ struct AlertRowView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .padding(14)
-        .cardBackground(cornerRadius: 18, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .contentShape(Rectangle())
     }
 
