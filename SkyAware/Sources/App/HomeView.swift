@@ -59,6 +59,7 @@ struct HomeView: View {
     // Badge State
     @State private var stormRisk: StormRiskLevel?
     @State private var severeRisk: SevereWeatherThreat?
+    @State private var fireRisk: FireRiskLevel?
     
     // Alert State
     @State private var mesos: [MdDTO] = []
@@ -80,6 +81,7 @@ struct HomeView: View {
         initialSnap: LocationSnapshot? = nil,
         initialStormRisk: StormRiskLevel? = nil,
         initialSevereRisk: SevereWeatherThreat? = nil,
+        initialFireRisk: FireRiskLevel? = nil,
         initialMesos: [MdDTO] = [],
         initialWatches: [WatchRowDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -88,6 +90,7 @@ struct HomeView: View {
         _snap = State(initialValue: initialSnap)
         _stormRisk = State(initialValue: initialStormRisk)
         _severeRisk = State(initialValue: initialSevereRisk)
+        _fireRisk = State(initialValue: initialFireRisk)
         _mesos = State(initialValue: initialMesos)
         _watches = State(initialValue: initialWatches)
         _outlook = State(initialValue: initialOutlook)
@@ -104,6 +107,7 @@ struct HomeView: View {
                             snap: snap,
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
+                            fireRisk: fireRisk,
                             mesos: mesos,
                             watches: watches,
                             outlook: outlook
@@ -313,15 +317,17 @@ struct HomeView: View {
     private func refreshRisk(for coord: CLLocationCoordinate2D) async {
         async let stormResult = capture { try await svc.getStormRisk(for: coord) }
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
+        async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
         async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
         
-        let (storm, severe, mesos, watch) = await (stormResult, severeResult, mesosResult, watchResult)
+        let (storm, severe, fire, mesos, watch) = await (stormResult, severeResult, fireResult, mesosResult, watchResult)
         if Task.isCancelled { return }
         
         await MainActor.run {
             if case let .success(value) = storm { self.stormRisk = value }
             if case let .success(value) = severe { self.severeRisk = value }
+            if case let .success(value) = fire { self.fireRisk = value  }
             if case let .success(value) = mesos { self.mesos = value }
             if case let .success(value) = watch { self.watches = value }
         }
@@ -368,6 +374,7 @@ struct HomeView: View {
         ),
         initialStormRisk: .slight,
         initialSevereRisk: .tornado(probability: 0.10),
+        initialFireRisk: .extreme,
         initialMesos: MD.sampleDiscussionDTOs,
         initialWatches: Watch.sampleWatchRows,
         initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,

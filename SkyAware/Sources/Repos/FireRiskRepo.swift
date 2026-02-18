@@ -40,32 +40,37 @@ actor FireRiskRepo {
         )
     }
 
-    /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
-    //    func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> StormRiskLevel {
-    //        // 1) Fetch only risks that are currently valid
-    //        let pred = #Predicate<StormRisk> { date >= $0.valid && date <= $0.expires }
-    //        let risks = try modelContext.fetch(FetchDescriptor<StormRisk>(predicate: pred))
-    //
-    //        // 2) Sort by descending risk so we can early-exit on first hit
-    //        let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
-    //
-    ////         3) For each risk, check polygons with optional bbox prefilter, then precise hit test
-    //        for risk in bySeverity {
-    //            for poly in risk.polygons {
-    //                // Coarse bbox prefilter if available
-    //                if let bbox = poly.bbox, bbox.contains(point) == false { continue }
-    //
-    //                // Precise hit test on ring coordinates
-    //                let ring = poly.ringCoordinates
-    //                guard !ring.isEmpty else { continue }
-    //                if MesoGeometry.contains(point, inRing: ring) {
-    //                    return risk.riskLevel
-    //                }
-    //            }
-    //        }
-    //
-    //        return .allClear
-    //    }
+    /// Returns the strongest fire risk level whose polygon contains the given point, as of `date`.
+        func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> FireRiskLevel {
+            // 1) Fetch only risks that are currently valid
+            let pred = #Predicate<FireRisk> { date >= $0.valid && date <= $0.expires }
+            let risks = try modelContext.fetch(FetchDescriptor<FireRisk>(predicate: pred))
+    
+            // 2) Sort by descending risk so we can early-exit on first hit
+            let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
+    
+            // 3) For each risk, check polygons with optional bbox prefilter, then precise hit test
+            for risk in bySeverity {
+                for poly in risk.polygons {
+                    // Coarse bbox prefilter if available
+                    if let bbox = poly.bbox, bbox.contains(point) == false { continue }
+    
+                    // Precise hit test on ring coordinates
+                    let ring = poly.ringCoordinates
+                    guard !ring.isEmpty else { continue }
+                    if MesoGeometry.contains(point, inRing: ring) {
+                        switch risk.riskLevel {
+                        case 5: return .elevated
+                        case 8: return .critical
+                        case 10: return .extreme
+                        default: return .clear
+                        }
+                    }
+                }
+            }
+    
+            return .clear
+        }
 
     func getLatestMapData(asOf date: Date = .init()) throws -> [FireRiskDTO] {
         // 1) Fetch only risks that are currently valid

@@ -11,12 +11,26 @@ struct SummaryView: View {
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
+    let fireRisk: FireRiskLevel?
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let outlook: ConvectiveOutlookDTO?
 
     private var hasActiveAlerts: Bool {
         !mesos.isEmpty || !watches.isEmpty
+    }
+
+    @ViewBuilder
+    private var riskSnapshotContent: some View {
+        VStack(spacing: 12) {
+            badgeRow
+            // TODO: Toggle this with an option one day
+            //       Make the option that, if its clear to show
+            //       the row. Default should be to hide a no fire
+            //       danger
+            FireWeatherRailView(level: fireRisk ?? .clear)
+                .placeholder(fireRisk == nil)
+        }
     }
 
     @ViewBuilder
@@ -28,7 +42,7 @@ struct SummaryView: View {
             SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
                 .placeholder(severeRisk == nil)
         }
-        .padding(.vertical, 8)
+        .padding(.top, 8)
     }
     
     var body: some View {
@@ -43,10 +57,10 @@ struct SummaryView: View {
                 sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
                 if #available(iOS 26, *) {
                     GlassEffectContainer(spacing: 14) {
-                        badgeRow
+                        riskSnapshotContent
                     }
                 } else {
-                    badgeRow
+                    riskSnapshotContent
                 }
             }
             .padding(16)
@@ -115,6 +129,7 @@ struct SummaryView: View {
             ),
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.10),
+            fireRisk: .extreme,
             mesos: MD.sampleDiscussionDTOs,
             watches: Watch.sampleWatchRows,
             outlook: ConvectiveOutlook.sampleOutlookDtos.first
@@ -134,6 +149,7 @@ struct SummaryView: View {
             ),
             stormRisk: nil,
             severeRisk: nil,
+            fireRisk: nil,
             mesos: [],
             watches: [],
             outlook: nil

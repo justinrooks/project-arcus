@@ -12,7 +12,6 @@ struct AlertView: View {
     let watches: [WatchRowDTO]
     let onRefresh: (() async -> Void)?
 
-    @State private var selectedWatch: WatchRowDTO?
     @State private var selectedMeso: MdDTO?
 
     private var hasNoAlerts: Bool {
@@ -52,9 +51,7 @@ struct AlertView: View {
                             symbol: "exclamationmark.triangle.fill"
                         ) {
                             ForEach(watches) { watch in
-                                Button {
-                                    selectedWatch = watch
-                                } label: {
+                                NavigationLink(value: watch) {
                                     AlertRowView(alert: watch)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
@@ -100,7 +97,7 @@ struct AlertView: View {
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .navigationDestination(item: $selectedWatch) { watch in
+        .navigationDestination(for: WatchRowDTO.self) { watch in
             ScrollView {
                 WatchDetailView(watch: watch, layout: .full)
                     .padding(.top, 8)

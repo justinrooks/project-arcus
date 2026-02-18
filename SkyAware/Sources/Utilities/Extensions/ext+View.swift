@@ -68,6 +68,20 @@ extension View {
         }
     }
 
+    func railStyle(background: LinearGradient) -> some View {
+        self
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+            .padding([.leading, .trailing], 15)
+            .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+            .skyAwareSurface(
+                cornerRadius: SkyAwareRadius.large,
+                tint: .white.opacity(0.08),
+                shadowOpacity: 0.18,
+                shadowRadius: 8,
+                shadowY: 4
+            )
+    }
+    
     func badgeStyle(background: LinearGradient) -> some View {
         self
             .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,

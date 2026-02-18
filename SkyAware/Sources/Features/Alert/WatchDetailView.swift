@@ -14,7 +14,7 @@ struct WatchDetailView: View {
     private var sectionSpacing: CGFloat { layout == .sheet ? 12 : 14 }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: sectionSpacing) {
+        LazyVStack(alignment: .leading, spacing: sectionSpacing) {
             headerCard
             .padding()
             .cardBackground(cornerRadius: 24, shadowOpacity: 0.12, shadowRadius: 16, shadowY: 8)
@@ -56,7 +56,6 @@ struct WatchDetailView: View {
                     .fontWeight(.medium)
                     .foregroundStyle(.primary)
                     .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Instructions")
                     .lineLimit(layout == .sheet ? 3 : nil)
             }
@@ -73,7 +72,6 @@ struct WatchDetailView: View {
             Text(text)
                 .font(.callout.monospaced())
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
         .cardBackground(cornerRadius: 20, shadowOpacity: 0.1, shadowRadius: 12, shadowY: 6)
