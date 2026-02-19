@@ -9,11 +9,16 @@ import SwiftUI
 import CoreLocation
 import OSLog
 
+struct RefreshContext {
+    let coordinates: CLLocationCoordinate2D
+    let refreshedAt: Date
+}
+
 struct HomeView: View {
-    private struct RefreshContext {
-        let coordinates: CLLocationCoordinate2D
-        let refreshedAt: Date
-    }
+//    private struct RefreshContext {
+//        let coordinates: CLLocationCoordinate2D
+//        let refreshedAt: Date
+//    }
 
     struct LoadingOverlayState {
         private(set) var activeRefreshes: Int = 0
@@ -51,10 +56,12 @@ struct HomeView: View {
     private var outlookSvc: any SpcOutlookQuerying { dependencies.spcOutlook }
     private var nwsSvc: any NwsRiskQuerying { dependencies.nwsRisk  }
     private var nwsSync: any NwsSyncing { dependencies.nwsSync }
+    private var weatherClient: WeatherClient { dependencies.weatherClient }
 
     // MARK: State
     // Header State
     @State private var snap: LocationSnapshot?
+    @State private var summaryWeather: SummaryWeather?
     
     // Badge State
     @State private var stormRisk: StormRiskLevel?
@@ -110,7 +117,9 @@ struct HomeView: View {
                             fireRisk: fireRisk,
                             mesos: mesos,
                             watches: watches,
-                            outlook: outlook
+                            outlook: outlook,
+                            refresh: lastRefreshContext,
+                            weather: summaryWeather
                         )
                         .toolbar(.hidden, for: .navigationBar)
                         .background(.skyAwareBackground)
@@ -255,9 +264,23 @@ struct HomeView: View {
         }
         if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
         await refreshOutlooks()
+        
+        // WeatherKit Check
+        if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
+        await refreshWeather(for: snap.coordinates)
+        
+        
         if showsLoading {
             await MainActor.run { endRefresh() }
         }
+    }
+    
+    @MainActor
+    private func refreshWeather(for snap: CLLocationCoordinate2D) async {
+        if Task.isCancelled { return }
+        let weather = await weatherClient.currentWeather(for: CLLocation(latitude: snap.latitude, longitude: snap.longitude))
+        if Task.isCancelled { return }
+        self.summaryWeather = weather
     }
     
     private func refreshOutlooks() async {

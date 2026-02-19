@@ -23,7 +23,7 @@ extension Logger {
     static let providersNwsClient = Logger(subsystem: subsystem, category: "providers.nws.client")
     static let providersNws = Logger(subsystem: subsystem, category: "providers.nws")
     static let providersNwsGrid = Logger(subsystem: subsystem, category: "providers.nws.grid")
-    
+    static let providersWeatherKit = Logger(subsystem: subsystem, category: "providers.weatherKit")
     
     // MARK: Repos
     static let reposConvectiveOutlook = Logger(subsystem: subsystem, category: "repos.convectiveOutlook")

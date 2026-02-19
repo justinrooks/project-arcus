@@ -15,6 +15,8 @@ struct SummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let outlook: ConvectiveOutlookDTO?
+    let refresh: RefreshContext?
+    let weather: SummaryWeather?
 
     private var hasActiveAlerts: Bool {
         !mesos.isEmpty || !watches.isEmpty
@@ -49,9 +51,10 @@ struct SummaryView: View {
         VStack(spacing: 18) {
             SummaryStatus(
                 location: snap?.placemarkSummary ?? "Searching...",
-                updatedAt: outlook?.published
+                updatedAt: refresh?.refreshedAt,
+                weather: weather
             )
-            .placeholder(outlook == nil || snap == nil)
+            .placeholder(snap == nil)
 
             VStack(alignment: .leading, spacing: 12) {
                 sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
@@ -132,7 +135,9 @@ struct SummaryView: View {
             fireRisk: .extreme,
             mesos: MD.sampleDiscussionDTOs,
             watches: Watch.sampleWatchRows,
-            outlook: ConvectiveOutlook.sampleOutlookDtos.first
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            refresh: nil,
+            weather: nil
         )
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -152,7 +157,9 @@ struct SummaryView: View {
             fireRisk: nil,
             mesos: [],
             watches: [],
-            outlook: nil
+            outlook: nil,
+            refresh: nil,
+            weather: nil
         )
         .toolbar(.hidden, for: .navigationBar)
     }
