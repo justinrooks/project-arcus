@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(23)
+## v0.1.0(22)
 
 ### Overview
 This update adds WeatherKit conditions plus in-app attribution, expands Fire Weather surfacing, and refreshes major screens with a more consistent visual system while tightening refresh and networking behavior.

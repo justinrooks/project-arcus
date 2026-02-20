@@ -1,4 +1,4 @@
-SkyAware ## v0.1.0(23) build adds WeatherKit attribution/cadence updates, expanded Fire Weather surfacing, and continued map behavior fixes.
+SkyAware ## v0.1.0(22) build adds WeatherKit attribution/cadence updates, expanded Fire Weather surfacing, and continued map behavior fixes.
 
 Highlights:
 - Fire Weather risk now appears in both the Summary rail and the Fire map layer/legend

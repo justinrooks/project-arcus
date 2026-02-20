@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(23)
+## v0.1.0(22)
 
 ### Features
 - Add Fire Weather risk support for SPC wind/RH products, including a dedicated Fire map layer and legend coverage.
