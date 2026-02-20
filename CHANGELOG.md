@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(23)
+
 ### Features
 - Add Fire Weather risk support for SPC wind/RH products, including a dedicated Fire map layer and legend coverage.
 <!-- evidence: 751d110 -->
@@ -9,18 +11,24 @@
 <!-- evidence: fd86cd1 -->
 - Add WeatherKit-backed current conditions to the Summary header, including temperature and condition symbol for the current location.
 <!-- evidence: 4392ead -->
+- Add WeatherKit attribution to Summary so provider branding and legal-link attribution are shown in-app.
+<!-- evidence: 0be9d92 -->
 
 ### Background & Notifications
 - Include Fire Weather zones when evaluating local alert inclusion.
 <!-- evidence: 751d110 -->
 - Reduce duplicate foreground refresh churn by requiring either elapsed time or location-distance thresholds before re-running refresh work.
 <!-- evidence: f87b268 -->
+- Throttle WeatherKit refreshes to a policy-driven minimum interval (with force-refresh bypass) to reduce repeated current-conditions fetches.
+<!-- evidence: 0be9d92 -->
 
 ### Data & Repos
 - Fix overlapping SPC map sync ownership so concurrent refresh paths join in-flight work instead of triggering repeated map-product loads.
 <!-- evidence: 751d110 -->
 - Filter active watches by validity window so expired and not-yet-effective watches are excluded from active results.
 <!-- evidence: 3f1a46c -->
+- Keep severe-risk deduping keyed by threat type + outlook key so different products at the same threat type do not overwrite each other.
+<!-- evidence: 0be9d92 -->
 
 ### UI / UX
 - Apply feed-provided stroke/fill styling to Fire, Categorical, and Severe polygons, with alpha-tuned overlays for map readability and legend parity.
@@ -33,20 +41,28 @@
 <!-- evidence: f87b268 -->
 - Standardize corner radii across cards, chips, and related surfaces.
 <!-- evidence: 13ba38a -->
+- Render severe polygons in explicit severity order (including SIGN tie-handling) so higher-severity shading stays visually on top; align legend ordering with that model.
+<!-- evidence: 0be9d92 -->
 
 ### Infra / Parsing
 - Standardize SPC/NWS HTTP handling with status-aware errors (including 429/503), Retry-After parsing, shared request headers, and cancellation-aware retries.
 <!-- evidence: 751d110 -->
+- Treat cancelled convective/meso sync passes as expected control flow and log them at notice level instead of error.
+<!-- evidence: 0be9d92 -->
 
 ### Tests / QA
 - Add an XCTest plan and expand unit coverage for map style metadata propagation, sync coalescing/cooldown behavior, and network client status mapping.
 <!-- evidence: 751d110 -->
 - Add Watch repository active-state tests to verify validity-window filtering.
 <!-- evidence: 3f1a46c -->
+- Add unit coverage for WeatherKit refresh-policy interval behavior and severe map polygon ordering when significant and non-significant probabilities tie.
+<!-- evidence: 0be9d92 -->
 
 ### Maintenance / Cleanup
 - Update release documentation and engineering journal entries for this cycle.
 <!-- evidence: 751d110, 876c813, 4392ead -->
+- Add architecture notes for a server-backed timely notifications strategy.
+<!-- evidence: 0be9d92 -->
 
 ## v0.1.0(18)
 

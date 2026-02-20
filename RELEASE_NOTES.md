@@ -2,12 +2,15 @@
 
 ## Unreleased
 
+## v0.1.0(23)
+
 ### Overview
-This update adds WeatherKit conditions in Summary, expands Fire Weather surfacing, and refreshes major screens with a more consistent visual system while tightening refresh and networking behavior.
+This update adds WeatherKit conditions plus in-app attribution, expands Fire Weather surfacing, and refreshes major screens with a more consistent visual system while tightening refresh and networking behavior.
 
 ### Highlights
 - Fire Weather risk is now surfaced in both the map experience and the Summary risk snapshot rail.
 - Summary now shows current-location weather conditions (temperature + symbol) from WeatherKit.
+- Summary now includes WeatherKit attribution with provider/legal-link presentation.
 - Active watch results are now filtered by watch validity window, excluding expired and not-yet-effective watches.
 - Summary, Alerts, Outlook, Map, Diagnostics, and Settings screens were refreshed with consistent card/row treatments and corner-radius alignment.
 - Map layer picker interactions were hardened to prevent intermittent missed taps.
@@ -17,15 +20,19 @@ This update adds WeatherKit conditions in Summary, expands Fire Weather surfacin
 - SPC map sync now coalesces overlapping refresh requests to avoid repeated map-product reloads.
 - SPC/NWS HTTP handling now uses status-aware errors (including 429/503), Retry-After parsing, shared headers, and cancellation-aware retries.
 - Foreground refresh now gates duplicate reruns using elapsed-time and movement-distance thresholds.
+- WeatherKit refreshes now follow a minimum-interval policy (with force-refresh bypass) to reduce repeated conditions fetches.
+- Convective and mesoscale sync cancellations during interactive refresh are treated as expected flow to reduce false error-noise in logs.
 
 ### UI / UX
 - Fire Weather now has a dedicated Summary rail with localized severity messaging.
 - Dark-mode background layering was restored for clearer contrast across tabs.
 - Map layer controls now have improved tap hit areas and overlay stacking behavior.
+- Severe overlays now render with explicit severity ordering so higher-severity (including significant tie-cases) appears on top consistently.
 
 ### Tests / QA
 - Added an XCTest plan and expanded unit coverage for map style metadata, sync coalescing/cooldown, and HTTP status mapping.
 - Added Watch repository tests that verify active-watch validity-window filtering.
+- Added tests for WeatherKit refresh-policy interval behavior and severe polygon ordering for equal-probability significant overlays.
 
 ## v0.1.0(18)
 

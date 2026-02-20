@@ -1,12 +1,12 @@
-SkyAware UNRELEASED build adds WeatherKit summary conditions, expanded Fire Weather surfacing, and broad UI consistency updates.
+SkyAware ## v0.1.0(23) build adds WeatherKit attribution/cadence updates, expanded Fire Weather surfacing, and continued map behavior fixes.
 
 Highlights:
 - Fire Weather risk now appears in both the Summary rail and the Fire map layer/legend
 - Summary now shows current-location temperature and condition symbol from WeatherKit
+- Summary now includes WeatherKit attribution with a provider/legal link
 - Active watches are now filtered by validity window (effective through end time)
-- Summary, Alerts, Outlook, Map, Diagnostics, and Settings surfaces now share more consistent card styling and corner radii
+- Severe map overlays now maintain explicit severity ordering so higher-risk shading stays on top
 - Map layer picker button interactions are more reliable during repeated taps
-- Foreground refresh now skips duplicate reruns unless enough time has passed or location has materially changed
 
 SkyAware v0.1.0(18) build focuses on map layering correctness and safer background refresh rescheduling behavior.
 
