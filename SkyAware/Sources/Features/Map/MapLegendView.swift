@@ -32,13 +32,13 @@ struct MapLegend: View {
                 }
 
             case .tornado, .hail, .wind:
-                let risks = severeRisks ?? []
+                let risks = severeLevels
                 Text(risks.isEmpty ? "No \(layer.title.lowercased()) risk" : "\(layer.title) Risk")
                     .font(.caption.weight(.semibold))
                     .textCase(.uppercase)
 
-                ForEach(risks.indices, id: \.self) { index in
-                    SevereLegendRow(layer: layer, risk: risks[index])
+                ForEach(risks, id: \.title) { risk in
+                    SevereLegendRow(layer: layer, risk: risk)
                 }
             }
         }
@@ -64,6 +64,36 @@ struct MapLegend: View {
             uniquingKeysWith: { lhs, rhs in lhs.valid >= rhs.valid ? lhs : rhs }
         )
         return mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
+    }
+
+    private var severeLevels: [SevereRiskShapeDTO] {
+        let source = severeRisks ?? []
+        let dedupedByTitle = Dictionary(
+            source.map { ($0.title, $0) },
+            uniquingKeysWith: { lhs, _ in lhs }
+        )
+        return dedupedByTitle.values.sorted {
+            let lhsProbability = $0.probabilities.intValue
+            let rhsProbability = $1.probabilities.intValue
+            if lhsProbability != rhsProbability {
+                return lhsProbability < rhsProbability
+            }
+
+            let lhsSignificanceRank = isSignificant($0.probabilities) ? 1 : 0
+            let rhsSignificanceRank = isSignificant($1.probabilities) ? 1 : 0
+            if lhsSignificanceRank != rhsSignificanceRank {
+                return lhsSignificanceRank < rhsSignificanceRank
+            }
+
+            return $0.title < $1.title
+        }
+    }
+
+    private func isSignificant(_ probability: ThreatProbability) -> Bool {
+        if case .significant = probability {
+            return true
+        }
+        return false
     }
 }
 

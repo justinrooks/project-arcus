@@ -55,7 +55,7 @@ final class Watch {
     
 //    var rawGeometry: Data?
       
-    init(nwsId: String, messageId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, sender: String, instruction: String, response: String, rawGeometry: Data? = nil) {
+    init(nwsId: String, messageId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, sender: String?, instruction: String?, response: String?, rawGeometry: Data? = nil) {
         self.nwsId = nwsId
         self.messageId = messageId
         self.areaDesc = areaDesc

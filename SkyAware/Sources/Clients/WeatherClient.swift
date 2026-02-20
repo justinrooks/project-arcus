@@ -30,4 +30,14 @@ actor WeatherClient {
             return nil
         }
     }
+    
+    func weatherAttribution() async -> WeatherAttribution? {
+        do {
+            let attr = try await self.service.attribution
+            return attr
+        } catch {
+            logger.error("WeatherKit attribution failed: \(error, privacy: .public)")
+            return nil
+        }
+    }
 }

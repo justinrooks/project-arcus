@@ -20,7 +20,7 @@ struct SummaryStatus: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Current Location")
+            Text("Current Conditions")
                 .font(.caption2)
                   .fontWeight(.semibold)
                   .textCase(.uppercase)
@@ -43,7 +43,7 @@ struct SummaryStatus: View {
                               .foregroundStyle(.primary)
                               .monospacedDigit()
                         Image(systemName: weather.symbolName)
-                            .renderingMode(.original)
+//                            .renderingMode(.original)
                             .symbolVariant(.fill)
                             .font(.subheadline)
                               .fontWeight(.semibold)
@@ -134,5 +134,8 @@ private struct TimeView: View {
 }
 
 #Preview {
-    SummaryStatus(location: "Denver, CO", updatedAt: .now.addingTimeInterval(-16000), weather: nil)
+    VStack {
+        SummaryStatus(location: "Denver, CO", updatedAt: .now.addingTimeInterval(-16000), weather: .init(temperature: Measurement(value: 37.0, unit: .fahrenheit), symbolName: "sun.max", conditionText: "test", asOf: .now))
+        SummaryStatus(location: "Denver, CO", updatedAt: .now.addingTimeInterval(-16000), weather: .init(temperature: Measurement(value: 47.0, unit: .fahrenheit), symbolName: "cloud", conditionText: "test", asOf: .now))
+    }
 }

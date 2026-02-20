@@ -99,10 +99,10 @@ actor WatchRepo {
             let urgency          = item.properties.urgency,
             let event            = item.properties.event,
             let headline         = item.properties.headline,
-            let watchDescription = item.properties.description,
-            let sender           = item.properties.senderName,
-            let instruction      = item.properties.instruction,
-            let response         = item.properties.response
+            let watchDescription = item.properties.description
+//            let sender           = item.properties.senderName,
+//            let instruction      = item.properties.instruction,
+//            let response         = item.properties.response
         else {
             logger.debug("Required watch property missing, returning null.")
             return nil
@@ -131,9 +131,9 @@ actor WatchRepo {
             event: event,
             headline: headline,
             watchDescription: watchDescription,
-            sender: sender,
-            instruction: instruction,
-            response: response
+            sender: item.properties.senderName,
+            instruction: item.properties.instruction,
+            response: item.properties.response
         )
     }
     

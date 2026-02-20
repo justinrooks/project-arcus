@@ -4,33 +4,49 @@
 
 ### Features
 - Add Fire Weather risk support for SPC wind/RH products, including a dedicated Fire map layer and legend coverage.
-<!-- evidence: ef9bf56 -->
+<!-- evidence: 751d110 -->
+- Add a Fire Weather rail to the Summary risk snapshot with localized risk labels and messaging.
+<!-- evidence: fd86cd1 -->
+- Add WeatherKit-backed current conditions to the Summary header, including temperature and condition symbol for the current location.
+<!-- evidence: 4392ead -->
 
 ### Background & Notifications
 - Include Fire Weather zones when evaluating local alert inclusion.
-<!-- evidence: 40c4f0b -->
+<!-- evidence: 751d110 -->
+- Reduce duplicate foreground refresh churn by requiring either elapsed time or location-distance thresholds before re-running refresh work.
+<!-- evidence: f87b268 -->
 
 ### Data & Repos
 - Fix overlapping SPC map sync ownership so concurrent refresh paths join in-flight work instead of triggering repeated map-product loads.
-<!-- evidence: ba98ab2 -->
+<!-- evidence: 751d110 -->
+- Filter active watches by validity window so expired and not-yet-effective watches are excluded from active results.
+<!-- evidence: 3f1a46c -->
 
 ### UI / UX
 - Apply feed-provided stroke/fill styling to Fire, Categorical, and Severe polygons, with alpha-tuned overlays for map readability and legend parity.
-<!-- evidence: c247389, 42dda37 -->
+<!-- evidence: 751d110 -->
+- Redesign Summary, Alerts, Outlook, Map, Diagnostics, and Settings surfaces with consistent card/row styling and glass-style treatments.
+<!-- evidence: 70cda47, b3b2d1c, 771da07, d38bfbd -->
+- Fix intermittent map layer picker button taps by improving hit testing and overlay layering.
+<!-- evidence: de88978 -->
+- Restore dark-mode background layering and improve visual consistency across tabs.
+<!-- evidence: f87b268 -->
+- Standardize corner radii across cards, chips, and related surfaces.
+<!-- evidence: 13ba38a -->
 
 ### Infra / Parsing
 - Standardize SPC/NWS HTTP handling with status-aware errors (including 429/503), Retry-After parsing, shared request headers, and cancellation-aware retries.
-<!-- evidence: ff2ea7f, 8a1db94 -->
+<!-- evidence: 751d110 -->
 
 ### Tests / QA
 - Add an XCTest plan and expand unit coverage for map style metadata propagation, sync coalescing/cooldown behavior, and network client status mapping.
-<!-- evidence: e635427 -->
+<!-- evidence: 751d110 -->
+- Add Watch repository active-state tests to verify validity-window filtering.
+<!-- evidence: 3f1a46c -->
 
 ### Maintenance / Cleanup
-- Fix a force-unwrap in alert preview content that could crash SwiftUI previews.
-<!-- evidence: bf0e6c0 -->
 - Update release documentation and engineering journal entries for this cycle.
-<!-- evidence: 8c45eec, 4d4150c -->
+<!-- evidence: 751d110, 876c813, 4392ead -->
 
 ## v0.1.0(18)
 

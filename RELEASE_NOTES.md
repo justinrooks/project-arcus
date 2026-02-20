@@ -3,23 +3,29 @@
 ## Unreleased
 
 ### Overview
-This update adds Fire Weather map and local-alert coverage, extends feed-based polygon styling across map overlays, and tightens sync/network request handling.
+This update adds WeatherKit conditions in Summary, expands Fire Weather surfacing, and refreshes major screens with a more consistent visual system while tightening refresh and networking behavior.
 
 ### Highlights
-- Fire Weather risk data from SPC wind/RH products is now available in a dedicated Fire map layer and legend output.
-- Fire, Categorical, and Severe map overlays now use feed-provided stroke/fill styling with alpha tuning for readable map and legend presentation.
-- Local alert inclusion now evaluates Fire Weather zones.
-- SPC map sync ownership now coalesces overlapping refresh paths instead of replaying repeated map-product loads.
+- Fire Weather risk is now surfaced in both the map experience and the Summary risk snapshot rail.
+- Summary now shows current-location weather conditions (temperature + symbol) from WeatherKit.
+- Active watch results are now filtered by watch validity window, excluding expired and not-yet-effective watches.
+- Summary, Alerts, Outlook, Map, Diagnostics, and Settings screens were refreshed with consistent card/row treatments and corner-radius alignment.
+- Map layer picker interactions were hardened to prevent intermittent missed taps.
+- Fire, Categorical, and Severe overlays continue to use feed-provided stroke/fill styling with tuned alpha and legend parity.
 
 ### Reliability & Performance
-- SPC/NWS request handling now uses status-aware failures (including 429/503), Retry-After parsing, shared headers, and cancellation-aware retries.
-- Map sync request ownership is coordinated to avoid redundant network bursts during concurrent refresh paths.
+- SPC map sync now coalesces overlapping refresh requests to avoid repeated map-product reloads.
+- SPC/NWS HTTP handling now uses status-aware errors (including 429/503), Retry-After parsing, shared headers, and cancellation-aware retries.
+- Foreground refresh now gates duplicate reruns using elapsed-time and movement-distance thresholds.
 
 ### UI / UX
-- Fire, Categorical, and Severe polygons now render with feed-derived styling instead of static fallback-only map styling.
+- Fire Weather now has a dedicated Summary rail with localized severity messaging.
+- Dark-mode background layering was restored for clearer contrast across tabs.
+- Map layer controls now have improved tap hit areas and overlay stacking behavior.
 
 ### Tests / QA
-- Added an XCTest plan and expanded unit coverage for map style metadata propagation, map sync coalescing/cooldown, and HTTP client status mapping.
+- Added an XCTest plan and expanded unit coverage for map style metadata, sync coalescing/cooldown, and HTTP status mapping.
+- Added Watch repository tests that verify active-watch validity-window filtering.
 
 ## v0.1.0(18)
 

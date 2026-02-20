@@ -15,11 +15,6 @@ struct RefreshContext {
 }
 
 struct HomeView: View {
-//    private struct RefreshContext {
-//        let coordinates: CLLocationCoordinate2D
-//        let refreshedAt: Date
-//    }
-
     struct LoadingOverlayState {
         private(set) var activeRefreshes: Int = 0
         private(set) var message: String?
@@ -75,10 +70,12 @@ struct HomeView: View {
     // Refresh State
     @State private var lastRefreshContext: RefreshContext?
     @State private var lastOutlookSyncAt: Date?
+    @State private var lastWeatherKitSyncAt: Date?
     @State private var loadingState = LoadingOverlayState()
     private let minimumForegroundRefreshInterval: TimeInterval = 3 * 60
     private let minimumRefreshDistanceMeters: CLLocationDistance = 800
     private let outlookRefreshPolicy = OutlookRefreshPolicy()
+    private let weatherKitRefreshPolicy = WeatherKitRefreshPolicy()
     
     // Outlook State
     @State private var outlooks: [ConvectiveOutlookDTO] = []
@@ -126,8 +123,7 @@ struct HomeView: View {
                     }
                     .background(Color(.skyAwareBackground).ignoresSafeArea())
                     .refreshable {
-                        lastRefreshContext = nil
-                        await refresh(for: snap, force: true, showsLoading: true)
+                        await forceRefreshFromLatestSnapshot(showsLoading: true)
                     }
                 }
                 .background(Color(.skyAwareBackground).ignoresSafeArea())
@@ -243,6 +239,9 @@ struct HomeView: View {
         let shouldSyncOutlookNow = await MainActor.run {
             markOutlookSyncIfNeeded(force: force, now: now)
         }
+        let shouldSyncWeatherKitNow = await MainActor.run {
+            markWeatherKitSyncIfNeeded(force: force, now: now)
+        }
 
         if showsLoading {
             await MainActor.run { startRefresh(message: "Refreshing data...") }
@@ -265,14 +264,36 @@ struct HomeView: View {
         if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
         await refreshOutlooks()
         
-        // WeatherKit Check
-        if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
-        await refreshWeather(for: snap.coordinates)
+        if shouldSyncWeatherKitNow {
+            if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
+            await refreshWeather(for: snap.coordinates)
+        } else {
+            logger.debug("Skipping WeatherKit refresh due to refresh throttle")
+        }
         
         
         if showsLoading {
             await MainActor.run { endRefresh() }
         }
+    }
+
+    private func forceRefreshFromLatestSnapshot(showsLoading: Bool) async {
+        let latestSnapshot: LocationSnapshot?
+        if let providerSnapshot = await locSvc.snapshot() {
+            latestSnapshot = providerSnapshot
+        } else {
+            latestSnapshot = await MainActor.run { snap }
+        }
+        guard let latestSnapshot else {
+            logger.info("Manual refresh skipped because no location snapshot is available yet")
+            return
+        }
+
+        await MainActor.run {
+            snap = latestSnapshot
+            lastRefreshContext = nil
+        }
+        await refresh(for: latestSnapshot, force: true, showsLoading: showsLoading)
     }
     
     @MainActor
@@ -333,6 +354,19 @@ struct HomeView: View {
         )
         if shouldSync {
             lastOutlookSyncAt = now
+        }
+        return shouldSync
+    }
+
+    @MainActor
+    private func markWeatherKitSyncIfNeeded(force: Bool, now: Date) -> Bool {
+        let shouldSync = weatherKitRefreshPolicy.shouldSync(
+            now: now,
+            lastSync: lastWeatherKitSyncAt,
+            force: force
+        )
+        if shouldSync {
+            lastWeatherKitSyncAt = now
         }
         return shouldSync
     }

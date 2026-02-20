@@ -91,6 +91,8 @@ struct SummaryView: View {
                     symbol: "clock.arrow.circlepath"
                 )
             }
+            
+            AttributionView()
 
             Spacer(minLength: 14)
         }
