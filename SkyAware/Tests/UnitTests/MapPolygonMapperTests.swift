@@ -81,6 +81,40 @@ struct MapPolygonMapperTests {
         #expect(hail.polygons.compactMap { $0.title } == ["5% Hail Risk"])
     }
 
+    @Test("Severe polygons render SIGN above non-significant when probability ties")
+    func severePolygons_significantRendersOnTopForEqualProbability() {
+        let severeRisks: [SevereRiskShapeDTO] = [
+            SevereRiskShapeDTO(
+                type: .tornado,
+                probabilities: .significant(10),
+                stroke: nil,
+                fill: nil,
+                polygons: [makeGeoPolygon(title: "10% Significant Tornado Risk")]
+            ),
+            SevereRiskShapeDTO(
+                type: .tornado,
+                probabilities: .percent(0.10),
+                stroke: nil,
+                fill: nil,
+                polygons: [makeGeoPolygon(title: "10% Tornado Risk")]
+            )
+        ]
+
+        let tornado = mapper.polygons(
+            for: .tornado,
+            stormRisk: [],
+            severeRisks: severeRisks,
+            mesos: [],
+            fires: []
+        )
+
+        // Lower/equal non-significant should be first; SIGN should render last on top.
+        #expect(tornado.polygons.compactMap { $0.title } == [
+            "10% Tornado Risk",
+            "10% Significant Tornado Risk"
+        ])
+    }
+
     @Test("Severe polygons include encoded SPC style metadata")
     func severePolygons_includeStyleMetadata() {
         let severeRisks: [SevereRiskShapeDTO] = [

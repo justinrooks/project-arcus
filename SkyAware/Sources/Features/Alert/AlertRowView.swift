@@ -10,43 +10,52 @@ import SwiftUI
 struct AlertRowView: View {
     let alert: any AlertItem
 
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter
+    }()
+
+    private var iconAndColor: (icon: String, color: Color) {
+        let title = parseWatchType(from: alert.title)
+        let style = styleForType(alert.alertType, title)
+        return (style.0, style.1)
+    }
+
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // Type Badge
-            let title = parseWatchType(from: alert.title)
-            let (icon, color) = styleForType(alert.alertType, title)
-            Image(systemName: icon)
-                .foregroundColor(color)
-                .font(.title3)
-                .frame(width: 36, height: 36)
-                .background(
-                    Circle()
-                        .fill(color.opacity(0.15))
-                )
+            Image(systemName: iconAndColor.icon)
+                .foregroundStyle(iconAndColor.color)
+                .font(.headline.weight(.semibold))
+                .frame(width: 40, height: 40)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: iconAndColor.color.opacity(0.16))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
-                    .font(.headline)
-                    .foregroundColor(.primary)
+                    .font(.headline.weight(.semibold))
                     .lineLimit(2)
-                    .minimumScaleFactor(0.9)
+                    .minimumScaleFactor(0.85)
                 
-                Text(relativeDate(alert.issued))
-                    .font(.caption)
+                Text("Issued \(relativeDate(alert.issued))")
+                    .font(.caption.weight(.medium))
                     .foregroundColor(.secondary)
             }
             Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .padding()
-        .cardRowBackground()
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(14)
+        .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Helpers
     
-    func relativeDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+    private func relativeDate(_ date: Date) -> String {
+        Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
     }
     
     private func parseWatchType(from text: String) -> String? {

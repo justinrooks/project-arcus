@@ -34,52 +34,28 @@ struct MapPolygonMapper {
             return MKMultiPolygon(polygons)
 
         case .tornado:
-            let source = severeRisks.filter { $0.type == .tornado }
-            let polygons = source.flatMap { severe -> [MKPolygon] in
-                severe.polygons.map { polygon in
-                    let coordinates = polygon.ringCoordinates
-                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
-                    mkPolygon.title = polygon.title
-                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
-                        fillHex: severe.fill,
-                        strokeHex: severe.stroke
-                    ).encoded
-                    return mkPolygon
-                }
-            }
-            return MKMultiPolygon(polygons)
+            return MKMultiPolygon(
+                severePolygons(
+                    from: severeRisks,
+                    type: .tornado
+                )
+            )
 
         case .hail:
-            let source = severeRisks.filter { $0.type == .hail }
-            let polygons = source.flatMap { severe -> [MKPolygon] in
-                severe.polygons.map { polygon in
-                    let coordinates = polygon.ringCoordinates
-                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
-                    mkPolygon.title = polygon.title
-                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
-                        fillHex: severe.fill,
-                        strokeHex: severe.stroke
-                    ).encoded
-                    return mkPolygon
-                }
-            }
-            return MKMultiPolygon(polygons)
+            return MKMultiPolygon(
+                severePolygons(
+                    from: severeRisks,
+                    type: .hail
+                )
+            )
 
         case .wind:
-            let source = severeRisks.filter { $0.type == .wind }
-            let polygons = source.flatMap { severe -> [MKPolygon] in
-                severe.polygons.map { polygon in
-                    let coordinates = polygon.ringCoordinates
-                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
-                    mkPolygon.title = polygon.title
-                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
-                        fillHex: severe.fill,
-                        strokeHex: severe.stroke
-                    ).encoded
-                    return mkPolygon
-                }
-            }
-            return MKMultiPolygon(polygons)
+            return MKMultiPolygon(
+                severePolygons(
+                    from: severeRisks,
+                    type: .wind
+                )
+            )
 
         case .meso:
             let polygons = makeMKPolygons(
@@ -117,5 +93,50 @@ struct MapPolygonMapper {
             mkPolygon.title = title(element)
             return mkPolygon
         }
+    }
+
+    private func severePolygons(
+        from severeRisks: [SevereRiskShapeDTO],
+        type: ThreatType
+    ) -> [MKPolygon] {
+        // Draw lower probabilities first so higher severity sits on top.
+        // When probabilities match (same DN), draw SIGN last (above non-significant).
+        let source = severeRisks
+            .filter { $0.type == type }
+            .sorted {
+                let lhsProbability = $0.probabilities.intValue
+                let rhsProbability = $1.probabilities.intValue
+                if lhsProbability != rhsProbability {
+                    return lhsProbability < rhsProbability
+                }
+
+                let lhsSignificanceRank = isSignificant($0.probabilities) ? 1 : 0
+                let rhsSignificanceRank = isSignificant($1.probabilities) ? 1 : 0
+                if lhsSignificanceRank != rhsSignificanceRank {
+                    return lhsSignificanceRank < rhsSignificanceRank
+                }
+
+                return $0.title < $1.title
+            }
+
+        return source.flatMap { severe -> [MKPolygon] in
+            severe.polygons.map { polygon in
+                let coordinates = polygon.ringCoordinates
+                let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
+                mkPolygon.title = polygon.title
+                mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+                    fillHex: severe.fill,
+                    strokeHex: severe.stroke
+                ).encoded
+                return mkPolygon
+            }
+        }
+    }
+
+    private func isSignificant(_ probability: ThreatProbability) -> Bool {
+        if case .significant = probability {
+            return true
+        }
+        return false
     }
 }

@@ -30,7 +30,7 @@ enum StormRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
         case .slight: return "exclamationmark.triangle.fill"
         case .enhanced: return "bolt.fill"
         case .moderate: return "exclamationmark.octagon.fill"
-        case .high: return "flame.fill"
+        case .high: return "bolt.trianglebadge.exclamationmark.fill"
         }
     }
     

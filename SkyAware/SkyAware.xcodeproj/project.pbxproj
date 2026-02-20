@@ -34,6 +34,7 @@
 		D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0AFC5EF2F412BAB001F331A /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		D0AFC5F02F412BAB001F331A /* Journal.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Journal.md; sourceTree = "<group>"; };
+		D0B22B902F465CD600651125 /* SkyAware.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SkyAware.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -184,6 +185,7 @@
 		D095EF9A2E16F5690074F867 = {
 			isa = PBXGroup;
 			children = (
+				D0B22B902F465CD600651125 /* SkyAware.entitlements */,
 				D0AFC5EF2F412BAB001F331A /* AGENTS.md */,
 				D0AFC5F02F412BAB001F331A /* Journal.md */,
 				D048DFB42F21395F0037C3D4 /* ci_scripts */,
@@ -512,6 +514,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = SkyAware.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YVC4WFW94T;
@@ -553,6 +556,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = SkyAware.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YVC4WFW94T;

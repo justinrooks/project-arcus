@@ -48,7 +48,7 @@ final class FireRisk {
     
     init(product: String, issued: Date, expires: Date, valid: Date, riskLevel: Int, label: String, stroke: String?, fill: String?, polygons: [GeoPolygonEntity]) {
         id = UUID()
-        self.key = "\(product)_\(issued.timeIntervalSince1970)"
+        self.key = "\(product)_\(riskLevel)_\(issued.timeIntervalSince1970)"
         self.product = product
         self.issued = issued
         self.valid = valid

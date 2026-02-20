@@ -21,7 +21,7 @@ import OSLog
 // latitude: 39.75288661683443,  longitude: -104.44886203922174) // Bennett, CO
 // latitude: 43.546155601038905, longitude: -96.73048523568963) // Sioux Falls, SD
 // latitude: 43.83334367563072,  longitude: -96.01419655189608) // NE SD somewhere
-
+//38.037293, -84.896337  38.032732, -85.341293
 @MainActor
 final class LocationManager: NSObject, CLLocationManagerDelegate {
     enum Mode { case stopped, foreground, background }

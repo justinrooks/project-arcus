@@ -9,6 +9,11 @@ import SwiftUI
 import CoreLocation
 import OSLog
 
+struct RefreshContext {
+    let coordinates: CLLocationCoordinate2D
+    let refreshedAt: Date
+}
+
 struct HomeView: View {
     struct LoadingOverlayState {
         private(set) var activeRefreshes: Int = 0
@@ -46,24 +51,31 @@ struct HomeView: View {
     private var outlookSvc: any SpcOutlookQuerying { dependencies.spcOutlook }
     private var nwsSvc: any NwsRiskQuerying { dependencies.nwsRisk  }
     private var nwsSync: any NwsSyncing { dependencies.nwsSync }
+    private var weatherClient: WeatherClient { dependencies.weatherClient }
 
     // MARK: State
     // Header State
     @State private var snap: LocationSnapshot?
+    @State private var summaryWeather: SummaryWeather?
     
     // Badge State
     @State private var stormRisk: StormRiskLevel?
     @State private var severeRisk: SevereWeatherThreat?
+    @State private var fireRisk: FireRiskLevel?
     
     // Alert State
     @State private var mesos: [MdDTO] = []
     @State private var watches: [WatchRowDTO] = []
     
     // Refresh State
-    @State private var lastRefreshKey: RefreshKey?
+    @State private var lastRefreshContext: RefreshContext?
     @State private var lastOutlookSyncAt: Date?
+    @State private var lastWeatherKitSyncAt: Date?
     @State private var loadingState = LoadingOverlayState()
+    private let minimumForegroundRefreshInterval: TimeInterval = 3 * 60
+    private let minimumRefreshDistanceMeters: CLLocationDistance = 800
     private let outlookRefreshPolicy = OutlookRefreshPolicy()
+    private let weatherKitRefreshPolicy = WeatherKitRefreshPolicy()
     
     // Outlook State
     @State private var outlooks: [ConvectiveOutlookDTO] = []
@@ -73,6 +85,7 @@ struct HomeView: View {
         initialSnap: LocationSnapshot? = nil,
         initialStormRisk: StormRiskLevel? = nil,
         initialSevereRisk: SevereWeatherThreat? = nil,
+        initialFireRisk: FireRiskLevel? = nil,
         initialMesos: [MdDTO] = [],
         initialWatches: [WatchRowDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -81,6 +94,7 @@ struct HomeView: View {
         _snap = State(initialValue: initialSnap)
         _stormRisk = State(initialValue: initialStormRisk)
         _severeRisk = State(initialValue: initialSevereRisk)
+        _fireRisk = State(initialValue: initialFireRisk)
         _mesos = State(initialValue: initialMesos)
         _watches = State(initialValue: initialWatches)
         _outlook = State(initialValue: initialOutlook)
@@ -97,56 +111,55 @@ struct HomeView: View {
                             snap: snap,
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
+                            fireRisk: fireRisk,
                             mesos: mesos,
                             watches: watches,
-                            outlook: outlook
+                            outlook: outlook,
+                            weather: summaryWeather
                         )
                         .toolbar(.hidden, for: .navigationBar)
                         .background(.skyAwareBackground)
                     }
-                    .scrollContentBackground(.hidden)
-                    .background(Color.skyAwareBackground.ignoresSafeArea())
+                    .background(Color(.skyAwareBackground).ignoresSafeArea())
                     .refreshable {
-                        lastRefreshKey = nil
-                        await refresh(for: snap, force: true, showsLoading: true)
+                        await forceRefreshFromLatestSnapshot(showsLoading: true)
                     }
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem { Label("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted")
 //                    "clock.arrow.trianglehead.2.counterclockwise.rotate.90") //gauge.with.needle.fill
                 }
                 
                 NavigationStack {
-                    AlertView(mesos: mesos, watches: watches)
-                        .navigationTitle("Active Alerts")
-                        .navigationBarTitleDisplayMode(.inline)
-            //            .toolbarBackground(.visible, for: .navigationBar)      // <- non-translucent
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                        .refreshable {
+                    AlertView(
+                        mesos: mesos,
+                        watches: watches,
+                        onRefresh: {
                             logger.debug("refreshing alerts")
-                            lastRefreshKey = nil
+                            lastRefreshContext = nil
                             await withLoading(message: "Refreshing alerts...") {
                                 await refresh(for: snap, force: true, showsLoading: false)
                             }
                         }
+                    )
+                        .background(.skyAwareBackground)
+                        .navigationTitle("Active Alerts")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
                     .badge(mesos.count + watches.count)
                 
                 MapScreenView()
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(.skyAwareBackground)
                     .tabItem { Label("Map", systemImage: "map") }
                 
                 NavigationStack {
-                    ConvectiveOutlookView(dtos: outlooks)
-                        .navigationTitle("Convective Outlooks")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                        .refreshable {
+                    ConvectiveOutlookView(
+                        dtos: outlooks,
+                        onRefresh: {
                             logger.debug("refreshing outlooks")
                             await withLoading(message: "Syncing outlooks...") {
                                 let now = Date()
@@ -157,20 +170,31 @@ struct HomeView: View {
                                 await refreshOutlooks()
                             }
                         }
+                    )
+                        .background(.skyAwareBackground)
+                        .navigationTitle("Convective Outlooks")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
                 
                 NavigationStack {
                     SettingsView()
-                        .navigationTitle("Background Health")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
                         .background(.skyAwareBackground)
+                        .navigationTitle("Settings")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.visible, for: .navigationBar)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .tabItem {Label("Settings", systemImage: "gearshape")}
             
             }
+            .background(Color(.skyAwareBackground).ignoresSafeArea())
+            .toolbarBackground(.visible, for: .tabBar)
+            .toolbarBackground(.skyAwareBackground, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
             if loadingState.isVisible {
                 LoadingView(message: loadingState.displayMessage)
@@ -214,6 +238,9 @@ struct HomeView: View {
         let shouldSyncOutlookNow = await MainActor.run {
             markOutlookSyncIfNeeded(force: force, now: now)
         }
+        let shouldSyncWeatherKitNow = await MainActor.run {
+            markWeatherKitSyncIfNeeded(force: force, now: now)
+        }
 
         if showsLoading {
             await MainActor.run { startRefresh(message: "Refreshing data...") }
@@ -235,9 +262,45 @@ struct HomeView: View {
         }
         if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
         await refreshOutlooks()
+        
+        if shouldSyncWeatherKitNow {
+            if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
+            await refreshWeather(for: snap.coordinates)
+        } else {
+            logger.debug("Skipping WeatherKit refresh due to refresh throttle")
+        }
+        
+        
         if showsLoading {
             await MainActor.run { endRefresh() }
         }
+    }
+
+    private func forceRefreshFromLatestSnapshot(showsLoading: Bool) async {
+        let latestSnapshot: LocationSnapshot?
+        if let providerSnapshot = await locSvc.snapshot() {
+            latestSnapshot = providerSnapshot
+        } else {
+            latestSnapshot = await MainActor.run { snap }
+        }
+        guard let latestSnapshot else {
+            logger.info("Manual refresh skipped because no location snapshot is available yet")
+            return
+        }
+
+        await MainActor.run {
+            snap = latestSnapshot
+            lastRefreshContext = nil
+        }
+        await refresh(for: latestSnapshot, force: true, showsLoading: showsLoading)
+    }
+    
+    @MainActor
+    private func refreshWeather(for snap: CLLocationCoordinate2D) async {
+        if Task.isCancelled { return }
+        let weather = await weatherClient.currentWeather(for: CLLocation(latitude: snap.latitude, longitude: snap.longitude))
+        if Task.isCancelled { return }
+        self.summaryWeather = weather
     }
     
     private func refreshOutlooks() async {
@@ -256,13 +319,28 @@ struct HomeView: View {
     
     @MainActor
     private func shouldRefresh(for snap: LocationSnapshot, force: Bool = false) -> Bool {
-        let key = RefreshKey(coord: snap.coordinates, timestamp: snap.timestamp)
+        let current = RefreshContext(coordinates: snap.coordinates, refreshedAt: snap.timestamp)
+
         if force {
-            lastRefreshKey = key
+            lastRefreshContext = current
             return true
         }
-        guard key != lastRefreshKey else { return false } // skip placemark-only or repeated initial yield
-        lastRefreshKey = key
+
+        guard let lastRefreshContext else {
+            self.lastRefreshContext = current
+            return true
+        }
+
+        let elapsed = current.refreshedAt.timeIntervalSince(lastRefreshContext.refreshedAt)
+        let currentLocation = CLLocation(latitude: current.coordinates.latitude, longitude: current.coordinates.longitude)
+        let previousLocation = CLLocation(latitude: lastRefreshContext.coordinates.latitude, longitude: lastRefreshContext.coordinates.longitude)
+        let distance = currentLocation.distance(from: previousLocation)
+
+        guard elapsed >= minimumForegroundRefreshInterval || distance >= minimumRefreshDistanceMeters else {
+            return false
+        }
+
+        self.lastRefreshContext = current
         return true
     }
 
@@ -278,19 +356,34 @@ struct HomeView: View {
         }
         return shouldSync
     }
+
+    @MainActor
+    private func markWeatherKitSyncIfNeeded(force: Bool, now: Date) -> Bool {
+        let shouldSync = weatherKitRefreshPolicy.shouldSync(
+            now: now,
+            lastSync: lastWeatherKitSyncAt,
+            force: force
+        )
+        if shouldSync {
+            lastWeatherKitSyncAt = now
+        }
+        return shouldSync
+    }
     
     private func refreshRisk(for coord: CLLocationCoordinate2D) async {
         async let stormResult = capture { try await svc.getStormRisk(for: coord) }
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
+        async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
         async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
         
-        let (storm, severe, mesos, watch) = await (stormResult, severeResult, mesosResult, watchResult)
+        let (storm, severe, fire, mesos, watch) = await (stormResult, severeResult, fireResult, mesosResult, watchResult)
         if Task.isCancelled { return }
         
         await MainActor.run {
             if case let .success(value) = storm { self.stormRisk = value }
             if case let .success(value) = severe { self.severeRisk = value }
+            if case let .success(value) = fire { self.fireRisk = value  }
             if case let .success(value) = mesos { self.mesos = value }
             if case let .success(value) = watch { self.watches = value }
         }
@@ -337,6 +430,7 @@ struct HomeView: View {
         ),
         initialStormRisk: .slight,
         initialSevereRisk: .tornado(probability: 0.10),
+        initialFireRisk: .extreme,
         initialMesos: MD.sampleDiscussionDTOs,
         initialWatches: Watch.sampleWatchRows,
         initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,

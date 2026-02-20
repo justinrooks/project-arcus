@@ -32,6 +32,9 @@ final class Dependencies: Sendable {
     private let _locationManager: LocationManager?
     private let _gridProvider: GridPointProvider?
     
+    // MARK: Weatherkit
+    private let _weatherClient: WeatherClient?
+    
     // MARK: Providers
     
     private let _spcProvider: SpcProvider?
@@ -99,6 +102,14 @@ final class Dependencies: Sendable {
         }
         return value
     }
+    
+    var weatherClient: WeatherClient {
+        guard let value = _weatherClient else {
+            fatalError("Dependencies.weatherClient used while unconfigured")
+        }
+        return value
+    }
+    
     var gridProvider: GridPointProvider {
         guard let value = _gridProvider else {
             fatalError("Dependencies.gridProvider used while unconfigured")
@@ -221,7 +232,8 @@ final class Dependencies: Sendable {
         refreshPolicy: RefreshPolicy?,
         cadencePolicy: CadencePolicy?,
         orchestrator: BackgroundOrchestrator?,
-        scheduler: BackgroundScheduler?
+        scheduler: BackgroundScheduler?,
+        weatherClient: WeatherClient?
     ) {
         self.appRefreshID = appRefreshID
         self.logger = logger
@@ -241,6 +253,7 @@ final class Dependencies: Sendable {
         self._cadencePolicy = cadencePolicy
         self._orchestrator = orchestrator
         self._scheduler = scheduler
+        self._weatherClient = weatherClient
     }
     
     @MainActor
@@ -367,6 +380,9 @@ final class Dependencies: Sendable {
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
         logger.notice("Providers ready; background orchestrator configured")
         
+        let weatherClient = WeatherClient()
+        logger.notice("WeatherKit client created")
+        
         return Dependencies(
             appRefreshID: appRefreshID,
             logger: logger,
@@ -385,7 +401,8 @@ final class Dependencies: Sendable {
             refreshPolicy: refreshPolicy,
             cadencePolicy: cadencePolicy,
             orchestrator: orchestrator,
-            scheduler: scheduler
+            scheduler: scheduler,
+            weatherClient: weatherClient
         )
     }
     
@@ -406,7 +423,8 @@ final class Dependencies: Sendable {
                                                          refreshPolicy: nil,
                                                          cadencePolicy: nil,
                                                          orchestrator: nil,
-                                                         scheduler: nil)
+                                                         scheduler: nil,
+                                                         weatherClient: nil)
     }
 
     private struct UserDefaultsNotificationSettingsProvider: NotificationSettingsProviding {

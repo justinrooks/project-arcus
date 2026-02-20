@@ -21,6 +21,7 @@ struct BgHealthDiagnosticsView: View {
             if let latest = runs.first {
                 Section {
                     StatusHeader(latest: latest)
+                        .cardRowBackground()
                 }
             }
             
@@ -34,11 +35,15 @@ struct BgHealthDiagnosticsView: View {
                 } else {
                     ForEach(runs, id: \.runId) { snap in
                         RunRow(snap: snap)
+                            .cardRowBackground()
                     }
                 }
             }
         }
+        .listStyle(.insetGrouped)
         .listSectionSpacing(15)
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
         .contentMargins(.top, 0, for: .scrollContent)
     }
 }
@@ -47,9 +52,7 @@ struct BgHealthDiagnosticsView: View {
 
 private struct StatusHeader: View {
     let latest: BgRunSnapshot
-    @Environment(\.colorScheme) private var scheme
-    
-    
+
     var body: some View {
         let now = Date()
         let status = computeStatus(from: latest, now: now)
@@ -60,7 +63,7 @@ private struct StatusHeader: View {
                 .frame(width: 12, height: 12)
             
             VStack(alignment: .leading, spacing: 4) {
-                Text("Status: \(status.label)")
+                Text("Background Status: \(status.label)")
                     .font(.headline)
                 HStack(spacing: 12) {
                     Label("Last \(relative(latest.endedAt, now: now))", systemImage: "clock")
@@ -70,7 +73,8 @@ private struct StatusHeader: View {
                 .foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
     }
     
     private func computeStatus(from latest: BgRunSnapshot, now: Date) -> (label: String, color: Color) {
@@ -168,10 +172,7 @@ private struct RunRow: View {
 // MARK: - Formatting Helpers
 
 private func relative(_ date: Date, now: Date = .now) -> String {
-    let f = RelativeDateTimeFormatter()
-    f.unitsStyle = .abbreviated
-    
-    return f.localizedString(for: date, relativeTo: now) // e.g., “12m ago”
+    date.relativeDate(to: now, with: .abbreviated) // e.g., "12m ago"
 }
 
 private enum BgHealthFormatters {
@@ -208,13 +209,6 @@ private func endDate(_ date: Date) -> String {
 
 private func timeOrDash(_ date: Date) -> String {
     BgHealthFormatters.timeOrDash.string(from: date)
-}
-
-private func formatSeconds(_ secs: Double) -> String {
-    if secs < 60 { return String(format: "%.1fs", secs) }
-    let m = Int(secs) / 60
-    let s = Int(secs) % 60
-    return "\(m)m \(s)s"
 }
 
 private func formatSecondsInt64(_ secs: Int64) -> String {

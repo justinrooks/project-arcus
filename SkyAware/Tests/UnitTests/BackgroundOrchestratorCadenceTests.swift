@@ -208,6 +208,10 @@ private extension BackgroundOrchestratorCadenceTests {
 }
 
 private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
+    func getFireRisk(for point: CLLocationCoordinate2D) async throws -> SkyAware.FireRiskLevel {
+        .clear
+    }
+    
     private let activeMesos: [MdDTO]
 
     init(activeMesos: [MdDTO]) {

@@ -9,35 +9,37 @@ import SwiftUI
 
 struct DiagnosticsView: View {
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Location") {
-//                    Text("Current: \(currentLocation)")
-//                    Text("Last Update: \(lastLocationUpdate)")
-//                    Text("Authorization: \(locationAuthStatus)")
+        List {
+            Section("Location") {
+//                Text("Current: \(currentLocation)")
+//                Text("Last Update: \(lastLocationUpdate)")
+//                Text("Authorization: \(locationAuthStatus)")
+            }
+            
+            Section("Data Sources") {
+//                Text("WeatherKit: \(weatherKitStatus)")
+//                Text("SPC: \(spcStatus)")
+//                Text("NWS: \(nwsStatus)")
+            }
+            
+            Section("Storage") {
+//                Text("Outlooks Cached: \(cachedOutlooks)")
+//                Text("Mesos Cached: \(cachedMesos)")
+            }
+            
+            Section("Actions") {
+                Button("Clear Cache") {
+//                    clearCache()
                 }
-                
-                Section("Data Sources") {
-//                    Text("WeatherKit: \(weatherKitStatus)")
-//                    Text("SPC: \(spcStatus)")
-//                    Text("NWS: \(nwsStatus)")
+                .skyAwareGlassButtonStyle()
+                Button("Force Refresh") {
+//                    forceRefresh()
                 }
-                
-                Section("Storage") {
-//                    Text("Outlooks Cached: \(cachedOutlooks)")
-//                    Text("Mesos Cached: \(cachedMesos)")
-                }
-                
-                Section("Actions") {
-                    Button("Clear Cache") {
-//                        clearCache()
-                    }
-                    Button("Force Refresh") {
-//                        forceRefresh()
-                    }
-                }
+                .skyAwareGlassButtonStyle(prominent: true)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
     }
 }
 

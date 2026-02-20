@@ -40,13 +40,13 @@ struct ToastView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: SkyAwareRadius.chip, style: .continuous)
                 .fill(.regularMaterial)
                 .shadow(color: .black.opacity(0.1),
                         radius: 8, x: 0, y: 4)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: SkyAwareRadius.chip, style: .continuous)
                 .stroke(toast.type.color.opacity(0.3), lineWidth: 1)
         )
         .padding(.horizontal, 16)

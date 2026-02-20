@@ -10,7 +10,7 @@ import SwiftUI
 struct AppBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(.skyAwareBackground)
+            .background(Color(.skyAwareBackground))
             .ignoresSafeArea()
     }
 }

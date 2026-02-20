@@ -9,47 +9,57 @@ import SwiftUI
 
 struct OutlookRowView: View {
     let outlook: ConvectiveOutlookDTO
+    private static let titleRegex = try? NSRegularExpression(
+        pattern: #"^SPC\s+\w+\s+\d{1,2},\s+\d{4}\s+(\d{4}) UTC (.+)$"#
+    )
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            // Type Badge
             Image(systemName: "pencil.and.list.clipboard")
                 .foregroundColor(.skyAwareAccent)
-                .font(.title3)
-                .frame(width: 36, height: 36)
-                .background(
-                    Circle()
-                        .fill(Color.skyAwareAccent.opacity(0.15))
-                )
+                .font(.headline.weight(.semibold))
+                .frame(width: 40, height: 40)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
 
             if let day = simplifyOutlookTitle(outlook.title) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(day)
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                        .font(.headline.weight(.semibold))
                         .lineLimit(2)
                         .minimumScaleFactor(0.9)
                     
                     if let issued = outlook.issued{
-                        Text("\(issued.shorten()) - \(issued.relativeDate())")
-                            .font(.caption)
+                        Text("\(issued.shorten()) • \(issued.relativeDate())")
+                            .font(.caption.weight(.medium))
                             .foregroundColor(.secondary)
                     }
                 }
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(outlook.title)
+                        .font(.headline.weight(.semibold))
+                        .lineLimit(2)
+                    Text("Published \(outlook.published.relativeDate())")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(.secondary)
+                }
             }
             Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
-        .padding()
-        .cardRowBackground()
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(14)
+        .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .contentShape(Rectangle())
     }
 }
 
 extension OutlookRowView {
-    func simplifyOutlookTitle(_ text: String) -> String? {
-        let pattern = #"^SPC\s+\w+\s+\d{1,2},\s+\d{4}\s+(\d{4}) UTC (.+)$"#
-        
+    private func simplifyOutlookTitle(_ text: String) -> String? {
         guard
-            let regex = try? NSRegularExpression(pattern: pattern),
+            let regex = Self.titleRegex,
             let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
             match.numberOfRanges == 3
         else {
@@ -61,10 +71,7 @@ extension OutlookRowView {
             return String(text[r])
         }
         
-        let time = group(1)     // "1630"
-        //let rest = group(2)     // "Day 1 Convective Outlook"
-        
-//        return "\(time)z \(rest)"
+        let time = group(1)
         return "\(time)z Outlook"
     }
 }

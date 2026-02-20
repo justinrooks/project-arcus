@@ -97,6 +97,9 @@ extension SpcProvider: SpcSyncing {
                 publishConvectiveIssue(d)
             }
             signposter.endInterval("Background Run", runInterval)
+        } catch is CancellationError {
+            signposter.endInterval("Background Run", runInterval)
+            logger.notice("Convective outlook sync cancelled")
         } catch {
             signposter.endInterval("Background Run", runInterval)
             logger.error("Error syncing convective outlook text products: \(error.localizedDescription, privacy: .public)")
@@ -108,6 +111,9 @@ extension SpcProvider: SpcSyncing {
         do {
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
             signposter.endInterval("Background Run", runInterval)
+        } catch is CancellationError {
+            signposter.endInterval("Background Run", runInterval)
+            logger.notice("Mesoscale discussion sync cancelled")
         } catch {
             signposter.endInterval("Background Run", runInterval)
             logger.error("Error syncing mesoscale discussion text products: \(error.localizedDescription, privacy: .public)")

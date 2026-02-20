@@ -21,4 +21,8 @@ extension SpcProvider: SpcRiskQuerying {
     func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
         try await mesoRepo.active(at: time, point: point)
     }
+    
+    func getFireRisk(for point: CLLocationCoordinate2D) async throws -> FireRiskLevel {
+        try await fireRiskRepo.active(for: point)
+    }
 }

@@ -124,15 +124,19 @@ actor BackgroundOrchestrator {
                 await nwsProvider.sync(for: updatedSnap.coordinates)
                 
                 // MARK: Get Risk Status
-                let (severeRisk, stormRisk, activeMesos, activeWatches) = try await withTimeout(seconds: 8, clock: clock) {
+                let (severeRisk, stormRisk, fireRisk, activeMesos, activeWatches) = try await withTimeout(seconds: 8, clock: clock) {
                     async let sr = self.spcProvider.getSevereRisk(for: snap.coordinates)
                     async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
+                    async let fr = self.spcProvider.getFireRisk(for: snap.coordinates)
                     async let mesos = self.spcProvider.getActiveMesos(at: .now, for: updatedSnap.coordinates)
                     async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
-                    return try await (sr, cr, mesos, watches)
+                    return try await (sr, cr, fr, mesos, watches)
                 }
                 let inMeso = activeMesos.isEmpty == false
                 let inWatch = activeWatches.isEmpty == false
+                
+                // TODO: Create a fireNotification flow
+                // TODO: Put the flow behind an options flag
                 
                 // MARK: Send the AM Notification
                 if settings.morningSummariesEnabled {

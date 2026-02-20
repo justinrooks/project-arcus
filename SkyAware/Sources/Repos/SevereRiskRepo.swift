@@ -132,7 +132,7 @@ actor SevereRiskRepo {
 
         // 2) For each risk level, keep the record with the most recent `valid` date
         let mostRecentByLevel: [String: SevereRisk] = Dictionary(
-            risks.map { ($0.type.rawValue, $0) },
+            risks.map { ($0.type.rawValue + $0.key, $0) },
             uniquingKeysWith: { lhs, rhs in
                 // choose the record with the later `valid` date
                 return lhs.valid >= rhs.valid ? lhs : rhs

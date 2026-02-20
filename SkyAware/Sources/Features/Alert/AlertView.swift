@@ -10,92 +10,155 @@ import SwiftUI
 struct AlertView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
-    
-    @State private var selectedWatch: WatchRowDTO?
+    let onRefresh: (() async -> Void)?
+
     @State private var selectedMeso: MdDTO?
-    
-    private let scale: Double = 0.9
-    
+
+    private var hasNoAlerts: Bool {
+        watches.isEmpty && mesos.isEmpty
+    }
+
+    init(
+        mesos: [MdDTO],
+        watches: [WatchRowDTO],
+        onRefresh: (() async -> Void)? = nil
+    ) {
+        self.mesos = mesos
+        self.watches = watches
+        self.onRefresh = onRefresh
+    }
+
     var body: some View {
-        List {
-            if(watches.isEmpty && mesos.isEmpty){
-                ContentUnavailableView {
-                    Label("No active watches or mesos", systemImage: "checkmark.seal.fill")
-                } description: {
-                    Text("There are no active weather watches.")
-                }
-                .scaleEffect(scale)
-            } else {
-                if(watches.isEmpty) {
-                    ContentUnavailableView {
-                        Label("No active watches", systemImage: "checkmark.seal.fill")
-                    } description: {
-                        Text("There are no active weather watches.")
-                    }
-                    .scaleEffect(scale)
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                if hasNoAlerts {
+                    emptySectionCard(
+                        title: "No active watches or mesos",
+                        subtitle: "There are currently no active weather watches or mesoscale discussions.",
+                        symbol: "checkmark.shield"
+                    )
                 } else {
-                    Section(header: Text("Watches")) {
-                        ForEach(watches) { watch in
-                            AlertRowView(alert: watch)
-                                .contentShape(Rectangle()) // Makes entire row tappable
-                                .onTapGesture {
-                                    selectedWatch = watch
+                    if watches.isEmpty {
+                        emptySectionCard(
+                            title: "No active watches",
+                            subtitle: "There are no active weather watches.",
+                            symbol: "checkmark.seal"
+                        )
+                    } else {
+                        alertSection(
+                            title: "Watches",
+                            subtitle: "\(watches.count) active",
+                            symbol: "exclamationmark.triangle.fill"
+                        ) {
+                            ForEach(watches) { watch in
+                                NavigationLink(value: watch) {
+                                    AlertRowView(alert: watch)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
                                 }
-                                .padding(.horizontal)
+                                .buttonStyle(.plain)
+                            }
                         }
-//                        .onDelete(perform: { indexSet in
-//                            indexSet.forEach { index in
-//                                let watch = watches[index]
-//                                modelContext.delete(watch)
-//                            }
-//                        })
                     }
-                }
-                
-                if(mesos.isEmpty) {
-                    ContentUnavailableView {
-                        Label("No active mesoscale discussions", systemImage: "checkmark.seal.fill")
-                    } description: {
-                        Text("There are no active mesoscale discussions.")
-                    }
-                    .scaleEffect(scale)
-                } else {
-                    Section(header: Text("Mesoscale Discussions")) {
-                        ForEach(mesos) { meso in
-                            AlertRowView(alert: meso)
-                                .contentShape(Rectangle()) // Makes entire row tappable
-                                .onTapGesture {
+
+                    if mesos.isEmpty {
+                        emptySectionCard(
+                            title: "No active mesoscale discussions",
+                            subtitle: "There are no active mesoscale discussions.",
+                            symbol: "checkmark.seal"
+                        )
+                    } else {
+                        alertSection(
+                            title: "Mesoscale Discussions",
+                            subtitle: "\(mesos.count) active",
+                            symbol: "waveform.path.ecg"
+                        ) {
+                            ForEach(mesos) { meso in
+                                Button {
                                     selectedMeso = meso
+                                } label: {
+                                    AlertRowView(alert: meso)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
                                 }
-                                .padding(.horizontal)
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
         }
-        .navigationDestination(item: $selectedWatch) { watch in
+        .refreshable {
+            guard let onRefresh else { return }
+            await onRefresh()
+        }
+        .scrollIndicators(.hidden)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .navigationDestination(for: WatchRowDTO.self) { watch in
             ScrollView {
                 WatchDetailView(watch: watch, layout: .full)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
             }
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
             .navigationTitle("Weather Watch")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
         }
         .navigationDestination(item: $selectedMeso) { meso in
             ScrollView {
                 MesoscaleDiscussionCard(meso: meso, layout: .full)
-//                    .padding(.horizontal, 16)
-//                    .padding(.top, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 24)
             }
+            .scrollContentBackground(.hidden)
+            .background(.skyAwareBackground)
             .navigationTitle("Mesoscale Discussion")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
         }
-        .contentMargins(.top, 0, for: .scrollContent)
+    }
+
+    private func alertSection<Content: View>(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: symbol)
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Text(subtitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+            }
+
+            content()
+        }
+        .padding(16)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+    }
+
+    private func emptySectionCard(title: String, subtitle: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.headline.weight(.semibold))
+            Text(subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 
@@ -103,9 +166,8 @@ struct AlertView: View {
     NavigationStack {
         AlertView(mesos: MD.sampleDiscussionDTOs, watches: Watch.sampleWatchRows)
             .navigationTitle("Active Alerts")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
 }

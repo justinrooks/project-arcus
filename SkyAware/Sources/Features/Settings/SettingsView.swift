@@ -90,140 +90,153 @@ struct SettingsView: View {
     }
     
     var body: some View {
-        Form {
-            Section(header: Text("Notification Preferences")) {
-                HStack {
-                    Toggle("Enable Morning Summaries", isOn: $morningSummaryEnabled)
-                        .onChange(of: morningSummaryEnabled) { oldValue, newValue in
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                sectionCard(title: "Notification Preferences", symbol: "bell.badge.fill") {
+                    Toggle("Morning Summaries", isOn: $morningSummaryEnabled)
+                        .onChange(of: morningSummaryEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Morning Summaries")
                         }
-                }
-                HStack {
-                    Toggle("Enable Meso Notifications", isOn: $mesoNotificationEnabled)
-                        .onChange(of: mesoNotificationEnabled) { oldValue, newValue in
+                    Toggle("Meso Notifications", isOn: $mesoNotificationEnabled)
+                        .onChange(of: mesoNotificationEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Meso Notifications")
                         }
-                }
-                HStack {
-                    Toggle("Enable Watch Notifications", isOn: $watchNotificationEnabled)
-                        .onChange(of: watchNotificationEnabled) { oldValue, newValue in
+                    Toggle("Watch Notifications", isOn: $watchNotificationEnabled)
+                        .onChange(of: watchNotificationEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Watch Notifications")
                         }
                 }
-            }
-            
-            Section(header: Text("Onboarding Debug")) {
-                HStack {
-                    Toggle(isOn: $onboardingComplete) {
-                        Text("Onboarding flow complete")
+
+                sectionCard(title: "AI Summary Preferences", symbol: "sparkles") {
+                    Toggle("AI summaries", isOn: $aiSummariesEnabled)
+                    Toggle("Share location context", isOn: $aiShareLocation)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Brevity")
+                            .font(.subheadline.weight(.semibold))
+                        Picker("Brevity", selection: brevityBinding) {
+                            ForEach(BrevityLevel.allCases) { level in
+                                Text(level.title).tag(level)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Audience")
+                            .font(.subheadline.weight(.semibold))
+                        Picker("Audience", selection: audienceBinding) {
+                            ForEach(AudienceLevel.allCases) { level in
+                                Text(level.title).tag(level)
+                            }
+                        }
+                        .pickerStyle(.segmented)
                     }
                 }
-                HStack {
-                    Text("Disclaimer Accepted Version: \(disclaimerVersion)")
+
+                sectionCard(title: "Diagnostics", symbol: "stethoscope", accent: .orange) {
+                    NavigationLink {
+                        BgHealthDiagnosticsView()
+                            .navigationTitle("Background Refresh History")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    } label: {
+                        settingsNavRow("Background Refresh History", systemImage: "waveform.path.ecg")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+
+                    NavigationLink {
+                        DiagnosticsView()
+                            .navigationTitle("Diagnostic Info")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    } label: {
+                        settingsNavRow("Diagnostic Info", systemImage: "stethoscope")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+
+                    NavigationLink {
+                        LogViewerView()
+                            .navigationTitle("Log Viewer")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    } label: {
+                        settingsNavRow("Log Viewer", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
                 }
-                HStack {
+
+                sectionCard(title: "Onboarding Debug", symbol: "ladybug.fill", accent: .orange) {
+                    Toggle("Onboarding flow complete", isOn: $onboardingComplete)
+                    infoRow("Disclaimer Accepted Version", "\(disclaimerVersion)")
                     Button("Reset disclaimer") {
                         UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
                         UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
                     }
+                    .skyAwareGlassButtonStyle()
+                }
+
+                sectionCard(title: "About", symbol: "info.circle.fill") {
+                    infoRow("Version", Bundle.main.fullVersion)
+                    infoRow("Disclaimer", "\(disclaimerVersion)")
                 }
             }
-            
-            //            Section(header: Text("AI PREFERENCES")) {
-            //                HStack{
-            //                    Toggle(isOn: $aiSummariesEnabled) {
-            //                        Text("Enable AI summaries")
-            //                    }
-            //                }
-            //                
-            //                if aiSummariesEnabled {
-            //                    HStack{
-            //                        Toggle(isOn: $aiShareLocation) {
-            //                            Text("Include location for summary")
-            //                        }
-            //                    }
-            //                    HStack{
-            //                        // Image(uiImage: UIImage(named: "Language")!)
-            //                        Picker(selection: brevityBinding, label: Text("Level of detail")) {
-            //                            ForEach(BrevityLevel.allCases) { level in
-            //                                Text(level.title).tag(level)
-            //                            }
-            //                        }
-            //                        // .pickerStyle(SegmentedPickerStyle())
-            //                    }
-            //                    HStack{
-            //                        // Image(uiImage: UIImage(named: "Language")!)
-            //                        Picker(selection: audienceBinding, label: Text("Interest level")) {
-            //                            ForEach(AudienceLevel.allCases) { level in
-            //                                Text(level.title).tag(level)
-            //                            }
-            //                        }
-            //                        // .pickerStyle(SegmentedPickerStyle())
-            //                    }
-            //                }
-            //            }
-            
-            Section("Diagnostics") {
-                NavigationLink("Background Refresh History") {
-                    BgHealthDiagnosticsView()
-                        .navigationTitle("Background Refresh History")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                }
-                NavigationLink("Diagnostic Info") {
-                    DiagnosticsView()
-                        .navigationTitle("Diagnostic Info")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                }
-                NavigationLink("Log Viewer") {
-                    LogViewerView()
-                        .navigationTitle("Log Viewer")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                        .scrollContentBackground(.hidden)
-                        .background(.skyAwareBackground)
-                }
-            }
-            .foregroundColor(.orange) // Visual indicator it's debug-only
-            
-            Section("About") {
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text(Bundle.main.fullVersion) // e.g., "1.0.0 (1)"
-                        .foregroundColor(.secondary)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    //                    tapCount += 1
-                    //                    if tapCount >= 7 {
-                    //                        devMode = true
-                    //                        tapCount = 0
-                    //                    }
-                }
-                HStack {
-                    Text("Disclaimer")
-                    Spacer()
-                    Text("\(disclaimerVersion)") // e.g., "1.0.0 (1)"
-                        .foregroundColor(.secondary)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    //                    tapCount += 1
-                    //                    if tapCount >= 7 {
-                    //                        devMode = true
-                    //                        tapCount = 0
-                    //                    }
-                }
-            }
-            
-            
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
         }
+        .scrollIndicators(.hidden)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+    }
+
+    private func sectionCard<Content: View>(
+        title: String,
+        symbol: String,
+        accent: Color = .primary,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: symbol)
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(accent)
+
+            content()
+        }
+        .padding(16)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+    }
+
+    private func infoRow(_ title: String, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
+    }
+
+    private func settingsNavRow(_ title: String, systemImage: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .frame(width: 18)
+            Text(title)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .padding(.vertical, 4)
+        .font(.subheadline.weight(.medium))
+        .contentShape(Rectangle())
     }
 }
 
@@ -257,8 +270,7 @@ extension SettingsView {
         SettingsView()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
 }

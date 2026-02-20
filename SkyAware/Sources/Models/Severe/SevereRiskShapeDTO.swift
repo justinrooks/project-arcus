@@ -13,4 +13,8 @@ struct SevereRiskShapeDTO: Sendable {
     let stroke: String?
     let fill: String?
     let polygons: [GeoPolygonEntity]
+
+    var title: String {
+        polygons.first?.title ?? probabilities.description
+    }
 }

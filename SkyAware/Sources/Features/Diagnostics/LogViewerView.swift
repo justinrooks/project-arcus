@@ -10,19 +10,34 @@ import OSLog
 
 // A Sendable DTO so we don’t pass OSLogEntry (not Sendable) around.
 struct LogLine: Identifiable, Sendable {
-    let id = UUID()
-    var _id: UUID { id }
+    let id: String
     let date: Date
     let level: OSLogEntryLog.Level
     let subsystem: String
     let category: String
     let message: String
+
+    init(
+        date: Date,
+        level: OSLogEntryLog.Level,
+        subsystem: String,
+        category: String,
+        message: String
+    ) {
+        self.date = date
+        self.level = level
+        self.subsystem = subsystem
+        self.category = category
+        self.message = message
+        // Keep identity stable across refreshes when content does not change.
+        self.id = "\(date.timeIntervalSinceReferenceDate)|\(level.rawValue)|\(subsystem)|\(category)|\(message)"
+    }
 }
 
 @MainActor
 struct LogViewerView: View {
     private let logger = Logger.uiDiagnostics
-    private let maxEntries = 1000
+
     enum Window: TimeInterval, CaseIterable, Identifiable {
         case fiveMin = 300, thirtyMin = 1800, twoHours = 7200
         var id: Self { self }
@@ -35,6 +50,12 @@ struct LogViewerView: View {
         }
     }
 
+    private struct LoadConfiguration: Equatable {
+        let window: Window
+        let includeAllSubsystems: Bool
+        let maxEntries: Int
+    }
+
     @State private var lines: [LogLine] = []
     @State private var isLoading = false
     @State private var window: Window = .thirtyMin
@@ -43,6 +64,15 @@ struct LogViewerView: View {
     @State private var maxEntriesSelection = 250
     @State private var loadTask: Task<Void, Never>?
     @State private var exportCache: String = ""
+
+    private let dateFormatter = LogViewerView.makeDateFormatter()
+    private var loadConfiguration: LoadConfiguration {
+        LoadConfiguration(
+            window: window,
+            includeAllSubsystems: includeAllSubsystems,
+            maxEntries: maxEntriesSelection
+        )
+    }
 
     private var toolbarItems: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
@@ -64,22 +94,26 @@ struct LogViewerView: View {
         f.timeStyle = .medium
         return f
     }
-    @State private var dateFormatter = LogViewerView.makeDateFormatter()
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                controls
-                contentList
-            }
-            .padding()
-            .navigationTitle("Logs")
-            .toolbar { toolbarItems }
-            .task { triggerLoad(debounced: false) }
-            .task(id: window) { triggerLoad(debounced: false) }
-            .task(id: includeAllSubsystems) { triggerLoad(debounced: false) }
-            .task(id: query) { triggerLoad(debounced: true) }
-            .task(id: maxEntriesSelection) { triggerLoad(debounced: false) }
+        VStack(spacing: 12) {
+            controls
+            contentList
+        }
+        .padding()
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .navigationTitle("Logs")
+        .toolbar { toolbarItems }
+        .task { triggerLoad(debounced: false) }
+        .onChange(of: loadConfiguration) { _, _ in
+            triggerLoad(debounced: false)
+        }
+        .onChange(of: query) { _, _ in
+            triggerLoad(debounced: true)
+        }
+        .onDisappear {
+            loadTask?.cancel()
+            loadTask = nil
         }
     }
 
@@ -109,6 +143,8 @@ struct LogViewerView: View {
             }
             .pickerStyle(.segmented)
         }
+        .padding(10)
+        .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.12, shadowRadius: 10, shadowY: 4)
     }
 
     private var contentList: some View {
@@ -123,10 +159,12 @@ struct LogViewerView: View {
                     Text("There are no log entries to display.")
                 }
             } else {
-                List(lines, id: \._id) { line in
+                List(lines) { line in
                     LogRowView(line: line, includeSubsystem: includeAllSubsystems, dateFormatter: dateFormatter)
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .background(.skyAwareBackground)
             }
         }
     }
@@ -181,8 +219,11 @@ private struct LogRowView: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(logBadge(for: line.level))
-                .font(.system(.headline, design: .rounded))
-                .frame(width: 24)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(logColor(for: line.level))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: logColor(for: line.level).opacity(0.16))
             VStack(alignment: .leading, spacing: 2) {
                 Text(line.message)
                     .font(.callout)
@@ -205,14 +246,26 @@ private struct LogRowView: View {
 
 private func logBadge(for level: OSLogEntryLog.Level) -> String {
     switch level {
-    case .debug:   return "🐜"
-    case .info:    return "ℹ️"
-    case .notice:  return "✅"
-    case .error:   return "❌"
-    case .fault:   return "⛔️"
+    case .debug:   return "DBG"
+    case .info:    return "INF"
+    case .notice:  return "OK"
+    case .error:   return "ERR"
+    case .fault:   return "FLT"
     case .undefined:
-        return "❓"
-    @unknown default: return "➟"
+        return "UNK"
+    @unknown default: return "OTH"
+    }
+}
+
+private func logColor(for level: OSLogEntryLog.Level) -> Color {
+    switch level {
+    case .debug: return .secondary
+    case .info: return .blue
+    case .notice: return .green
+    case .error: return .orange
+    case .fault: return .red
+    case .undefined: return .secondary
+    @unknown default: return .secondary
     }
 }
 

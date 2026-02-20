@@ -13,10 +13,10 @@ struct LoadingView: View {
     var body: some View {
         ZStack {
             Color.skyAwareBackground
-                .opacity(0.6)
+                .opacity(0.62)
                 .ignoresSafeArea()
 
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 ProgressView()
                     .tint(.skyAwareAccent)
                     .scaleEffect(1.2)
@@ -24,17 +24,13 @@ struct LoadingView: View {
                 Text(message)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
             }
             .padding(.vertical, 16)
             .padding(.horizontal, 20)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: 6)
+            .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.16, shadowRadius: 10, shadowY: 6)
         }
-        .transition(.opacity.combined(with: .scale)) // Smooth fade & scale
+        .transition(.opacity.combined(with: .scale))
     }
 }
 

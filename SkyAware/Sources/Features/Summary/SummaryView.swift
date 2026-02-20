@@ -6,57 +6,117 @@
 //
 
 import SwiftUI
-import CoreLocation
-import OSLog
 
 struct SummaryView: View {
-    private let logger = Logger.uiSummary
-    
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
+    let fireRisk: FireRiskLevel?
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let outlook: ConvectiveOutlookDTO?
+    let weather: SummaryWeather?
+
+    private var hasActiveAlerts: Bool {
+        !mesos.isEmpty || !watches.isEmpty
+    }
+
+    @ViewBuilder
+    private var riskSnapshotContent: some View {
+        VStack(spacing: 12) {
+            badgeRow
+            // TODO: Toggle this with an option one day
+            //       Make the option that, if its clear to show
+            //       the row. Default should be to hide a no fire
+            //       danger
+            FireWeatherRailView(level: fireRisk ?? .clear)
+                .placeholder(fireRisk == nil)
+        }
+    }
+
+    @ViewBuilder
+    private var badgeRow: some View {
+        HStack {
+            StormRiskBadgeView(level: stormRisk ?? .allClear)
+                .placeholder(stormRisk == nil)
+            Spacer()
+            SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
+                .placeholder(severeRisk == nil)
+        }
+        .padding(.top, 8)
+    }
     
     var body: some View {
-        VStack {
-            // Header
+        VStack(spacing: 18) {
             SummaryStatus(
                 location: snap?.placemarkSummary ?? "Searching...",
-                updatedAt: outlook?.published
+                weather: weather
             )
-            .placeholder(outlook == nil || snap == nil)
-            
-            // Badges
-            HStack {
-                StormRiskBadgeView(level: stormRisk ?? .allClear)
-                    .placeholder(stormRisk == nil)
-                Spacer()
-                SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
-                    .placeholder(severeRisk == nil)
+            .placeholder(snap == nil)
+
+            VStack(alignment: .leading, spacing: 12) {
+                sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
+                if #available(iOS 26, *) {
+                    GlassEffectContainer(spacing: 14) {
+                        riskSnapshotContent
+                    }
+                } else {
+                    riskSnapshotContent
+                }
             }
-            .padding(.vertical, 24)
-            
-            // Alerts
-            if !mesos.isEmpty || !watches.isEmpty {
+            .padding(16)
+            .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+
+            if hasActiveAlerts {
                 ActiveAlertSummaryView(
                     mesos: mesos,
                     watches: watches
                 )
-                .toolbar(.hidden, for: .navigationBar)
-                .background(.skyAwareBackground)
-                .padding(.bottom, 12)
+            } else {
+                emptySectionCard(
+                    title: "No Active Alerts",
+                    message: "Your local area currently has no active watches or mesoscale discussions.",
+                    symbol: "checkmark.shield"
+                )
             }
-            
-            // Current Outlook
+
             if let outlook {
                 OutlookSummaryCard(outlook: outlook)
-                    .padding(.bottom, 12)
+            } else {
+                emptySectionCard(
+                    title: "Outlook Pending",
+                    message: "Convective outlook text has not been synced yet.",
+                    symbol: "clock.arrow.circlepath"
+                )
             }
-            Spacer()
+            
+            AttributionView()
+
+            Spacer(minLength: 14)
         }
-        .padding()
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 20)
+    }
+
+    private func sectionTitle(_ title: String, icon: String) -> some View {
+        Label(title, systemImage: icon)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .textCase(.uppercase)
+    }
+
+    private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .font(.headline.weight(.semibold))
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 
@@ -72,12 +132,13 @@ struct SummaryView: View {
             ),
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.10),
+            fireRisk: .extreme,
             mesos: MD.sampleDiscussionDTOs,
             watches: Watch.sampleWatchRows,
-            outlook: ConvectiveOutlook.sampleOutlookDtos.first
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            weather: nil
         )
         .toolbar(.hidden, for: .navigationBar)
-        .background(.skyAwareBackground)
     }
 }
 
@@ -92,11 +153,12 @@ struct SummaryView: View {
             ),
             stormRisk: nil,
             severeRisk: nil,
+            fireRisk: nil,
             mesos: [],
             watches: [],
-            outlook: nil
+            outlook: nil,
+            weather: nil
         )
         .toolbar(.hidden, for: .navigationBar)
-        .background(.skyAwareBackground)
     }
 }

@@ -69,24 +69,41 @@ struct LayerTile: View {
     let isSelected: Bool
     let action: () -> Void
 
+    private var tint: Color {
+        switch layer {
+        case .categorical: return .riskThunderstorm.opacity(0.20)
+        case .wind: return .windTeal.opacity(0.20)
+        case .hail: return .hailBlue.opacity(0.20)
+        case .tornado: return .tornadoRed.opacity(0.20)
+        case .meso: return .mesoPurple.opacity(0.20)
+        case .fire: return .fireWeather.opacity(0.20)
+        }
+    }
+
     var body: some View {
         Button(action: {
             action()
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }) {
-            VStack(spacing: 12) {
+            VStack(spacing: 10) {
                 RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                     .fill(layer.gradient(for: scheme))
                     .overlay(
                         Image(systemName: layer.symbol).formatBadgeImage()
                     )
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        // selection ring
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-                            .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 3)
+                    .frame(width: 74, height: 74)
+                    .skyAwareSurface(
+                        cornerRadius: SkyAwareRadius.medium,
+                        tint: tint,
+                        interactive: true,
+                        shadowOpacity: scheme == .dark ? 0.20 : 0.10,
+                        shadowRadius: 5,
+                        shadowY: 2
                     )
-                    .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.2), radius: 6, y: 3)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
+                            .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                    }
 
                 Text(layer.title)
                     .font(.subheadline.weight(.semibold))
@@ -107,42 +124,57 @@ struct LayerPickerSheet: View {
     /// Use a Set for multi-select; for single-select pass allowsMultipleSelection = false
     @Binding var selection: MapLayer
     var title: String = "Map Layers"
+    var triggerNamespace: Namespace.ID? = nil
 
     @Environment(\.dismiss) private var dismiss
     
-    private let columns = [GridItem(.flexible()), GridItem(.flexible()),
-                           GridItem(.flexible()), GridItem(.flexible())]
+    private let columns = [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 14)]
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             HStack {
-                Spacer()
-                Text(title)
-                    .font(.title3.weight(.semibold))
-                Spacer()
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.caption.weight(.bold))
+                        .frame(width: 26, height: 26)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .skyAwareAccent.opacity(0.18))
+                        .modifier(LayerPickerMorph(namespace: triggerNamespace))
+                    Text(title)
+                        .font(.title3.weight(.semibold))
+                }
+                Spacer(minLength: 6)
                 DismissButton()
             }
             .padding()
 
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(MapLayer.allCases) { layer in
-                    LayerTile(layer: layer, isSelected: selection == layer) {
-                        toggle(layer)
+            Text("Active: \(selection.title)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
+
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: 16) {
+                    ForEach(MapLayer.allCases) { layer in
+                        LayerTile(layer: layer, isSelected: selection == layer) {
+                            toggle(layer)
+                        }
                     }
                 }
+                .padding(.horizontal)
+                .padding(.top, 2)
+                .padding(.bottom, 14)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 14)
 
-            // optional helper text
             Text("Choose a layer")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.bottom, 5)
+                .padding(.bottom, 8)
         }
-        .presentationDetents([.height(375)]) // looks like the Apple Maps panel
-//        .presentationDetents([.medium])
-//        .presentationCornerRadius(24)
+        .padding(.top, 8)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .presentationDetents([.height(410), .medium])
         .interactiveDismissDisabled(false)
     }
 
@@ -161,13 +193,26 @@ private struct DismissButton: View {
             dismiss()
         } label: {
             Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 35, weight: .semibold))
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.secondary, .tertiary)
+                .font(.headline.weight(.bold))
+                .frame(width: 34, height: 34)
                 .accessibilityLabel("Close")
         }
         .buttonStyle(.plain)
+        .skyAwareChip(cornerRadius: SkyAwareRadius.circularButton, tint: .white.opacity(0.1), interactive: true)
         .contentShape(.rect)
+    }
+}
+
+private struct LayerPickerMorph: ViewModifier {
+    let namespace: Namespace.ID?
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *), let namespace {
+            content.glassEffectID("map-layer-button", in: namespace)
+        } else {
+            content
+        }
     }
 }
 

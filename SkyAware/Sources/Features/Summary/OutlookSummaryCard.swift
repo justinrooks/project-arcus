@@ -13,43 +13,31 @@ struct OutlookSummaryCard: View {
     @State private var navigateToFull = false
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                Image(systemName: "sun.max.fill")
-                    .foregroundColor(.skyAwareAccent)
-                Text("Outlook Summary")
-                    .font(.headline)
-                    .foregroundColor(.skyAwareAccent)
-                Spacer()
-            }
-            
-            // Preview text
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Outlook Summary", systemImage: "sun.max.fill")
+                .font(.headline.weight(.semibold))
+
             Text(outlook.summary)
                 .font(.body)
-                .foregroundColor(.primary)
                 .lineSpacing(4)
+                .lineLimit(5)
                 .fixedSize(horizontal: false, vertical: true)
             
-            // Read more link
-//            if outlook.previewText.count < outlook.summary.count {
-                Button(action: {
-                    navigateToFull = true
-                }) {
-                    HStack(spacing: 4) {
-                        Text("Read full outlook")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Image(systemName: "arrow.right")
-                            .font(.caption)
-                    }
-                    .foregroundColor(.skyAwareAccent)
+            Button(action: {
+                navigateToFull = true
+            }) {
+                HStack(spacing: 8) {
+                    Text("Read full outlook")
+                        .font(.subheadline.weight(.semibold))
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.semibold))
                 }
-                .buttonStyle(PlainButtonStyle())
-//            }
+                .frame(maxWidth: .infinity)
+            }
+            .skyAwareGlassButtonStyle()
         }
-        .padding()
-        .cardBackground()
+        .padding(18)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
         .navigationDestination(isPresented: $navigateToFull) {
             ConvectiveOutlookDetailView(outlook: outlook)
         }

@@ -8,19 +8,93 @@
 import SwiftUI
 
 extension View {
+    @ViewBuilder
+    func skyAwareSurface(
+        cornerRadius: CGFloat = SkyAwareRadius.medium,
+        tint: Color = .white.opacity(0.06),
+        interactive: Bool = false,
+        shadowOpacity: Double = 0.10,
+        shadowRadius: CGFloat = 10,
+        shadowY: CGFloat = 4
+    ) -> some View {
+        if #available(iOS 26, *) {
+            if interactive {
+                self
+                    .glassEffect(
+                        .regular.tint(tint).interactive(),
+                        in: .rect(cornerRadius: cornerRadius)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.16), lineWidth: 0.8)
+                            .allowsHitTesting(false)
+                    }
+                    .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
+            } else {
+                self
+                    .glassEffect(
+                        .regular.tint(tint),
+                        in: .rect(cornerRadius: cornerRadius)
+                    )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.16), lineWidth: 0.8)
+                            .allowsHitTesting(false)
+                    }
+                    .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
+            }
+        } else {
+            self
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.cardBackground)
+                        .background(
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .fill(Color.clear)
+                                .shadow(
+                                    color: .black.opacity(shadowOpacity),
+                                    radius: shadowRadius,
+                                    x: 0,
+                                    y: shadowY
+                                )
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .strokeBorder(.white.opacity(0.10), lineWidth: 1)
+                                .allowsHitTesting(false)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                )
+        }
+    }
+
+    func railStyle(background: LinearGradient) -> some View {
+        self
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+            .padding([.leading, .trailing], 15)
+            .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+            .skyAwareSurface(
+                cornerRadius: SkyAwareRadius.large,
+                tint: .white.opacity(0.08),
+                shadowOpacity: 0.18,
+                shadowRadius: 8,
+                shadowY: 4
+            )
+    }
+    
     func badgeStyle(background: LinearGradient) -> some View {
         self
             .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
                    minHeight: 150, idealHeight: 150, maxHeight: 160)
             .aspectRatio(1, contentMode: .fit)
             .padding()
-//            .background(
-//                background, in: .rect(cornerRadius: 30, style: .continuous)
-//            )
-            .background(
-                RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                    .fill(background)
-                    .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 3)
+            .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+            .skyAwareSurface(
+                cornerRadius: SkyAwareRadius.large,
+                tint: .white.opacity(0.08),
+                shadowOpacity: 0.18,
+                shadowRadius: 8,
+                shadowY: 4
             )
     }
     
@@ -36,28 +110,36 @@ extension View {
             .animation(.snappy, value: isActive)
     }
     
+    @ViewBuilder
     func cardBackground(
-        cornerRadius: CGFloat = 30,
-        shadowOpacity: Double = 0.22,
-        shadowRadius: CGFloat = 30,
-        shadowY: CGFloat = 6
+        cornerRadius: CGFloat = SkyAwareRadius.hero,
+        shadowOpacity: Double = 0.10,
+        shadowRadius: CGFloat = 10,
+        shadowY: CGFloat = 4
     ) -> some View {
-        self.modifier(
-            CardBackground(
+        self.skyAwareSurface(
+            cornerRadius: cornerRadius,
+            tint: .white.opacity(0.10),
+            shadowOpacity: shadowOpacity,
+            shadowRadius: shadowRadius,
+            shadowY: shadowY
+        )
+    }
+    
+    func cardRowBackground(
+        cornerRadius: CGFloat = SkyAwareRadius.row,
+        shadowOpacity: Double = 0.0,
+        shadowRadius: CGFloat = 0,
+        shadowY: CGFloat = 0
+    ) -> some View {
+        self
+            .cardBackground(
                 cornerRadius: cornerRadius,
                 shadowOpacity: shadowOpacity,
                 shadowRadius: shadowRadius,
                 shadowY: shadowY
             )
-        )
-    }
-    
-    func cardRowBackground() -> some View {
-        self
-            .cardBackground()
-        //                .padding(.vertical, 4)
-        //                .padding(.horizontal, 8)
-            .listRowInsets(EdgeInsets(top: 4, leading: -10, bottom: 4, trailing: -10))
+            .listRowInsets(EdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 14))
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
     }
@@ -74,12 +156,13 @@ extension View {
                 self
                     .padding(.horizontal, hPad)
                     .padding(.vertical, vPad)
-                    .background() {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .fill(.cardBackground)
-                            .shadow(color: Color.black.opacity(shadowOpacity), radius: 12, x: 0, y: 5)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    .skyAwareSurface(
+                        cornerRadius: cornerRadius,
+                        tint: .white.opacity(0.08),
+                        shadowOpacity: shadowOpacity,
+                        shadowRadius: 12,
+                        shadowY: 5
+                    )
                 )
         case .full:
             return AnyView(
@@ -90,18 +173,67 @@ extension View {
             )
         }
     }
+
+    @ViewBuilder
+    func skyAwareGlassButtonStyle(prominent: Bool = false) -> some View {
+        if #available(iOS 26, *) {
+            if prominent {
+                self.buttonStyle(.glassProminent)
+            } else {
+                self.buttonStyle(.glass)
+            }
+        } else {
+            if prominent {
+                self.buttonStyle(.borderedProminent)
+            } else {
+                self.buttonStyle(.bordered)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func skyAwareChip(
+        cornerRadius: CGFloat = SkyAwareRadius.hero,
+        tint: Color = .white.opacity(0.10),
+        interactive: Bool = false
+    ) -> some View {
+        if #available(iOS 26, *) {
+            if interactive {
+                self.glassEffect(
+                    .regular.tint(tint).interactive(),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            } else {
+                self.glassEffect(
+                    .regular.tint(tint),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+            }
+        } else {
+            self
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                )
+        }
+    }
     
-    func getHeight(for height: Binding<CGFloat>) -> some View {
+    func getHeight(for height: Binding<CGFloat>, tolerance: CGFloat = 1) -> some View {
         self
             .fixedSize(horizontal: false, vertical: true)
             .background(
                 GeometryReader { geo in
                     Color.clear
                         .onAppear {
-                            height.wrappedValue = geo.size.height
+                            let measuredHeight = geo.size.height
+                            if abs(measuredHeight - height.wrappedValue) > tolerance {
+                                height.wrappedValue = measuredHeight
+                            }
                         }
                         .onChange(of: geo.size.height) { _, newValue in
-                            height.wrappedValue = newValue
+                            if abs(newValue - height.wrappedValue) > tolerance {
+                                height.wrappedValue = newValue
+                            }
                         }
                 }
             )

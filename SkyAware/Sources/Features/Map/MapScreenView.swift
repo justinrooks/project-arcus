@@ -24,50 +24,82 @@ struct MapScreenView: View {
     @State private var mesos: [MdDTO] = []
     @State private var stormRisk: [StormRiskDTO] = []
     @State private var severeRisks: [SevereRiskShapeDTO] = []
+    @State private var selectedSevereRisks: [SevereRiskShapeDTO]? = nil
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var snap: LocationSnapshot?
+    @Namespace private var layerNamespace
     
     var body: some View {
         ZStack {
             MapCanvasView(polygons: activePolygons, coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.all)
             
-            VStack {
-                Button {
-                    showLayerPicker = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .padding()
+            VStack(alignment: .trailing) {
+                HStack(spacing: 10) {
+                    Label(selected.title, systemImage: selected.symbol)
+                        .font(.subheadline.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .skyAwareSurface(
+                            cornerRadius: SkyAwareRadius.tile,
+                            tint: .white.opacity(0.10),
+                            shadowOpacity: 0.12,
+                            shadowRadius: 8,
+                            shadowY: 3
+                        )
+
+                    Button {
+                        showLayerPicker = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.headline.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel("Map layers")
+                    .skyAwareSurface(
+                        cornerRadius: SkyAwareRadius.section,
+                        tint: .skyAwareAccent.opacity(0.18),
+                        interactive: true,
+                        shadowOpacity: 0.16,
+                        shadowRadius: 10,
+                        shadowY: 6
+                    )
+                    .modifier(MapLayerButtonMorph(namespace: layerNamespace))
                 }
-                .buttonStyle(.plain)
-                .background(.ultraThickMaterial, in: Circle())
-                .padding(26)
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .zIndex(3)
             
             // Legend in bottom-right (stable container)
             VStack {
                 Spacer()
                 Group {
-                    MapLegend(layer: selected, severeRisks: severeRisksForSelectedLayer())
+                    MapLegend(layer: selected, severeRisks: selectedSevereRisks, fireRisks: fireRisk)
                 }
                 .transition(.opacity)
                 .animation(.default, value: selected)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
                 .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .allowsHitTesting(false)
         }
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(selection: $selected,
-                             title: "Map Layers")
+                             title: "Map Layers",
+                             triggerNamespace: layerNamespace)
         }
         .task {
             await loadMapData()
         }
         .onChange(of: selected) { _, _ in
-            rebuildPolygons()
+            rebuildMapState()
         }
         .task {
             if let first = await loc.snapshot() {
@@ -81,17 +113,24 @@ struct MapScreenView: View {
         }
     }
     
-    private func severeRisksForSelectedLayer() -> [SevereRiskShapeDTO]? {
-        switch selected {
-        case .tornado: return getSevereRisks(for: .tornado)
-        case .hail:    return getSevereRisks(for: .hail)
-        case .wind:    return getSevereRisks(for: .wind)
-        default:       return nil
+    private func severeRisksForSelectedLayer(for layer: MapLayer) -> [SevereRiskShapeDTO]? {
+        let sortedSevereRisks: [SevereRiskShapeDTO]
+        switch layer {
+        case .tornado:
+            sortedSevereRisks = severeRisksForType(.tornado)
+        case .hail:
+            sortedSevereRisks = severeRisksForType(.hail)
+        case .wind:
+            sortedSevereRisks = severeRisksForType(.wind)
+        default:
+            return nil
         }
+        return sortedSevereRisks
     }
-    
-    private func getSevereRisks(for type: ThreatType) -> [SevereRiskShapeDTO] {
-        severeRisks.filter { $0.type == type }
+
+    private func severeRisksForType(_ type: ThreatType) -> [SevereRiskShapeDTO] {
+        severeRisks
+            .filter { $0.type == type }
             .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
     }
     
@@ -132,7 +171,7 @@ struct MapScreenView: View {
             logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
         }
 
-        rebuildPolygons()
+        rebuildMapState()
     }
 
     private func fetchSevereRiskShapes() async -> Result<[SevereRiskShapeDTO], any Error> {
@@ -168,7 +207,7 @@ struct MapScreenView: View {
     }
 
     @MainActor
-    private func rebuildPolygons() {
+    private func rebuildMapState() {
         activePolygons = polygonMapper.polygons(
             for: selected,
             stormRisk: stormRisk,
@@ -176,6 +215,20 @@ struct MapScreenView: View {
             mesos: mesos,
             fires: fireRisk
         )
+        selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
+    }
+}
+
+private struct MapLayerButtonMorph: ViewModifier {
+    let namespace: Namespace.ID
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.glassEffectID("map-layer-button", in: namespace)
+        } else {
+            content
+        }
     }
 }
 

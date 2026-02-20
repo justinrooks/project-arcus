@@ -1,11 +1,12 @@
-SkyAware UNRELEASED build adds Fire Weather map/alert coverage, feed-driven polygon styling updates, and safer sync/network request handling.
+SkyAware ## v0.1.0(22) build adds WeatherKit attribution/cadence updates, expanded Fire Weather surfacing, and continued map behavior fixes.
 
 Highlights:
-- Fire Weather risk is now included in map layers and legend data from SPC wind/RH products
-- Fire, Categorical, and Severe map overlays now use feed-provided fill/stroke styling with tuned alpha
-- Local alert inclusion now accounts for Fire Weather zones
-- Overlapping map sync requests now coalesce instead of replaying full SPC map-product loads
-- SPC/NWS request failures now handle rate-limit/service-unavailable responses more consistently
+- Fire Weather risk now appears in both the Summary rail and the Fire map layer/legend
+- Summary now shows current-location temperature and condition symbol from WeatherKit
+- Summary now includes WeatherKit attribution with a provider/legal link
+- Active watches are now filtered by validity window (effective through end time)
+- Severe map overlays now maintain explicit severity ordering so higher-risk shading stays on top
+- Map layer picker button interactions are more reliable during repeated taps
 
 SkyAware v0.1.0(18) build focuses on map layering correctness and safer background refresh rescheduling behavior.
 

@@ -10,49 +10,57 @@ import SwiftUI
 struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
+    private let sortedMesos: [MdDTO]
+    private let sortedWatches: [WatchRowDTO]
     
     @State private var selectedMeso: MdDTO? = nil
     @State private var selectedWatch: WatchRowDTO? = nil
     @State private var mesoSheetHeight: CGFloat = .zero
     @State private var watchSheetHeight: CGFloat = .zero
+
+    init(mesos: [MdDTO], watches: [WatchRowDTO]) {
+        self.mesos = mesos
+        self.watches = watches
+        self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
+        self.sortedWatches = watches.sorted { $0.expires < $1.expires }
+    }
+
+    @ViewBuilder
+    private var alertsContent: some View {
+        ActiveAlertSection(
+            label: "Watches",
+            items: sortedWatches,
+            limit: 3,
+            onSelect: { selectedWatch = $0 }
+        ) { watch in
+            WatchRowView(watch: watch)
+        }
+
+        ActiveAlertSection(
+            label: "Mesos",
+            items: sortedMesos,
+            limit: 3,
+            onSelect: { selectedMeso = $0 }
+        ) { meso in
+            MesoRowView(meso: meso)
+        }
+    }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            // MARK: Header
-            HStack {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundColor(.skyAwareAccent)
-                Text("Local Alerts")
-                    .font(.headline)
-                    .foregroundColor(.skyAwareAccent)
-                Spacer()
-            }
-            
-            // MARK: Active Alerts
-            VStack(alignment: .leading, spacing: 15) {
-                ActiveAlertSection(
-                    label: "Watches",
-                    items: watches,
-                    limit: 3,
-                    sort: { $0.expires < $1.expires },
-                    onSelect: { selectedWatch = $0 }
-                ) { watch in
-                    WatchRowView(watch: watch)
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline.weight(.semibold))
+
+            if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 12) {
+                    alertsContent
                 }
-                
-                ActiveAlertSection(
-                    label: "Mesos",
-                    items: mesos,
-                    limit: 3,
-                    sort: { $0.validEnd < $1.validEnd },
-                    onSelect: { selectedMeso = $0 }
-                ) { meso in
-                    MesoRowView(meso: meso)
-                }
+            } else {
+                alertsContent
             }
         }
-        .padding()
-        .cardBackground()
+        .padding(18)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(height: $mesoSheetHeight) {
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet)
@@ -92,17 +100,19 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     let label: String
     let items: [Item]
     let limit: Int
-    let sort: (Item, Item) -> Bool
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
     
     var body: some View {
         if !items.isEmpty {
-            let visibleItems = items.sorted(by: sort).prefix(limit)
+            let visibleItems = items.prefix(limit)
             
             Text(label.uppercased())
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
             
             ForEach(visibleItems) { item in
                 Button { onSelect(item) } label: { row(item) }
@@ -111,7 +121,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
             
             if items.count > visibleItems.count {
                 Text("Showing \(visibleItems.count) of \(items.count) \(label.lowercased())")
-                    .font(.footnote)
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
             }
         }
@@ -125,35 +135,37 @@ private struct MesoRowView: View {
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.mesoscale, "")
             Image(systemName: icon)
-            //                .font(.subheadline)
                 .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 Text("MD \(meso.number.formatted(.number.grouping(.never)))")
                     .font(.subheadline.weight(.semibold))
-//                Text(meso.areasAffected.isEmpty ? meso.title : meso.areasAffected)
-//                    .lineLimit(3)
-//                    .truncationMode(.tail)
-//                    .font(.subheadline.weight(.semibold))
-//                    .foregroundStyle(.secondary)
             }
             
             Spacer()
             VStack(alignment: .trailing) {
-                Text("Prob: \(Int(meso.watchProbability))%")
+                Text("Watch \(Int(meso.watchProbability))%")
                     .monospacedDigit()
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Text("Expires: \(meso.validEnd, style: .time)")
+                    .font(.caption.weight(.semibold))
+                Text("Ends \(meso.validEnd, style: .time)")
                     .monospacedDigit()
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.caption)
             }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
         }
+        .padding(.vertical, 3)
     }
 }
 
 private struct WatchRowView: View {
     let watch: WatchRowDTO
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "E"
+        return formatter
+    }()
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
@@ -168,17 +180,20 @@ private struct WatchRowView: View {
             Spacer()
             VStack(alignment: .trailing) {
                 let txt = buildDisplay(watch: watch)
-                Text("Until: \(txt) \(watch.validEnd, style: .time)")
+                Text("Until \(txt) \(watch.validEnd, style: .time)")
                     .monospacedDigit()
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(.caption.weight(.semibold))
             }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
         }
+        .padding(.vertical, 3)
     }
-    func buildDisplay(watch: WatchRowDTO) -> String {
-        let f = DateFormatter()
-        f.dateFormat = "E"
-        return f.string(from: watch.validEnd)
+
+    private func buildDisplay(watch: WatchRowDTO) -> String {
+        Self.dayFormatter.string(from: watch.validEnd)
     }
 }
 
