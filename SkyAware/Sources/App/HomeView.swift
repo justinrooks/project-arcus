@@ -115,7 +115,6 @@ struct HomeView: View {
                             mesos: mesos,
                             watches: watches,
                             outlook: outlook,
-                            refresh: lastRefreshContext,
                             weather: summaryWeather
                         )
                         .toolbar(.hidden, for: .navigationBar)
