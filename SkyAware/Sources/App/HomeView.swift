@@ -181,7 +181,7 @@ struct HomeView: View {
                 .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
                 
                 NavigationStack {
-                    SettingsView()
+                    SettingsView(locationClient: locSvc)
                         .background(.skyAwareBackground)
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)

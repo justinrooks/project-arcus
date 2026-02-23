@@ -8,10 +8,15 @@
 import Foundation
 import CoreLocation
 import OSLog
+import SwiftyH3
 
 // MARK: - Geocoding Abstraction
 protocol LocationGeocoding: Sendable {
     func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String
+}
+
+protocol LocationHashing: Sendable {
+    func h3Cell(for coord: CLLocationCoordinate2D) throws -> String
 }
 
 actor CoreLocationGeocoder: LocationGeocoding {
@@ -23,6 +28,19 @@ actor CoreLocationGeocoder: LocationGeocoding {
         let places = try await geocoder.reverseGeocodeLocation(location)
         guard let p = places.first else { throw GeocodeError.noResults }
         return [p.locality, p.administrativeArea].compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
+struct SwiftyH3Hasher: LocationHashing {
+    let resolution: H3Cell.Resolution
+
+    init(resolution: H3Cell.Resolution = .res8) {
+        self.resolution = resolution
+    }
+
+    func h3Cell(for coord: CLLocationCoordinate2D) throws -> String {
+        let cell = try H3LatLng(coord).cell(at: resolution)
+        return cell.description
     }
 }
 
@@ -39,6 +57,8 @@ struct LocationSnapshot: Sendable {
     let accuracy: CLLocationAccuracy
     /// “City, ST” or “County, ST” etc. Keep it short and cached.
     var placemarkSummary: String?
+    /// Hex-encoded H3 cell id used for coarse server-side location bucketing.
+    var h3Cell: String?
 }
 
 typealias LocationSink = @Sendable (LocationUpdate) async -> Void
@@ -61,6 +81,7 @@ actor LocationProvider {
     private var continuations: [UUID: AsyncStream<LocationSnapshot>.Continuation] = [:]
 
     private let geocoder: LocationGeocoding
+    private let hasher: LocationHashing
     private let logger = Logger.locationProvider
     
     // Throttling
@@ -72,8 +93,12 @@ actor LocationProvider {
     private var acceptedCount = 0
     private var suppressedCount = 0
     
-    init(geocoder: LocationGeocoding = CoreLocationGeocoder()) {
+    init(
+        geocoder: LocationGeocoding = CoreLocationGeocoder(),
+        hasher: LocationHashing = SwiftyH3Hasher()
+    ) {
         self.geocoder = geocoder
+        self.hasher = hasher
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
@@ -107,7 +132,8 @@ actor LocationProvider {
             let snap = LocationSnapshot(coordinates: update.coordinates,
                                         timestamp: update.timestamp,
                                         accuracy: update.accuracy,
-                                        placemarkSummary: lastSnapshot?.placemarkSummary)
+                                        placemarkSummary: lastSnapshot?.placemarkSummary,
+                                        h3Cell: resolveH3Cell(for: update.coordinates) ?? lastSnapshot?.h3Cell)
             saveAndYieldSnapshot(snap)
             
             // 3) Reverse geocode – fire-and-forget
@@ -134,20 +160,28 @@ actor LocationProvider {
                 coordinates: coord,
                 timestamp: Date(),
                 accuracy: kCLLocationAccuracyThreeKilometers,
-                placemarkSummary: nil
+                placemarkSummary: nil,
+                h3Cell: resolveH3Cell(for: coord)
             )
             let coordChanged = base.coordinates.latitude != coord.latitude || base.coordinates.longitude != coord.longitude
             let updated = LocationSnapshot(coordinates: coord,
                                            timestamp: coordChanged ? Date() : base.timestamp,
                                            accuracy: base.accuracy,
-                                           placemarkSummary: place)
+                                           placemarkSummary: place,
+                                           h3Cell: resolveH3Cell(for: coord) ?? base.h3Cell)
             saveAndYieldSnapshot(updated)
             return updated
         } catch {
             logger.info("Failed to update placemark, falling back to last snapshot")
             // On failure or timeout, return the most recent snapshot if available, otherwise create a minimal one without a placemark.
             if let snap = lastSnapshot { return snap }
-            let snap = LocationSnapshot(coordinates: coord, timestamp: Date(), accuracy: kCLLocationAccuracyThreeKilometers, placemarkSummary: nil)
+            let snap = LocationSnapshot(
+                coordinates: coord,
+                timestamp: Date(),
+                accuracy: kCLLocationAccuracyThreeKilometers,
+                placemarkSummary: nil,
+                h3Cell: resolveH3Cell(for: coord)
+            )
             saveAndYieldSnapshot(snap)
             return snap
         }
@@ -168,11 +202,21 @@ actor LocationProvider {
                 snap = LocationSnapshot(coordinates: snap.coordinates,
                                         timestamp: snap.timestamp,
                                         accuracy: snap.accuracy,
-                                        placemarkSummary: summary)
+                                        placemarkSummary: summary,
+                                        h3Cell: snap.h3Cell)
                 saveAndYieldSnapshot(snap)
             }
         } catch {
             logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+    
+    private func resolveH3Cell(for coord: CLLocationCoordinate2D) -> String? {
+        do {
+            return try hasher.h3Cell(for: coord)
+        } catch {
+            logger.error("H3 indexing failed: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
     

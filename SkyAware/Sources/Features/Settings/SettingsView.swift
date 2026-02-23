@@ -40,6 +40,7 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 
 
 struct SettingsView: View {
+    private let locationClient: LocationClient?
     private let logger = Logger.uiSettings
     
     // MARK: Notification Settings
@@ -69,6 +70,13 @@ struct SettingsView: View {
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
     
+    @AppStorage(
+        RemoteNotificationRegistrar.apnsDeviceTokenKey,
+        store: UserDefaults.shared
+    ) private var apnsDeviceToken: String = ""
+    
+    @State private var currentH3Cell: String = ""
+    
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
     @AppStorage("aiShareLocation", store: UserDefaults.shared) private var aiShareLocation: Bool = true
@@ -87,6 +95,14 @@ struct SettingsView: View {
             get: { AudienceLevel(rawValue: audienceIndex) ?? .novice },
             set: { audienceIndex = $0.rawValue }
         )
+    }
+    
+    private var h3CellDisplay: String {
+        currentH3Cell.isEmpty ? "No location hash yet" : currentH3Cell
+    }
+    
+    init(locationClient: LocationClient? = nil) {
+        self.locationClient = locationClient
     }
     
     var body: some View {
@@ -172,6 +188,26 @@ struct SettingsView: View {
                     .contentShape(Rectangle())
                 }
 
+                sectionCard(title: "Location & Notification", symbol: "iphone.badge.location", accent: .orange) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("APNs Device Token")
+                            .font(.subheadline.weight(.semibold))
+                        Text(apnsDeviceToken.isEmpty ? "Not registered yet" : apnsDeviceToken)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Current H3 Cell (Res 8)")
+                            .font(.subheadline.weight(.semibold))
+                        Text(h3CellDisplay)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                
                 sectionCard(title: "Onboarding Debug", symbol: "ladybug.fill", accent: .orange) {
                     Toggle("Onboarding flow complete", isOn: $onboardingComplete)
                     infoRow("Disclaimer Accepted Version", "\(disclaimerVersion)")
@@ -193,6 +229,30 @@ struct SettingsView: View {
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .task {
+            await observeH3Cell()
+        }
+    }
+
+    private func observeH3Cell() async {
+        guard let locationClient else { return }
+        
+        if let snapshot = await locationClient.snapshot() {
+            await updateH3Cell(snapshot.h3Cell)
+        }
+        
+        let stream = await locationClient.updates()
+        for await snapshot in stream {
+            if Task.isCancelled { break }
+            await updateH3Cell(snapshot.h3Cell)
+        }
+    }
+    
+    @MainActor
+    private func updateH3Cell(_ h3Cell: String?) {
+        let next = h3Cell ?? ""
+        guard currentH3Cell != next else { return }
+        currentH3Cell = next
     }
 
     private func sectionCard<Content: View>(
@@ -242,32 +302,18 @@ struct SettingsView: View {
 
 extension SettingsView {
     func handleNotificationToggle(_ enabled: Bool, for notificationType: String) {
-        if !enabled { return }
+        guard enabled else { return }
         
         logger.info("Notification enabled for \(notificationType, privacy: .public)")
         Task {
-            await checkAuthorization()
-        }
-    }
-    
-    func checkAuthorization() async {
-        let center = UNUserNotificationCenter.current()
-        let settings = await center.notificationSettings()
-//        logger.info("Current notification authorization status: \(String(describing: settings.authorizationStatus), privacy: .public)")
-        if settings.authorizationStatus == .notDetermined {
-            do {
-                try await center.requestAuthorization(options: [.alert, .sound, .badge])
-//                logger.notice("Notification authorization requested: user responded (status may update asynchronously)")
-            } catch {
-//                logger.error("Error requesting notification permission: \(error.localizedDescription, privacy: .public)")
-            }
+            await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
         }
     }
 }
 
 #Preview {
     return NavigationStack {
-        SettingsView()
+        SettingsView(locationClient: nil)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)

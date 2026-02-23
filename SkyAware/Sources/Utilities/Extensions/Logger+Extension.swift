@@ -58,6 +58,7 @@ extension Logger {
     
     // MARK: Notification
     static let notificationsManager = Logger(subsystem: subsystem, category: "notifications.manager")
+    static let notificationsRemote = Logger(subsystem: subsystem, category: "notifications.remote")
     
     // MARK: Morning Notification
     static let notificationsMorningEngine = Logger(subsystem: subsystem, category: "notifications.morning.engine")

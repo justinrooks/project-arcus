@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 		D0AFC5F12F412BAB001F331A /* Journal.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5F02F412BAB001F331A /* Journal.md */; };
 		D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5EF2F412BAB001F331A /* AGENTS.md */; };
 /* End PBXBuildFile section */
@@ -56,6 +57,7 @@
 				UnitTests/NwsHttpClientTests.swift,
 				UnitTests/ParseAsIssueDateTests.swift,
 				UnitTests/ParseSPCValidTime.swift,
+				UnitTests/RemoteNotificationRegistrarTests.swift,
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
@@ -82,6 +84,7 @@
 				UnitTests/NwsHttpClientTests.swift,
 				UnitTests/ParseAsIssueDateTests.swift,
 				UnitTests/ParseSPCValidTime.swift,
+				UnitTests/RemoteNotificationRegistrarTests.swift,
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
@@ -155,6 +158,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -233,6 +237,9 @@
 				D048DFB42F21395F0037C3D4 /* ci_scripts */,
 			);
 			name = SkyAware;
+			packageProductDependencies = (
+				D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */,
+			);
 			productName = SkyAware;
 			productReference = D095EFA32E16F5690074F867 /* SkyAware.app */;
 			productType = "com.apple.product-type.application";
@@ -306,6 +313,7 @@
 			mainGroup = D095EF9A2E16F5690074F867;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D095EFA42E16F5690074F867 /* Products */;
@@ -381,6 +389,17 @@
 			targetProxy = D095EFBD2E16F56A0074F867 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pawelmajcher/SwiftyH3.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCBuildConfiguration section */
 		D095EFC42E16F56A0074F867 /* Debug */ = {
@@ -665,6 +684,14 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */;
+			productName = SwiftyH3;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		D095EF9E2E16F5690074F867 /* Build configuration list for PBXProject "SkyAware" */ = {

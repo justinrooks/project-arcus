@@ -26,6 +26,24 @@ struct LocationProviderTests {
             }
         }
     }
+    
+    private struct MockHasher: LocationHashing {
+        enum Mode {
+            case success(String)
+            case failure(Error)
+        }
+        
+        let mode: Mode
+        
+        func h3Cell(for coord: CLLocationCoordinate2D) throws -> String {
+            switch mode {
+            case .success(let value):
+                return value
+            case .failure(let error):
+                throw error
+            }
+        }
+    }
 
     private actor RacingGeocoder: LocationGeocoding {
         private var callCount = 0
@@ -84,6 +102,20 @@ struct LocationProviderTests {
         #expect(value.coordinates.longitude == -104.0)
         #expect(value.timestamp == now)
         #expect(value.accuracy == 50)
+    }
+    
+    @Test("send stores h3 hash when hasher succeeds")
+    func send_storesH3Hash() async throws {
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success("872681364ffffff"))
+        )
+        let now = Date()
+        
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
+        
+        let snapshot = try #require(await provider.snapshot())
+        #expect(snapshot.h3Cell == "872681364ffffff")
     }
 
     @Test("send suppresses rapid updates inside minSeconds window")
