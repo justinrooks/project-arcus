@@ -153,9 +153,8 @@ struct LocationProviderTests {
         let now = Date()
         
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
-        
-        try await Task.sleep(for: .milliseconds(50))
-        let pushed = await pusher.allSnapshots()
+
+        let pushed = await waitForSnapshots(from: pusher)
         let first = try #require(pushed.first)
         #expect(pushed.count == 1)
         #expect(first.timestamp == now)
@@ -197,6 +196,23 @@ struct LocationProviderTests {
         #expect(payload.latitude == 35.4676)
         #expect(payload.longitude == -97.5164)
         #expect(payload.h3Cell == "872681364ffffff")
+    }
+
+    private func waitForSnapshots(
+        from pusher: MockSnapshotPusher,
+        timeoutMs: Int = 500,
+        pollMs: Int = 10
+    ) async -> [LocationSnapshot] {
+        let maxAttempts = max(1, timeoutMs / pollMs)
+        for _ in 0..<maxAttempts {
+            let snapshots = await pusher.allSnapshots()
+            if !snapshots.isEmpty {
+                return snapshots
+            }
+            try? await Task.sleep(for: .milliseconds(pollMs))
+        }
+
+        return await pusher.allSnapshots()
     }
 
     @Test("send suppresses rapid updates inside minSeconds window")
