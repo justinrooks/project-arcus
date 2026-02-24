@@ -193,8 +193,6 @@ struct LocationProviderTests {
         #expect(payload.county == "OKC109")
         #expect(payload.zone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
-        #expect(payload.latitude == 35.4676)
-        #expect(payload.longitude == -97.5164)
         #expect(payload.h3Cell == "872681364ffffff")
     }
 

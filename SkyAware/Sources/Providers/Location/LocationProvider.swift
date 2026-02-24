@@ -75,8 +75,6 @@ struct LocationSnapshot: Sendable {
 
 struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
     let timestamp: Date
-    let latitude: Double
-    let longitude: Double
     let accuracy: CLLocationAccuracy
     let placemarkSummary: String?
     let h3Cell: String?
@@ -162,8 +160,6 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         let installationId = await installationIdProvider()
         let payload = LocationSnapshotPushPayload(
             timestamp: snapshot.timestamp,
-            latitude: snapshot.coordinates.latitude,
-            longitude: snapshot.coordinates.longitude,
             accuracy: snapshot.accuracy,
             placemarkSummary: snapshot.placemarkSummary,
             h3Cell: snapshot.h3Cell,
