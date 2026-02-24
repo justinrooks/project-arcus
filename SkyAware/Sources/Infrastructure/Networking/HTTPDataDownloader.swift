@@ -115,6 +115,7 @@ public actor LastGlobalSuccessHTTPObserver: HTTPResponseObserving {
 
 public protocol HTTPClient: Sendable {
     func get (_ url: URL, headers: [String: String]) async throws -> HTTPResponse
+    func post(_ url: URL, headers: [String: String], body: Data?) async throws -> HTTPResponse
     func clearCache()
 }
 
@@ -136,7 +137,11 @@ public final class URLSessionHTTPClient: HTTPClient {
     }
     
     public func get(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
-        try await request(url: url, method: "GET", headers: headers)
+        try await request(url: url, method: "GET", headers: headers, body: nil)
+    }
+
+    public func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
+        try await request(url: url, method: "POST", headers: headers, body: body)
     }
 
     public func clearCache() {
@@ -151,7 +156,7 @@ public final class URLSessionHTTPClient: HTTPClient {
         return nil
     }
     
-    private func request(url: URL, method: String, headers: [String: String]) async throws -> HTTPResponse {
+    private func request(url: URL, method: String, headers: [String: String], body: Data?) async throws -> HTTPResponse {
         // Try up to `delays.count` attempts. Delays array encodes backoff for retries,
         // where index+1 corresponds to the wait before the next attempt.
         for attempt in 0..<delays.count {
@@ -159,6 +164,7 @@ public final class URLSessionHTTPClient: HTTPClient {
             do {
                 var req = URLRequest(url: url)
                 req.httpMethod = method
+                req.httpBody = body
                 
                 headers.forEach { header in
                     req.setValue(

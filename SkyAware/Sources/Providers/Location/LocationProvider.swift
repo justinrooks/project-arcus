@@ -19,6 +19,14 @@ protocol LocationHashing: Sendable {
     func h3Cell(for coord: CLLocationCoordinate2D) throws -> String
 }
 
+protocol LocationSnapshotUploading: Sendable {
+    func upload(_ payload: LocationSnapshotPushPayload) async throws
+}
+
+protocol LocationSnapshotPushing: Sendable {
+    func enqueue(_ snapshot: LocationSnapshot) async
+}
+
 actor CoreLocationGeocoder: LocationGeocoding {
     func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
         // Use a request-scoped geocoder to avoid overlapping operations on a shared
@@ -44,6 +52,10 @@ struct SwiftyH3Hasher: LocationHashing {
     }
 }
 
+enum LocationPushError: Error {
+    case invalidResponseStatus(Int)
+}
+
 // MARK: Supporting Structs
 struct LocationUpdate: Sendable {
     let coordinates: CLLocationCoordinate2D
@@ -59,6 +71,146 @@ struct LocationSnapshot: Sendable {
     var placemarkSummary: String?
     /// Hex-encoded H3 cell id used for coarse server-side location bucketing.
     var h3Cell: String?
+}
+
+struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
+    let timestamp: Date
+    let latitude: Double
+    let longitude: Double
+    let accuracy: CLLocationAccuracy
+    let placemarkSummary: String?
+    let h3Cell: String?
+    let county: String?
+    let zone: String?
+    let fireZone: String?
+    let installationId: String
+    let apnsDeviceToken: String
+}
+
+actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
+    private let endpoint: URL
+    private let http: HTTPClient
+    private let encoder: JSONEncoder
+    private let logger = Logger.locationPushUploader
+
+    init(endpoint: URL, http: HTTPClient = URLSessionHTTPClient()) {
+        self.endpoint = endpoint
+        self.http = http
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        self.encoder = encoder
+    }
+
+    func upload(_ payload: LocationSnapshotPushPayload) async throws {
+        let body = try encoder.encode(payload)
+        let response = try await http.post(endpoint, headers: requestHeaders, body: body)
+        guard (200...299).contains(response.status) else {
+            logger.error("Location snapshot upload failed status=\(response.status, privacy: .public)")
+            throw LocationPushError.invalidResponseStatus(response.status)
+        }
+    }
+
+    private var requestHeaders: [String: String] {
+        [
+            "User-Agent": HTTPRequestHeaders.userAgent(),
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        ]
+    }
+}
+
+struct NoOpLocationSnapshotPusher: LocationSnapshotPushing {
+    func enqueue(_ snapshot: LocationSnapshot) async {}
+}
+
+actor LocationSnapshotPusher: LocationSnapshotPushing {
+    typealias APNsTokenProvider = @Sendable () -> String
+    typealias InstallationIDProvider = @Sendable () async -> String
+    typealias GridRegionContextProvider = @Sendable () async -> NwsGridRegionContext?
+
+    private let uploader: any LocationSnapshotUploading
+    private let apnsTokenProvider: APNsTokenProvider
+    private let installationIdProvider: InstallationIDProvider
+    private let gridRegionContextProvider: GridRegionContextProvider
+    private let retryDelaysSeconds: [UInt64]
+    private let logger = Logger.locationPushPusher
+
+    private var queue: [LocationSnapshotPushPayload] = []
+    private var isProcessing = false
+
+    init(
+        uploader: any LocationSnapshotUploading,
+        apnsTokenProvider: @escaping APNsTokenProvider = {
+            UserDefaults(suiteName: "com.justinrooks.skyaware")?
+                .string(forKey: RemoteNotificationRegistrar.apnsDeviceTokenKey) ?? ""
+        },
+        installationIdProvider: @escaping InstallationIDProvider = {
+            await InstallationIdentityStore.shared.installationId()
+        },
+        gridRegionContextProvider: @escaping GridRegionContextProvider = { nil },
+        retryDelaysSeconds: [UInt64] = [0, 5, 15]
+    ) {
+        self.uploader = uploader
+        self.apnsTokenProvider = apnsTokenProvider
+        self.installationIdProvider = installationIdProvider
+        self.gridRegionContextProvider = gridRegionContextProvider
+        self.retryDelaysSeconds = retryDelaysSeconds
+    }
+
+    func enqueue(_ snapshot: LocationSnapshot) async {
+        let regionContext = await gridRegionContextProvider()
+        let installationId = await installationIdProvider()
+        let payload = LocationSnapshotPushPayload(
+            timestamp: snapshot.timestamp,
+            latitude: snapshot.coordinates.latitude,
+            longitude: snapshot.coordinates.longitude,
+            accuracy: snapshot.accuracy,
+            placemarkSummary: snapshot.placemarkSummary,
+            h3Cell: snapshot.h3Cell,
+            county: regionContext?.county,
+            zone: regionContext?.zone,
+            fireZone: regionContext?.fireZone,
+            installationId: installationId,
+            apnsDeviceToken: apnsTokenProvider()
+        )
+        queue.append(payload)
+
+        guard !isProcessing else { return }
+        isProcessing = true
+        await drainQueue()
+        isProcessing = false
+    }
+
+    private func drainQueue() async {
+        while !queue.isEmpty {
+            let payload = queue.removeFirst()
+            _ = await uploadWithRetry(payload)
+        }
+    }
+
+    private func uploadWithRetry(_ payload: LocationSnapshotPushPayload) async -> Bool {
+        for (index, delay) in retryDelaysSeconds.enumerated() {
+            if delay > 0 {
+                try? await Task.sleep(for: .seconds(Int(delay)))
+            }
+            do {
+                try await uploader.upload(payload)
+                return true
+            } catch is CancellationError {
+                logger.debug("Location snapshot upload cancelled")
+                return false
+            } catch {
+                let isFinalAttempt = index == retryDelaysSeconds.count - 1
+                if isFinalAttempt {
+                    logger.error("Location snapshot upload failed after retries: \(error.localizedDescription, privacy: .public)")
+                } else {
+                    logger.warning("Location snapshot upload attempt failed; retrying")
+                }
+            }
+        }
+
+        return false
+    }
 }
 
 typealias LocationSink = @Sendable (LocationUpdate) async -> Void
@@ -82,6 +234,7 @@ actor LocationProvider {
 
     private let geocoder: LocationGeocoding
     private let hasher: LocationHashing
+    private let snapshotPusher: LocationSnapshotPushing
     private let logger = Logger.locationProvider
     
     // Throttling
@@ -95,10 +248,12 @@ actor LocationProvider {
     
     init(
         geocoder: LocationGeocoding = CoreLocationGeocoder(),
-        hasher: LocationHashing = SwiftyH3Hasher()
+        hasher: LocationHashing = SwiftyH3Hasher(),
+        snapshotPusher: LocationSnapshotPushing = NoOpLocationSnapshotPusher()
     ) {
         self.geocoder = geocoder
         self.hasher = hasher
+        self.snapshotPusher = snapshotPusher
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
@@ -263,6 +418,9 @@ actor LocationProvider {
         lastSnapshot = snap
         logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.coordinates.longitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.placemarkSummary ?? "unknown", privacy: .public)")
         continuations.values.forEach { $0.yield(snap) }
+        Task(priority: .utility) { [snapshotPusher] in
+            await snapshotPusher.enqueue(snap)
+        }
     }
     
     private func removeContinuation(id: UUID) {

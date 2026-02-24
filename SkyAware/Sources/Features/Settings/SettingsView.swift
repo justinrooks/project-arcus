@@ -75,6 +75,7 @@ struct SettingsView: View {
         store: UserDefaults.shared
     ) private var apnsDeviceToken: String = ""
     
+    @State private var installationId: String = ""
     @State private var currentH3Cell: String = ""
     
     // MARK: AI Settings
@@ -99,6 +100,10 @@ struct SettingsView: View {
     
     private var h3CellDisplay: String {
         currentH3Cell.isEmpty ? "No location hash yet" : currentH3Cell
+    }
+
+    private var installationIdDisplay: String {
+        installationId.isEmpty ? "Not available yet" : installationId
     }
     
     init(locationClient: LocationClient? = nil) {
@@ -190,6 +195,15 @@ struct SettingsView: View {
 
                 sectionCard(title: "Location & Notification", symbol: "iphone.badge.location", accent: .orange) {
                     VStack(alignment: .leading, spacing: 6) {
+                        Text("Installation ID")
+                            .font(.subheadline.weight(.semibold))
+                        Text(installationIdDisplay)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
                         Text("APNs Device Token")
                             .font(.subheadline.weight(.semibold))
                         Text(apnsDeviceToken.isEmpty ? "Not registered yet" : apnsDeviceToken)
@@ -232,6 +246,9 @@ struct SettingsView: View {
         .task {
             await observeH3Cell()
         }
+        .task {
+            await loadInstallationId()
+        }
     }
 
     private func observeH3Cell() async {
@@ -253,6 +270,13 @@ struct SettingsView: View {
         let next = h3Cell ?? ""
         guard currentH3Cell != next else { return }
         currentH3Cell = next
+    }
+
+    private func loadInstallationId() async {
+        let value = await InstallationIdentityStore.shared.installationId()
+        await MainActor.run {
+            installationId = value
+        }
     }
 
     private func sectionCard<Content: View>(

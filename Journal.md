@@ -115,6 +115,69 @@ Now we can quickly confirm H3 generation on real movement/device flows without a
 Gotcha:
 The settings panel can only show an H3 value after at least one accepted location snapshot exists, so "No location hash yet" is expected on fresh launch or denied location access.
 
+### 2026-02-23: Location snapshot server push pipeline
+
+Goal:
+Guarantee that every accepted location snapshot update can be forwarded to a backend endpoint from one consistent choke point in the pipeline.
+
+What changed:
+- Added runtime-configured endpoint support via `LOCATION_PUSH_URL` build setting -> `Info.plist` `LocationPushURL`.
+- Added a location snapshot push payload that includes:
+  - coordinates + accuracy
+  - timestamp
+  - placemark summary
+  - `h3Cell`
+  - APNs device token
+- Added a queued `LocationSnapshotPusher` actor with retry behavior.
+- Added `HTTPLocationSnapshotUploader` to POST JSON to the configured endpoint.
+- Wired `LocationProvider.saveAndYieldSnapshot(...)` to enqueue push work every time a snapshot is saved.
+- Wired `Dependencies.live()` to enable/disable this path based on whether endpoint config exists.
+
+Why this helps:
+By attaching push at `saveAndYieldSnapshot`, we avoid fragmented “did we remember to send here too?” logic. One gate, consistent behavior.
+
+Gotcha:
+If `LOCATION_PUSH_URL` is empty or invalid, pushing is intentionally disabled (no-op pusher), so local development keeps working without backend setup.
+
+### 2026-02-23: Added NWS county/zone/fireZone to pushed location payload
+
+Goal:
+Enrich each pushed location snapshot with the currently resolved NWS region identifiers so backend workflows can join location updates to county/zone-level alert logic immediately.
+
+What changed:
+- Added an actor-safe `NwsGridRegionContext` cache in `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/NwsMetadataRepo.swift`.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/NWS/GridPointProvider.swift` to refresh that cache whenever a new `GridPointSnapshot` is resolved.
+- Extended `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/Location/LocationProvider.swift` push payload with:
+  - `county`
+  - `zone`
+  - `fireZone`
+- Wired `/Users/justin/Code/project-arcus/SkyAware/Sources/App/Dependencies.swift` so `LocationSnapshotPusher` reads region context from `NwsMetadataRepo` at enqueue time.
+- Expanded `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/LocationProviderTests.swift` to assert these fields are included in the uploaded payload.
+
+Why this helps:
+The backend now receives both a coarse spatial key (`h3Cell`) and the NWS operational region IDs in the same event, which reduces lookup work and keeps event processing deterministic.
+
+Gotcha:
+These region fields are optional and depend on recent gridpoint resolution, so early app lifecycle events may legitimately send `null` values until NWS metadata has been fetched.
+
+### 2026-02-23: Added stable installation identity for server payloads
+
+Goal:
+Give backend ingestion a stable per-install identity that survives APNs token rotation, while still shipping the current APNs token for push delivery.
+
+What changed:
+- Added Keychain-backed installation identity creation/lookup in `/Users/justin/Code/project-arcus/SkyAware/Sources/Notifications/RemoteNotificationRegistrar.swift`.
+- Bootstrapped identity on app activation in `/Users/justin/Code/project-arcus/SkyAware/Sources/App/SkyAwareApp.swift`.
+- Extended `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/Location/LocationProvider.swift` payload with `installationId`.
+- Surfaced Installation ID in Settings diagnostics at `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Settings/SettingsView.swift`.
+- Added tests in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/RemoteNotificationRegistrarTests.swift` and updated payload assertions in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/LocationProviderTests.swift`.
+
+Why this helps:
+`installationId` now acts like the durable mailing address label on the package, while APNs token remains the route-of-the-day. The server can upsert by installation and treat token updates as normal churn.
+
+Gotcha:
+If Keychain persistence fails (rare, but possible), the app still generates an in-memory ID for that launch so payloads keep flowing. It just won’t be stable across relaunch until persistence succeeds.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

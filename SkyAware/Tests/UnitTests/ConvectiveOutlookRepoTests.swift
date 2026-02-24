@@ -325,6 +325,12 @@ private final class SpcMockHTTPClient: HTTPClient, @unchecked Sendable {
         if let error { throw error }
         return response
     }
+    
+    func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
+        await state.record(url: url, headers: headers)
+        if let error { throw error }
+        return response
+    }
 
     func clearCache() {}
 

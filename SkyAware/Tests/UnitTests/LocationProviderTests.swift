@@ -44,6 +44,30 @@ struct LocationProviderTests {
             }
         }
     }
+    
+    private actor MockSnapshotPusher: LocationSnapshotPushing {
+        private var snapshots: [LocationSnapshot] = []
+        
+        func enqueue(_ snapshot: LocationSnapshot) async {
+            snapshots.append(snapshot)
+        }
+        
+        func allSnapshots() -> [LocationSnapshot] {
+            snapshots
+        }
+    }
+    
+    private actor MockSnapshotUploader: LocationSnapshotUploading {
+        private var payloads: [LocationSnapshotPushPayload] = []
+        
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            payloads.append(payload)
+        }
+        
+        func uploadedPayloads() -> [LocationSnapshotPushPayload] {
+            payloads
+        }
+    }
 
     private actor RacingGeocoder: LocationGeocoding {
         private var callCount = 0
@@ -116,6 +140,63 @@ struct LocationProviderTests {
         
         let snapshot = try #require(await provider.snapshot())
         #expect(snapshot.h3Cell == "872681364ffffff")
+    }
+    
+    @Test("send pushes accepted snapshot to location snapshot pusher")
+    func send_pushesAcceptedSnapshot() async throws {
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success("872681364ffffff")),
+            snapshotPusher: pusher
+        )
+        let now = Date()
+        
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
+        
+        try await Task.sleep(for: .milliseconds(50))
+        let pushed = await pusher.allSnapshots()
+        let first = try #require(pushed.first)
+        #expect(pushed.count == 1)
+        #expect(first.timestamp == now)
+        #expect(first.h3Cell == "872681364ffffff")
+    }
+
+    @Test("snapshot pusher payload includes timestamp and apns token")
+    func snapshotPusher_includesTimestampAndApnsToken() async throws {
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            gridRegionContextProvider: {
+                NwsGridRegionContext(county: "OKC109", zone: "OKZ025", fireZone: "OKZ025")
+            },
+            retryDelaysSeconds: [0]
+        )
+        
+        let ts = Date(timeIntervalSince1970: 1_234_567)
+        let snap = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: ts,
+            accuracy: 42,
+            placemarkSummary: "OKC, OK",
+            h3Cell: "872681364ffffff"
+        )
+        
+        await pusher.enqueue(snap)
+        
+        let payloads = await uploader.uploadedPayloads()
+        let payload = try #require(payloads.first)
+        #expect(payload.timestamp == ts)
+        #expect(payload.installationId == "install-abc-123")
+        #expect(payload.apnsDeviceToken == "apns-token-123")
+        #expect(payload.county == "OKC109")
+        #expect(payload.zone == "OKZ025")
+        #expect(payload.fireZone == "OKZ025")
+        #expect(payload.latitude == 35.4676)
+        #expect(payload.longitude == -97.5164)
+        #expect(payload.h3Cell == "872681364ffffff")
     }
 
     @Test("send suppresses rapid updates inside minSeconds window")

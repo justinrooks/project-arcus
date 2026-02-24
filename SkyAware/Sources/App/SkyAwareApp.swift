@@ -114,6 +114,8 @@ struct SkyAwareApp: App {
                 break
             case .active:
                 Task(priority: .utility) {
+                    let installationId = await InstallationIdentityStore.shared.installationId()
+                    logger.debug("Installation ID ready with \(installationId.count, privacy: .public) chars")
                     await RemoteNotificationRegistrar.shared.registerForRemoteNotificationsIfAuthorized(context: "scene-active")
                 }
                 

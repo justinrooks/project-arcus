@@ -7,9 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 		D0AFC5F12F412BAB001F331A /* Journal.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5F02F412BAB001F331A /* Journal.md */; };
 		D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5EF2F412BAB001F331A /* AGENTS.md */; };
+		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -390,17 +390,6 @@
 		};
 /* End PBXTargetDependency section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/pawelmajcher/SwiftyH3.git";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 0.5.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCBuildConfiguration section */
 		D095EFC42E16F56A0074F867 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -555,6 +544,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LOCATION_PUSH_URL = "http://localhost:8080/api/v1/devices/location-snapshots";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyaware.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -597,6 +587,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LOCATION_PUSH_URL = "";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyaware.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -685,14 +676,6 @@
 		};
 /* End XCBuildConfiguration section */
 
-/* Begin XCSwiftPackageProductDependency section */
-		D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */;
-			productName = SwiftyH3;
-		};
-/* End XCSwiftPackageProductDependency section */
-
 /* Begin XCConfigurationList section */
 		D095EF9E2E16F5690074F867 /* Build configuration list for PBXProject "SkyAware" */ = {
 			isa = XCConfigurationList;
@@ -731,6 +714,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/pawelmajcher/SwiftyH3.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.5.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */;
+			productName = SwiftyH3;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D095EF9B2E16F5690074F867 /* Project object */;
 }

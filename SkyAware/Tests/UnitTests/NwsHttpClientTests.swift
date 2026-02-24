@@ -39,6 +39,15 @@ private final class MockHTTPClient: HTTPClient, @unchecked Sendable {
         }
         return response
     }
+    
+    func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
+        await state.record(url: url, headers: headers)
+
+        if let error {
+            throw error
+        }
+        return response
+    }
 
     func clearCache() {}
 
