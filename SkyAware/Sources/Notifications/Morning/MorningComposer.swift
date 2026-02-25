@@ -18,9 +18,10 @@ struct MorningComposer: NotificationComposing {
         let issue = (event.payload["issue"] as? Date).map { "Issued: \($0.formatted(date: .abbreviated, time: .shortened))" } ?? "Latest outlook loaded."
         let stormRisk = (event.payload["stormRisk"] as? StormRiskLevel) ?? .allClear
         let severeRisk = (event.payload["severeRisk"] as? SevereWeatherThreat) ?? .allClear
+        let fireRisk = (event.payload["fireRisk"] as? FireRiskLevel) ?? .clear
         let placemark = (event.payload["placeMark"] as? String) ?? "Unknown"
         
         logger.debug("Summary notification generated")
-        return ("Today's Outlook for \(placemark)", "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)", "\(issue)")
+        return ("Today's Outlook for \(placemark)", "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)\nFire Risk: \(fireRisk.message)", "\(issue)")
     }
 }

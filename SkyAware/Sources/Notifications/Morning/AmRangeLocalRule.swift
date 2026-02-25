@@ -53,6 +53,7 @@ struct AmRangeLocalRule: NotificationRuleEvaluating {
                 "issue": ctx.lastConvectiveIssue as Sendable?,
                 "stormRisk": ctx.stormRisk,
                 "severeRisk": ctx.severeRisk,
+                "fireRisk": ctx.fireRisk,
                 "placeMark": ctx.placeMark
             ]
         )
