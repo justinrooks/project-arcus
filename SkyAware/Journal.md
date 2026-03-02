@@ -77,6 +77,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Pitfall**: coverage comparisons are noisy if executable-line counts changed between runs. Track both percentage and covered/executable line totals to avoid false confidence (or false panic).
 - **Legend parity fix (Fire layer)**: the fire legend used to show a single generic "Fire" chip, which hid what SPC was actually saying. We now build legend rows from unique `riskLevel`s (sorted high-to-low) and render each chip with upstream `stroke`/`fill`, so the legend finally mirrors the map overlays instead of acting like a placeholder.
 - **Bug squash (Weather summary formatter churn)**: the temperature label in `SummaryStatus` was using a view-stored `MeasurementFormatter`, which can be recreated as SwiftUI value views are rebuilt. We moved it to a shared static formatter so weather rows stay cheap during refresh cycles.
+- **Summary loading UX pass**: we gave `ActiveAlertSummaryView` and `OutlookSummaryCard` explicit loading modes with redacted placeholder content, then had `SummaryView` route to those placeholders during initial data fetch. This avoids the awkward “No Active Alerts”/“Outlook Pending” messaging flashing before the first sync finishes.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.

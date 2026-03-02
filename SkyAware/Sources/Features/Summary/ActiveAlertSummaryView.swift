@@ -10,6 +10,7 @@ import SwiftUI
 struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
+    let isLoading: Bool
     private let sortedMesos: [MdDTO]
     private let sortedWatches: [WatchRowDTO]
     
@@ -18,9 +19,10 @@ struct ActiveAlertSummaryView: View {
     @State private var mesoSheetHeight: CGFloat = .zero
     @State private var watchSheetHeight: CGFloat = .zero
 
-    init(mesos: [MdDTO], watches: [WatchRowDTO]) {
+    init(mesos: [MdDTO], watches: [WatchRowDTO], isLoading: Bool = false) {
         self.mesos = mesos
         self.watches = watches
+        self.isLoading = isLoading
         self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
         self.sortedWatches = watches.sorted { $0.expires < $1.expires }
     }
@@ -45,6 +47,12 @@ struct ActiveAlertSummaryView: View {
             MesoRowView(meso: meso)
         }
     }
+
+    @ViewBuilder
+    private var placeholderAlertsContent: some View {
+        PlaceholderAlertSection(label: "Watches")
+        PlaceholderAlertSection(label: "Mesos")
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -53,14 +61,23 @@ struct ActiveAlertSummaryView: View {
 
             if #available(iOS 26, *) {
                 GlassEffectContainer(spacing: 12) {
-                    alertsContent
+                    if isLoading {
+                        placeholderAlertsContent
+                    } else {
+                        alertsContent
+                    }
                 }
             } else {
-                alertsContent
+                if isLoading {
+                    placeholderAlertsContent
+                } else {
+                    alertsContent
+                }
             }
         }
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .placeholder(isLoading)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(height: $mesoSheetHeight) {
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet)
@@ -96,6 +113,42 @@ struct ActiveAlertSummaryView: View {
 }
 
 // MARK: Components
+private struct PlaceholderAlertSection: View {
+    let label: String
+
+    var body: some View {
+        Text(label.uppercased())
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
+
+        ForEach(0..<2, id: \.self) { _ in
+            HStack(alignment: .top, spacing: 15) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Placeholder alert title")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Additional placeholder context")
+                        .font(.caption)
+                }
+
+                Spacer()
+                Text("Until 00:00 PM")
+                    .monospacedDigit()
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
+            }
+            .padding(.vertical, 3)
+        }
+    }
+}
+
 private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     let label: String
     let items: [Item]
