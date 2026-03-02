@@ -143,7 +143,7 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
                 .string(forKey: RemoteNotificationRegistrar.apnsDeviceTokenKey) ?? ""
         },
         installationIdProvider: @escaping InstallationIDProvider = {
-            await InstallationIdentityStore.shared.installationId()
+            InstallationIdentityStore.shared.installationId()
         },
         gridRegionContextProvider: @escaping GridRegionContextProvider = { nil },
         retryDelaysSeconds: [UInt64] = [0, 5, 15]

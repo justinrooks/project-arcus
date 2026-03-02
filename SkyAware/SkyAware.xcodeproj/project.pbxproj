@@ -544,7 +544,6 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				LOCATION_PUSH_URL = "http://localhost:8080/api/v1/devices/location-snapshots";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.skyaware.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
