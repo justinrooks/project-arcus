@@ -178,6 +178,25 @@ Why this helps:
 Gotcha:
 If Keychain persistence fails (rare, but possible), the app still generates an in-memory ID for that launch so payloads keep flowing. It just won’t be stable across relaunch until persistence succeeds.
 
+### 2026-03-02: Map "time travel" bug in risk layers (old + new polygons together)
+
+Bug-shaped problem:
+The map could show overlapping historical and current polygons at the same time (especially noticeable in fire risk), because active-window filtering alone does not guarantee "latest issuance only."
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/FireRiskRepo.swift` so `getLatestMapData` now:
+  - buckets by `riskLevel`
+  - keeps only the freshest record per bucket (prefers newer `issued`, then `valid`, then `expires`)
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/StormRiskRepo.swift` to use the same recency tie-breaker (it previously preferred `valid`, which is often identical across issuances).
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/SevereRiskRepo.swift` to dedupe by true display bucket (`type + probability`) instead of `type + key` (where `key` already includes `issued`, which accidentally preserves old versions).
+- Added regression tests in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/MapDataFreshnessRepoTests.swift` for fire, storm, and severe map products.
+
+Aha moment:
+“Active right now” and “latest version” are different filters. Think of it like airport departure boards: two gate updates can both be valid timestamps, but only one is the current truth.
+
+Gotcha:
+Using `valid` as the primary freshness signal is brittle for SPC products because updates can share the same valid window. `issued` is the better primary key for recency.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

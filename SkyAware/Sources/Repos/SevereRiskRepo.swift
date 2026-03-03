@@ -115,32 +115,31 @@ actor SevereRiskRepo {
     func getSevereRiskShapes(asOf date: Date = .init()) throws
         -> [SevereRiskShapeDTO]
     {
-        // Can't use an enum in a predicate, so need to find a different way.
-        // For now, I'm just going to return an array of the DTO's shaped in
-        // a way that's easier to use downstream. Then we'll just use the View
-        // layer to put the shapes in their respective buckets.
-
-        // Targeting only those items that are both valid and not expired
+        // Target only items that are both valid and not expired.
         let desc = FetchDescriptor<SevereRisk>(
             predicate: #Predicate<SevereRisk> {
                 $0.valid <= date && date < $0.expires
             }
         )
 
-        // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
+        // Keep only the freshest record per type + probability bucket.
         let risks = try modelContext.fetch(desc)
+        var mostRecentByBucket: [SevereRiskBucket: SevereRisk] = [:]
 
-        // 2) For each risk level, keep the record with the most recent `valid` date
-        let mostRecentByLevel: [String: SevereRisk] = Dictionary(
-            risks.map { ($0.type.rawValue + $0.key, $0) },
-            uniquingKeysWith: { lhs, rhs in
-                // choose the record with the later `valid` date
-                return lhs.valid >= rhs.valid ? lhs : rhs
+        for risk in risks {
+            let bucket = SevereRiskBucket(type: risk.type, probability: risk.probability)
+            if let current = mostRecentByBucket[bucket] {
+                if isMoreRecent(risk, than: current) {
+                    mostRecentByBucket[bucket] = risk
+                }
+            } else {
+                mostRecentByBucket[bucket] = risk
             }
-        )
+        }
+
         var result: [SevereRiskShapeDTO] = []
 
-        for (_, data) in mostRecentByLevel {
+        for (_, data) in mostRecentByBucket {
             result.append(
                 SevereRiskShapeDTO(
                     type: data.type,
@@ -247,4 +246,16 @@ actor SevereRiskRepo {
         }
         try modelContext.save()
     }
+
+    private func isMoreRecent(_ lhs: SevereRisk, than rhs: SevereRisk) -> Bool {
+        if lhs.issued != rhs.issued { return lhs.issued > rhs.issued }
+        if lhs.valid != rhs.valid { return lhs.valid > rhs.valid }
+        if lhs.expires != rhs.expires { return lhs.expires > rhs.expires }
+        return lhs.key > rhs.key
+    }
+}
+
+private struct SevereRiskBucket: Hashable {
+    let type: ThreatType
+    let probability: ThreatProbability
 }
