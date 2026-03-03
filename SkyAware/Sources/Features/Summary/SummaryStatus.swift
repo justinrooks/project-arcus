@@ -20,15 +20,12 @@ struct SummaryStatus: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Current Conditions")
-                .font(.caption2)
-                  .fontWeight(.semibold)
-                  .textCase(.uppercase)
-                  .foregroundStyle(.secondary)
+                .sectionLabel()
 
             HStack(spacing: 10) {
                 Label(location, systemImage: "location.fill")
                     .font(.headline)
-                      .fontWeight(.semibold)
+                      .fontWeight(.bold)
                       .foregroundStyle(.primary)
                 Spacer(minLength: 8)
                 
@@ -36,20 +33,14 @@ struct SummaryStatus: View {
                     if let weather {
                         let temp = Self.temperatureFormatter.string(from: weather.temperature)
                         Text(temp)
-                            .font(.headline)
-                              .fontWeight(.semibold)
-                              .foregroundStyle(.primary)
                               .monospacedDigit()
                         Image(systemName: weather.symbolName)
                             .symbolVariant(.fill)
-                            .font(.subheadline)
-                              .fontWeight(.semibold)
-                              .foregroundStyle(.secondary)
                     }
 
                 }
-                .font(.callout.weight(.regular))
-                .foregroundStyle(.secondary)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
             }
         }
         .padding(.horizontal, 14)
