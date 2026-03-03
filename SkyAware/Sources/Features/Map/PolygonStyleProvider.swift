@@ -55,6 +55,11 @@ enum PolygonStyleProvider {
 
     private static func fallbackPolygonStyle(risk: String, probability: String, context: ColorContext) -> (UIColor, UIColor) {
         switch risk.uppercased() {
+        case let r where r.contains("TSTM"):
+            return (
+                UIColor(red: 0.75, green: 0.93, blue: 0.75, alpha: 0.3),
+                UIColor(red: 0.4, green: 0.7, blue: 0.4, alpha: 1.0)
+            )
         case let r where r.contains("MRGL"):
             return (UIColor(hue: 0.33, saturation: 0.5, brightness: 0.8, alpha: 0.3), .green)
         case let r where r.contains("SLGT"):
@@ -87,12 +92,6 @@ enum PolygonStyleProvider {
             let base = parseTorProbability(probability)
             let alpha = context == .map ? 0.3 : 0.7
             return (base.withAlphaComponent(alpha), isSignificant ? UIColor.black : base)
-            
-        case let r where r.contains("TSTM"):
-            return (
-                UIColor(red: 0.75, green: 0.93, blue: 0.75, alpha: 0.3),
-                UIColor(red: 0.4, green: 0.7, blue: 0.4, alpha: 1.0)
-            )
         default:
             logger.warning("Unknown polygon title encountered while styling")
             return (UIColor.systemPink.withAlphaComponent(0.15), UIColor.systemPink)

@@ -9,24 +9,21 @@ struct MapLegend: View {
         VStack(alignment: .leading, spacing: 10) {
             switch layer {
             case .categorical:
-                Text("Severe Storm Risk")
+                Text("Severe Risk")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                ForEach(categoricalLevels, id: \.self) { level in
+                ForEach(Array(StormRiskLevel.allCases.reversed().dropLast()), id: \.self) { level in
                     CategoricalLegendRow(risk: level)
                 }
 
             case .meso:
                 Text("Legend")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                CategoricalLegendRow(risk: layer.key.capitalized) // MESO
+                MesoLegendRow(risk: layer.key.capitalized) // MESO
             
             case .fire:
                 let risks = fireLevels
                 Text(risks.isEmpty ? "No fire risk" : "Fire Risk")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
                 ForEach(risks, id: \.riskLevel) { risk in
                     FireLegendRow(risk: risk)
                 }
@@ -35,7 +32,6 @@ struct MapLegend: View {
                 let risks = severeLevels
                 Text(risks.isEmpty ? "No \(layer.title.lowercased()) risk" : "\(layer.title) Risk")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
 
                 ForEach(risks, id: \.title) { risk in
                     SevereLegendRow(layer: layer, risk: risk)
@@ -50,11 +46,6 @@ struct MapLegend: View {
             shadowRadius: 8,
             shadowY: 3
         )
-    }
-
-    // Categorical ordering; mirrors SPC scale from highest to lowest, plus TSTM
-    private var categoricalLevels: [String] {
-        ["HIGH", "MDT", "ENH", "SLGT", "MRGL", "TSTM"]
     }
 
     private var fireLevels: [FireRiskDTO] {
@@ -100,6 +91,25 @@ struct MapLegend: View {
 // MARK: - Rows
 
 private struct CategoricalLegendRow: View {
+    let risk: StormRiskLevel
+
+    var body: some View {
+        let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk.abbreviation.uppercased(), probability: "0%")
+        HStack {
+            Circle()
+                .fill(Color(fill))
+                .overlay(
+                    Circle().stroke(Color(stroke), lineWidth: 1.15)
+                )
+                .frame(width: 14, height: 14)
+            Text(risk.message.split(separator: " ")[0])
+                .font(.caption)
+                .fontWeight(["HIGH", "MDT", "ENH"].contains(risk.abbreviation.uppercased()) ? .semibold : .regular)
+        }
+    }
+}
+
+private struct MesoLegendRow: View {
     let risk: String
 
     var body: some View {
@@ -113,7 +123,7 @@ private struct CategoricalLegendRow: View {
                 .frame(width: 14, height: 14)
             Text(risk)
                 .font(.caption)
-                .fontWeight(["HIGH", "MDT", "ENH"].contains(risk) ? .semibold : .regular)
+                .fontWeight(.regular)
         }
     }
 }

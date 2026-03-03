@@ -37,37 +37,31 @@ struct MapScreenView: View {
             
             VStack(alignment: .trailing) {
                 HStack(spacing: 10) {
-                    Label(selected.title, systemImage: selected.symbol)
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .skyAwareSurface(
-                            cornerRadius: SkyAwareRadius.tile,
-                            tint: .white.opacity(0.10),
-                            shadowOpacity: 0.12,
-                            shadowRadius: 8,
-                            shadowY: 3
-                        )
-
                     Button {
                         showLayerPicker = true
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.headline.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                            .foregroundStyle(.primary)
+                        HStack(spacing: 10) {
+                            Image(systemName: "square.2.layers.3d.top.filled")
+                                .imageScale(.medium)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            Text(selected.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 40)
+                        .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
                     .accessibilityLabel("Map layers")
-                    .skyAwareSurface(
-                        cornerRadius: SkyAwareRadius.section,
-                        tint: .skyAwareAccent.opacity(0.18),
-                        interactive: true,
-                        shadowOpacity: 0.16,
-                        shadowRadius: 10,
-                        shadowY: 6
-                    )
+                    .accessibilityValue(selected.title)
+                    .scaleEffect(showLayerPicker ? 0.98 : 1)
+                    .animation(.snappy(duration: 0.20), value: showLayerPicker)
+                    .modifier(MapLayerPickerButtonStyle())
                     .modifier(MapLayerButtonMorph(namespace: layerNamespace))
                 }
                 .padding(.horizontal, 18)
@@ -216,6 +210,27 @@ struct MapScreenView: View {
             fires: fireRisk
         )
         selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
+    }
+}
+
+private struct MapLayerPickerButtonStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .buttonStyle(.glass)
+        } else {
+            content
+                .buttonStyle(.plain)
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.section,
+                    tint: .skyAwareAccent.opacity(0.18),
+                    interactive: true,
+                    shadowOpacity: 0.16,
+                    shadowRadius: 10,
+                    shadowY: 6
+                )
+        }
     }
 }
 
