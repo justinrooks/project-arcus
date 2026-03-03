@@ -195,14 +195,29 @@ struct SpcProviderSyncMapProductsTests {
         let calls = await client.geoJsonCallCount()
         #expect(calls == 5)
     }
+
+    @Test("Failed map product run does not trigger cooldown")
+    func failedRunDoesNotTriggerCooldown() async throws {
+        let container = try await makeMapSyncContainer()
+        let client = CountingMapSyncClient(failingProduct: .hail)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        await provider.syncMapProducts()
+        await provider.syncMapProducts()
+
+        let calls = await client.geoJsonCallCount()
+        #expect(calls == 10)
+    }
 }
 
 private actor CountingMapSyncClient: SpcClient {
     private var geoJsonCalls = 0
     private let delayNanoseconds: UInt64
+    private let failingProduct: GeoJSONProduct?
 
-    init(delayNanoseconds: UInt64 = 0) {
+    init(delayNanoseconds: UInt64 = 0, failingProduct: GeoJSONProduct? = nil) {
         self.delayNanoseconds = delayNanoseconds
+        self.failingProduct = failingProduct
     }
 
     func fetchRssData(for product: RssProduct) async throws -> Data {
@@ -213,6 +228,9 @@ private actor CountingMapSyncClient: SpcClient {
         geoJsonCalls += 1
         if delayNanoseconds > 0 {
             try await Task.sleep(nanoseconds: delayNanoseconds)
+        }
+        if product == failingProduct {
+            throw SpcError.missingData
         }
         return Data("{}".utf8)
     }

@@ -38,10 +38,11 @@ extension SpcProvider: SpcSyncing {
 
     private func runMapProductsSync() async {
         let runInterval = signposter.beginInterval("Spc Sync Map Products")
+        var completedWithoutFailures = true
         defer {
             signposter.endInterval("Background Run", runInterval)
             mapSyncTask = nil
-            if !Task.isCancelled {
+            if !Task.isCancelled && completedWithoutFailures {
                 lastMapSyncFinishedAt = Date()
             }
         }
@@ -49,34 +50,34 @@ extension SpcProvider: SpcSyncing {
         if Task.isCancelled {
             return
         }
-        await refreshMapProduct(named: "categorical") {
+        completedWithoutFailures = await refreshMapProduct(named: "categorical") {
             try await stormRiskRepo.refreshStormRisk(using: client)
-        }
+        } && completedWithoutFailures
         if Task.isCancelled {
             return
         }
-        await refreshMapProduct(named: "hail") {
+        completedWithoutFailures = await refreshMapProduct(named: "hail") {
             try await severeRiskRepo.refreshHailRisk(using: client)
-        }
+        } && completedWithoutFailures
         if Task.isCancelled {
             return
         }
-        await refreshMapProduct(named: "wind") {
+        completedWithoutFailures = await refreshMapProduct(named: "wind") {
             try await severeRiskRepo.refreshWindRisk(using: client)
-        }
+        } && completedWithoutFailures
         if Task.isCancelled {
             return
         }
-        await refreshMapProduct(named: "tornado") {
+        completedWithoutFailures = await refreshMapProduct(named: "tornado") {
             try await severeRiskRepo.refreshTornadoRisk(using: client)
-        }
+        } && completedWithoutFailures
         
         if Task.isCancelled {
             return
         }
-        await refreshMapProduct(named: "fire") {
+        completedWithoutFailures = await refreshMapProduct(named: "fire") {
             try await fireRiskRepo.refreshFireRisk(using: client)
-        }
+        } && completedWithoutFailures
     }
     
     func syncTextProducts() async {
@@ -126,13 +127,16 @@ extension SpcProvider: SpcSyncing {
         for c in convectiveContinuations.values { c.yield(date) }
     }
 
-    private func refreshMapProduct(named name: String, operation: () async throws -> Void) async {
+    private func refreshMapProduct(named name: String, operation: () async throws -> Void) async -> Bool {
         do {
             try await operation()
+            return true
         } catch is CancellationError {
             logger.notice("SPC map product sync cancelled for \(name, privacy: .public)")
+            return false
         } catch {
             logger.error("Error loading SPC map feed product=\(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
 }
