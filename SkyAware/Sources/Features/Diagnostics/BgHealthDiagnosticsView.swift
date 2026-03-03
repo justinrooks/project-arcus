@@ -97,7 +97,7 @@ private struct StatusHeader: View {
             return ("Error", .red)
         }
         
-        return ("OK", .green)
+        return ("Ok", .green)
     }
 }
 
@@ -155,7 +155,7 @@ private struct RunRow: View {
     
     private func outcomeLabel(_ code: Int) -> String {
         switch code {
-        case 0: return "OK"
+        case 0: return "Ok"
         case 1: return "Partial"
         default: return "Error"
         }

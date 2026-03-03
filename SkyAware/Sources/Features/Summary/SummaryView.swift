@@ -109,15 +109,13 @@ struct SummaryView: View {
 
     private func sectionTitle(_ title: String, icon: String) -> some View {
         Label(title, systemImage: icon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
+            .sectionLabel()
     }
 
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
+                .sectionLabel()
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

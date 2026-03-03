@@ -80,6 +80,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **War story (throttling that lied)**: we were stamping the WeatherKit "last sync" time before knowing if the fetch actually succeeded. On flaky connectivity, one failed call could put weather refreshes in timeout jail for 30 minutes. We now mark the timestamp only after we get real weather data.
 - **Bug squash (cooldown on partial failure)**: SPC map sync cooldown was updated even when one map product failed, because per-product errors were logged-and-swallowed and the run still looked "done." We now track whether every product succeeded and only stamp cooldown for fully successful runs, with a regression test proving failed runs are immediately retryable.
 - **Summary loading UX pass**: we gave `ActiveAlertSummaryView` and `OutlookSummaryCard` explicit loading modes with redacted placeholder content, then had `SummaryView` route to those placeholders during initial data fetch. This avoids the awkward “No Active Alerts”/“Outlook Pending” messaging flashing before the first sync finishes.
+- **Map control affordance pass (Liquid Glass)**: the layer-picker trigger looked like a static badge, so we rebuilt it as a real control (`slider.horizontal.3` + active layer title + chevron) and used native `.glass` button styling on iOS 26 with a fallback surface on earlier OS versions. Result: clearer tap affordance without adding visual clutter.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.

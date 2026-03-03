@@ -25,7 +25,7 @@ struct OutlookSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Outlook Summary", systemImage: "sun.max.fill")
-                .font(.headline.weight(.semibold))
+                .sectionLabel()
 
             Text(summaryText)
                 .font(.body)

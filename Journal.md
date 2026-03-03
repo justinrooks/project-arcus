@@ -197,6 +197,23 @@ Aha moment:
 Gotcha:
 Using `valid` as the primary freshness signal is brittle for SPC products because updates can share the same valid window. `issued` is the better primary key for recency.
 
+### 2026-03-03: UI casing consistency pass across all SwiftUI views
+
+Bug-shaped problem:
+Several views were forcing uppercase presentation (`.textCase(.uppercase)`, `uppercased()` labels, and all-caps badge text), which made the UI feel visually inconsistent across cards and chips.
+
+What changed:
+- Reviewed every `View`/`ViewModifier` file under `/Users/justin/Code/project-arcus/SkyAware/Sources`.
+- Removed uppercase display transforms in summary headers, product headers, map legend headers, and alert section chips.
+- Converted hardcoded all-caps UI strings to sentence case where they were stylistic (for example, `IN ZONE` -> `In zone`, `MD 123` -> `Meso 123`, `OK` -> `Ok` in diagnostics badges).
+- Added a small risk-level formatter in `ConvectiveOutlookDetailView` to translate abbreviated risk tokens (`MRGL`, `SLGT`, `ENH`, `MDT`) into sentence-cased display labels.
+
+Aha moment:
+Uppercase can look "urgent," but when everything is urgent, nothing is. Sentence case improved scannability without changing layout or behavior.
+
+Gotcha:
+Not all uppercase text should be normalized. Domain acronyms and proper nouns (like NOAA/NWS/SPC/APNs) are intentional and were left intact.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

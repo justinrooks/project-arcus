@@ -25,7 +25,7 @@ struct KeyValueRow: View {
 struct InZonePill: View {
     let inZone: Bool
     var body: some View {
-        Text(inZone ? "IN ZONE" : "OUTSIDE")
+        Text(inZone ? "In zone" : "Outside")
             .font(.caption.weight(.semibold))
             .padding(.vertical, 4)
             .padding(.horizontal, 10)

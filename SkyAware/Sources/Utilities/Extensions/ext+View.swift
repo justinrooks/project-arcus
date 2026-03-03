@@ -9,6 +9,12 @@ import SwiftUI
 
 extension View {
     @ViewBuilder
+    func sectionLabel() -> some View {
+        self.font(.headline.weight(.semibold))
+        .foregroundStyle(.primary)
+    }
+    
+    @ViewBuilder
     func skyAwareSurface(
         cornerRadius: CGFloat = SkyAwareRadius.medium,
         tint: Color = .white.opacity(0.06),

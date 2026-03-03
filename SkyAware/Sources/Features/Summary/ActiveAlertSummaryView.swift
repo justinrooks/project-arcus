@@ -57,7 +57,7 @@ struct ActiveAlertSummaryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                .font(.headline.weight(.semibold))
+                .sectionLabel()
 
             if #available(iOS 26, *) {
                 GlassEffectContainer(spacing: 12) {
@@ -117,7 +117,7 @@ private struct PlaceholderAlertSection: View {
     let label: String
 
     var body: some View {
-        Text(label.uppercased())
+        Text(label)
             .font(.caption2.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 10)
@@ -136,7 +136,7 @@ private struct PlaceholderAlertSection: View {
                 }
 
                 Spacer()
-                Text("Until 00:00 PM")
+                Text("Until 00:00 pm")
                     .monospacedDigit()
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -160,7 +160,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
         if !items.isEmpty {
             let visibleItems = items.prefix(limit)
             
-            Text(label.uppercased())
+            Text(label)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
@@ -190,7 +190,7 @@ private struct MesoRowView: View {
             Image(systemName: icon)
                 .foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
-                Text("MD \(meso.number.formatted(.number.grouping(.never)))")
+                Text("Meso \(meso.number.formatted(.number.grouping(.never)))")
                     .font(.subheadline.weight(.semibold))
             }
             
