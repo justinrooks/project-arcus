@@ -214,6 +214,27 @@ Uppercase can look "urgent," but when everything is urgent, nothing is. Sentence
 Gotcha:
 Not all uppercase text should be normalized. Domain acronyms and proper nouns (like NOAA/NWS/SPC/APNs) are intentional and were left intact.
 
+### 2026-03-03: Atmosphere rail polish + Liquid Glass metric tiles
+
+Bug-shaped problem:
+`AtmosphereRailView` looked like a rough prototype next to the fire/storm/severe rails. It had raw stacked values, little hierarchy, and no cohesive chip treatment, so the section felt unfinished.
+
+What changed:
+- Rebuilt `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Badges/AtmosphereRailView.swift` to match the established badge/rail visual language:
+  - clear lead icon chip
+  - strong headline (`Atmospheric Snapshot`)
+  - concise secondary summary line with update time
+  - consistent 2-column metric tiles for dew point, humidity, wind, and pressure
+- Added a small metric tile component with monospaced values and concise secondary context (wind direction, pressure trend).
+- Grouped metric chips in `GlassEffectContainer` on iOS 26+ and kept fallback behavior through shared `skyAwareChip`.
+- Stayed inside the existing risk-based color system by tinting surfaces from the current `FireRiskLevel` colors.
+
+Aha moment:
+Visual quality jumped once the rail stopped being “a row of numbers” and became “a headline plus scannable tiles.” Same data, way better cognitive ergonomics.
+
+Gotcha:
+Using random IDs inside metric `ForEach` would make tile identity unstable and cause unnecessary re-renders. Stable identity based on metric title keeps updates predictable.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

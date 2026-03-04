@@ -21,6 +21,10 @@ struct SummaryView: View {
         !mesos.isEmpty || !watches.isEmpty
     }
 
+    private var isWeatherLoading: Bool {
+        weather == nil
+    }
+
     private var isSummaryLoading: Bool {
         snap == nil || stormRisk == nil || severeRisk == nil || fireRisk == nil
     }
@@ -35,6 +39,11 @@ struct SummaryView: View {
             //       danger
             FireWeatherRailView(level: fireRisk ?? .clear)
                 .placeholder(fireRisk == nil)
+            AtmosphereRailView(weather: weather, level: .clear)
+//                    .placeholder(isWeatherLoading)
+                .opacity(isWeatherLoading ? 1 : 0)
+                .allowsHitTesting(false)
+                .animation(.snappy, value: isWeatherLoading)
         }
     }
 
