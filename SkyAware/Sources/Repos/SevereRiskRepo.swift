@@ -87,9 +87,23 @@ actor SevereRiskRepo {
             FetchDescriptor<SevereRisk>(predicate: pred)
         )
 
-        // 2) Sort by descending risk so we can early-exit on first hit
-        let bySeverity = risks.sorted {
-            $0.threatLevel.priority > $1.threatLevel.priority
+        // 2) Sort by descending severity so we can early-exit on first hit.
+        //    Within a threat type, prefer higher probability and then fresher issuances.
+        let bySeverity = risks.sorted { lhs, rhs in
+            if lhs.threatLevel.priority != rhs.threatLevel.priority {
+                return lhs.threatLevel.priority > rhs.threatLevel.priority
+            }
+
+            let lhsProbability = lhs.probability.decimalValue
+            let rhsProbability = rhs.probability.decimalValue
+            if lhsProbability != rhsProbability {
+                return lhsProbability > rhsProbability
+            }
+
+            if lhs.issued != rhs.issued { return lhs.issued > rhs.issued }
+            if lhs.valid != rhs.valid { return lhs.valid > rhs.valid }
+            if lhs.expires != rhs.expires { return lhs.expires > rhs.expires }
+            return lhs.key > rhs.key
         }
 
         // 3) For each risk, check polygons with optional bbox prefilter, then precise hit test
