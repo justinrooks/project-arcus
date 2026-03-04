@@ -255,19 +255,19 @@ struct SettingsView: View {
         guard let locationClient else { return }
         
         if let snapshot = await locationClient.snapshot() {
-            await updateH3Cell(snapshot.h3Cell)
+            updateH3Cell(snapshot.h3Cell)
         }
         
         let stream = await locationClient.updates()
         for await snapshot in stream {
             if Task.isCancelled { break }
-            await updateH3Cell(snapshot.h3Cell)
+            updateH3Cell(snapshot.h3Cell)
         }
     }
     
     @MainActor
-    private func updateH3Cell(_ h3Cell: String?) {
-        let next = h3Cell ?? ""
+    private func updateH3Cell(_ h3Cell: Int64?) {
+        let next = h3Cell.map { String(UInt64(bitPattern: $0), radix: 16) } ?? ""
         guard currentH3Cell != next else { return }
         currentH3Cell = next
     }

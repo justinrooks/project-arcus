@@ -235,6 +235,77 @@ Visual quality jumped once the rail stopped being “a row of numbers” and bec
 Gotcha:
 Using random IDs inside metric `ForEach` would make tile identity unstable and cause unnecessary re-renders. Stable identity based on metric title keeps updates predictable.
 
+### 2026-03-04: Dew point explainer tip on Atmosphere rail
+
+Bug-shaped problem:
+The dew point value was visually emphasized (orange + bold), but tapping it did nothing. We were effectively highlighting a mystery number with no built-in explanation.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Badges/AtmosphereRailView.swift` so the entire dew point tile is now a tappable button.
+- Added a compact popover tip anchored to that tile with plain-language dew point guidance and a simple comfort scale.
+- Added a typed metric identity (`AtmosphereMetricKind`) instead of relying on string comparisons for dew-point-specific styling/behavior.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Summary/SummaryView.swift` to re-enable interaction for the atmosphere rail after weather loads (`.allowsHitTesting(!isWeatherLoading)`), while still keeping loading-state behavior safe.
+
+Aha moment:
+If a metric is "important enough to color," it is usually "important enough to explain." A tiny inline explainer beats sending users to a full-screen glossary.
+
+Gotcha:
+The summary screen had interaction disabled for this rail, so even a perfectly wired button in the rail would never fire. Wiring the tap correctly required both local tile changes and parent-level hit-testing behavior.
+
+### 2026-03-04: Atmosphere rail metric tiles switched to true Liquid Glass chips
+
+Bug-shaped problem:
+We wrapped the metrics in `GlassEffectContainer`, but each tile itself was still just plain content. In other words: we built a fancy glass display case and put cardboard labels inside it.
+
+What changed:
+- Refactored `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Badges/AtmosphereRailView.swift` metric tiles to render as real glass chips on iOS 26+ using `.glassEffect(...)` with a consistent rounded-rect shape.
+- Kept fallback visuals for pre-iOS 26 using a material-backed rounded tile.
+- Made the entire dew point tile the interaction surface and applied interactive glass only to that tile.
+- Introduced light tinting derived from `FireRiskLevel.tint` so `level` is now meaningful and styling stays consistent with the existing risk palette.
+
+Aha moment:
+`GlassEffectContainer` only pays off when the children are actually glass. Once each metric became a chip, the whole section started behaving like one coherent surface instead of isolated text blocks.
+
+Gotcha:
+If only the value text is tappable, users miss the affordance. Making the whole dew point chip the tap target improved both usability and visual consistency.
+
+### 2026-03-04: Atmosphere rail cleanup pass (API + tip robustness)
+
+Bug-shaped problem:
+The view had a couple of “leftover scaffold” patterns: a `GlassEffectContainer` without glass children, an unused `level` input, and dew-point tip logic that parsed numbers from display text.
+
+What changed:
+- Removed the inert `GlassEffectContainer` wrapper from `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Badges/AtmosphereRailView.swift`.
+- Removed the unused `level` parameter from `AtmosphereRailView` and updated callsites/previews.
+- Replaced dew point parsing-from-string with direct numeric plumbing (`numericValue`) so tip guidance is driven by real data, not formatted text.
+- Updated `DewPointTipView` layout to a fixed-width non-scrolling popover so all explanatory text is visible at once.
+
+Aha moment:
+UI text formatting is presentation, not source-of-truth data. Once we stopped parsing the string, the tip logic became both safer and easier to reason about.
+
+Gotcha:
+“Looks fine right now” helper wrappers can quietly become dead code as the UI evolves. Small cleanup passes keep SwiftUI views honest and easier to maintain.
+
+### 2026-03-04: Severe risk overlap ordering bug (2% beating 5% tornado)
+
+Bug-shaped problem:
+Some locations inside overlapping tornado probability polygons could show `2%` instead of `5%`. The app was pulling both, but when risk type tied (tornado vs tornado), selection order depended on fetch order.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/SevereRiskRepo.swift` `active(asOf:for:)` sorting so it now ranks by:
+  - threat type priority (tornado > hail > wind)
+  - then probability (higher first)
+  - then issuance recency (`issued`, `valid`, `expires`) for deterministic tie breaks
+- Added `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/SevereRiskRepoActiveSelectionTests.swift` with regression coverage for:
+  - overlapping tornado `2%` and `5%` polygons selecting `5%`
+  - cross-type behavior staying intact (tornado still outranks hail per existing threat-priority rule)
+
+Aha moment:
+“Severity category” and “severity magnitude” are two different axes. We were sorting on category only, which is like ranking restaurants by cuisine but ignoring the actual rating.
+
+Gotcha:
+Any tie in your comparator is a hidden product decision. If that tie-breaker is implicit, users eventually discover it in the weirdest edge case.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

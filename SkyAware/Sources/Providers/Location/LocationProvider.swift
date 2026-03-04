@@ -9,6 +9,7 @@ import Foundation
 import CoreLocation
 import OSLog
 import SwiftyH3
+import UIKit
 
 // MARK: - Geocoding Abstraction
 protocol LocationGeocoding: Sendable {
@@ -16,7 +17,7 @@ protocol LocationGeocoding: Sendable {
 }
 
 protocol LocationHashing: Sendable {
-    func h3Cell(for coord: CLLocationCoordinate2D) throws -> String
+    func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64
 }
 
 protocol LocationSnapshotUploading: Sendable {
@@ -46,9 +47,11 @@ struct SwiftyH3Hasher: LocationHashing {
         self.resolution = resolution
     }
 
-    func h3Cell(for coord: CLLocationCoordinate2D) throws -> String {
+    func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64 {
         let cell = try H3LatLng(coord).cell(at: resolution)
-        return cell.description
+        
+        return Int64(bitPattern: cell.id)
+//        return cell.description
     }
 }
 
@@ -70,19 +73,29 @@ struct LocationSnapshot: Sendable {
     /// “City, ST” or “County, ST” etc. Keep it short and cached.
     var placemarkSummary: String?
     /// Hex-encoded H3 cell id used for coarse server-side location bucketing.
-    var h3Cell: String?
+    var h3Cell: Int64?
 }
 
 struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
-    let timestamp: Date
-    let accuracy: CLLocationAccuracy
-    let placemarkSummary: String?
-    let h3Cell: String?
+    let capturedAt: Date
+    let locationAgeSeconds: Double
+    let horizontalAccuracyMeters: Double
+    let cellScheme: String
+    let h3Cell: Int64?
+    let h3Resolution: Int?
     let county: String?
     let zone: String?
     let fireZone: String?
-    let installationId: String
     let apnsDeviceToken: String
+    let installationId: String
+    let source: String
+    let auth: String
+    let appVersion: String
+    let buildNumber: String
+    let platform: String
+    let osVersion: String
+    let apnsEnvironment: String
+    
 }
 
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
@@ -159,16 +172,41 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         let regionContext = await gridRegionContextProvider()
         let installationId = await installationIdProvider()
         let payload = LocationSnapshotPushPayload(
-            timestamp: snapshot.timestamp,
-            accuracy: snapshot.accuracy,
-            placemarkSummary: snapshot.placemarkSummary,
+            capturedAt: snapshot.timestamp,
+            locationAgeSeconds: Date().timeIntervalSince(snapshot.timestamp),
+            horizontalAccuracyMeters: snapshot.accuracy,
+            cellScheme: snapshot.h3Cell == nil ? "ugc-only" : "h3",
             h3Cell: snapshot.h3Cell,
+            h3Resolution: 8, // TODO: Make this global someday
             county: regionContext?.county,
             zone: regionContext?.zone,
             fireZone: regionContext?.fireZone,
+            apnsDeviceToken: apnsTokenProvider(),
             installationId: installationId,
-            apnsDeviceToken: apnsTokenProvider()
+            source: "unknown",
+            auth: {
+                switch CLLocationManager().authorizationStatus {
+                case .authorizedAlways: return "always"
+                case .authorizedWhenInUse: return "whenInUse"
+                case .denied: return "denied"
+                case .restricted: return "restricted"
+                case .notDetermined: return "notDetermined"
+                @unknown default: return "unknown"
+                }
+            }(),
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            buildNumber: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
+            platform: "iOS",
+            osVersion: await UIDevice.current.systemVersion,
+            apnsEnvironment: {
+                #if DEBUG
+                return "sandbox"
+                #else
+                return "prod"
+                #endif
+            }()
         )
+
         queue.append(payload)
 
         guard !isProcessing else { return }
@@ -362,7 +400,7 @@ actor LocationProvider {
         }
     }
     
-    private func resolveH3Cell(for coord: CLLocationCoordinate2D) -> String? {
+    private func resolveH3Cell(for coord: CLLocationCoordinate2D) -> Int64? {
         do {
             return try hasher.h3Cell(for: coord)
         } catch {

@@ -5,6 +5,8 @@ import Testing
 
 @Suite("LocationProvider")
 struct LocationProviderTests {
+    private let sampleH3Cell: Int64 = 0x872681364FFFFFF
+
     private indirect enum GeocoderMode {
         case success(String)
         case failure(Error)
@@ -29,13 +31,13 @@ struct LocationProviderTests {
     
     private struct MockHasher: LocationHashing {
         enum Mode {
-            case success(String)
+            case success(Int64)
             case failure(Error)
         }
         
         let mode: Mode
         
-        func h3Cell(for coord: CLLocationCoordinate2D) throws -> String {
+        func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64 {
             switch mode {
             case .success(let value):
                 return value
@@ -132,14 +134,14 @@ struct LocationProviderTests {
     func send_storesH3Hash() async throws {
         let provider = LocationProvider(
             geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
-            hasher: MockHasher(mode: .success("872681364ffffff"))
+            hasher: MockHasher(mode: .success(sampleH3Cell))
         )
         let now = Date()
         
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
         
         let snapshot = try #require(await provider.snapshot())
-        #expect(snapshot.h3Cell == "872681364ffffff")
+        #expect(snapshot.h3Cell == sampleH3Cell)
     }
     
     @Test("send pushes accepted snapshot to location snapshot pusher")
@@ -147,7 +149,7 @@ struct LocationProviderTests {
         let pusher = MockSnapshotPusher()
         let provider = LocationProvider(
             geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
-            hasher: MockHasher(mode: .success("872681364ffffff")),
+            hasher: MockHasher(mode: .success(sampleH3Cell)),
             snapshotPusher: pusher
         )
         let now = Date()
@@ -158,7 +160,7 @@ struct LocationProviderTests {
         let first = try #require(pushed.first)
         #expect(pushed.count == 1)
         #expect(first.timestamp == now)
-        #expect(first.h3Cell == "872681364ffffff")
+        #expect(first.h3Cell == sampleH3Cell)
     }
 
     @Test("snapshot pusher payload includes timestamp and apns token")
@@ -180,20 +182,20 @@ struct LocationProviderTests {
             timestamp: ts,
             accuracy: 42,
             placemarkSummary: "OKC, OK",
-            h3Cell: "872681364ffffff"
+            h3Cell: sampleH3Cell
         )
         
         await pusher.enqueue(snap)
         
         let payloads = await uploader.uploadedPayloads()
         let payload = try #require(payloads.first)
-        #expect(payload.timestamp == ts)
+        #expect(payload.capturedAt == ts)
         #expect(payload.installationId == "install-abc-123")
         #expect(payload.apnsDeviceToken == "apns-token-123")
         #expect(payload.county == "OKC109")
         #expect(payload.zone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
-        #expect(payload.h3Cell == "872681364ffffff")
+        #expect(payload.h3Cell == sampleH3Cell)
     }
 
     private func waitForSnapshots(
