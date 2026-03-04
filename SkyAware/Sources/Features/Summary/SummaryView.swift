@@ -39,10 +39,9 @@ struct SummaryView: View {
             //       danger
             FireWeatherRailView(level: fireRisk ?? .clear)
                 .placeholder(fireRisk == nil)
-            AtmosphereRailView(weather: weather, level: .clear)
-//                    .placeholder(isWeatherLoading)
-                .opacity(isWeatherLoading ? 1 : 0)
-                .allowsHitTesting(false)
+            AtmosphereRailView(weather: weather)
+//                .placeholder(isWeatherLoading)
+                .allowsHitTesting(!isWeatherLoading)
                 .animation(.snappy, value: isWeatherLoading)
         }
     }

@@ -9,8 +9,8 @@ import SwiftUI
 
 struct AtmosphereRailView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @State private var activeTip: AtmosphereTip?
     let weather: SummaryWeather?
-    let level: FireRiskLevel
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -30,6 +30,10 @@ struct AtmosphereRailView: View {
     private var formattedDewPoint: String? {
         guard let weather else { return nil }
         return formatTemperature(weather.dewPoint)
+    }
+
+    private var dewPointFahrenheit: Double? {
+        weather?.dewPoint.converted(to: .fahrenheit).value
     }
 
     private var formattedHumidity: String? {
@@ -75,20 +79,28 @@ struct AtmosphereRailView: View {
 
     private var metrics: [AtmosphereMetric] {
         [
-            .init(title: "Dew Point",
+            .init(kind: .dewPoint,
+                  title: "Dew Point",
                   value: formattedDewPoint ?? "—",
+                  numericValue: dewPointFahrenheit,
                   detail: nil,
                   symbol: "thermometer.sun"),
-            .init(title: "Humidity",
+            .init(kind: .humidity,
+                  title: "Humidity",
                   value: formattedHumidity ?? "—",
+                  numericValue: nil,
                   detail: nil,
                   symbol: "humidity.fill"),
-            .init(title: "Wind",
+            .init(kind: .wind,
+                  title: "Wind",
                   value: formattedWind ?? "—",
+                  numericValue: nil,
                   detail: weather?.windDirection ?? "Direction unavailable",
                   symbol: "wind"),
-            .init(title: "Pressure",
+            .init(kind: .pressure,
+                  title: "Pressure",
                   value: formattedPressure ?? "—",
+                  numericValue: nil,
                   detail: pressureTrendLabel,
                   symbol: pressureTrendSymbol)
         ]
@@ -142,19 +154,16 @@ struct AtmosphereRailView: View {
 
     @ViewBuilder
     private var metricGrid: some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 10) {
-                metricGridContent
-            }
-        } else {
-            metricGridContent
-        }
+        metricGridContent
     }
 
     private var metricGridContent: some View {
         LazyVGrid(columns: metricColumns, spacing: 8) {
             ForEach(metrics) { metric in
-                AtmosphereMetricTile(metric: metric)
+                AtmosphereMetricTile(
+                    metric: metric,
+                    activeTip: $activeTip
+                )
             }
         }
         .padding(.horizontal, 4)
@@ -162,19 +171,96 @@ struct AtmosphereRailView: View {
     }
 }
 
+private enum AtmosphereMetricKind: String, Identifiable {
+    case dewPoint
+    case humidity
+    case wind
+    case pressure
+
+    var id: String { rawValue }
+}
+
 private struct AtmosphereMetric: Identifiable {
-    var id: String { title }
+    var id: AtmosphereMetricKind { kind }
+    let kind: AtmosphereMetricKind
     let title: String
     let value: String
+    let numericValue: Double?
     let detail: String?
     let symbol: String
 }
 
-private struct AtmosphereMetricTile: View {
-    let metric: AtmosphereMetric
-    @Environment(\.colorScheme) private var colorScheme
+private enum AtmosphereTip: String, Identifiable {
+    case dewPoint
+
+    var id: String { rawValue }
+}
+
+private struct DewPointTipView: View {
+    let currentValue: String
+    let dewPointF: Double?
+
+    private var dewPointHint: String? {
+        guard let dp = dewPointF else { return nil }
+
+        switch dp {
+        case ..<55:
+            return "The air is fairly dry. Strong thunderstorms are less likely."
+        case 55..<60:
+            return "Moisture is increasing, but still somewhat limited for stronger storms."
+        case 60..<65:
+            return "Moisture levels are supportive of developing thunderstorms."
+        case 65..<70:
+            return "Moisture is high and can support stronger storms."
+        default:
+            return "Very humid air. Storms can become intense if other conditions align."
+        }
+    }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Dew Point")
+                .font(.headline.weight(.semibold))
+
+            Text("Dew point measures how much moisture is in the air. Moisture acts as fuel for thunderstorms.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if currentValue != "—" {
+                Text("Current value: \(currentValue)")
+                    .font(.subheadline.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let hint = dewPointHint {
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("When dew points climb into the mid‑60s°F or higher, storms can grow stronger and the potential for severe weather increases.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(width: 360, alignment: .leading)
+    }
+}
+
+private struct AtmosphereMetricTile: View {
+    let metric: AtmosphereMetric
+    @Binding var activeTip: AtmosphereTip?
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var isDewPoint: Bool {
+        metric.kind == .dewPoint
+    }
+
+    private var tileContent: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
                 Image(systemName: metric.symbol)
@@ -184,6 +270,7 @@ private struct AtmosphereMetricTile: View {
                     .frame(width: 24, height: 18, alignment: .leading)
                     .padding(.leading, 2)
                     .layoutPriority(1)
+
                 Text(metric.title)
                     .font(.footnote.weight(.semibold))
                     .lineLimit(1)
@@ -193,10 +280,12 @@ private struct AtmosphereMetricTile: View {
             .foregroundStyle(.secondary)
 
             Text(metric.value)
-                .font(.callout.weight(metric.title == "Dew Point" ? .bold : .semibold))
-                .foregroundStyle(metric.title == "Dew Point"
-                                 ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
-                                 : .primary)
+                .font(.callout.weight(isDewPoint ? .bold : .semibold))
+                .foregroundStyle(
+                    isDewPoint
+                    ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
+                    : .primary
+                )
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -208,52 +297,73 @@ private struct AtmosphereMetricTile: View {
                     .lineLimit(1)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 2)
-        .padding(.vertical, 2)
+    }
+
+    var body: some View {
+        Group {
+            if isDewPoint {
+                Button {
+                    activeTip = activeTip == .dewPoint ? nil : .dewPoint
+                } label: {
+                    tileContent
+                }
+                .buttonStyle(.plain)
+                .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Dew Point \(metric.value)")
+                .accessibilityHint("Shows more detail about dew point.")
+                .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
+                    switch tip {
+                    case .dewPoint:
+                        DewPointTipView(currentValue: metric.value, dewPointF: metric.numericValue)
+                            .presentationCompactAdaptation(.popover)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 6)
+                .padding(.trailing, 4)
+                .padding(.vertical, 6)
+            } else {
+                tileContent
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 6)
+                    .padding(.trailing, 4)
+                    .padding(.vertical, 6)
+            }
+        }
     }
 }
 
 #Preview {
     VStack {
         AtmosphereRailView(weather: .init(
-            temperature: Measurement(
-                value: 37.0,
-                unit: .fahrenheit
-            ),
+            temperature: Measurement(value: 37.0, unit: .fahrenheit),
             symbolName: "sun.max",
             conditionText: "test",
             asOf: .now,
-            dewPoint: Measurement(
-                value: 45.0,
-                unit: .fahrenheit
-            ),
+            dewPoint: Measurement(value: 45.0, unit: .fahrenheit),
             humidity: 0.15,
             windSpeed: .init(value: 15.0, unit: .milesPerHour),
             windGust: nil,
             windDirection: "NNW",
             pressure: .init(value: 29.95, unit: .inchesOfMercury),
             pressureTrend: "climbing"
-        ), level: .clear)
-        AtmosphereRailView(weather: nil, level: .clear)
+        ))
+
+        AtmosphereRailView(weather: nil)
+
         AtmosphereRailView(weather: .init(
-            temperature: Measurement(
-                value: 48.0,
-                unit: .fahrenheit
-            ),
+            temperature: Measurement(value: 48.0, unit: .fahrenheit),
             symbolName: "cloud.drizzle",
             conditionText: "Scattered showers",
             asOf: .now,
-            dewPoint: Measurement(
-                value: 43.0,
-                unit: .fahrenheit
-            ),
+            dewPoint: Measurement(value: 43.0, unit: .fahrenheit),
             humidity: 0.82,
             windSpeed: .init(value: 8.0, unit: .milesPerHour),
             windGust: nil,
             windDirection: "SE",
             pressure: .init(value: 29.58, unit: .inchesOfMercury),
             pressureTrend: "falling"
-        ), level: .elevated)
+        ))
     }
 }
