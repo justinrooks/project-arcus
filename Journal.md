@@ -298,6 +298,7 @@ What changed:
   - then issuance recency (`issued`, `valid`, `expires`) for deterministic tie breaks
 - Added `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/SevereRiskRepoActiveSelectionTests.swift` with regression coverage for:
   - overlapping tornado `2%` and `5%` polygons selecting `5%`
+  - overlapping hail and wind polygons selecting the higher probability within each type
   - cross-type behavior staying intact (tornado still outranks hail per existing threat-priority rule)
 
 Aha moment:
@@ -305,6 +306,20 @@ Aha moment:
 
 Gotcha:
 Any tie in your comparator is a hidden product decision. If that tie-breaker is implicit, users eventually discover it in the weirdest edge case.
+
+### 2026-03-04: Parallel test flake from shared in-memory SwiftData containers
+
+Bug-shaped problem:
+`SevereRiskRepo` tests could fail in Xcode "run all tests" even when they passed in isolation. The root cause was shared in-memory `ModelContainer` reuse across test suites, which let concurrently running suites stomp on each other’s state.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/TestStore.swift` so `container(for:)` now returns a fresh in-memory container per call instead of caching by model key.
+
+Aha moment:
+In-memory test DB caching looks fast and harmless until parallel execution shows up. Determinism beats tiny setup savings in test infrastructure.
+
+Gotcha:
+`@Suite(.serialized)` only serializes within that suite. It does not protect you from other suites mutating the same shared store at the same time.
 
 ## 6) Engineer's Wisdom
 

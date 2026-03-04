@@ -108,6 +108,90 @@ struct SevereRiskRepoActiveSelectionTests {
         let active = try await repo.active(asOf: asOf, for: point)
         #expect(active == .tornado(probability: 0.02))
     }
+
+    @Test("Overlapping hail polygons prefer the higher hail probability")
+    func overlappingHailPolygonsPreferHigherProbability() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        let geometry = makeMultiPolygonGeometry(squareAtLonLat: (-100.0, 40.0), size: 1.0)
+        let props5 = makeProperties(
+            label: "0.05",
+            label2: "5% Hail Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 5
+        )
+        let props30 = makeProperties(
+            label: "0.30",
+            label2: "30% Hail Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 30
+        )
+
+        let hailData = try JSONEncoder().encode(
+            makeFeatureCollection(
+                features: [
+                    makeFeature(properties: props5, geometry: geometry),
+                    makeFeature(properties: props30, geometry: geometry)
+                ]
+            )
+        )
+        let mock = MultiProductMockClient(geoJsonByProduct: [.hail: hailData])
+
+        try await repo.refreshHailRisk(using: mock)
+
+        let asOf = makeUTCDate(2025, 9, 20, 1, 0)
+        let point = CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        let active = try await repo.active(asOf: asOf, for: point)
+        #expect(active == .hail(probability: 0.30))
+    }
+
+    @Test("Overlapping wind polygons prefer the higher wind probability")
+    func overlappingWindPolygonsPreferHigherProbability() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        let geometry = makeMultiPolygonGeometry(squareAtLonLat: (-100.0, 40.0), size: 1.0)
+        let props5 = makeProperties(
+            label: "0.05",
+            label2: "5% Wind Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 5
+        )
+        let props15 = makeProperties(
+            label: "0.15",
+            label2: "15% Wind Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 15
+        )
+
+        let windData = try JSONEncoder().encode(
+            makeFeatureCollection(
+                features: [
+                    makeFeature(properties: props5, geometry: geometry),
+                    makeFeature(properties: props15, geometry: geometry)
+                ]
+            )
+        )
+        let mock = MultiProductMockClient(geoJsonByProduct: [.wind: windData])
+
+        try await repo.refreshWindRisk(using: mock)
+
+        let asOf = makeUTCDate(2025, 9, 20, 1, 0)
+        let point = CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        let active = try await repo.active(asOf: asOf, for: point)
+        #expect(active == .wind(probability: 0.15))
+    }
 }
 
 private func makeFeatureCollection(features: [GeoJSONFeature]) -> GeoJSONFeatureCollection {

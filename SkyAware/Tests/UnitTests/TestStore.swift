@@ -3,18 +3,12 @@ import SwiftData
 
 @MainActor
 enum TestStore {
-    private static var containers: [String: ModelContainer] = [:]
-
     static func container(for models: [any PersistentModel.Type]) throws -> ModelContainer {
-        let key = models.map { String(describing: $0) }.sorted().joined(separator: "+")
-        if let existing = containers[key] {
-            return existing
-        }
         let schema = Schema(models)
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: config)
-        containers[key] = container
-        return container
+        // Return a fresh container per test call to prevent cross-suite state bleed
+        // when Swift Testing executes suites in parallel.
+        return try ModelContainer(for: schema, configurations: config)
     }
 
     static func reset<T: PersistentModel>(_ type: T.Type, in container: ModelContainer) throws {
