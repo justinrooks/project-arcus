@@ -89,6 +89,10 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Unknown polygon warning flood fix**: map style resolution always evaluated fallback parsing first, which emitted “unknown title” warnings even when SPC `fill/stroke` overrides were valid. We now short-circuit when both overrides exist and only emit unknown fallback logs at debug level.
 - **Legend CIG suppression hardening**: severe legend rows now filter out both explicit CIG/intensity entries and `0%` severe placeholders (the current intensity artifact shape in feed data), with filtering applied in both `MapScreenView` (legend input) and `MapLegendView` (render-time guard).
 - **CIG stacking order fix**: intensity overlays are now explicitly sorted for draw order so overlapping regions render `CIG3` on top of `CIG2` on top of `CIG1` (highest severity always visually dominant).
+- **Legend hatching explainer**: the existing bottom-right map legend now includes a second mini-section with a hatch swatch plus plain-language copy (`Hatching` / `Stronger storms possible`), so texture semantics are explained in place.
+- **Shared hatch token usage**: the new legend swatch reads from `HatchStyle.default` (same style token used by `RiskPolygonRenderer`) so angle/spacing/line width/opacity stay consistent between map overlays and legend preview.
+- **Legend hatching visibility wiring fix**: `MapLegend` now relies on selected severe-risk input that still contains intensity rows (while continuing to hide intensity rows from probability chips). This restored hatch explainer visibility when CIG overlays are present for the active severe layer.
+- **Cleanup**: removed stale `isCigOrZeroPercent` helper from `MapScreenView` after shifting filtering responsibility to `MapLegend`.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.

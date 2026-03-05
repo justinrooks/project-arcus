@@ -25,6 +25,7 @@ struct HatchStyle: Hashable, Sendable {
         switch level {
         case 1:
             adjusted.spacing *= 1.15
+            adjusted.angleDegrees = 0
         case 3:
             adjusted.spacing *= 0.90
         default:

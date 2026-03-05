@@ -126,7 +126,6 @@ struct MapScreenView: View {
     private func severeRisksForType(_ type: ThreatType) -> [SevereRiskShapeDTO] {
         severeRisks
             .filter { $0.type == type }
-            .filter { !$0.isCigOrZeroPercent }
             .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
     }
     
@@ -245,20 +244,6 @@ struct MapScreenView: View {
 
         activeOverlays = probabilityOverlays + orderedIntensityOverlays
         selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
-    }
-}
-
-private extension SevereRiskShapeDTO {
-    var isCigOrZeroPercent: Bool {
-        if intensityLevel != nil {
-            return true
-        }
-
-        if case .percent(let value) = probabilities, value <= 0 {
-            return true
-        }
-
-        return false
     }
 }
 

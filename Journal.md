@@ -417,6 +417,34 @@ What changed:
 Aha moment:
 Trait-driven dynamic colors are the safer bridge here: the system gives you appearance context at resolve-time, so you don’t need to reach for global UI state.
 
+### 2026-03-05: Legend hatch explainer + shared swatch style
+
+Bug-shaped problem:
+The map gained procedural hatching, but the legend only explained probability colors. Users had no in-context explanation for what texture meant.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapLegendView.swift` to add a second mini-section beneath severe probability rows.
+- Added a compact `HatchSwatchView` and explanatory copy:
+  - `Hatching`
+  - `Stronger storms possible`
+- Wired the swatch to `HatchStyle.default` so legend texture angle/spacing/line width/opacity stay aligned with map hatching tokens.
+
+Aha moment:
+Legends are product affordances, not decoration. If a map uses a second visual channel (texture), the legend needs to decode it where the decision happens.
+
+### 2026-03-05: Legend hatching visibility wiring fix
+
+Bug-shaped problem:
+After legend refactors, the hatching explainer row stopped showing even when CIG intensity overlays were active.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapScreenView.swift` so selected severe legend data includes intensity rows for the active threat type.
+- Kept probability row filtering inside the legend itself, so UI still hides CIG rows but can correctly detect `hasHatching`.
+- Removed stale `isCigOrZeroPercent` helper from `MapScreenView` after the wiring change.
+
+Aha moment:
+If a child view derives feature flags from incoming data, upstream filtering can silently disable valid UI states.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

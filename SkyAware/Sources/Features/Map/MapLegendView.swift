@@ -5,6 +5,10 @@ struct MapLegend: View {
     let severeRisks: [SevereRiskShapeDTO]?
     let fireRisks: [FireRiskDTO]?
 
+    private var hasHatching: Bool {
+        (severeRisks ?? []).contains { $0.intensityLevel != nil }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             switch layer {
@@ -36,10 +40,20 @@ struct MapLegend: View {
                 ForEach(risks, id: \.title) { risk in
                     SevereLegendRow(layer: layer, risk: risk)
                 }
+
+                if hasHatching && !risks.isEmpty {
+                    Divider()
+                        .overlay(.secondary.opacity(0.25))
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+
+                    HatchLegendRow(hatchStyle: .default)
+                }
             }
         }
         .padding(16)
         .frame(minWidth: 144, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .cardBackground(
             cornerRadius: SkyAwareRadius.row,
             shadowOpacity: 0.10,
@@ -204,6 +218,61 @@ private struct FireLegendRow: View {
             }
             return "Level \(risk.riskLevel)"
         }
+    }
+}
+
+private struct HatchLegendRow: View {
+    let hatchStyle: HatchStyle //= HatchStyle.default
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            HatchSwatchView(style: hatchStyle)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hatching")
+                    .font(.caption.weight(.semibold))
+
+                Text("Stronger storms possible")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Hatching. Stronger storms possible.")
+    }
+}
+
+private struct HatchSwatchView: View {
+    let style: HatchStyle
+
+    var body: some View {
+        let swatchShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+
+        Canvas { context, size in
+            let spacing = CGFloat(style.spacing)
+            let lineWidth = CGFloat(style.lineWidth)
+            let angle = Angle.degrees(style.angleDegrees)
+
+            context.opacity = style.opacity * 0.85
+            context.translateBy(x: size.width / 2, y: size.height / 2)
+            context.rotate(by: angle)
+
+            let extent = max(size.width, size.height) * 2
+            var y = -extent
+            while y <= extent {
+                var path = Path()
+                path.move(to: CGPoint(x: -extent, y: y))
+                path.addLine(to: CGPoint(x: extent, y: y))
+                context.stroke(path, with: .color(.primary.opacity(0.55)), lineWidth: lineWidth)
+                y += spacing
+            }
+        }
+        .drawingGroup()
+        .frame(width: 24, height: 16)
+        .background(.thinMaterial, in: swatchShape)
+        .overlay(swatchShape.stroke(.primary.opacity(0.12), lineWidth: 1))
+        .clipShape(swatchShape)
+        .accessibilityHidden(true)
     }
 }
 
