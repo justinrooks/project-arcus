@@ -137,11 +137,16 @@ actor SevereRiskRepo {
         )
 
         // Keep only the freshest record per type + probability bucket.
+        // CIG overlays are bucketed independently so they are not collapsed into percent(0) buckets.
         let risks = try modelContext.fetch(desc)
         var mostRecentByBucket: [SevereRiskBucket: SevereRisk] = [:]
 
         for risk in risks {
-            let bucket = SevereRiskBucket(type: risk.type, probability: risk.probability)
+            let bucket = SevereRiskBucket(
+                type: risk.type,
+                probability: risk.probability,
+                intensityLevel: SevereRiskShapeDTO.intensityLevel(from: risk.label ?? "")
+            )
             if let current = mostRecentByBucket[bucket] {
                 if isMoreRecent(risk, than: current) {
                     mostRecentByBucket[bucket] = risk
@@ -160,7 +165,8 @@ actor SevereRiskRepo {
                     probabilities: data.probability,
                     stroke: data.stroke,
                     fill: data.fill,
-                    polygons: data.polygons
+                    polygons: data.polygons,
+                    label: data.label ?? ""
                 )
             )
         }
@@ -272,4 +278,5 @@ actor SevereRiskRepo {
 private struct SevereRiskBucket: Hashable {
     let type: ThreatType
     let probability: ThreatProbability
+    let intensityLevel: Int?
 }

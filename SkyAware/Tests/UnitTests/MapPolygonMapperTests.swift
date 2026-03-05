@@ -141,6 +141,32 @@ struct MapPolygonMapperTests {
         #expect(metadata?.fillHex == "#FEDCBA")
     }
 
+    @Test("Severe CIG polygons include encoded intensity metadata")
+    func severePolygons_includeCigMetadata() {
+        let severeRisks: [SevereRiskShapeDTO] = [
+            SevereRiskShapeDTO(
+                type: .tornado,
+                probabilities: .percent(0),
+                stroke: "#654321",
+                fill: "#FEDCBA",
+                polygons: [makeGeoPolygon(title: "15% Tornado Risk")],
+                label: "CIG1"
+            )
+        ]
+
+        let result = mapper.polygons(
+            for: .tornado,
+            stormRisk: [],
+            severeRisks: severeRisks,
+            mesos: [],
+            fires: []
+        )
+
+        #expect(result.polygons.count == 1)
+        let metadata = StormRiskPolygonStyleMetadata.decode(from: result.polygons.first?.subtitle)
+        #expect(metadata?.cigLevel == 1)
+    }
+
     @Test("Meso polygons are titled MESO for consistent map styling")
     func mesoPolygons_useMesoTitle() throws {
         let mesos: [MdDTO] = [

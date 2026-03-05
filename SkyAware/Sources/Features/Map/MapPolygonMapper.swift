@@ -126,7 +126,8 @@ struct MapPolygonMapper {
                 mkPolygon.title = polygon.title
                 mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
                     fillHex: severe.fill,
-                    strokeHex: severe.stroke
+                    strokeHex: severe.stroke,
+                    cigLevel: severe.intensityLevel
                 ).encoded
                 return mkPolygon
             }

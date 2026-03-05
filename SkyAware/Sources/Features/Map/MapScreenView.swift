@@ -27,12 +27,13 @@ struct MapScreenView: View {
     @State private var selectedSevereRisks: [SevereRiskShapeDTO]? = nil
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
+    @State private var activeOverlays: [MKOverlay] = []
     @State private var snap: LocationSnapshot?
     @Namespace private var layerNamespace
     
     var body: some View {
         ZStack {
-            MapCanvasView(polygons: activePolygons, coordinates: snap?.coordinates)
+            MapCanvasView(polygons: activePolygons, overlays: activeOverlays, coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.all)
             
             VStack(alignment: .trailing) {
@@ -202,13 +203,38 @@ struct MapScreenView: View {
 
     @MainActor
     private func rebuildMapState() {
-        activePolygons = polygonMapper.polygons(
+        let mappedPolygons = polygonMapper.polygons(
             for: selected,
             stormRisk: stormRisk,
             severeRisks: severeRisks,
             mesos: mesos,
             fires: fireRisk
         )
+        activePolygons = mappedPolygons
+
+        var probabilityOverlays: [MKOverlay] = []
+        var intensityOverlays: [MKOverlay] = []
+        probabilityOverlays.reserveCapacity(mappedPolygons.polygons.count)
+
+        for polygon in mappedPolygons.polygons {
+            let metadata = StormRiskPolygonStyleMetadata.decode(from: polygon.subtitle)
+            if let cigLevel = metadata?.cigLevel {
+                let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
+                intensityOverlays.append(
+                    RiskPolygonOverlay.intensity(
+                        from: polygon,
+                        level: cigLevel,
+                        strokeColor: style.stroke,
+                        fillColor: style.fill
+                    )
+                )
+            } else {
+                probabilityOverlays.append(RiskPolygonOverlay.probability(from: polygon))
+            }
+        }
+
+        // Draw intensity overlays after probability overlays so hatch stays visible.
+        activeOverlays = probabilityOverlays + intensityOverlays
         selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
     }
 }

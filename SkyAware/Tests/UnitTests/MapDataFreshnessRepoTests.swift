@@ -200,6 +200,96 @@ struct MapDataFreshnessRepoTests {
         let significant15 = results.first { $0.type == .tornado && $0.probabilities == .significant(15) }
         #expect(significant15?.fill == "#330000")
     }
+
+    @Test("Severe map keeps separate CIG intensity buckets")
+    func severeMapKeepsSeparateCigBuckets() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+
+        let repo = SevereRiskRepo(modelContainer: container)
+        let asOf = makeUTCDate(2026, 3, 1, 12, 0)
+        let valid = makeUTCDate(2026, 3, 1, 7, 0)
+        let expires = makeUTCDate(2026, 3, 1, 23, 0)
+        let issue = makeUTCDate(2026, 3, 1, 11, 0)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                SevereRisk(
+                    type: .tornado,
+                    probability: .percent(0),
+                    threatLevel: .tornado(probability: 0),
+                    issued: issue,
+                    valid: valid,
+                    expires: expires,
+                    dn: 1,
+                    stroke: "#AA0000",
+                    fill: "#110000",
+                    polygons: [],
+                    label: "CIG1"
+                )
+            )
+            context.insert(
+                SevereRisk(
+                    type: .tornado,
+                    probability: .percent(0),
+                    threatLevel: .tornado(probability: 0),
+                    issued: issue,
+                    valid: valid,
+                    expires: expires,
+                    dn: 2,
+                    stroke: "#BB0000",
+                    fill: "#220000",
+                    polygons: [],
+                    label: "CIG2"
+                )
+            )
+            try context.save()
+        }
+
+        let results = try await repo.getSevereRiskShapes(asOf: asOf)
+        #expect(results.count == 2)
+        #expect(results.contains { $0.label == "CIG1" && $0.intensityLevel == 1 })
+        #expect(results.contains { $0.label == "CIG2" && $0.intensityLevel == 2 })
+    }
+
+    @Test("Severe risk key differentiates CIG label with same DN and issuance")
+    func severeRiskKeyDifferentiatesCigLabel() {
+        let issued = makeUTCDate(2026, 3, 1, 11, 0)
+        let valid = makeUTCDate(2026, 3, 1, 7, 0)
+        let expires = makeUTCDate(2026, 3, 1, 23, 0)
+
+        let base = SevereRisk(
+            type: .tornado,
+            probability: .percent(0),
+            threatLevel: .tornado(probability: 0),
+            issued: issued,
+            valid: valid,
+            expires: expires,
+            dn: 1,
+            stroke: "#AA0000",
+            fill: "#110000",
+            polygons: [],
+            label: "0.00"
+        )
+
+        let cig = SevereRisk(
+            type: .tornado,
+            probability: .percent(0),
+            threatLevel: .tornado(probability: 0),
+            issued: issued,
+            valid: valid,
+            expires: expires,
+            dn: 1,
+            stroke: "#AA0000",
+            fill: "#110000",
+            polygons: [],
+            label: "CIG1"
+        )
+
+        #expect(base.key != cig.key)
+        #expect(cig.key.hasSuffix("_CIG1"))
+    }
 }
 
 private func makeUTCDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) -> Date {

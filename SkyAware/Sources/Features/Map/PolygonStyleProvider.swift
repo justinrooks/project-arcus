@@ -30,10 +30,23 @@ enum PolygonStyleProvider {
         spcFillHex: String? = nil,
         spcStrokeHex: String? = nil
     ) -> (UIColor, UIColor) {
-        let (fallbackFill, fallbackStroke) = fallbackPolygonStyle(risk: risk, probability: probability, context: context)
-        let fill = color(fromHex: spcFillHex)
-            .map { $0.withAlphaComponent(fillAlpha(for: context)) } ?? fallbackFill
-        let stroke = color(fromHex: spcStrokeHex) ?? fallbackStroke
+        let fillOverride = color(fromHex: spcFillHex)
+            .map { $0.withAlphaComponent(fillAlpha(for: context)) }
+        let strokeOverride = color(fromHex: spcStrokeHex)
+
+        // Most SPC polygons provide explicit style tokens; avoid unnecessary fallback
+        // evaluation (and unknown-style logs) when both overrides are available.
+        if let fillOverride, let strokeOverride {
+            return (fillOverride, strokeOverride)
+        }
+
+        let (fallbackFill, fallbackStroke) = fallbackPolygonStyle(
+            risk: risk,
+            probability: probability,
+            context: context
+        )
+        let fill = fillOverride ?? fallbackFill
+        let stroke = strokeOverride ?? fallbackStroke
         return (fill, stroke)
     }
 
@@ -93,7 +106,9 @@ enum PolygonStyleProvider {
             let alpha = context == .map ? 0.3 : 0.7
             return (base.withAlphaComponent(alpha), isSignificant ? UIColor.black : base)
         default:
-            logger.warning("Unknown polygon title encountered while styling")
+            logger.debug(
+                "Using fallback polygon style for risk=\(risk, privacy: .public) probability=\(probability, privacy: .public)"
+            )
             return (UIColor.systemPink.withAlphaComponent(0.15), UIColor.systemPink)
         }
     }

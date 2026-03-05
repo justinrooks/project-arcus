@@ -321,6 +321,61 @@ In-memory test DB caching looks fast and harmless until parallel execution shows
 Gotcha:
 `@Suite(.serialized)` only serializes within that suite. It does not protect you from other suites mutating the same shared store at the same time.
 
+### 2026-03-05: Procedural CIG map hatching (texture layer, not caution tape)
+
+Bug-shaped problem:
+Intensity overlays needed to feel informative, but previous options risked visual mud in dark mode or “warning tape” stripes in light mode.
+
+What changed:
+- Added typed map overlays so map rendering can distinguish `probability` polygons from `intensity(level:)` polygons without guessing from titles.
+- Added a procedural hatch renderer that clips diagonal lines to polygon paths and scales spacing/line width by `zoomScale` for crisp output.
+- Added a zoom gate so hatch only appears at regional+ zoom; zoomed-out views stay clean.
+- Added dark-mode hatch tint logic that lifts toward near-white (instead of darkening toward black), so texture remains legible on dark basemaps.
+- Updated map overlay sync so signatures include geometry + style metadata (kind/colors/hatch recipe), avoiding stale styles and unnecessary remove/re-add churn.
+
+Aha moment:
+MapKit overlay polish is mostly math and restraint: one clip, one bounded draw pass, and enough spacing to read as texture instead of signage.
+
+Gotcha:
+Identity-only overlay comparisons break once overlays are regenerated wrappers. Signature-based diffing has to include style tokens, not just coordinates.
+
+### 2026-03-05: CIG label plumbing fix (`LABEL="CIG1"` now renders hatch)
+
+Bug-shaped problem:
+We added hatch rendering, but CIG overlays still didn’t appear because the `LABEL` value (`CIG1`) wasn’t being carried through the severe-shape map pipeline.
+
+What changed:
+- `SevereRiskShapeDTO` now preserves the raw severe label and exposes `intensityLevel` parsing from `CIG1/2/3`.
+- Severe map freshness bucketing now includes intensity level so CIG buckets don’t collapse into generic `percent(0)` buckets.
+- Severe polygon subtitle metadata now includes `cigLevel`, and map overlay assembly converts those polygons into intensity overlays drawn above base probability overlays.
+
+Aha moment:
+If your renderer logic depends on a token (`CIG1`) but your mapper strips that token, the renderer is innocent and the pipeline is guilty.
+
+### 2026-03-05: CIG persistence key collision (the “invisible overlay” sequel)
+
+Bug-shaped problem:
+Even after label plumbing worked, some CIG polygons still vanished because `SevereRisk.key` only differentiated `SIGN` labels. If a `CIG1` row shared `type + issued + dn` with a non-CIG row, one could overwrite the other at persistence time.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Models/Severe/SevereRisk.swift` key generation to include `_CIG1/_CIG2/_CIG3` suffixes (and keep `_SIGN`) when present.
+- Added regression coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/MapDataFreshnessRepoTests.swift` to verify CIG keys stay distinct for the same issuance/DN bucket.
+
+Aha moment:
+Rendering bugs can start in storage. If unique keys collapse distinct semantics, the map never gets a chance to draw what was lost.
+
+### 2026-03-05: Polygon style warning flood cleanup
+
+Bug-shaped problem:
+Console logs were flooded with “Unknown polygon title encountered while styling,” even when polygons had explicit SPC `fill/stroke` metadata and rendered correctly.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/PolygonStyleProvider.swift` to short-circuit fallback style parsing when both SPC overrides are present.
+- Downgraded unknown fallback logging from warning-level to debug-level so expected fallback cases don’t spam warning noise.
+
+Aha moment:
+If fallback is unconditional, logs become lies. Good observability starts with only evaluating fallbacks when you truly need them.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

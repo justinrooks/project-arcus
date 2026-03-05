@@ -7,10 +7,34 @@
 
 import SwiftUI
 import MapKit
+import UIKit
 
 struct MapCanvasView: UIViewRepresentable {
     let polygons: MKMultiPolygon
+    let overlays: [MKOverlay]
     let coordinates: CLLocationCoordinate2D?
+
+    init(
+        polygons: MKMultiPolygon,
+        overlays: [MKOverlay] = [],
+        coordinates: CLLocationCoordinate2D?
+    ) {
+        self.polygons = polygons
+        self.overlays = overlays
+        self.coordinates = coordinates
+    }
+
+    init(
+        polygons: [MKPolygon],
+        overlays: [MKOverlay] = [],
+        coordinates: CLLocationCoordinate2D?
+    ) {
+        self.init(
+            polygons: MKMultiPolygon(polygons),
+            overlays: overlays,
+            coordinates: coordinates
+        )
+    }
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -25,12 +49,12 @@ struct MapCanvasView: UIViewRepresentable {
             context.coordinator.lastCenteredCoordinate = coord
         }
 
-        mapView.addOverlays(polygons.polygons)
+        mapView.addOverlays(resolvedIncomingOverlays(using: context.coordinator))
         return mapView
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        let incoming = polygons.polygons
+        let incoming = resolvedIncomingOverlays(using: context.coordinator)
         if !overlaysMatchByIdentity(existing: uiView.overlays, incoming: incoming) {
             syncOverlays(on: uiView, incoming: incoming)
         }
@@ -46,27 +70,35 @@ struct MapCanvasView: UIViewRepresentable {
         MapCoordinator()
     }
 
-    private func overlaysMatchByIdentity(existing: [MKOverlay], incoming: [MKPolygon]) -> Bool {
+    private func resolvedIncomingOverlays(using coordinator: MapCoordinator) -> [MKOverlay] {
+        if !overlays.isEmpty {
+            return overlays
+        }
+
+        return polygons.polygons.map { coordinator.makeProbabilityOverlay(from: $0) }
+    }
+
+    private func overlaysMatchByIdentity(existing: [MKOverlay], incoming: [MKOverlay]) -> Bool {
         guard existing.count == incoming.count else { return false }
 
-        for (overlay, polygon) in zip(existing, incoming) {
-            guard let existingPolygon = overlay as? MKPolygon, existingPolygon === polygon else { return false }
+        for (existingOverlay, incomingOverlay) in zip(existing, incoming) {
+            guard existingOverlay === incomingOverlay else { return false }
         }
 
         return true
     }
 
-    private func syncOverlays(on mapView: MKMapView, incoming: [MKPolygon]) {
-        var existingBuckets = bucketize(polygons: mapView.overlays.compactMap { $0 as? MKPolygon })
-        var toAdd: [MKPolygon] = []
+    private func syncOverlays(on mapView: MKMapView, incoming: [MKOverlay]) {
+        var existingBuckets = bucketize(overlays: mapView.overlays)
+        var toAdd: [MKOverlay] = []
 
-        for polygon in incoming {
-            let key = polygonSignature(polygon)
+        for overlay in incoming {
+            let key = overlaySignature(overlay)
             if var bucket = existingBuckets[key], !bucket.isEmpty {
                 _ = bucket.removeLast()
                 existingBuckets[key] = bucket.isEmpty ? nil : bucket
             } else {
-                toAdd.append(polygon)
+                toAdd.append(overlay)
             }
         }
 
@@ -75,22 +107,66 @@ struct MapCanvasView: UIViewRepresentable {
         if !toAdd.isEmpty { mapView.addOverlays(toAdd) }
     }
 
-    private func bucketize(polygons: [MKPolygon]) -> [Int: [MKPolygon]] {
-        var buckets: [Int: [MKPolygon]] = [:]
-        buckets.reserveCapacity(polygons.count)
+    private func bucketize(overlays: [MKOverlay]) -> [Int: [MKOverlay]] {
+        var buckets: [Int: [MKOverlay]] = [:]
+        buckets.reserveCapacity(overlays.count)
 
-        for polygon in polygons {
-            let key = polygonSignature(polygon)
-            buckets[key, default: []].append(polygon)
+        for overlay in overlays {
+            let key = overlaySignature(overlay)
+            buckets[key, default: []].append(overlay)
         }
 
         return buckets
     }
 
-    private func polygonSignature(_ polygon: MKPolygon) -> Int {
+    private func overlaySignature(_ overlay: MKOverlay) -> Int {
         var hasher = Hasher()
-        hasher.combine(polygon.title ?? "")
-        hasher.combine(polygon.subtitle ?? "")
+
+        if let riskOverlay = overlay as? RiskPolygonOverlay {
+            hasher.combine("risk")
+            hasher.combine(polygonGeometrySignature(riskOverlay.polygon))
+            switch riskOverlay.kind {
+            case .probability:
+                hasher.combine(0)
+            case .intensity(let level):
+                hasher.combine(1)
+                hasher.combine(level)
+            }
+
+            hasher.combine(colorSignature(riskOverlay.fillColor))
+            hasher.combine(colorSignature(riskOverlay.strokeColor))
+
+            if let hatchStyle = riskOverlay.hatchStyle {
+                hasher.combine(Int((hatchStyle.angleDegrees * 100).rounded()))
+                hasher.combine(Int((hatchStyle.spacing * 100).rounded()))
+                hasher.combine(Int((hatchStyle.lineWidth * 100).rounded()))
+                hasher.combine(Int((hatchStyle.opacity * 1000).rounded()))
+            } else {
+                hasher.combine(-1)
+            }
+            return hasher.finalize()
+        }
+
+        if let polygon = overlay as? MKPolygon {
+            hasher.combine("polygon")
+            hasher.combine(polygonGeometrySignature(polygon))
+            hasher.combine(polygon.title ?? "")
+            hasher.combine(polygon.subtitle ?? "")
+            return hasher.finalize()
+        }
+
+        hasher.combine("overlay")
+        hasher.combine(Int((overlay.coordinate.latitude * 100_000).rounded()))
+        hasher.combine(Int((overlay.coordinate.longitude * 100_000).rounded()))
+        hasher.combine(Int((overlay.boundingMapRect.origin.x / 100).rounded()))
+        hasher.combine(Int((overlay.boundingMapRect.origin.y / 100).rounded()))
+        hasher.combine(Int((overlay.boundingMapRect.size.width / 100).rounded()))
+        hasher.combine(Int((overlay.boundingMapRect.size.height / 100).rounded()))
+        return hasher.finalize()
+    }
+
+    private func polygonGeometrySignature(_ polygon: MKPolygon) -> Int {
+        var hasher = Hasher()
         hasher.combine(polygon.pointCount)
 
         var coordinates = [CLLocationCoordinate2D](
@@ -104,6 +180,47 @@ struct MapCanvasView: UIViewRepresentable {
             hasher.combine(Int((coordinate.longitude * 100_000).rounded()))
         }
 
+        if let interiorPolygons = polygon.interiorPolygons {
+            hasher.combine(interiorPolygons.count)
+            for interior in interiorPolygons {
+                hasher.combine(interior.pointCount)
+
+                var interiorCoordinates = [CLLocationCoordinate2D](
+                    repeating: CLLocationCoordinate2D(latitude: 0, longitude: 0),
+                    count: interior.pointCount
+                )
+                interior.getCoordinates(
+                    &interiorCoordinates,
+                    range: NSRange(location: 0, length: interior.pointCount)
+                )
+
+                for coordinate in interiorCoordinates {
+                    hasher.combine(Int((coordinate.latitude * 100_000).rounded()))
+                    hasher.combine(Int((coordinate.longitude * 100_000).rounded()))
+                }
+            }
+        } else {
+            hasher.combine(0)
+        }
+
+        return hasher.finalize()
+    }
+
+    private func colorSignature(_ color: UIColor) -> Int {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        guard color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+            return Int((color.cgColor.alpha * 1000).rounded())
+        }
+
+        var hasher = Hasher()
+        hasher.combine(Int((red * 1000).rounded()))
+        hasher.combine(Int((green * 1000).rounded()))
+        hasher.combine(Int((blue * 1000).rounded()))
+        hasher.combine(Int((alpha * 1000).rounded()))
         return hasher.finalize()
     }
 }

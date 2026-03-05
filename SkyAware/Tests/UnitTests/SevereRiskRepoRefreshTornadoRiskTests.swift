@@ -123,6 +123,36 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         #expect(shapes.first?.fill == "#123456")
         #expect(shapes.first?.probabilities == .percent(0.10))
     }
+
+    @Test("CIG label is preserved and exposes intensity level")
+    func cigLabel_isPreservedInShapeDTO() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        let props = makeProperties(
+            label: "CIG1",
+            label2: "15% Tornado Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 15,
+            stroke: "#AA0000",
+            fill: "#220000"
+        )
+        let geom = makeMultiPolygonGeometry(squareAtLonLat: (-100.0, 40.0), size: 1.0)
+        let feature = makeFeature(properties: props, geometry: geom)
+        let data = try JSONEncoder().encode(makeFeatureCollection(features: [feature]))
+        let mock = MockClient(mode: .success(data))
+
+        try await repo.refreshTornadoRisk(using: mock)
+        let activeAt = Date(timeIntervalSince1970: 1_758_326_400) // 2025-09-20 01:00:00 UTC
+        let shapes = try await repo.getSevereRiskShapes(asOf: activeAt)
+
+        #expect(shapes.count == 1)
+        #expect(shapes.first?.label == "CIG1")
+        #expect(shapes.first?.intensityLevel == 1)
+    }
 }
 
 // MARK: - Test JSON Builders
