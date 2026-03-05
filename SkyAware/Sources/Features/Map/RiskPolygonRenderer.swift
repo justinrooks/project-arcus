@@ -143,11 +143,15 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
     }
 
     private func resolvedHatchColor() -> UIColor {
-        switch UIScreen.main.traitCollection.userInterfaceStyle {
-        case .dark:
-            return riskOverlay.strokeColor.mixed(with: .white, amount: 0.78)
-        default:
-            return riskOverlay.strokeColor.mixed(with: .black, amount: 0.20)
+        let strokeColor = riskOverlay.strokeColor
+        return UIColor { traitCollection in
+            let resolvedStroke = strokeColor.resolvedColor(with: traitCollection)
+            switch traitCollection.userInterfaceStyle {
+            case .dark:
+                return resolvedStroke.mixed(with: .white, amount: 0.78)
+            default:
+                return resolvedStroke.mixed(with: .black, amount: 0.20)
+            }
         }
     }
 }

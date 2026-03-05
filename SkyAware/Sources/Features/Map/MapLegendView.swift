@@ -58,7 +58,17 @@ struct MapLegend: View {
     }
 
     private var severeLevels: [SevereRiskShapeDTO] {
-        let source = severeRisks ?? []
+        // CIG overlays are map texture-only for now; hide them from legend entries.
+        // Also hide 0% severe rows (current feed representation for intensity-only data).
+        let source = (severeRisks ?? []).filter { risk in
+            if risk.intensityLevel != nil {
+                return false
+            }
+            if case .percent(let value) = risk.probabilities, value <= 0 {
+                return false
+            }
+            return true
+        }
         let dedupedByTitle = Dictionary(
             source.map { ($0.title, $0) },
             uniquingKeysWith: { lhs, _ in lhs }

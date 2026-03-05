@@ -376,6 +376,47 @@ What changed:
 Aha moment:
 If fallback is unconditional, logs become lies. Good observability starts with only evaluating fallbacks when you truly need them.
 
+### 2026-03-05: Legend cleanup for CIG/intensity rows
+
+Bug-shaped problem:
+Even after initial CIG filtering, intensity artifacts could still show in legend as `0%` severe entries depending on feed shape.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapScreenView.swift` to filter severe legend candidates by excluding intensity rows and zero-percent entries.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapLegendView.swift` with the same defensive filter so CIG/intensity rows are suppressed at render time too.
+
+Aha moment:
+For UI cleanup, put guardrails at both the data ingress and the rendering boundary; one filter is brittle, two are resilient.
+
+### 2026-03-05: Explicit CIG layer precedence
+
+Bug-shaped problem:
+When multiple intensity overlays overlap (e.g., `CIG1` with nested `CIG2/CIG3`), visual priority depended on incidental polygon order.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapScreenView.swift` to sort intensity overlays by level before rendering so draw order is deterministic:
+  - bottom: `CIG1`
+  - middle: `CIG2`
+  - top: `CIG3`
+
+Aha moment:
+In map rendering, “severity” has to be encoded as draw order, not just color tokens.
+
+### 2026-03-05: Swift 6 concurrency cleanup in `RiskPolygonRenderer`
+
+Bug-shaped problem:
+`RiskPolygonRenderer` was reading `UIScreen.main.traitCollection` while drawing hatch strokes. Under strict Swift 6 concurrency, that crosses into main-actor isolated UI API from a nonisolated renderer context and triggers warnings.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/RiskPolygonRenderer.swift` to build hatch color with `UIColor(dynamicProvider:)` and trait-based resolution.
+- Removed direct `UIScreen.main` access from rendering code.
+- Kept the same visual intent:
+  - dark mode still lifts hatch toward near-white
+  - light mode still darkens hatch slightly toward black
+
+Aha moment:
+Trait-driven dynamic colors are the safer bridge here: the system gives you appearance context at resolve-time, so you don’t need to reach for global UI state.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

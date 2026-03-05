@@ -126,6 +126,7 @@ struct MapScreenView: View {
     private func severeRisksForType(_ type: ThreatType) -> [SevereRiskShapeDTO] {
         severeRisks
             .filter { $0.type == type }
+            .filter { !$0.isCigOrZeroPercent }
             .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
     }
     
@@ -213,19 +214,22 @@ struct MapScreenView: View {
         activePolygons = mappedPolygons
 
         var probabilityOverlays: [MKOverlay] = []
-        var intensityOverlays: [MKOverlay] = []
+        var intensityOverlaysByLevel: [(level: Int, overlay: MKOverlay)] = []
         probabilityOverlays.reserveCapacity(mappedPolygons.polygons.count)
 
         for polygon in mappedPolygons.polygons {
             let metadata = StormRiskPolygonStyleMetadata.decode(from: polygon.subtitle)
             if let cigLevel = metadata?.cigLevel {
                 let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
-                intensityOverlays.append(
-                    RiskPolygonOverlay.intensity(
+                intensityOverlaysByLevel.append(
+                    (
+                        level: cigLevel,
+                        overlay: RiskPolygonOverlay.intensity(
                         from: polygon,
                         level: cigLevel,
                         strokeColor: style.stroke,
                         fillColor: style.fill
+                    )
                     )
                 )
             } else {
@@ -233,9 +237,28 @@ struct MapScreenView: View {
             }
         }
 
-        // Draw intensity overlays after probability overlays so hatch stays visible.
-        activeOverlays = probabilityOverlays + intensityOverlays
+        // Draw intensity overlays after probabilities, with higher CIG drawn last (on top):
+        // bottom -> top = CIG1, CIG2, CIG3.
+        let orderedIntensityOverlays = intensityOverlaysByLevel
+            .sorted { $0.level < $1.level }
+            .map(\.overlay)
+
+        activeOverlays = probabilityOverlays + orderedIntensityOverlays
         selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
+    }
+}
+
+private extension SevereRiskShapeDTO {
+    var isCigOrZeroPercent: Bool {
+        if intensityLevel != nil {
+            return true
+        }
+
+        if case .percent(let value) = probabilities, value <= 0 {
+            return true
+        }
+
+        return false
     }
 }
 

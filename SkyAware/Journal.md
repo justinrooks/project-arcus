@@ -87,6 +87,8 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **CIG label plumbing fix (`LABEL=\"CIG1\"`)**: hatch rendering was wired, but severe DTOs dropped the raw `LABEL` token on the path to map overlays. We now preserve that label, derive `intensityLevel` from it, carry it in polygon subtitle metadata, and build intensity overlays after probability overlays so CIG hatch actually shows up on-map.
 - **CIG persistence key collision fix**: CIG rows could still disappear if they shared `type + issued + dn` with non-CIG rows, because the unique `SevereRisk.key` only special-cased `SIGN`. We now suffix keys for `CIG1/2/3` as well, so CIG overlays survive persistence and reach the map renderer.
 - **Unknown polygon warning flood fix**: map style resolution always evaluated fallback parsing first, which emitted “unknown title” warnings even when SPC `fill/stroke` overrides were valid. We now short-circuit when both overrides exist and only emit unknown fallback logs at debug level.
+- **Legend CIG suppression hardening**: severe legend rows now filter out both explicit CIG/intensity entries and `0%` severe placeholders (the current intensity artifact shape in feed data), with filtering applied in both `MapScreenView` (legend input) and `MapLegendView` (render-time guard).
+- **CIG stacking order fix**: intensity overlays are now explicitly sorted for draw order so overlapping regions render `CIG3` on top of `CIG2` on top of `CIG1` (highest severity always visually dominant).
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
