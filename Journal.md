@@ -445,6 +445,20 @@ What changed:
 Aha moment:
 If a child view derives feature flags from incoming data, upstream filtering can silently disable valid UI states.
 
+### 2026-03-05: Layered CIG hatch recipes (single legend swatch)
+
+Bug-shaped problem:
+The first hatch implementation proved the concept, but overlapping `CIG1`, `CIG2`, and `CIG3` could look too similar and the legend only previewed one pattern. In stacked areas, that made intensity layering feel flatter than intended.
+
+What changed:
+- Expanded `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/HatchStyle.swift` with per-style dash and phase controls (`dashPattern`, `lineOffset`) so each CIG level has a distinct visual recipe.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/RiskPolygonRenderer.swift` to render dashed/offset hatch lines procedurally (still clipped to polygon path), and fixed a double-adjust bug so styles are applied exactly once.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapLegendView.swift` so the legend keeps one hatch row but the swatch layers all three recipes, matching what users can see on-map in overlap zones.
+- Updated overlay signature hashing in `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapCanvasView.swift` to include dash/offset style fields, preventing stale-style reuse during overlay sync.
+
+Aha moment:
+When multiple textures can stack, uniqueness is not just an art decision. It is a data-encoding requirement, and it needs to be preserved in both renderer math and diffing identity.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

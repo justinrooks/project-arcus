@@ -21,6 +21,20 @@ struct RiskPolygonOverlayTests {
         #expect(abs(base.adjusted(forIntensityLevel: 3).spacing - (base.spacing * 0.90)) < 0.001)
     }
 
+    @Test("Hatch style pattern recipes are unique by intensity level")
+    func hatchStyle_patternRecipesAreUniqueByLevel() {
+        let base = HatchStyle.default
+        let level1 = base.adjusted(forIntensityLevel: 1)
+        let level2 = base.adjusted(forIntensityLevel: 2)
+        let level3 = base.adjusted(forIntensityLevel: 3)
+
+        #expect(level1.dashPattern != level2.dashPattern)
+        #expect(level2.dashPattern != level3.dashPattern)
+        #expect(level1.dashPattern != level3.dashPattern)
+        #expect(level1.lineOffset != level2.lineOffset)
+        #expect(level2.lineOffset != level3.lineOffset)
+    }
+
     @Test("Probability overlay uses SPC style metadata colors")
     func probabilityOverlay_usesSpcMetadata() {
         let polygon = makePolygon()

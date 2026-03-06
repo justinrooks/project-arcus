@@ -81,12 +81,13 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
     }
 
     private func drawHatch(path: CGPath, level: Int, zoomScale: MKZoomScale, in context: CGContext) {
-        let baseStyle = riskOverlay.hatchStyle ?? HatchStyle.default
-        let style = baseStyle.adjusted(forIntensityLevel: level)
+        let style = riskOverlay.hatchStyle ?? HatchStyle.default.adjusted(forIntensityLevel: level)
         let spacing = max(8.0, style.spacing) / zoomScale
         let lineWidth = max(0.75, style.lineWidth) / zoomScale
         let hatchColor = resolvedHatchColor().withAlphaComponent(CGFloat(style.opacity))
         let angle = CGFloat(style.angleDegrees * .pi / 180)
+        let lineOffset = CGFloat(style.lineOffset) / zoomScale
+        let dashPattern = style.dashPattern.map { CGFloat($0) / zoomScale }
 
         let bounds = path.boundingBoxOfPath.insetBy(dx: -spacing, dy: -spacing)
         let diagonal = hypot(bounds.width, bounds.height)
@@ -101,9 +102,14 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         context.setStrokeColor(hatchColor.cgColor)
         context.setLineWidth(lineWidth)
         context.setLineCap(.round)
+        if dashPattern.isEmpty {
+            context.setLineDash(phase: 0, lengths: [])
+        } else {
+            context.setLineDash(phase: 0, lengths: dashPattern)
+        }
         context.beginPath()
 
-        var y = -diagonal
+        var y = -diagonal + lineOffset
         while y <= diagonal {
             context.move(to: CGPoint(x: -halfLength, y: y))
             context.addLine(to: CGPoint(x: halfLength, y: y))

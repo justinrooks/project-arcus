@@ -141,6 +141,11 @@ struct MapCanvasView: UIViewRepresentable {
                 hasher.combine(Int((hatchStyle.spacing * 100).rounded()))
                 hasher.combine(Int((hatchStyle.lineWidth * 100).rounded()))
                 hasher.combine(Int((hatchStyle.opacity * 1000).rounded()))
+                hasher.combine(Int((hatchStyle.lineOffset * 100).rounded()))
+                hasher.combine(hatchStyle.dashPattern.count)
+                for dashValue in hatchStyle.dashPattern {
+                    hasher.combine(Int((dashValue * 100).rounded()))
+                }
             } else {
                 hasher.combine(-1)
             }

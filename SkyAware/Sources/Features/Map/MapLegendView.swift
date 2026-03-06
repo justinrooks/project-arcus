@@ -47,7 +47,7 @@ struct MapLegend: View {
                         .padding(.top, 10)
                         .padding(.bottom, 6)
 
-                    HatchLegendRow(hatchStyle: .default)
+                    HatchLegendRow(hatchStyles: HatchStyle.legendPreviewStyles)
                 }
             }
         }
@@ -222,11 +222,11 @@ private struct FireLegendRow: View {
 }
 
 private struct HatchLegendRow: View {
-    let hatchStyle: HatchStyle //= HatchStyle.default
+    let hatchStyles: [HatchStyle]
 
     var body: some View {
         HStack(alignment: .center, spacing: 8) {
-            HatchSwatchView(style: hatchStyle)
+            HatchSwatchView(styles: hatchStyles)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Hatching")
@@ -243,28 +243,42 @@ private struct HatchLegendRow: View {
 }
 
 private struct HatchSwatchView: View {
-    let style: HatchStyle
+    let styles: [HatchStyle]
 
     var body: some View {
         let swatchShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
 
         Canvas { context, size in
-            let spacing = CGFloat(style.spacing)
-            let lineWidth = CGFloat(style.lineWidth)
-            let angle = Angle.degrees(style.angleDegrees)
+            let extent = max(size.width, size.height) * 2.0
 
-            context.opacity = style.opacity * 0.85
-            context.translateBy(x: size.width / 2, y: size.height / 2)
-            context.rotate(by: angle)
+            for style in styles {
+                var layer = context
+                let spacing = CGFloat(style.spacing)
+                let lineWidth = CGFloat(style.lineWidth)
+                let angle = Angle.degrees(style.angleDegrees)
+                let dashPattern = style.dashPattern.map { CGFloat($0) }
 
-            let extent = max(size.width, size.height) * 2
-            var y = -extent
-            while y <= extent {
-                var path = Path()
-                path.move(to: CGPoint(x: -extent, y: y))
-                path.addLine(to: CGPoint(x: extent, y: y))
-                context.stroke(path, with: .color(.primary.opacity(0.55)), lineWidth: lineWidth)
-                y += spacing
+                layer.opacity = style.opacity * 0.85
+                layer.translateBy(x: size.width / 2, y: size.height / 2)
+                layer.rotate(by: angle)
+
+                var y = -extent + CGFloat(style.lineOffset)
+                while y <= extent {
+                    var path = Path()
+                    path.move(to: CGPoint(x: -extent, y: y))
+                    path.addLine(to: CGPoint(x: extent, y: y))
+                    layer.stroke(
+                        path,
+                        with: .color(.primary.opacity(0.55)),
+                        style: StrokeStyle(
+                            lineWidth: lineWidth,
+                            lineCap: .round,
+                            dash: dashPattern,
+                            dashPhase: 0
+                        )
+                    )
+                    y += spacing
+                }
             }
         }
         .drawingGroup()
