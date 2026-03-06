@@ -7,98 +7,138 @@
 
 import MapKit
 
-struct MapPolygonMapper {
+struct MapPolygonEntry: Sendable {
+    let key: String
+    let title: String?
+    let subtitle: String?
+    let coordinates: [Coordinate2D]
+
+    var polygon: MKPolygon {
+        let ringCoordinates = coordinates.map(\.location)
+        let polygon = MKPolygon(coordinates: ringCoordinates, count: ringCoordinates.count)
+        polygon.title = title
+        polygon.subtitle = subtitle
+        return polygon
+    }
+}
+
+struct KeyedMapPolygons: Sendable {
+    let keyedPolygons: [MapPolygonEntry]
+
+    var polygons: [MKPolygon] {
+        keyedPolygons.map(\.polygon)
+    }
+
+    var multiPolygon: MKMultiPolygon {
+        MKMultiPolygon(polygons)
+    }
+
+    init(entries: [MapPolygonEntry]) {
+        self.keyedPolygons = entries
+    }
+}
+
+struct MapPolygonMapper: Sendable {
     func polygons(
         for layer: MapLayer,
         stormRisk: [StormRiskDTO],
         severeRisks: [SevereRiskShapeDTO],
         mesos: [MdDTO],
         fires: [FireRiskDTO]
-    ) -> MKMultiPolygon {
+    ) -> KeyedMapPolygons {
         switch layer {
         case .categorical:
             // Draw lower categories first so higher severity sits on top.
             let source = stormRisk.sorted { $0.riskLevel < $1.riskLevel }
-            let polygons = source.flatMap { risk -> [MKPolygon] in
-                risk.polygons.map { polygon in
-                    let coordinates = polygon.ringCoordinates
-                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
-                    mkPolygon.title = polygon.title
-                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+            let entries = source.enumerated().flatMap { riskIndex, risk -> [MapPolygonEntry] in
+                risk.polygons.enumerated().map { polygonIndex, polygon in
+                    let subtitle = StormRiskPolygonStyleMetadata(
                         fillHex: risk.fill,
                         strokeHex: risk.stroke
                     ).encoded
-                    return mkPolygon
+                    return MapPolygonEntry(
+                        key: "cat|\(risk.riskLevel.rawValue)|\(Int(risk.issued.timeIntervalSince1970))|\(riskIndex)|\(polygonIndex)",
+                        title: polygon.title,
+                        subtitle: subtitle,
+                        coordinates: polygon.coordinates
+                    )
                 }
             }
-            return MKMultiPolygon(polygons)
+            return KeyedMapPolygons(entries: entries)
 
         case .tornado:
-            return MKMultiPolygon(
-                severePolygons(
+            return KeyedMapPolygons(
+                entries: severePolygons(
                     from: severeRisks,
                     type: .tornado
                 )
             )
 
         case .hail:
-            return MKMultiPolygon(
-                severePolygons(
+            return KeyedMapPolygons(
+                entries: severePolygons(
                     from: severeRisks,
                     type: .hail
                 )
             )
 
         case .wind:
-            return MKMultiPolygon(
-                severePolygons(
+            return KeyedMapPolygons(
+                entries: severePolygons(
                     from: severeRisks,
                     type: .wind
                 )
             )
 
         case .meso:
-            let polygons = makeMKPolygons(
-                from: mesos,
-                coordinates: { $0.coordinates.map { $0.location } },
-                title: { _ in layer.key }
-            )
-            return MKMultiPolygon(polygons)
+            let entries = mesos.enumerated().map { index, meso in
+                return MapPolygonEntry(
+                    key: "meso|\(meso.number)|\(index)",
+                    title: layer.key,
+                    subtitle: nil,
+                    coordinates: meso.coordinates
+                )
+            }
+            return KeyedMapPolygons(entries: entries)
             
         case .fire:
-            let polygons = fires.flatMap { fire -> [MKPolygon] in
-                fire.polygons.map { polygon in
-                    let coordinates = polygon.ringCoordinates
-                    let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
-                    mkPolygon.title = polygon.title
-                    mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+            let entries = fires.enumerated().flatMap { fireIndex, fire -> [MapPolygonEntry] in
+                fire.polygons.enumerated().map { polygonIndex, polygon in
+                    let subtitle = StormRiskPolygonStyleMetadata(
                         fillHex: fire.fill,
                         strokeHex: fire.stroke
                     ).encoded
-                    return mkPolygon
+                    return MapPolygonEntry(
+                        key: "fire|\(fire.riskLevel)|\(Int(fire.issued.timeIntervalSince1970))|\(fireIndex)|\(polygonIndex)",
+                        title: polygon.title,
+                        subtitle: subtitle,
+                        coordinates: polygon.coordinates
+                    )
                 }
             }
-            return MKMultiPolygon(polygons)
+            return KeyedMapPolygons(entries: entries)
         }
     }
 
-    private func makeMKPolygons<Element>(
-        from source: [Element],
-        coordinates: (Element) -> [CLLocationCoordinate2D],
-        title: (Element) -> String?
-    ) -> [MKPolygon] {
-        source.map { element in
-            let coords = coordinates(element)
-            let mkPolygon = MKPolygon(coordinates: coords, count: coords.count)
-            mkPolygon.title = title(element)
-            return mkPolygon
+    private func severeProbabilityKey(_ probability: ThreatProbability) -> String {
+        switch probability {
+        case .percent(let value):
+            return "p\(Int((value * 100).rounded()))"
+        case .significant(let value):
+            return "sig\(value)"
         }
+    }
+
+    private func sanitizedKeyPart(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "|", with: "_")
     }
 
     private func severePolygons(
         from severeRisks: [SevereRiskShapeDTO],
         type: ThreatType
-    ) -> [MKPolygon] {
+    ) -> [MapPolygonEntry] {
         // Draw lower probabilities first so higher severity sits on top.
         // When probabilities match (same DN), draw SIGN last (above non-significant).
         let source = severeRisks
@@ -119,17 +159,21 @@ struct MapPolygonMapper {
                 return $0.title < $1.title
             }
 
-        return source.flatMap { severe -> [MKPolygon] in
-            severe.polygons.map { polygon in
-                let coordinates = polygon.ringCoordinates
-                let mkPolygon = MKPolygon(coordinates: coordinates, count: coordinates.count)
-                mkPolygon.title = polygon.title
-                mkPolygon.subtitle = StormRiskPolygonStyleMetadata(
+        return source.enumerated().flatMap { riskIndex, severe -> [MapPolygonEntry] in
+            let probabilityKey = severeProbabilityKey(severe.probabilities)
+            let labelKey = sanitizedKeyPart(severe.label)
+            return severe.polygons.enumerated().map { polygonIndex, polygon in
+                let subtitle = StormRiskPolygonStyleMetadata(
                     fillHex: severe.fill,
                     strokeHex: severe.stroke,
                     cigLevel: severe.intensityLevel
                 ).encoded
-                return mkPolygon
+                return MapPolygonEntry(
+                    key: "sev|\(type.rawValue)|\(probabilityKey)|\(labelKey)|\(riskIndex)|\(polygonIndex)",
+                    title: polygon.title,
+                    subtitle: subtitle,
+                    coordinates: polygon.coordinates
+                )
             }
         }
     }

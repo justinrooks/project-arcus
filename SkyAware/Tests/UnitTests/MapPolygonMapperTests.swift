@@ -36,6 +36,34 @@ struct MapPolygonMapperTests {
         #expect(titles == ["TSTM", "MRGL", "SLGT", "HIGH"])
     }
 
+    @Test("Categorical polygon keys are deterministic and unique")
+    func categoricalKeys_areDeterministicAndUnique() {
+        let stormRisk: [StormRiskDTO] = [
+            makeStormRisk(level: .enhanced, title: "ENH"),
+            makeStormRisk(level: .slight, title: "SLGT")
+        ]
+
+        let first = mapper.polygons(
+            for: .categorical,
+            stormRisk: stormRisk,
+            severeRisks: [],
+            mesos: [],
+            fires: []
+        )
+        let second = mapper.polygons(
+            for: .categorical,
+            stormRisk: stormRisk,
+            severeRisks: [],
+            mesos: [],
+            fires: []
+        )
+
+        let firstKeys = first.keyedPolygons.map(\.key)
+        let secondKeys = second.keyedPolygons.map(\.key)
+        #expect(firstKeys == secondKeys)
+        #expect(Set(firstKeys).count == firstKeys.count)
+    }
+
     @Test("Severe layers only include polygons for selected threat type")
     func severePolygons_areFilteredByThreatType() {
         let severeRisks: [SevereRiskShapeDTO] = [

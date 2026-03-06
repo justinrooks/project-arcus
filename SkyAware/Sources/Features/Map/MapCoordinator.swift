@@ -8,8 +8,11 @@
 import MapKit
 import Foundation
 
+@MainActor
 final class MapCoordinator: NSObject, MKMapViewDelegate {
     var lastCenteredCoordinate: CLLocationCoordinate2D?
+    private var overlayByKey: [String: MKOverlay] = [:]
+    private var keyByOverlayIdentifier: [ObjectIdentifier: String] = [:]
 
     init(lastCenteredCoordinate: CLLocationCoordinate2D? = nil) {
         self.lastCenteredCoordinate = lastCenteredCoordinate
@@ -17,6 +20,35 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
 
     func makeProbabilityOverlay(from polygon: MKPolygon) -> RiskPolygonOverlay {
         RiskPolygonOverlay.probability(from: polygon)
+    }
+
+    func overlay(for key: String) -> MKOverlay? {
+        overlayByKey[key]
+    }
+
+    func registerOverlay(_ overlay: MKOverlay, key: String) {
+        let identifier = ObjectIdentifier(overlay as AnyObject)
+        overlayByKey[key] = overlay
+        keyByOverlayIdentifier[identifier] = key
+    }
+
+    func key(for overlay: MKOverlay) -> String? {
+        let identifier = ObjectIdentifier(overlay as AnyObject)
+        return keyByOverlayIdentifier[identifier]
+    }
+
+    func unregisterOverlay(_ overlay: MKOverlay) {
+        let identifier = ObjectIdentifier(overlay as AnyObject)
+        guard let key = keyByOverlayIdentifier.removeValue(forKey: identifier) else { return }
+        if let cachedOverlay = overlayByKey[key],
+           (cachedOverlay as AnyObject) === (overlay as AnyObject) {
+            overlayByKey.removeValue(forKey: key)
+        }
+    }
+
+    func pruneOverlayCache(keeping keys: Set<String>) {
+        overlayByKey = overlayByKey.filter { keys.contains($0.key) }
+        keyByOverlayIdentifier = keyByOverlayIdentifier.filter { keys.contains($0.value) }
     }
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {

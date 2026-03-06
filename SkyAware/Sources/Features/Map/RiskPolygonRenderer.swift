@@ -11,6 +11,8 @@ import UIKit
 
 final class RiskPolygonRenderer: MKOverlayPathRenderer {
     static let hatchZoomThreshold: MKZoomScale = 0.000025
+    private static let hatchMaxZoomRelaxation: CGFloat = 3.5
+    private static let hatchZoomRelaxationExponent: CGFloat = 1.65
 
     private let riskOverlay: RiskPolygonOverlay
 
@@ -82,12 +84,18 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
 
     private func drawHatch(path: CGPath, level: Int, zoomScale: MKZoomScale, in context: CGContext) {
         let style = riskOverlay.hatchStyle ?? HatchStyle.default.adjusted(forIntensityLevel: level)
-        let spacing = max(8.0, style.spacing) / zoomScale
-        let lineWidth = max(0.75, style.lineWidth) / zoomScale
+        let zoomRelaxation = hatchZoomRelaxation(for: zoomScale)
+        let screenSpacing = (max(8.0, style.spacing) * zoomRelaxation).clamped(to: 8.0...32.0)
+        let screenLineWidth = (
+            max(0.75, style.lineWidth) * (1 + ((zoomRelaxation - 1) * 0.35))
+        ).clamped(to: 0.75...1.8)
+
+        let spacing = screenSpacing / zoomScale
+        let lineWidth = screenLineWidth / zoomScale
         let hatchColor = resolvedHatchColor().withAlphaComponent(CGFloat(style.opacity))
         let angle = CGFloat(style.angleDegrees * .pi / 180)
-        let lineOffset = CGFloat(style.lineOffset) / zoomScale
-        let dashPattern = style.dashPattern.map { CGFloat($0) / zoomScale }
+        let lineOffset = (CGFloat(style.lineOffset) * zoomRelaxation) / zoomScale
+        let dashPattern = style.dashPattern.map { (CGFloat($0) * zoomRelaxation) / zoomScale }
 
         let bounds = path.boundingBoxOfPath.insetBy(dx: -spacing, dy: -spacing)
         let diagonal = hypot(bounds.width, bounds.height)
@@ -118,6 +126,12 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
 
         context.strokePath()
         context.restoreGState()
+    }
+
+    private func hatchZoomRelaxation(for zoomScale: MKZoomScale) -> CGFloat {
+        let normalizedZoom = max(1.0, CGFloat(zoomScale / Self.hatchZoomThreshold))
+        let relaxed = pow(normalizedZoom, Self.hatchZoomRelaxationExponent)
+        return min(Self.hatchMaxZoomRelaxation, max(1.0, relaxed))
     }
 
     private func polygonPath(for polygon: MKPolygon) -> CGPath {
@@ -154,11 +168,17 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
             let resolvedStroke = strokeColor.resolvedColor(with: traitCollection)
             switch traitCollection.userInterfaceStyle {
             case .dark:
-                return resolvedStroke.mixed(with: .white, amount: 0.78)
+                return resolvedStroke.mixed(with: .black, amount: 0.10)
             default:
-                return resolvedStroke.mixed(with: .black, amount: 0.20)
+                return resolvedStroke.mixed(with: .black, amount: 0.10)
             }
         }
+    }
+}
+
+private extension CGFloat {
+    func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
+        Swift.min(range.upperBound, Swift.max(range.lowerBound, self))
     }
 }
 

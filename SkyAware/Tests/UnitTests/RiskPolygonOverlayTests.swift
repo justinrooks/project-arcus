@@ -16,9 +16,9 @@ struct RiskPolygonOverlayTests {
     @Test("Hatch style spacing adjusts by intensity level")
     func hatchStyle_spacingAdjustsByLevel() {
         let base = HatchStyle.default
-        #expect(abs(base.adjusted(forIntensityLevel: 1).spacing - (base.spacing * 1.15)) < 0.001)
+        #expect(abs(base.adjusted(forIntensityLevel: 1).spacing - (base.spacing * 1.10)) < 0.001)
         #expect(abs(base.adjusted(forIntensityLevel: 2).spacing - base.spacing) < 0.001)
-        #expect(abs(base.adjusted(forIntensityLevel: 3).spacing - (base.spacing * 0.90)) < 0.001)
+        #expect(abs(base.adjusted(forIntensityLevel: 3).spacing - (base.spacing * 0.82)) < 0.001)
     }
 
     @Test("Hatch style pattern recipes are unique by intensity level")
@@ -76,7 +76,7 @@ struct RiskPolygonOverlayTests {
         }
 
         #expect(level == 3)
-        #expect(abs((overlay.hatchStyle?.spacing ?? 0) - (HatchStyle.default.spacing * 0.90)) < 0.001)
+        #expect(abs((overlay.hatchStyle?.spacing ?? 0) - (HatchStyle.default.spacing * 0.82)) < 0.001)
     }
 
     private func makePolygon() -> MKPolygon {

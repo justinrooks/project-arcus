@@ -459,6 +459,23 @@ What changed:
 Aha moment:
 When multiple textures can stack, uniqueness is not just an art decision. It is a data-encoding requirement, and it needs to be preserved in both renderer math and diffing identity.
 
+### 2026-03-05: Map performance pass - off-main rebuild + key-based overlay sync
+
+Bug-shaped problem:
+Switching map layers could feel sticky because we were rebuilding polygons/overlays on the main actor, and overlay syncing used expensive geometry hashing every update.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapScreenView.swift` to move map render-state construction into a cancelable background task (`Task.detached`), then publish final UI state on `MainActor`.
+- Added keyed polygon output in `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapPolygonMapper.swift` (`MapPolygonEntry`, `KeyedMapPolygons`) so overlays can be matched by stable IDs instead of geometry scans.
+- Reworked `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapCanvasView.swift` + `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapCoordinator.swift` to cache/reuse overlays by key, remove/add only deltas, and reorder only when key order actually changes.
+- Added deterministic key regression coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/MapPolygonMapperTests.swift`.
+
+Aha moment:
+We were asking the UI thread to be both chef and waiter. Once prep moved off-main and overlay identity became key-based, the main thread got back to serving frames instead of chopping vegetables.
+
+Gotcha:
+Detached-task cancellation semantics matter. Wrapping detached work inside another task can accidentally let canceled rebuilds keep burning CPU in the background.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

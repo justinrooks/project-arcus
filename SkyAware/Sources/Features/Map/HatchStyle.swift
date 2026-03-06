@@ -17,9 +17,9 @@ struct HatchStyle: Hashable, Sendable {
 
     static let `default` = HatchStyle(
         angleDegrees: -45,
-        spacing: 14,
-        lineWidth: 1,
-        opacity: 0.24,
+        spacing: 11.5,
+        lineWidth: 1.55,
+        opacity: 0.42,
         dashPattern: [],
         lineOffset: 0
     )
@@ -32,18 +32,19 @@ struct HatchStyle: Hashable, Sendable {
         var adjusted = self
         switch level {
         case 1:
-            adjusted.spacing *= 1.15
-            adjusted.opacity *= 0.90
-            adjusted.dashPattern = [1.2, 7.5]
+            adjusted.spacing *= 1.10
+            adjusted.opacity *= 1.0
+            adjusted.dashPattern = [3.2, 4.4]
             adjusted.lineOffset = adjusted.spacing * 0.15
         case 2:
-            adjusted.dashPattern = [5.5, 6.5]
+            adjusted.opacity = min(0.48, adjusted.opacity * 1.05)
+            adjusted.dashPattern = [8.5, 4.0]
             adjusted.lineOffset = adjusted.spacing * 0.45
         case 3:
-            adjusted.spacing *= 0.90
-            adjusted.lineWidth *= 1.08
-            adjusted.opacity = min(0.30, adjusted.opacity * 1.12)
-            adjusted.dashPattern = [10.0, 4.0]
+            adjusted.spacing *= 0.82
+            adjusted.lineWidth *= 1.22
+            adjusted.opacity = min(0.56, adjusted.opacity * 1.22)
+            adjusted.dashPattern = [15.0, 1.8]
             adjusted.lineOffset = adjusted.spacing * 0.75
         default:
             break
