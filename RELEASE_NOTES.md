@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### Overview
+This update adds an Atmosphere rail in Summary, introduces layered severe-map hatching with matching legend output, and extends notification/location snapshot handling while tightening map freshness and rendering behavior.
+
+### Highlights
+- Summary now includes an Atmosphere rail for current atmospheric conditions.
+- Severe map overlays now use layered hatch patterns with unified legend swatches for significant intensity levels.
+- Morning notifications now include Fire Weather risk context, and additional notification types are enabled.
+- Location snapshot push payloads now include installation/region context and use H3 cell identifiers instead of raw latitude/longitude.
+- Summary components now use consistent placeholder loading states and updated text casing across key surfaces.
+- Settings now hides AI options, fixes the location card width issue, and shows installation/device identifiers for debugging.
+
+### Reliability & Performance
+- Map product freshness filtering now excludes stale products from current map output.
+- Severe badge threat sorting now picks the highest tornado risk for badge display.
+- Map rendering now uses keyed overlay diffing with concurrency-safe hatch layering.
+- Location snapshot push logging was added to support diagnostics.
+
+### UI / UX
+- Map layer picker and legend presentation were refined for more consistent controls and severe hatch swatch output.
+- Summary header card layout was cleaned up.
+
+### Tests / QA
+- Added and stabilized tests for location snapshot push behavior, map freshness filtering, and severe overlay rendering behavior.
+- Fixed failing unit tests around severe-risk active-selection helpers.
+
 ## v0.1.0(22)
 
 ### Overview
