@@ -112,3 +112,4 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - I’d add a small diagnostics surface in-app early so it’s obvious when background work is being throttled or suppressed.
 - I’d separate map data transforms into a dedicated mapper layer up front so polygon construction and caching are deterministic and testable outside SwiftUI.
 - I’d add a lightweight performance checklist early (render-path work, identity stability, async trigger fan-out, geometry feedback loops) and enforce it in review.
+- **Bug squash (empty-token location push retries)**: location snapshot uploads were attempted even when APNs token storage was still empty, creating guaranteed-invalid payloads and unnecessary retry noise. `LocationSnapshotPusher.enqueue` now trims/guards token presence and skips upload until registration provides a real token, with unit coverage to prevent regressions.

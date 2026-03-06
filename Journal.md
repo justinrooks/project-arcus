@@ -509,3 +509,4 @@ A tiny token-formatting test catches easy-to-miss backend integration bugs early
 - I would define a typed `AppSettings` key registry early instead of raw string keys scattered across files.
 - I would add a lightweight diagnostics panel for permission status + APNs token from day one.
 - I would establish one canonical "notifications bootstrap" path at app launch to avoid behavior fragmentation across onboarding, settings, and background flows.
+- **Bug squash (empty-token location push retries)**: location snapshot uploads were attempted even when APNs token storage was still empty, creating guaranteed-invalid payloads and unnecessary retry noise. `LocationSnapshotPusher.enqueue` now trims/guards token presence and skips upload until registration provides a real token, with unit coverage to prevent regressions.
