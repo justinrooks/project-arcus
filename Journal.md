@@ -476,6 +476,20 @@ We were asking the UI thread to be both chef and waiter. Once prep moved off-mai
 Gotcha:
 Detached-task cancellation semantics matter. Wrapping detached work inside another task can accidentally let canceled rebuilds keep burning CPU in the background.
 
+### 2026-03-05: Same-key overlay refresh bug (stale polygons/colors)
+
+Bug-shaped problem:
+Our key-based cache was too trusting. If SPC shipped a corrected polygon with the same coarse key (`layer/risk/issued/index`), we reused the old overlay object and kept drawing stale geometry/style on the map.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapCoordinator.swift` with an overlay render-signature (geometry + style) and a `resolvedOverlay` path that only reuses cached overlays when signatures still match.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapCoordinator.swift` registration so replacing a key drops old object-identifier mappings. That lets sync remove outdated map overlays even when the key is unchanged.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Map/MapCanvasView.swift` to use signature-aware resolution during sync instead of unconditional key-based reuse.
+- Added `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/RiskPolygonOverlayTests.swift` coverage for same-key reuse, geometry-change replacement, and style-change replacement.
+
+Aha moment:
+Cache keys are passports, not fingerprints. If the passport says the traveler is the same but the face changed, you still need the biometric check.
+
 ## 6) Engineer's Wisdom
 
 - Keep lifecycle side effects out of SwiftUI view `body`.

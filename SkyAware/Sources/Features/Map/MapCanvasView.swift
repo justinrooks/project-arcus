@@ -124,8 +124,7 @@ struct MapCanvasView: UIViewRepresentable {
         desiredOverlays.reserveCapacity(incoming.count)
 
         for entry in incoming {
-            let overlay = coordinator.overlay(for: entry.key) ?? entry.overlay
-            coordinator.registerOverlay(overlay, key: entry.key)
+            let overlay = coordinator.resolvedOverlay(for: entry.key, incomingOverlay: entry.overlay)
             desiredOverlays.append(overlay)
         }
 

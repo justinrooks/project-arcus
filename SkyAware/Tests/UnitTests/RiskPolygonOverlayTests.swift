@@ -79,6 +79,64 @@ struct RiskPolygonOverlayTests {
         #expect(abs((overlay.hatchStyle?.spacing ?? 0) - (HatchStyle.default.spacing * 0.82)) < 0.001)
     }
 
+    @MainActor
+    @Test("MapCoordinator reuses cached overlay when geometry and style are unchanged")
+    func mapCoordinator_reusesEquivalentOverlayForSameKey() {
+        let coordinator = MapCoordinator()
+        let key = "sev|tornado|p10|foo|0|0|probability"
+
+        let first = RiskPolygonOverlay.probability(from: makeStyledPolygon())
+        _ = coordinator.resolvedOverlay(for: key, incomingOverlay: first)
+
+        let equivalent = RiskPolygonOverlay.probability(from: makeStyledPolygon())
+        _ = coordinator.resolvedOverlay(for: key, incomingOverlay: equivalent)
+
+        #expect(coordinator.key(for: first) == key)
+        #expect(coordinator.key(for: equivalent) == nil)
+    }
+
+    @MainActor
+    @Test("MapCoordinator replaces cached overlay when geometry changes under same key")
+    func mapCoordinator_replacesOverlayWhenGeometryChangesForSameKey() {
+        let coordinator = MapCoordinator()
+        let key = "sev|tornado|p10|foo|0|0|probability"
+
+        let first = RiskPolygonOverlay.probability(from: makeStyledPolygon())
+        _ = coordinator.resolvedOverlay(for: key, incomingOverlay: first)
+
+        let changedGeometry = RiskPolygonOverlay.probability(from: makeStyledPolygon(latitudeOffset: 0.5))
+        _ = coordinator.resolvedOverlay(for: key, incomingOverlay: changedGeometry)
+
+        #expect(coordinator.key(for: first) == nil)
+        #expect(coordinator.key(for: changedGeometry) == key)
+    }
+
+    @MainActor
+    @Test("MapCoordinator replaces cached overlay when style changes under same key")
+    func mapCoordinator_replacesOverlayWhenStyleChangesForSameKey() {
+        let coordinator = MapCoordinator()
+        let key = "sev|tornado|p10|foo|0|0|probability"
+
+        let first = RiskPolygonOverlay.probability(
+            from: makeStyledPolygon(
+                fillHex: "#2255AA",
+                strokeHex: "#AA5522"
+            )
+        )
+        _ = coordinator.resolvedOverlay(for: key, incomingOverlay: first)
+
+        let changedStyle = RiskPolygonOverlay.probability(
+            from: makeStyledPolygon(
+                fillHex: "#44AA22",
+                strokeHex: "#2266AA"
+            )
+        )
+        _ = coordinator.resolvedOverlay(for: key, incomingOverlay: changedStyle)
+
+        #expect(coordinator.key(for: first) == nil)
+        #expect(coordinator.key(for: changedStyle) == key)
+    }
+
     private func makePolygon() -> MKPolygon {
         var coordinates = [
             CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
@@ -86,6 +144,25 @@ struct RiskPolygonOverlayTests {
             CLLocationCoordinate2D(latitude: 35.2, longitude: -97.1)
         ]
         return MKPolygon(coordinates: &coordinates, count: coordinates.count)
+    }
+
+    private func makeStyledPolygon(
+        latitudeOffset: CLLocationDegrees = 0,
+        fillHex: String = "#2255AA",
+        strokeHex: String = "#AA5522"
+    ) -> MKPolygon {
+        var coordinates = [
+            CLLocationCoordinate2D(latitude: 35.0 + latitudeOffset, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.1 + latitudeOffset, longitude: -96.9),
+            CLLocationCoordinate2D(latitude: 35.2 + latitudeOffset, longitude: -97.1)
+        ]
+        let polygon = MKPolygon(coordinates: &coordinates, count: coordinates.count)
+        polygon.title = "10% Tornado Risk"
+        polygon.subtitle = StormRiskPolygonStyleMetadata(
+            fillHex: fillHex,
+            strokeHex: strokeHex
+        ).encoded
+        return polygon
     }
 
     private func rgba(_ color: UIColor) -> (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) {
