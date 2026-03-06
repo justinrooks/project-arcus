@@ -78,23 +78,22 @@ actor FireRiskRepo {
             $0.valid <= date && date < $0.expires
         }
         let desc = FetchDescriptor<FireRisk>(predicate: pred)
-        // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
+        // We'll dedupe by risk level and keep the freshest issuance for each level.
         let risks = try modelContext.fetch(desc)
 
-        //        // 2) For each risk level, keep the record with the most recent `valid` date
-        //        let mostRecentByLevel: [Int: FireRisk] = Dictionary(
-        //            risks.map { ($0.riskLevel.rawValue, $0) },
-        //            uniquingKeysWith: { lhs, rhs in
-        //                // choose the record with the later `valid` date
-        //                return lhs.valid >= rhs.valid ? lhs : rhs
-        //            }
-        //        )
+        // 2) For each risk level, keep only the most recent record.
+        let mostRecentByLevel: [Int: FireRisk] = Dictionary(
+            risks.map { ($0.riskLevel, $0) },
+            uniquingKeysWith: { lhs, rhs in
+                self.isMoreRecent(lhs, than: rhs) ? lhs : rhs
+            }
+        )
 
-        // 3) Sort the selected items by descending risk severity for a stable output order
-        //        let selected = mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
+        // 3) Sort by descending risk for stable output.
+        let selected = mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
 
-        // 4) Map to DTOs
-        return risks.map {
+        // 4) Map to DTOs.
+        return selected.map {
             FireRiskDTO(
                 product: $0.product,
                 issued: $0.issued,
@@ -136,5 +135,12 @@ actor FireRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func isMoreRecent(_ lhs: FireRisk, than rhs: FireRisk) -> Bool {
+        if lhs.issued != rhs.issued { return lhs.issued > rhs.issued }
+        if lhs.valid != rhs.valid { return lhs.valid > rhs.valid }
+        if lhs.expires != rhs.expires { return lhs.expires > rhs.expires }
+        return lhs.key > rhs.key
     }
 }

@@ -7,10 +7,39 @@
 
 import SwiftUI
 import MapKit
+import UIKit
+
+struct MapOverlayEntry {
+    let key: String
+    let overlay: MKOverlay
+}
 
 struct MapCanvasView: UIViewRepresentable {
     let polygons: MKMultiPolygon
+    let overlays: [MapOverlayEntry]
     let coordinates: CLLocationCoordinate2D?
+
+    init(
+        polygons: MKMultiPolygon,
+        overlays: [MapOverlayEntry] = [],
+        coordinates: CLLocationCoordinate2D?
+    ) {
+        self.polygons = polygons
+        self.overlays = overlays
+        self.coordinates = coordinates
+    }
+
+    init(
+        polygons: [MKPolygon],
+        overlays: [MapOverlayEntry] = [],
+        coordinates: CLLocationCoordinate2D?
+    ) {
+        self.init(
+            polygons: MKMultiPolygon(polygons),
+            overlays: overlays,
+            coordinates: coordinates
+        )
+    }
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -25,15 +54,17 @@ struct MapCanvasView: UIViewRepresentable {
             context.coordinator.lastCenteredCoordinate = coord
         }
 
-        mapView.addOverlays(polygons.polygons)
+        let incoming = resolvedIncomingOverlays(using: context.coordinator)
+        for entry in incoming {
+            context.coordinator.registerOverlay(entry.overlay, key: entry.key)
+        }
+        mapView.addOverlays(incoming.map(\.overlay))
         return mapView
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        let incoming = polygons.polygons
-        if !overlaysMatchByIdentity(existing: uiView.overlays, incoming: incoming) {
-            syncOverlays(on: uiView, incoming: incoming)
-        }
+        let incoming = resolvedIncomingOverlays(using: context.coordinator)
+        syncOverlays(on: uiView, incoming: incoming, coordinator: context.coordinator)
 
         if context.coordinator.lastCenteredCoordinate == nil, let coord = coordinates {
             let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
@@ -46,64 +77,91 @@ struct MapCanvasView: UIViewRepresentable {
         MapCoordinator()
     }
 
-    private func overlaysMatchByIdentity(existing: [MKOverlay], incoming: [MKPolygon]) -> Bool {
-        guard existing.count == incoming.count else { return false }
-
-        for (overlay, polygon) in zip(existing, incoming) {
-            guard let existingPolygon = overlay as? MKPolygon, existingPolygon === polygon else { return false }
+    private func resolvedIncomingOverlays(using coordinator: MapCoordinator) -> [MapOverlayEntry] {
+        if !overlays.isEmpty {
+            return overlays
         }
 
-        return true
+        return polygons.polygons.enumerated().map { index, polygon in
+            let key = fallbackKey(for: polygon, index: index)
+            let overlay = coordinator.overlay(for: key) ?? coordinator.makeProbabilityOverlay(from: polygon)
+            return MapOverlayEntry(key: key, overlay: overlay)
+        }
     }
 
-    private func syncOverlays(on mapView: MKMapView, incoming: [MKPolygon]) {
-        var existingBuckets = bucketize(polygons: mapView.overlays.compactMap { $0 as? MKPolygon })
-        var toAdd: [MKPolygon] = []
+    private func fallbackKey(for polygon: MKPolygon, index: Int) -> String {
+        let rect = polygon.boundingMapRect
+        return [
+            "fallback",
+            String(index),
+            String(polygon.pointCount),
+            String(Int(rect.origin.x.rounded())),
+            String(Int(rect.origin.y.rounded())),
+            String(Int(rect.size.width.rounded())),
+            String(Int(rect.size.height.rounded())),
+            polygon.title ?? "",
+            polygon.subtitle ?? ""
+        ].joined(separator: "|")
+    }
 
-        for polygon in incoming {
-            let key = polygonSignature(polygon)
-            if var bucket = existingBuckets[key], !bucket.isEmpty {
-                _ = bucket.removeLast()
-                existingBuckets[key] = bucket.isEmpty ? nil : bucket
-            } else {
-                toAdd.append(polygon)
+    private func syncOverlays(
+        on mapView: MKMapView,
+        incoming: [MapOverlayEntry],
+        coordinator: MapCoordinator
+    ) {
+        if incoming.isEmpty {
+            if !mapView.overlays.isEmpty {
+                mapView.removeOverlays(mapView.overlays)
+            }
+            coordinator.pruneOverlayCache(keeping: [])
+            return
+        }
+
+        let desiredKeys = incoming.map(\.key)
+        let desiredKeySet = Set(desiredKeys)
+
+        var desiredOverlays: [MKOverlay] = []
+        desiredOverlays.reserveCapacity(incoming.count)
+
+        for entry in incoming {
+            let overlay = coordinator.resolvedOverlay(for: entry.key, incomingOverlay: entry.overlay)
+            desiredOverlays.append(overlay)
+        }
+
+        let currentOverlays = mapView.overlays
+        var toRemove: [MKOverlay] = []
+        toRemove.reserveCapacity(currentOverlays.count)
+
+        for overlay in currentOverlays {
+            guard let key = coordinator.key(for: overlay), desiredKeySet.contains(key) else {
+                toRemove.append(overlay)
+                coordinator.unregisterOverlay(overlay)
+                continue
             }
         }
 
-        let toRemove = existingBuckets.values.flatMap { $0 }
-        if !toRemove.isEmpty { mapView.removeOverlays(toRemove) }
-        if !toAdd.isEmpty { mapView.addOverlays(toAdd) }
-    }
-
-    private func bucketize(polygons: [MKPolygon]) -> [Int: [MKPolygon]] {
-        var buckets: [Int: [MKPolygon]] = [:]
-        buckets.reserveCapacity(polygons.count)
-
-        for polygon in polygons {
-            let key = polygonSignature(polygon)
-            buckets[key, default: []].append(polygon)
+        if !toRemove.isEmpty {
+            mapView.removeOverlays(toRemove)
         }
 
-        return buckets
-    }
+        let currentKeys = Set(mapView.overlays.compactMap { coordinator.key(for: $0) })
+        var toAdd: [MKOverlay] = []
+        toAdd.reserveCapacity(incoming.count)
 
-    private func polygonSignature(_ polygon: MKPolygon) -> Int {
-        var hasher = Hasher()
-        hasher.combine(polygon.title ?? "")
-        hasher.combine(polygon.subtitle ?? "")
-        hasher.combine(polygon.pointCount)
-
-        var coordinates = [CLLocationCoordinate2D](
-            repeating: CLLocationCoordinate2D(latitude: 0, longitude: 0),
-            count: polygon.pointCount
-        )
-        polygon.getCoordinates(&coordinates, range: NSRange(location: 0, length: polygon.pointCount))
-
-        for coordinate in coordinates {
-            hasher.combine(Int((coordinate.latitude * 100_000).rounded()))
-            hasher.combine(Int((coordinate.longitude * 100_000).rounded()))
+        for (index, key) in desiredKeys.enumerated() where !currentKeys.contains(key) {
+            toAdd.append(desiredOverlays[index])
         }
 
-        return hasher.finalize()
+        if !toAdd.isEmpty {
+            mapView.addOverlays(toAdd)
+        }
+
+        let finalKeys = mapView.overlays.compactMap { coordinator.key(for: $0) }
+        if finalKeys != desiredKeys {
+            mapView.removeOverlays(mapView.overlays)
+            mapView.addOverlays(desiredOverlays)
+        }
+
+        coordinator.pruneOverlayCache(keeping: desiredKeySet)
     }
 }

@@ -36,6 +36,34 @@ struct MapPolygonMapperTests {
         #expect(titles == ["TSTM", "MRGL", "SLGT", "HIGH"])
     }
 
+    @Test("Categorical polygon keys are deterministic and unique")
+    func categoricalKeys_areDeterministicAndUnique() {
+        let stormRisk: [StormRiskDTO] = [
+            makeStormRisk(level: .enhanced, title: "ENH"),
+            makeStormRisk(level: .slight, title: "SLGT")
+        ]
+
+        let first = mapper.polygons(
+            for: .categorical,
+            stormRisk: stormRisk,
+            severeRisks: [],
+            mesos: [],
+            fires: []
+        )
+        let second = mapper.polygons(
+            for: .categorical,
+            stormRisk: stormRisk,
+            severeRisks: [],
+            mesos: [],
+            fires: []
+        )
+
+        let firstKeys = first.keyedPolygons.map(\.key)
+        let secondKeys = second.keyedPolygons.map(\.key)
+        #expect(firstKeys == secondKeys)
+        #expect(Set(firstKeys).count == firstKeys.count)
+    }
+
     @Test("Severe layers only include polygons for selected threat type")
     func severePolygons_areFilteredByThreatType() {
         let severeRisks: [SevereRiskShapeDTO] = [
@@ -139,6 +167,32 @@ struct MapPolygonMapperTests {
         let metadata = StormRiskPolygonStyleMetadata.decode(from: result.polygons.first?.subtitle)
         #expect(metadata?.strokeHex == "#654321")
         #expect(metadata?.fillHex == "#FEDCBA")
+    }
+
+    @Test("Severe CIG polygons include encoded intensity metadata")
+    func severePolygons_includeCigMetadata() {
+        let severeRisks: [SevereRiskShapeDTO] = [
+            SevereRiskShapeDTO(
+                type: .tornado,
+                probabilities: .percent(0),
+                stroke: "#654321",
+                fill: "#FEDCBA",
+                polygons: [makeGeoPolygon(title: "15% Tornado Risk")],
+                label: "CIG1"
+            )
+        ]
+
+        let result = mapper.polygons(
+            for: .tornado,
+            stormRisk: [],
+            severeRisks: severeRisks,
+            mesos: [],
+            fires: []
+        )
+
+        #expect(result.polygons.count == 1)
+        let metadata = StormRiskPolygonStyleMetadata.decode(from: result.polygons.first?.subtitle)
+        #expect(metadata?.cigLevel == 1)
     }
 
     @Test("Meso polygons are titled MESO for consistent map styling")

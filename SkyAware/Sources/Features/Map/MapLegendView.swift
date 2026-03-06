@@ -5,28 +5,29 @@ struct MapLegend: View {
     let severeRisks: [SevereRiskShapeDTO]?
     let fireRisks: [FireRiskDTO]?
 
+    private var hasHatching: Bool {
+        (severeRisks ?? []).contains { $0.intensityLevel != nil }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             switch layer {
             case .categorical:
-                Text("Severe Storm Risk")
+                Text("Severe Risk")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                ForEach(categoricalLevels, id: \.self) { level in
+                ForEach(Array(StormRiskLevel.allCases.reversed().dropLast()), id: \.self) { level in
                     CategoricalLegendRow(risk: level)
                 }
 
             case .meso:
                 Text("Legend")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
-                CategoricalLegendRow(risk: layer.key.capitalized) // MESO
+                MesoLegendRow(risk: layer.key.capitalized) // MESO
             
             case .fire:
                 let risks = fireLevels
                 Text(risks.isEmpty ? "No fire risk" : "Fire Risk")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
                 ForEach(risks, id: \.riskLevel) { risk in
                     FireLegendRow(risk: risk)
                 }
@@ -35,26 +36,30 @@ struct MapLegend: View {
                 let risks = severeLevels
                 Text(risks.isEmpty ? "No \(layer.title.lowercased()) risk" : "\(layer.title) Risk")
                     .font(.caption.weight(.semibold))
-                    .textCase(.uppercase)
 
                 ForEach(risks, id: \.title) { risk in
                     SevereLegendRow(layer: layer, risk: risk)
+                }
+
+                if hasHatching && !risks.isEmpty {
+                    Divider()
+                        .overlay(.secondary.opacity(0.25))
+                        .padding(.top, 10)
+                        .padding(.bottom, 6)
+
+                    HatchLegendRow(hatchStyles: HatchStyle.legendPreviewStyles)
                 }
             }
         }
         .padding(16)
         .frame(minWidth: 144, alignment: .leading)
+        .fixedSize(horizontal: true, vertical: false)
         .cardBackground(
             cornerRadius: SkyAwareRadius.row,
             shadowOpacity: 0.10,
             shadowRadius: 8,
             shadowY: 3
         )
-    }
-
-    // Categorical ordering; mirrors SPC scale from highest to lowest, plus TSTM
-    private var categoricalLevels: [String] {
-        ["HIGH", "MDT", "ENH", "SLGT", "MRGL", "TSTM"]
     }
 
     private var fireLevels: [FireRiskDTO] {
@@ -67,7 +72,17 @@ struct MapLegend: View {
     }
 
     private var severeLevels: [SevereRiskShapeDTO] {
-        let source = severeRisks ?? []
+        // CIG overlays are map texture-only for now; hide them from legend entries.
+        // Also hide 0% severe rows (current feed representation for intensity-only data).
+        let source = (severeRisks ?? []).filter { risk in
+            if risk.intensityLevel != nil {
+                return false
+            }
+            if case .percent(let value) = risk.probabilities, value <= 0 {
+                return false
+            }
+            return true
+        }
         let dedupedByTitle = Dictionary(
             source.map { ($0.title, $0) },
             uniquingKeysWith: { lhs, _ in lhs }
@@ -100,6 +115,25 @@ struct MapLegend: View {
 // MARK: - Rows
 
 private struct CategoricalLegendRow: View {
+    let risk: StormRiskLevel
+
+    var body: some View {
+        let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk.abbreviation.uppercased(), probability: "0%")
+        HStack {
+            Circle()
+                .fill(Color(fill))
+                .overlay(
+                    Circle().stroke(Color(stroke), lineWidth: 1.15)
+                )
+                .frame(width: 14, height: 14)
+            Text(risk.message.split(separator: " ")[0])
+                .font(.caption)
+                .fontWeight(["HIGH", "MDT", "ENH"].contains(risk.abbreviation.uppercased()) ? .semibold : .regular)
+        }
+    }
+}
+
+private struct MesoLegendRow: View {
     let risk: String
 
     var body: some View {
@@ -113,7 +147,7 @@ private struct CategoricalLegendRow: View {
                 .frame(width: 14, height: 14)
             Text(risk)
                 .font(.caption)
-                .fontWeight(["HIGH", "MDT", "ENH"].contains(risk) ? .semibold : .regular)
+                .fontWeight(.regular)
         }
     }
 }
@@ -184,6 +218,75 @@ private struct FireLegendRow: View {
             }
             return "Level \(risk.riskLevel)"
         }
+    }
+}
+
+private struct HatchLegendRow: View {
+    let hatchStyles: [HatchStyle]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            HatchSwatchView(styles: hatchStyles)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hatching")
+                    .font(.caption.weight(.semibold))
+
+                Text("Stronger storms possible")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Hatching. Stronger storms possible.")
+    }
+}
+
+private struct HatchSwatchView: View {
+    let styles: [HatchStyle]
+
+    var body: some View {
+        let swatchShape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+
+        Canvas { context, size in
+            let extent = max(size.width, size.height) * 2.0
+
+            for style in styles {
+                var layer = context
+                let spacing = CGFloat(style.spacing)
+                let lineWidth = CGFloat(style.lineWidth)
+                let angle = Angle.degrees(style.angleDegrees)
+                let dashPattern = style.dashPattern.map { CGFloat($0) }
+
+                layer.opacity = style.opacity * 0.85
+                layer.translateBy(x: size.width / 2, y: size.height / 2)
+                layer.rotate(by: angle)
+
+                var y = -extent + CGFloat(style.lineOffset)
+                while y <= extent {
+                    var path = Path()
+                    path.move(to: CGPoint(x: -extent, y: y))
+                    path.addLine(to: CGPoint(x: extent, y: y))
+                    layer.stroke(
+                        path,
+                        with: .color(.primary.opacity(0.55)),
+                        style: StrokeStyle(
+                            lineWidth: lineWidth,
+                            lineCap: .round,
+                            dash: dashPattern,
+                            dashPhase: 0
+                        )
+                    )
+                    y += spacing
+                }
+            }
+        }
+        .drawingGroup()
+        .frame(width: 24, height: 16)
+        .background(.thinMaterial, in: swatchShape)
+        .overlay(swatchShape.stroke(.primary.opacity(0.12), lineWidth: 1))
+        .clipShape(swatchShape)
+        .accessibilityHidden(true)
     }
 }
 

@@ -8,38 +8,53 @@
 import SwiftUI
 
 struct OutlookSummaryCard: View {
-    let outlook: ConvectiveOutlookDTO
+    let outlook: ConvectiveOutlookDTO?
+    let isLoading: Bool
     
     @State private var navigateToFull = false
+
+    init(outlook: ConvectiveOutlookDTO?, isLoading: Bool = false) {
+        self.outlook = outlook
+        self.isLoading = isLoading
+    }
+
+    private var summaryText: String {
+        outlook?.summary ?? "A convective outlook summary will appear here once syncing is complete."
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("Outlook Summary", systemImage: "sun.max.fill")
-                .font(.headline.weight(.semibold))
+                .sectionLabel()
 
-            Text(outlook.summary)
+            Text(summaryText)
                 .font(.body)
                 .lineSpacing(4)
                 .lineLimit(5)
                 .fixedSize(horizontal: false, vertical: true)
             
             Button(action: {
+                guard outlook != nil else { return }
                 navigateToFull = true
             }) {
                 HStack(spacing: 8) {
                     Text("Read full outlook")
-                        .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
                     Image(systemName: "arrow.right")
                         .font(.caption.weight(.semibold))
                 }
                 .frame(maxWidth: .infinity)
             }
             .skyAwareGlassButtonStyle()
+            .disabled(isLoading || outlook == nil)
         }
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .placeholder(isLoading)
         .navigationDestination(isPresented: $navigateToFull) {
-            ConvectiveOutlookDetailView(outlook: outlook)
+            if let outlook {
+                ConvectiveOutlookDetailView(outlook: outlook)
+            }
         }
     }
 }

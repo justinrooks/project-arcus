@@ -9,6 +9,22 @@ import Foundation
 import OSLog
 import SwiftData
 
+private enum AppEnvironment {
+    private static let locationPushURLKey = "LocationPushURL"
+
+    static func locationPushURL(bundle: Bundle = .main) -> URL? {
+        guard let rawValue = bundle.object(forInfoDictionaryKey: locationPushURLKey) as? String else {
+            return nil
+        }
+
+        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, !value.hasPrefix("$(") else { return nil }
+        guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return nil }
+        guard scheme == "https" || scheme == "http" else { return nil }
+        return url
+    }
+}
+
 final class Dependencies: Sendable {
     // MARK: Core config
 
@@ -281,12 +297,6 @@ final class Dependencies: Sendable {
             fatalError("Could not create ModelContainer: \(error)")
         }
         
-        // Location
-        let locationProvider = LocationProvider()
-        let sink: LocationSink = { [locationProvider] update in await locationProvider.send(update: update) }
-        let locationManager = LocationManager(onUpdate: sink)
-        logger.info("LocationManager configured")
-        
         // Configure the network cache
         URLCache.shared = .skyAwareCache
         logger.debug("URLCache configured for SkyAware")
@@ -296,6 +306,26 @@ final class Dependencies: Sendable {
         let httpClient = URLSessionHTTPClient(observer: responseObserver)
         let nwsClient = NwsHttpClient(http: httpClient)
         let spcClient = SpcHttpClient(http: httpClient)
+        let metadataRepo = NwsMetadataRepo()
+
+        let snapshotPusher: LocationSnapshotPushing
+        if let endpoint = AppEnvironment.locationPushURL() {
+            let uploader = HTTPLocationSnapshotUploader(endpoint: endpoint, http: httpClient)
+            snapshotPusher = LocationSnapshotPusher(
+                uploader: uploader,
+                gridRegionContextProvider: { await metadataRepo.currentRegionContextSnapshot() }
+            )
+            logger.notice("Location snapshot push enabled host=\(endpoint.host ?? "unknown", privacy: .public)")
+        } else {
+            snapshotPusher = NoOpLocationSnapshotPusher()
+            logger.notice("Location snapshot push disabled (missing LOCATION_PUSH_URL)")
+        }
+        
+        // Location
+        let locationProvider = LocationProvider(snapshotPusher: snapshotPusher)
+        let sink: LocationSink = { [locationProvider] update in await locationProvider.send(update: update) }
+        let locationManager = LocationManager(onUpdate: sink)
+        logger.info("LocationManager configured")
         
         // Create our data layer repos
         let outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)
@@ -305,7 +335,6 @@ final class Dependencies: Sendable {
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
         let fireRiskRepo   = FireRiskRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
-        let metadataRepo   = NwsMetadataRepo()
         
         logger.debug("Repositories initialized")
         

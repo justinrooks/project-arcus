@@ -23,7 +23,6 @@ struct SpcProductHeader: View {
                 Text(title)
                     .font(layout == .sheet ? .headline.weight(.semibold)
                           : .title3.weight(.semibold))
-                    .textCase(.uppercase)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
                 

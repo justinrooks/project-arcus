@@ -91,7 +91,13 @@ struct NotificationManager: Sendable {
         let center = UNUserNotificationCenter.current()
         
         do {
-            try await center.requestAuthorization(options: [.alert, .badge, .sound])
+            try await center.requestAuthorization(options: [.alert,
+                                                            .sound,
+                                                            .badge,
+                                                            .carPlay,
+                                                            .provisional,
+//                                                            .criticalAlert,
+                                                            .providesAppNotificationSettings])
             logger.info("Notification authorization successful")
             return true
             

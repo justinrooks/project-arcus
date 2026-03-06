@@ -31,7 +31,7 @@ struct ConvectiveOutlookDetailView: View {
         guard let risk = outlook.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines), !risk.isEmpty else {
             return nil
         }
-        return "Risk: \(risk.uppercased())"
+        return "Risk: \(sentenceCaseRiskLevel(risk))"
     }
     
     private var fullDiscussion: String {
@@ -85,8 +85,8 @@ struct ConvectiveOutlookDetailView: View {
                     if let day = outlook.day {
                         OutlookMetaChip(title: "Day \(day)", icon: "calendar")
                     }
-                    if let risk = outlook.riskLevel?.uppercased(), !risk.isEmpty {
-                        OutlookMetaChip(title: risk, icon: "exclamationmark.triangle")
+                    if let risk = outlook.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines), !risk.isEmpty {
+                        OutlookMetaChip(title: sentenceCaseRiskLevel(risk), icon: "exclamationmark.triangle")
                     }
                 }
                 .padding(.vertical, 2)
@@ -108,6 +108,22 @@ struct ConvectiveOutlookDetailView: View {
         }
         .padding()
         .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.10, shadowRadius: 12, shadowY: 6)
+    }
+
+    private func sentenceCaseRiskLevel(_ risk: String) -> String {
+        let normalized = risk.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return normalized }
+
+        switch normalized.uppercased() {
+        case "MRGL": return "Marginal"
+        case "SLGT": return "Slight"
+        case "ENH": return "Enhanced"
+        case "MDT": return "Moderate"
+        case "HIGH": return "High"
+        default:
+            let lowercase = normalized.lowercased()
+            return lowercase.prefix(1).uppercased() + lowercase.dropFirst()
+        }
     }
 }
 

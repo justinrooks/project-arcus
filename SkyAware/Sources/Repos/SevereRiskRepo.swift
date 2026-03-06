@@ -87,9 +87,23 @@ actor SevereRiskRepo {
             FetchDescriptor<SevereRisk>(predicate: pred)
         )
 
-        // 2) Sort by descending risk so we can early-exit on first hit
-        let bySeverity = risks.sorted {
-            $0.threatLevel.priority > $1.threatLevel.priority
+        // 2) Sort by descending severity so we can early-exit on first hit.
+        //    Within a threat type, prefer higher probability and then fresher issuances.
+        let bySeverity = risks.sorted { lhs, rhs in
+            if lhs.threatLevel.priority != rhs.threatLevel.priority {
+                return lhs.threatLevel.priority > rhs.threatLevel.priority
+            }
+
+            let lhsProbability = lhs.probability.decimalValue
+            let rhsProbability = rhs.probability.decimalValue
+            if lhsProbability != rhsProbability {
+                return lhsProbability > rhsProbability
+            }
+
+            if lhs.issued != rhs.issued { return lhs.issued > rhs.issued }
+            if lhs.valid != rhs.valid { return lhs.valid > rhs.valid }
+            if lhs.expires != rhs.expires { return lhs.expires > rhs.expires }
+            return lhs.key > rhs.key
         }
 
         // 3) For each risk, check polygons with optional bbox prefilter, then precise hit test
@@ -115,39 +129,44 @@ actor SevereRiskRepo {
     func getSevereRiskShapes(asOf date: Date = .init()) throws
         -> [SevereRiskShapeDTO]
     {
-        // Can't use an enum in a predicate, so need to find a different way.
-        // For now, I'm just going to return an array of the DTO's shaped in
-        // a way that's easier to use downstream. Then we'll just use the View
-        // layer to put the shapes in their respective buckets.
-
-        // Targeting only those items that are both valid and not expired
+        // Target only items that are both valid and not expired.
         let desc = FetchDescriptor<SevereRisk>(
             predicate: #Predicate<SevereRisk> {
                 $0.valid <= date && date < $0.expires
             }
         )
 
-        // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
+        // Keep only the freshest record per type + probability bucket.
+        // CIG overlays are bucketed independently so they are not collapsed into percent(0) buckets.
         let risks = try modelContext.fetch(desc)
+        var mostRecentByBucket: [SevereRiskBucket: SevereRisk] = [:]
 
-        // 2) For each risk level, keep the record with the most recent `valid` date
-        let mostRecentByLevel: [String: SevereRisk] = Dictionary(
-            risks.map { ($0.type.rawValue + $0.key, $0) },
-            uniquingKeysWith: { lhs, rhs in
-                // choose the record with the later `valid` date
-                return lhs.valid >= rhs.valid ? lhs : rhs
+        for risk in risks {
+            let bucket = SevereRiskBucket(
+                type: risk.type,
+                probability: risk.probability,
+                intensityLevel: SevereRiskShapeDTO.intensityLevel(from: risk.label ?? "")
+            )
+            if let current = mostRecentByBucket[bucket] {
+                if isMoreRecent(risk, than: current) {
+                    mostRecentByBucket[bucket] = risk
+                }
+            } else {
+                mostRecentByBucket[bucket] = risk
             }
-        )
+        }
+
         var result: [SevereRiskShapeDTO] = []
 
-        for (_, data) in mostRecentByLevel {
+        for (_, data) in mostRecentByBucket {
             result.append(
                 SevereRiskShapeDTO(
                     type: data.type,
                     probabilities: data.probability,
                     stroke: data.stroke,
                     fill: data.fill,
-                    polygons: data.polygons
+                    polygons: data.polygons,
+                    label: data.label ?? ""
                 )
             )
         }
@@ -247,4 +266,17 @@ actor SevereRiskRepo {
         }
         try modelContext.save()
     }
+
+    private func isMoreRecent(_ lhs: SevereRisk, than rhs: SevereRisk) -> Bool {
+        if lhs.issued != rhs.issued { return lhs.issued > rhs.issued }
+        if lhs.valid != rhs.valid { return lhs.valid > rhs.valid }
+        if lhs.expires != rhs.expires { return lhs.expires > rhs.expires }
+        return lhs.key > rhs.key
+    }
+}
+
+private struct SevereRiskBucket: Hashable {
+    let type: ThreatType
+    let probability: ThreatProbability
+    let intensityLevel: Int?
 }

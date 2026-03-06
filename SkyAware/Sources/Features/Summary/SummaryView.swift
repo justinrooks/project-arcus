@@ -21,6 +21,14 @@ struct SummaryView: View {
         !mesos.isEmpty || !watches.isEmpty
     }
 
+    private var isWeatherLoading: Bool {
+        weather == nil
+    }
+
+    private var isSummaryLoading: Bool {
+        snap == nil || stormRisk == nil || severeRisk == nil || fireRisk == nil
+    }
+
     @ViewBuilder
     private var riskSnapshotContent: some View {
         VStack(spacing: 12) {
@@ -31,6 +39,10 @@ struct SummaryView: View {
             //       danger
             FireWeatherRailView(level: fireRisk ?? .clear)
                 .placeholder(fireRisk == nil)
+            AtmosphereRailView(weather: weather)
+//                .placeholder(isWeatherLoading)
+                .allowsHitTesting(!isWeatherLoading)
+                .animation(.snappy, value: isWeatherLoading)
         }
     }
 
@@ -67,7 +79,9 @@ struct SummaryView: View {
             .padding(16)
             .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
 
-            if hasActiveAlerts {
+            if isSummaryLoading {
+                ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
+            } else if hasActiveAlerts {
                 ActiveAlertSummaryView(
                     mesos: mesos,
                     watches: watches
@@ -80,7 +94,9 @@ struct SummaryView: View {
                 )
             }
 
-            if let outlook {
+            if isSummaryLoading {
+                OutlookSummaryCard(outlook: nil, isLoading: true)
+            } else if let outlook {
                 OutlookSummaryCard(outlook: outlook)
             } else {
                 emptySectionCard(
@@ -101,15 +117,13 @@ struct SummaryView: View {
 
     private func sectionTitle(_ title: String, icon: String) -> some View {
         Label(title, systemImage: icon)
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .textCase(.uppercase)
+            .sectionLabel()
     }
 
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
+                .sectionLabel()
             Text(message)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

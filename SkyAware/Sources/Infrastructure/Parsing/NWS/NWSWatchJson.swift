@@ -7,8 +7,6 @@
 
 import Foundation
 
-import Foundation
-
 // MARK: - Root
 
 public struct NWSWatchJson: Codable, Sendable {

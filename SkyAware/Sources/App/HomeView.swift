@@ -181,7 +181,7 @@ struct HomeView: View {
                 .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
                 
                 NavigationStack {
-                    SettingsView()
+                    SettingsView(locationClient: locSvc)
                         .background(.skyAwareBackground)
                         .navigationTitle("Settings")
                         .navigationBarTitleDisplayMode(.inline)
@@ -239,7 +239,7 @@ struct HomeView: View {
             markOutlookSyncIfNeeded(force: force, now: now)
         }
         let shouldSyncWeatherKitNow = await MainActor.run {
-            markWeatherKitSyncIfNeeded(force: force, now: now)
+            shouldSyncWeatherKit(force: force, now: now)
         }
 
         if showsLoading {
@@ -265,7 +265,12 @@ struct HomeView: View {
         
         if shouldSyncWeatherKitNow {
             if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
-            await refreshWeather(for: snap.coordinates)
+            let didRefreshWeather = await refreshWeather(for: snap.coordinates)
+            if didRefreshWeather {
+                await MainActor.run { lastWeatherKitSyncAt = now }
+            } else {
+                logger.debug("WeatherKit refresh returned no data; leaving throttle timestamp unchanged")
+            }
         } else {
             logger.debug("Skipping WeatherKit refresh due to refresh throttle")
         }
@@ -296,11 +301,13 @@ struct HomeView: View {
     }
     
     @MainActor
-    private func refreshWeather(for snap: CLLocationCoordinate2D) async {
-        if Task.isCancelled { return }
+    private func refreshWeather(for snap: CLLocationCoordinate2D) async -> Bool {
+        if Task.isCancelled { return false }
         let weather = await weatherClient.currentWeather(for: CLLocation(latitude: snap.latitude, longitude: snap.longitude))
-        if Task.isCancelled { return }
+        if Task.isCancelled { return false }
+        guard let weather else { return false }
         self.summaryWeather = weather
+        return true
     }
     
     private func refreshOutlooks() async {
@@ -358,16 +365,12 @@ struct HomeView: View {
     }
 
     @MainActor
-    private func markWeatherKitSyncIfNeeded(force: Bool, now: Date) -> Bool {
-        let shouldSync = weatherKitRefreshPolicy.shouldSync(
+    private func shouldSyncWeatherKit(force: Bool, now: Date) -> Bool {
+        weatherKitRefreshPolicy.shouldSync(
             now: now,
             lastSync: lastWeatherKitSyncAt,
             force: force
         )
-        if shouldSync {
-            lastWeatherKitSyncAt = now
-        }
-        return shouldSync
     }
     
     private func refreshRisk(for coord: CLLocationCoordinate2D) async {

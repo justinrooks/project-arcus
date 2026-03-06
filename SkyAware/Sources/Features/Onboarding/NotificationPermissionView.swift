@@ -6,11 +6,9 @@
 //
 
 import SwiftUI
-import OSLog
 
 struct NotificationPermissionView: View {
     let onComplete: () -> Void
-    private let logger = Logger.uiOnboarding
     
     var body: some View {
         VStack(spacing: 24) {
@@ -56,9 +54,8 @@ struct NotificationPermissionView: View {
             //showLocationPermissionAlert = (locationMgr.authStatus == .denied || locationMgr.authStatus == .restricted)
             
             Button(action: {
-                requestNotificationPermission()
-                // Small delay, then complete onboarding
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                Task {
+                    await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
                     onComplete()
                 }
             }) {
@@ -84,14 +81,6 @@ struct NotificationPermissionView: View {
         }
         .padding()
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-    }
-    
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                logger.error("Notification permission error: \(error.localizedDescription, privacy: .public)")
-            }
-        }
     }
 }
 

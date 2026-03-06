@@ -246,14 +246,14 @@ private struct LogRowView: View {
 
 private func logBadge(for level: OSLogEntryLog.Level) -> String {
     switch level {
-    case .debug:   return "DBG"
-    case .info:    return "INF"
-    case .notice:  return "OK"
-    case .error:   return "ERR"
-    case .fault:   return "FLT"
+    case .debug:   return "Debug"
+    case .info:    return "Info"
+    case .notice:  return "Ok"
+    case .error:   return "Error"
+    case .fault:   return "Fault"
     case .undefined:
-        return "UNK"
-    @unknown default: return "OTH"
+        return "Unknown"
+    @unknown default: return "Other"
     }
 }
 

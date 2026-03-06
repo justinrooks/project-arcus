@@ -14,6 +14,8 @@ import OSLog
 
 @main
 struct SkyAwareApp: App {
+    @UIApplicationDelegateAdaptor(SkyAwareAppDelegate.self) private var appDelegate
+    
     // EnvVars
     @Environment(\.scenePhase) private var scenePhase
     
@@ -111,6 +113,12 @@ struct SkyAwareApp: App {
             case .inactive: // Swallow inactive state
                 break
             case .active:
+                Task(priority: .utility) {
+                    let installationId = await InstallationIdentityStore.shared.installationId()
+                    logger.debug("Installation ID ready with \(installationId.count, privacy: .public) chars")
+                    await RemoteNotificationRegistrar.shared.registerForRemoteNotificationsIfAuthorized(context: "scene-active")
+                }
+                
                 // If its our first run, spin off a task to set up a background task
                 // so we always have one
                 if !didBootstrapBGRefresh {

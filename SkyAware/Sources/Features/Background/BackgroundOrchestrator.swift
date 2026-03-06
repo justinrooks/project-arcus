@@ -149,6 +149,7 @@ actor BackgroundOrchestrator {
                             quietHours: nil,
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
+                            fireRisk: fireRisk,
                             placeMark: updatedSnap.placemarkSummary ?? "Unknown"
                         )
                     )

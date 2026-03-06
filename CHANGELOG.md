@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+## v0.1.0(25)
+
+### Features
+- Add an Atmosphere rail to Summary that surfaces current atmospheric conditions.
+<!-- evidence: 3324c60, 691f147 -->
+- Add layered severe-risk hatch overlays and matching legend swatches to distinguish significant intensity levels on the map.
+<!-- evidence: 761c5c1, 9cc559f, eb5fa50 -->
+
+### Background & Notifications
+- Add location snapshot push plumbing with installation and region context, and switch payloads from raw latitude/longitude to H3 cell identifiers.
+<!-- evidence: 61332e6, f947263, 3be4303, 6d8e50a -->
+- Enable additional notification types and include Fire Weather risk in morning notifications.
+<!-- evidence: c972860, e0c00be -->
+
+### Data & Repos
+- Fix map product freshness filtering so outdated map data is not treated as current.
+<!-- evidence: b57d41c -->
+- Fix severe badge threat sorting so the highest tornado risk is selected for badge output.
+<!-- evidence: 0b06f02 -->
+
+### UI / UX
+- Make Summary components consistent and use placeholder content while loading.
+<!-- evidence: 016c8ab -->
+- Hide AI settings, fix the Settings location card width bug, and surface installation/device identifiers in Settings for debugging.
+<!-- evidence: 535622d, 61332e6 -->
+- Normalize text casing across Summary, Outlook, Meso, and diagnostics surfaces.
+<!-- evidence: 0ef93db -->
+- Refine map layer picker/legend presentation and unify severe hatch legend swatches.
+<!-- evidence: e6dbb10, eb5fa50 -->
+
+### Infra / Parsing
+- Improve map rendering with keyed overlay diffing and concurrency-safe hatch layering.
+<!-- evidence: fce30a6, 6e3da7a -->
+
+### Tests / QA
+- Add and stabilize tests for location snapshot push behavior, map freshness filtering, and severe overlay rendering behavior.
+<!-- evidence: cecd695, b57d41c, fce30a6, 761c5c1, eb5fa50 -->
+- Fix failing unit tests around severe-risk active-selection helpers.
+<!-- evidence: 0b406cc -->
+
+### Maintenance / Cleanup
+- Add location snapshot push logging for diagnostics.
+<!-- evidence: 6772c75 -->
+- Clean up Summary header card layout.
+<!-- evidence: b90fecd -->
+
 ## v0.1.0(22)
 
 ### Features

@@ -44,6 +44,8 @@ extension Logger {
     // MARK: Location
     static let locationManager = Logger(subsystem: subsystem, category: "location.manager")
     static let locationProvider = Logger(subsystem: subsystem, category: "location.provider")
+    static let locationPushPusher = Logger(subsystem: subsystem, category: "location.push.pusher")
+    static let locationPushUploader = Logger(subsystem: subsystem, category: "location.push.uploader")
     
     // MARK: Views
     static let uiAlert = Logger(subsystem: subsystem, category: "ui.alert")
@@ -58,6 +60,8 @@ extension Logger {
     
     // MARK: Notification
     static let notificationsManager = Logger(subsystem: subsystem, category: "notifications.manager")
+    static let notificationsRemote = Logger(subsystem: subsystem, category: "notifications.remote")
+    static let identityInstallation = Logger(subsystem: subsystem, category: "identity.installation")
     
     // MARK: Morning Notification
     static let notificationsMorningEngine = Logger(subsystem: subsystem, category: "notifications.morning.engine")

@@ -16,7 +16,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
     
     var title: String {
         switch self {
-        case .categorical: return "Categorical"
+        case .categorical: return "Severe Risk"
         case .wind:        return "Wind"
         case .hail:        return "Hail"
         case .tornado:     return "Tornado"
@@ -108,9 +108,11 @@ struct LayerTile: View {
                 Text(layer.title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(minHeight: 34, alignment: .top)
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, 4)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(layer.title + (isSelected ? ", selected" : ""))
         }
@@ -134,7 +136,7 @@ struct LayerPickerSheet: View {
         VStack(spacing: 14) {
             HStack {
                 HStack(spacing: 8) {
-                    Image(systemName: "slider.horizontal.3")
+                    Image(systemName: "square.2.layers.3d.top.filled")
                         .font(.caption.weight(.bold))
                         .frame(width: 26, height: 26)
                         .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .skyAwareAccent.opacity(0.18))
@@ -146,13 +148,6 @@ struct LayerPickerSheet: View {
                 DismissButton()
             }
             .padding()
-
-            Text("Active: \(selection.title)")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
 
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {

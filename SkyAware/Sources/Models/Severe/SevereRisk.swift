@@ -55,6 +55,7 @@ final class SevereRisk {
     var issued: Date
     var valid: Date
     var expires: Date
+    var label: String?
     var stroke: String?
     var fill: String?
     var polygons: [GeoPolygonEntity]
@@ -76,11 +77,11 @@ final class SevereRisk {
     
     init(type: ThreatType, probability: ThreatProbability, threatLevel: SevereWeatherThreat, issued: Date, valid: Date, expires: Date, dn: Int, stroke: String?, fill: String?, polygons: [GeoPolygonEntity], label: String) {
         self.id = UUID()
-        
-        if(label == "SIGN") {
-            self.key = "\(type.rawValue)_\(issued.timeIntervalSince1970)_p\(dn)_SIGN"
+        let baseKey = "\(type.rawValue)_\(issued.timeIntervalSince1970)_p\(dn)"
+        if let keySuffix = Self.keySuffix(for: label) {
+            self.key = "\(baseKey)_\(keySuffix)"
         } else {
-            self.key = "\(type.rawValue)_\(issued.timeIntervalSince1970)_p\(dn)"
+            self.key = baseKey
         }
         
         self.type = type
@@ -89,8 +90,29 @@ final class SevereRisk {
         self.issued = issued
         self.valid = valid
         self.expires = expires
+        self.label = label
         self.stroke = stroke
         self.fill = fill
         self.polygons = polygons
+    }
+
+    private static func keySuffix(for label: String) -> String? {
+        let normalized = label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+
+        guard !normalized.isEmpty else { return nil }
+
+        if normalized == "SIGN" {
+            return normalized
+        }
+
+        if normalized.hasPrefix("CIG"),
+           let level = Int(normalized.dropFirst(3)),
+           (1...3).contains(level) {
+            return "CIG\(level)"
+        }
+
+        return nil
     }
 }

@@ -35,6 +35,11 @@ actor GridPointProvider {
             let decoded = try await metadataRepo.getPointMetadata(using: client, for: coordinates)
             let snapshot = GridPointSnapshot(from: decoded, with: coordinates)
             lastSnapshot = snapshot
+            await metadataRepo.updateCurrentRegionContext(
+                county: snapshot.county,
+                zone: snapshot.zone,
+                fireZone: snapshot.fireZone
+            )
             
             return snapshot
         } catch {

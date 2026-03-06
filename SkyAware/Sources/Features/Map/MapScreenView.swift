@@ -27,47 +27,43 @@ struct MapScreenView: View {
     @State private var selectedSevereRisks: [SevereRiskShapeDTO]? = nil
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
+    @State private var activeOverlays: [MapOverlayEntry] = []
     @State private var snap: LocationSnapshot?
+    @State private var mapRebuildTask: Task<Void, Never>?
     @Namespace private var layerNamespace
     
     var body: some View {
         ZStack {
-            MapCanvasView(polygons: activePolygons, coordinates: snap?.coordinates)
+            MapCanvasView(polygons: activePolygons, overlays: activeOverlays, coordinates: snap?.coordinates)
                 .edgesIgnoringSafeArea(.all)
             
             VStack(alignment: .trailing) {
                 HStack(spacing: 10) {
-                    Label(selected.title, systemImage: selected.symbol)
-                        .font(.subheadline.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .skyAwareSurface(
-                            cornerRadius: SkyAwareRadius.tile,
-                            tint: .white.opacity(0.10),
-                            shadowOpacity: 0.12,
-                            shadowRadius: 8,
-                            shadowY: 3
-                        )
-
                     Button {
                         showLayerPicker = true
                     } label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.headline.weight(.semibold))
-                            .frame(width: 44, height: 44)
-                            .foregroundStyle(.primary)
+                        HStack(spacing: 10) {
+                            Image(systemName: "square.2.layers.3d.top.filled")
+                                .imageScale(.medium)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(.secondary)
+                            Text(selected.title)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 40)
+                        .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
                     .accessibilityLabel("Map layers")
-                    .skyAwareSurface(
-                        cornerRadius: SkyAwareRadius.section,
-                        tint: .skyAwareAccent.opacity(0.18),
-                        interactive: true,
-                        shadowOpacity: 0.16,
-                        shadowRadius: 10,
-                        shadowY: 6
-                    )
+                    .accessibilityValue(selected.title)
+                    .scaleEffect(showLayerPicker ? 0.98 : 1)
+                    .animation(.snappy(duration: 0.20), value: showLayerPicker)
+                    .modifier(MapLayerPickerButtonStyle())
                     .modifier(MapLayerButtonMorph(namespace: layerNamespace))
                 }
                 .padding(.horizontal, 18)
@@ -99,7 +95,11 @@ struct MapScreenView: View {
             await loadMapData()
         }
         .onChange(of: selected) { _, _ in
-            rebuildMapState()
+            scheduleMapStateRebuild()
+        }
+        .onDisappear {
+            mapRebuildTask?.cancel()
+            mapRebuildTask = nil
         }
         .task {
             if let first = await loc.snapshot() {
@@ -111,27 +111,6 @@ struct MapScreenView: View {
                 await MainActor.run { snap = s }
             }
         }
-    }
-    
-    private func severeRisksForSelectedLayer(for layer: MapLayer) -> [SevereRiskShapeDTO]? {
-        let sortedSevereRisks: [SevereRiskShapeDTO]
-        switch layer {
-        case .tornado:
-            sortedSevereRisks = severeRisksForType(.tornado)
-        case .hail:
-            sortedSevereRisks = severeRisksForType(.hail)
-        case .wind:
-            sortedSevereRisks = severeRisksForType(.wind)
-        default:
-            return nil
-        }
-        return sortedSevereRisks
-    }
-
-    private func severeRisksForType(_ type: ThreatType) -> [SevereRiskShapeDTO] {
-        severeRisks
-            .filter { $0.type == type }
-            .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
     }
     
     @MainActor
@@ -171,7 +150,7 @@ struct MapScreenView: View {
             logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
         }
 
-        rebuildMapState()
+        scheduleMapStateRebuild()
     }
 
     private func fetchSevereRiskShapes() async -> Result<[SevereRiskShapeDTO], any Error> {
@@ -207,15 +186,207 @@ struct MapScreenView: View {
     }
 
     @MainActor
-    private func rebuildMapState() {
-        activePolygons = polygonMapper.polygons(
+    private func scheduleMapStateRebuild() {
+        mapRebuildTask?.cancel()
+
+        let selected = selected
+        let stormRisk = stormRisk
+        let severeRisks = severeRisks
+        let mesos = mesos
+        let fireRisk = fireRisk
+        let mapper = polygonMapper
+
+        mapRebuildTask = Task.detached(priority: .userInitiated) {
+            let renderState = MapRenderStateBuilder.build(
+                selected: selected,
+                stormRisk: stormRisk,
+                severeRisks: severeRisks,
+                mesos: mesos,
+                fireRisk: fireRisk,
+                polygonMapper: mapper
+            )
+
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                if Task.isCancelled { return }
+
+                var polygons: [MKPolygon] = []
+                polygons.reserveCapacity(renderState.polygons.count)
+
+                var polygonsByKey: [String: MKPolygon] = [:]
+                polygonsByKey.reserveCapacity(renderState.polygons.count)
+
+                for polygonEntry in renderState.polygons {
+                    let polygon = polygonEntry.polygon
+                    polygons.append(polygon)
+                    polygonsByKey[polygonEntry.key] = polygon
+                }
+
+                var overlays: [MapOverlayEntry] = []
+                overlays.reserveCapacity(renderState.overlays.count)
+
+                for overlayPlan in renderState.overlays {
+                    guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
+
+                    let overlay: MKOverlay
+                    switch overlayPlan.kind {
+                    case .probability:
+                        overlay = RiskPolygonOverlay.probability(from: polygon)
+                    case .intensity(let level):
+                        let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
+                        overlay = RiskPolygonOverlay.intensity(
+                            from: polygon,
+                            level: level,
+                            strokeColor: style.stroke,
+                            fillColor: style.fill
+                        )
+                    }
+
+                    overlays.append(
+                        MapOverlayEntry(
+                            key: overlayPlan.key,
+                            overlay: overlay
+                        )
+                    )
+                }
+
+                activePolygons = MKMultiPolygon(polygons)
+                activeOverlays = overlays
+                selectedSevereRisks = renderState.selectedSevereRisks
+            }
+        }
+    }
+}
+
+private struct MapOverlayBuildPlan: Sendable {
+    enum Kind: Sendable {
+        case probability
+        case intensity(level: Int)
+    }
+
+    let key: String
+    let polygonKey: String
+    let kind: Kind
+}
+
+private struct MapRenderState: Sendable {
+    let polygons: [MapPolygonEntry]
+    let overlays: [MapOverlayBuildPlan]
+    let selectedSevereRisks: [SevereRiskShapeDTO]?
+}
+
+private enum MapRenderStateBuilder {
+    static func build(
+        selected: MapLayer,
+        stormRisk: [StormRiskDTO],
+        severeRisks: [SevereRiskShapeDTO],
+        mesos: [MdDTO],
+        fireRisk: [FireRiskDTO],
+        polygonMapper: MapPolygonMapper
+    ) -> MapRenderState {
+        let mappedPolygons = polygonMapper.polygons(
             for: selected,
             stormRisk: stormRisk,
             severeRisks: severeRisks,
             mesos: mesos,
             fires: fireRisk
         )
-        selectedSevereRisks = severeRisksForSelectedLayer(for: selected)
+
+        if Task.isCancelled {
+            return MapRenderState(
+                polygons: mappedPolygons.keyedPolygons,
+                overlays: [],
+                selectedSevereRisks: nil
+            )
+        }
+
+        var probabilityOverlays: [MapOverlayBuildPlan] = []
+        var intensityOverlaysByLevel: [(level: Int, plan: MapOverlayBuildPlan)] = []
+        probabilityOverlays.reserveCapacity(mappedPolygons.keyedPolygons.count)
+
+        for keyedPolygon in mappedPolygons.keyedPolygons {
+            if Task.isCancelled { break }
+            let metadata = StormRiskPolygonStyleMetadata.decode(from: keyedPolygon.subtitle)
+            if let cigLevel = metadata?.cigLevel {
+                intensityOverlaysByLevel.append(
+                    (
+                        level: cigLevel,
+                        plan: MapOverlayBuildPlan(
+                            key: "\(keyedPolygon.key)|intensity|\(cigLevel)",
+                            polygonKey: keyedPolygon.key,
+                            kind: .intensity(level: cigLevel)
+                        )
+                    )
+                )
+            } else {
+                probabilityOverlays.append(
+                    MapOverlayBuildPlan(
+                        key: "\(keyedPolygon.key)|probability",
+                        polygonKey: keyedPolygon.key,
+                        kind: .probability
+                    )
+                )
+            }
+        }
+
+        // Draw intensity overlays after probabilities, with higher CIG drawn last (on top):
+        // bottom -> top = CIG1, CIG2, CIG3.
+        let orderedIntensityOverlays = intensityOverlaysByLevel
+            .sorted { $0.level < $1.level }
+            .map(\.plan)
+
+        return MapRenderState(
+            polygons: mappedPolygons.keyedPolygons,
+            overlays: probabilityOverlays + orderedIntensityOverlays,
+            selectedSevereRisks: severeRisksForSelectedLayer(selected, severeRisks: severeRisks)
+        )
+    }
+
+    private static func severeRisksForSelectedLayer(
+        _ layer: MapLayer,
+        severeRisks: [SevereRiskShapeDTO]
+    ) -> [SevereRiskShapeDTO]? {
+        switch layer {
+        case .tornado:
+            severeRisksForType(.tornado, severeRisks: severeRisks)
+        case .hail:
+            severeRisksForType(.hail, severeRisks: severeRisks)
+        case .wind:
+            severeRisksForType(.wind, severeRisks: severeRisks)
+        default:
+            nil
+        }
+    }
+
+    private static func severeRisksForType(
+        _ type: ThreatType,
+        severeRisks: [SevereRiskShapeDTO]
+    ) -> [SevereRiskShapeDTO] {
+        severeRisks
+            .filter { $0.type == type }
+            .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
+    }
+}
+
+private struct MapLayerPickerButtonStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .buttonStyle(.glass)
+        } else {
+            content
+                .buttonStyle(.plain)
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.section,
+                    tint: .skyAwareAccent.opacity(0.18),
+                    interactive: true,
+                    shadowOpacity: 0.16,
+                    shadowRadius: 10,
+                    shadowY: 6
+                )
+        }
     }
 }
 

@@ -30,10 +30,23 @@ enum PolygonStyleProvider {
         spcFillHex: String? = nil,
         spcStrokeHex: String? = nil
     ) -> (UIColor, UIColor) {
-        let (fallbackFill, fallbackStroke) = fallbackPolygonStyle(risk: risk, probability: probability, context: context)
-        let fill = color(fromHex: spcFillHex)
-            .map { $0.withAlphaComponent(fillAlpha(for: context)) } ?? fallbackFill
-        let stroke = color(fromHex: spcStrokeHex) ?? fallbackStroke
+        let fillOverride = color(fromHex: spcFillHex)
+            .map { $0.withAlphaComponent(fillAlpha(for: context)) }
+        let strokeOverride = color(fromHex: spcStrokeHex)
+
+        // Most SPC polygons provide explicit style tokens; avoid unnecessary fallback
+        // evaluation (and unknown-style logs) when both overrides are available.
+        if let fillOverride, let strokeOverride {
+            return (fillOverride, strokeOverride)
+        }
+
+        let (fallbackFill, fallbackStroke) = fallbackPolygonStyle(
+            risk: risk,
+            probability: probability,
+            context: context
+        )
+        let fill = fillOverride ?? fallbackFill
+        let stroke = strokeOverride ?? fallbackStroke
         return (fill, stroke)
     }
 
@@ -55,6 +68,11 @@ enum PolygonStyleProvider {
 
     private static func fallbackPolygonStyle(risk: String, probability: String, context: ColorContext) -> (UIColor, UIColor) {
         switch risk.uppercased() {
+        case let r where r.contains("TSTM"):
+            return (
+                UIColor(red: 0.75, green: 0.93, blue: 0.75, alpha: 0.3),
+                UIColor(red: 0.4, green: 0.7, blue: 0.4, alpha: 1.0)
+            )
         case let r where r.contains("MRGL"):
             return (UIColor(hue: 0.33, saturation: 0.5, brightness: 0.8, alpha: 0.3), .green)
         case let r where r.contains("SLGT"):
@@ -87,14 +105,10 @@ enum PolygonStyleProvider {
             let base = parseTorProbability(probability)
             let alpha = context == .map ? 0.3 : 0.7
             return (base.withAlphaComponent(alpha), isSignificant ? UIColor.black : base)
-            
-        case let r where r.contains("TSTM"):
-            return (
-                UIColor(red: 0.75, green: 0.93, blue: 0.75, alpha: 0.3),
-                UIColor(red: 0.4, green: 0.7, blue: 0.4, alpha: 1.0)
-            )
         default:
-            logger.warning("Unknown polygon title encountered while styling")
+            logger.debug(
+                "Using fallback polygon style for risk=\(risk, privacy: .public) probability=\(probability, privacy: .public)"
+            )
             return (UIColor.systemPink.withAlphaComponent(0.15), UIColor.systemPink)
         }
     }

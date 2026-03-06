@@ -14,6 +14,7 @@ struct MorningContext: Sendable {
     let quietHours: ClosedRange<Int>?
     let stormRisk: StormRiskLevel
     let severeRisk: SevereWeatherThreat
+    let fireRisk: FireRiskLevel
     let placeMark: String
     
     init(
@@ -23,6 +24,7 @@ struct MorningContext: Sendable {
         quietHours: ClosedRange<Int>?,
         stormRisk: StormRiskLevel,
         severeRisk: SevereWeatherThreat,
+        fireRisk: FireRiskLevel,
         placeMark: String
     ) {
         self.now = now
@@ -31,6 +33,7 @@ struct MorningContext: Sendable {
         self.quietHours = quietHours
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
+        self.fireRisk = fireRisk
         self.placeMark = placeMark
     }
 }

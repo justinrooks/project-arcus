@@ -25,21 +25,17 @@ struct MorningNotificationTests {
             quietHours: nil,
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.3),
+            fireRisk: .clear,
             placeMark: "Oklahoma City, OK"
         )
         
         let rule = AmRangeLocalRule(window: 7..<11)
-        do {
-            let event = try #require(rule.evaluate(ctx))
-            
-            #expect(event.kind == .morningOutlook)
-            #expect(event.key == "morning:2026-01-02")
-            #expect(event.payload["localDay"] as? String == "2026-01-02")
-            #expect(event.payload["issue"] as? Date == issue)
-            #expect(event.payload["placeMark"] as? String == "Oklahoma City, OK")
-        } catch {
-            #expect(false, "Unexpected error: \(error)")
-        }
+        let event = rule.evaluate(ctx)
+        #expect(event?.kind == NotificationKind.morningOutlook)
+        #expect(event?.key == "morning:2026-01-02")
+        #expect(event?.payload["localDay"] as? String == "2026-01-02")
+        #expect(event?.payload["issue"] as? Date == issue)
+        #expect(event?.payload["placeMark"] as? String == "Oklahoma City, OK")
     }
     
     @Test
@@ -53,6 +49,7 @@ struct MorningNotificationTests {
             quietHours: nil,
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.3),
+            fireRisk: .clear,
             placeMark: "Oklahoma City, OK"
         )
         
@@ -74,6 +71,7 @@ struct MorningNotificationTests {
             quietHours: nil,
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.3),
+            fireRisk: .clear,
             placeMark: "Oklahoma City, OK"
         )
         

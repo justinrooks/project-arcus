@@ -5,6 +5,8 @@ import Testing
 
 @Suite("LocationProvider")
 struct LocationProviderTests {
+    private let sampleH3Cell: Int64 = 0x872681364FFFFFF
+
     private indirect enum GeocoderMode {
         case success(String)
         case failure(Error)
@@ -24,6 +26,48 @@ struct LocationProviderTests {
                 try await Task.sleep(for: .seconds(seconds))
                 return try await MockGeocoder(mode: then).reverseGeocode(coord)
             }
+        }
+    }
+    
+    private struct MockHasher: LocationHashing {
+        enum Mode {
+            case success(Int64)
+            case failure(Error)
+        }
+        
+        let mode: Mode
+        
+        func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64 {
+            switch mode {
+            case .success(let value):
+                return value
+            case .failure(let error):
+                throw error
+            }
+        }
+    }
+    
+    private actor MockSnapshotPusher: LocationSnapshotPushing {
+        private var snapshots: [LocationSnapshot] = []
+        
+        func enqueue(_ snapshot: LocationSnapshot) async {
+            snapshots.append(snapshot)
+        }
+        
+        func allSnapshots() -> [LocationSnapshot] {
+            snapshots
+        }
+    }
+    
+    private actor MockSnapshotUploader: LocationSnapshotUploading {
+        private var payloads: [LocationSnapshotPushPayload] = []
+        
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            payloads.append(payload)
+        }
+        
+        func uploadedPayloads() -> [LocationSnapshotPushPayload] {
+            payloads
         }
     }
 
@@ -84,6 +128,91 @@ struct LocationProviderTests {
         #expect(value.coordinates.longitude == -104.0)
         #expect(value.timestamp == now)
         #expect(value.accuracy == 50)
+    }
+    
+    @Test("send stores h3 hash when hasher succeeds")
+    func send_storesH3Hash() async throws {
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success(sampleH3Cell))
+        )
+        let now = Date()
+        
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
+        
+        let snapshot = try #require(await provider.snapshot())
+        #expect(snapshot.h3Cell == sampleH3Cell)
+    }
+    
+    @Test("send pushes accepted snapshot to location snapshot pusher")
+    func send_pushesAcceptedSnapshot() async throws {
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success(sampleH3Cell)),
+            snapshotPusher: pusher
+        )
+        let now = Date()
+        
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
+
+        let pushed = await waitForSnapshots(from: pusher)
+        let first = try #require(pushed.first)
+        #expect(pushed.count == 1)
+        #expect(first.timestamp == now)
+        #expect(first.h3Cell == sampleH3Cell)
+    }
+
+    @Test("snapshot pusher payload includes timestamp and apns token")
+    func snapshotPusher_includesTimestampAndApnsToken() async throws {
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            gridRegionContextProvider: {
+                NwsGridRegionContext(county: "OKC109", zone: "OKZ025", fireZone: "OKZ025")
+            },
+            retryDelaysSeconds: [0]
+        )
+        
+        let ts = Date(timeIntervalSince1970: 1_234_567)
+        let snap = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: ts,
+            accuracy: 42,
+            placemarkSummary: "OKC, OK",
+            h3Cell: sampleH3Cell
+        )
+        
+        await pusher.enqueue(snap)
+        
+        let payloads = await uploader.uploadedPayloads()
+        let payload = try #require(payloads.first)
+        #expect(payload.capturedAt == ts)
+        #expect(payload.installationId == "install-abc-123")
+        #expect(payload.apnsDeviceToken == "apns-token-123")
+        #expect(payload.county == "OKC109")
+        #expect(payload.zone == "OKZ025")
+        #expect(payload.fireZone == "OKZ025")
+        #expect(payload.h3Cell == sampleH3Cell)
+    }
+
+    private func waitForSnapshots(
+        from pusher: MockSnapshotPusher,
+        timeoutMs: Int = 500,
+        pollMs: Int = 10
+    ) async -> [LocationSnapshot] {
+        let maxAttempts = max(1, timeoutMs / pollMs)
+        for _ in 0..<maxAttempts {
+            let snapshots = await pusher.allSnapshots()
+            if !snapshots.isEmpty {
+                return snapshots
+            }
+            try? await Task.sleep(for: .milliseconds(pollMs))
+        }
+
+        return await pusher.allSnapshots()
     }
 
     @Test("send suppresses rapid updates inside minSeconds window")

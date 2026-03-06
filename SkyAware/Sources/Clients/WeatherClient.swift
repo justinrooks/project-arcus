@@ -23,7 +23,14 @@ actor WeatherClient {
                 temperature: currentWeather.temperature,
                 symbolName: currentWeather.symbolName,
                 conditionText: currentWeather.condition.description,
-                asOf: .now
+                asOf: .now,
+                dewPoint: currentWeather.dewPoint,
+                humidity: currentWeather.humidity,
+                windSpeed: currentWeather.wind.speed,
+                windGust: currentWeather.wind.gust,
+                windDirection: currentWeather.wind.compassDirection.abbreviation,
+                pressure: currentWeather.pressure,
+                pressureTrend: currentWeather.pressureTrend.description
             )
         } catch {
             logger.error("WeatherKit request failed: \(error, privacy: .public)")

@@ -67,19 +67,18 @@ actor StormRiskRepo {
         // 1) Fetch only risks that are currently valid
         let pred = #Predicate<StormRisk> { $0.valid <= date && date < $0.expires }
         let desc = FetchDescriptor<StormRisk>(predicate: pred)
-        // We'll dedupe by risk level based on the latest `valid` date, so no sort needed here
+        // We'll dedupe by risk level and keep the freshest issuance for each level.
         let risks = try modelContext.fetch(desc)
 
-        // 2) For each risk level, keep the record with the most recent `valid` date
+        // 2) For each risk level, keep the most recent record.
         let mostRecentByLevel: [Int: StormRisk] = Dictionary(
             risks.map { ($0.riskLevel.rawValue, $0) },
             uniquingKeysWith: { lhs, rhs in
-                // choose the record with the later `valid` date
-                return lhs.valid >= rhs.valid ? lhs : rhs
+                self.isMoreRecent(lhs, than: rhs) ? lhs : rhs
             }
         )
 
-        // 3) Sort the selected items by descending risk severity for a stable output order
+        // 3) Sort by descending risk severity for a stable output order.
         let selected = mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
 
         // 4) Map to DTOs
@@ -120,5 +119,12 @@ actor StormRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func isMoreRecent(_ lhs: StormRisk, than rhs: StormRisk) -> Bool {
+        if lhs.issued != rhs.issued { return lhs.issued > rhs.issued }
+        if lhs.valid != rhs.valid { return lhs.valid > rhs.valid }
+        if lhs.expires != rhs.expires { return lhs.expires > rhs.expires }
+        return lhs.key > rhs.key
     }
 }
