@@ -172,6 +172,11 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
     func enqueue(_ snapshot: LocationSnapshot) async {
         let regionContext = await gridRegionContextProvider()
         let installationId = await installationIdProvider()
+        let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apnsToken.isEmpty else {
+            logger.debug("Skipping location snapshot upload; APNs token unavailable")
+            return
+        }
         let payload = LocationSnapshotPushPayload(
             capturedAt: snapshot.timestamp,
             locationAgeSeconds: Date().timeIntervalSince(snapshot.timestamp),
@@ -182,7 +187,7 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
             county: regionContext?.county,
             zone: regionContext?.zone,
             fireZone: regionContext?.fireZone,
-            apnsDeviceToken: apnsTokenProvider(),
+            apnsDeviceToken: apnsToken,
             installationId: installationId,
             source: "unknown",
             auth: {
