@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(25)
+
 ### Overview
 This update adds an Atmosphere rail in Summary, introduces layered severe-map hatching with matching legend output, and extends notification/location snapshot handling while tightening map freshness and rendering behavior.
 

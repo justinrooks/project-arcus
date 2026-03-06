@@ -1,4 +1,4 @@
-SkyAware upcoming build adds a new Atmosphere summary rail, expanded severe-map hatching/legend behavior, and notification/data freshness updates.
+SkyAware v0.1.0(25) build adds a new Atmosphere summary rail, expanded severe-map hatching/legend behavior, and notification/data freshness updates.
 
 Highlights:
 - Summary now includes an Atmosphere rail and more consistent placeholder loading states
@@ -8,7 +8,7 @@ Highlights:
 - Map product freshness filtering now reduces stale map layer displays
 - Settings now hides AI options, fixes the location card width issue, and shows installation/device identifiers for debugging
 
-SkyAware ## v0.1.0(22) build adds WeatherKit attribution/cadence updates, expanded Fire Weather surfacing, and continued map behavior fixes.
+SkyAware v0.1.0(22) build adds WeatherKit attribution/cadence updates, expanded Fire Weather surfacing, and continued map behavior fixes.
 
 Highlights:
 - Fire Weather risk now appears in both the Summary rail and the Fire map layer/legend

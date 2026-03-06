@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(25)
+
 ### Features
 - Add an Atmosphere rail to Summary that surfaces current atmospheric conditions.
 <!-- evidence: 3324c60, 691f147 -->
