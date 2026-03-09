@@ -75,6 +75,8 @@ struct NwsHttpClientTests {
         #expect(components.scheme == "https")
         #expect(components.host == "api.weather.gov")
         #expect(components.path == "/alerts/active")
+        #expect(components.queryItems?.first(where: { $0.name == "status" })?.value == "actual")
+        #expect(components.queryItems?.first(where: { $0.name == "message_type" })?.value == "alert,update")
         #expect(components.queryItems?.first(where: { $0.name == "point" })?.value == "39.1234,-104.9876")
         #expect(request.headers["Accept"] == "application/geo+json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)

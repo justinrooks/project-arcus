@@ -31,7 +31,11 @@ struct NwsHttpClient: NwsClient {
         let point = "\(lat),\(lon)"
         let url = try makeNwsUrl(
             path: "/alerts/active",
-            queryItems: [URLQueryItem(name: "point", value: point)]
+            queryItems: [
+                URLQueryItem(name: "status", value: "actual"),
+                URLQueryItem(name: "message_type", value: "alert,update"),
+                URLQueryItem(name: "point", value: point)
+            ]
         )
         
         return try await fetch(from: url)
@@ -61,9 +65,16 @@ struct NwsHttpClient: NwsClient {
 
         let resp = try await http.get(url, headers: requestHeaders)
         try Task.checkCancellation()
-        
+
+        if resp.source != .live {
+            logger.notice("NWS response served from \(resp.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
+        }
+
         switch resp.classifyStatus() {
         case .success:
+            break
+        case .notModified:
+            // Downloader already rehydrates cached body for 304 when available.
             break
         case .rateLimited(let retryAfter):
             let error = NwsError.rateLimited(retryAfterSeconds: retryAfter)

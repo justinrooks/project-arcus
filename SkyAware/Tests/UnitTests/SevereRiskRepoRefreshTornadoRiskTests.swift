@@ -197,6 +197,18 @@ private func makeMultiPolygonGeometry(squareAtLonLat origin: (Double, Double), s
 
 @Suite("SpcProvider.syncMapProducts", .serialized)
 struct SpcProviderSyncMapProductsTests {
+    @Test("Map sync caps concurrent product fanout at three")
+    func mapSyncCapsFanoutAtThree() async throws {
+        let container = try await makeMapSyncContainer()
+        let client = CountingMapSyncClient(delayNanoseconds: 50_000_000)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        await provider.syncMapProducts()
+
+        #expect(await client.geoJsonCallCount() == 5)
+        #expect(await client.maxConcurrentGeoJsonCalls() <= 3)
+    }
+
     @Test("Concurrent calls share one in-flight map sync run")
     func concurrentCallsShareOneRun() async throws {
         let container = try await makeMapSyncContainer()
@@ -242,6 +254,8 @@ struct SpcProviderSyncMapProductsTests {
 
 private actor CountingMapSyncClient: SpcClient {
     private var geoJsonCalls = 0
+    private var inFlightGeoJsonCalls = 0
+    private var maxConcurrentGeoJsonCallsValue = 0
     private let delayNanoseconds: UInt64
     private let failingProduct: GeoJSONProduct?
 
@@ -256,6 +270,13 @@ private actor CountingMapSyncClient: SpcClient {
 
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
         geoJsonCalls += 1
+        inFlightGeoJsonCalls += 1
+        maxConcurrentGeoJsonCallsValue = max(maxConcurrentGeoJsonCallsValue, inFlightGeoJsonCalls)
+
+        defer {
+            inFlightGeoJsonCalls -= 1
+        }
+
         if delayNanoseconds > 0 {
             try await Task.sleep(nanoseconds: delayNanoseconds)
         }
@@ -267,6 +288,10 @@ private actor CountingMapSyncClient: SpcClient {
 
     func geoJsonCallCount() -> Int {
         geoJsonCalls
+    }
+
+    func maxConcurrentGeoJsonCalls() -> Int {
+        maxConcurrentGeoJsonCallsValue
     }
 }
 

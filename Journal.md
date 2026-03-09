@@ -54,6 +54,40 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-09: Networking got faster, calmer, and less chatty
+
+Bug-shaped problem:
+Data refreshes could feel slow under normal load and brittle under bad network conditions. We were also doing avoidable duplicate NWS work when multiple triggers fired close together.
+
+What changed:
+- Upgraded `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Networking/HTTPDataDownloader.swift` with:
+  - task-local execution context (`foreground` vs `background`)
+  - policy-driven timeout/retry profiles
+  - retry handling for 429/503 with `Retry-After` support + jitter
+  - HTTP 304 cache revalidation path (`cacheRevalidated304`)
+  - final-attempt cache fallback path for retryable failures (`cacheFallback`)
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/SPC/SpcProvider+Syncing.swift` to:
+  - run text sync lanes concurrently (convective + meso)
+  - fan out map product sync with a fixed max concurrency of 3
+  - preserve existing in-flight coalescing and cooldown behavior
+- Updated foreground/background call sites:
+  - `/Users/justin/Code/project-arcus/SkyAware/Sources/App/HomeView.swift` sets foreground mode and parallelizes independent refresh stages
+  - `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Background/BackgroundOrchestrator.swift` sets background mode for orchestration calls
+- Reduced avoidable NWS traffic:
+  - `/Users/justin/Code/project-arcus/SkyAware/Sources/Clients/NwsClient.swift` now requests active alerts with tighter recommended filters
+  - `/Users/justin/Code/project-arcus/SkyAware/Sources/Utilities/Core/RefreshKey.swift` now quantizes to 4-decimal coordinate precision
+  - `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/NWS/NwsProvider.swift` now coalesces in-flight same-location syncs and adds a short cooldown gate
+- Added/updated tests:
+  - new downloader coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/HTTPDataDownloaderTests.swift`
+  - new NWS dedupe/cooldown coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/NwsProviderSyncTests.swift`
+  - updated query and SPC concurrency tests in existing suites
+
+Aha moment:
+The fastest request is the one you never send. Bounded parallelism plus dedupe beats both pure serial and "spawn everything now" approaches.
+
+Gotcha:
+The new downloader tests used a shared `URLProtocol` stub store, and Swift Testing runs suites concurrently by default. Tests were intermittently failing with `NSURLErrorDomain -1011` because they were resetting each other's stub queues. Marking that suite `.serialized` fixed the flake.
+
 ### 2026-03-08: Background runs had amnesia about location
 
 Bug-shaped problem:

@@ -6,16 +6,21 @@
 //
 
 import Foundation
+import OSLog
 
 // MARK: SpcSyncing
 extension SpcProvider: SpcSyncing {
+    private static let mapSyncMaxConcurrentProducts = 3
+
     func sync() async {
         let runInterval = signposter.beginInterval("Spc Sync")
-        
-        await syncTextProducts()
-        await syncMapProducts()
-        
-        signposter.endInterval("Background Run", runInterval)    }
+
+        async let textSync: Void = syncTextProducts()
+        async let mapSync: Void = syncMapProducts()
+        _ = await (textSync, mapSync)
+
+        signposter.endInterval("Background Run", runInterval)
+    }
     
     func syncMapProducts() async {
         if let inFlight = mapSyncTask {
@@ -47,43 +52,63 @@ extension SpcProvider: SpcSyncing {
             }
         }
 
-        if Task.isCancelled {
-            return
+        if Task.isCancelled { return }
+
+        let client = self.client
+        let stormRiskRepo = self.stormRiskRepo
+        let severeRiskRepo = self.severeRiskRepo
+        let fireRiskRepo = self.fireRiskRepo
+        let logger = self.logger
+
+        let products: [(name: String, operation: @Sendable () async throws -> Void)] = [
+            ("categorical", { try await stormRiskRepo.refreshStormRisk(using: client) }),
+            ("hail", { try await severeRiskRepo.refreshHailRisk(using: client) }),
+            ("wind", { try await severeRiskRepo.refreshWindRisk(using: client) }),
+            ("tornado", { try await severeRiskRepo.refreshTornadoRisk(using: client) }),
+            ("fire", { try await fireRiskRepo.refreshFireRisk(using: client) })
+        ]
+
+        let allSucceeded = await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
+            var pending = products[...]
+            var active = 0
+            var succeeded = true
+
+            func enqueueNext() {
+                guard let next = pending.popFirst() else { return }
+                active += 1
+                group.addTask {
+                    await Self.runMapProductSync(named: next.name, logger: logger, operation: next.operation)
+                }
+            }
+
+            for _ in 0..<min(Self.mapSyncMaxConcurrentProducts, products.count) {
+                enqueueNext()
+            }
+
+            while active > 0 {
+                guard let completed = await group.next() else { break }
+                active -= 1
+                succeeded = succeeded && completed
+
+                if Task.isCancelled {
+                    group.cancelAll()
+                    return false
+                }
+
+                enqueueNext()
+            }
+
+            return succeeded
         }
-        completedWithoutFailures = await refreshMapProduct(named: "categorical") {
-            try await stormRiskRepo.refreshStormRisk(using: client)
-        } && completedWithoutFailures
-        if Task.isCancelled {
-            return
-        }
-        completedWithoutFailures = await refreshMapProduct(named: "hail") {
-            try await severeRiskRepo.refreshHailRisk(using: client)
-        } && completedWithoutFailures
-        if Task.isCancelled {
-            return
-        }
-        completedWithoutFailures = await refreshMapProduct(named: "wind") {
-            try await severeRiskRepo.refreshWindRisk(using: client)
-        } && completedWithoutFailures
-        if Task.isCancelled {
-            return
-        }
-        completedWithoutFailures = await refreshMapProduct(named: "tornado") {
-            try await severeRiskRepo.refreshTornadoRisk(using: client)
-        } && completedWithoutFailures
-        
-        if Task.isCancelled {
-            return
-        }
-        completedWithoutFailures = await refreshMapProduct(named: "fire") {
-            try await fireRiskRepo.refreshFireRisk(using: client)
-        } && completedWithoutFailures
+
+        completedWithoutFailures = allSucceeded && completedWithoutFailures
     }
     
     func syncTextProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Text")
-        await syncConvectiveOutlooks()
-        await syncMesoscaleDiscussions()
+        async let convectiveSync: Void = syncConvectiveOutlooks()
+        async let mesoSync: Void = syncMesoscaleDiscussions()
+        _ = await (convectiveSync, mesoSync)
         signposter.endInterval("Background Run", runInterval)
     }
 
@@ -127,7 +152,11 @@ extension SpcProvider: SpcSyncing {
         for c in convectiveContinuations.values { c.yield(date) }
     }
 
-    private func refreshMapProduct(named name: String, operation: () async throws -> Void) async -> Bool {
+    private static func runMapProductSync(
+        named name: String,
+        logger: Logger,
+        operation: @Sendable () async throws -> Void
+    ) async -> Bool {
         do {
             try await operation()
             return true
