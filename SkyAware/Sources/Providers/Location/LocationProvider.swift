@@ -75,7 +75,7 @@ actor LocationProvider {
         self.snapshotPusher = snapshotPusher
         self.snapshotCache = snapshotCache
         self.nowProvider = nowProvider
-        lastSnapshot = restoredSnapshotIfFresh(snapshotCache.load())
+        lastSnapshot = Self.restoredSnapshotIfFresh(snapshotCache.load(), nowProvider: nowProvider)
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
@@ -197,12 +197,15 @@ actor LocationProvider {
         }
     }
 
-    private func restoredSnapshotIfFresh(_ snapshot: LocationSnapshot?) -> LocationSnapshot? {
+    private static func restoredSnapshotIfFresh(
+        _ snapshot: LocationSnapshot?,
+        nowProvider: @Sendable () -> Date
+    ) -> LocationSnapshot? {
         guard let snapshot else { return nil }
 
         let age = nowProvider().timeIntervalSince(snapshot.timestamp)
         guard age >= 0, age <= Self.cachedSnapshotMaxAge else {
-            logger.notice("Ignoring stale cached location snapshot with age \(age, privacy: .public)s")
+            Logger.locationProvider.notice("Ignoring stale cached location snapshot with age \(age, privacy: .public)s")
             return nil
         }
 
