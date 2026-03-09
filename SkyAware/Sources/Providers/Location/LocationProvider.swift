@@ -42,6 +42,8 @@ func makeLocationClient(provider: LocationProvider) -> LocationClient {
 // MARK: LocationProvider Actor
 
 actor LocationProvider {
+    private static let cachedSnapshotMaxAge: TimeInterval = 60 * 60
+
     private var lastSnapshot: LocationSnapshot?
     private var continuations: [UUID: AsyncStream<LocationSnapshot>.Continuation] = [:]
 
@@ -49,6 +51,7 @@ actor LocationProvider {
     private let hasher: LocationHashing
     private let snapshotPusher: LocationSnapshotPushing
     private let snapshotCache: LocationSnapshotCaching
+    private let nowProvider: @Sendable () -> Date
     private let logger = Logger.locationProvider
     
     // Throttling
@@ -64,13 +67,15 @@ actor LocationProvider {
         geocoder: LocationGeocoding = CoreLocationGeocoder(),
         hasher: LocationHashing = SwiftyH3Hasher(),
         snapshotPusher: LocationSnapshotPushing = NoOpLocationSnapshotPusher(),
-        snapshotCache: LocationSnapshotCaching = NoOpLocationSnapshotCache()
+        snapshotCache: LocationSnapshotCaching = NoOpLocationSnapshotCache(),
+        nowProvider: @escaping @Sendable () -> Date = Date.init
     ) {
         self.geocoder = geocoder
         self.hasher = hasher
         self.snapshotPusher = snapshotPusher
         self.snapshotCache = snapshotCache
-        lastSnapshot = snapshotCache.load()
+        self.nowProvider = nowProvider
+        lastSnapshot = restoredSnapshotIfFresh(snapshotCache.load())
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
@@ -190,6 +195,18 @@ actor LocationProvider {
             logger.error("H3 indexing failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
+    }
+
+    private func restoredSnapshotIfFresh(_ snapshot: LocationSnapshot?) -> LocationSnapshot? {
+        guard let snapshot else { return nil }
+
+        let age = nowProvider().timeIntervalSince(snapshot.timestamp)
+        guard age >= 0, age <= Self.cachedSnapshotMaxAge else {
+            logger.notice("Ignoring stale cached location snapshot with age \(age, privacy: .public)s")
+            return nil
+        }
+
+        return snapshot
     }
     
     // MARK: Snapshot Validation

@@ -143,6 +143,24 @@ struct LocationProviderTests {
         #expect(snapshot.h3Cell == sampleH3Cell)
     }
 
+    @Test("snapshot ignores stale cached snapshot at startup")
+    func snapshot_ignoresStaleCacheAtStartup() async {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let staleTimestamp = now.addingTimeInterval(-(60 * 60 + 1))
+        let cached = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: staleTimestamp,
+            accuracy: 42,
+            placemarkSummary: "Oklahoma City, OK",
+            h3Cell: sampleH3Cell
+        )
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+
+        let snapshot = await provider.snapshot()
+        #expect(snapshot == nil)
+    }
+
     @Test("send rejects updates with low accuracy")
     func send_rejectsLowAccuracy() async {
         let provider = LocationProvider()
