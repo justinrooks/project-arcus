@@ -61,6 +61,11 @@ struct SettingsView: View {
     
     // MARK: Debugging
     @AppStorage(
+        "sendL8ntoSignal",
+        store: UserDefaults.shared
+    ) private var sendL8nToSignal: Bool = true
+    
+    @AppStorage(
         "onboardingComplete",
         store: UserDefaults.shared
     ) private var onboardingComplete: Bool = false
@@ -194,6 +199,10 @@ struct SettingsView: View {
                 }
 
                 sectionCard(title: "Location & Notification", symbol: "iphone.badge.location", accent: .orange) {
+                    Toggle("Send Location to Signal", isOn: $sendL8nToSignal)
+                        .onChange(of: sendL8nToSignal) { _, newValue in
+                            handleNotificationToggle(newValue, for: "Send Location to Signal")
+                        }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Installation ID")
                             .font(.subheadline.weight(.semibold))

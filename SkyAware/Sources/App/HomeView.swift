@@ -166,7 +166,9 @@ struct HomeView: View {
                                 await MainActor.run {
                                     _ = markOutlookSyncIfNeeded(force: true, now: now)
                                 }
-                                await sync.syncConvectiveOutlooks()
+                                await HTTPExecutionMode.$current.withValue(.foreground) {
+                                    await sync.syncConvectiveOutlooks()
+                                }
                                 await refreshOutlooks()
                             }
                         }
@@ -246,26 +248,45 @@ struct HomeView: View {
             await MainActor.run { startRefresh(message: "Refreshing data...") }
         }
 
-        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing alerts...") } }
-        await nwsSync.sync(for: snap.coordinates)
-        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing mesos...") } }
-        await sync.syncMesoscaleDiscussions()
-        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing map products...") } }
-        await sync.syncMapProducts()
-        if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks...") } }
-        await refreshRisk(for: snap.coordinates)
-        if shouldSyncOutlookNow {
-            if showsLoading { await MainActor.run { updateRefreshMessage("Syncing outlooks...") } }
-            await sync.syncConvectiveOutlooks()
-        } else {
+        let location = snap.coordinates
+        let nwsSync = self.nwsSync
+        let sync = self.sync
+
+        if !shouldSyncOutlookNow {
             logger.debug("Skipping convective outlook sync due to refresh throttle")
         }
-        if showsLoading { await MainActor.run { updateRefreshMessage("Updating outlooks...") } }
-        await refreshOutlooks()
+
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing network feeds...") } }
+        await HTTPExecutionMode.$current.withValue(.foreground) {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await nwsSync.sync(for: location) }
+                group.addTask { await sync.syncMesoscaleDiscussions() }
+                group.addTask { await sync.syncMapProducts() }
+                if shouldSyncOutlookNow {
+                    group.addTask { await sync.syncConvectiveOutlooks() }
+                }
+                await group.waitForAll()
+            }
+        }
+
+        if Task.isCancelled {
+            if showsLoading { await MainActor.run { endRefresh() } }
+            return
+        }
+
+        if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks and outlooks...") } }
+        async let riskRefresh: Void = refreshRisk(for: location)
+        async let outlookRefresh: Void = refreshOutlooks()
+        _ = await (riskRefresh, outlookRefresh)
+
+        if Task.isCancelled {
+            if showsLoading { await MainActor.run { endRefresh() } }
+            return
+        }
         
         if shouldSyncWeatherKitNow {
             if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
-            let didRefreshWeather = await refreshWeather(for: snap.coordinates)
+            let didRefreshWeather = await refreshWeather(for: location)
             if didRefreshWeather {
                 await MainActor.run { lastWeatherKitSyncAt = now }
             } else {

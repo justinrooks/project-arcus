@@ -92,14 +92,18 @@ actor BackgroundOrchestrator {
                 // MARK: Get fresh data
                 logger.info("Starting SPC sync")
                 let syncInterval = signposter.beginInterval("SPC Sync")
-                await spcProvider.sync()
+                await HTTPExecutionMode.$current.withValue(.background) {
+                    await spcProvider.sync()
+                }
                 signposter.endInterval("SPC Sync", syncInterval)
                 logger.info("SPC sync completed")
                 feedsChanged.formUnion([.outlookDay1, .meso])
                 
                 // - Get the latest convective outlook details
                 logger.debug("Fetching latest convective outlook")
-                let outlook = try await spcProvider.getLatestConvectiveOutlook()
+                let outlook = try await HTTPExecutionMode.$current.withValue(.background) {
+                    try await spcProvider.getLatestConvectiveOutlook()
+                }
                 logger.debug("Latest convective outlook fetched")
                 
                 try Task.checkCancellation()
@@ -121,16 +125,20 @@ actor BackgroundOrchestrator {
                 let updatedSnap = await locationProvider.ensurePlacemark(for: snap.coordinates)
                 
                 // Keep watch data current each run so cadence decisions can react to active watches.
-                await nwsProvider.sync(for: updatedSnap.coordinates)
+                await HTTPExecutionMode.$current.withValue(.background) {
+                    await nwsProvider.sync(for: updatedSnap.coordinates)
+                }
                 
                 // MARK: Get Risk Status
-                let (severeRisk, stormRisk, fireRisk, activeMesos, activeWatches) = try await withTimeout(seconds: 8, clock: clock) {
-                    async let sr = self.spcProvider.getSevereRisk(for: snap.coordinates)
-                    async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
-                    async let fr = self.spcProvider.getFireRisk(for: snap.coordinates)
-                    async let mesos = self.spcProvider.getActiveMesos(at: .now, for: updatedSnap.coordinates)
-                    async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
-                    return try await (sr, cr, fr, mesos, watches)
+                let (severeRisk, stormRisk, fireRisk, activeMesos, activeWatches) = try await HTTPExecutionMode.$current.withValue(.background) {
+                    try await withTimeout(seconds: 8, clock: clock) {
+                        async let sr = self.spcProvider.getSevereRisk(for: snap.coordinates)
+                        async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
+                        async let fr = self.spcProvider.getFireRisk(for: snap.coordinates)
+                        async let mesos = self.spcProvider.getActiveMesos(at: .now, for: updatedSnap.coordinates)
+                        async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
+                        return try await (sr, cr, fr, mesos, watches)
+                    }
                 }
                 let inMeso = activeMesos.isEmpty == false
                 let inWatch = activeWatches.isEmpty == false

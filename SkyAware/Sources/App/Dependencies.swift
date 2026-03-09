@@ -322,7 +322,10 @@ final class Dependencies: Sendable {
         }
         
         // Location
-        let locationProvider = LocationProvider(snapshotPusher: snapshotPusher)
+        let locationProvider = LocationProvider(
+            snapshotPusher: snapshotPusher,
+            snapshotCache: LocationSnapshotCache()
+        )
         let sink: LocationSink = { [locationProvider] update in await locationProvider.send(update: update) }
         let locationManager = LocationManager(onUpdate: sink)
         logger.info("LocationManager configured")

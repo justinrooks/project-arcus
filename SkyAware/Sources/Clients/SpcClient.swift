@@ -88,8 +88,15 @@ struct SpcHttpClient: SpcClient {
         let resp = try await http.get(url, headers: headers)
         try Task.checkCancellation()
 
+        if resp.source != .live {
+            logger.notice("SPC response served from \(resp.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
+        }
+
         switch resp.classifyStatus() {
         case .success:
+            break
+        case .notModified:
+            // Downloader already rehydrates cached body for 304 when available.
             break
         case .rateLimited(let retryAfter):
             logger.warning("SPC rate limited endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) retryAfterSeconds=\(retryAfter ?? -1, privacy: .public)")

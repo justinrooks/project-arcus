@@ -227,7 +227,7 @@ private struct LogRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(line.message)
                     .font(.callout)
-                    .lineLimit(3)
+                    .lineLimit(6)
                 HStack(spacing: 8) {
                     Text(dateFormatter.string(from: line.date))
                         .foregroundStyle(.secondary)

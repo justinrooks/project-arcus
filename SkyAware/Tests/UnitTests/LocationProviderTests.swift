@@ -70,6 +70,22 @@ struct LocationProviderTests {
             payloads
         }
     }
+    
+    private final class MockSnapshotCache: @unchecked Sendable, LocationSnapshotCaching {
+        private(set) var storedSnapshot: LocationSnapshot?
+        
+        init(storedSnapshot: LocationSnapshot? = nil) {
+            self.storedSnapshot = storedSnapshot
+        }
+        
+        func load() -> LocationSnapshot? {
+            storedSnapshot
+        }
+        
+        func save(_ snapshot: LocationSnapshot) {
+            storedSnapshot = snapshot
+        }
+    }
 
     private actor RacingGeocoder: LocationGeocoding {
         private var callCount = 0
@@ -105,6 +121,45 @@ struct LocationProviderTests {
         let snapshot = await provider.snapshot()
         #expect(snapshot == nil)
     }
+    
+    @Test("snapshot restores from cache at startup")
+    func snapshot_restoresFromCacheAtStartup() async throws {
+        let now = Date(timeIntervalSince1970: 1_234_500)
+        let cached = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: now,
+            accuracy: 42,
+            placemarkSummary: "Oklahoma City, OK",
+            h3Cell: sampleH3Cell
+        )
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let provider = LocationProvider(snapshotCache: cache)
+        
+        let snapshot = try #require(await provider.snapshot())
+        #expect(snapshot.coordinates.latitude == cached.coordinates.latitude)
+        #expect(snapshot.coordinates.longitude == cached.coordinates.longitude)
+        #expect(snapshot.timestamp == now)
+        #expect(snapshot.placemarkSummary == "Oklahoma City, OK")
+        #expect(snapshot.h3Cell == sampleH3Cell)
+    }
+
+    @Test("snapshot ignores stale cached snapshot at startup")
+    func snapshot_ignoresStaleCacheAtStartup() async {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let staleTimestamp = now.addingTimeInterval(-(60 * 60 + 1))
+        let cached = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: staleTimestamp,
+            accuracy: 42,
+            placemarkSummary: "Oklahoma City, OK",
+            h3Cell: sampleH3Cell
+        )
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
+
+        let snapshot = await provider.snapshot()
+        #expect(snapshot == nil)
+    }
 
     @Test("send rejects updates with low accuracy")
     func send_rejectsLowAccuracy() async {
@@ -128,6 +183,19 @@ struct LocationProviderTests {
         #expect(value.coordinates.longitude == -104.0)
         #expect(value.timestamp == now)
         #expect(value.accuracy == 50)
+    }
+    
+    @Test("send persists accepted snapshot to cache")
+    func send_persistsAcceptedSnapshotToCache() async throws {
+        let cache = MockSnapshotCache()
+        let provider = LocationProvider(snapshotCache: cache)
+        let now = Date(timeIntervalSince1970: 1_234_560)
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 50))
+        
+        let cached = try #require(cache.storedSnapshot)
+        #expect(cached.coordinates.latitude == 39.0)
+        #expect(cached.coordinates.longitude == -104.0)
+        #expect(cached.timestamp == now)
     }
     
     @Test("send stores h3 hash when hasher succeeds")

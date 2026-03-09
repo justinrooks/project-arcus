@@ -20,4 +20,4 @@ SkyAware is an iOS app that keeps users aware of severe weather (SPC outlooks, m
 - Location-driven behavior depends on authorization state; force-quit suppresses background execution until relaunch.
 
 ## Notes
-- This is a supplemental AGENTS.md. There is a repo level one located one level higher in the tree at ../AGENTS.MD.l
+- This is a supplemental AGENTS.md. There is a repo level one located one level higher in the tree at ../AGENTS.MD
