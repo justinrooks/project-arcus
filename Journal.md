@@ -54,6 +54,30 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-08: Background runs had amnesia about location
+
+Bug-shaped problem:
+Background refreshes were hitting the `"No location snapshot available; rechecking in 20m"` path too often after cold launches. The orchestrator was fine; the memory was not. `LocationProvider` kept `lastSnapshot` only in RAM, so a fresh process started with an empty brain.
+
+What changed:
+- Added snapshot caching seams in `/Users/justin/Code/project-arcus/SkyAware/Sources/Ifrastructure/Location/LocationSnapshotCache.swift`:
+  - `LocationSnapshotCaching` protocol
+  - `LocationSnapshotCache` (persist/restore with a versioned key)
+  - `NoOpLocationSnapshotCache` for deterministic/non-persistent contexts
+- Wired `LocationProvider` to:
+  - restore cached snapshot at init
+  - persist every accepted snapshot in `saveAndYieldSnapshot(...)`
+- Wired production DI in `/Users/justin/Code/project-arcus/SkyAware/Sources/App/Dependencies.swift` to use `LocationSnapshotCache`.
+- Added tests in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/LocationProviderTests.swift` for:
+  - cache restore on startup
+  - cache write on accepted update
+
+Aha moment:
+Background orchestration wasn't the broken part. It was like calling a chef into the kitchen and finding the pantry empty every morning. Persisting the last known location snapshot turns that pantry light on before the first recipe starts.
+
+Gotcha:
+Making persistence the global default would leak state into tests and make them flaky. The `NoOp` default keeps tests clean, and live dependencies opt into persistence explicitly.
+
 ### 2026-02-22: APNs registration integration
 
 Bug-shaped problem:

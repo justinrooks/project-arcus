@@ -48,6 +48,7 @@ actor LocationProvider {
     private let geocoder: LocationGeocoding
     private let hasher: LocationHashing
     private let snapshotPusher: LocationSnapshotPushing
+    private let snapshotCache: LocationSnapshotCaching
     private let logger = Logger.locationProvider
     
     // Throttling
@@ -62,11 +63,14 @@ actor LocationProvider {
     init(
         geocoder: LocationGeocoding = CoreLocationGeocoder(),
         hasher: LocationHashing = SwiftyH3Hasher(),
-        snapshotPusher: LocationSnapshotPushing = NoOpLocationSnapshotPusher()
+        snapshotPusher: LocationSnapshotPushing = NoOpLocationSnapshotPusher(),
+        snapshotCache: LocationSnapshotCaching = NoOpLocationSnapshotCache()
     ) {
         self.geocoder = geocoder
         self.hasher = hasher
         self.snapshotPusher = snapshotPusher
+        self.snapshotCache = snapshotCache
+        lastSnapshot = snapshotCache.load()
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
@@ -229,6 +233,7 @@ actor LocationProvider {
     // MARK: Helpers
     private func saveAndYieldSnapshot(_ snap: LocationSnapshot) {
         lastSnapshot = snap
+        snapshotCache.save(snap)
         logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.coordinates.longitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.placemarkSummary ?? "unknown", privacy: .public)")
         continuations.values.forEach { $0.yield(snap) }
         Task(priority: .utility) { [snapshotPusher] in
