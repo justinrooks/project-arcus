@@ -1,17 +1,17 @@
----
-name: Feature request
-about: Suggest an idea for this project
-title: "[Feature] Short description"
-labels: enhancement
-assignees: ''
+## Summary
+What needs to be done?
 
----
+## Why
+Why does this matter?
 
-### Problem
-Describe the motivation behind this feature.
+## Scope
+What is in / out?
 
-### Proposed Solution
-What do you want to add or change?
+## Acceptance Notes
+What should be true when this is done?
 
-### Additional Context
-Add screenshots, sketches, or notes as needed.
+## Proposed Solution
+How do we plan to implement this?
+
+## Related
+ADR / Feature Brief / Parent Epic
