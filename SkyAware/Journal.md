@@ -93,6 +93,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Shared hatch token usage**: the new legend swatch reads from `HatchStyle.default` (same style token used by `RiskPolygonRenderer`) so angle/spacing/line width/opacity stay consistent between map overlays and legend preview.
 - **Legend hatching visibility wiring fix**: `MapLegend` now relies on selected severe-risk input that still contains intensity rows (while continuing to hide intensity rows from probability chips). This restored hatch explainer visibility when CIG overlays are present for the active severe layer.
 - **Cleanup**: removed stale `isCigOrZeroPercent` helper from `MapScreenView` after shifting filtering responsibility to `MapLegend`.
+- **Concurrency boundary fix (settings -> actor)**: `LocationSnapshotPusher` needed the new `serverNotificationEnabled` preference, but the obvious accessor (`UserDefaults.shared`) is `@MainActor` in this codebase because SwiftUI `@AppStorage` lives on the UI side of town. The fix was to inject a tiny `@Sendable` provider that reads the same suite-backed defaults directly, so the actor gets a plain Bool instead of trying to borrow main-actor state mid-flight.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
@@ -106,6 +107,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - Keep formatter allocation out of hot paths; cache or centralize formatting helpers before profiling gets noisy.
 - Stable list identity is a performance feature. Random IDs make diffing expensive and can degrade scroll smoothness.
 - Prefer one clear async trigger pipeline over several reactive hooks that can race or duplicate work.
+- When an actor needs app settings, pass in a Sendable value/provider or read from a non-UI persistence boundary. Pulling `@MainActor` convenience state into background actors is how “one tiny Bool” turns into a Swift 6 isolation fight.
 
 ## 7) If I Were Starting Over...
 - I’d design background scheduling as a policy engine from day one, with clear rules for “tighten/relax cadence” and easy unit test hooks.

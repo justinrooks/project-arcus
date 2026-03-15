@@ -241,6 +241,7 @@ struct LocationProviderTests {
             gridRegionContextProvider: {
                 NwsGridRegionContext(county: "OKC109", zone: "OKZ025", fireZone: "OKZ025")
             },
+            subscriptionStatusProvider: { false },
             retryDelaysSeconds: [0]
         )
         
@@ -264,6 +265,7 @@ struct LocationProviderTests {
         #expect(payload.zone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
         #expect(payload.h3Cell == sampleH3Cell)
+        #expect(payload.isSubscribed == false)
     }
 
     @Test("snapshot pusher skips upload when APNs token is missing")
