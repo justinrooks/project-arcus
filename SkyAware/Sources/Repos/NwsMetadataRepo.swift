@@ -12,6 +12,8 @@ struct NwsGridRegionContext: Sendable, Equatable {
     let county: String?
     let zone: String?
     let fireZone: String?
+    let countyLabel: String?
+    let fireZoneLabel: String?
 }
 
 actor NwsMetadataRepo {
@@ -29,11 +31,40 @@ actor NwsMetadataRepo {
         return decoded
     }
     
-    func updateCurrentRegionContext(county: String?, zone: String?, fireZone: String?) {
-        currentRegionContext = NwsGridRegionContext(county: county, zone: zone, fireZone: fireZone)
+    func getLocationLabels(using client: any NwsClient, for county: String?, and zone: String?) async throws -> (String?, String?) {
+        let countyMetadata = try await zoneMetadata(using: client, type: .county, identifier: county)
+        let fireZoneMetadata = try await zoneMetadata(using: client, type: .fire, identifier: zone)
+
+        let countyLabel = countyMetadata.map { "\($0.name) \($0.type)".capitalized }
+        let fireZoneLabel = fireZoneMetadata?.name
+
+        return (countyLabel, fireZoneLabel)
+    }
+    
+    func updateCurrentRegionContext(county: String?, zone: String?, fireZone: String?, countyLabel: String?, fireZoneLabel: String?) {
+        currentRegionContext = NwsGridRegionContext(
+            county: county,
+            zone: zone,
+            fireZone: fireZone,
+            countyLabel: countyLabel,
+            fireZoneLabel: fireZoneLabel
+        )
     }
     
     func currentRegionContextSnapshot() -> NwsGridRegionContext? {
         currentRegionContext
+    }
+
+    private func zoneMetadata(
+        using client: any NwsClient,
+        type: NwsZoneType,
+        identifier: String?
+    ) async throws -> NWSZoneDTO? {
+        guard let identifier else {
+            return nil
+        }
+
+        let data = try await client.fetchZoneMetadata(for: type, and: identifier)
+        return try JSONDecoder().decode(NWSZoneDTO.self, from: data)
     }
 }

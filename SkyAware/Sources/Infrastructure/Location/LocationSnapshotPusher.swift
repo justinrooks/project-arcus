@@ -37,6 +37,9 @@ struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
     let platform: String
     let osVersion: String
     let apnsEnvironment: String
+    let countyLabel: String?
+    let fireZoneLabel: String?
+    let isSubscribed: Bool?
     
 }
 
@@ -44,11 +47,16 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
     typealias APNsTokenProvider = @Sendable () -> String
     typealias InstallationIDProvider = @Sendable () async -> String
     typealias GridRegionContextProvider = @Sendable () async -> NwsGridRegionContext?
+    typealias SubscriptionStatusProvider = @Sendable () -> Bool
+
+    nonisolated private static let userDefaultsSuiteName = "com.justinrooks.skyaware"
+    nonisolated private static let serverNotificationEnabledKey = "serverNotificationEnabled"
 
     private let uploader: any LocationSnapshotUploading
     private let apnsTokenProvider: APNsTokenProvider
     private let installationIdProvider: InstallationIDProvider
     private let gridRegionContextProvider: GridRegionContextProvider
+    private let subscriptionStatusProvider: SubscriptionStatusProvider
     private let retryDelaysSeconds: [UInt64]
     private let logger = Logger.locationPushPusher
 
@@ -58,19 +66,22 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
     init(
         uploader: any LocationSnapshotUploading,
         apnsTokenProvider: @escaping APNsTokenProvider = {
-            UserDefaults(suiteName: "com.justinrooks.skyaware")?
-                .string(forKey: RemoteNotificationRegistrar.apnsDeviceTokenKey) ?? ""
+            LocationSnapshotPusher.readApnsTokenFromDefaults()
         },
         installationIdProvider: @escaping InstallationIDProvider = {
             InstallationIdentityStore.shared.installationId()
         },
         gridRegionContextProvider: @escaping GridRegionContextProvider = { nil },
+        subscriptionStatusProvider: @escaping SubscriptionStatusProvider = {
+            LocationSnapshotPusher.readSubscriptionStatusFromDefaults()
+        },
         retryDelaysSeconds: [UInt64] = [0, 5, 15]
     ) {
         self.uploader = uploader
         self.apnsTokenProvider = apnsTokenProvider
         self.installationIdProvider = installationIdProvider
         self.gridRegionContextProvider = gridRegionContextProvider
+        self.subscriptionStatusProvider = subscriptionStatusProvider
         self.retryDelaysSeconds = retryDelaysSeconds
     }
 
@@ -78,6 +89,7 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         let regionContext = await gridRegionContextProvider()
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSubscribed = subscriptionStatusProvider()
         guard !apnsToken.isEmpty else {
             logger.debug("Skipping location snapshot upload; APNs token unavailable")
             return
@@ -115,7 +127,10 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
                 #else
                 return "prod"
                 #endif
-            }()
+            }(),
+            countyLabel: regionContext?.countyLabel,
+            fireZoneLabel: regionContext?.fireZoneLabel,
+            isSubscribed: isSubscribed
         )
 
         queue.append(payload)
@@ -155,5 +170,18 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         }
 
         return false
+    }
+
+    nonisolated private static func readApnsTokenFromDefaults() -> String {
+        UserDefaults(suiteName: userDefaultsSuiteName)?
+            .string(forKey: RemoteNotificationRegistrar.apnsDeviceTokenKey) ?? ""
+    }
+
+    nonisolated private static func readSubscriptionStatusFromDefaults() -> Bool {
+        if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
+            .object(forKey: serverNotificationEnabledKey) as? Bool {
+            return value
+        }
+        return true
     }
 }

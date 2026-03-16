@@ -59,6 +59,11 @@ struct SettingsView: View {
         store: UserDefaults.shared
     ) private var watchNotificationEnabled: Bool = true
     
+    @AppStorage(
+        "serverNotificationEnabled",
+        store: UserDefaults.shared
+    ) private var serverNotificationEnabled: Bool = true
+    
     // MARK: Debugging
     @AppStorage(
         "sendL8ntoSignal",
@@ -130,6 +135,10 @@ struct SettingsView: View {
                     Toggle("Watch Notifications", isOn: $watchNotificationEnabled)
                         .onChange(of: watchNotificationEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Watch Notifications")
+                        }
+                    Toggle("Server Notifications", isOn: $serverNotificationEnabled)
+                        .onChange(of: serverNotificationEnabled) { _, newValue in
+                            handleNotificationToggle(newValue, for: "Server Notifications")
                         }
                 }
 
