@@ -8,13 +8,23 @@
 import Foundation
 import OSLog
 
+enum NwsZoneType: Sendable, Codable {
+    case county
+    case fire
+}
+
 protocol NwsClient: Sendable {
     func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data
     func fetchPointMetadata(for location: Coordinate2D) async throws -> Data
+    func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data
 }
 
 //https://api.weather.gov/alerts/active?point=39%2C-104
 //https://api.weather.gov/alerts/active?status=actual&message_type=alert,update&point=39%2C-104
+
+//https://api.weather.gov/zones/fire/COZ245
+//https://api.weather.gov/zones/county/COC001
+
 
 struct NwsHttpClient: NwsClient {
     private let http: HTTPClient
@@ -37,6 +47,15 @@ struct NwsHttpClient: NwsClient {
                 URLQueryItem(name: "point", value: point)
             ]
         )
+        
+        return try await fetch(from: url)
+    }
+    
+    func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+        let url = switch zoneType {
+            case .county: try makeNwsUrl(path: "/zones/county/\(zone)")
+            case .fire: try makeNwsUrl(path: "/zones/fire/\(zone)")
+        }
         
         return try await fetch(from: url)
     }

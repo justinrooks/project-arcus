@@ -128,8 +128,8 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
                 return "prod"
                 #endif
             }(),
-            countyLabel: nil,
-            fireZoneLabel: nil,
+            countyLabel: regionContext?.countyLabel,
+            fireZoneLabel: regionContext?.fireZoneLabel,
             isSubscribed: isSubscribed
         )
 

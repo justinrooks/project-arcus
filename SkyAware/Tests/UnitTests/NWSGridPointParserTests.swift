@@ -115,4 +115,23 @@ struct NWSGridPointParserTests {
         let result = NWSGridPointParser.decode(from: data(json))
         #expect(result == nil)
     }
+
+    @Test
+    func decodesZoneTypeAndNameFromProperties() throws {
+        let json = """
+        {
+          "id": "https://api.weather.gov/zones/county/COC001",
+          "type": "Feature",
+          "properties": {
+            "id": "COC001",
+            "type": "county",
+            "name": "Adams"
+          }
+        }
+        """
+
+        let zone = try JSONDecoder().decode(NWSZoneDTO.self, from: data(json))
+        #expect(zone.type == "county")
+        #expect(zone.name == "Adams")
+    }
 }

@@ -94,6 +94,7 @@ Think of the app as a restaurant kitchen. The **Providers** are your ingredient 
 - **Legend hatching visibility wiring fix**: `MapLegend` now relies on selected severe-risk input that still contains intensity rows (while continuing to hide intensity rows from probability chips). This restored hatch explainer visibility when CIG overlays are present for the active severe layer.
 - **Cleanup**: removed stale `isCigOrZeroPercent` helper from `MapScreenView` after shifting filtering responsibility to `MapLegend`.
 - **Concurrency boundary fix (settings -> actor)**: `LocationSnapshotPusher` needed the new `serverNotificationEnabled` preference, but the obvious accessor (`UserDefaults.shared`) is `@MainActor` in this codebase because SwiftUI `@AppStorage` lives on the UI side of town. The fix was to inject a tiny `@Sendable` provider that reads the same suite-backed defaults directly, so the actor gets a plain Bool instead of trying to borrow main-actor state mid-flight.
+- **Metadata repo cleanup (one fetch/decode path, two labels)**: `NwsMetadataRepo.getLocationLabels` had two almost-identical branches that each fetched zone metadata, decoded it, then formatted it slightly differently. We pulled the shared network/decode work into one helper so the public function now reads like a menu: county label gets `"name type"`, fire-zone label gets just `name`. Same behavior, less copy-paste, fewer places to break when the DTO changes.
 
 ## 6) Engineer's Wisdom
 - Keep background handlers short and predictable; timeouts are your friend.
