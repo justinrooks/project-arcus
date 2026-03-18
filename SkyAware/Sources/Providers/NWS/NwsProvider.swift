@@ -60,7 +60,7 @@ extension NwsProvider: NwsSyncing {
         let logger = self.logger
         let task = Task { () -> Bool in
             do {
-                try await watchRepo.refresh(using: client, for: coordinates)
+//                try await watchRepo.refresh(using: client, for: coordinates)
                 return true
             } catch {
                 logger.error("Error syncing NWS Watches: \(error, privacy: .public)")
@@ -84,13 +84,20 @@ extension NwsProvider: NwsRiskQuerying {
             return []
         }
         
-        guard let county = gridMetadata.county, let zone = gridMetadata.zone, let fireZone = gridMetadata.fireZone else {
-            logger.warning("No county, zone, or fire zone data available")
+        guard
+            let countyCode = gridMetadata.countyCode,
+            let forecastZone = gridMetadata.forecastZone,
+            let fireZone = gridMetadata.fireZone
+        else {
+            logger.warning("No county code, forecast zone, or fire zone data available")
             return []
         }
         
-        //COZ246
-        let watches = try await watchRepo.active(county: county, zone: zone, fireZone: fireZone)
+        let watches = try await watchRepo.active(
+            countyCode: countyCode,
+            forecastZone: forecastZone,
+            fireZone: fireZone
+        )
         
         return watches
     }

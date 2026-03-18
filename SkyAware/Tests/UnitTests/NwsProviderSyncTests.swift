@@ -24,6 +24,10 @@ private actor CountingNwsClient: NwsClient {
         Data(#"{"properties":{}}"#.utf8)
     }
 
+    func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+        Data(#"{"properties":{}}"#.utf8)
+    }
+
     func activeAlertsCallCount() -> Int {
         activeAlertsCalls
     }
@@ -37,9 +41,9 @@ private struct StubGeocoder: LocationGeocoding {
 
 @Suite("NwsProvider.sync", .serialized)
 struct NwsProviderSyncTests {
-    @Test("Concurrent sync requests for same location join one in-flight network call")
-    func concurrentSameLocationJoinsInFlight() async throws {
-        let client = CountingNwsClient(delayNanoseconds: 75_000_000)
+    @Test("Concurrent sync requests do not hit the NWS alerts endpoint while watch refresh is disabled")
+    func concurrentSameLocationDoesNotHitAlertsEndpoint() async throws {
+        let client = CountingNwsClient()
         let provider = try await makeProvider(client: client)
         let point = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
 
@@ -49,11 +53,11 @@ struct NwsProviderSyncTests {
             await group.waitForAll()
         }
 
-        #expect(await client.activeAlertsCallCount() == 1)
+        #expect(await client.activeAlertsCallCount() == 0)
     }
 
-    @Test("Same-location cooldown suppresses immediate duplicate sync trigger")
-    func cooldownSuppressesDuplicateTrigger() async throws {
+    @Test("Same-grid repeat sync does not hit the NWS alerts endpoint while watch refresh is disabled")
+    func repeatSameGridDoesNotHitAlertsEndpoint() async throws {
         let client = CountingNwsClient()
         let provider = try await makeProvider(client: client)
         let first = CLLocationCoordinate2D(latitude: 35.123456, longitude: -97.123456)
@@ -62,7 +66,7 @@ struct NwsProviderSyncTests {
         await provider.sync(for: first)
         await provider.sync(for: drifted)
 
-        #expect(await client.activeAlertsCallCount() == 1)
+        #expect(await client.activeAlertsCallCount() == 0)
     }
 
     private func makeProvider(client: any NwsClient) async throws -> NwsProvider {

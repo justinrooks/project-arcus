@@ -7,9 +7,9 @@ import Testing
 struct LocationProviderTests {
     private let sampleH3Cell: Int64 = 0x872681364FFFFFF
 
-    private indirect enum GeocoderMode {
+    private indirect enum GeocoderMode: Sendable {
         case success(String)
-        case failure(Error)
+        case failure(any Error & Sendable)
         case delay(seconds: Double, then: GeocoderMode)
     }
 
@@ -30,9 +30,9 @@ struct LocationProviderTests {
     }
     
     private struct MockHasher: LocationHashing {
-        enum Mode {
+        enum Mode: Sendable {
             case success(Int64)
-            case failure(Error)
+            case failure(any Error & Sendable)
         }
         
         let mode: Mode
@@ -133,7 +133,7 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: cached)
-        let provider = LocationProvider(snapshotCache: cache)
+        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
         
         let snapshot = try #require(await provider.snapshot())
         #expect(snapshot.coordinates.latitude == cached.coordinates.latitude)
@@ -239,7 +239,13 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             gridRegionContextProvider: {
-                NwsGridRegionContext(county: "OKC109", zone: "OKZ025", fireZone: "OKZ025")
+                NwsGridRegionContext(
+                    countyCode: "OKC109",
+                    forecastZone: "OKZ025",
+                    fireZone: "OKZ025",
+                    countyLabel: "Oklahoma County",
+                    fireZoneLabel: "Central Oklahoma"
+                )
             },
             subscriptionStatusProvider: { false },
             retryDelaysSeconds: [0]
@@ -261,8 +267,8 @@ struct LocationProviderTests {
         #expect(payload.capturedAt == ts)
         #expect(payload.installationId == "install-abc-123")
         #expect(payload.apnsDeviceToken == "apns-token-123")
-        #expect(payload.county == "OKC109")
-        #expect(payload.zone == "OKZ025")
+        #expect(payload.countyCode == "OKC109")
+        #expect(payload.forecastZone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
         #expect(payload.h3Cell == sampleH3Cell)
         #expect(payload.isSubscribed == false)
