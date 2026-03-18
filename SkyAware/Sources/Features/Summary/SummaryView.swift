@@ -94,17 +94,17 @@ struct SummaryView: View {
                 )
             }
 
-            if isSummaryLoading {
-                OutlookSummaryCard(outlook: nil, isLoading: true)
-            } else if let outlook {
-                OutlookSummaryCard(outlook: outlook)
-            } else {
-                emptySectionCard(
-                    title: "Outlook Pending",
-                    message: "Convective outlook text has not been synced yet.",
-                    symbol: "clock.arrow.circlepath"
-                )
-            }
+//            if isSummaryLoading {
+//                OutlookSummaryCard(outlook: nil, isLoading: true)
+//            } else if let outlook {
+//                OutlookSummaryCard(outlook: outlook)
+//            } else {
+//                emptySectionCard(
+//                    title: "Outlook Pending",
+//                    message: "Convective outlook text has not been synced yet.",
+//                    symbol: "clock.arrow.circlepath"
+//                )
+//            }
             
             AttributionView()
 

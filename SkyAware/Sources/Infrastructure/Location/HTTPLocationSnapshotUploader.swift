@@ -22,7 +22,13 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
     private let encoder: JSONEncoder
     private let logger = Logger.locationPushUploader
 
-    init(endpoint: URL, http: HTTPClient = URLSessionHTTPClient()) {
+    init(baseURL: URL, http: HTTPClient = URLSessionHTTPClient()) {
+        guard let endpoint = ArcusSignalConfiguration.url(
+            from: baseURL,
+            path: ArcusSignalConfiguration.locationSnapshotsPath
+        ) else {
+            preconditionFailure("Invalid Arcus signal base URL")
+        }
         self.endpoint = endpoint
         self.http = http
         let encoder = JSONEncoder()

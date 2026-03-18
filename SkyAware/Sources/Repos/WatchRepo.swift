@@ -13,10 +13,18 @@ import OSLog
 actor WatchRepo {
     private let logger = Logger.reposWatch
     
-    func active(county: String, zone: String, fireZone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
-        logger.info("Fetching current local watches for \(county, privacy: .public), \(zone, privacy: .public), \(fireZone, privacy: .public)")
+    func active(on date: Date = .now) async throws -> [WatchRowDTO] {
+        logger.info("Fetching current local watches")
         
-//        let candidates = try modelContext.fetch(allWatchesDescriptor())
+        let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
+
+        return candidates.map { WatchRowDTO.init(from: $0) }
+    }
+    
+    @available(*, deprecated, message: "Use the refresh with arcus client instead")
+    func active(countyCode: String, forecastZone: String, fireZone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
+        logger.info("Fetching current local watches for \(countyCode, privacy: .public), \(forecastZone, privacy: .public), \(fireZone, privacy: .public)")
+        
         let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
         
         var hits: [Watch] = []
@@ -26,7 +34,7 @@ actor WatchRepo {
             let ugc = watch.ugcZones
             guard !ugc.isEmpty else { continue }
             
-            if ugc.contains(county) || ugc.contains(zone) || ugc.contains(fireZone) {
+            if ugc.contains(countyCode) || ugc.contains(forecastZone) || ugc.contains(fireZone) {
                 hits.append(watch)
             }
         }
@@ -34,6 +42,22 @@ actor WatchRepo {
         return hits.map { WatchRowDTO.init(from: $0) }
     }
     
+    func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, in cell: Int64?) async throws {
+        let data = try await client.fetchActiveAlerts(for: countyCode, or: fireZone, in: cell)
+        
+        guard let decoded:[DeviceAlertPayload] = JsonParser.decode(from: data) else {
+            logger.error("Unable to parse Arcus watch data")
+            throw ArcusError.parsingError
+        }
+        
+        let watches = decoded
+            .compactMap { makeWatch(from: $0) }
+        
+        try upsert(watches)
+        logger.debug("Parsed \(watches.count, privacy: .public) watch\(watches.count > 1 ? "es" : "", privacy: .public) from Arcus")
+    }
+    
+    @available(*, deprecated, message: "Use the refresh with arcus client instead")
     func refresh(using client: any NwsClient, for location: Coordinate2D) async throws {
         let data = try await client.fetchActiveAlertsJsonData(for: location)
 
@@ -83,6 +107,51 @@ actor WatchRepo {
         logger.info("Expired watches purged")
     }
     
+    // MARK: Translator
+    private func makeWatch(from item: DeviceAlertPayload) -> Watch? {
+        guard
+            let sent             = item.sent,
+            let effective        = item.effective,
+            let onset            = item.onset,
+            let expires          = item.expires,
+            let ends             = item.ends,
+            let watchDescription = item.description
+        else {
+            logger.debug("Required watch property missing, returning null.")
+            return nil
+        }
+        
+        // TODO: Default or remove
+//        let status           = item.status
+//        let ugcZones         = item.properties.geocode?.ugc
+//        let sameCodes        = item.properties.geocode?.same
+        
+        return .init(
+            nwsId: "\(item.id)",
+            messageId: item.currentRevisionUrn,
+            areaDesc: item.areaDesc ?? "",
+            ugcZones: [], // Deprecate
+            sameCodes:[], // Deprecate
+            sent: sent,
+            effective: effective,
+            onset: onset,
+            expires: expires,
+            ends: ends,
+            status: "", // Deprecate
+            messageType: item.messageType,
+            severity: item.severity,
+            certainty: item.certainty,
+            urgency: item.urgency,
+            event: item.event,
+            headline: item.headline ?? "",
+            watchDescription: watchDescription,
+            sender: item.senderName,
+            instruction: item.instructions,
+            response: item.response
+        )
+    }
+    
+    @available(*, deprecated, message: "Use the make with DevicePayload instead")
     private func makeWatch(from item: NWSWatchFeatureDTO) -> Watch? {
         guard
             let ugcZones         = item.properties.geocode?.ugc,
@@ -137,6 +206,7 @@ actor WatchRepo {
         )
     }
     
+    // MARK: Upsert
     private func upsert(_ items: [Watch]) throws {
         for item in items {
             modelContext.insert(item)
@@ -144,6 +214,7 @@ actor WatchRepo {
         try modelContext.save()
     }
     
+    // MARK: Fetch Descriptors
     /// Returns a descriptor that filters watches that active
     /// - Parameter date: current date
     /// - Returns: fetch descriptor

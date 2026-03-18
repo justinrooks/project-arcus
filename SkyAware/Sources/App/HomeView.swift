@@ -51,6 +51,8 @@ struct HomeView: View {
     private var outlookSvc: any SpcOutlookQuerying { dependencies.spcOutlook }
     private var nwsSvc: any NwsRiskQuerying { dependencies.nwsRisk  }
     private var nwsSync: any NwsSyncing { dependencies.nwsSync }
+    private var arcusAlertSvc: any ArcusAlertQuerying { dependencies.arcusProvider }
+    private var arcusAlertSync: any ArcusAlertSyncing { dependencies.arcusProvider }
     private var weatherClient: WeatherClient { dependencies.weatherClient }
 
     // MARK: State
@@ -259,9 +261,10 @@ struct HomeView: View {
         if showsLoading { await MainActor.run { updateRefreshMessage("Syncing network feeds...") } }
         await HTTPExecutionMode.$current.withValue(.foreground) {
             await withTaskGroup(of: Void.self) { group in
-                group.addTask { await nwsSync.sync(for: location) }
+//                group.addTask { await nwsSync.sync(for: location) }
                 group.addTask { await sync.syncMesoscaleDiscussions() }
                 group.addTask { await sync.syncMapProducts() }
+                group.addTask { await arcusAlertSync.sync(h3Cell: snap.h3Cell)}
                 if shouldSyncOutlookNow {
                     group.addTask { await sync.syncConvectiveOutlooks() }
                 }
@@ -399,9 +402,10 @@ struct HomeView: View {
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
         async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
-        async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
+//        async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
+        async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches() }
         
-        let (storm, severe, fire, mesos, watch) = await (stormResult, severeResult, fireResult, mesosResult, watchResult)
+        let (storm, severe, fire, mesos, arcus) = await (stormResult, severeResult, fireResult, mesosResult, arcusWatch)
         if Task.isCancelled { return }
         
         await MainActor.run {
@@ -409,7 +413,7 @@ struct HomeView: View {
             if case let .success(value) = severe { self.severeRisk = value }
             if case let .success(value) = fire { self.fireRisk = value  }
             if case let .success(value) = mesos { self.mesos = value }
-            if case let .success(value) = watch { self.watches = value }
+            if case let .success(value) = arcus { self.watches = value }
         }
     }
     

@@ -9,22 +9,6 @@ import Foundation
 import OSLog
 import SwiftData
 
-private enum AppEnvironment {
-    private static let locationPushURLKey = "LocationPushURL"
-
-    static func locationPushURL(bundle: Bundle = .main) -> URL? {
-        guard let rawValue = bundle.object(forInfoDictionaryKey: locationPushURLKey) as? String else {
-            return nil
-        }
-
-        let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty, !value.hasPrefix("$(") else { return nil }
-        guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else { return nil }
-        guard scheme == "https" || scheme == "http" else { return nil }
-        return url
-    }
-}
-
 final class Dependencies: Sendable {
     // MARK: Core config
 
@@ -55,6 +39,7 @@ final class Dependencies: Sendable {
     
     private let _spcProvider: SpcProvider?
     private let _nwsProvider: NwsProvider?
+    private let _arcusProvider: ArcusAlertProvider?
     
     // MARK: Background orchestration
     
@@ -144,6 +129,14 @@ final class Dependencies: Sendable {
         }
         return value
     }
+    
+    var arcusProvider: ArcusAlertProvider {
+        guard let value = _arcusProvider else {
+            fatalError("Dependencies.arcusProvider used while unconfigured")
+        }
+        return value
+    }
+    
     var refreshPolicy: RefreshPolicy {
         guard let value = _refreshPolicy else {
             fatalError("Dependencies.refreshPolicy used while unconfigured")
@@ -245,6 +238,7 @@ final class Dependencies: Sendable {
         gridProvider: GridPointProvider?,
         spcProvider: SpcProvider?,
         nwsProvider: NwsProvider?,
+        arcusProvider: ArcusAlertProvider?,
         refreshPolicy: RefreshPolicy?,
         cadencePolicy: CadencePolicy?,
         orchestrator: BackgroundOrchestrator?,
@@ -265,6 +259,7 @@ final class Dependencies: Sendable {
         self._gridProvider = gridProvider
         self._spcProvider = spcProvider
         self._nwsProvider = nwsProvider
+        self._arcusProvider = arcusProvider
         self._refreshPolicy = refreshPolicy
         self._cadencePolicy = cadencePolicy
         self._orchestrator = orchestrator
@@ -306,19 +301,21 @@ final class Dependencies: Sendable {
         let httpClient = URLSessionHTTPClient(observer: responseObserver)
         let nwsClient = NwsHttpClient(http: httpClient)
         let spcClient = SpcHttpClient(http: httpClient)
+        let arcusBaseURL = ArcusSignalConfiguration.resolvedBaseURL()
+        let arcusClient = ArcusHttpClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()
 
         let snapshotPusher: LocationSnapshotPushing
-        if let endpoint = AppEnvironment.locationPushURL() {
-            let uploader = HTTPLocationSnapshotUploader(endpoint: endpoint, http: httpClient)
+        if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
+            let uploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
             snapshotPusher = LocationSnapshotPusher(
                 uploader: uploader,
                 gridRegionContextProvider: { await metadataRepo.currentRegionContextSnapshot() }
             )
-            logger.notice("Location snapshot push enabled host=\(endpoint.host ?? "unknown", privacy: .public)")
+            logger.notice("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
         } else {
             snapshotPusher = NoOpLocationSnapshotPusher()
-            logger.notice("Location snapshot push disabled (missing LOCATION_PUSH_URL)")
+            logger.notice("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
         }
         
         // Location
@@ -363,6 +360,14 @@ final class Dependencies: Sendable {
         let nwsProvider = nws
         logger.debug("NWS provider initialized")
         
+        let arcus = ArcusAlertProvider(
+            watchRepo: watchRepo,
+            metadataRepo: metadataRepo,
+            gridMetadataProvider: gridProvider,
+            client: arcusClient)
+        let arcusProvider = arcus
+        logger.debug("Arcus provider initialized")
+        
         // Background policies
         let refreshPolicy = RefreshPolicy()
         let cadencePolicy = CadencePolicy()
@@ -398,7 +403,8 @@ final class Dependencies: Sendable {
         
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
-            nwsProvider: nws,
+//            nwsProvider: nws,
+            arcusProvider: arcus,
             locationProvider: locationProvider,
             policy: refreshPolicy,
             engine: morning,
@@ -430,6 +436,7 @@ final class Dependencies: Sendable {
             gridProvider: gridProvider,
             spcProvider: spcProvider,
             nwsProvider: nwsProvider,
+            arcusProvider: arcusProvider,
             refreshPolicy: refreshPolicy,
             cadencePolicy: cadencePolicy,
             orchestrator: orchestrator,
@@ -452,6 +459,7 @@ final class Dependencies: Sendable {
                                                          gridProvider: nil,
                                                          spcProvider: nil,
                                                          nwsProvider: nil,
+                                                         arcusProvider: nil,
                                                          refreshPolicy: nil,
                                                          cadencePolicy: nil,
                                                          orchestrator: nil,

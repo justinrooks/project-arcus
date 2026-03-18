@@ -121,7 +121,7 @@ private extension BackgroundOrchestratorCadenceTests {
 
         let healthStore = BgHealthStore(modelContainer: container)
         let spc = FakeSpcProvider(activeMesos: activeMesos)
-        let nws = FakeNwsProvider(activeWatches: activeWatches)
+        let watchProvider = FakeWatchProvider(activeWatches: activeWatches)
         let locationProvider = LocationProvider(geocoder: ConstantGeocoder(summary: "Norman, OK"))
         let now = Date()
         await locationProvider.send(update: .init(
@@ -148,12 +148,12 @@ private extension BackgroundOrchestratorCadenceTests {
             gate: AllowAllGate(),
             composer: NoopComposer(),
             sender: NoopSender(),
-            nws: nws
+            nws: watchProvider
         )
 
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
-            nwsProvider: nws,
+            arcusProvider: watchProvider,
             locationProvider: locationProvider,
             policy: RefreshPolicy(),
             engine: morningEngine,
@@ -245,14 +245,18 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     }
 }
 
-private actor FakeNwsProvider: NwsSyncing, NwsRiskQuerying {
+private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying, NwsRiskQuerying {
     private let activeWatches: [WatchRowDTO]
 
     init(activeWatches: [WatchRowDTO]) {
         self.activeWatches = activeWatches
     }
 
-    func sync(for point: CLLocationCoordinate2D) async {}
+    func sync(h3Cell: Int64?) async {}
+
+    func getActiveWatches() async throws -> [WatchRowDTO] {
+        activeWatches
+    }
 
     func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchRowDTO] {
         activeWatches

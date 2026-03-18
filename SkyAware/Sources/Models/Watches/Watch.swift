@@ -22,16 +22,17 @@ extension Watch {
 
 @Model
 final class Watch {
-    // 1/23/26 - updated the incomming value to be vtec.
-    //           using the VTECDescriptor.eventKey allows
-    //           us to get the event itself including updates
-    //           and not just each message.
-    // TODO: Need to rename this property some day
+    // As we are now getting alerts from Arcus we are using the
+    // Arcus seriesId here. Arcus handles the deduping and graphing
+    // of alerts and will maintain this id thru updates to remaining
+    // properties.
     @Attribute(.unique) var nwsId: String
-    var messageId: String?
+    var messageId: String? // Current URN
 
     // properties.geocode
     var areaDesc: String        // human-readable region
+    
+    // Deprecate
     var ugcZones: [String]      // from geocode.UGC
     var sameCodes: [String]     // from geocode.SAME
 
@@ -53,9 +54,30 @@ final class Watch {
     var instruction: String?
     var response: String?
     
-//    var rawGeometry: Data?
-      
-    init(nwsId: String, messageId: String, areaDesc: String, ugcZones: [String], sameCodes: [String], sent: Date, effective: Date, onset: Date, expires: Date, ends: Date, status: String, messageType: String, severity: String, certainty: String, urgency: String, event: String, headline: String, watchDescription: String, sender: String?, instruction: String?, response: String?, rawGeometry: Data? = nil) {
+    init(
+        nwsId: String,
+        messageId: String,
+        areaDesc: String,
+        ugcZones: [String],
+        sameCodes: [String],
+        sent: Date,
+        effective: Date,
+        onset: Date,
+        expires: Date,
+        ends: Date,
+        status: String,
+        messageType: String,
+        severity: String,
+        certainty: String,
+        urgency: String,
+        event: String,
+        headline: String,
+        watchDescription: String,
+        sender: String?,
+        instruction: String?,
+        response: String?,
+        rawGeometry: Data? = nil
+    ) {
         self.nwsId = nwsId
         self.messageId = messageId
         self.areaDesc = areaDesc
@@ -77,6 +99,5 @@ final class Watch {
         self.sender = sender
         self.instruction = instruction
         self.response = response
-//        self.rawGeometry = rawGeometry
     }
 }

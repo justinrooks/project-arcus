@@ -165,3 +165,128 @@ struct NwsHttpClientTests {
         }
     }
 }
+
+private actor ArcusMockHTTPClientState {
+    var requests: [(method: String, url: URL, headers: [String: String], body: Data?)] = []
+
+    func record(method: String, url: URL, headers: [String: String], body: Data?) {
+        requests.append((method: method, url: url, headers: headers, body: body))
+    }
+
+    func firstRequest() -> (method: String, url: URL, headers: [String: String], body: Data?)? {
+        requests.first
+    }
+}
+
+private final class ArcusMockHTTPClient: HTTPClient, @unchecked Sendable {
+    private let state = ArcusMockHTTPClientState()
+    private let response: HTTPResponse
+    private let error: Error?
+
+    init(response: HTTPResponse, error: Error? = nil) {
+        self.response = response
+        self.error = error
+    }
+
+    func get(_ url: URL, headers: [String : String]) async throws -> HTTPResponse {
+        await state.record(method: "GET", url: url, headers: headers, body: nil)
+
+        if let error {
+            throw error
+        }
+        return response
+    }
+
+    func post(_ url: URL, headers: [String : String], body: Data?) async throws -> HTTPResponse {
+        await state.record(method: "POST", url: url, headers: headers, body: body)
+
+        if let error {
+            throw error
+        }
+        return response
+    }
+
+    func clearCache() {}
+
+    func firstRequest() async -> (method: String, url: URL, headers: [String: String], body: Data?)? {
+        await state.firstRequest()
+    }
+}
+
+@Suite("ArcusHttpClient")
+struct ArcusHttpClientTests {
+    @Test("fetchActiveAlerts builds alerts endpoint from Arcus signal base URL")
+    func fetchActiveAlerts_buildsArcusAlertsURL() async throws {
+        let payload = Data("{\"ok\":true}".utf8)
+        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: payload))
+        let client = ArcusHttpClient(baseURL: URL(string: "https://arcus.example.com")!, http: http)
+
+        let data = try await client.fetchActiveAlerts(
+            for: "COC001",
+            or: "COZ245",
+            in: 613725958748241919
+        )
+
+        #expect(data == payload)
+
+        let request = try #require(await http.firstRequest())
+        let components = try #require(URLComponents(url: request.url, resolvingAgainstBaseURL: false))
+        #expect(request.method == "GET")
+        #expect(components.scheme == "https")
+        #expect(components.host == "arcus.example.com")
+        #expect(components.path == ArcusSignalConfiguration.alertsPath)
+        #expect(components.queryItems?.first(where: { $0.name == "ugc" })?.value == "COC001")
+        #expect(components.queryItems?.first(where: { $0.name == "fire" })?.value == "COZ245")
+        #expect(components.queryItems?.first(where: { $0.name == "h3" })?.value == "613725958748241919")
+        #expect(request.headers["Accept"] == "application/json")
+        #expect(request.headers["User-Agent"]?.isEmpty == false)
+    }
+}
+
+@Suite("HTTPLocationSnapshotUploader")
+struct HTTPLocationSnapshotUploaderTests {
+    @Test("upload builds location snapshot endpoint from Arcus signal base URL")
+    func upload_buildsLocationSnapshotsURL() async throws {
+        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
+        let uploader = HTTPLocationSnapshotUploader(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: http
+        )
+
+        let payload = LocationSnapshotPushPayload(
+            capturedAt: Date(timeIntervalSince1970: 1_710_000_000),
+            locationAgeSeconds: 5,
+            horizontalAccuracyMeters: 12,
+            cellScheme: "h3",
+            h3Cell: 613725958748241919,
+            h3Resolution: 8,
+            countyCode: "COC001",
+            forecastZone: "COZ245",
+            fireZone: "COZ245",
+            apnsDeviceToken: "abc123",
+            installationId: "install-1",
+            source: "unit-test",
+            auth: "always",
+            appVersion: "1.0",
+            buildNumber: "1",
+            platform: "iOS",
+            osVersion: "18.0",
+            apnsEnvironment: "sandbox",
+            countyLabel: "Adams County",
+            fireZoneLabel: "Front Range",
+            isSubscribed: true
+        )
+
+        try await uploader.upload(payload)
+
+        let request = try #require(await http.firstRequest())
+        #expect(request.method == "POST")
+        #expect(request.url.scheme == "https")
+        #expect(request.url.host == "arcus.example.com")
+        #expect(request.url.path == ArcusSignalConfiguration.locationSnapshotsPath)
+        #expect(request.headers["Accept"] == "application/json")
+        #expect(request.headers["Content-Type"] == "application/json")
+        #expect(request.headers["User-Agent"]?.isEmpty == false)
+        #expect(request.body?.isEmpty == false)
+    }
+}

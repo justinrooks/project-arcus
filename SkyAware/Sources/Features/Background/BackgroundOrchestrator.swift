@@ -32,7 +32,8 @@ actor BackgroundOrchestrator {
     private let logger = Logger.backgroundOrchestrator
     private let signposter:OSSignposter
     private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
-    private let nwsProvider: any NwsSyncing & NwsRiskQuerying
+//    private let nwsProvider: any NwsSyncing & NwsRiskQuerying
+    private let arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying
     private let locationProvider: LocationProvider
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
@@ -46,7 +47,8 @@ actor BackgroundOrchestrator {
     
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
-        nwsProvider: any NwsSyncing & NwsRiskQuerying,
+//        nwsProvider: any NwsSyncing & NwsRiskQuerying,
+        arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying,
         locationProvider: LocationProvider,
         policy: RefreshPolicy,
         engine: MorningEngine,
@@ -57,7 +59,8 @@ actor BackgroundOrchestrator {
         notificationSettingsProvider: NotificationSettingsProviding
     ) {
         self.spcProvider = spcProvider
-        self.nwsProvider = nwsProvider
+//        self.nwsProvider = nwsProvider
+        self.arcusProvider = arcusProvider
         self.locationProvider = locationProvider
         morningEngine = engine
         refreshPolicy = policy
@@ -126,7 +129,8 @@ actor BackgroundOrchestrator {
                 
                 // Keep watch data current each run so cadence decisions can react to active watches.
                 await HTTPExecutionMode.$current.withValue(.background) {
-                    await nwsProvider.sync(for: updatedSnap.coordinates)
+//                    await nwsProvider.sync(for: updatedSnap.coordinates)
+                    await arcusProvider.sync(h3Cell: updatedSnap.h3Cell)
                 }
                 
                 // MARK: Get Risk Status
@@ -136,7 +140,8 @@ actor BackgroundOrchestrator {
                         async let cr = self.spcProvider.getStormRisk(for: snap.coordinates)
                         async let fr = self.spcProvider.getFireRisk(for: snap.coordinates)
                         async let mesos = self.spcProvider.getActiveMesos(at: .now, for: updatedSnap.coordinates)
-                        async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
+//                        async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
+                        async let watches = self.arcusProvider.getActiveWatches()
                         return try await (sr, cr, fr, mesos, watches)
                     }
                 }

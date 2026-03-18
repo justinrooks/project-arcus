@@ -10,8 +10,8 @@
 	<array>
 		<dict/>
 	</array>
-	<key>LocationPushURL</key>
-	<string>$(LOCATION_PUSH_URL)</string>
+	<key>ArcusSignalURL</key>
+	<string>$(ARCUS_SIGNAL_URL)</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
