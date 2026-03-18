@@ -54,6 +54,21 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-18: The fake empty payload trap in Arcus alert fetching
+
+Bug-shaped problem:
+When the app tried to fetch Arcus alerts before an `h3Cell` existed, the client returned `Data()`. That made a request precondition problem dress up like a JSON parsing failure, which is the software equivalent of blaming the waiter when the kitchen never got the ticket.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Clients/ArcusClient.swift` to throw a real request error when `h3Cell` is missing instead of returning an empty payload.
+- Added a dedicated `missingH3Cell` case and localized messaging in `/Users/justin/Code/project-arcus/SkyAware/Sources/Utilities/Core/SkyAwareErrors.swift`.
+
+Aha moment:
+Empty data is not a neutral fallback. It is a disguise. Once the client throws the right error at the boundary, the rest of the pipeline stops inventing a parsing mystery that never happened.
+
+Gotcha:
+This kind of bug is sneaky because logs make it look like "the server sent junk" when the real issue is "we asked too early." Guarding preconditions with explicit errors keeps debugging short and sane.
+
 ### 2026-03-09: Networking got faster, calmer, and less chatty
 
 Bug-shaped problem:
@@ -179,7 +194,7 @@ Goal:
 Guarantee that every accepted location snapshot update can be forwarded to a backend endpoint from one consistent choke point in the pipeline.
 
 What changed:
-- Added runtime-configured endpoint support via `LOCATION_PUSH_URL` build setting -> `Info.plist` `LocationPushURL`.
+- Added runtime-configured Arcus signal base URL support via `ARCUS_SIGNAL_URL` build setting -> `Info.plist` `ArcusSignalURL`.
 - Added a location snapshot push payload that includes:
   - coordinates + accuracy
   - timestamp
@@ -187,7 +202,7 @@ What changed:
   - `h3Cell`
   - APNs device token
 - Added a queued `LocationSnapshotPusher` actor with retry behavior.
-- Added `HTTPLocationSnapshotUploader` to POST JSON to the configured endpoint.
+- Added `HTTPLocationSnapshotUploader` to POST JSON to the configured Arcus signal host, appending `/api/v1/devices/location-snapshots` itself.
 - Wired `LocationProvider.saveAndYieldSnapshot(...)` to enqueue push work every time a snapshot is saved.
 - Wired `Dependencies.live()` to enable/disable this path based on whether endpoint config exists.
 
@@ -195,7 +210,7 @@ Why this helps:
 By attaching push at `saveAndYieldSnapshot`, we avoid fragmented “did we remember to send here too?” logic. One gate, consistent behavior.
 
 Gotcha:
-If `LOCATION_PUSH_URL` is empty or invalid, pushing is intentionally disabled (no-op pusher), so local development keeps working without backend setup.
+If `ARCUS_SIGNAL_URL` is empty or invalid, pushing is intentionally disabled (no-op pusher), so local development keeps working without backend setup. Arcus alert fetching still defaults to the production host unless a custom base URL is configured.
 
 ### 2026-02-23: Added NWS county/zone/fireZone to pushed location payload
 
@@ -568,3 +583,29 @@ A tiny token-formatting test catches easy-to-miss backend integration bugs early
 - I would add a lightweight diagnostics panel for permission status + APNs token from day one.
 - I would establish one canonical "notifications bootstrap" path at app launch to avoid behavior fragmentation across onboarding, settings, and background flows.
 - **Bug squash (empty-token location push retries)**: location snapshot uploads were attempted even when APNs token storage was still empty, creating guaranteed-invalid payloads and unnecessary retry noise. `LocationSnapshotPusher.enqueue` now trims/guards token presence and skips upload until registration provides a real token, with unit coverage to prevent regressions.
+
+### 2026-03-18: Unit test suite drift after the Arcus alert pivot
+
+Bug-shaped problem:
+The test suite had a couple of fossils from before the alert-source migration. One location-cache test used a hard-coded ancient timestamp without pinning the provider clock, and the `NwsProvider.sync` tests still expected live alert-fetch traffic even though that watch-refresh path is intentionally disabled right now.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/LocationProviderTests.swift` so the cache-restore test injects a matching `nowProvider`, which makes it test freshness logic instead of accidentally testing the wall clock on Justin's laptop.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/NwsProviderSyncTests.swift` so the assertions match the current migration state: `NwsProvider.sync` should not hit the NWS alerts endpoint while watch refresh is turned off.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift` so the cadence harness uses an Arcus-capable watch provider for the orchestrator while still satisfying the existing watch-engine interface.
+
+Aha moment:
+Tests can lie in two directions. Sometimes they miss a regression; other times they faithfully guard behavior that the app no longer wants. Migration work leaves behind both kinds of ghosts.
+
+### 2026-03-18: Naming cleanup for grid-region identifiers
+
+Bug-shaped problem:
+The code was using `county` and `zone` in places where we really meant "county UGC code" and "forecast zone." That works until the Arcus migration shows up and suddenly everyone has to stop and ask, "wait, which zone is this one?"
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Models/GridPointSnapshot.swift` to rename `county` -> `countyCode` and `zone` -> `forecastZone`.
+- Carried the same vocabulary through `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/NwsMetadataRepo.swift`, `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/NWS/GridPointProvider.swift`, `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/NWS/NwsProvider.swift`, `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/ArcusAlertProvider.swift`, and `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationSnapshotPusher.swift`.
+- Preserved the existing push payload wire keys (`county`, `zone`) via `CodingKeys` so naming got clearer in Swift without silently changing the server contract.
+
+Aha moment:
+Bad names are like mislabeled drawers in a workshop. You can still build something, but every trip to the toolbox costs extra thought.
