@@ -298,6 +298,71 @@ struct LocationProviderTests {
         #expect(payloads.isEmpty)
     }
 
+    @Test("pushLatestSnapshotWhenAvailable replays cached snapshot immediately")
+    func pushLatestSnapshotWhenAvailable_replaysCachedSnapshot() async throws {
+        let now = Date(timeIntervalSince1970: 1_234_567)
+        let cached = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: now,
+            accuracy: 42,
+            placemarkSummary: "OKC, OK",
+            h3Cell: sampleH3Cell
+        )
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(snapshotPusher: pusher, snapshotCache: cache, nowProvider: { now })
+
+        let didPush = await provider.pushLatestSnapshotWhenAvailable(timeout: 0.01)
+
+        #expect(didPush)
+        let pushed = await pusher.allSnapshots()
+        let first = try #require(pushed.first)
+        #expect(first.timestamp == now)
+        #expect(first.h3Cell == sampleH3Cell)
+    }
+
+    @Test("pushLatestSnapshotWhenAvailable waits for a new snapshot")
+    func pushLatestSnapshotWhenAvailable_waitsForNextSnapshot() async throws {
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success(sampleH3Cell)),
+            snapshotPusher: pusher
+        )
+
+        let pushTask = Task {
+            await provider.pushLatestSnapshotWhenAvailable(timeout: 0.5)
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        await provider.send(
+            update: makeUpdate(
+                lat: 39.0,
+                lon: -104.0,
+                timestamp: Date(timeIntervalSince1970: 1_234_600),
+                accuracy: 25
+            )
+        )
+
+        let didPush = await pushTask.value
+        #expect(didPush)
+
+        let pushed = await waitForSnapshots(from: pusher)
+        #expect(pushed.count == 1)
+    }
+
+    @Test("pushLatestSnapshotWhenAvailable times out when no snapshot is available")
+    func pushLatestSnapshotWhenAvailable_timesOutWithoutSnapshot() async {
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(snapshotPusher: pusher)
+
+        let didPush = await provider.pushLatestSnapshotWhenAvailable(timeout: 0.01)
+
+        #expect(!didPush)
+        let pushed = await pusher.allSnapshots()
+        #expect(pushed.isEmpty)
+    }
+
     private func waitForSnapshots(
         from pusher: MockSnapshotPusher,
         timeoutMs: Int = 500,

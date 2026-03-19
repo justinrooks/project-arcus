@@ -75,9 +75,17 @@ struct SkyAwareApp: App {
                     .sheet(isPresented: $showLocationPermissionAlert) {
                         // Just show the location screen in a sheet
                         NavigationStack {
-                            LocationPermissionView(locationMgr: deps.locationManager) {
-                                showLocationPermissionAlert = false
-                            }
+                            LocationPermissionView(
+                                isWorking: false,
+                                statusMessage: nil,
+                                onEnable: {
+                                    deps.locationManager.checkLocationAuthorization(isActive: true)
+                                    showLocationPermissionAlert = false
+                                },
+                                onSkip: {
+                                    showLocationPermissionAlert = false
+                                }
+                            )
                             .navigationTitle("Location Restricted")
                             .navigationBarTitleDisplayMode(.inline)
                         }

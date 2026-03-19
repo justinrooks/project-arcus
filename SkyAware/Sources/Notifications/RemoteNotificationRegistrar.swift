@@ -20,6 +20,7 @@ final class RemoteNotificationRegistrar {
     private let userDefaults: UserDefaults?
     private let logger: Logger
     private let registerRemoteNotifications: @MainActor () -> Void
+    private var tokenWaiters: [UUID: CheckedContinuation<String?, Never>] = [:]
 
     init(
         center: UNUserNotificationCenter = .current(),
@@ -35,9 +36,10 @@ final class RemoteNotificationRegistrar {
         self.registerRemoteNotifications = registerRemoteNotifications
     }
 
-    func requestAuthorizationAndRegister() async {
+    func requestAuthorizationAndRegister() async -> UNAuthorizationStatus {
         let status = await requestAuthorizationIfNeeded()
         registerIfAuthorized(status: status, context: "permission-request")
+        return status
     }
 
     func registerForRemoteNotificationsIfAuthorized(context: String) async {
@@ -49,13 +51,48 @@ final class RemoteNotificationRegistrar {
         let token = Self.deviceTokenString(from: deviceToken)
         userDefaults?.set(token, forKey: Self.apnsDeviceTokenKey)
         logger.notice("Stored APNs device token with \(token.count, privacy: .public) hex chars")
+        let waiters = Array(tokenWaiters.values)
+        tokenWaiters.removeAll()
+        waiters.forEach { $0.resume(returning: token) }
 #if DEBUG
         logger.debug("APNs device token (debug): \(token, privacy: .public)")
 #endif
     }
 
+    func waitForDeviceToken(timeout: Duration = .seconds(10)) async -> String? {
+        if let token = storedDeviceToken() {
+            return token
+        }
+
+        let waiterID = UUID()
+        return await withCheckedContinuation { continuation in
+            tokenWaiters[waiterID] = continuation
+
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: timeout)
+                guard let self, let continuation = self.tokenWaiters.removeValue(forKey: waiterID) else {
+                    return
+                }
+                continuation.resume(returning: nil)
+            }
+        }
+    }
+
     nonisolated static func deviceTokenString(from deviceToken: Data) -> String {
         deviceToken.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func storedDeviceToken() -> String? {
+        guard
+            let token = userDefaults?
+                .string(forKey: Self.apnsDeviceTokenKey)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !token.isEmpty
+        else {
+            return nil
+        }
+
+        return token
     }
 
     private func requestAuthorizationIfNeeded() async -> UNAuthorizationStatus {

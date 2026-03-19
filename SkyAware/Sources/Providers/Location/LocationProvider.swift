@@ -79,6 +79,32 @@ actor LocationProvider {
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
+
+    func pushLatestSnapshotWhenAvailable(timeout: Double = 15) async -> Bool {
+        if let lastSnapshot {
+            await snapshotPusher.enqueue(lastSnapshot)
+            return true
+        }
+
+        let stream = updates()
+
+        do {
+            let snapshot: LocationSnapshot? = try await withTimeout(timeout: timeout) {
+                for await snapshot in stream {
+                    return snapshot
+                }
+                return nil
+            }
+
+            guard snapshot != nil else { return false }
+            logger.debug("Observed fresh location snapshot while waiting for uploader readiness")
+            return true
+        } catch {
+            logger.notice("Timed out waiting for a location snapshot to upload")
+            return false
+        }
+    }
+
     func updates() -> AsyncStream<LocationSnapshot> {
         AsyncStream { cont in
             if let lastSnapshot { cont.yield(lastSnapshot) }
