@@ -107,11 +107,18 @@ struct LocationProviderTests {
         }
     }
 
-    private func makeUpdate(lat: Double, lon: Double, timestamp: Date, accuracy: CLLocationAccuracy) -> LocationUpdate {
+    private func makeUpdate(
+        lat: Double,
+        lon: Double,
+        timestamp: Date,
+        accuracy: CLLocationAccuracy,
+        forceAcceptance: Bool = false
+    ) -> LocationUpdate {
         LocationUpdate(
             coordinates: CLLocationCoordinate2D(latitude: lat, longitude: lon),
             timestamp: timestamp,
-            accuracy: accuracy
+            accuracy: accuracy,
+            forceAcceptance: forceAcceptance
         )
     }
 
@@ -183,6 +190,21 @@ struct LocationProviderTests {
         #expect(value.coordinates.longitude == -104.0)
         #expect(value.timestamp == now)
         #expect(value.accuracy == 50)
+    }
+
+    @Test("send accepts explicit refresh even when throttle would normally suppress it")
+    func send_acceptsExplicitRefreshWhenStationary() async throws {
+        let provider = LocationProvider()
+        let first = Date(timeIntervalSince1970: 1_000)
+        let second = first.addingTimeInterval(1)
+
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: first, accuracy: 50))
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: second, accuracy: 50, forceAcceptance: true))
+
+        let snapshot = try #require(await provider.snapshot())
+        #expect(snapshot.timestamp == second)
+        #expect(snapshot.coordinates.latitude == 39.0)
+        #expect(snapshot.coordinates.longitude == -104.0)
     }
     
     @Test("send persists accepted snapshot to cache")

@@ -406,6 +406,9 @@ final class Dependencies: Sendable {
 //            nwsProvider: nws,
             arcusProvider: arcus,
             locationProvider: locationProvider,
+            refreshCurrentLocation: { timeout in
+                await locationManager.refreshCurrentLocation(timeout: timeout)
+            },
             policy: refreshPolicy,
             engine: morning,
             mesoEngine: meso,

@@ -54,6 +54,60 @@ struct BackgroundSchedulerReplacementPolicyTests {
 
 @Suite("BackgroundOrchestrator Cadence", .serialized)
 struct BackgroundOrchestratorCadenceTests {
+    @Test("Fresh location request updates provider before risk queries")
+    func freshLocationRequest_updatesProviderBeforeRiskQueries() async throws {
+        let refreshed = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeWatches: [],
+            refreshedLocation: refreshed,
+            refreshSucceeds: true,
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+        )
+
+        _ = await setup.orchestrator.run()
+
+        let points = await setup.spc.queriedPoints()
+        #expect(points.isEmpty == false)
+        #expect(points.allSatisfy { $0.latitude == refreshed.latitude && $0.longitude == refreshed.longitude })
+    }
+
+    @Test("Failed fresh location request uses recent cached snapshot")
+    func failedFreshLocationRequest_usesRecentCachedSnapshot() async throws {
+        let cached = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeWatches: [],
+            refreshedLocation: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            refreshSucceeds: false,
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+        )
+
+        _ = await setup.orchestrator.run()
+
+        let points = await setup.spc.queriedPoints()
+        #expect(points.isEmpty == false)
+        #expect(points.allSatisfy { $0.latitude == cached.latitude && $0.longitude == cached.longitude })
+    }
+
+    @Test("Stale cached snapshot skips location-dependent work when refresh fails")
+    func staleCachedSnapshot_skipsLocationDependentWorkWhenRefreshFails() async throws {
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeWatches: [],
+            refreshedLocation: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            refreshSucceeds: false,
+            cachedSnapshotTimestamp: Date().addingTimeInterval(-(6 * 60)),
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+        )
+
+        let outcome = await setup.orchestrator.run()
+
+        let points = await setup.spc.queriedPoints()
+        #expect(points.isEmpty)
+        #expect(outcome.result == .skipped)
+    }
+
     @Test("Active meso tightens cadence to short")
     func activeMeso_tightensCadenceToShort() async throws {
         let setup = try await makeSystem(
@@ -98,6 +152,7 @@ private extension BackgroundOrchestratorCadenceTests {
     struct SystemUnderTest {
         let orchestrator: BackgroundOrchestrator
         let modelContainer: ModelContainer
+        let spc: FakeSpcProvider
 
         func latestCadence() async throws -> Int? {
             try await MainActor.run {
@@ -114,6 +169,9 @@ private extension BackgroundOrchestratorCadenceTests {
     func makeSystem(
         activeMesos: [MdDTO],
         activeWatches: [WatchRowDTO],
+        refreshedLocation: CLLocationCoordinate2D? = nil,
+        refreshSucceeds: Bool = false,
+        cachedSnapshotTimestamp: Date = Date(),
         settings: NotificationSettings
     ) async throws -> SystemUnderTest {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
@@ -123,10 +181,9 @@ private extension BackgroundOrchestratorCadenceTests {
         let spc = FakeSpcProvider(activeMesos: activeMesos)
         let watchProvider = FakeWatchProvider(activeWatches: activeWatches)
         let locationProvider = LocationProvider(geocoder: ConstantGeocoder(summary: "Norman, OK"))
-        let now = Date()
         await locationProvider.send(update: .init(
             coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
-            timestamp: now,
+            timestamp: cachedSnapshotTimestamp,
             accuracy: 10
         ))
 
@@ -155,6 +212,16 @@ private extension BackgroundOrchestratorCadenceTests {
             spcProvider: spc,
             arcusProvider: watchProvider,
             locationProvider: locationProvider,
+            refreshCurrentLocation: { _ in
+                guard refreshSucceeds, let refreshedLocation else { return false }
+                await locationProvider.send(update: .init(
+                    coordinates: refreshedLocation,
+                    timestamp: Date(),
+                    accuracy: 10,
+                    forceAcceptance: true
+                ))
+                return true
+            },
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
@@ -164,7 +231,7 @@ private extension BackgroundOrchestratorCadenceTests {
             notificationSettingsProvider: StaticSettingsProvider(settings: settings)
         )
 
-        return .init(orchestrator: orchestrator, modelContainer: container)
+        return .init(orchestrator: orchestrator, modelContainer: container, spc: spc)
     }
 
     static func makeMeso() -> MdDTO {
@@ -208,8 +275,11 @@ private extension BackgroundOrchestratorCadenceTests {
 }
 
 private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
+    private var recordedPoints: [CLLocationCoordinate2D] = []
+
     func getFireRisk(for point: CLLocationCoordinate2D) async throws -> SkyAware.FireRiskLevel {
-        .clear
+        recordedPoints.append(point)
+        return .clear
     }
     
     private let activeMesos: [MdDTO]
@@ -225,15 +295,18 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     func syncMesoscaleDiscussions() async {}
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
-        .allClear
+        recordedPoints.append(point)
+        return .allClear
     }
 
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
-        .allClear
+        recordedPoints.append(point)
+        return .allClear
     }
 
     func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
-        activeMesos
+        recordedPoints.append(point)
+        return activeMesos
     }
 
     func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
@@ -242,6 +315,10 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func getConvectiveOutlooks() async throws -> [ConvectiveOutlookDTO] {
         []
+    }
+
+    func queriedPoints() -> [CLLocationCoordinate2D] {
+        recordedPoints
     }
 }
 

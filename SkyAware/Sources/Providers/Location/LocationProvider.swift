@@ -14,6 +14,19 @@ struct LocationUpdate: Sendable {
     let coordinates: CLLocationCoordinate2D
     let timestamp: Date
     let accuracy: CLLocationAccuracy
+    let forceAcceptance: Bool
+
+    init(
+        coordinates: CLLocationCoordinate2D,
+        timestamp: Date,
+        accuracy: CLLocationAccuracy,
+        forceAcceptance: Bool = false
+    ) {
+        self.coordinates = coordinates
+        self.timestamp = timestamp
+        self.accuracy = accuracy
+        self.forceAcceptance = forceAcceptance
+    }
 }
 
 struct LocationSnapshot: Sendable {
@@ -130,7 +143,7 @@ actor LocationProvider {
         
         // 2) Check accept & update snapshot and task the placemark update
         let now = update.timestamp
-        if shouldAccept(update, now: now) {
+        if update.forceAcceptance || shouldAccept(update, now: now) {
             acceptedCount &+= 1
             let snap = LocationSnapshot(coordinates: update.coordinates,
                                         timestamp: update.timestamp,

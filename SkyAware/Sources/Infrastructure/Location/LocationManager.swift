@@ -32,6 +32,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let logger = Logger.locationManager
     private let onUpdate: LocationSink
     private var streamTask: Task<Void, Never>?
+    private var pendingRefreshLocationContinuations: [CheckedContinuation<Bool, Never>] = []
     private(set) var authStatus: CLAuthorizationStatus = .notDetermined
     
     init(onUpdate: @escaping LocationSink) {
@@ -74,6 +75,25 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
+        }
+    }
+
+    func refreshCurrentLocation(timeout: Double = 12) async -> Bool {
+        let status = manager.authorizationStatus
+        guard status == .authorizedAlways || status == .authorizedWhenInUse else {
+            logger.notice("Skipping one-shot location refresh due to auth status \(status.rawValue, privacy: .public)")
+            return false
+        }
+
+        do {
+            return try await withTimeout(timeout: timeout) { [weak self] in
+                guard let self else { return false }
+                return await self.awaitFreshLocationRequest()
+            }
+        } catch {
+            logger.notice("Timed out waiting for one-shot location refresh")
+            resolvePendingRefreshLocationContinuations(with: false)
+            return false
         }
     }
     
@@ -133,15 +153,25 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     ///   - locations: array of locations from the system
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        
-        Task {
-            await onUpdate(
-                .init(
-                    coordinates: loc.coordinate,
-                    timestamp: loc.timestamp,
-                    accuracy: loc.horizontalAccuracy
-                )
+        Task { @MainActor [weak self, onUpdate] in
+            let update = LocationUpdate(
+                coordinates: loc.coordinate,
+                timestamp: loc.timestamp,
+                accuracy: loc.horizontalAccuracy,
+                forceAcceptance: self?.pendingRefreshLocationContinuations.isEmpty == false
             )
+            await onUpdate(update)
+
+            if update.forceAcceptance {
+                self?.resolvePendingRefreshLocationContinuations(with: true)
+            }
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        Task { @MainActor [weak self] in
+            self?.logger.error("Location manager failed with error: \(error.localizedDescription, privacy: .public)")
+            self?.resolvePendingRefreshLocationContinuations(with: false)
         }
     }
     
@@ -177,5 +207,27 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             task.cancel()
             streamTask = nil
         }
+    }
+
+    private func awaitFreshLocationRequest() async -> Bool {
+        await withCheckedContinuation { continuation in
+            let shouldStartRequest = pendingRefreshLocationContinuations.isEmpty
+            pendingRefreshLocationContinuations.append(continuation)
+
+            if shouldStartRequest {
+                logger.debug("Requesting one-shot current location")
+                manager.requestLocation()
+            } else {
+                logger.debug("Joining in-flight one-shot location request")
+            }
+        }
+    }
+
+    private func resolvePendingRefreshLocationContinuations(with success: Bool) {
+        guard pendingRefreshLocationContinuations.isEmpty == false else { return }
+
+        let continuations = pendingRefreshLocationContinuations
+        pendingRefreshLocationContinuations.removeAll()
+        continuations.forEach { $0.resume(returning: success) }
     }
 }
