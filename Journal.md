@@ -597,6 +597,34 @@ What changed:
 Aha moment:
 Tests can lie in two directions. Sometimes they miss a regression; other times they faithfully guard behavior that the app no longer wants. Migration work leaves behind both kinds of ghosts.
 
+### 2026-03-18: Onboarding now waits for the real handoff, not the optimistic one
+
+Bug-shaped problem:
+The onboarding flow was moving on vibes. Location advanced after a half-second timer instead of the user’s real choice, and notifications considered the job "done" as soon as we asked iOS to register for remote notifications. That meant the first location snapshot upload could get dropped in the crack between "permission granted" and "APNs token actually arrived."
+
+What changed:
+- Refactored `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Onboarding/OnboardingView.swift` so the parent owns the async orchestration and the child permission views stay mostly presentational.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Onboarding/LocationPermissionView.swift` to stop auto-advancing on a fixed delay.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Onboarding/NotificationPermissionView.swift` to show progress while setup is finishing instead of instantly exiting.
+- Extended `/Users/justin/Code/project-arcus/SkyAware/Sources/Notifications/RemoteNotificationRegistrar.swift` with a real "wait for token" path.
+- Extended `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/Location/LocationProvider.swift` with a targeted replay hook so onboarding can push the latest snapshot once the token is finally in hand.
+
+Aha moment:
+There’s a huge difference between "I asked the OS for a thing" and "the thing exists now." Permission flows are distributed systems wearing a friendly UI costume.
+
+### 2026-03-18: The placeholder home screen was a permission handoff bug in disguise
+
+Bug-shaped problem:
+After onboarding, the app could land on `HomeView` with a perfectly good cached location name but still show loading placeholders for risk and weather. That looked like "data never loaded," but the real problem was subtler: the first summary refresh lived in the same scene-phase task that also re-checked location authorization. If the user had granted "When In Use," the app treated that as a cue to escalate again, which made the handoff fragile right when we needed the first refresh to stick.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/App/HomeView.swift` so interactive location prompting only happens when authorization is actually `.notDetermined`.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationManager.swift` so a plain authorization check no longer auto-escalates `authorizedWhenInUse` into a fresh "Always Allow" request.
+- Added a focused regression test in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift` to lock in the "only prompt when not determined" rule.
+
+Aha moment:
+Not every empty screen is a data bug. Sometimes the network already did its job and the UI still looks blank because a lifecycle task got interrupted at exactly the wrong moment.
+
 ### 2026-03-18: Naming cleanup for grid-region identifiers
 
 Bug-shaped problem:
@@ -609,3 +637,32 @@ What changed:
 
 Aha moment:
 Bad names are like mislabeled drawers in a workshop. You can still build something, but every trip to the toolbox costs extra thought.
+
+### 2026-03-18: Foreground startup should not wait on one stream to wake up
+
+Bug-shaped problem:
+After a TestFlight update, the app could open with the chrome fully rendered but no fresh data on screen until the user force-quit and relaunched. The sneaky part was that nothing "crashed" at all. Foreground refresh was simply riding on the location update stream, so if that first post-update launch did not hand us an immediate snapshot, the network bootstrap never really got its starting pistol.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/App/HomeView.swift` so activation does three separate things instead of one tangled thing:
+  - asks for location authorization only when the scene is actually active
+  - updates location-manager mode for the current scene phase
+  - proactively refreshes from the best available snapshot (provider cache first, already-rendered state second) before settling into the live update stream
+- Added `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift` coverage for the bootstrap snapshot selection logic, so we preserve the "provider snapshot wins, rendered snapshot is fallback" contract.
+
+Aha moment:
+An async stream is a great conveyor belt, but it is a terrible ignition switch. If first-launch freshness depends on the belt moving, the app can look frozen even when every individual component is technically healthy.
+
+### 2026-03-19: Morning background update used a stale location
+
+Bug-shaped problem:
+The morning summary pipeline was doing something that looked responsible but was actually a little too optimistic. `BackgroundOrchestrator` asked for a location snapshot, then refreshed only the placemark text for those coordinates. That meant a background run could cheerfully use yesterday's coordinates if the cached snapshot was old. The sneaky sequel: even when we explicitly asked Core Location for a one-shot refresh, `LocationProvider` could still suppress that update as "too soon" because its normal burst-throttle logic had no idea this was a deliberate refresh request.
+
+What changed:
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Background/BackgroundOrchestrator.swift` so the background job asks for a fresh device location before risk queries, trusts only recent snapshots, and skips location-dependent work entirely when the only available snapshot is stale.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationManager.swift` so one-shot refreshes flow through a clearly marked path and only resolve after the provider has processed the update.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/Location/LocationProvider.swift` so explicitly requested refreshes bypass the normal burst throttle and actually become the new snapshot, even if the user has not moved far enough to satisfy the foreground streaming heuristics.
+- Added regression coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift` and `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/LocationProviderTests.swift` for three cases: fresh refresh wins, recent cache fallback is allowed, and stale cache causes the background notification path to skip instead of bluffing.
+
+Aha moment:
+"We requested a fresh location" is only a receipt. The real contract is stricter: did a new fix get accepted, and is it recent enough that we'd be comfortable putting it into a notification?
