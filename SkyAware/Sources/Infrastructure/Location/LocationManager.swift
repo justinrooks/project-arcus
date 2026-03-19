@@ -63,7 +63,6 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         case .authorizedAlways:
             logger.debug("Location always is authorized")
         case .authorizedWhenInUse:
-            manager.requestAlwaysAuthorization()
             logger.debug("Location when in use is authorized")
         @unknown default:
             stopAll()

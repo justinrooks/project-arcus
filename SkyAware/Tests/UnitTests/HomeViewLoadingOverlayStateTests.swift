@@ -1,6 +1,78 @@
 import Foundation
+import CoreLocation
 import Testing
 @testable import SkyAware
+
+@Suite("HomeView Startup Snapshot Selection")
+struct HomeViewStartupSnapshotSelectionTests {
+    private func makeSnapshot(lat: Double, lon: Double, timestamp: TimeInterval) -> LocationSnapshot {
+        LocationSnapshot(
+            coordinates: .init(latitude: lat, longitude: lon),
+            timestamp: Date(timeIntervalSince1970: timestamp),
+            accuracy: 50,
+            placemarkSummary: nil,
+            h3Cell: nil
+        )
+    }
+
+    @Test("prefers provider snapshot when both sources exist")
+    func prefersProviderSnapshot() {
+        let provider = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
+        let rendered = makeSnapshot(lat: 35.46, lon: -97.51, timestamp: 50)
+
+        let selected = HomeView.preferredBootstrapSnapshot(
+            providerSnapshot: provider,
+            renderedSnapshot: rendered
+        )
+
+        #expect(selected?.coordinates.latitude == provider.coordinates.latitude)
+        #expect(selected?.coordinates.longitude == provider.coordinates.longitude)
+        #expect(selected?.timestamp == provider.timestamp)
+    }
+
+    @Test("falls back to rendered snapshot when provider snapshot is missing")
+    func fallsBackToRenderedSnapshot() {
+        let rendered = makeSnapshot(lat: 35.46, lon: -97.51, timestamp: 50)
+
+        let selected = HomeView.preferredBootstrapSnapshot(
+            providerSnapshot: nil,
+            renderedSnapshot: rendered
+        )
+
+        #expect(selected?.coordinates.latitude == rendered.coordinates.latitude)
+        #expect(selected?.coordinates.longitude == rendered.coordinates.longitude)
+        #expect(selected?.timestamp == rendered.timestamp)
+    }
+
+    @Test("returns nil when no snapshot source exists")
+    func returnsNilWithoutAnySnapshot() {
+        let selected = HomeView.preferredBootstrapSnapshot(
+            providerSnapshot: nil,
+            renderedSnapshot: nil
+        )
+
+        #expect(selected == nil)
+    }
+
+    @Test("requests interactive location auth only when status is not determined")
+    func requestsInteractiveLocationAuth_onlyWhenNotDetermined() {
+        #expect(
+            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .notDetermined)
+        )
+        #expect(
+            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .authorizedWhenInUse) == false
+        )
+        #expect(
+            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .authorizedAlways) == false
+        )
+        #expect(
+            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .denied) == false
+        )
+        #expect(
+            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .restricted) == false
+        )
+    }
+}
 
 @Suite("HomeView Loading Overlay State")
 struct HomeViewLoadingOverlayStateTests {

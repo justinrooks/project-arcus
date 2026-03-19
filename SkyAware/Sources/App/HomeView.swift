@@ -39,6 +39,19 @@ struct HomeView: View {
         }
     }
 
+    static func preferredBootstrapSnapshot(
+        providerSnapshot: LocationSnapshot?,
+        renderedSnapshot: LocationSnapshot?
+    ) -> LocationSnapshot? {
+        providerSnapshot ?? renderedSnapshot
+    }
+
+    static func shouldRequestInteractiveLocationAuthorization(
+        authStatus: CLAuthorizationStatus
+    ) -> Bool {
+        authStatus == .notDetermined
+    }
+
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     
@@ -211,9 +224,17 @@ struct HomeView: View {
         .tint(.skyAwareAccent)
         .task(id: scenePhase) {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
-            dependencies.locationManager.checkLocationAuthorization(isActive: true)
+            let isActive = scenePhase == .active
+            if isActive,
+               Self.shouldRequestInteractiveLocationAuthorization(
+                   authStatus: dependencies.locationManager.authStatus
+               ) {
+                dependencies.locationManager.checkLocationAuthorization(isActive: true)
+            }
             dependencies.locationManager.updateMode(for: scenePhase)
-            guard scenePhase == .active else { return }
+            guard isActive else { return }
+
+            await bootstrapForegroundRefreshIfPossible(showsLoading: true)
             
             // Whenever a location snapshot hits, refresh the data with
             // the newest location.
@@ -224,6 +245,26 @@ struct HomeView: View {
                 await refresh(for: s, showsLoading: true)
             }
         }
+    }
+
+    private func latestAvailableSnapshot() async -> LocationSnapshot? {
+        let providerSnapshot = await locSvc.snapshot()
+        let renderedSnapshot = await MainActor.run { snap }
+        return Self.preferredBootstrapSnapshot(
+            providerSnapshot: providerSnapshot,
+            renderedSnapshot: renderedSnapshot
+        )
+    }
+
+    private func bootstrapForegroundRefreshIfPossible(showsLoading: Bool) async {
+        guard let latestSnapshot = await latestAvailableSnapshot() else {
+            logger.notice("Foreground activation has no cached location snapshot yet; waiting for live location updates")
+            return
+        }
+
+        logger.info("Bootstrapping foreground refresh from latest available snapshot")
+        await MainActor.run { snap = latestSnapshot }
+        await refresh(for: latestSnapshot, showsLoading: showsLoading)
     }
     
     /// Refreshes outlook plus location-scoped data together
@@ -306,12 +347,7 @@ struct HomeView: View {
     }
 
     private func forceRefreshFromLatestSnapshot(showsLoading: Bool) async {
-        let latestSnapshot: LocationSnapshot?
-        if let providerSnapshot = await locSvc.snapshot() {
-            latestSnapshot = providerSnapshot
-        } else {
-            latestSnapshot = await MainActor.run { snap }
-        }
+        let latestSnapshot = await latestAvailableSnapshot()
         guard let latestSnapshot else {
             logger.info("Manual refresh skipped because no location snapshot is available yet")
             return
