@@ -18,6 +18,16 @@ enum OtherErrors: Error {
     case timeoutError
 }
 
+enum ArcusError: Error, Equatable {
+    case invalidUrl
+    case missingH3Cell
+    case parsingError
+    case missingData
+    case networkError(status: Int)
+    case rateLimited(retryAfterSeconds: Int?)
+    case serviceUnavailable(retryAfterSeconds: Int?)
+}
+
 enum NwsError: Error, Equatable {
     case invalidUrl
     case parsingError
@@ -38,7 +48,7 @@ enum SpcError: Error, Equatable {
     case serviceUnavailable(retryAfterSeconds: Int?)
 }
 
-enum GeocodeError: Error {
+enum GeocodeError: Error, Sendable {
     case noResults
     case noCoordinate
 }
@@ -109,6 +119,33 @@ extension NwsError: LocalizedError {
                 return "NWS service unavailable (503). Retry after \(retryAfter) seconds."
             }
             return "NWS service unavailable (503)."
+        }
+    }
+}
+
+extension ArcusError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .invalidUrl:
+            return "Arcus URL is nil or invalid."
+        case .missingH3Cell:
+            return "Arcus alerts require an H3 cell before requesting data."
+        case .parsingError:
+            return "Arcus data parsing error."
+        case .missingData:
+            return "Arcus response data is missing."
+        case .networkError(let status):
+            return "Arcus network request failed with HTTP status \(status)."
+        case .rateLimited(let retryAfter):
+            if let retryAfter {
+                return "Arcus rate limited (429). Retry after \(retryAfter) seconds."
+            }
+            return "Arcus rate limited (429)."
+        case .serviceUnavailable(let retryAfter):
+            if let retryAfter {
+                return "Arcus service unavailable (503). Retry after \(retryAfter) seconds."
+            }
+            return "Arcus service unavailable (503)."
         }
     }
 }

@@ -1,0 +1,107 @@
+//
+//  ArcusClient.swift
+//  SkyAware
+//
+//  Created by Justin Rooks on 3/17/26.
+//
+
+import Foundation
+import OSLog
+
+protocol ArcusClient: Sendable {
+    func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data
+}
+
+struct ArcusHttpClient: ArcusClient {
+    private let http: HTTPClient
+    private let baseURL: URL
+    private let logger = Logger.providersArcusClient
+    // https://skyaware.bennettbunker.com/api/v1/alerts?ugc=COZ245&fire=AKZ326&h3=613725958748241919
+    
+    init(
+        baseURL: URL = ArcusSignalConfiguration.defaultBaseURL,
+        http: HTTPClient = URLSessionHTTPClient()
+    ) {
+        self.baseURL = baseURL
+        self.http = http
+    }
+    
+    func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data {
+        guard let cell else {
+            logger.error("Missing required h3 cell address")
+            throw ArcusError.missingH3Cell
+        }
+        logger.info("Arcus request started endpoint=/alerts ugc=\(ugc, privacy: .private(mask: .hash)) fire=\(fire, privacy: .private(mask: .hash)) h3Cell=\(cell, privacy: .private(mask: .hash))")
+        let url = try makeUrl(
+            path: ArcusSignalConfiguration.alertsPath,
+            queryItems: [
+                URLQueryItem(name: "ugc", value: ugc),
+                URLQueryItem(name: "fire", value: fire),
+                URLQueryItem(name: "h3", value: "\(cell)")
+            ]
+        )
+        
+        return try await fetch(from: url)
+    }
+    
+    private var requestHeaders: [String: String] {
+        HTTPRequestHeaders.arcus()
+    }
+    
+    private func fetch(from url: URL) async throws -> Data {
+        try Task.checkCancellation()
+
+        let resp = try await http.get(url, headers: requestHeaders)
+        try Task.checkCancellation()
+
+        if resp.source != .live {
+            logger.notice("Arcus response served from \(resp.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
+        }
+
+        switch resp.classifyStatus() {
+        case .success:
+            break
+        case .notModified:
+            // Downloader already rehydrates cached body for 304 when available.
+            break
+        case .rateLimited(let retryAfter):
+            let error = ArcusError.rateLimited(retryAfterSeconds: retryAfter)
+            logFailure(error: error, endpoint: url.path, status: resp.status)
+            throw error
+        case .serviceUnavailable(let retryAfter):
+            let error = ArcusError.serviceUnavailable(retryAfterSeconds: retryAfter)
+            logFailure(error: error, endpoint: url.path, status: resp.status)
+            throw error
+        case .failure(let status):
+            let error = ArcusError.networkError(status: status)
+            logFailure(error: error, endpoint: url.path, status: status)
+            throw error
+        }
+        
+        guard let data = resp.data else {
+            logger.error("Arcus response missing body endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public)")
+            throw ArcusError.missingData
+        }
+        
+        return data
+    }
+    
+    private func logFailure(error: ArcusError, endpoint: String, status: Int) {
+        switch error {
+        case .rateLimited(let retryAfter):
+            logger.warning("Arcus rate limited endpoint=\(endpoint, privacy: .public) status=\(status, privacy: .public) retryAfterSeconds=\(retryAfter ?? -1, privacy: .public)")
+        case .serviceUnavailable(let retryAfter):
+            logger.warning("Arcus service unavailable endpoint=\(endpoint, privacy: .public) status=\(status, privacy: .public) retryAfterSeconds=\(retryAfter ?? -1, privacy: .public)")
+        default:
+            logger.error("Arcus request failed endpoint=\(endpoint, privacy: .public) status=\(status, privacy: .public)")
+        }
+    }
+    
+    /// Build an absolute URL from a relative path, or throw on failure.
+    private func makeUrl(path: String, queryItems: [URLQueryItem] = []) throws -> URL {
+        guard let url = ArcusSignalConfiguration.url(from: baseURL, path: path, queryItems: queryItems) else {
+            throw ArcusError.invalidUrl
+        }
+        return url
+    }
+}

@@ -8,7 +8,10 @@
 import SwiftUI
 
 struct NotificationPermissionView: View {
-    let onComplete: () -> Void
+    let isWorking: Bool
+    let statusMessage: String?
+    let onEnable: () -> Void
+    let onSkip: () -> Void
     
     var body: some View {
         VStack(spacing: 24) {
@@ -42,23 +45,14 @@ struct NotificationPermissionView: View {
             .padding(.horizontal, 32)
             
             Spacer()
-            
-            // TODO: Adapt this code to use here, and helpfully navigate to the settings
-            //            .alert("Location Permission Needed",
-            //                   isPresented: $showLocationPermissionAlert) {
-            //                Button("Settings") { locationMgr.openSettings() }
-            //                Button("Cancel", role: .cancel) {}
-            //            } message: {
-            //                Text("Enable location to see nearby weather risks and alerts.")
-            //            }
-            //showLocationPermissionAlert = (locationMgr.authStatus == .denied || locationMgr.authStatus == .restricted)
-            
-            Button(action: {
-                Task {
-                    await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
-                    onComplete()
-                }
-            }) {
+
+            if let statusMessage {
+                ProgressView(statusMessage)
+                    .font(.subheadline)
+                    .tint(.skyAwareAccent)
+            }
+
+            Button(action: onEnable) {
                 Text("Enable Notifications")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -70,12 +64,12 @@ struct NotificationPermissionView: View {
                     )
             }
             .padding(.horizontal, 32)
+            .disabled(isWorking)
             
-            Button("Skip for Now") {
-                onComplete()
-            }
+            Button("Skip for Now", action: onSkip)
             .font(.subheadline)
             .foregroundColor(.secondary)
+            .disabled(isWorking)
             
             Spacer()
         }
@@ -85,5 +79,10 @@ struct NotificationPermissionView: View {
 }
 
 #Preview {
-    NotificationPermissionView() { }
+    NotificationPermissionView(
+        isWorking: false,
+        statusMessage: nil,
+        onEnable: {},
+        onSkip: {}
+    )
 }

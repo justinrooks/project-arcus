@@ -7,9 +7,9 @@ import Testing
 struct LocationProviderTests {
     private let sampleH3Cell: Int64 = 0x872681364FFFFFF
 
-    private indirect enum GeocoderMode {
+    private indirect enum GeocoderMode: Sendable {
         case success(String)
-        case failure(Error)
+        case failure(any Error & Sendable)
         case delay(seconds: Double, then: GeocoderMode)
     }
 
@@ -30,9 +30,9 @@ struct LocationProviderTests {
     }
     
     private struct MockHasher: LocationHashing {
-        enum Mode {
+        enum Mode: Sendable {
             case success(Int64)
-            case failure(Error)
+            case failure(any Error & Sendable)
         }
         
         let mode: Mode
@@ -107,11 +107,18 @@ struct LocationProviderTests {
         }
     }
 
-    private func makeUpdate(lat: Double, lon: Double, timestamp: Date, accuracy: CLLocationAccuracy) -> LocationUpdate {
+    private func makeUpdate(
+        lat: Double,
+        lon: Double,
+        timestamp: Date,
+        accuracy: CLLocationAccuracy,
+        forceAcceptance: Bool = false
+    ) -> LocationUpdate {
         LocationUpdate(
             coordinates: CLLocationCoordinate2D(latitude: lat, longitude: lon),
             timestamp: timestamp,
-            accuracy: accuracy
+            accuracy: accuracy,
+            forceAcceptance: forceAcceptance
         )
     }
 
@@ -133,7 +140,7 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: cached)
-        let provider = LocationProvider(snapshotCache: cache)
+        let provider = LocationProvider(snapshotCache: cache, nowProvider: { now })
         
         let snapshot = try #require(await provider.snapshot())
         #expect(snapshot.coordinates.latitude == cached.coordinates.latitude)
@@ -183,6 +190,21 @@ struct LocationProviderTests {
         #expect(value.coordinates.longitude == -104.0)
         #expect(value.timestamp == now)
         #expect(value.accuracy == 50)
+    }
+
+    @Test("send accepts explicit refresh even when throttle would normally suppress it")
+    func send_acceptsExplicitRefreshWhenStationary() async throws {
+        let provider = LocationProvider()
+        let first = Date(timeIntervalSince1970: 1_000)
+        let second = first.addingTimeInterval(1)
+
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: first, accuracy: 50))
+        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: second, accuracy: 50, forceAcceptance: true))
+
+        let snapshot = try #require(await provider.snapshot())
+        #expect(snapshot.timestamp == second)
+        #expect(snapshot.coordinates.latitude == 39.0)
+        #expect(snapshot.coordinates.longitude == -104.0)
     }
     
     @Test("send persists accepted snapshot to cache")
@@ -239,7 +261,13 @@ struct LocationProviderTests {
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             gridRegionContextProvider: {
-                NwsGridRegionContext(county: "OKC109", zone: "OKZ025", fireZone: "OKZ025")
+                NwsGridRegionContext(
+                    countyCode: "OKC109",
+                    forecastZone: "OKZ025",
+                    fireZone: "OKZ025",
+                    countyLabel: "Oklahoma County",
+                    fireZoneLabel: "Central Oklahoma"
+                )
             },
             subscriptionStatusProvider: { false },
             retryDelaysSeconds: [0]
@@ -261,8 +289,8 @@ struct LocationProviderTests {
         #expect(payload.capturedAt == ts)
         #expect(payload.installationId == "install-abc-123")
         #expect(payload.apnsDeviceToken == "apns-token-123")
-        #expect(payload.county == "OKC109")
-        #expect(payload.zone == "OKZ025")
+        #expect(payload.countyCode == "OKC109")
+        #expect(payload.forecastZone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
         #expect(payload.h3Cell == sampleH3Cell)
         #expect(payload.isSubscribed == false)
@@ -290,6 +318,71 @@ struct LocationProviderTests {
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
+    }
+
+    @Test("pushLatestSnapshotWhenAvailable replays cached snapshot immediately")
+    func pushLatestSnapshotWhenAvailable_replaysCachedSnapshot() async throws {
+        let now = Date(timeIntervalSince1970: 1_234_567)
+        let cached = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: now,
+            accuracy: 42,
+            placemarkSummary: "OKC, OK",
+            h3Cell: sampleH3Cell
+        )
+        let cache = MockSnapshotCache(storedSnapshot: cached)
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(snapshotPusher: pusher, snapshotCache: cache, nowProvider: { now })
+
+        let didPush = await provider.pushLatestSnapshotWhenAvailable(timeout: 0.01)
+
+        #expect(didPush)
+        let pushed = await pusher.allSnapshots()
+        let first = try #require(pushed.first)
+        #expect(first.timestamp == now)
+        #expect(first.h3Cell == sampleH3Cell)
+    }
+
+    @Test("pushLatestSnapshotWhenAvailable waits for a new snapshot")
+    func pushLatestSnapshotWhenAvailable_waitsForNextSnapshot() async throws {
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
+            hasher: MockHasher(mode: .success(sampleH3Cell)),
+            snapshotPusher: pusher
+        )
+
+        let pushTask = Task {
+            await provider.pushLatestSnapshotWhenAvailable(timeout: 0.5)
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        await provider.send(
+            update: makeUpdate(
+                lat: 39.0,
+                lon: -104.0,
+                timestamp: Date(timeIntervalSince1970: 1_234_600),
+                accuracy: 25
+            )
+        )
+
+        let didPush = await pushTask.value
+        #expect(didPush)
+
+        let pushed = await waitForSnapshots(from: pusher)
+        #expect(pushed.count == 1)
+    }
+
+    @Test("pushLatestSnapshotWhenAvailable times out when no snapshot is available")
+    func pushLatestSnapshotWhenAvailable_timesOutWithoutSnapshot() async {
+        let pusher = MockSnapshotPusher()
+        let provider = LocationProvider(snapshotPusher: pusher)
+
+        let didPush = await provider.pushLatestSnapshotWhenAvailable(timeout: 0.01)
+
+        #expect(!didPush)
+        let pushed = await pusher.allSnapshots()
+        #expect(pushed.isEmpty)
     }
 
     private func waitForSnapshots(

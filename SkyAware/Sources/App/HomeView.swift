@@ -39,6 +39,19 @@ struct HomeView: View {
         }
     }
 
+    static func preferredBootstrapSnapshot(
+        providerSnapshot: LocationSnapshot?,
+        renderedSnapshot: LocationSnapshot?
+    ) -> LocationSnapshot? {
+        providerSnapshot ?? renderedSnapshot
+    }
+
+    static func shouldRequestInteractiveLocationAuthorization(
+        authStatus: CLAuthorizationStatus
+    ) -> Bool {
+        authStatus == .notDetermined
+    }
+
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     
@@ -49,8 +62,8 @@ struct HomeView: View {
     private var locSvc: LocationClient { dependencies.locationClient }
     private var svc: any SpcRiskQuerying { dependencies.spcRisk }
     private var outlookSvc: any SpcOutlookQuerying { dependencies.spcOutlook }
-    private var nwsSvc: any NwsRiskQuerying { dependencies.nwsRisk  }
-    private var nwsSync: any NwsSyncing { dependencies.nwsSync }
+    private var arcusAlertSvc: any ArcusAlertQuerying { dependencies.arcusProvider }
+    private var arcusAlertSync: any ArcusAlertSyncing { dependencies.arcusProvider }
     private var weatherClient: WeatherClient { dependencies.weatherClient }
 
     // MARK: State
@@ -209,9 +222,17 @@ struct HomeView: View {
         .tint(.skyAwareAccent)
         .task(id: scenePhase) {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
-            dependencies.locationManager.checkLocationAuthorization(isActive: true)
+            let isActive = scenePhase == .active
+            if isActive,
+               Self.shouldRequestInteractiveLocationAuthorization(
+                   authStatus: dependencies.locationManager.authStatus
+               ) {
+                dependencies.locationManager.checkLocationAuthorization(isActive: true)
+            }
             dependencies.locationManager.updateMode(for: scenePhase)
-            guard scenePhase == .active else { return }
+            guard isActive else { return }
+
+            await bootstrapForegroundRefreshIfPossible(showsLoading: true)
             
             // Whenever a location snapshot hits, refresh the data with
             // the newest location.
@@ -222,6 +243,26 @@ struct HomeView: View {
                 await refresh(for: s, showsLoading: true)
             }
         }
+    }
+
+    private func latestAvailableSnapshot() async -> LocationSnapshot? {
+        let providerSnapshot = await locSvc.snapshot()
+        let renderedSnapshot = await MainActor.run { snap }
+        return Self.preferredBootstrapSnapshot(
+            providerSnapshot: providerSnapshot,
+            renderedSnapshot: renderedSnapshot
+        )
+    }
+
+    private func bootstrapForegroundRefreshIfPossible(showsLoading: Bool) async {
+        guard let latestSnapshot = await latestAvailableSnapshot() else {
+            logger.notice("Foreground activation has no cached location snapshot yet; waiting for live location updates")
+            return
+        }
+
+        logger.info("Bootstrapping foreground refresh from latest available snapshot")
+        await MainActor.run { snap = latestSnapshot }
+        await refresh(for: latestSnapshot, showsLoading: showsLoading)
     }
     
     /// Refreshes outlook plus location-scoped data together
@@ -249,7 +290,6 @@ struct HomeView: View {
         }
 
         let location = snap.coordinates
-        let nwsSync = self.nwsSync
         let sync = self.sync
 
         if !shouldSyncOutlookNow {
@@ -259,9 +299,9 @@ struct HomeView: View {
         if showsLoading { await MainActor.run { updateRefreshMessage("Syncing network feeds...") } }
         await HTTPExecutionMode.$current.withValue(.foreground) {
             await withTaskGroup(of: Void.self) { group in
-                group.addTask { await nwsSync.sync(for: location) }
                 group.addTask { await sync.syncMesoscaleDiscussions() }
                 group.addTask { await sync.syncMapProducts() }
+                group.addTask { await arcusAlertSync.sync(h3Cell: snap.h3Cell)}
                 if shouldSyncOutlookNow {
                     group.addTask { await sync.syncConvectiveOutlooks() }
                 }
@@ -303,12 +343,7 @@ struct HomeView: View {
     }
 
     private func forceRefreshFromLatestSnapshot(showsLoading: Bool) async {
-        let latestSnapshot: LocationSnapshot?
-        if let providerSnapshot = await locSvc.snapshot() {
-            latestSnapshot = providerSnapshot
-        } else {
-            latestSnapshot = await MainActor.run { snap }
-        }
+        let latestSnapshot = await latestAvailableSnapshot()
         guard let latestSnapshot else {
             logger.info("Manual refresh skipped because no location snapshot is available yet")
             return
@@ -399,9 +434,9 @@ struct HomeView: View {
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
         async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
-        async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
+        async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches() }
         
-        let (storm, severe, fire, mesos, watch) = await (stormResult, severeResult, fireResult, mesosResult, watchResult)
+        let (storm, severe, fire, mesos, arcus) = await (stormResult, severeResult, fireResult, mesosResult, arcusWatch)
         if Task.isCancelled { return }
         
         await MainActor.run {
@@ -409,7 +444,7 @@ struct HomeView: View {
             if case let .success(value) = severe { self.severeRisk = value }
             if case let .success(value) = fire { self.fireRisk = value  }
             if case let .success(value) = mesos { self.mesos = value }
-            if case let .success(value) = watch { self.watches = value }
+            if case let .success(value) = arcus { self.watches = value }
         }
     }
     

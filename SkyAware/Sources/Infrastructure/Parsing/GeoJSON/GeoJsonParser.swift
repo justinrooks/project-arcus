@@ -12,6 +12,7 @@ enum GeoJsonParser {
     /// Decodes the provided Data into a GeoJSONFeatureCollection DTO
     /// - Parameter data: data stream to decode
     /// - Returns: a populated GeoJSONFeatureCollection DTO, or empty if there's a decoding error
+    @available(*, deprecated, message: "Use the Arcus instead")
     static func decode(from data: Data) -> GeoJSONFeatureCollection {
         let decoder = DecoderFactory.base
         do {

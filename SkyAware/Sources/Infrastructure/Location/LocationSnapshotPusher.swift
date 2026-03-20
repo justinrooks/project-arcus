@@ -25,8 +25,8 @@ struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
     let cellScheme: String
     let h3Cell: Int64?
     let h3Resolution: Int?
-    let county: String?
-    let zone: String?
+    let countyCode: String?
+    let forecastZone: String?
     let fireZone: String?
     let apnsDeviceToken: String
     let installationId: String
@@ -40,7 +40,30 @@ struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
     let countyLabel: String?
     let fireZoneLabel: String?
     let isSubscribed: Bool?
-    
+
+    enum CodingKeys: String, CodingKey {
+        case capturedAt
+        case locationAgeSeconds
+        case horizontalAccuracyMeters
+        case cellScheme
+        case h3Cell
+        case h3Resolution
+        case countyCode = "county"
+        case forecastZone = "zone"
+        case fireZone
+        case apnsDeviceToken
+        case installationId
+        case source
+        case auth
+        case appVersion
+        case buildNumber
+        case platform
+        case osVersion
+        case apnsEnvironment
+        case countyLabel
+        case fireZoneLabel
+        case isSubscribed
+    }
 }
 
 actor LocationSnapshotPusher: LocationSnapshotPushing {
@@ -101,8 +124,8 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
             cellScheme: snapshot.h3Cell == nil ? "ugc-only" : "h3",
             h3Cell: snapshot.h3Cell,
             h3Resolution: 8, // TODO: Make this global someday
-            county: regionContext?.county,
-            zone: regionContext?.zone,
+            countyCode: regionContext?.countyCode,
+            forecastZone: regionContext?.forecastZone,
             fireZone: regionContext?.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: installationId,

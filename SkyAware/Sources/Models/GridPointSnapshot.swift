@@ -22,8 +22,8 @@ struct GridPointSnapshot {
     let state: String?
     let timeZoneId: String?
     let radarStationId: String?
-    let zone: String?
-    let county: String?
+    let forecastZone: String?
+    let countyCode: String?
     let fireZone: String?
     
     init(from: NWSGridPoint, with coordinates: Coordinate2D) {
@@ -43,8 +43,8 @@ struct GridPointSnapshot {
         self.state                  = props.relativeLocation?.properties.state
         self.timeZoneId             = props.timeZone
         self.radarStationId         = props.radarStation
-        self.zone                   = props.forecastZone?.lastPathComponent
-        self.county                 = props.county?.lastPathComponent
+        self.forecastZone           = props.forecastZone?.lastPathComponent
+        self.countyCode             = props.county?.lastPathComponent
         self.fireZone               = props.fireWeatherZone?.lastPathComponent
     }
 }

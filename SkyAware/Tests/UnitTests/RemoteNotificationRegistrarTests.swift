@@ -53,6 +53,48 @@ struct RemoteNotificationRegistrarTests {
         #expect(value.isEmpty)
     }
 
+    @MainActor
+    @Test("waitForDeviceToken returns stored token immediately")
+    func waitForDeviceToken_returnsStoredValue() async {
+        let suiteName = "RemoteNotificationRegistrarTests.waitForDeviceToken_returnsStoredValue"
+        let defaults = UserDefaults(suiteName: suiteName)
+        defaults?.removePersistentDomain(forName: suiteName)
+        defaults?.set("existing-token", forKey: RemoteNotificationRegistrar.apnsDeviceTokenKey)
+
+        let sut = RemoteNotificationRegistrar(
+            center: .current(),
+            userDefaults: defaults,
+            registerRemoteNotifications: {}
+        )
+
+        let token = await sut.waitForDeviceToken(timeout: .seconds(1))
+        #expect(token == "existing-token")
+    }
+
+    @MainActor
+    @Test("waitForDeviceToken resumes when token is stored later")
+    func waitForDeviceToken_resumesAfterStore() async throws {
+        let suiteName = "RemoteNotificationRegistrarTests.waitForDeviceToken_resumesAfterStore"
+        let defaults = UserDefaults(suiteName: suiteName)
+        defaults?.removePersistentDomain(forName: suiteName)
+
+        let sut = RemoteNotificationRegistrar(
+            center: .current(),
+            userDefaults: defaults,
+            registerRemoteNotifications: {}
+        )
+
+        let tokenTask = Task { @MainActor in
+            await sut.waitForDeviceToken(timeout: .seconds(1))
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        sut.storeDeviceToken(Data([0x00, 0xAB, 0x10]))
+
+        let token = await tokenTask.value
+        #expect(token == "00ab10")
+    }
+
     @Test("InstallationIdentityStore returns existing ID without writing")
     func installationIdentity_returnsExistingId() async {
         let storage = MockInstallationStorage(storedValue: "existing-install-id")

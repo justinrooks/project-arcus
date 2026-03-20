@@ -95,6 +95,14 @@ public enum HTTPRequestHeaders {
         return "\(appName)/\(bundle.appVersion) (\(bundleID); build:\(bundle.buildNumber))"
     }
 
+    public static func arcus(bundle: Bundle = .main) -> [String: String] {
+        [
+            "User-Agent": userAgent(bundle: bundle),
+             "Accept": "application/json"//,
+//            "If-None-Match": "*"
+        ]
+    }
+    
     public static func nws(bundle: Bundle = .main) -> [String: String] {
         [
             "User-Agent": userAgent(bundle: bundle),

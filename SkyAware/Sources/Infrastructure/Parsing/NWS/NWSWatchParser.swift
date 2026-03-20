@@ -12,6 +12,7 @@ enum NWSWatchParser {
     /// Decodes the provided Data into a GeoJSONFeatureCollection DTO
     /// - Parameter data: data stream to decode
     /// - Returns: a populated GeoJSONFeatureCollection DTO, or empty if there's a decoding error
+    @available(*, deprecated, message: "Use the Arcus instead")
     static func decode(from data: Data) -> NWSWatchJson? {
         let decoder = DecoderFactory.iso8601
         

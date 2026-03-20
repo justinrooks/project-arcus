@@ -21,7 +21,9 @@ extension Logger {
     static let providersSpc = Logger(subsystem: subsystem, category: "providers.spc")
     static let parsingRss = Logger(subsystem: subsystem, category: "parsing.rss")
     static let providersNwsClient = Logger(subsystem: subsystem, category: "providers.nws.client")
+    static let providersArcusClient = Logger(subsystem: subsystem, category: "providers.arcus.client")
     static let providersNws = Logger(subsystem: subsystem, category: "providers.nws")
+    static let providersArcus = Logger(subsystem: subsystem, category: "providers.arcus")
     static let providersNwsGrid = Logger(subsystem: subsystem, category: "providers.nws.grid")
     static let providersWeatherKit = Logger(subsystem: subsystem, category: "providers.weatherKit")
     

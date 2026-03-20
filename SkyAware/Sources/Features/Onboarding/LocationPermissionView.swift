@@ -8,14 +8,15 @@
 import SwiftUI
 
 struct LocationPermissionView: View {
-    let locationMgr: LocationManager
-    let onContinue: () -> Void
-//    @StateObject private var locationManager = LocationManager()
+    let isWorking: Bool
+    let statusMessage: String?
+    let onEnable: () -> Void
+    let onSkip: () -> Void
     
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            
+
             Image(systemName: "location.fill")
                 .font(.system(size: 80))
                 .foregroundColor(.skyAwareAccent)
@@ -34,18 +35,14 @@ struct LocationPermissionView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            
             Spacer()
-            
-            Button(action: {
-                locationMgr.checkLocationAuthorization(isActive: true)
-                
-                // Small delay to let permission dialog appear/dismiss, then continue
 
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    onContinue()
-                }
-            }) {
+            if let statusMessage {
+                ProgressView(statusMessage)
+                    .font(.subheadline)
+                    .tint(.skyAwareAccent)
+            }
+            Button(action: onEnable) {
                 Text("Enable Location")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -57,12 +54,12 @@ struct LocationPermissionView: View {
                     )
             }
             .padding(.horizontal, 32)
+            .disabled(isWorking)
             
-            Button("Skip for Now") {
-                onContinue()
-            }
+            Button("Skip for Now", action: onSkip)
             .font(.subheadline)
             .foregroundColor(.secondary)
+            .disabled(isWorking)
             
             Spacer()
         }
@@ -72,9 +69,10 @@ struct LocationPermissionView: View {
 }
 
 #Preview {
-    let provider = LocationProvider()
-    let sink: LocationSink = { [provider] update in await provider.send(update: update) }
-    let locationMgr = LocationManager(onUpdate: sink)
-    
-    LocationPermissionView(locationMgr: locationMgr) { }
+    LocationPermissionView(
+        isWorking: false,
+        statusMessage: nil,
+        onEnable: {},
+        onSkip: {}
+    )
 }

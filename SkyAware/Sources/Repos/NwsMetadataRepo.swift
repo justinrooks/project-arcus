@@ -9,8 +9,8 @@ import Foundation
 import OSLog
 
 struct NwsGridRegionContext: Sendable, Equatable {
-    let county: String?
-    let zone: String?
+    let countyCode: String?
+    let forecastZone: String?
     let fireZone: String?
     let countyLabel: String?
     let fireZoneLabel: String?
@@ -23,17 +23,16 @@ actor NwsMetadataRepo {
     func getPointMetadata(using client: any NwsClient, for location: Coordinate2D) async throws -> NWSGridPoint {
         let data = try await client.fetchPointMetadata(for: location)
 
-        guard let decoded = NWSGridPointParser.decode(from: data) else {
-            logger.error("Unable to parse NWS Json grid point data")
+        guard let decoded: NWSGridPoint = JsonParser.decode(from: data) else {
             throw NwsError.parsingError
         }
-        
+
         return decoded
     }
     
-    func getLocationLabels(using client: any NwsClient, for county: String?, and zone: String?) async throws -> (String?, String?) {
-        let countyMetadata = try await zoneMetadata(using: client, type: .county, identifier: county)
-        let fireZoneMetadata = try await zoneMetadata(using: client, type: .fire, identifier: zone)
+    func getLocationLabels(using client: any NwsClient, for countyCode: String?, and fireZone: String?) async throws -> (String?, String?) {
+        let countyMetadata = try await zoneMetadata(using: client, type: .county, identifier: countyCode)
+        let fireZoneMetadata = try await zoneMetadata(using: client, type: .fire, identifier: fireZone)
 
         let countyLabel = countyMetadata.map { "\($0.name) \($0.type)".capitalized }
         let fireZoneLabel = fireZoneMetadata?.name
@@ -41,10 +40,16 @@ actor NwsMetadataRepo {
         return (countyLabel, fireZoneLabel)
     }
     
-    func updateCurrentRegionContext(county: String?, zone: String?, fireZone: String?, countyLabel: String?, fireZoneLabel: String?) {
+    func updateCurrentRegionContext(
+        countyCode: String?,
+        forecastZone: String?,
+        fireZone: String?,
+        countyLabel: String?,
+        fireZoneLabel: String?
+    ) {
         currentRegionContext = NwsGridRegionContext(
-            county: county,
-            zone: zone,
+            countyCode: countyCode,
+            forecastZone: forecastZone,
             fireZone: fireZone,
             countyLabel: countyLabel,
             fireZoneLabel: fireZoneLabel

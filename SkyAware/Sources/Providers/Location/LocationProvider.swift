@@ -14,6 +14,19 @@ struct LocationUpdate: Sendable {
     let coordinates: CLLocationCoordinate2D
     let timestamp: Date
     let accuracy: CLLocationAccuracy
+    let forceAcceptance: Bool
+
+    init(
+        coordinates: CLLocationCoordinate2D,
+        timestamp: Date,
+        accuracy: CLLocationAccuracy,
+        forceAcceptance: Bool = false
+    ) {
+        self.coordinates = coordinates
+        self.timestamp = timestamp
+        self.accuracy = accuracy
+        self.forceAcceptance = forceAcceptance
+    }
 }
 
 struct LocationSnapshot: Sendable {
@@ -79,6 +92,32 @@ actor LocationProvider {
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
+
+    func pushLatestSnapshotWhenAvailable(timeout: Double = 15) async -> Bool {
+        if let lastSnapshot {
+            await snapshotPusher.enqueue(lastSnapshot)
+            return true
+        }
+
+        let stream = updates()
+
+        do {
+            let snapshot: LocationSnapshot? = try await withTimeout(timeout: timeout) {
+                for await snapshot in stream {
+                    return snapshot
+                }
+                return nil
+            }
+
+            guard snapshot != nil else { return false }
+            logger.debug("Observed fresh location snapshot while waiting for uploader readiness")
+            return true
+        } catch {
+            logger.notice("Timed out waiting for a location snapshot to upload")
+            return false
+        }
+    }
+
     func updates() -> AsyncStream<LocationSnapshot> {
         AsyncStream { cont in
             if let lastSnapshot { cont.yield(lastSnapshot) }
@@ -104,7 +143,7 @@ actor LocationProvider {
         
         // 2) Check accept & update snapshot and task the placemark update
         let now = update.timestamp
-        if shouldAccept(update, now: now) {
+        if update.forceAcceptance || shouldAccept(update, now: now) {
             acceptedCount &+= 1
             let snap = LocationSnapshot(coordinates: update.coordinates,
                                         timestamp: update.timestamp,
