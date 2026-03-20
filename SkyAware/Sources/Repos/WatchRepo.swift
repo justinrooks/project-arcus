@@ -13,12 +13,27 @@ import OSLog
 actor WatchRepo {
     private let logger = Logger.reposWatch
     
-    func active(on date: Date = .now) async throws -> [WatchRowDTO] {
+    func active(countyCode: String, fireZone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
         logger.info("Fetching current local watches")
         
         let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
 
-        return candidates.map { WatchRowDTO.init(from: $0) }
+        var hits: [Watch] = []
+        hits.reserveCapacity(candidates.count)
+        
+        for watch in candidates {
+            let ugc = watch.ugcZones
+            guard !ugc.isEmpty else { continue }
+            
+            // TODO: Add the h3 cell here as a filter
+            if ugc.contains(countyCode) || ugc.contains(fireZone) {
+                hits.append(watch)
+            }
+        }
+        
+        return hits.map { WatchRowDTO.init(from: $0) }
+        
+//        return candidates.map { WatchRowDTO.init(from: $0) }
     }
     
     @available(*, deprecated, message: "Use the refresh with arcus client instead")
@@ -121,16 +136,17 @@ actor WatchRepo {
             return nil
         }
         
-        // TODO: Default or remove
+        // TODO: Populate
 //        let status           = item.status
 //        let ugcZones         = item.properties.geocode?.ugc
-//        let sameCodes        = item.properties.geocode?.same
+//        let h3Cells: [Int64] = []
+
         
         return .init(
             nwsId: "\(item.id)",
             messageId: item.currentRevisionUrn,
             areaDesc: item.areaDesc ?? "",
-            ugcZones: [], // Deprecate
+            ugcZones: [],
             sameCodes:[], // Deprecate
             sent: sent,
             effective: effective,
