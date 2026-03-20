@@ -154,7 +154,7 @@ struct SkyAwareApp: App {
                         logger.notice("Starting spc provider cleanup and sync")
                         await deps.spcProvider.cleanup()
                         logger.info("Spc provider cleanup finished")
-                        await deps.nwsProvider.cleanup()
+                        await deps.arcusProvider.cleanup()
                         logger.info("Nws provider cleanup finished")
                         
                         // HomeView owns foreground startup refresh and map product sync.

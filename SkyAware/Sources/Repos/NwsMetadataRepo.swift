@@ -23,11 +23,10 @@ actor NwsMetadataRepo {
     func getPointMetadata(using client: any NwsClient, for location: Coordinate2D) async throws -> NWSGridPoint {
         let data = try await client.fetchPointMetadata(for: location)
 
-        guard let decoded = NWSGridPointParser.decode(from: data) else {
-            logger.error("Unable to parse NWS Json grid point data")
+        guard let decoded: NWSGridPoint = JsonParser.decode(from: data) else {
             throw NwsError.parsingError
         }
-        
+
         return decoded
     }
     

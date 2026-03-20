@@ -62,7 +62,7 @@ struct BackgroundOrchestratorCadenceTests {
             activeWatches: [],
             refreshedLocation: refreshed,
             refreshSucceeds: true,
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
 
         _ = await setup.orchestrator.run()
@@ -80,7 +80,7 @@ struct BackgroundOrchestratorCadenceTests {
             activeWatches: [],
             refreshedLocation: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
             refreshSucceeds: false,
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
 
         _ = await setup.orchestrator.run()
@@ -98,7 +98,7 @@ struct BackgroundOrchestratorCadenceTests {
             refreshedLocation: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
             refreshSucceeds: false,
             cachedSnapshotTimestamp: Date().addingTimeInterval(-(6 * 60)),
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
 
         let outcome = await setup.orchestrator.run()
@@ -113,7 +113,7 @@ struct BackgroundOrchestratorCadenceTests {
         let setup = try await makeSystem(
             activeMesos: [Self.makeMeso()],
             activeWatches: [],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
         _ = await setup.orchestrator.run()
 
@@ -126,7 +126,7 @@ struct BackgroundOrchestratorCadenceTests {
         let setup = try await makeSystem(
             activeMesos: [],
             activeWatches: [Self.makeWatch()],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
         _ = await setup.orchestrator.run()
 
@@ -139,7 +139,7 @@ struct BackgroundOrchestratorCadenceTests {
         let setup = try await makeSystem(
             activeMesos: [],
             activeWatches: [],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false, watchNotificationsEnabled: false)
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
         _ = await setup.orchestrator.run()
 
@@ -200,13 +200,6 @@ private extension BackgroundOrchestratorCadenceTests {
             sender: NoopSender(),
             spc: spc
         )
-        let watchEngine = WatchEngine(
-            rule: NoopWatchRule(),
-            gate: AllowAllGate(),
-            composer: NoopComposer(),
-            sender: NoopSender(),
-            nws: watchProvider
-        )
 
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
@@ -225,7 +218,6 @@ private extension BackgroundOrchestratorCadenceTests {
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
-            watchEngine: watchEngine,
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(settings: settings)
@@ -322,7 +314,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     }
 }
 
-private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying, NwsRiskQuerying {
+private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     private let activeWatches: [WatchRowDTO]
 
     init(activeWatches: [WatchRowDTO]) {
@@ -364,12 +356,6 @@ private struct NoopMorningRule: NotificationRuleEvaluating {
 
 private struct NoopMesoRule: MesoNotificationRuleEvaluating {
     func evaluate(_ ctx: MesoContext) -> NotificationEvent? {
-        nil
-    }
-}
-
-private struct NoopWatchRule: WatchNotificationRuleEvaluating {
-    func evaluate(_ ctx: WatchContext) -> NotificationEvent? {
         nil
     }
 }

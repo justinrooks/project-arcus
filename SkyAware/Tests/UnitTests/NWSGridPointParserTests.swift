@@ -47,7 +47,7 @@ struct NWSGridPointParserTests {
         }
         """
         
-        let result = NWSGridPointParser.decode(from: data(json))
+        let result: NWSGridPoint? = JsonParser.decode(from: data(json))
         let point = try #require(result)
         #expect(point.type == "Feature")
         #expect(point.properties.gridId == "OUN")
@@ -69,7 +69,7 @@ struct NWSGridPointParserTests {
         }
         """
         
-        let result = NWSGridPointParser.decode(from: data(json))
+        let result: NWSGridPoint? = JsonParser.decode(from: data(json))
         #expect(result == nil)
     }
 
@@ -87,7 +87,7 @@ struct NWSGridPointParserTests {
         }
         """
         
-        let result = NWSGridPointParser.decode(from: data(json))
+        let result: NWSGridPoint? = JsonParser.decode(from: data(json))
         #expect(result == nil)
     }
 
@@ -105,14 +105,14 @@ struct NWSGridPointParserTests {
         }
         """
         
-        let result = NWSGridPointParser.decode(from: data(json))
+        let result: NWSGridPoint? = JsonParser.decode(from: data(json))
         #expect(result == nil)
     }
 
     @Test
     func returnsNilForCorruptedData() {
         let json = "{ not-valid-json }"
-        let result = NWSGridPointParser.decode(from: data(json))
+        let result: NWSGridPoint? = JsonParser.decode(from: data(json))
         #expect(result == nil)
     }
 

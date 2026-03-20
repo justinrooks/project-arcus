@@ -55,11 +55,6 @@ struct SettingsView: View {
     ) private var mesoNotificationEnabled: Bool = true
     
     @AppStorage(
-        "watchNotificationEnabled",
-        store: UserDefaults.shared
-    ) private var watchNotificationEnabled: Bool = true
-    
-    @AppStorage(
         "serverNotificationEnabled",
         store: UserDefaults.shared
     ) private var serverNotificationEnabled: Bool = true
@@ -131,10 +126,6 @@ struct SettingsView: View {
                     Toggle("Meso Notifications", isOn: $mesoNotificationEnabled)
                         .onChange(of: mesoNotificationEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Meso Notifications")
-                        }
-                    Toggle("Watch Notifications", isOn: $watchNotificationEnabled)
-                        .onChange(of: watchNotificationEnabled) { _, newValue in
-                            handleNotificationToggle(newValue, for: "Watch Notifications")
                         }
                     Toggle("Server Notifications", isOn: $serverNotificationEnabled)
                         .onChange(of: serverNotificationEnabled) { _, newValue in

@@ -21,7 +21,6 @@ struct Outcome: Sendable {
 struct NotificationSettings: Sendable {
     let morningSummariesEnabled: Bool
     let mesoNotificationsEnabled: Bool
-    let watchNotificationsEnabled: Bool
 }
 
 protocol NotificationSettingsProviding: Sendable {
@@ -32,14 +31,12 @@ actor BackgroundOrchestrator {
     private let logger = Logger.backgroundOrchestrator
     private let signposter:OSSignposter
     private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
-//    private let nwsProvider: any NwsSyncing & NwsRiskQuerying
     private let arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying
     private let locationProvider: LocationProvider
     private let refreshCurrentLocation: @Sendable (Double) async -> Bool
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
     private let mesoEngine: MesoEngine
-    private let watchEngine: WatchEngine
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
     private let notificationSettingsProvider: NotificationSettingsProviding
@@ -50,20 +47,17 @@ actor BackgroundOrchestrator {
     
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
-//        nwsProvider: any NwsSyncing & NwsRiskQuerying,
         arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying,
         locationProvider: LocationProvider,
         refreshCurrentLocation: @escaping @Sendable (Double) async -> Bool,
         policy: RefreshPolicy,
         engine: MorningEngine,
         mesoEngine: MesoEngine,
-        watchEngine: WatchEngine,
         health: BgHealthStore,
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding
     ) {
         self.spcProvider = spcProvider
-//        self.nwsProvider = nwsProvider
         self.arcusProvider = arcusProvider
         self.locationProvider = locationProvider
         self.refreshCurrentLocation = refreshCurrentLocation
@@ -72,7 +66,6 @@ actor BackgroundOrchestrator {
         healthStore = health
         self.cadence = cadence
         self.mesoEngine = mesoEngine
-        self.watchEngine = watchEngine
         self.notificationSettingsProvider = notificationSettingsProvider
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
@@ -89,7 +82,6 @@ actor BackgroundOrchestrator {
         return await withTaskCancellationHandler {
             var didMorningNotify = false
             var didMesoNotify = false
-            var didWatchNotify = false
             var noNotifyReasons: [String] = []
             var feedsChanged: Set<Feed> = []
             
@@ -135,7 +127,6 @@ actor BackgroundOrchestrator {
                 
                 // Keep watch data current each run so cadence decisions can react to active watches.
                 await HTTPExecutionMode.$current.withValue(.background) {
-//                    await nwsProvider.sync(for: updatedSnap.coordinates)
                     await arcusProvider.sync(h3Cell: updatedSnap.h3Cell)
                 }
                 
@@ -146,7 +137,6 @@ actor BackgroundOrchestrator {
                         async let cr = self.spcProvider.getStormRisk(for: location)
                         async let fr = self.spcProvider.getFireRisk(for: location)
                         async let mesos = self.spcProvider.getActiveMesos(at: .now, for: location)
-//                        async let watches = self.nwsProvider.getActiveWatches(for: updatedSnap.coordinates)
                         async let watches = self.arcusProvider.getActiveWatches()
                         return try await (sr, cr, fr, mesos, watches)
                     }
@@ -188,21 +178,7 @@ actor BackgroundOrchestrator {
                     )
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                 } else { noNotifyReasons.append("Meso notification disabled") }
-                
-                if settings.watchNotificationsEnabled {
-                    // MARK: Send Watch Notification
-                    signposter.emitEvent("Watch Notification")
-                    didWatchNotify = await watchEngine.run(
-                        ctx: .init(
-                            now: .now,
-                            localTZ: .current,
-                            location: updatedSnap.coordinates,
-                            placeMark: updatedSnap.placemarkSummary ?? "Unknown"
-                        )
-                    )
-                    if !didWatchNotify { noNotifyReasons.append("Watch notification skipped") }
-                } else { noNotifyReasons.append("Watch notification disabled") }
-                
+                                
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
                     for: .init(
@@ -217,7 +193,7 @@ actor BackgroundOrchestrator {
                 let nextRun = refreshPolicy.getNextRunTime(for: cadenceResult.cadence)
                 let end = Date()
                 let active = clock.now - startInstant
-                let didNotify = didMorningNotify || didMesoNotify || didWatchNotify
+                let didNotify = didMorningNotify || didMesoNotify
                 let reasonNoNotify = didNotify ? nil : noNotifyReasons.joined(separator: "; ")
 
                 try? await recordBgRun(

@@ -62,8 +62,6 @@ struct HomeView: View {
     private var locSvc: LocationClient { dependencies.locationClient }
     private var svc: any SpcRiskQuerying { dependencies.spcRisk }
     private var outlookSvc: any SpcOutlookQuerying { dependencies.spcOutlook }
-    private var nwsSvc: any NwsRiskQuerying { dependencies.nwsRisk  }
-    private var nwsSync: any NwsSyncing { dependencies.nwsSync }
     private var arcusAlertSvc: any ArcusAlertQuerying { dependencies.arcusProvider }
     private var arcusAlertSync: any ArcusAlertSyncing { dependencies.arcusProvider }
     private var weatherClient: WeatherClient { dependencies.weatherClient }
@@ -292,7 +290,6 @@ struct HomeView: View {
         }
 
         let location = snap.coordinates
-        let nwsSync = self.nwsSync
         let sync = self.sync
 
         if !shouldSyncOutlookNow {
@@ -302,7 +299,6 @@ struct HomeView: View {
         if showsLoading { await MainActor.run { updateRefreshMessage("Syncing network feeds...") } }
         await HTTPExecutionMode.$current.withValue(.foreground) {
             await withTaskGroup(of: Void.self) { group in
-//                group.addTask { await nwsSync.sync(for: location) }
                 group.addTask { await sync.syncMesoscaleDiscussions() }
                 group.addTask { await sync.syncMapProducts() }
                 group.addTask { await arcusAlertSync.sync(h3Cell: snap.h3Cell)}
@@ -438,7 +434,6 @@ struct HomeView: View {
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
         async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
-//        async let watchResult = capture { try await nwsSvc.getActiveWatches(for: coord) }
         async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches() }
         
         let (storm, severe, fire, mesos, arcus) = await (stormResult, severeResult, fireResult, mesosResult, arcusWatch)

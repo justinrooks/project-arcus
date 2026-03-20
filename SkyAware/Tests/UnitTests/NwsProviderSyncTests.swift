@@ -41,33 +41,33 @@ private struct StubGeocoder: LocationGeocoding {
 
 @Suite("NwsProvider.sync", .serialized)
 struct NwsProviderSyncTests {
-    @Test("Concurrent sync requests do not hit the NWS alerts endpoint while watch refresh is disabled")
-    func concurrentSameLocationDoesNotHitAlertsEndpoint() async throws {
-        let client = CountingNwsClient()
-        let provider = try await makeProvider(client: client)
-        let point = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
-
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await provider.sync(for: point) }
-            group.addTask { await provider.sync(for: point) }
-            await group.waitForAll()
-        }
-
-        #expect(await client.activeAlertsCallCount() == 0)
-    }
-
-    @Test("Same-grid repeat sync does not hit the NWS alerts endpoint while watch refresh is disabled")
-    func repeatSameGridDoesNotHitAlertsEndpoint() async throws {
-        let client = CountingNwsClient()
-        let provider = try await makeProvider(client: client)
-        let first = CLLocationCoordinate2D(latitude: 35.123456, longitude: -97.123456)
-        let drifted = CLLocationCoordinate2D(latitude: 35.123499, longitude: -97.123499)
-
-        await provider.sync(for: first)
-        await provider.sync(for: drifted)
-
-        #expect(await client.activeAlertsCallCount() == 0)
-    }
+//    @Test("Concurrent sync requests do not hit the NWS alerts endpoint while watch refresh is disabled")
+//    func concurrentSameLocationDoesNotHitAlertsEndpoint() async throws {
+//        let client = CountingNwsClient()
+//        let provider = try await makeProvider(client: client)
+//        let point = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
+//
+//        await withTaskGroup(of: Void.self) { group in
+//            group.addTask { await provider.sync(for: point) }
+//            group.addTask { await provider.sync(for: point) }
+//            await group.waitForAll()
+//        }
+//
+//        #expect(await client.activeAlertsCallCount() == 0)
+//    }
+//
+//    @Test("Same-grid repeat sync does not hit the NWS alerts endpoint while watch refresh is disabled")
+//    func repeatSameGridDoesNotHitAlertsEndpoint() async throws {
+//        let client = CountingNwsClient()
+//        let provider = try await makeProvider(client: client)
+//        let first = CLLocationCoordinate2D(latitude: 35.123456, longitude: -97.123456)
+//        let drifted = CLLocationCoordinate2D(latitude: 35.123499, longitude: -97.123499)
+//
+//        await provider.sync(for: first)
+//        await provider.sync(for: drifted)
+//
+//        #expect(await client.activeAlertsCallCount() == 0)
+//    }
 
     private func makeProvider(client: any NwsClient) async throws -> NwsProvider {
         let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }

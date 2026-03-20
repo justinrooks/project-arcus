@@ -192,20 +192,6 @@ final class Dependencies: Sendable {
     }
     
     // MARK: Protocol surfaces - NWS
-    var nwsRisk: any NwsRiskQuerying {
-        guard let _nwsProvider else {
-            fatalError("Dependencies.nwsRisk used while unconfigured")
-        }
-        return _nwsProvider
-    }
-    
-    var nwsSync: any NwsSyncing {
-        guard let _nwsProvider else {
-            fatalError("Dependencies.nwsRisk used while unconfigured")
-        }
-        return _nwsProvider
-    }
-    
     var nwsMetadata: any NwsMetadataProviding {
         guard let _nwsProvider else {
             fatalError("Dependencies.nwsMetadata used while unconfigured")
@@ -390,20 +376,10 @@ final class Dependencies: Sendable {
             spc: spc
         )
         
-        logger.debug("Composing watch notification engine")
-        let watch = WatchEngine(
-            rule: WatchRule(),
-            gate: WatchGate(store: DefaultWatchStore()),
-            composer: WatchComposer(),
-            sender: Sender(),
-            nws: nws
-        )
-        
         let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
-//            nwsProvider: nws,
             arcusProvider: arcus,
             locationProvider: locationProvider,
             refreshCurrentLocation: { timeout in
@@ -412,7 +388,6 @@ final class Dependencies: Sendable {
             policy: refreshPolicy,
             engine: morning,
             mesoEngine: meso,
-            watchEngine: watch,
             health: healthStore,
             cadence: cadencePolicy,
             notificationSettingsProvider: notificationSettingsProvider
@@ -475,8 +450,7 @@ final class Dependencies: Sendable {
             await MainActor.run {
                 NotificationSettings(
                     morningSummariesEnabled: readBoolSetting(forKey: "morningSummaryEnabled", defaultValue: true),
-                    mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true),
-                    watchNotificationsEnabled: readBoolSetting(forKey: "watchNotificationEnabled", defaultValue: true)
+                    mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true)
                 )
             }
         }
