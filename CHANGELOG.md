@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## v0.1.0(28)
+
+### Background & Notifications
+- Wait for the actual location-permission result and APNs token before sending the first location snapshot during onboarding.
+<!-- evidence: e47120d -->
+- Reuse recent location snapshots across cold starts, prefer a fresh fix for background runs, and skip stale location-dependent work.
+<!-- evidence: 1798c83, e47120d -->
+- Include county/fire-zone codes and labels plus subscription status in location snapshot uploads to the server.
+<!-- evidence: 0872620 -->
+
+### Data & Repos
+- Move active watch loading to the server alert feed and match watches by both UGC zones and H3 cells so alert results follow location changes more reliably.
+<!-- evidence: e47120d, b2fbafb -->
+
+### UI / UX
+- Add Server Notifications and Send Location to Signal toggles in Settings.
+<!-- evidence: 1798c83, 0872620 -->
+- Add a Diagnostics cache-clear action and show more of each log entry before truncating lines in Log Viewer.
+<!-- evidence: 1798c83, b2fbafb -->
+- Show onboarding progress states while waiting for location and notification permission handoffs.
+<!-- evidence: e47120d -->
+
+### Infra / Parsing
+- Harden SPC/NWS/alert networking with foreground/background request policies, 429/503 retry handling, Retry-After parsing, 304 cache revalidation, and cached GET fallback after retry exhaustion.
+<!-- evidence: 1798c83 -->
+- Parallelize independent foreground feed syncs and reduce repeated NWS traffic with filtered active-alert queries, refresh-key quantization, and in-flight/cooldown dedupe.
+<!-- evidence: 1798c83 -->
+
+### Tests / QA
+- Add regression coverage for downloader retry/caching behavior, location snapshot caching, onboarding/APNs token waiting, server-backed watch syncing/filtering, and background cadence freshness rules.
+<!-- evidence: 1798c83, 0872620, e47120d, b2fbafb -->
+
 ## v0.1.0(25)
 
 ### Features

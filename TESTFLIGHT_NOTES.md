@@ -1,3 +1,13 @@
+SkyAware v0.1.0(28) build improves onboarding and location handoffs, keeps watch matching aligned with location changes, and hardens network/cache behavior.
+
+Highlights:
+- Onboarding now waits for the actual location-permission result and APNs token before sending the first location snapshot
+- Foreground and background refresh can reuse recent location snapshots, prefer fresh fixes when available, and skip stale location-dependent work
+- Active watch loading now uses the server alert feed, with UGC/H3 matching so local watch results follow location changes more reliably
+- Settings now includes Server Notifications and Send Location to Signal toggles
+- Diagnostics now lets you clear the shared network cache and shows longer log entries before truncating
+- SPC/NWS/alert requests now have stronger retry, revalidation, and cached-fallback handling
+
 SkyAware v0.1.0(25) build adds a new Atmosphere summary rail, expanded severe-map hatching/legend behavior, and notification/data freshness updates.
 
 Highlights:

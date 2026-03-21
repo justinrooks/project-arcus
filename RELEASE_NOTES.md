@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## v0.1.0(28)
+
+### Overview
+This update tightens onboarding and location handoffs, keeps active watches aligned with location changes, and hardens network/cache behavior across foreground and background refreshes.
+
+### Highlights
+- Onboarding now waits for the actual location-permission result and APNs token before sending the first location snapshot.
+- Foreground and background refresh now reuse recent location snapshots, prefer fresh fixes when available, and skip stale location-dependent work.
+- Active watch loading now uses the server alert feed, with UGC/H3 matching so watch results follow location changes more reliably.
+- Settings now includes Server Notifications and Send Location to Signal toggles.
+- Diagnostics now lets you clear the shared network cache, and Log Viewer shows more of each entry before truncating.
+- Location snapshot uploads now include county/fire-zone codes and labels plus subscription status.
+
+### Reliability & Performance
+- SPC/NWS/alert networking now uses foreground/background request policies, 429/503 retry handling, Retry-After parsing, 304 cache revalidation, and cached GET fallback after retry exhaustion.
+- Foreground refresh now runs independent feed syncs in parallel, and repeated NWS traffic is reduced with filtered active-alert queries, refresh-key quantization, and in-flight/cooldown dedupe.
+
+### UI / UX
+- Onboarding permission screens now show progress while waiting for location and notification handoffs.
+- Settings now surfaces Server Notifications and Send Location to Signal toggles, and Diagnostics adds cache clearing with longer log entry previews.
+
+### Tests / QA
+- Added regression coverage for downloader retry/caching behavior, location snapshot caching, onboarding/APNs token waiting, server-backed watch syncing/filtering, and background cadence freshness rules.
+
 ## v0.1.0(25)
 
 ### Overview
