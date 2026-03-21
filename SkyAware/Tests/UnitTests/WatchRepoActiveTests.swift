@@ -15,14 +15,20 @@ struct WatchRepoActiveTests {
         repo = WatchRepo(modelContainer: container)
     }
 
-    private func makeWatch(number: String, issued: Date, effective: Date, validEnd: Date) -> Watch {
+    private func makeWatch(
+        number: String,
+        issued: Date,
+        effective: Date,
+        validEnd: Date,
+        ugcZones: [String] = ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
+        cells: [Int64] = []
+    ) -> Watch {
         let iso = ISO8601DateFormatter()
         return Watch(
             nwsId: number,
             messageId: number,
             areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
-            ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
-            sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
+            ugcZones: ugcZones,
             sent: issued,
             effective: effective,
             onset: iso.date(from: "2025-11-25T22:20:00Z")!,
@@ -38,7 +44,8 @@ struct WatchRepoActiveTests {
             watchDescription: "TORNADO WATCH remains valid until 6 PM CST this evening. Primary threats include a couple tornadoes possible and damaging winds.",
             sender: "w-nws.webmaster@noaa.gov",
             instruction: "Take shelter in an interior room. Avoid windows. If in a mobile home, move to a sturdier shelter.",
-            response: "Monitor"
+            response: "Monitor",
+            cells: cells
         )
     }
 
@@ -57,11 +64,35 @@ struct WatchRepoActiveTests {
         ctx.insert(upcoming)
         try ctx.save()
 
-        let hits = try await repo.active(countyCode: "ALC013", forecastZone: "ALC013", fireZone: "COZ245", on: now)
+        let hits = try await repo.active(countyCode: "ALC013", fireZone: "COZ245", cell: nil, on: now)
         let ids = Set(hits.map { $0.id })
 
         #expect(ids.contains("1\(tag)"))
         #expect(!ids.contains("2\(tag)"))
         #expect(!ids.contains("3\(tag)"))
+    }
+
+    @Test("Keeps cell-based matches even when UGC metadata is absent")
+    func matchesCellOnlyWatch() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let cell: Int64 = 613725958748241919
+        let tag = "-C"
+
+        let cellOnly = makeWatch(
+            number: "1\(tag)",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            ugcZones: [],
+            cells: [cell]
+        )
+
+        ctx.insert(cellOnly)
+        try ctx.save()
+
+        let hits = try await repo.active(countyCode: "ZZZ000", fireZone: "ZZZ000", cell: cell, on: now)
+
+        #expect(hits.map(\.id) == ["1\(tag)"])
     }
 }

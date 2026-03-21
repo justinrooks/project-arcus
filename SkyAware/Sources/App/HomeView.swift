@@ -315,7 +315,7 @@ struct HomeView: View {
         }
 
         if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks and outlooks...") } }
-        async let riskRefresh: Void = refreshRisk(for: location)
+        async let riskRefresh: Void = refreshRisk(for: location, with: snap.h3Cell)
         async let outlookRefresh: Void = refreshOutlooks()
         _ = await (riskRefresh, outlookRefresh)
 
@@ -429,12 +429,12 @@ struct HomeView: View {
         )
     }
     
-    private func refreshRisk(for coord: CLLocationCoordinate2D) async {
+    private func refreshRisk(for coord: CLLocationCoordinate2D, with cell: Int64?) async {
         async let stormResult = capture { try await svc.getStormRisk(for: coord) }
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
         async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
-        async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches() }
+        async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches(h3Cell: cell) }
         
         let (storm, severe, fire, mesos, arcus) = await (stormResult, severeResult, fireResult, mesosResult, arcusWatch)
         if Task.isCancelled { return }

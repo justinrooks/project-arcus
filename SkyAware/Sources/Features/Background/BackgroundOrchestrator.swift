@@ -137,7 +137,7 @@ actor BackgroundOrchestrator {
                         async let cr = self.spcProvider.getStormRisk(for: location)
                         async let fr = self.spcProvider.getFireRisk(for: location)
                         async let mesos = self.spcProvider.getActiveMesos(at: .now, for: location)
-                        async let watches = self.arcusProvider.getActiveWatches()
+                        async let watches = self.arcusProvider.getActiveWatches(h3Cell: updatedSnap.h3Cell)
                         return try await (sr, cr, fr, mesos, watches)
                     }
                 }

@@ -13,7 +13,6 @@ struct WatchRepoPurgeTests {
             messageId: number,
             areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
             ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
-            sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
             sent: issued,
             effective: iso.date(from: "2025-11-25T22:20:00Z")!,
             onset: iso.date(from: "2025-11-25T22:20:00Z")!,
@@ -29,7 +28,8 @@ struct WatchRepoPurgeTests {
             watchDescription: "TORNADO WATCH remains valid until 6 PM CST this evening. Primary threats include a couple tornadoes possible and damaging winds.",
             sender: "w-nws.webmaster@noaa.gov",
             instruction: "Take shelter in an interior room. Avoid windows. If in a mobile home, move to a sturdier shelter.",
-            response: "Monitor"
+            response: "Monitor",
+            cells: []
         )
     }
 

@@ -54,6 +54,42 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-20: Added an on-device cache eject button for network debugging
+
+Bug-shaped problem:
+When simulator and physical-device behavior disagree, "same endpoint" is not enough evidence. A cached body can make two runs look like twins from across the room while one of them is quietly replaying yesterday's weather.
+
+What changed:
+- Wired the `Clear Cache` action in `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Diagnostics/DiagnosticsView.swift`.
+- The button now clears `URLCache.shared`, which is the same shared cache installed in live dependencies for network traffic.
+
+Aha moment:
+ETag and HTTP caching are like a very eager intern who keeps handing you the last report because it "looked close enough." Most of the time that is great. During payload forensics, it is maddening. A one-tap cache reset turns the investigation back into a science experiment instead of a ghost story.
+
+Gotcha:
+Clearing the cache guarantees the next request is not served from the app's stored `URLCache`, but it does not magically fix server-side differences. If the next response is still weird, the problem moved from "stale local copy" to "real live payload."
+
+### 2026-03-20: The missing `ugc` mystery that was really a contract mismatch
+
+Bug-shaped problem:
+`WatchRepo.refresh(...)` was throwing a parsing error on the decode line with `Missing key 'ugc'`. At first glance it looked like the repo was broken, but the real culprit was one layer upstream: `DeviceAlertPayload` treated `ugc` as mandatory even though Arcus can send cell-based alert matches without that field. Classic detective-story twist: the body was in the repo, but the murder happened in the model.
+
+What changed:
+- Relaxed `/Users/justin/Code/project-arcus/SkyAware/Sources/Models/Watches/DeviceAlertPayload.swift` so `ugc` and `h3Cells` can be absent in the incoming JSON.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/WatchRepo.swift` to normalize missing geo arrays to empty arrays when building `Watch` models.
+- Fixed local filtering so a watch can match by H3 cell even when `ugcZones` is empty.
+- Added regression coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/DeviceAlertPayloadTests.swift` and `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/WatchRepoActiveTests.swift`.
+
+Aha moment:
+There are two very different questions hidden in one payload:
+1. "Can I decode this record?"
+2. "Does this record apply to the current location?"
+
+We were accidentally answering the second question during decoding by requiring `ugc` up front. That is like refusing to open a package because the shipping label is smudged, even though the GPS tracker inside is working fine.
+
+Gotcha:
+Even after decoding was fixed, the repo still had a trapdoor: it immediately skipped any watch with empty `ugcZones`, which meant cell-only matches would quietly vanish. When data can match through multiple geospatial paths, the filter logic has to respect all of them, not just the old county-zone route.
+
 ### 2026-03-18: The fake empty payload trap in Arcus alert fetching
 
 Bug-shaped problem:

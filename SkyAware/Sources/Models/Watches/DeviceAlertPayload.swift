@@ -45,5 +45,8 @@ public struct DeviceAlertPayload: Sendable, Codable {
     let description: String?
     let instructions: String?
     let response: String?
+    
+    // Arcus can return cell-only matches without UGC metadata.
+    let ugc: [String]?
+    var h3Cells: [Int64]?
 }
-
