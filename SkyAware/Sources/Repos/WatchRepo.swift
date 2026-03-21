@@ -13,7 +13,7 @@ import OSLog
 actor WatchRepo {
     private let logger = Logger.reposWatch
     
-    func active(countyCode: String, fireZone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
+    func active(countyCode: String, fireZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
         logger.info("Fetching current local watches")
         
         let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
@@ -23,40 +23,19 @@ actor WatchRepo {
         
         for watch in candidates {
             let ugc = watch.ugcZones
-            guard !ugc.isEmpty else { continue }
+            let cells = watch.h3Cells
+            let matchesCell = cell.map { cells.contains($0) } ?? false
+            let matchesUGC = ugc.contains(countyCode) || ugc.contains(fireZone)
             
-            // TODO: Add the h3 cell here as a filter
-            if ugc.contains(countyCode) || ugc.contains(fireZone) {
+            if matchesCell || matchesUGC {
                 hits.append(watch)
             }
         }
         
-        return hits.map { WatchRowDTO.init(from: $0) }
-        
-//        return candidates.map { WatchRowDTO.init(from: $0) }
+        // Dedupe before returning since its possible to be in the same cell and county/fire zone.
+        return hits.removingDuplicates(by: \.nwsId).map { WatchRowDTO.init(from: $0) }
     }
-    
-    @available(*, deprecated, message: "Use the refresh with arcus client instead")
-    func active(countyCode: String, forecastZone: String, fireZone: String, on date: Date = .now) async throws -> [WatchRowDTO] {
-        logger.info("Fetching current local watches for \(countyCode, privacy: .public), \(forecastZone, privacy: .public), \(fireZone, privacy: .public)")
-        
-        let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
-        
-        var hits: [Watch] = []
-        hits.reserveCapacity(candidates.count)
-        
-        for watch in candidates {
-            let ugc = watch.ugcZones
-            guard !ugc.isEmpty else { continue }
-            
-            if ugc.contains(countyCode) || ugc.contains(forecastZone) || ugc.contains(fireZone) {
-                hits.append(watch)
-            }
-        }
-        
-        return hits.map { WatchRowDTO.init(from: $0) }
-    }
-    
+
     func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, in cell: Int64?) async throws {
         let data = try await client.fetchActiveAlerts(for: countyCode, or: fireZone, in: cell)
         
@@ -71,40 +50,7 @@ actor WatchRepo {
         try upsert(watches)
         logger.debug("Parsed \(watches.count, privacy: .public) watch\(watches.count > 1 ? "es" : "", privacy: .public) from Arcus")
     }
-    
-    @available(*, deprecated, message: "Use the refresh with arcus client instead")
-    func refresh(using client: any NwsClient, for location: Coordinate2D) async throws {
-        let data = try await client.fetchActiveAlertsJsonData(for: location)
 
-        guard let decoded = NWSWatchParser.decode(from: data) else {
-            logger.error("Unable to parse NWS Json watch data")
-            throw NwsError.parsingError
-        }
-        
-        guard var features = decoded.features else {
-            logger.debug("No NWS watch features found")
-            return
-        }
-        
-#if DEBUG
-        // Temporarily we are injecting a sample tornado watch
-        // this can eventually go away, but may be valuable.
-        let x = Watch.buildNwsTornadoSample()
-        if let coded: Data = x.data(using: .utf8),
-           let slug = NWSWatchParser.decode(from: coded),
-           let sample = slug.features?.first {
-            features.append(sample)
-        } else {
-            logger.debug("Sample watch injection failed to decode")
-        }
-#endif // DEBUG
-        let watches = features
-            .compactMap { makeWatch(from: $0) }
-        
-        try upsert(watches)
-        logger.debug("Parsed \(watches.count, privacy: .public) watch\(watches.count > 1 ? "es" : "", privacy: .public) from NWS")
-    }
-    
     /// Removes any expired watches from the database
     func purge(asOf now: Date = .init()) throws {
         logger.info("Purging expired NWS watches")
@@ -135,19 +81,12 @@ actor WatchRepo {
             logger.debug("Required watch property missing, returning null.")
             return nil
         }
-        
-        // TODO: Populate
-//        let status           = item.status
-//        let ugcZones         = item.properties.geocode?.ugc
-//        let h3Cells: [Int64] = []
 
-        
         return .init(
             nwsId: "\(item.id)",
             messageId: item.currentRevisionUrn,
             areaDesc: item.areaDesc ?? "",
-            ugcZones: [],
-            sameCodes:[], // Deprecate
+            ugcZones: item.ugc ?? [],
             sent: sent,
             effective: effective,
             onset: onset,
@@ -163,62 +102,8 @@ actor WatchRepo {
             watchDescription: watchDescription,
             sender: item.senderName,
             instruction: item.instructions,
-            response: item.response
-        )
-    }
-    
-    @available(*, deprecated, message: "Use the make with DevicePayload instead")
-    private func makeWatch(from item: NWSWatchFeatureDTO) -> Watch? {
-        guard
-            let ugcZones         = item.properties.geocode?.ugc,
-            let sameCodes        = item.properties.geocode?.same,
-            let sent             = item.properties.sent,
-            let effective        = item.properties.effective,
-            let onset            = item.properties.onset,
-            let expires          = item.properties.expires,
-            let ends             = item.properties.ends,
-            let status           = item.properties.status,
-            let messageType      = item.properties.messageType,
-            let severity         = item.properties.severity,
-            let certainty        = item.properties.certainty,
-            let urgency          = item.properties.urgency,
-            let event            = item.properties.event,
-            let headline         = item.properties.headline,
-            let watchDescription = item.properties.description
-//            let sender           = item.properties.senderName,
-//            let instruction      = item.properties.instruction,
-//            let response         = item.properties.response
-        else {
-            logger.debug("Required watch property missing, returning null.")
-            return nil
-        }
-        
-        let vtec = item.properties.parameters?["VTEC"]?.first ?? ""
-        let vtecP = vtec.parseVTEC()
-        let key = vtecP?.eventKey
-        
-        return .init(
-            nwsId: key ?? item.properties.id, // Uses vtec as a key, if we don't have a vtec, then fall back to messasge id
-            messageId: item.properties.id,
-            areaDesc: item.properties.areaDesc,
-            ugcZones: ugcZones,
-            sameCodes: sameCodes,
-            sent: sent,
-            effective: effective,
-            onset: onset,
-            expires: expires,
-            ends: ends,
-            status: status,
-            messageType: messageType,
-            severity: severity,
-            certainty: certainty,
-            urgency: urgency,
-            event: event,
-            headline: headline,
-            watchDescription: watchDescription,
-            sender: item.properties.senderName,
-            instruction: item.properties.instruction,
-            response: item.properties.response
+            response: item.response,
+            cells: item.h3Cells ?? []
         )
     }
     

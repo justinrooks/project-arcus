@@ -323,11 +323,7 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
 
     func sync(h3Cell: Int64?) async {}
 
-    func getActiveWatches() async throws -> [WatchRowDTO] {
-        activeWatches
-    }
-
-    func getActiveWatches(for point: CLLocationCoordinate2D) async throws -> [WatchRowDTO] {
+    func getActiveWatches(h3Cell: Int64?) async throws -> [WatchRowDTO] {
         activeWatches
     }
 }

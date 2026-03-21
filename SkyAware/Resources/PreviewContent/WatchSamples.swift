@@ -235,7 +235,7 @@ extension Watch {
                 messageId: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
                 areaDesc: "Butler, AL; Clarke, AL; Conecuh, AL; Crenshaw, AL; Monroe, AL; Washington, AL; Wilcox, AL",
                 ugcZones: ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
-                sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
+//                sameCodes: ["001013", "001025", "001035", "001041", "001099", "001129", "001131"],
                 sent: iso.date(from: "2025-11-25T22:20:00Z")!,
                 effective: iso.date(from: "2025-11-25T22:20:00Z")!,
                 onset: iso.date(from: "2025-11-25T22:20:00Z")!,
@@ -251,7 +251,8 @@ extension Watch {
                 watchDescription: "TORNADO WATCH remains valid until 6 PM CST this evening. Primary threats include a couple tornadoes possible and damaging winds.",
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Take shelter in an interior room. Avoid windows. If in a mobile home, move to a sturdier shelter.",
-                response: "Monitor"
+                response: "Monitor",
+                cells: []
             ),
 
             // Severe Thunderstorm Watch (afternoon CDT)
@@ -260,7 +261,7 @@ extension Watch {
                 messageId: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
                 areaDesc: "Sedgwick, KS; Butler, KS; Harvey, KS",
                 ugcZones: ["KSZ047", "KSZ048", "KSZ049"],
-                sameCodes: ["020173", "020015", "020079"],
+//                sameCodes: ["020173", "020015", "020079"],
                 sent: iso.date(from: "2025-06-18T19:05:00Z")!,
                 effective: iso.date(from: "2025-06-18T19:05:00Z")!,
                 onset: iso.date(from: "2025-06-18T19:10:00Z")!,
@@ -276,7 +277,8 @@ extension Watch {
                 watchDescription: "Severe storms expected with large hail up to 1.5 inches and damaging wind gusts up to 70 mph possible.",
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Be prepared to seek sturdy shelter if warnings are issued. Secure outdoor objects.",
-                response: "Monitor"
+                response: "Monitor",
+                cells: []
             ),
 
             // Tornado Watch (spring outbreak window)
@@ -285,7 +287,7 @@ extension Watch {
                 messageId: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
                 areaDesc: "Cleveland, OK; McClain, OK; Oklahoma, OK; Pottawatomie, OK",
                 ugcZones: ["OKC027", "OKC087", "OKC109", "OKC125"],
-                sameCodes: ["040027", "040087", "040109", "040125"],
+//                sameCodes: ["040027", "040087", "040109", "040125"],
                 sent: iso.date(from: "2025-05-06T20:10:00Z")!,
                 effective: iso.date(from: "2025-05-06T20:10:00Z")!,
                 onset: iso.date(from: "2025-05-06T20:15:00Z")!,
@@ -301,7 +303,8 @@ extension Watch {
                 watchDescription: "Conditions favor supercells capable of tornadoes. Very large hail and damaging winds also possible.",
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Review your shelter plan now. Have multiple ways to receive warnings.",
-                response: "Shelter"
+                response: "Shelter",
+                cells: []
             ),
 
             // Severe Thunderstorm Watch (late summer)
@@ -310,7 +313,7 @@ extension Watch {
                 messageId: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
                 areaDesc: "Douglas, NE; Sarpy, NE; Cass, NE; Pottawattamie, IA",
                 ugcZones: ["NEC055", "NEC153", "NEC025", "IAC155"],
-                sameCodes: ["031055", "031153", "031025", "019155"],
+//                sameCodes: ["031055", "031153", "031025", "019155"],
                 sent: iso.date(from: "2025-08-12T21:30:00Z")!,
                 effective: iso.date(from: "2025-08-12T21:30:00Z")!,
                 onset: iso.date(from: "2025-08-12T21:35:00Z")!,
@@ -326,7 +329,8 @@ extension Watch {
                 watchDescription: "Organized thunderstorms may produce damaging winds and hail. A line segment could develop toward evening.",
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Stay weather-aware this evening. If a warning is issued, move indoors away from windows.",
-                response: "Monitor"
+                response: "Monitor",
+                cells: [] 
             )
         ]
     }

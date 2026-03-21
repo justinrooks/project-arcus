@@ -31,11 +31,8 @@ final class Watch {
 
     // properties.geocode
     var areaDesc: String        // human-readable region
-    
-    // Deprecate
     var ugcZones: [String]      // from geocode.UGC
-    var sameCodes: [String]     // from geocode.SAME
-
+    
     // properties
     var sent: Date
     var effective: Date
@@ -53,13 +50,13 @@ final class Watch {
     var sender: String?
     var instruction: String?
     var response: String?
+    var h3Cells: [Int64] = []
     
     init(
         nwsId: String,
         messageId: String,
         areaDesc: String,
         ugcZones: [String],
-        sameCodes: [String],
         sent: Date,
         effective: Date,
         onset: Date,
@@ -76,13 +73,12 @@ final class Watch {
         sender: String?,
         instruction: String?,
         response: String?,
-        rawGeometry: Data? = nil
+        cells: [Int64]
     ) {
         self.nwsId = nwsId
         self.messageId = messageId
         self.areaDesc = areaDesc
         self.ugcZones = ugcZones
-        self.sameCodes = sameCodes
         self.sent = sent
         self.effective = effective
         self.onset = onset
@@ -99,5 +95,6 @@ final class Watch {
         self.sender = sender
         self.instruction = instruction
         self.response = response
+        self.h3Cells = cells
     }
 }

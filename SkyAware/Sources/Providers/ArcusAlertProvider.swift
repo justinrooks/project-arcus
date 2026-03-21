@@ -50,7 +50,7 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
 }
 
 extension ArcusAlertProvider: ArcusAlertQuerying {
-    func getActiveWatches() async throws -> [WatchRowDTO] {
+    func getActiveWatches(h3Cell: Int64?) async throws -> [WatchRowDTO] {
         guard let gridMetadata = await gridPointProvider.currentGridPointMetadata() else {
             logger.warning("No grid metadata available")
             return []
@@ -62,8 +62,7 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
         }
         
         //COZ246
-        // TODO: Get the h3 cell here as a new filter
-        return try await watchRepo.active(countyCode: county, fireZone: fireZone)
+        return try await watchRepo.active(countyCode: county, fireZone: fireZone, cell: h3Cell)
     }
 }
 

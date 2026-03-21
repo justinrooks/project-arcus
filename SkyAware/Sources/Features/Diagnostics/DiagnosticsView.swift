@@ -6,8 +6,12 @@
 //
 
 import SwiftUI
+import OSLog
 
 struct DiagnosticsView: View {
+    @State private var cacheStatusMessage: String?
+    private let logger = Logger.uiSettings
+
     var body: some View {
         List {
             Section("Location") {
@@ -29,17 +33,31 @@ struct DiagnosticsView: View {
             
             Section("Actions") {
                 Button("Clear Cache") {
-//                    clearCache()
+                    clearCache()
                 }
                 .skyAwareGlassButtonStyle()
+
+                if let cacheStatusMessage {
+                    Text(cacheStatusMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Button("Force Refresh") {
 //                    forceRefresh()
                 }
                 .skyAwareGlassButtonStyle(prominent: true)
+                .disabled(true)
             }
         }
         .scrollContentBackground(.hidden)
         .background(.skyAwareBackground)
+    }
+
+    private func clearCache() {
+        URLCache.shared.removeAllCachedResponses()
+        cacheStatusMessage = "Network cache cleared. Your next fetch should be live."
+        logger.notice("Diagnostics cleared shared URL cache")
     }
 }
 
