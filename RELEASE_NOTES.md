@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(28)
+## v0.1.0(29)
 
 ### Overview
 This update tightens onboarding and location handoffs, keeps active watches aligned with location changes, and hardens network/cache behavior across foreground and background refreshes.

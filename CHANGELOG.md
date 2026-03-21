@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(28)
+## v0.1.0(29)
 
 ### Background & Notifications
 - Wait for the actual location-permission result and APNs token before sending the first location snapshot during onboarding.

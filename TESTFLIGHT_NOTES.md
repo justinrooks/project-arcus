@@ -1,4 +1,4 @@
-SkyAware v0.1.0(28) build improves onboarding and location handoffs, keeps watch matching aligned with location changes, and hardens network/cache behavior.
+SkyAware v0.1.0(29) build improves onboarding and location handoffs, keeps watch matching aligned with location changes, and hardens network/cache behavior.
 
 Highlights:
 - Onboarding now waits for the actual location-permission result and APNs token before sending the first location snapshot
