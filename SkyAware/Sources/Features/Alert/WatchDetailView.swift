@@ -34,7 +34,7 @@ struct WatchDetailView: View {
                 issued: watch.issued,
                 validStart: watch.issued,
                 validEnd: watch.validEnd,
-                subtitle: watch.messageType == "UPDATE" ? "Updated" : nil,
+                subtitle: watch.isUpdateMessage ? "Updated" : nil,
                 inZone: false,
                 sender: watch.sender
             )

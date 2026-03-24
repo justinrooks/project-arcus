@@ -15,6 +15,10 @@ extension WatchRowDTO: AlertItem {
     nonisolated var validEnd: Date       {self.ends}      // Valid end
     nonisolated var summary: String      {self.description}      // description / CDATA
     nonisolated var alertType: AlertType { AlertType.watch }      // Type of alert to conform to alert item
+    nonisolated var isUpdateMessage: Bool {
+        messageType.trimmingCharacters(in: .whitespacesAndNewlines)
+            .localizedCaseInsensitiveCompare("update") == .orderedSame
+    }
 }
 
 struct WatchRowDTO: Identifiable, Sendable, Hashable {
