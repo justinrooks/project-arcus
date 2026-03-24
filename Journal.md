@@ -54,6 +54,23 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-24: The case of the watch that was updated but refused to say so
+
+Bug-shaped problem:
+After the Arcus watch migration, the detail screen checked for `"UPDATE"` while the live payloads and preview fixtures said `"Update"`. That meant revised watches walked into the UI wearing an update badge invisibility cloak. At the same time, the repo was trusting every decoded Arcus payload with valid timestamps, even though the contract already says alerts can arrive in `Cancelled` state.
+
+What changed:
+- Added a case-insensitive `isUpdateMessage` helper in `/Users/justin/Code/project-arcus/SkyAware/Sources/Models/Watches/WatchRowDTO.swift`.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Alert/WatchDetailView.swift` to use that helper instead of a hard-coded uppercase comparison.
+- Hardened `/Users/justin/Code/project-arcus/SkyAware/Sources/Repos/WatchRepo.swift` to skip non-active and cancel-type Arcus payloads before they ever hit persistence.
+- Added regression coverage in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/WatchRowDTOTests.swift` and `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/WatchRepoRefreshTests.swift`.
+
+Aha moment:
+String casing bugs are the software equivalent of a fake mustache. The data is technically the same person, but the guard at the door still says, "Never seen them before." Normalizing the message type at the edge keeps display code from playing guess-the-capitalization.
+
+Gotcha:
+Time-window checks are necessary, but not sufficient. If an upstream system sends a cancellation with a still-future `ends` value, date math alone will happily keep a dead alert shambling around the app like a weather zombie.
+
 ### 2026-03-20: Added an on-device cache eject button for network debugging
 
 Bug-shaped problem:

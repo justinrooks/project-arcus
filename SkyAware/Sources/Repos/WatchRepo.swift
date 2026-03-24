@@ -70,6 +70,19 @@ actor WatchRepo {
     
     // MARK: Translator
     private func makeWatch(from item: DeviceAlertPayload) -> Watch? {
+        let state = item.state.trimmingCharacters(in: .whitespacesAndNewlines)
+        let messageType = item.messageType.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard state.localizedCaseInsensitiveCompare("active") == .orderedSame else {
+            logger.debug("Skipping Arcus alert with non-active state: \(state, privacy: .public)")
+            return nil
+        }
+
+        guard messageType.localizedCaseInsensitiveCompare("cancel") != .orderedSame else {
+            logger.debug("Skipping Arcus alert with cancel message type")
+            return nil
+        }
+
         guard
             let sent             = item.sent,
             let effective        = item.effective,
@@ -92,8 +105,8 @@ actor WatchRepo {
             onset: onset,
             expires: expires,
             ends: ends,
-            status: "", // Deprecate
-            messageType: item.messageType,
+            status: state,
+            messageType: messageType,
             severity: item.severity,
             certainty: item.certainty,
             urgency: item.urgency,
