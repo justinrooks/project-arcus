@@ -54,6 +54,21 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-25: The cancelled watch that politely refused to leave
+
+Bug-shaped problem:
+Yesterday's Arcus fix got halfway to the finish line. We stopped *inserting* cancelled payloads, which is good, but `WatchRepo.refresh` still had the memory of an elephant and the delete instincts of a goldfish. If a watch was already stored from an earlier active revision, a later `Cancel` payload would be ignored instead of evicting the old record. Result: a dead watch could keep haunting the app until its original `ends` time expired.
+
+What changed:
+- Updated [/Users/justin/.codex/worktrees/08ad/project-arcus/SkyAware/Sources/Repos/WatchRepo.swift](/Users/justin/.codex/worktrees/08ad/project-arcus/SkyAware/Sources/Repos/WatchRepo.swift) so refreshes first identify Arcus payloads that should no longer persist, delete matching stored watches by series id, and only then upsert the still-active ones.
+- Extended [/Users/justin/.codex/worktrees/08ad/project-arcus/SkyAware/Tests/UnitTests/WatchRepoRefreshTests.swift](/Users/justin/.codex/worktrees/08ad/project-arcus/SkyAware/Tests/UnitTests/WatchRepoRefreshTests.swift) with a regression case that starts with a persisted active watch, feeds in a cancellation revision, and proves the repo no longer returns that watch as active.
+
+Aha moment:
+Filtering and reconciliation are cousins, not twins. "Don't add the bad thing" sounds right until you remember the bad thing might already be sitting in your database eating snacks.
+
+Gotcha:
+Any feature that treats `refresh` like a full truth sync needs to think in both directions: what's new to insert, and what is now false enough to delete. Otherwise stale data gets nine lives for free.
+
 ### 2026-03-24: The case of the watch that was updated but refused to say so
 
 Bug-shaped problem:

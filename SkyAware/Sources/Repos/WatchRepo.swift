@@ -43,6 +43,16 @@ actor WatchRepo {
             logger.error("Unable to parse Arcus watch data")
             throw ArcusError.parsingError
         }
+
+        let retiredWatchIDs = Set(
+            decoded
+                .filter { shouldPersist($0) == false }
+                .map { "\($0.id)" }
+        )
+
+        if retiredWatchIDs.isEmpty == false {
+            try deleteWatches(withIDs: retiredWatchIDs)
+        }
         
         let watches = decoded
             .compactMap { makeWatch(from: $0) }
@@ -69,17 +79,28 @@ actor WatchRepo {
     }
     
     // MARK: Translator
-    private func makeWatch(from item: DeviceAlertPayload) -> Watch? {
+    private func shouldPersist(_ item: DeviceAlertPayload) -> Bool {
         let state = item.state.trimmingCharacters(in: .whitespacesAndNewlines)
         let messageType = item.messageType.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard state.localizedCaseInsensitiveCompare("active") == .orderedSame else {
             logger.debug("Skipping Arcus alert with non-active state: \(state, privacy: .public)")
-            return nil
+            return false
         }
 
         guard messageType.localizedCaseInsensitiveCompare("cancel") != .orderedSame else {
             logger.debug("Skipping Arcus alert with cancel message type")
+            return false
+        }
+
+        return true
+    }
+
+    private func makeWatch(from item: DeviceAlertPayload) -> Watch? {
+        let state = item.state.trimmingCharacters(in: .whitespacesAndNewlines)
+        let messageType = item.messageType.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard shouldPersist(item) else {
             return nil
         }
 
@@ -124,6 +145,19 @@ actor WatchRepo {
     private func upsert(_ items: [Watch]) throws {
         for item in items {
             modelContext.insert(item)
+        }
+        try modelContext.save()
+    }
+
+    private func deleteWatches(withIDs ids: Set<String>) throws {
+        guard ids.isEmpty == false else { return }
+
+        let doomed = try modelContext.fetch(allWatchesDescriptor()).filter { ids.contains($0.nwsId) }
+        guard doomed.isEmpty == false else { return }
+
+        logger.debug("Removing \(doomed.count, privacy: .public) retired Arcus watch\(doomed.count > 1 ? "es" : "", privacy: .public)")
+        for watch in doomed {
+            modelContext.delete(watch)
         }
         try modelContext.save()
     }
