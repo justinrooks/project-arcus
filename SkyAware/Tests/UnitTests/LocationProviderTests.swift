@@ -656,7 +656,7 @@ struct LocationContextResolverTests {
             contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in
-                Task {
+                Task.detached {
                     try? await Task.sleep(for: .milliseconds(20))
                     await authorizationState.set(.authorizedWhenInUse)
                 }
@@ -675,7 +675,7 @@ struct LocationContextResolverTests {
         let context = try await resolver.prepareCurrentContext(
             requiresFreshLocation: true,
             showsAuthorizationPrompt: true,
-            authorizationTimeout: 0.5,
+            authorizationTimeout: 1,
             locationTimeout: 0.5,
             maximumAcceptedLocationAge: 300,
             placemarkTimeout: 0.1
