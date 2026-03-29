@@ -54,6 +54,46 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-28: Deterministic location context, or “stop cooking before the ingredients arrive”
+
+Bug-shaped problem:
+Location was being used like a kitchen where half the stations started plating before the groceries were unpacked. Coordinates might exist, but county/fire zone metadata could still be missing. H3 might be there, but onboarding could already be pushing a snapshot. Foreground and background flows were both “mostly right,” but they were not following one strict definition of “location is ready.”
+
+What changed:
+- Added `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationContextResolver.swift` as the one small brain that decides whether location is truly ready.
+- Upgraded `LocationContext` from “maybe useful bundle” to “fully ready contract”: snapshot + H3 + grid metadata with county/fire zone.
+- Extended `/Users/justin/Code/project-arcus/SkyAware/Sources/Models/GridPointSnapshot.swift` with `countyLabel` and `fireZoneLabel` so the resolved context carries the human-readable region story too.
+- Simplified `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/NWS/GridPointProvider.swift` by removing its self-listening location loop. Grid resolution now happens only when the shared resolver asks for it.
+- Stopped auto-uploading raw snapshots from `/Users/justin/Code/project-arcus/SkyAware/Sources/Providers/Location/LocationProvider.swift`. Pushes now happen only after a full context exists via `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationSnapshotPusher.swift`.
+- Refactored `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationSession.swift` so `currentContext` is the real readiness gate and `currentSnapshot` is just the lightweight diagnostic/map view of the world.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/App/HomeView.swift` so startup now has two lanes:
+  - global SPC sync can start immediately
+  - location-scoped refreshes wait for a full resolved context
+- Updated onboarding and `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Background/BackgroundOrchestrator.swift` to use the same readiness rules instead of each inventing their own “good enough” threshold.
+- Tightened Arcus-facing APIs so they now require ready context instead of optional H3-only inputs.
+- Added/updated test coverage across resolver, session, Home refresh triggers, onboarding-adjacent upload behavior, and background orchestration.
+
+Aha moment:
+The big simplifier was not “more architecture.” It was one sharper sentence: location-dependent work does not begin until coordinates, H3, county, and fire zone all exist together. Once that rule became explicit, a lot of spooky edge cases turned back into ordinary plumbing.
+
+Gotcha:
+There was a tempting older pattern where “latest snapshot” felt like the source of truth. That is fine for maps and diagnostics, but dangerous for fetch orchestration. A snapshot tells you where the user is. A context tells you whether the rest of the app can safely act on it.
+
+### 2026-03-28: Onboarding now asks for Always Allow after While Using
+
+Bug-shaped problem:
+The onboarding flow got the app to “good enough” location access, but not the access level the product actually wants. We were stopping at While Using, which is like hiring a night watchman and then only letting them work daytime shifts.
+
+What changed:
+- Added a small upgrade path in `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationManager.swift` so the app can explicitly request Always authorization once it already has While Using.
+- Exposed that through `/Users/justin/Code/project-arcus/SkyAware/Sources/Infrastructure/Location/LocationSession.swift`.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Onboarding/OnboardingView.swift` to trigger the Always upgrade immediately after the user grants While Using during onboarding.
+- Updated `/Users/justin/Code/project-arcus/SkyAware/Sources/Features/Onboarding/LocationPermissionView.swift` copy so the second system prompt is expected, not surprising.
+- Added targeted tests in `/Users/justin/Code/project-arcus/SkyAware/Tests/UnitTests/LocationManagerTests.swift`.
+
+Aha moment:
+Permission UX is product design disguised as plumbing. If the app truly depends on background-aware location, the onboarding copy and the actual authorization sequence have to tell the same story.
+
 ### 2026-03-24: The case of the watch that was updated but refused to say so
 
 Bug-shaped problem:
