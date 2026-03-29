@@ -39,27 +39,14 @@ struct HomeView: View {
         }
     }
 
-    static func preferredBootstrapSnapshot(
-        providerSnapshot: LocationSnapshot?,
-        renderedSnapshot: LocationSnapshot?
-    ) -> LocationSnapshot? {
-        providerSnapshot ?? renderedSnapshot
-    }
-
-    static func shouldRequestInteractiveLocationAuthorization(
-        authStatus: CLAuthorizationStatus
-    ) -> Bool {
-        authStatus == .notDetermined
-    }
-
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
+    @Environment(LocationSession.self) private var locationSession
     
     private let logger = Logger.uiHome
     
     // MARK: Local handles
     private var sync: any SpcSyncing { dependencies.spcSync }
-    private var locSvc: LocationClient { dependencies.locationClient }
     private var svc: any SpcRiskQuerying { dependencies.spcRisk }
     private var outlookSvc: any SpcOutlookQuerying { dependencies.spcOutlook }
     private var arcusAlertSvc: any ArcusAlertQuerying { dependencies.arcusProvider }
@@ -89,6 +76,80 @@ struct HomeView: View {
     private let minimumRefreshDistanceMeters: CLLocationDistance = 800
     private let outlookRefreshPolicy = OutlookRefreshPolicy()
     private let weatherKitRefreshPolicy = WeatherKitRefreshPolicy()
+
+    static func shouldRunContextDrivenRefresh(
+        scenePhase: ScenePhase,
+        refreshKey: LocationContext.RefreshKey?
+    ) -> Bool {
+        scenePhase == .active && refreshKey != nil
+    }
+
+    static func shouldPerformLocationRefresh(
+        lastRefreshContext: RefreshContext?,
+        snapshot: LocationSnapshot,
+        force: Bool,
+        minimumForegroundRefreshInterval: TimeInterval = 3 * 60,
+        minimumRefreshDistanceMeters: CLLocationDistance = 800
+    ) -> Bool {
+        if force {
+            return true
+        }
+
+        guard let lastRefreshContext else {
+            return true
+        }
+
+        let currentLocation = CLLocation(
+            latitude: snapshot.coordinates.latitude,
+            longitude: snapshot.coordinates.longitude
+        )
+        let previousLocation = CLLocation(
+            latitude: lastRefreshContext.coordinates.latitude,
+            longitude: lastRefreshContext.coordinates.longitude
+        )
+        let elapsed = snapshot.timestamp.timeIntervalSince(lastRefreshContext.refreshedAt)
+        let distance = currentLocation.distance(from: previousLocation)
+        return elapsed >= minimumForegroundRefreshInterval || distance >= minimumRefreshDistanceMeters
+    }
+
+    static func readinessState(
+        startupState: LocationStartupState,
+        hasContext: Bool,
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        fireRisk: FireRiskLevel?
+    ) -> SummaryReadinessState {
+        switch startupState {
+        case .idle, .requestingAuthorization, .acquiringLocation:
+            return SummaryReadinessState.loadingLocation
+        case .resolvingContext:
+            return SummaryReadinessState.resolvingLocalContext
+        case .failed:
+            return SummaryReadinessState.locationUnavailable
+        case .ready:
+            if hasContext == false {
+                return SummaryReadinessState.loadingLocation
+            }
+            if stormRisk == nil || severeRisk == nil || fireRisk == nil {
+                return SummaryReadinessState.loadingLocalData
+            }
+            return SummaryReadinessState.ready
+        }
+    }
+
+    private var currentContextRefreshKey: LocationContext.RefreshKey? {
+        locationSession.currentContext?.refreshKey
+    }
+
+    private var readinessState: SummaryReadinessState {
+        Self.readinessState(
+            startupState: locationSession.startupState,
+            hasContext: locationSession.currentContext != nil,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            fireRisk: fireRisk
+        )
+    }
     
     // Outlook State
     @State private var outlooks: [ConvectiveOutlookDTO] = []
@@ -118,94 +179,95 @@ struct HomeView: View {
         ZStack {
             Color(.skyAwareBackground).ignoresSafeArea()
             TabView {
-                NavigationStack {
-                    ScrollView {
-                        SummaryView(
-                            snap: snap,
-                            stormRisk: stormRisk,
-                            severeRisk: severeRisk,
-                            fireRisk: fireRisk,
-                            mesos: mesos,
-                            watches: watches,
-                            outlook: outlook,
-                            weather: summaryWeather
-                        )
-                        .toolbar(.hidden, for: .navigationBar)
-                        .background(.skyAwareBackground)
+                Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted") {
+                    NavigationStack {
+                        ScrollView {
+                            SummaryView(
+                                snap: snap,
+                                stormRisk: stormRisk,
+                                severeRisk: severeRisk,
+                                fireRisk: fireRisk,
+                                mesos: mesos,
+                                watches: watches,
+                                outlook: outlook,
+                                weather: summaryWeather,
+                                readinessState: readinessState
+                            )
+                            .toolbar(.hidden, for: .navigationBar)
+                            .background(.skyAwareBackground)
+                        }
+                        .background(Color(.skyAwareBackground).ignoresSafeArea())
+                        .refreshable {
+                            await forceRefreshCurrentContext(showsLoading: true)
+                        }
                     }
                     .background(Color(.skyAwareBackground).ignoresSafeArea())
-                    .refreshable {
-                        await forceRefreshFromLatestSnapshot(showsLoading: true)
+                }
+
+                Tab("Alerts", systemImage: "exclamationmark.triangle") {
+                    NavigationStack {
+                        AlertView(
+                            mesos: mesos,
+                            watches: watches,
+                            onRefresh: {
+                                logger.debug("refreshing alerts")
+                                lastRefreshContext = nil
+                                await forceRefreshCurrentContext(showsLoading: true)
+                            }
+                        )
+                            .background(.skyAwareBackground)
+                            .navigationTitle("Active Alerts")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                     }
+                    .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
-                .background(Color(.skyAwareBackground).ignoresSafeArea())
-                .tabItem { Label("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted")
-//                    "clock.arrow.trianglehead.2.counterclockwise.rotate.90") //gauge.with.needle.fill
+                .badge(mesos.count + watches.count)
+
+                Tab("Map", systemImage: "map") {
+                    MapScreenView()
+                        .toolbar(.hidden, for: .navigationBar)
                 }
-                
-                NavigationStack {
-                    AlertView(
-                        mesos: mesos,
-                        watches: watches,
-                        onRefresh: {
-                            logger.debug("refreshing alerts")
-                            lastRefreshContext = nil
-                            await withLoading(message: "Refreshing alerts...") {
-                                await refresh(for: snap, force: true, showsLoading: false)
-                            }
-                        }
-                    )
-                        .background(.skyAwareBackground)
-                        .navigationTitle("Active Alerts")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                }
-                .background(Color(.skyAwareBackground).ignoresSafeArea())
-                .tabItem { Label("Alerts", systemImage: "exclamationmark.triangle") }//umbrella
-                    .badge(mesos.count + watches.count)
-                
-                MapScreenView()
-                    .toolbar(.hidden, for: .navigationBar)
-                    .tabItem { Label("Map", systemImage: "map") }
-                
-                NavigationStack {
-                    ConvectiveOutlookView(
-                        dtos: outlooks,
-                        onRefresh: {
-                            logger.debug("refreshing outlooks")
-                            await withLoading(message: "Syncing outlooks...") {
-                                let now = Date()
-                                await MainActor.run {
-                                    _ = markOutlookSyncIfNeeded(force: true, now: now)
+
+                Tab("Outlooks", systemImage: "list.clipboard.fill") {
+                    NavigationStack {
+                        ConvectiveOutlookView(
+                            dtos: outlooks,
+                            onRefresh: {
+                                logger.debug("refreshing outlooks")
+                                await withLoading(message: "Syncing outlooks...") {
+                                    let now = Date()
+                                    await MainActor.run {
+                                        _ = markOutlookSyncIfNeeded(force: true, now: now)
+                                    }
+                                    await HTTPExecutionMode.$current.withValue(.foreground) {
+                                        await sync.syncConvectiveOutlooks()
+                                    }
+                                    await refreshOutlooks()
                                 }
-                                await HTTPExecutionMode.$current.withValue(.foreground) {
-                                    await sync.syncConvectiveOutlooks()
-                                }
-                                await refreshOutlooks()
                             }
-                        }
-                    )
-                        .background(.skyAwareBackground)
-                        .navigationTitle("Convective Outlooks")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                        )
+                            .background(.skyAwareBackground)
+                            .navigationTitle("Convective Outlooks")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    }
+                    .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
-                .background(Color(.skyAwareBackground).ignoresSafeArea())
-                .tabItem { Label("Outlooks", systemImage: "list.clipboard.fill") }
-                
-                NavigationStack {
-                    SettingsView(locationClient: locSvc)
-                        .background(.skyAwareBackground)
-                        .navigationTitle("Settings")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+
+                Tab("Settings", systemImage: "gearshape") {
+                    NavigationStack {
+                        SettingsView()
+                            .background(.skyAwareBackground)
+                            .navigationTitle("Settings")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.visible, for: .navigationBar)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    }
+                    .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
-                .background(Color(.skyAwareBackground).ignoresSafeArea())
-                .tabItem {Label("Settings", systemImage: "gearshape")}
-            
             }
             .background(Color(.skyAwareBackground).ignoresSafeArea())
             .toolbarBackground(.visible, for: .tabBar)
@@ -223,60 +285,39 @@ struct HomeView: View {
         .task(id: scenePhase) {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
             let isActive = scenePhase == .active
-            if isActive,
-               Self.shouldRequestInteractiveLocationAuthorization(
-                   authStatus: dependencies.locationManager.authStatus
-               ) {
-                dependencies.locationManager.checkLocationAuthorization(isActive: true)
-            }
-            dependencies.locationManager.updateMode(for: scenePhase)
             guard isActive else { return }
 
-            await bootstrapForegroundRefreshIfPossible(showsLoading: true)
-            
-            // Whenever a location snapshot hits, refresh the data with
-            // the newest location.
-            let stream = await locSvc.updates()
-            for await s in stream {
-                if Task.isCancelled { break }
-                await MainActor.run { snap = s }
-                await refresh(for: s, showsLoading: true)
+            await bootstrapForegroundRefresh(showsLoading: true)
+        }
+        .task(id: currentContextRefreshKey) {
+            guard Self.shouldRunContextDrivenRefresh(
+                scenePhase: scenePhase,
+                refreshKey: currentContextRefreshKey
+            ) else { return }
+            let latestContext = locationSession.currentContext
+            await MainActor.run {
+                snap = latestContext?.snapshot
             }
+            guard let latestContext else { return }
+            await refresh(for: latestContext, showsLoading: true)
         }
     }
 
-    private func latestAvailableSnapshot() async -> LocationSnapshot? {
-        let providerSnapshot = await locSvc.snapshot()
-        let renderedSnapshot = await MainActor.run { snap }
-        return Self.preferredBootstrapSnapshot(
-            providerSnapshot: providerSnapshot,
-            renderedSnapshot: renderedSnapshot
+    private func bootstrapForegroundRefresh(showsLoading: Bool) async {
+        await refreshForegroundData(
+            force: true,
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: true,
+            showsLoading: showsLoading
         )
     }
-
-    private func bootstrapForegroundRefreshIfPossible(showsLoading: Bool) async {
-        guard let latestSnapshot = await latestAvailableSnapshot() else {
-            logger.notice("Foreground activation has no cached location snapshot yet; waiting for live location updates")
-            return
-        }
-
-        logger.info("Bootstrapping foreground refresh from latest available snapshot")
-        await MainActor.run { snap = latestSnapshot }
-        await refresh(for: latestSnapshot, showsLoading: showsLoading)
-    }
     
-    /// Refreshes outlook plus location-scoped data together
-    private func refresh(for snap: LocationSnapshot?, force: Bool = false, showsLoading: Bool = true) async {
-        guard let snap else {
-            logger.info("No location snapshot, skipping refresh")
-            return
-        }
-        guard shouldRefresh(for: snap, force: force) else {
-            logger.debug("Refresh denied, no change detected")
-            return
-        }
-
-        logger.info("Refreshing summary data")
+    private func refreshForegroundData(
+        force: Bool,
+        requiresFreshLocation: Bool,
+        showsAuthorizationPrompt: Bool,
+        showsLoading: Bool
+    ) async {
         let now = Date()
         let shouldSyncOutlookNow = await MainActor.run {
             markOutlookSyncIfNeeded(force: force, now: now)
@@ -286,47 +327,106 @@ struct HomeView: View {
         }
 
         if showsLoading {
-            await MainActor.run { startRefresh(message: "Refreshing data...") }
+            await MainActor.run { startRefresh(message: "Preparing location context...") }
         }
-
-        let location = snap.coordinates
-        let sync = self.sync
 
         if !shouldSyncOutlookNow {
             logger.debug("Skipping convective outlook sync due to refresh throttle")
         }
 
-        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing network feeds...") } }
-        await HTTPExecutionMode.$current.withValue(.foreground) {
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { await sync.syncMesoscaleDiscussions() }
-                group.addTask { await sync.syncMapProducts() }
-                group.addTask { await arcusAlertSync.sync(h3Cell: snap.h3Cell)}
-                if shouldSyncOutlookNow {
-                    group.addTask { await sync.syncConvectiveOutlooks() }
-                }
-                await group.waitForAll()
+        let contextTask = Task {
+            await locationSession.prepareCurrentLocationContext(
+                requiresFreshLocation: requiresFreshLocation,
+                showsAuthorizationPrompt: showsAuthorizationPrompt
+            )
+        }
+        let globalSyncTask = Task {
+            await syncGlobalFeeds(shouldSyncOutlookNow: shouldSyncOutlookNow)
+        }
+        let context = await contextTask.value
+
+        if Task.isCancelled {
+            if showsLoading { await MainActor.run { endRefresh() } }
+            return
+        }
+
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing global SPC feeds...") } }
+        await globalSyncTask.value
+        await refreshOutlooks()
+
+        if Task.isCancelled {
+            if showsLoading { await MainActor.run { endRefresh() } }
+            return
+        }
+
+        guard let context else {
+            logger.notice("Foreground activation could not prepare a current location context")
+            if showsLoading { await MainActor.run { endRefresh() } }
+            return
+        }
+
+        await MainActor.run { snap = context.snapshot }
+        await refresh(
+            for: context,
+            force: force,
+            showsLoading: false,
+            now: now,
+            shouldSyncWeatherKitNow: shouldSyncWeatherKitNow
+        )
+
+        if showsLoading {
+            await MainActor.run { endRefresh() }
+        }
+    }
+
+    /// Refreshes location-scoped data once a deterministic context is ready.
+    private func refresh(
+        for context: LocationContext,
+        force: Bool = false,
+        showsLoading: Bool = true,
+        now: Date = Date(),
+        shouldSyncWeatherKitNow: Bool? = nil
+    ) async {
+        guard shouldRefresh(for: context.snapshot, force: force) else {
+            logger.debug("Refresh denied, no change detected")
+            return
+        }
+
+        logger.info("Refreshing location-scoped summary data")
+        let shouldRefreshWeather: Bool
+        if let shouldSyncWeatherKitNow {
+            shouldRefreshWeather = shouldSyncWeatherKitNow
+        } else {
+            shouldRefreshWeather = await MainActor.run {
+                shouldSyncWeatherKit(force: force, now: now)
             }
         }
 
+        if showsLoading {
+            await MainActor.run { startRefresh(message: "Refreshing local weather data...") }
+        }
+
+        if showsLoading { await MainActor.run { updateRefreshMessage("Syncing local alerts...") } }
+        await HTTPExecutionMode.$current.withValue(.foreground) {
+            await arcusAlertSync.sync(context: context)
+        }
+
         if Task.isCancelled {
             if showsLoading { await MainActor.run { endRefresh() } }
             return
         }
 
-        if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks and outlooks...") } }
-        async let riskRefresh: Void = refreshRisk(for: location, with: snap.h3Cell)
-        async let outlookRefresh: Void = refreshOutlooks()
-        _ = await (riskRefresh, outlookRefresh)
+        if showsLoading { await MainActor.run { updateRefreshMessage("Updating local risks...") } }
+        await refreshRisk(for: context)
 
         if Task.isCancelled {
             if showsLoading { await MainActor.run { endRefresh() } }
             return
         }
-        
-        if shouldSyncWeatherKitNow {
+
+        if shouldRefreshWeather {
             if showsLoading { await MainActor.run { updateRefreshMessage("Updating current weather...") } }
-            let didRefreshWeather = await refreshWeather(for: location)
+            let didRefreshWeather = await refreshWeather(for: context.snapshot.coordinates)
             if didRefreshWeather {
                 await MainActor.run { lastWeatherKitSyncAt = now }
             } else {
@@ -336,24 +436,21 @@ struct HomeView: View {
             logger.debug("Skipping WeatherKit refresh due to refresh throttle")
         }
         
-        
         if showsLoading {
             await MainActor.run { endRefresh() }
         }
     }
 
-    private func forceRefreshFromLatestSnapshot(showsLoading: Bool) async {
-        let latestSnapshot = await latestAvailableSnapshot()
-        guard let latestSnapshot else {
-            logger.info("Manual refresh skipped because no location snapshot is available yet")
-            return
-        }
-
+    private func forceRefreshCurrentContext(showsLoading: Bool) async {
         await MainActor.run {
-            snap = latestSnapshot
             lastRefreshContext = nil
         }
-        await refresh(for: latestSnapshot, force: true, showsLoading: showsLoading)
+        await refreshForegroundData(
+            force: true,
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: false,
+            showsLoading: showsLoading
+        )
     }
     
     @MainActor
@@ -382,28 +479,20 @@ struct HomeView: View {
     
     @MainActor
     private func shouldRefresh(for snap: LocationSnapshot, force: Bool = false) -> Bool {
-        let current = RefreshContext(coordinates: snap.coordinates, refreshedAt: snap.timestamp)
-
-        if force {
-            lastRefreshContext = current
-            return true
-        }
-
-        guard let lastRefreshContext else {
-            self.lastRefreshContext = current
-            return true
-        }
-
-        let elapsed = current.refreshedAt.timeIntervalSince(lastRefreshContext.refreshedAt)
-        let currentLocation = CLLocation(latitude: current.coordinates.latitude, longitude: current.coordinates.longitude)
-        let previousLocation = CLLocation(latitude: lastRefreshContext.coordinates.latitude, longitude: lastRefreshContext.coordinates.longitude)
-        let distance = currentLocation.distance(from: previousLocation)
-
-        guard elapsed >= minimumForegroundRefreshInterval || distance >= minimumRefreshDistanceMeters else {
+        guard Self.shouldPerformLocationRefresh(
+            lastRefreshContext: lastRefreshContext,
+            snapshot: snap,
+            force: force,
+            minimumForegroundRefreshInterval: minimumForegroundRefreshInterval,
+            minimumRefreshDistanceMeters: minimumRefreshDistanceMeters
+        ) else {
             return false
         }
 
-        self.lastRefreshContext = current
+        self.lastRefreshContext = RefreshContext(
+            coordinates: snap.coordinates,
+            refreshedAt: snap.timestamp
+        )
         return true
     }
 
@@ -429,12 +518,26 @@ struct HomeView: View {
         )
     }
     
-    private func refreshRisk(for coord: CLLocationCoordinate2D, with cell: Int64?) async {
+    private func syncGlobalFeeds(shouldSyncOutlookNow: Bool) async {
+        await HTTPExecutionMode.$current.withValue(.foreground) {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await sync.syncMesoscaleDiscussions() }
+                group.addTask { await sync.syncMapProducts() }
+                if shouldSyncOutlookNow {
+                    group.addTask { await sync.syncConvectiveOutlooks() }
+                }
+                await group.waitForAll()
+            }
+        }
+    }
+
+    private func refreshRisk(for context: LocationContext) async {
+        let coord = context.snapshot.coordinates
         async let stormResult = capture { try await svc.getStormRisk(for: coord) }
         async let severeResult = capture { try await svc.getSevereRisk(for: coord) }
         async let fireResult = capture { try await svc.getFireRisk(for: coord) }
         async let mesosResult = capture { try await svc.getActiveMesos(at: .now, for: coord) }
-        async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches(h3Cell: cell) }
+        async let arcusWatch  = capture { try await arcusAlertSvc.getActiveWatches(context: context) }
         
         let (storm, severe, fire, mesos, arcus) = await (stormResult, severeResult, fireResult, mesosResult, arcusWatch)
         if Task.isCancelled { return }
@@ -496,4 +599,5 @@ struct HomeView: View {
         initialOutlook: ConvectiveOutlook.sampleOutlookDtos.first
     )
     .environment(\.dependencies, Dependencies.unconfigured)
+    .environment(LocationSession.preview)
 }

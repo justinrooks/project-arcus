@@ -40,7 +40,7 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 
 
 struct SettingsView: View {
-    private let locationClient: LocationClient?
+    @Environment(LocationSession.self) private var locationSession
     private let logger = Logger.uiSettings
     
     // MARK: Notification Settings
@@ -81,7 +81,6 @@ struct SettingsView: View {
     ) private var apnsDeviceToken: String = ""
     
     @State private var installationId: String = ""
-    @State private var currentH3Cell: String = ""
     
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
@@ -104,15 +103,14 @@ struct SettingsView: View {
     }
     
     private var h3CellDisplay: String {
-        currentH3Cell.isEmpty ? "No location hash yet" : currentH3Cell
+        guard let h3Cell = locationSession.currentSnapshot?.h3Cell else {
+            return "No location hash yet"
+        }
+        return String(UInt64(bitPattern: h3Cell), radix: 16)
     }
 
     private var installationIdDisplay: String {
         installationId.isEmpty ? "Not available yet" : installationId
-    }
-    
-    init(locationClient: LocationClient? = nil) {
-        self.locationClient = locationClient
     }
     
     var body: some View {
@@ -253,32 +251,8 @@ struct SettingsView: View {
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .task {
-            await observeH3Cell()
-        }
-        .task {
             await loadInstallationId()
         }
-    }
-
-    private func observeH3Cell() async {
-        guard let locationClient else { return }
-        
-        if let snapshot = await locationClient.snapshot() {
-            updateH3Cell(snapshot.h3Cell)
-        }
-        
-        let stream = await locationClient.updates()
-        for await snapshot in stream {
-            if Task.isCancelled { break }
-            updateH3Cell(snapshot.h3Cell)
-        }
-    }
-    
-    @MainActor
-    private func updateH3Cell(_ h3Cell: Int64?) {
-        let next = h3Cell.map { String(UInt64(bitPattern: $0), radix: 16) } ?? ""
-        guard currentH3Cell != next else { return }
-        currentH3Cell = next
     }
 
     private func loadInstallationId() async {
@@ -347,10 +321,11 @@ extension SettingsView {
 
 #Preview {
     return NavigationStack {
-        SettingsView(locationClient: nil)
+        SettingsView()
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
     }
+    .environment(LocationSession.preview)
 }

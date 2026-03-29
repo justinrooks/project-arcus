@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct SummaryStatus: View {
-    let location: String
+    let statusText: String
     let weather: SummaryWeather?
 
     private static let temperatureFormatter: MeasurementFormatter = {
@@ -39,7 +39,7 @@ struct SummaryStatus: View {
 
     private var contentRow: some View {
         HStack(spacing: 10) {
-            Label(location, systemImage: "location.fill")
+            Label(statusText, systemImage: "location.fill")
                 .font(.headline)
                 .fontWeight(.bold)
                 .foregroundStyle(.primary)
@@ -72,7 +72,7 @@ struct SummaryStatus: View {
 #Preview {
     VStack {
         SummaryStatus(
-            location: "Denver, CO",
+            statusText: "Denver, CO",
             weather: .init(
                 temperature: Measurement(
                     value: 37.0,
@@ -94,7 +94,7 @@ struct SummaryStatus: View {
             )
         )
         SummaryStatus(
-            location: "Topeka, KS",
+            statusText: "Topeka, KS",
             weather: .init(
                 temperature: Measurement(
                     value: 47.0,

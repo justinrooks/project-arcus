@@ -7,6 +7,29 @@
 
 import SwiftUI
 
+enum SummaryReadinessState: Equatable {
+    case loadingLocation
+    case resolvingLocalContext
+    case loadingLocalData
+    case ready
+    case locationUnavailable
+
+    var statusText: String {
+        switch self {
+        case .loadingLocation:
+            "Finding your location..."
+        case .resolvingLocalContext:
+            "Resolving local weather context..."
+        case .loadingLocalData:
+            "Loading local weather details..."
+        case .ready:
+            "Current location ready"
+        case .locationUnavailable:
+            "Location unavailable"
+        }
+    }
+}
+
 struct SummaryView: View {
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
@@ -16,6 +39,7 @@ struct SummaryView: View {
     let watches: [WatchRowDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let readinessState: SummaryReadinessState
 
     private var hasActiveAlerts: Bool {
         !mesos.isEmpty || !watches.isEmpty
@@ -26,7 +50,23 @@ struct SummaryView: View {
     }
 
     private var isSummaryLoading: Bool {
-        snap == nil || stormRisk == nil || severeRisk == nil || fireRisk == nil
+        switch readinessState {
+        case .loadingLocation, .resolvingLocalContext, .loadingLocalData:
+            true
+        case .ready, .locationUnavailable:
+            false
+        }
+    }
+
+    private var statusText: String {
+        if let placemark = snap?.placemarkSummary {
+            return placemark
+        }
+        return readinessState.statusText
+    }
+
+    private var isLocationUnavailable: Bool {
+        readinessState == .locationUnavailable
     }
 
     @ViewBuilder
@@ -61,14 +101,19 @@ struct SummaryView: View {
     var body: some View {
         VStack(spacing: 18) {
             SummaryStatus(
-                location: snap?.placemarkSummary ?? "Searching...",
+                statusText: statusText,
                 weather: weather
             )
-            .placeholder(snap == nil)
 
             VStack(alignment: .leading, spacing: 12) {
                 sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
-                if #available(iOS 26, *) {
+                if isLocationUnavailable {
+                    unavailableCard(
+                        title: "Location Required",
+                        message: "Enable location access to load local risk, alerts, and weather conditions.",
+                        symbol: "location.slash"
+                    )
+                } else if #available(iOS 26, *) {
                     GlassEffectContainer(spacing: 14) {
                         riskSnapshotContent
                     }
@@ -79,7 +124,13 @@ struct SummaryView: View {
             .padding(16)
             .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
 
-            if isSummaryLoading {
+            if isLocationUnavailable {
+                unavailableCard(
+                    title: "Location Required",
+                    message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                    symbol: "location.slash"
+                )
+            } else if isSummaryLoading {
                 ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
             } else if hasActiveAlerts {
                 ActiveAlertSummaryView(
@@ -94,10 +145,10 @@ struct SummaryView: View {
                 )
             }
 
-            if isSummaryLoading {
-                OutlookSummaryCard(outlook: nil, isLoading: true)
-            } else if let outlook {
+            if let outlook {
                 OutlookSummaryCard(outlook: outlook)
+            } else if readinessState == .loadingLocation || readinessState == .resolvingLocalContext {
+                OutlookSummaryCard(outlook: nil, isLoading: true)
             } else {
                 emptySectionCard(
                     title: "Outlook Pending",
@@ -132,6 +183,10 @@ struct SummaryView: View {
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
+
+    private func unavailableCard(title: String, message: String, symbol: String) -> some View {
+        emptySectionCard(title: title, message: message, symbol: symbol)
+    }
 }
 
 // MARK: Previews
@@ -150,7 +205,8 @@ struct SummaryView: View {
             mesos: MD.sampleDiscussionDTOs,
             watches: Watch.sampleWatchRows,
             outlook: ConvectiveOutlook.sampleOutlookDtos.first,
-            weather: nil
+            weather: nil,
+            readinessState: .ready
         )
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -171,7 +227,8 @@ struct SummaryView: View {
             mesos: [],
             watches: [],
             outlook: nil,
-            weather: nil
+            weather: nil,
+            readinessState: .loadingLocalData
         )
         .toolbar(.hidden, for: .navigationBar)
     }

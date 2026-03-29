@@ -11,12 +11,12 @@ import OSLog
 
 struct MapScreenView: View {
     @Environment(\.dependencies) private var deps
+    @Environment(LocationSession.self) private var locationSession
     private let logger = Logger.uiMap
     private let polygonMapper = MapPolygonMapper()
     
     // MARK: Local handles
     private var svc: any SpcMapData { deps.spcMapData }
-    private var loc: LocationClient { deps.locationClient }
     
     @State private var selected: MapLayer = .categorical
     @State private var showLayerPicker = false
@@ -28,14 +28,17 @@ struct MapScreenView: View {
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var activeOverlays: [MapOverlayEntry] = []
-    @State private var snap: LocationSnapshot?
     @State private var mapRebuildTask: Task<Void, Never>?
     @Namespace private var layerNamespace
     
     var body: some View {
         ZStack {
-            MapCanvasView(polygons: activePolygons, overlays: activeOverlays, coordinates: snap?.coordinates)
-                .edgesIgnoringSafeArea(.all)
+            MapCanvasView(
+                polygons: activePolygons,
+                overlays: activeOverlays,
+                coordinates: locationSession.currentSnapshot?.coordinates
+            )
+                .ignoresSafeArea()
             
             VStack(alignment: .trailing) {
                 HStack(spacing: 10) {
@@ -100,16 +103,6 @@ struct MapScreenView: View {
         .onDisappear {
             mapRebuildTask?.cancel()
             mapRebuildTask = nil
-        }
-        .task {
-            if let first = await loc.snapshot() {
-                await MainActor.run { snap = first }
-            }
-            
-            let stream = await loc.updates()
-            for await s in stream {
-                await MainActor.run { snap = s }
-            }
         }
     }
     
@@ -405,4 +398,5 @@ private struct MapLayerButtonMorph: ViewModifier {
 
 #Preview {
     MapScreenView()
+        .environment(LocationSession.preview)
 }

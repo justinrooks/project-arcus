@@ -32,8 +32,7 @@ actor BackgroundOrchestrator {
     private let signposter:OSSignposter
     private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
     private let arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying
-    private let locationProvider: LocationProvider
-    private let refreshCurrentLocation: @Sendable (Double) async -> Bool
+    private let locationContextResolver: any LocationContextResolving
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
     private let mesoEngine: MesoEngine
@@ -48,8 +47,7 @@ actor BackgroundOrchestrator {
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
         arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying,
-        locationProvider: LocationProvider,
-        refreshCurrentLocation: @escaping @Sendable (Double) async -> Bool,
+        locationContextResolver: any LocationContextResolving,
         policy: RefreshPolicy,
         engine: MorningEngine,
         mesoEngine: MesoEngine,
@@ -59,8 +57,7 @@ actor BackgroundOrchestrator {
     ) {
         self.spcProvider = spcProvider
         self.arcusProvider = arcusProvider
-        self.locationProvider = locationProvider
-        self.refreshCurrentLocation = refreshCurrentLocation
+        self.locationContextResolver = locationContextResolver
         morningEngine = engine
         refreshPolicy = policy
         healthStore = health
@@ -110,7 +107,7 @@ actor BackgroundOrchestrator {
                 
                 // MARK: Get location snapshot
                 logger.debug("Attempting to obtain latest device location for background run")
-                guard let snap = await resolvedLocationSnapshot() else {
+                guard let context = await resolvedLocationContext() else {
                     logger.info("No current location snapshot available; rechecking in 20m")
                     let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
                     let end = Date()
@@ -122,12 +119,11 @@ actor BackgroundOrchestrator {
                 }
                 
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
-                let updatedSnap = await locationProvider.ensurePlacemark(for: snap.coordinates)
-                let location = updatedSnap.coordinates
+                let location = context.snapshot.coordinates
                 
                 // Keep watch data current each run so cadence decisions can react to active watches.
                 await HTTPExecutionMode.$current.withValue(.background) {
-                    await arcusProvider.sync(h3Cell: updatedSnap.h3Cell)
+                    await arcusProvider.sync(context: context)
                 }
                 
                 // MARK: Get Risk Status
@@ -137,7 +133,7 @@ actor BackgroundOrchestrator {
                         async let cr = self.spcProvider.getStormRisk(for: location)
                         async let fr = self.spcProvider.getFireRisk(for: location)
                         async let mesos = self.spcProvider.getActiveMesos(at: .now, for: location)
-                        async let watches = self.arcusProvider.getActiveWatches(h3Cell: updatedSnap.h3Cell)
+                        async let watches = self.arcusProvider.getActiveWatches(context: context)
                         return try await (sr, cr, fr, mesos, watches)
                     }
                 }
@@ -159,7 +155,7 @@ actor BackgroundOrchestrator {
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
                             fireRisk: fireRisk,
-                            placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                            placeMark: context.snapshot.placemarkSummary ?? "Unknown"
                         )
                     )
                     if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
@@ -172,8 +168,8 @@ actor BackgroundOrchestrator {
                         ctx: .init(
                             now: .now,
                             localTZ: .current,
-                            location: updatedSnap.coordinates,
-                            placeMark: updatedSnap.placemarkSummary ?? "Unknown"
+                            location: context.snapshot.coordinates,
+                            placeMark: context.snapshot.placemarkSummary ?? "Unknown"
                         )
                     )
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
@@ -234,32 +230,20 @@ actor BackgroundOrchestrator {
         }
     }
 
-    private func resolvedLocationSnapshot() async -> LocationSnapshot? {
-        let cachedSnapshot = await locationProvider.snapshot()
-        let didRefreshCurrentLocation = await refreshCurrentLocation(requestedLocationTimeout)
-
-        if didRefreshCurrentLocation,
-           let refreshedSnapshot = await locationProvider.snapshot(),
-           isCurrentLocationSnapshot(refreshedSnapshot) {
-            logger.debug("Using current device location for background run")
-            return refreshedSnapshot
-        }
-
-        guard let cachedSnapshot else { return nil }
-
-        let ageSeconds = max(0, Date().timeIntervalSince(cachedSnapshot.timestamp))
-        guard ageSeconds <= maximumAcceptedLocationAge else {
-            logger.notice("Skipping location-dependent background work because cached location is stale at \(ageSeconds, privacy: .public)s")
+    private func resolvedLocationContext() async -> LocationContext? {
+        do {
+            return try await locationContextResolver.prepareCurrentContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false,
+                authorizationTimeout: requestedLocationTimeout,
+                locationTimeout: requestedLocationTimeout,
+                maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+                placemarkTimeout: 8
+            )
+        } catch {
+            logger.notice("Skipping location-dependent background work because location context is unavailable: \(String(describing: error), privacy: .public)")
             return nil
         }
-
-        logger.notice("Using recent cached location snapshot aged \(ageSeconds, privacy: .public)s")
-        return cachedSnapshot
-    }
-
-    private func isCurrentLocationSnapshot(_ snapshot: LocationSnapshot) -> Bool {
-        let ageSeconds = Date().timeIntervalSince(snapshot.timestamp)
-        return ageSeconds >= 0 && ageSeconds <= maximumAcceptedLocationAge
     }
     
     // MARK: Convenience bg run record

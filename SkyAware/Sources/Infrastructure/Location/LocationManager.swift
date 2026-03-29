@@ -28,14 +28,19 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private var currentMode: Mode = .stopped
     private var lastPhase: ScenePhase = .inactive
     
-    private let manager = CLLocationManager()
+    private let manager: CLLocationManager
     private let logger = Logger.locationManager
     private let onUpdate: LocationSink
+    private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus) -> Void)?
     private var streamTask: Task<Void, Never>?
     private var pendingRefreshLocationContinuations: [CheckedContinuation<Bool, Never>] = []
     private(set) var authStatus: CLAuthorizationStatus = .notDetermined
     
-    init(onUpdate: @escaping LocationSink) {
+    init(
+        manager: CLLocationManager = CLLocationManager(),
+        onUpdate: @escaping LocationSink
+    ) {
+        self.manager = manager
         self.onUpdate = onUpdate
         
         super.init()
@@ -50,6 +55,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     
     func checkLocationAuthorization(isActive: Bool) {
         self.authStatus = manager.authorizationStatus
+        onAuthorizationChange?(authStatus)
         guard isActive else { return } // never prompt in background
         
         switch manager.authorizationStatus {
@@ -71,11 +77,33 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             break
         }
     }
+
+    @discardableResult
+    func requestAlwaysAuthorizationUpgradeIfNeeded() -> Bool {
+        let status = manager.authorizationStatus
+        authStatus = status
+        onAuthorizationChange?(status)
+
+        guard status == .authorizedWhenInUse else {
+            logger.debug("Skipping always-authorization upgrade; current status is \(status.rawValue, privacy: .public)")
+            return false
+        }
+
+        logger.debug("Requesting location always authorization upgrade")
+        manager.requestAlwaysAuthorization()
+        return true
+    }
     
     func openSettings() {
         if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)
         }
+    }
+
+    func setAuthorizationChangeHandler(
+        _ handler: (@MainActor @Sendable (CLAuthorizationStatus) -> Void)?
+    ) {
+        onAuthorizationChange = handler
     }
 
     func refreshCurrentLocation(timeout: Double = 12) async -> Bool {
@@ -142,6 +170,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
         Task { @MainActor in
             authStatus = status
+            onAuthorizationChange?(status)
             updateMode(for: lastPhase)
         }
     }
