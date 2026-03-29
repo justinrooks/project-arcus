@@ -1,10 +1,12 @@
 import Foundation
 import CoreLocation
+import SwiftUI
 import Testing
 @testable import SkyAware
 
-@Suite("HomeView Startup Snapshot Selection")
-struct HomeViewStartupSnapshotSelectionTests {
+@Suite("HomeView Refresh Triggers")
+@MainActor
+struct HomeViewRefreshTriggerTests {
     private func makeSnapshot(lat: Double, lon: Double, timestamp: TimeInterval) -> LocationSnapshot {
         LocationSnapshot(
             coordinates: .init(latitude: lat, longitude: lon),
@@ -15,61 +17,126 @@ struct HomeViewStartupSnapshotSelectionTests {
         )
     }
 
-    @Test("prefers provider snapshot when both sources exist")
-    func prefersProviderSnapshot() {
-        let provider = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
-        let rendered = makeSnapshot(lat: 35.46, lon: -97.51, timestamp: 50)
-
-        let selected = HomeView.preferredBootstrapSnapshot(
-            providerSnapshot: provider,
-            renderedSnapshot: rendered
+    private func makeContextRefreshKey() -> LocationContext.RefreshKey {
+        LocationContext.RefreshKey(
+            h3Cell: 0x882681b485fffff,
+            countyCode: "OKC109",
+            fireZone: "OKZ025",
+            gridKey: GridRefreshKey(coord: .init(latitude: 35.2226, longitude: -97.4395))
         )
-
-        #expect(selected?.coordinates.latitude == provider.coordinates.latitude)
-        #expect(selected?.coordinates.longitude == provider.coordinates.longitude)
-        #expect(selected?.timestamp == provider.timestamp)
     }
 
-    @Test("falls back to rendered snapshot when provider snapshot is missing")
-    func fallsBackToRenderedSnapshot() {
-        let rendered = makeSnapshot(lat: 35.46, lon: -97.51, timestamp: 50)
-
-        let selected = HomeView.preferredBootstrapSnapshot(
-            providerSnapshot: nil,
-            renderedSnapshot: rendered
+    @Test("context-driven refresh waits for a ready context")
+    func contextDrivenRefresh_waitsForReadyContext() {
+        #expect(
+            HomeView.shouldRunContextDrivenRefresh(scenePhase: .active, refreshKey: nil) == false
         )
-
-        #expect(selected?.coordinates.latitude == rendered.coordinates.latitude)
-        #expect(selected?.coordinates.longitude == rendered.coordinates.longitude)
-        #expect(selected?.timestamp == rendered.timestamp)
+        #expect(
+            HomeView.shouldRunContextDrivenRefresh(
+                scenePhase: .background,
+                refreshKey: makeContextRefreshKey()
+            ) == false
+        )
+        #expect(
+            HomeView.shouldRunContextDrivenRefresh(
+                scenePhase: .active,
+                refreshKey: makeContextRefreshKey()
+            )
+        )
     }
 
-    @Test("returns nil when no snapshot source exists")
-    func returnsNilWithoutAnySnapshot() {
-        let selected = HomeView.preferredBootstrapSnapshot(
-            providerSnapshot: nil,
-            renderedSnapshot: nil
+    @Test("duplicate activation refresh is skipped for the same snapshot")
+    func duplicateActivationRefresh_isSkippedForSameSnapshot() {
+        let snapshot = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
+        let lastRefresh = RefreshContext(
+            coordinates: snapshot.coordinates,
+            refreshedAt: snapshot.timestamp
         )
 
-        #expect(selected == nil)
+        #expect(
+            HomeView.shouldPerformLocationRefresh(
+                lastRefreshContext: lastRefresh,
+                snapshot: snapshot,
+                force: false
+            ) == false
+        )
     }
 
-    @Test("requests interactive location auth only when status is not determined")
-    func requestsInteractiveLocationAuth_onlyWhenNotDetermined() {
+    @Test("force refresh still bypasses duplicate suppression")
+    func forceRefresh_bypassesDuplicateSuppression() {
+        let snapshot = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
+        let lastRefresh = RefreshContext(
+            coordinates: snapshot.coordinates,
+            refreshedAt: snapshot.timestamp
+        )
+
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .notDetermined)
+            HomeView.shouldPerformLocationRefresh(
+                lastRefreshContext: lastRefresh,
+                snapshot: snapshot,
+                force: true
+            )
+        )
+    }
+
+    @Test("maps startup location acquisition states into loading location readiness")
+    func readinessState_mapsLocationAcquisitionStates() {
+        #expect(
+            HomeView.readinessState(
+                startupState: .idle,
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .loadingLocation
         )
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .authorizedWhenInUse) == false
+            HomeView.readinessState(
+                startupState: .acquiringLocation,
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .loadingLocation
         )
+    }
+
+    @Test("maps resolving context into local context readiness")
+    func readinessState_mapsResolvingContext() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .authorizedAlways) == false
+            HomeView.readinessState(
+                startupState: .resolvingContext,
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .resolvingLocalContext
         )
+    }
+
+    @Test("maps ready state with missing local risks into loading local data")
+    func readinessState_mapsReadyWithMissingRiskData() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .denied) == false
+            HomeView.readinessState(
+                startupState: .ready,
+                hasContext: true,
+                stormRisk: .slight,
+                severeRisk: nil,
+                fireRisk: .elevated
+            ) == .loadingLocalData
         )
+    }
+
+    @Test("maps failed startup into location unavailable readiness")
+    func readinessState_mapsFailure() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .restricted) == false
+            HomeView.readinessState(
+                startupState: .failed("location-unavailable"),
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .locationUnavailable
         )
     }
 }

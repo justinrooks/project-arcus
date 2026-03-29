@@ -47,18 +47,6 @@ struct LocationProviderTests {
         }
     }
     
-    private actor MockSnapshotPusher: LocationSnapshotPushing {
-        private var snapshots: [LocationSnapshot] = []
-        
-        func enqueue(_ snapshot: LocationSnapshot) async {
-            snapshots.append(snapshot)
-        }
-        
-        func allSnapshots() -> [LocationSnapshot] {
-            snapshots
-        }
-    }
-    
     private actor MockSnapshotUploader: LocationSnapshotUploading {
         private var payloads: [LocationSnapshotPushPayload] = []
         
@@ -119,6 +107,56 @@ struct LocationProviderTests {
             timestamp: timestamp,
             accuracy: accuracy,
             forceAcceptance: forceAcceptance
+        )
+    }
+
+    private func makeGridSnapshot(
+        countyCode: String? = "OKC109",
+        fireZone: String? = "OKZ025",
+        countyLabel: String? = "Oklahoma County",
+        fireZoneLabel: String? = "Central Oklahoma"
+    ) -> GridPointSnapshot {
+        GridPointSnapshot(
+            nwsId: "https://api.weather.gov/points/35.4676,-97.5164",
+            latitude: 35.4676,
+            longitude: -97.5164,
+            gridId: "OUN",
+            gridX: 34,
+            gridY: 74,
+            forecastURL: nil,
+            forecastHourlyURL: nil,
+            forecastGridDataURL: nil,
+            observationStationsURL: nil,
+            city: "Oklahoma City",
+            state: "OK",
+            timeZoneId: "America/Chicago",
+            radarStationId: "KTLX",
+            forecastZone: "OKZ025",
+            countyCode: countyCode,
+            fireZone: fireZone,
+            countyLabel: countyLabel,
+            fireZoneLabel: fireZoneLabel
+        )
+    }
+
+    private func makeContext(
+        timestamp: Date = Date(timeIntervalSince1970: 1_234_567),
+        placemark: String? = "OKC, OK",
+        h3Cell: Int64? = nil,
+        grid: GridPointSnapshot? = nil
+    ) -> LocationContext {
+        let h3Cell = h3Cell ?? sampleH3Cell
+        let snapshot = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: timestamp,
+            accuracy: 42,
+            placemarkSummary: placemark,
+            h3Cell: h3Cell
+        )
+        return LocationContext(
+            snapshot: snapshot,
+            h3Cell: h3Cell,
+            grid: grid ?? makeGridSnapshot()
         )
     }
 
@@ -234,59 +272,23 @@ struct LocationProviderTests {
         #expect(snapshot.h3Cell == sampleH3Cell)
     }
     
-    @Test("send pushes accepted snapshot to location snapshot pusher")
-    func send_pushesAcceptedSnapshot() async throws {
-        let pusher = MockSnapshotPusher()
-        let provider = LocationProvider(
-            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
-            hasher: MockHasher(mode: .success(sampleH3Cell)),
-            snapshotPusher: pusher
-        )
-        let now = Date()
-        
-        await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: now, accuracy: 25))
-
-        let pushed = await waitForSnapshots(from: pusher)
-        let first = try #require(pushed.first)
-        #expect(pushed.count == 1)
-        #expect(first.timestamp == now)
-        #expect(first.h3Cell == sampleH3Cell)
-    }
-
-    @Test("snapshot pusher payload includes timestamp and apns token")
-    func snapshotPusher_includesTimestampAndApnsToken() async throws {
+    @Test("location context pusher payload includes timestamp and apns token")
+    func locationContextPusher_includesTimestampAndApnsToken() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
             uploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
-            gridRegionContextProvider: {
-                NwsGridRegionContext(
-                    countyCode: "OKC109",
-                    forecastZone: "OKZ025",
-                    fireZone: "OKZ025",
-                    countyLabel: "Oklahoma County",
-                    fireZoneLabel: "Central Oklahoma"
-                )
-            },
             subscriptionStatusProvider: { false },
             retryDelaysSeconds: [0]
         )
-        
-        let ts = Date(timeIntervalSince1970: 1_234_567)
-        let snap = LocationSnapshot(
-            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
-            timestamp: ts,
-            accuracy: 42,
-            placemarkSummary: "OKC, OK",
-            h3Cell: sampleH3Cell
-        )
-        
-        await pusher.enqueue(snap)
+
+        let context = makeContext()
+        await pusher.enqueue(context)
         
         let payloads = await uploader.uploadedPayloads()
         let payload = try #require(payloads.first)
-        #expect(payload.capturedAt == ts)
+        #expect(payload.capturedAt == context.snapshot.timestamp)
         #expect(payload.installationId == "install-abc-123")
         #expect(payload.apnsDeviceToken == "apns-token-123")
         #expect(payload.countyCode == "OKC109")
@@ -296,8 +298,8 @@ struct LocationProviderTests {
         #expect(payload.isSubscribed == false)
     }
 
-    @Test("snapshot pusher skips upload when APNs token is missing")
-    func snapshotPusher_skipsUploadWithoutApnsToken() async {
+    @Test("location context pusher skips upload when APNs token is missing")
+    func locationContextPusher_skipsUploadWithoutApnsToken() async {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
             uploader: uploader,
@@ -306,100 +308,10 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0]
         )
 
-        let snap = LocationSnapshot(
-            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
-            timestamp: Date(timeIntervalSince1970: 1_234_567),
-            accuracy: 42,
-            placemarkSummary: "OKC, OK",
-            h3Cell: sampleH3Cell
-        )
-
-        await pusher.enqueue(snap)
+        await pusher.enqueue(makeContext())
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
-    }
-
-    @Test("pushLatestSnapshotWhenAvailable replays cached snapshot immediately")
-    func pushLatestSnapshotWhenAvailable_replaysCachedSnapshot() async throws {
-        let now = Date(timeIntervalSince1970: 1_234_567)
-        let cached = LocationSnapshot(
-            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
-            timestamp: now,
-            accuracy: 42,
-            placemarkSummary: "OKC, OK",
-            h3Cell: sampleH3Cell
-        )
-        let cache = MockSnapshotCache(storedSnapshot: cached)
-        let pusher = MockSnapshotPusher()
-        let provider = LocationProvider(snapshotPusher: pusher, snapshotCache: cache, nowProvider: { now })
-
-        let didPush = await provider.pushLatestSnapshotWhenAvailable(timeout: 0.01)
-
-        #expect(didPush)
-        let pushed = await pusher.allSnapshots()
-        let first = try #require(pushed.first)
-        #expect(first.timestamp == now)
-        #expect(first.h3Cell == sampleH3Cell)
-    }
-
-    @Test("pushLatestSnapshotWhenAvailable waits for a new snapshot")
-    func pushLatestSnapshotWhenAvailable_waitsForNextSnapshot() async throws {
-        let pusher = MockSnapshotPusher()
-        let provider = LocationProvider(
-            geocoder: MockGeocoder(mode: .failure(GeocodeError.noResults)),
-            hasher: MockHasher(mode: .success(sampleH3Cell)),
-            snapshotPusher: pusher
-        )
-
-        let pushTask = Task {
-            await provider.pushLatestSnapshotWhenAvailable(timeout: 0.5)
-        }
-
-        try await Task.sleep(for: .milliseconds(50))
-        await provider.send(
-            update: makeUpdate(
-                lat: 39.0,
-                lon: -104.0,
-                timestamp: Date(timeIntervalSince1970: 1_234_600),
-                accuracy: 25
-            )
-        )
-
-        let didPush = await pushTask.value
-        #expect(didPush)
-
-        let pushed = await waitForSnapshots(from: pusher)
-        #expect(pushed.count == 1)
-    }
-
-    @Test("pushLatestSnapshotWhenAvailable times out when no snapshot is available")
-    func pushLatestSnapshotWhenAvailable_timesOutWithoutSnapshot() async {
-        let pusher = MockSnapshotPusher()
-        let provider = LocationProvider(snapshotPusher: pusher)
-
-        let didPush = await provider.pushLatestSnapshotWhenAvailable(timeout: 0.01)
-
-        #expect(!didPush)
-        let pushed = await pusher.allSnapshots()
-        #expect(pushed.isEmpty)
-    }
-
-    private func waitForSnapshots(
-        from pusher: MockSnapshotPusher,
-        timeoutMs: Int = 500,
-        pollMs: Int = 10
-    ) async -> [LocationSnapshot] {
-        let maxAttempts = max(1, timeoutMs / pollMs)
-        for _ in 0..<maxAttempts {
-            let snapshots = await pusher.allSnapshots()
-            if !snapshots.isEmpty {
-                return snapshots
-            }
-            try? await Task.sleep(for: .milliseconds(pollMs))
-        }
-
-        return await pusher.allSnapshots()
     }
 
     @Test("send suppresses rapid updates inside minSeconds window")
@@ -613,5 +525,386 @@ struct LocationProviderTests {
         let final = try #require(await provider.snapshot())
         #expect(final.timestamp == t1)
         #expect(final.placemarkSummary == "Latest City")
+    }
+}
+
+@Suite("LocationContextResolver")
+struct LocationContextResolverTests {
+    private let sampleH3Cell: Int64 = 0x882681b485fffff
+
+    private enum TestError: Error, Sendable {
+        case geocodeFailed
+    }
+
+    private actor AuthorizationState {
+        private var status: CLAuthorizationStatus
+
+        init(status: CLAuthorizationStatus) {
+            self.status = status
+        }
+
+        func current() -> CLAuthorizationStatus {
+            status
+        }
+
+        func set(_ status: CLAuthorizationStatus) {
+            self.status = status
+        }
+    }
+
+    private struct TestGeocoder: LocationGeocoding {
+        let result: Result<String, TestError>
+
+        func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+            switch result {
+            case .success(let summary):
+                return summary
+            case .failure(let error):
+                throw error
+            }
+        }
+    }
+
+    private struct TestHasher: LocationHashing {
+        let h3Cell: Int64?
+
+        func h3Cell(for coord: CLLocationCoordinate2D) throws -> Int64 {
+            guard let h3Cell else {
+                throw TestError.geocodeFailed
+            }
+            return h3Cell
+        }
+    }
+
+    private actor RecordingContextPusher: LocationContextPushing {
+        private var contexts: [LocationContext] = []
+
+        func enqueue(_ context: LocationContext) async {
+            contexts.append(context)
+        }
+
+        func count() -> Int {
+            contexts.count
+        }
+    }
+
+    private actor ResolverNwsClient: NwsClient {
+        let pointPayload: Data
+        let countyName: String?
+        let fireZoneName: String?
+
+        init(pointPayload: Data, countyName: String?, fireZoneName: String?) {
+            self.pointPayload = pointPayload
+            self.countyName = countyName
+            self.fireZoneName = fireZoneName
+        }
+
+        func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data {
+            Data()
+        }
+
+        func fetchPointMetadata(for location: Coordinate2D) async throws -> Data {
+            pointPayload
+        }
+
+        func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+            let name = switch zoneType {
+            case .county:
+                countyName ?? ""
+            case .fire:
+                fireZoneName ?? ""
+            }
+            let type = switch zoneType {
+            case .county:
+                "county"
+            case .fire:
+                "fire"
+            }
+            return Data(
+                """
+                {
+                  "properties": {
+                    "type": "\(type)",
+                    "name": "\(name)"
+                  }
+                }
+                """.utf8
+            )
+        }
+    }
+
+    @Test("waits for authorization result before preparing a ready context")
+    func waitsForAuthorizationResult() async throws {
+        let authorizationState = AuthorizationState(status: .notDetermined)
+        let pusher = RecordingContextPusher()
+        let locationProvider = LocationProvider(
+            geocoder: TestGeocoder(result: .success("Norman, OK")),
+            hasher: TestHasher(h3Cell: sampleH3Cell)
+        )
+        let gridPointProvider = GridPointProvider(
+            client: ResolverNwsClient(
+                pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
+                countyName: "Oklahoma County",
+                fireZoneName: "Central Oklahoma"
+            ),
+            repo: NwsMetadataRepo()
+        )
+        let resolver = LocationContextResolver(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationProvider: locationProvider,
+            gridPointProvider: gridPointProvider,
+            contextPusher: pusher,
+            authorizationStatusProvider: { await authorizationState.current() },
+            authorizationRequester: { _ in
+                Task {
+                    try? await Task.sleep(for: .milliseconds(20))
+                    await authorizationState.set(.authorizedWhenInUse)
+                }
+            },
+            refreshCurrentLocation: { _ in
+                await locationProvider.send(update: .init(
+                    coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
+                    timestamp: Date(),
+                    accuracy: 15,
+                    forceAcceptance: true
+                ))
+                return true
+            }
+        )
+
+        let context = try await resolver.prepareCurrentContext(
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: true,
+            authorizationTimeout: 0.5,
+            locationTimeout: 0.5,
+            maximumAcceptedLocationAge: 300,
+            placemarkTimeout: 0.1
+        )
+
+        #expect(context.h3Cell == sampleH3Cell)
+        #expect(context.grid.countyCode == "OKC109")
+        #expect(context.grid.fireZone == "OKZ025")
+        #expect(await pusher.count() == 1)
+    }
+
+    @Test("times out cleanly while waiting for authorization resolution")
+    func authorizationTimeoutIsReported() async {
+        let authorizationState = AuthorizationState(status: .notDetermined)
+        let locationProvider = LocationProvider(
+            geocoder: TestGeocoder(result: .success("Norman, OK")),
+            hasher: TestHasher(h3Cell: sampleH3Cell)
+        )
+        let gridPointProvider = GridPointProvider(
+            client: ResolverNwsClient(
+                pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
+                countyName: "Oklahoma County",
+                fireZoneName: "Central Oklahoma"
+            ),
+            repo: NwsMetadataRepo()
+        )
+        let resolver = LocationContextResolver(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationProvider: locationProvider,
+            gridPointProvider: gridPointProvider,
+            authorizationStatusProvider: { await authorizationState.current() },
+            authorizationRequester: { _ in },
+            refreshCurrentLocation: { _ in false }
+        )
+
+        do {
+            _ = try await resolver.prepareCurrentContext(
+                requiresFreshLocation: false,
+                showsAuthorizationPrompt: true,
+                authorizationTimeout: 0.01,
+                locationTimeout: 0.01,
+                maximumAcceptedLocationAge: 300,
+                placemarkTimeout: 0.1
+            )
+            Issue.record("Expected authorization timeout")
+        } catch {
+            #expect((error as? LocationContextError) == .authorizationTimeout)
+        }
+    }
+
+    @Test("does not produce a ready context without h3")
+    func missingH3PreventsReadyContext() async {
+        let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
+        let locationProvider = LocationProvider(
+            geocoder: TestGeocoder(result: .success("Norman, OK")),
+            hasher: TestHasher(h3Cell: nil)
+        )
+        let gridPointProvider = GridPointProvider(
+            client: ResolverNwsClient(
+                pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
+                countyName: "Oklahoma County",
+                fireZoneName: "Central Oklahoma"
+            ),
+            repo: NwsMetadataRepo()
+        )
+        let resolver = LocationContextResolver(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationProvider: locationProvider,
+            gridPointProvider: gridPointProvider,
+            authorizationStatusProvider: { await authorizationState.current() },
+            authorizationRequester: { _ in },
+            refreshCurrentLocation: { _ in
+                await locationProvider.send(update: .init(
+                    coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
+                    timestamp: Date(),
+                    accuracy: 15,
+                    forceAcceptance: true
+                ))
+                return true
+            }
+        )
+
+        do {
+            _ = try await resolver.prepareCurrentContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false,
+                authorizationTimeout: 0.1,
+                locationTimeout: 0.5,
+                maximumAcceptedLocationAge: 300,
+                placemarkTimeout: 0.1
+            )
+            Issue.record("Expected missingH3Cell")
+        } catch {
+            #expect((error as? LocationContextError) == .missingH3Cell)
+        }
+    }
+
+    @Test("does not produce a ready context without county and fire zone")
+    func missingRegionMetadataPreventsReadyContext() async {
+        let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
+        let locationProvider = LocationProvider(
+            geocoder: TestGeocoder(result: .success("Norman, OK")),
+            hasher: TestHasher(h3Cell: sampleH3Cell)
+        )
+        let gridPointProvider = GridPointProvider(
+            client: ResolverNwsClient(
+                pointPayload: makePointPayload(includeCounty: false, includeFireZone: false),
+                countyName: nil,
+                fireZoneName: nil
+            ),
+            repo: NwsMetadataRepo()
+        )
+        let resolver = LocationContextResolver(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationProvider: locationProvider,
+            gridPointProvider: gridPointProvider,
+            authorizationStatusProvider: { await authorizationState.current() },
+            authorizationRequester: { _ in },
+            refreshCurrentLocation: { _ in
+                await locationProvider.send(update: .init(
+                    coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
+                    timestamp: Date(),
+                    accuracy: 15,
+                    forceAcceptance: true
+                ))
+                return true
+            }
+        )
+
+        do {
+            _ = try await resolver.prepareCurrentContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false,
+                authorizationTimeout: 0.1,
+                locationTimeout: 0.5,
+                maximumAcceptedLocationAge: 300,
+                placemarkTimeout: 0.1
+            )
+            Issue.record("Expected missingRegionContext")
+        } catch {
+            #expect((error as? LocationContextError) == .missingRegionContext)
+        }
+    }
+
+    @Test("allows a ready context when placemark resolution fails")
+    func missingPlacemarkDoesNotBlockReadyContext() async throws {
+        let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
+        let pusher = RecordingContextPusher()
+        let locationProvider = LocationProvider(
+            geocoder: TestGeocoder(result: .failure(.geocodeFailed)),
+            hasher: TestHasher(h3Cell: sampleH3Cell)
+        )
+        let gridPointProvider = GridPointProvider(
+            client: ResolverNwsClient(
+                pointPayload: makePointPayload(includeCounty: true, includeFireZone: true),
+                countyName: "Oklahoma County",
+                fireZoneName: "Central Oklahoma"
+            ),
+            repo: NwsMetadataRepo()
+        )
+        let resolver = LocationContextResolver(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationProvider: locationProvider,
+            gridPointProvider: gridPointProvider,
+            contextPusher: pusher,
+            authorizationStatusProvider: { await authorizationState.current() },
+            authorizationRequester: { _ in },
+            refreshCurrentLocation: { _ in
+                await locationProvider.send(update: .init(
+                    coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
+                    timestamp: Date(),
+                    accuracy: 15,
+                    forceAcceptance: true
+                ))
+                return true
+            }
+        )
+
+        let context = try await resolver.prepareCurrentContext(
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: false,
+            authorizationTimeout: 0.1,
+            locationTimeout: 0.5,
+            maximumAcceptedLocationAge: 300,
+            placemarkTimeout: 0.1
+        )
+
+        #expect(context.snapshot.placemarkSummary == nil)
+        #expect(await pusher.count() == 1)
+    }
+
+    private func makePointPayload(includeCounty: Bool, includeFireZone: Bool) -> Data {
+        let countyEntry = includeCounty
+            ? #""county": "https://api.weather.gov/zones/county/OKC109","# 
+            : ""
+        let fireZoneEntry = includeFireZone
+            ? #""fireWeatherZone": "https://api.weather.gov/zones/fire/OKZ025","# 
+            : ""
+
+        return Data(
+            """
+            {
+              "id": "https://api.weather.gov/points/35.2226,-97.4395",
+              "type": "Feature",
+              "geometry": null,
+              "properties": {
+                "gridId": "OUN",
+                "gridX": 34,
+                "gridY": 74,
+                "forecast": "https://api.weather.gov/gridpoints/OUN/34,74/forecast",
+                "forecastHourly": "https://api.weather.gov/gridpoints/OUN/34,74/forecast/hourly",
+                "forecastGridData": "https://api.weather.gov/gridpoints/OUN/34,74",
+                "observationStations": "https://api.weather.gov/gridpoints/OUN/34,74/stations",
+                "relativeLocation": {
+                  "type": "Feature",
+                  "geometry": null,
+                  "properties": {
+                    "city": "Norman",
+                    "state": "OK"
+                  }
+                },
+                "forecastZone": "https://api.weather.gov/zones/forecast/OKZ025",
+                \(countyEntry)
+                \(fireZoneEntry)
+                "timeZone": "America/Chicago",
+                "radarStation": "KTLX"
+              }
+            }
+            """.utf8
+        )
     }
 }

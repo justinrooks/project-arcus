@@ -75,10 +75,8 @@ struct NwsProviderSyncTests {
 
         let watchRepo = WatchRepo(modelContainer: container)
         let metadataRepo = NwsMetadataRepo()
-        let locationProvider = LocationProvider(geocoder: StubGeocoder())
         let gridPointProvider = GridPointProvider(
             client: client,
-            locationProvider: locationProvider,
             repo: metadataRepo
         )
 
