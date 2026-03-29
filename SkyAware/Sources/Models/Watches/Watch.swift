@@ -10,13 +10,32 @@ import SwiftData
 
 extension Watch {
     // Derived values
-    nonisolated var isWatch: Bool { true }
-    nonisolated var isConvective: Bool { true }
-
     nonisolated var isActive: Bool { isActive(at: .init()) }
-
     nonisolated func isActive(at date: Date) -> Bool {
         effective <= date && date <= ends
+    }
+    
+    // MARK: Fetch Descriptors
+    /// Returns a descriptor that filters watches that active
+    /// - Parameter date: current date
+    /// - Returns: fetch descriptor
+    static func currentWatchesDescriptor(date: Date = .now) -> FetchDescriptor<Watch> {
+        let predicate = #Predicate<Watch> { watch in
+            watch.effective <= date && date <= watch.ends
+        }
+        return FetchDescriptor(predicate: predicate)
+    }
+    
+    /// Returns a fetch descriptor that gets all watches
+    /// - Returns: fetch descriptor
+    static func allWatchesDescriptor() -> FetchDescriptor<Watch> {
+        let predicate = #Predicate<Watch> { _ in true }
+        return FetchDescriptor(predicate: predicate)
+    }
+    
+    static func expiredWatchesDescriptor(asOf now: Date) -> FetchDescriptor<Watch> {
+        let predicate = #Predicate<Watch> { $0.ends < now }
+        return FetchDescriptor(predicate: predicate)
     }
 }
 

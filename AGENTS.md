@@ -9,9 +9,9 @@
 
 ## Build, Test, and Development Commands
 - Build (debug):
-  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 15" build`
+  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
 - Run unit + UI tests:
-  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 15" test`
+  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test`
 - SwiftPM fetch/resolve (if Xcode prompts):
   `xcodebuild -resolvePackageDependencies -project SkyAware/SkyAware.xcodeproj`
 - Open in Xcode:
@@ -31,7 +31,7 @@
 - Prefer small, deterministic tests; stub network/providers and avoid hitting live WeatherKit, NWS, or SPC feeds.
 - When adding UI, include a smoke UI test for navigation/happy path; keep identifiers stable for accessibility and UITest hooks.
 - Coverage goal: 75%+ when reasonable for the change.
-- Prefer iPhone 17 / iPhone 17 Pro on iOS 26.2 when running tests locally.
+- Prefer iPhone 17 / iPhone 17 Pro on iOS 26.4 when running tests locally.
 - When tests are run, analyze the `.xcresult` and report coverage deltas.
 
 ## Commit & Pull Request Guidelines
