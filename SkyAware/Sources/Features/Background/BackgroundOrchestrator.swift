@@ -43,6 +43,10 @@ actor BackgroundOrchestrator {
     private let clock = ContinuousClock()
     private let requestedLocationTimeout: Double = 12
     private let maximumAcceptedLocationAge: TimeInterval = 5 * 60
+    private let mapProductRefreshPolicy = MapProductRefreshPolicy()
+    private let outlookRefreshPolicy = OutlookRefreshPolicy()
+    private var lastMapProductSyncAt: Date?
+    private var lastOutlookSyncAt: Date?
     
     init(
         spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
@@ -87,14 +91,14 @@ actor BackgroundOrchestrator {
                 let settings = await notificationSettingsProvider.current()
                 
                 // MARK: Get fresh data
-                logger.info("Starting SPC sync")
+                logger.info("Starting slow SPC sync")
                 let syncInterval = signposter.beginInterval("SPC Sync")
-                await HTTPExecutionMode.$current.withValue(.background) {
-                    await spcProvider.sync()
-                }
+                let didSyncSlowFeeds = await syncSlowFeeds(now: start)
                 signposter.endInterval("SPC Sync", syncInterval)
-                logger.info("SPC sync completed")
-                feedsChanged.formUnion([.outlookDay1, .meso])
+                logger.info("Slow SPC sync completed")
+                if didSyncSlowFeeds {
+                    feedsChanged.insert(.outlookDay1)
+                }
                 
                 // - Get the latest convective outlook details
                 logger.debug("Fetching latest convective outlook")
@@ -119,24 +123,29 @@ actor BackgroundOrchestrator {
                 }
                 
                 logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
-                let location = context.snapshot.coordinates
-                
-                // Keep watch data current each run so cadence decisions can react to active watches.
                 await HTTPExecutionMode.$current.withValue(.background) {
-                    await arcusProvider.sync(context: context)
+                    await IngestionSupport.syncHotFeeds(
+                        spcSync: spcProvider,
+                        arcusSync: arcusProvider,
+                        context: context
+                    )
                 }
-                
-                // MARK: Get Risk Status
-                let (severeRisk, stormRisk, fireRisk, activeMesos, activeWatches) = try await HTTPExecutionMode.$current.withValue(.background) {
+                feedsChanged.formUnion([.meso, .watch])
+
+                let localSnapshot = try await HTTPExecutionMode.$current.withValue(.background) {
                     try await withTimeout(seconds: 8, clock: clock) {
-                        async let sr = self.spcProvider.getSevereRisk(for: location)
-                        async let cr = self.spcProvider.getStormRisk(for: location)
-                        async let fr = self.spcProvider.getFireRisk(for: location)
-                        async let mesos = self.spcProvider.getActiveMesos(at: .now, for: location)
-                        async let watches = self.arcusProvider.getActiveWatches(context: context)
-                        return try await (sr, cr, fr, mesos, watches)
+                        try await IngestionSupport.readLocationScopedSnapshot(
+                            spcRisk: self.spcProvider,
+                            arcusQuery: self.arcusProvider,
+                            context: context
+                        )
                     }
                 }
+                let severeRisk = localSnapshot.severeRisk
+                let stormRisk = localSnapshot.stormRisk
+                let fireRisk = localSnapshot.fireRisk
+                let activeMesos = localSnapshot.mesos
+                let activeWatches = localSnapshot.watches
                 let inMeso = activeMesos.isEmpty == false
                 let inWatch = activeWatches.isEmpty == false
                 
@@ -170,7 +179,8 @@ actor BackgroundOrchestrator {
                             localTZ: .current,
                             location: context.snapshot.coordinates,
                             placeMark: context.snapshot.placemarkSummary ?? "Unknown"
-                        )
+                        ),
+                        mesos: activeMesos
                     )
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                 } else { noNotifyReasons.append("Meso notification disabled") }
@@ -244,6 +254,43 @@ actor BackgroundOrchestrator {
             logger.notice("Skipping location-dependent background work because location context is unavailable: \(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    private func syncSlowFeeds(now: Date) async -> Bool {
+        let shouldSyncMapProducts = mapProductRefreshPolicy.shouldSync(
+            now: now,
+            lastSync: lastMapProductSyncAt,
+            force: false
+        )
+        let shouldSyncOutlooks = outlookRefreshPolicy.shouldSync(
+            now: now,
+            lastSync: lastOutlookSyncAt,
+            force: false
+        )
+
+        if shouldSyncMapProducts == false && shouldSyncOutlooks == false {
+            return false
+        }
+
+        await HTTPExecutionMode.$current.withValue(.background) {
+            await withTaskGroup(of: Void.self) { group in
+                if shouldSyncMapProducts {
+                    group.addTask { await self.spcProvider.syncMapProducts() }
+                }
+                if shouldSyncOutlooks {
+                    group.addTask { await self.spcProvider.syncConvectiveOutlooks() }
+                }
+                await group.waitForAll()
+            }
+        }
+
+        if shouldSyncMapProducts {
+            lastMapProductSyncAt = now
+        }
+        if shouldSyncOutlooks {
+            lastOutlookSyncAt = now
+        }
+        return true
     }
     
     // MARK: Convenience bg run record

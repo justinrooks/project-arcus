@@ -35,31 +35,35 @@ struct MesoEngine: Sendable {
         do{
             logger.debug("Fetching active mesos")
             let mesos = try await spc.getActiveMesos(at: .now, for: ctx.location)
-            let updatedCtx = MesoContext(
-                now: .now,
-                localTZ: ctx.localTZ,
-                location: ctx.location,
-                placeMark: ctx.placeMark,
-                mesos: mesos
-            )
-            
-            logger.debug("Running rules")
-            guard let event = rule.evaluate(updatedCtx) else { return false }
-            
-            logger.debug("Checking gate")
-            guard await gate.allow(event, now: updatedCtx.now) else { return false }
-            
-            logger.debug("Building notification")
-            let msg = composer.compose(event)
-            
-            logger.info("Sending notification")
-            await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
-            
-            logger.notice("Notification sent")
-            return true
+            return await run(ctx: ctx, mesos: mesos)
         } catch {
             logger.error("Error in MesoEngine: \(error.localizedDescription, privacy: .public)")
             return false
         }
+    }
+
+    func run(ctx: NotificationContext, mesos: [MdDTO]) async -> Bool {
+        let updatedCtx = MesoContext(
+            now: .now,
+            localTZ: ctx.localTZ,
+            location: ctx.location,
+            placeMark: ctx.placeMark,
+            mesos: mesos
+        )
+
+        logger.debug("Running rules")
+        guard let event = rule.evaluate(updatedCtx) else { return false }
+
+        logger.debug("Checking gate")
+        guard await gate.allow(event, now: updatedCtx.now) else { return false }
+
+        logger.debug("Building notification")
+        let msg = composer.compose(event)
+
+        logger.info("Sending notification")
+        await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
+
+        logger.notice("Notification sent")
+        return true
     }
 }
