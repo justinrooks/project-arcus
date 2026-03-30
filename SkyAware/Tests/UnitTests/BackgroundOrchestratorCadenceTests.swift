@@ -121,7 +121,8 @@ struct BackgroundOrchestratorCadenceTests {
 
         _ = await setup.orchestrator.run()
 
-        #expect(await setup.spc.syncCount() == 1)
+        #expect(await setup.spc.syncMapProductsCount() == 1)
+        #expect(await setup.spc.syncConvectiveOutlooksCount() == 1)
         #expect((await setup.spc.queriedPoints()).isEmpty)
     }
 
@@ -329,6 +330,8 @@ private extension BackgroundOrchestratorCadenceTests {
 private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private var recordedPoints: [CLLocationCoordinate2D] = []
     private var syncCalls = 0
+    private var syncMapProductsCalls = 0
+    private var syncConvectiveOutlooksCalls = 0
 
     func getFireRisk(for point: CLLocationCoordinate2D) async throws -> SkyAware.FireRiskLevel {
         recordedPoints.append(point)
@@ -342,9 +345,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     }
 
     func sync() async { syncCalls += 1 }
-    func syncMapProducts() async {}
+    func syncMapProducts() async { syncMapProductsCalls += 1 }
     func syncTextProducts() async {}
-    func syncConvectiveOutlooks() async {}
+    func syncConvectiveOutlooks() async { syncConvectiveOutlooksCalls += 1 }
     func syncMesoscaleDiscussions() async {}
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
@@ -376,6 +379,14 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func syncCount() -> Int {
         syncCalls
+    }
+
+    func syncMapProductsCount() -> Int {
+        syncMapProductsCalls
+    }
+
+    func syncConvectiveOutlooksCount() -> Int {
+        syncConvectiveOutlooksCalls
     }
 }
 

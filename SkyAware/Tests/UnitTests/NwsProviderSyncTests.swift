@@ -39,7 +39,6 @@ private struct StubGeocoder: LocationGeocoding {
     }
 }
 
-@Suite("NwsProvider.sync", .serialized)
 struct NwsProviderSyncTests {
 //    @Test("Concurrent sync requests do not hit the NWS alerts endpoint while watch refresh is disabled")
 //    func concurrentSameLocationDoesNotHitAlertsEndpoint() async throws {

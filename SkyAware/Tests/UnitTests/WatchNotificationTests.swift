@@ -3,7 +3,6 @@ import Testing
 import CoreLocation
 import Foundation
 
-@Suite("Watch Notification")
 //struct WatchNotificationTests {
 //    private let centralTime: TimeZone = TimeZone(secondsFromGMT: -6 * 3600)!
 //
