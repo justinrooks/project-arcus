@@ -28,6 +28,7 @@ struct NotificationManager: Sendable {
         title: String,
         subtitle: String,
         body: String,
+        id: String,
         interval: TimeInterval = 10,
         sound: UNNotificationSound = .default,
         badge: NSNumber = 0,
@@ -41,7 +42,7 @@ struct NotificationManager: Sendable {
         notificationReq.badge = badge
         
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: repeats)
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: notificationReq, trigger: trigger)
+        let request = UNNotificationRequest(identifier: id, content: notificationReq, trigger: trigger)
         
         await internalNotify(request: request)
     }

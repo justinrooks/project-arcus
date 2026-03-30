@@ -14,3 +14,7 @@ protocol NotificationRuleEvaluating: Sendable {
 protocol MesoNotificationRuleEvaluating: Sendable {
     func evaluate(_ ctx: MesoContext) -> NotificationEvent?
 }
+
+protocol WatchNotificationRuleEvaluating: Sendable {
+    func evaluate(_ ctx: WatchContext) -> NotificationEvent?
+}

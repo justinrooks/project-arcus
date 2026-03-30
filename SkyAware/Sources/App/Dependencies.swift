@@ -395,7 +395,28 @@ final class Dependencies: Sendable {
             sender: Sender(),
             spc: spc
         )
-        
+
+        logger.debug("Composing watch notification engine")
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: DefaultWatchStore()),
+            composer: WatchComposer(),
+            sender: Sender()
+        )
+
+        let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
+            locationContextResolver: locationContextResolver,
+            spcSync: spc,
+            spcRisk: spc,
+            arcusSync: arcus,
+            arcusQuery: arcus,
+            watchEngine: watchEngine
+        )
+
+        locationManager.setBackgroundLocationChangeHandler {
+            await backgroundLocationChangeHandler.handleLocationChange()
+        }
+
         let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(

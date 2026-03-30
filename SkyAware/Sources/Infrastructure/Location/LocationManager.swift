@@ -31,6 +31,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let manager: CLLocationManager
     private let logger = Logger.locationManager
     private let onUpdate: LocationSink
+    private var onBackgroundLocationChange: (@Sendable () async -> Void)?
     private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus) -> Void)?
     private var streamTask: Task<Void, Never>?
     private var pendingRefreshLocationContinuations: [CheckedContinuation<Bool, Never>] = []
@@ -104,6 +105,12 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         _ handler: (@MainActor @Sendable (CLAuthorizationStatus) -> Void)?
     ) {
         onAuthorizationChange = handler
+    }
+
+    func setBackgroundLocationChangeHandler(
+        _ handler: (@Sendable () async -> Void)?
+    ) {
+        onBackgroundLocationChange = handler
     }
 
     func refreshCurrentLocation(timeout: Double = 12) async -> Bool {
@@ -183,6 +190,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
         Task { @MainActor [weak self, onUpdate] in
+            let shouldHandleBackgroundLocationChange = self?.currentMode == .background
             let update = LocationUpdate(
                 coordinates: loc.coordinate,
                 timestamp: loc.timestamp,
@@ -193,6 +201,10 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
             if update.forceAcceptance {
                 self?.resolvePendingRefreshLocationContinuations(with: true)
+            }
+
+            if shouldHandleBackgroundLocationChange {
+                await self?.onBackgroundLocationChange?()
             }
         }
     }
