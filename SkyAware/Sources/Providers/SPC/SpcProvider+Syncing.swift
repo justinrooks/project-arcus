@@ -133,15 +133,31 @@ extension SpcProvider: SpcSyncing {
     }
 
     func syncMesoscaleDiscussions() async {
+        if let inFlight = mesoSyncTask {
+            logger.debug("SPC meso sync already in-flight; joining existing task")
+            await inFlight.value
+            return
+        }
+
+        let task = Task { [self] in
+            await runMesoscaleDiscussionSync()
+        }
+        mesoSyncTask = task
+        await task.value
+    }
+
+    private func runMesoscaleDiscussionSync() async {
         let runInterval = signposter.beginInterval("Spc Sync Mesos")
+        defer {
+            signposter.endInterval("Background Run", runInterval)
+            mesoSyncTask = nil
+        }
+
         do {
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
-            signposter.endInterval("Background Run", runInterval)
         } catch is CancellationError {
-            signposter.endInterval("Background Run", runInterval)
             logger.notice("Mesoscale discussion sync cancelled")
         } catch {
-            signposter.endInterval("Background Run", runInterval)
             logger.error("Error syncing mesoscale discussion text products: \(error.localizedDescription, privacy: .public)")
         }
     }

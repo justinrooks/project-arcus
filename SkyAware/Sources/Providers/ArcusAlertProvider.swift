@@ -12,6 +12,7 @@ actor ArcusAlertProvider {
     let logger = Logger.providersArcus
     let client: ArcusClient
     let watchRepo: WatchRepo
+    private var inFlightSyncs: [LocationContext.RefreshKey: Task<Void, Never>] = [:]
     
     init(watchRepo: WatchRepo, client: ArcusClient) {
         self.client = client
@@ -21,19 +22,32 @@ actor ArcusAlertProvider {
 
 extension ArcusAlertProvider: ArcusAlertSyncing {
     func sync(context: LocationContext) async {
+        let key = context.refreshKey
+        if let inFlight = inFlightSyncs[key] {
+            logger.debug("Arcus alert sync already in-flight for current location scope; joining existing task")
+            await inFlight.value
+            return
+        }
+
         let watchRepo = self.watchRepo
         let client = self.client
         let logger = self.logger
-        do {
-            try await watchRepo.refresh(
-                using: client,
-                for: context.grid.countyCode ?? "",
-                and: context.grid.fireZone ?? "",
-                in: context.h3Cell
-            )
-        } catch {
-            logger.error("Error syncing Arcus alerts: \(error, privacy: .public)")
+        let task = Task {
+            do {
+                try await watchRepo.refresh(
+                    using: client,
+                    for: context.grid.countyCode ?? "",
+                    and: context.grid.fireZone ?? "",
+                    in: context.h3Cell
+                )
+            } catch {
+                logger.error("Error syncing Arcus alerts: \(error, privacy: .public)")
+            }
         }
+
+        inFlightSyncs[key] = task
+        await task.value
+        inFlightSyncs[key] = nil
     }
 }
 

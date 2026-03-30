@@ -23,7 +23,7 @@ struct LocationContext: Sendable, Equatable {
         )
     }
 
-    struct RefreshKey: Equatable, Sendable {
+    struct RefreshKey: Hashable, Sendable {
         let h3Cell: Int64
         let countyCode: String
         let fireZone: String
