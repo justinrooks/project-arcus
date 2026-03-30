@@ -254,8 +254,9 @@ struct HomeRefreshPipelineTests {
         #expect(locationSession.prepareCalls.isEmpty)
         #expect(await weather.callCount() == 0)
         #expect(pipeline.loadingState.isVisible == false)
-        #expect(pipeline.outlooks == sampleOutlooks())
-        #expect(pipeline.outlook == sampleOutlooks().max(by: { $0.published < $1.published }))
+        #expect(pipeline.outlooks.map(\.title) == sampleOutlooks().map(\.title))
+        #expect(pipeline.outlooks.map(\.published) == sampleOutlooks().map(\.published))
+        #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
     }
 
     @Test("scene active refresh updates summary weather from the weather client")

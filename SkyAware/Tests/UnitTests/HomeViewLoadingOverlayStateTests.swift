@@ -17,32 +17,11 @@ struct HomeViewRefreshTriggerTests {
         )
     }
 
-    private func makeContextRefreshKey() -> LocationContext.RefreshKey {
-        LocationContext.RefreshKey(
-            h3Cell: 0x882681b485fffff,
-            countyCode: "OKC109",
-            fireZone: "OKZ025",
-            gridKey: GridRefreshKey(coord: .init(latitude: 35.2226, longitude: -97.4395))
-        )
-    }
-
-    @Test("context-driven refresh waits for a ready context")
-    func contextDrivenRefresh_waitsForReadyContext() {
-        #expect(
-            HomeView.shouldRunContextDrivenRefresh(scenePhase: .active, refreshKey: nil) == false
-        )
-        #expect(
-            HomeView.shouldRunContextDrivenRefresh(
-                scenePhase: .background,
-                refreshKey: makeContextRefreshKey()
-            ) == false
-        )
-        #expect(
-            HomeView.shouldRunContextDrivenRefresh(
-                scenePhase: .active,
-                refreshKey: makeContextRefreshKey()
-            )
-        )
+    @Test("scene active absorbs context changed follow-up work")
+    func sceneActive_absorbsContextChanged() {
+        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.contextChanged))
+        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.timer))
+        #expect(HomeView.RefreshTrigger.manual.absorbs(.sceneActive))
     }
 
     @Test("duplicate activation refresh is skipped for the same snapshot")
@@ -138,6 +117,39 @@ struct HomeViewRefreshTriggerTests {
                 fireRisk: nil
             ) == .locationUnavailable
         )
+    }
+}
+
+@Suite("Foreground Refresh Policies")
+struct ForegroundRefreshPolicyTests {
+    private let alertPolicy = AlertRefreshPolicy(minimumSyncInterval: 120)
+    private let mapPolicy = MapProductRefreshPolicy(minimumSyncInterval: 600)
+
+    @Test("alert policy syncs when there is no previous sync")
+    func alertPolicy_syncsWithoutPreviousSync() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        #expect(alertPolicy.shouldSync(now: now, lastSync: nil, force: false))
+    }
+
+    @Test("alert policy skips before minimum interval")
+    func alertPolicy_skipsBeforeMinimumInterval() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recent = now.addingTimeInterval(-30)
+        #expect(alertPolicy.shouldSync(now: now, lastSync: recent, force: false) == false)
+    }
+
+    @Test("map policy skips before minimum interval")
+    func mapPolicy_skipsBeforeMinimumInterval() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recent = now.addingTimeInterval(-300)
+        #expect(mapPolicy.shouldSync(now: now, lastSync: recent, force: false) == false)
+    }
+
+    @Test("map policy force refresh bypasses interval guard")
+    func mapPolicy_forceBypassesIntervalGuard() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recent = now.addingTimeInterval(-5)
+        #expect(mapPolicy.shouldSync(now: now, lastSync: recent, force: true))
     }
 }
 
