@@ -12,7 +12,6 @@ import UserNotifications
 
 @MainActor
 struct OnboardingView: View {
-    @Environment(\.dependencies) private var deps
     @Environment(LocationSession.self) private var locationSession
 
     private let logger = Logger.appMain
@@ -31,8 +30,6 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @State private var locationStepState: PermissionStepState = .idle
     @State private var notificationStepState: PermissionStepState = .idle
-
-    private var sync: any SpcSyncing { deps.spcSync }
 
     private var isArcusSignalPushEnabled: Bool {
         ArcusSignalConfiguration.configuredBaseURL() != nil
@@ -156,9 +153,6 @@ struct OnboardingView: View {
     @MainActor
     private func completeOnboarding() {
         onboardingComplete = true
-        Task {
-            await sync.sync()
-        }
     }
 }
 
