@@ -31,6 +31,23 @@ struct HomeView: View {
         )
     }
 
+    private var hasMeaningfulSummaryContent: Bool {
+        refreshPipeline.snap != nil ||
+        refreshPipeline.summaryWeather != nil ||
+        refreshPipeline.stormRisk != nil ||
+        refreshPipeline.severeRisk != nil ||
+        refreshPipeline.fireRisk != nil ||
+        refreshPipeline.outlook != nil ||
+        refreshPipeline.mesos.isEmpty == false ||
+        refreshPipeline.watches.isEmpty == false
+    }
+
+    private var isEmptyResolvingSummary: Bool {
+        readinessState != .locationUnavailable &&
+        hasMeaningfulSummaryContent == false &&
+        (refreshPipeline.resolutionState.isRefreshing || readinessState != .ready)
+    }
+
     init(
         initialSnap: LocationSnapshot? = nil,
         initialStormRisk: StormRiskLevel? = nil,
@@ -85,7 +102,8 @@ struct HomeView: View {
                                 watches: refreshPipeline.watches,
                                 outlook: refreshPipeline.outlook,
                                 weather: refreshPipeline.summaryWeather,
-                                readinessState: readinessState
+                                readinessState: readinessState,
+                                resolutionState: refreshPipeline.resolutionState
                             )
                             .toolbar(.hidden, for: .navigationBar)
                             .background(.skyAwareBackground)
@@ -162,14 +180,17 @@ struct HomeView: View {
             }
             .background(Color(.skyAwareBackground).ignoresSafeArea())
             .toolbarBackground(.visible, for: .tabBar)
-            .toolbarBackground(.skyAwareBackground, for: .tabBar)
+            .toolbarBackground(.skyAwareBackground.opacity(isEmptyResolvingSummary ? 0.68 : 1.0), for: .tabBar)
+            .animation(.easeInOut(duration: 0.35), value: isEmptyResolvingSummary)
             .ignoresSafeArea(edges: .bottom)
 
-            if refreshPipeline.loadingState.isVisible {
-                LoadingView(message: refreshPipeline.loadingState.displayMessage)
+            if isEmptyResolvingSummary {
+                Rectangle()
+                    .fill(Color.skyAwareBackground.opacity(0.28))
+                    .frame(height: 96)
+                    .ignoresSafeArea(edges: .bottom)
                     .allowsHitTesting(false)
-                    .transition(.opacity.combined(with: .scale))
-                    .zIndex(1)
+                    .transition(.opacity)
             }
         }
         .transition(.opacity)

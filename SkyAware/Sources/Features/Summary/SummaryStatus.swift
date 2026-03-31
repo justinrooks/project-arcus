@@ -10,6 +10,7 @@ import SwiftUI
 struct SummaryStatus: View {
     let statusText: String
     let weather: SummaryWeather?
+    let resolutionState: SummaryResolutionState
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -38,11 +39,18 @@ struct SummaryStatus: View {
     }
 
     private var contentRow: some View {
-        HStack(spacing: 10) {
-            Label(statusText, systemImage: "location.fill")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundStyle(.primary)
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(statusText, systemImage: "location.fill")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.primary)
+
+                SummaryStatusSecondaryLine(
+                    resolutionState: resolutionState
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 8)
 
@@ -52,20 +60,104 @@ struct SummaryStatus: View {
 
     @ViewBuilder
     private var weatherContent: some View {
-        HStack(spacing: 6) {
-            if let weather, let formattedTemperature {
-                Text(formattedTemperature)
-                    .monospacedDigit()
-                Image(systemName: weather.symbolName)
-                    .symbolVariant(.fill)
+        VStack(alignment: .trailing, spacing: 2) {
+            HStack(spacing: 6) {
+                if let weather, let formattedTemperature {
+                    Text(formattedTemperature)
+                        .monospacedDigit()
+                    Image(systemName: weather.symbolName)
+                        .symbolVariant(.fill)
+                }
             }
+            .frame(minHeight: 20, alignment: .trailing)
+
+            Group {
+                SummarySettledConditionLine(
+                    conditionText: weather?.conditionText,
+                    resolutionState: resolutionState
+                )
+            }
+            .font(.footnote)
+            .multilineTextAlignment(.trailing)
+            .lineLimit(1)
+            .frame(minHeight: 18, alignment: .trailing)
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.primary)
+        .frame(minWidth: 88, alignment: .trailing)
     }
 
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
         Self.temperatureFormatter.string(from: temperature)
+    }
+}
+
+private struct SummaryStatusSecondaryLine: View {
+    let resolutionState: SummaryResolutionState
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { context in
+            Group {
+                if let message = message(for: context.date) {
+                    Text(message)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(" ")
+                        .foregroundStyle(.clear)
+                        .accessibilityHidden(true)
+                }
+            }
+            .font(.footnote)
+            .lineLimit(1)
+            .contentTransition(.opacity)
+            .frame(minHeight: 18, alignment: .leading)
+            .id(message(for: context.date) ?? "")
+        }
+    }
+
+    private func message(for date: Date) -> String? {
+        if resolutionState.isRefreshing {
+            return activeMessage(for: date)
+        }
+
+        if let recentCompletedMessage = resolutionState.recentCompletedMessage {
+            return recentCompletedMessage
+        }
+
+        return nil
+    }
+
+    private func activeMessage(for date: Date) -> String? {
+        let messages = resolutionState.activeMessages
+        guard messages.isEmpty == false else { return nil }
+        guard messages.count > 1 else { return messages[0] }
+
+        let index = Int(date.timeIntervalSinceReferenceDate / 3).quotientAndRemainder(dividingBy: messages.count).remainder
+        return messages[index]
+    }
+}
+
+private struct SummarySettledConditionLine: View {
+    let conditionText: String?
+    let resolutionState: SummaryResolutionState
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+            Group {
+                if shouldShowCondition, let conditionText {
+                    Text(conditionText)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(" ")
+                        .foregroundStyle(.clear)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+    }
+
+    private var shouldShowCondition: Bool {
+        resolutionState.isRefreshing == false && resolutionState.recentCompletedMessage == nil
     }
 }
 
@@ -91,7 +183,8 @@ struct SummaryStatus: View {
                 windDirection: "NNW",
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "climbing"
-            )
+            ),
+            resolutionState: SummaryResolutionState()
         )
         SummaryStatus(
             statusText: "Topeka, KS",
@@ -113,7 +206,8 @@ struct SummaryStatus: View {
                 windDirection: "SSE",
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "falling"
-            )
+            ),
+            resolutionState: SummaryResolutionState()
         )
     }
 }

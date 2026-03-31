@@ -73,7 +73,7 @@ final class HomeRefreshPipeline {
     var watches: [WatchRowDTO]
     var outlooks: [ConvectiveOutlookDTO]
     var outlook: ConvectiveOutlookDTO?
-    var loadingState = HomeView.LoadingOverlayState()
+    var resolutionState = SummaryResolutionState()
 
     init(
         initialSnap: LocationSnapshot? = nil,
@@ -143,14 +143,12 @@ final class HomeRefreshPipeline {
     func refreshOutlooksManually(environment: Environment) async {
         updateEnvironment(environment)
 
-        await withLoading(message: "Syncing outlooks...") {
-            let now = Date()
-            _ = self.markOutlookSyncIfNeeded(force: true, now: now)
-            await HTTPExecutionMode.$current.withValue(.foreground) {
-                await environment.sync.syncConvectiveOutlooks()
-            }
-            await self.refreshOutlooks(using: environment.outlooks)
+        let now = Date()
+        _ = markOutlookSyncIfNeeded(force: true, now: now)
+        await HTTPExecutionMode.$current.withValue(.foreground) {
+            await environment.sync.syncConvectiveOutlooks()
         }
+        await refreshOutlooks(using: environment.outlooks)
     }
 
     func enqueueRefresh(_ trigger: HomeView.RefreshTrigger, environment: Environment) async {
@@ -230,10 +228,6 @@ final class HomeRefreshPipeline {
             : shouldSyncWeatherKit(force: trigger.bypassesThrottles, now: now)
         let shouldSyncHotFeeds = markHotFeedSyncIfNeeded(force: trigger.bypassesThrottles, now: now)
 
-        if trigger.showsLoading {
-            startRefresh(message: "Preparing location context...")
-        }
-
         let slowSyncTask = Task {
             await syncSlowFeeds(
                 shouldSyncMapProducts: shouldSyncMapProducts,
@@ -242,23 +236,30 @@ final class HomeRefreshPipeline {
             )
         }
 
+        if trigger.isHotFeedsOnly == false {
+            resolutionState.begin(
+                task: .location,
+                sections: [.conditions]
+            )
+        }
+
         let context = await resolveContext(for: trigger, locationSession: environment.locationSession)
+        if trigger.isHotFeedsOnly == false {
+            resolutionState.finish(
+                task: .location,
+                resolvedSections: [.conditions]
+            )
+        }
 
         if trigger.supportsSlowFeeds {
-            if trigger.showsLoading {
-                updateRefreshMessage("Syncing slower SPC feeds...")
-            }
             await slowSyncTask.value
-            await refreshOutlooks(using: environment.outlooks)
         } else {
             slowSyncTask.cancel()
         }
 
         guard let context else {
             environment.logger.notice("Skipping foreground ingest because no location context is available for trigger=\(String(describing: trigger), privacy: .public)")
-            if trigger.showsLoading {
-                endRefresh()
-            }
+            resolutionState.reset()
             return
         }
 
@@ -268,17 +269,13 @@ final class HomeRefreshPipeline {
             let shouldProceed = shouldRefresh(for: context.snapshot, force: trigger.bypassesThrottles)
             guard shouldProceed else {
                 environment.logger.debug("Skipping local reads because location-scoped refresh gate denied trigger=\(String(describing: trigger), privacy: .public)")
-                if trigger.showsLoading {
-                    endRefresh()
-                }
+                resolutionState.reset()
                 return
             }
         }
 
         if shouldSyncHotFeeds {
-            if trigger.showsLoading {
-                updateRefreshMessage("Syncing hot feeds...")
-            }
+            resolutionState.begin(task: .alerts, sections: [.alerts])
             await HTTPExecutionMode.$current.withValue(.foreground) {
                 await IngestionSupport.syncHotFeeds(
                     spcSync: environment.sync,
@@ -298,10 +295,13 @@ final class HomeRefreshPipeline {
                 arcusQuery: environment.arcusAlerts
             )
         } else {
-            if trigger.showsLoading {
-                updateRefreshMessage("Reading local data...")
-            }
-            await readAndApplyLocationScopedSnapshot(
+            resolutionState.begin(
+                task: .stormRisk,
+                sections: [.stormRisk, .severeRisk, .fireRisk, .outlook]
+            )
+            resolutionState.begin(task: .alerts, sections: [.alerts])
+            await refreshOutlooks(using: environment.outlooks)
+            await readAndApplyLocationScopedSnapshotProgressively(
                 for: context,
                 logger: environment.logger,
                 spcRisk: environment.spcRisk,
@@ -311,9 +311,7 @@ final class HomeRefreshPipeline {
 
         if trigger.isHotFeedsOnly == false {
             if shouldSyncWeatherKitNow {
-                if trigger.showsLoading {
-                    updateRefreshMessage("Updating current weather...")
-                }
+                resolutionState.begin(task: .weather, sections: [.conditions, .atmosphere])
                 let didRefreshWeather = await refreshWeather(
                     for: context.snapshot.coordinates,
                     weatherClient: environment.weatherClient
@@ -321,13 +319,19 @@ final class HomeRefreshPipeline {
                 if didRefreshWeather {
                     lastWeatherKitSyncAt = now
                 }
+                resolutionState.finish(
+                    task: .weather,
+                    resolvedSections: [.conditions, .atmosphere]
+                )
             } else {
                 environment.logger.debug("Skipping WeatherKit refresh due to refresh throttle")
             }
         }
 
-        if trigger.showsLoading {
-            endRefresh()
+        if resolutionState.isRefreshing {
+            resolutionState.begin(task: .finalizing, sections: [])
+            try? await Task.sleep(for: .milliseconds(350))
+            resolutionState.finish(task: .finalizing, resolvedSections: [])
         }
     }
 
@@ -352,8 +356,10 @@ final class HomeRefreshPipeline {
             if Task.isCancelled { return }
             outlooks = dtos
             outlook = latest
+            resolutionState.finish(task: .stormRisk, resolvedSections: [.outlook])
         } catch {
             // Swallow for now; consider logging.
+            resolutionState.finish(task: .stormRisk, resolvedSections: [.outlook])
         }
     }
 
@@ -471,27 +477,105 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func readAndApplyLocationScopedSnapshot(
+    private func readAndApplyLocationScopedSnapshotProgressively(
         for context: LocationContext,
         logger: Logger,
         spcRisk: any SpcRiskQuerying,
         arcusQuery: any ArcusAlertQuerying
     ) async {
-        do {
-            let snapshot = try await IngestionSupport.readLocationScopedSnapshot(
-                spcRisk: spcRisk,
-                arcusQuery: arcusQuery,
-                context: context
-            )
-            if Task.isCancelled { return }
-            stormRisk = snapshot.stormRisk
-            severeRisk = snapshot.severeRisk
-            fireRisk = snapshot.fireRisk
-            mesos = snapshot.mesos
-            watches = snapshot.watches
-        } catch {
-            logger.error("Failed to read location-scoped data snapshot: \(error.localizedDescription, privacy: .public)")
+        enum ProgressiveResult: Sendable {
+            case stormRisk(StormRiskLevel)
+            case severeRisk(SevereWeatherThreat)
+            case fireRisk(FireRiskLevel)
+            case mesos([MdDTO])
+            case watches([WatchRowDTO])
+            case failure(String)
         }
+
+        let coord = context.snapshot.coordinates
+        let previousStormRisk = stormRisk
+        let previousSevereRisk = severeRisk
+        let previousFireRisk = fireRisk
+        let previousMesos = mesos
+        let previousWatches = watches
+        var didFail = false
+
+        await withTaskGroup(of: ProgressiveResult.self) { group in
+            group.addTask {
+                do {
+                    return .stormRisk(try await spcRisk.getStormRisk(for: coord))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
+            }
+            group.addTask {
+                do {
+                    return .severeRisk(try await spcRisk.getSevereRisk(for: coord))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
+            }
+            group.addTask {
+                do {
+                    return .fireRisk(try await spcRisk.getFireRisk(for: coord))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
+            }
+            group.addTask {
+                do {
+                    return .mesos(try await spcRisk.getActiveMesos(at: .now, for: coord))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
+            }
+            group.addTask {
+                do {
+                    return .watches(try await arcusQuery.getActiveWatches(context: context))
+                } catch {
+                    return .failure(error.localizedDescription)
+                }
+            }
+
+            for await result in group {
+                if Task.isCancelled { return }
+
+                switch result {
+                case .stormRisk(let stormRisk):
+                    self.stormRisk = stormRisk
+                    resolutionState.finish(task: .stormRisk, resolvedSections: [.stormRisk])
+                case .severeRisk(let severeRisk):
+                    self.severeRisk = severeRisk
+                    resolutionState.finish(task: .stormRisk, resolvedSections: [.severeRisk])
+                case .fireRisk(let fireRisk):
+                    self.fireRisk = fireRisk
+                    resolutionState.finish(task: .stormRisk, resolvedSections: [.fireRisk])
+                case .mesos(let mesos):
+                    self.mesos = mesos
+                    resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
+                case .watches(let watches):
+                    self.watches = watches
+                    resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
+                case .failure(let description):
+                    didFail = true
+                    logger.error("Failed to read location-scoped data snapshot: \(description, privacy: .public)")
+                }
+            }
+        }
+
+        if didFail {
+            stormRisk = previousStormRisk
+            severeRisk = previousSevereRisk
+            fireRisk = previousFireRisk
+            mesos = previousMesos
+            watches = previousWatches
+        }
+
+        resolutionState.finish(
+            task: .stormRisk,
+            resolvedSections: [.stormRisk, .severeRisk, .fireRisk]
+        )
+        resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
     }
 
     private func readAndApplyHotFeedSnapshot(
@@ -510,55 +594,15 @@ final class HomeRefreshPipeline {
             snap = context.snapshot
             mesos = snapshot.mesos
             watches = snapshot.watches
+            resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
         } catch {
             logger.error("Failed to read hot feed snapshot: \(error.localizedDescription, privacy: .public)")
+            resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
         }
-    }
-
-    private func withLoading(message: String, operation: @escaping () async -> Void) async {
-        startRefresh(message: message)
-        await operation()
-        endRefresh()
-    }
-
-    private func startRefresh(message: String) {
-        loadingState.begin(message: message)
-    }
-
-    private func updateRefreshMessage(_ message: String) {
-        loadingState.setMessage(message)
-    }
-
-    private func endRefresh() {
-        loadingState.end()
     }
 }
 
 extension HomeView {
-    struct LoadingOverlayState {
-        private(set) var activeRefreshes: Int = 0
-        private(set) var message: String?
-
-        var isVisible: Bool { activeRefreshes > 0 }
-        var displayMessage: String { message ?? "Refreshing data..." }
-
-        mutating func begin(message: String) {
-            self.message = message
-            activeRefreshes += 1
-        }
-
-        mutating func setMessage(_ message: String) {
-            self.message = message
-        }
-
-        mutating func end() {
-            activeRefreshes = max(0, activeRefreshes - 1)
-            if activeRefreshes == 0 {
-                message = nil
-            }
-        }
-    }
-
     enum RefreshTrigger: Equatable {
         case sceneActive
         case manual

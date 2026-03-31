@@ -135,14 +135,14 @@ struct HomeRefreshPipelineTests {
             locationSession.prepareCalls.count == 1
         }
         #expect(prepareStarted)
-        #expect(pipeline.loadingState.isVisible)
+        #expect(pipeline.resolutionState.isRefreshing)
         #expect(await completion.isFinished() == false)
 
         await gate.open()
         await refreshTask.value
 
         #expect(await completion.isFinished())
-        #expect(pipeline.loadingState.isVisible == false)
+        #expect(pipeline.resolutionState.isRefreshing == false)
         #expect(locationSession.prepareCalls.count == 1)
     }
 
@@ -253,7 +253,7 @@ struct HomeRefreshPipelineTests {
         #expect(await watches.queryCount() == 0)
         #expect(locationSession.prepareCalls.isEmpty)
         #expect(await weather.callCount() == 0)
-        #expect(pipeline.loadingState.isVisible == false)
+        #expect(pipeline.resolutionState.isRefreshing == false)
         #expect(pipeline.outlooks.map(\.title) == sampleOutlooks().map(\.title))
         #expect(pipeline.outlooks.map(\.published) == sampleOutlooks().map(\.published))
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")

@@ -40,6 +40,7 @@ struct SummaryView: View {
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
     let readinessState: SummaryReadinessState
+    let resolutionState: SummaryResolutionState
 
     private var hasActiveAlerts: Bool {
         !mesos.isEmpty || !watches.isEmpty
@@ -69,6 +70,22 @@ struct SummaryView: View {
         readinessState == .locationUnavailable
     }
 
+    private var hasMeaningfulContent: Bool {
+        snap != nil ||
+        weather != nil ||
+        stormRisk != nil ||
+        severeRisk != nil ||
+        fireRisk != nil ||
+        outlook != nil ||
+        hasActiveAlerts
+    }
+
+    private var showsEmptyResolving: Bool {
+        isLocationUnavailable == false &&
+        hasMeaningfulContent == false &&
+        (isSummaryLoading || resolutionState.isRefreshing)
+    }
+
     @ViewBuilder
     private var riskSnapshotContent: some View {
         VStack(spacing: 12) {
@@ -79,9 +96,10 @@ struct SummaryView: View {
             //       danger
             FireWeatherRailView(level: fireRisk ?? .clear)
                 .placeholder(fireRisk == nil)
+                .summaryResolving(resolutionState.isResolving(.fireRisk))
             AtmosphereRailView(weather: weather)
-//                .placeholder(isWeatherLoading)
                 .allowsHitTesting(!isWeatherLoading)
+                .summaryResolving(resolutionState.isResolving(.atmosphere))
                 .animation(.snappy, value: isWeatherLoading)
         }
     }
@@ -91,79 +109,94 @@ struct SummaryView: View {
         HStack {
             StormRiskBadgeView(level: stormRisk ?? .allClear)
                 .placeholder(stormRisk == nil)
+                .summaryResolving(resolutionState.isResolving(.stormRisk))
             Spacer()
             SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
                 .placeholder(severeRisk == nil)
+                .summaryResolving(resolutionState.isResolving(.severeRisk))
         }
         .padding(.top, 8)
     }
     
     var body: some View {
         VStack(spacing: 18) {
-            SummaryStatus(
-                statusText: statusText,
-                weather: weather
-            )
+            if showsEmptyResolving {
+                LoadingView(message: resolutionState.activeMessages.first ?? readinessState.statusText)
+            } else {
+                SummaryStatus(
+                    statusText: statusText,
+                    weather: weather,
+                    resolutionState: resolutionState
+                )
+                .summaryResolving(resolutionState.isResolving(.conditions))
 
-            VStack(alignment: .leading, spacing: 12) {
-                sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
+                    if isLocationUnavailable {
+                        unavailableCard(
+                            title: "Location Required",
+                            message: "Enable location access to load local risk, alerts, and weather conditions.",
+                            symbol: "location.slash"
+                        )
+                    } else if #available(iOS 26, *) {
+                        GlassEffectContainer(spacing: 14) {
+                            riskSnapshotContent
+                        }
+                    } else {
+                        riskSnapshotContent
+                    }
+                }
+                .padding(16)
+                .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+
                 if isLocationUnavailable {
                     unavailableCard(
                         title: "Location Required",
-                        message: "Enable location access to load local risk, alerts, and weather conditions.",
+                        message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
                         symbol: "location.slash"
                     )
-                } else if #available(iOS 26, *) {
-                    GlassEffectContainer(spacing: 14) {
-                        riskSnapshotContent
-                    }
+                } else if isSummaryLoading && hasActiveAlerts == false {
+                    ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
+                        .summaryResolving(resolutionState.isResolving(.alerts))
+                } else if hasActiveAlerts {
+                    ActiveAlertSummaryView(
+                        mesos: mesos,
+                        watches: watches
+                    )
+                    .summaryResolving(resolutionState.isResolving(.alerts))
                 } else {
-                    riskSnapshotContent
+                    emptySectionCard(
+                        title: "No Active Alerts",
+                        message: "Your local area currently has no active watches or mesoscale discussions.",
+                        symbol: "checkmark.shield"
+                    )
+                    .summaryResolving(resolutionState.isResolving(.alerts))
                 }
-            }
-            .padding(16)
-            .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
 
-            if isLocationUnavailable {
-                unavailableCard(
-                    title: "Location Required",
-                    message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                    symbol: "location.slash"
-                )
-            } else if isSummaryLoading {
-                ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
-            } else if hasActiveAlerts {
-                ActiveAlertSummaryView(
-                    mesos: mesos,
-                    watches: watches
-                )
-            } else {
-                emptySectionCard(
-                    title: "No Active Alerts",
-                    message: "Your local area currently has no active watches or mesoscale discussions.",
-                    symbol: "checkmark.shield"
-                )
+                if let outlook {
+                    OutlookSummaryCard(outlook: outlook)
+                        .summaryResolving(resolutionState.isResolving(.outlook))
+                } else if readinessState == .loadingLocation || readinessState == .resolvingLocalContext {
+                    OutlookSummaryCard(outlook: nil, isLoading: true)
+                        .summaryResolving(resolutionState.isResolving(.outlook))
+                } else {
+                    emptySectionCard(
+                        title: "Outlook Pending",
+                        message: "Convective outlook text has not been synced yet.",
+                        symbol: "clock.arrow.circlepath"
+                    )
+                    .summaryResolving(resolutionState.isResolving(.outlook))
+                }
+                
+                AttributionView()
             }
-
-            if let outlook {
-                OutlookSummaryCard(outlook: outlook)
-            } else if readinessState == .loadingLocation || readinessState == .resolvingLocalContext {
-                OutlookSummaryCard(outlook: nil, isLoading: true)
-            } else {
-                emptySectionCard(
-                    title: "Outlook Pending",
-                    message: "Convective outlook text has not been synced yet.",
-                    symbol: "clock.arrow.circlepath"
-                )
-            }
-            
-            AttributionView()
 
             Spacer(minLength: 14)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 20)
+        .animation(.easeInOut(duration: 0.35), value: showsEmptyResolving)
     }
 
     private func sectionTitle(_ title: String, icon: String) -> some View {
@@ -206,7 +239,8 @@ struct SummaryView: View {
             watches: Watch.sampleWatchRows,
             outlook: ConvectiveOutlook.sampleOutlookDtos.first,
             weather: nil,
-            readinessState: .ready
+            readinessState: .ready,
+            resolutionState: SummaryResolutionState()
         )
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -228,7 +262,8 @@ struct SummaryView: View {
             watches: [],
             outlook: nil,
             weather: nil,
-            readinessState: .loadingLocalData
+            readinessState: .loadingLocalData,
+            resolutionState: SummaryResolutionState()
         )
         .toolbar(.hidden, for: .navigationBar)
     }

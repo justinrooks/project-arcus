@@ -153,58 +153,55 @@ struct ForegroundRefreshPolicyTests {
     }
 }
 
-@Suite("HomeView Loading Overlay State")
-struct HomeViewLoadingOverlayStateTests {
-    @Test("begin shows overlay and message")
-    func begin_showsOverlayAndMessage() {
-        var state = HomeView.LoadingOverlayState()
+@Suite("Summary Resolution State")
+struct SummaryResolutionStateTests {
+    @Test("begin tracks provider message and resolving sections")
+    func begin_tracksProviderMessageAndSections() {
+        var state = SummaryResolutionState()
 
-        state.begin(message: "Refreshing alerts...")
+        state.begin(task: .alerts, sections: [.alerts])
 
-        #expect(state.activeRefreshes == 1)
-        #expect(state.isVisible)
-        #expect(state.displayMessage == "Refreshing alerts...")
+        #expect(state.isRefreshing)
+        #expect(state.activeMessages == ["Refreshing local alerts..."])
+        #expect(state.isResolving(.alerts))
     }
 
-    @Test("nested begin/end keeps overlay until all refreshes complete")
-    func nestedBeginEnd_keepsOverlayUntilZero() {
-        var state = HomeView.LoadingOverlayState()
+    @Test("finishing one section keeps the provider active for remaining work")
+    func finish_keepsProviderActiveUntilAllSectionsResolve() {
+        var state = SummaryResolutionState()
 
-        state.begin(message: "Refreshing data...")
-        state.begin(message: "Syncing outlooks...")
-        state.end()
+        state.begin(task: .stormRisk, sections: [.stormRisk, .severeRisk])
+        state.finish(task: .stormRisk, resolvedSections: [.stormRisk])
 
-        #expect(state.activeRefreshes == 1)
-        #expect(state.isVisible)
-        #expect(state.displayMessage == "Syncing outlooks...")
-
-        state.end()
-
-        #expect(state.activeRefreshes == 0)
-        #expect(state.isVisible == false)
-        #expect(state.message == nil)
-        #expect(state.displayMessage == "Refreshing data...")
+        #expect(state.isRefreshing)
+        #expect(state.activeMessages == ["Analyzing storm risk..."])
+        #expect(state.isResolving(.stormRisk) == false)
+        #expect(state.isResolving(.severeRisk))
     }
 
-    @Test("setMessage updates display text while active")
-    func setMessage_updatesDisplayMessage() {
-        var state = HomeView.LoadingOverlayState()
-        state.begin(message: "Refreshing data...")
+    @Test("finishing remaining sections clears refresh activity")
+    func finish_clearsRefreshWhenTaskCompletes() {
+        var state = SummaryResolutionState()
 
-        state.setMessage("Updating local risks...")
+        state.begin(task: .weather, sections: [.conditions, .atmosphere])
+        state.finish(task: .weather, resolvedSections: [.conditions, .atmosphere])
 
-        #expect(state.displayMessage == "Updating local risks...")
+        #expect(state.isRefreshing == false)
+        #expect(state.isResolving(.conditions) == false)
+        #expect(state.isResolving(.atmosphere) == false)
+        #expect(state.recentCompletedMessage == "Updating conditions...")
     }
 
-    @Test("end clamps at zero and keeps state hidden")
-    func end_clampsAtZero() {
-        var state = HomeView.LoadingOverlayState()
+    @Test("reset clears active tasks and sections")
+    func reset_clearsTrackedState() {
+        var state = SummaryResolutionState()
 
-        state.end()
+        state.begin(task: .location, sections: [.conditions])
+        state.reset()
 
-        #expect(state.activeRefreshes == 0)
-        #expect(state.isVisible == false)
-        #expect(state.message == nil)
+        #expect(state.isRefreshing == false)
+        #expect(state.activeMessages.isEmpty)
+        #expect(state.isResolving(.conditions) == false)
     }
 }
 
