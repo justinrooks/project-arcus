@@ -54,6 +54,33 @@ Essential for periodic refresh and notification relevance when the app is not fo
 
 ## 5) The Journey
 
+### 2026-03-30: Architecture x-ray, or “the app has one weather story and three narrators”
+
+Bug-shaped problem:
+Nothing was exactly "broken," which is precisely why this kind of work matters. The codebase tells a coherent story at runtime, but it tells that story with a few different accents. Foreground refresh and background refresh both know when data is "fresh," but they keep separate clocks. Arcus is clearly the live alert source, but old NWS watch-era artifacts still sit around like props from last season. Settings offer switches that sound product-real, while some of the runtime behavior still treats them more like suggestion boxes than hard contracts.
+
+What changed:
+- Added a companion architecture note at `/Users/justin/Code/project-arcus/docs/codebase/skyaware-app-risks-decisions.md` that captures:
+  - the 5 most important architectural risks
+  - the 5 most important undocumented decisions
+  - the 5 highest-value places to simplify or standardize
+- Grounded that note in actual code evidence from the refresh pipeline, dependency container, settings flow, DTO layer, notification engines, and the Arcus/NWS boundary.
+
+Aha moment:
+The app's architecture is not messy so much as mid-conversation. The strongest pattern is "local-first, actor-isolated, location-driven orchestration," and that pattern is good. The trouble starts where that good pattern is expressed twice with slightly different rules. That is how complexity sneaks in: not through one giant bad idea, but through several reasonable ideas that never sat in the same room and agreed on a single vocabulary.
+
+Gotcha:
+Two of the sharpest edges are easy to miss in ordinary feature work:
+- `Dependencies` is convenient, but `fatalError`-backed accessors plus preview-time `.task` usage can turn a harmless canvas into a trap door.
+- UUID-minting DTOs look innocent until SwiftUI diffing, cache semantics, or merge reasoning suddenly feel slippery and nobody can quite explain why.
+
+If I were leaving a sticky note for Future Us:
+Write down the real contracts, not the implementation folklore. In this app, that means documenting:
+- what "location ready" really means
+- which service is the source of truth for alerts
+- who owns freshness policy
+- what each settings toggle is actually allowed to control
+
 ### 2026-03-28: Deterministic location context, or “stop cooking before the ingredients arrive”
 
 Bug-shaped problem:
