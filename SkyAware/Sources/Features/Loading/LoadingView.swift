@@ -57,7 +57,7 @@ struct LoadingView: View {
                 }
 
                 VStack(spacing: 6) {
-                    Text("Resolving local weather")
+                    Text("Getting your conditions ready")
                         .font(.headline.weight(.medium))
                         .foregroundStyle(.primary.opacity(0.9))
 

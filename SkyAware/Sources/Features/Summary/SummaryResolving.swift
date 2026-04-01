@@ -28,15 +28,15 @@ enum SummaryProviderTask: Hashable {
     var statusMessage: String {
         switch self {
         case .location:
-            "Checking current conditions..."
+            "Getting your location…"
         case .weather:
-            "Updating conditions..."
+            "Updating your conditions…"
         case .stormRisk:
-            "Analyzing storm risk..."
+            "Getting storm risk…"
         case .alerts:
-            "Refreshing local alerts..."
+            "Bringing in local alerts…"
         case .finalizing:
-            "Finalizing data..."
+            "Getting everything ready…"
         }
     }
 }

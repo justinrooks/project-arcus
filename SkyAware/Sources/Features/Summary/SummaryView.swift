@@ -17,15 +17,15 @@ enum SummaryReadinessState: Equatable {
     var statusText: String {
         switch self {
         case .loadingLocation:
-            "Finding your location..."
+            "Finding your location…"
         case .resolvingLocalContext:
-            "Resolving local weather context..."
+            "Getting your area ready…"
         case .loadingLocalData:
-            "Loading local weather details..."
+            "Bringing in your conditions…"
         case .ready:
-            "Current location ready"
+            "Ready"
         case .locationUnavailable:
-            "Location unavailable"
+            "Location not available"
         }
     }
 }
@@ -128,7 +128,6 @@ struct SummaryView: View {
                     weather: weather,
                     resolutionState: resolutionState
                 )
-                .summaryResolving(resolutionState.isResolving(.conditions))
 
                 VStack(alignment: .leading, spacing: 12) {
                     sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")

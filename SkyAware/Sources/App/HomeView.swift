@@ -185,7 +185,7 @@ struct HomeView: View {
             .ignoresSafeArea(edges: .bottom)
 
             if isEmptyResolvingSummary {
-                Rectangle()
+                RoundedRectangle(cornerRadius: SkyAwareRadius.section, style: .continuous)
                     .fill(Color.skyAwareBackground.opacity(0.28))
                     .frame(height: 96)
                     .ignoresSafeArea(edges: .bottom)
