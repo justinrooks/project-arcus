@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### Background & Notifications
+- Resolve a complete local location context before running onboarding, foreground, and background location-based refreshes or uploads, so local alerts and conditions wait for county/fire-zone metadata instead of raw coordinates alone.
+<!-- evidence: 007e00d -->
+- Ask for Always Allow after While Using during onboarding so background alerts can stay current.
+<!-- evidence: 007e00d -->
+- Fetch hot mesos/watch feeds on background location changes and send a one-time local notification when a newly relevant watch appears.
+<!-- evidence: 1bb0289 -->
+
+### Data & Repos
+- Filter cancelled and non-active Arcus watch payloads before persisting them, so inactive watches do not appear in local results.
+<!-- evidence: b9d3c2d -->
+
+### UI / UX
+- Update onboarding permission copy to explain the Always Allow follow-up request and that location is used to determine local weather alerts.
+<!-- evidence: 007e00d -->
+- Show clearer Summary/Home loading states while SkyAware prepares location context, local risks, alerts, and current conditions.
+<!-- evidence: 007e00d, 12386d6, 4fb9697 -->
+- Label updated watches correctly in the detail view even when Arcus message-type formatting varies.
+<!-- evidence: b9d3c2d -->
+
+### Infra / Parsing
+- Coalesce duplicate location-scoped Arcus and mesoscale syncs so repeated refreshes join in-flight work instead of refetching the same local feeds.
+<!-- evidence: 8f77ca5 -->
+- Split foreground/background ingestion into shared hot-feed and slower-feed refresh paths so mesos/watch updates stay current without forcing every SPC feed to re-run on each location change.
+<!-- evidence: de3548b, 7a16313, 9b08893, 1bb0289 -->
+
+### Tests / QA
+- Add regression coverage for deterministic location-context readiness, Home refresh pipeline behavior, watch cancellation/update handling, and background location-change watch notifications.
+<!-- evidence: 8361968, 6cee659, 64c3a6d, 3870865, b9d3c2d, 1bb0289 -->
+
+### Maintenance / Cleanup
+- Refactor Home refresh orchestration and watch persistence helpers into shared pipeline/support types, and refresh repository documentation for the new flow.
+<!-- evidence: de3548b, 33dbcbd, bbfdeca, c29bb04 -->
+
 ## v0.1.0(29)
 
 ### Background & Notifications

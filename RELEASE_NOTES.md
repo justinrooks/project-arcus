@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### Overview
+This update makes local refreshes wait for complete area context, adds hot-alert fetching when your location changes in the background, and tightens watch filtering and presentation.
+
+### Highlights
+- SkyAware now waits for complete local context before loading location-based risks, alerts, and current conditions.
+- Onboarding now follows While Using permission with an Always Allow follow-up request so background alerts can stay current.
+- Background location changes now fetch hot mesos/watch data and can send a watch notification when a newly relevant watch is detected.
+- Cancelled and inactive Arcus watch payloads are now filtered out before they reach local watch results.
+- Updated watches now show the correct "Updated" subtitle in watch details.
+- Summary/Home loading now shows clearer progress states while your location and local conditions are being prepared.
+
+### Reliability & Performance
+- Duplicate location-scoped Arcus and mesoscale syncs now join in-flight work instead of refetching the same local data.
+- Foreground and background ingestion now share the same hot-feed pipeline, while slower SPC feeds are refreshed separately.
+
+### UI / UX
+- Onboarding permission copy now explains the Always Allow follow-up request and how location is used to determine local weather alerts.
+- Summary loading now presents more detailed status messaging while local context, alerts, and conditions are resolving.
+
+### Tests / QA
+- Added regression coverage for deterministic location-context readiness, Home refresh pipeline behavior, watch cancellation/update handling, and background location-change watch notifications.
+
 ## v0.1.0(29)
 
 ### Overview
