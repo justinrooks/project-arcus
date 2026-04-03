@@ -14,13 +14,35 @@ enum DetailLayout { case full, sheet }
 struct MesoscaleDiscussionContent: View {
     let meso: MdDTO
     let layout: DetailLayout
+    let isExpanded: Bool
     
     // Layout metrics
     private var sectionSpacing: CGFloat { layout == .sheet ? 12 : 14 }
+    private var summaryFont: Font { isExpanded ? .callout : .footnote }
+    private var summaryLineSpacing: CGFloat { isExpanded ? 4 : 3 }
+    private var trimmedSummary: String? {
+        let summary = meso.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return summary.isEmpty ? nil : summary
+    }
+
+    init(meso: MdDTO, layout: DetailLayout, isExpanded: Bool = true) {
+        self.meso = meso
+        self.layout = layout
+        self.isExpanded = isExpanded
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
-            SpcProductHeader(title: "Meso \(meso.number)", issued: meso.issued, validStart: meso.validStart, validEnd: meso.validEnd, subtitle: nil, inZone: false, sender: nil)
+            SpcProductHeader(
+                layout: layout,
+                title: "Meso \(meso.number)",
+                issued: meso.issued,
+                validStart: meso.validStart,
+                validEnd: meso.validEnd,
+                subtitle: nil,
+                inZone: false,
+                sender: nil
+            )
             
             Divider().opacity(0.12)
             
@@ -32,6 +54,11 @@ struct MesoscaleDiscussionContent: View {
             
             probability
             primaryThreat
+
+            if layout == .sheet {
+                summarySection
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
 
             SpcProductFooter(link: meso.link, validEnd: meso.validEnd)
             
@@ -46,6 +73,38 @@ struct MesoscaleDiscussionContent: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 12)
+            }
+        }
+    }
+
+    private var summarySection: some View {
+        Group {
+            if isExpanded {
+                summaryContent(lineLimit: nil)
+            } else {
+                ViewThatFits(in: .vertical) {
+                    summaryContent(lineLimit: nil)
+                    summaryContent(lineLimit: 9)
+                    summaryContent(lineLimit: 7)
+                    summaryContent(lineLimit: 5)
+                    summaryContent(lineLimit: 3)
+                }
+            }
+        }
+        .animation(.snappy(duration: 0.24, extraBounce: 0), value: isExpanded)
+    }
+
+    @ViewBuilder
+    private func summaryContent(lineLimit: Int?) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let trimmedSummary {
+                Text(trimmedSummary)
+                    .font(summaryFont)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(summaryLineSpacing)
+                    .lineLimit(lineLimit)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: lineLimit == nil)
             }
         }
     }
@@ -131,9 +190,23 @@ struct MesoscaleDiscussionContent: View {
 struct MesoscaleDiscussionCard: View {
     let meso: MdDTO
     let layout: DetailLayout
+    let isExpanded: Bool
+
+    init(meso: MdDTO, layout: DetailLayout, isExpanded: Bool = true) {
+        self.meso = meso
+        self.layout = layout
+        self.isExpanded = isExpanded
+    }
     
     var body: some View {
-        MesoscaleDiscussionContent(meso: meso, layout: layout)
+        Group {
+            if layout == .sheet {
+                MesoscaleDiscussionContent(meso: meso, layout: layout, isExpanded: isExpanded)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                MesoscaleDiscussionContent(meso: meso, layout: layout, isExpanded: isExpanded)
+            }
+        }
             .mesoscaleCardChrome(for: layout)
             .accessibilityElement(children: .contain)
     }

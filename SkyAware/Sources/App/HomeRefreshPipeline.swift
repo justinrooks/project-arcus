@@ -31,6 +31,22 @@ protocol HomeLocationContextPreparing: AnyObject {
 extension WeatherClient: HomeWeatherQuerying {}
 extension LocationSession: HomeLocationContextPreparing {}
 
+struct HomeRiskSnapshot {
+    var stormRisk: StormRiskLevel?
+    var severeRisk: SevereWeatherThreat?
+    var fireRisk: FireRiskLevel?
+}
+
+struct HomeAlertSnapshot {
+    var mesos: [MdDTO] = []
+    var watches: [WatchRowDTO] = []
+}
+
+struct HomeOutlookSnapshot {
+    var outlooks: [ConvectiveOutlookDTO] = []
+    var outlook: ConvectiveOutlookDTO?
+}
+
 @MainActor
 @Observable
 final class HomeRefreshPipeline {
@@ -66,14 +82,18 @@ final class HomeRefreshPipeline {
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
-    var stormRisk: StormRiskLevel?
-    var severeRisk: SevereWeatherThreat?
-    var fireRisk: FireRiskLevel?
-    var mesos: [MdDTO]
-    var watches: [WatchRowDTO]
-    var outlooks: [ConvectiveOutlookDTO]
-    var outlook: ConvectiveOutlookDTO?
+    private(set) var riskSnapshot: HomeRiskSnapshot
+    private(set) var alertSnapshot: HomeAlertSnapshot
+    private(set) var outlookSnapshot: HomeOutlookSnapshot
     var resolutionState = SummaryResolutionState()
+
+    var stormRisk: StormRiskLevel? { riskSnapshot.stormRisk }
+    var severeRisk: SevereWeatherThreat? { riskSnapshot.severeRisk }
+    var fireRisk: FireRiskLevel? { riskSnapshot.fireRisk }
+    var mesos: [MdDTO] { alertSnapshot.mesos }
+    var watches: [WatchRowDTO] { alertSnapshot.watches }
+    var outlooks: [ConvectiveOutlookDTO] { outlookSnapshot.outlooks }
+    var outlook: ConvectiveOutlookDTO? { outlookSnapshot.outlook }
 
     init(
         initialSnap: LocationSnapshot? = nil,
@@ -93,13 +113,19 @@ final class HomeRefreshPipeline {
         weatherKitRefreshPolicy: WeatherKitRefreshPolicy = WeatherKitRefreshPolicy()
     ) {
         self.snap = initialSnap
-        self.stormRisk = initialStormRisk
-        self.severeRisk = initialSevereRisk
-        self.fireRisk = initialFireRisk
-        self.mesos = initialMesos
-        self.watches = initialWatches
-        self.outlooks = initialOutlooks
-        self.outlook = initialOutlook
+        self.riskSnapshot = HomeRiskSnapshot(
+            stormRisk: initialStormRisk,
+            severeRisk: initialSevereRisk,
+            fireRisk: initialFireRisk
+        )
+        self.alertSnapshot = HomeAlertSnapshot(
+            mesos: initialMesos,
+            watches: initialWatches
+        )
+        self.outlookSnapshot = HomeOutlookSnapshot(
+            outlooks: initialOutlooks,
+            outlook: initialOutlook
+        )
         self.minimumForegroundRefreshInterval = minimumForegroundRefreshInterval
         self.minimumRefreshDistanceMeters = minimumRefreshDistanceMeters
         self.foregroundTimerInterval = foregroundTimerInterval
@@ -354,8 +380,7 @@ final class HomeRefreshPipeline {
             let dtos = try await outlooksService.getConvectiveOutlooks()
             let latest = dtos.max(by: { $0.published < $1.published })
             if Task.isCancelled { return }
-            outlooks = dtos
-            outlook = latest
+            outlookSnapshot = HomeOutlookSnapshot(outlooks: dtos, outlook: latest)
             resolutionState.finish(task: .stormRisk, resolvedSections: [.outlook])
         } catch {
             // Swallow for now; consider logging.
@@ -485,55 +510,62 @@ final class HomeRefreshPipeline {
     ) async {
         enum ProgressiveResult: Sendable {
             case stormRisk(StormRiskLevel)
+            case stormRiskFailure(String)
             case severeRisk(SevereWeatherThreat)
+            case severeRiskFailure(String)
             case fireRisk(FireRiskLevel)
+            case fireRiskFailure(String)
             case mesos([MdDTO])
+            case mesosFailure(String)
             case watches([WatchRowDTO])
-            case failure(String)
+            case watchesFailure(String)
         }
 
         let coord = context.snapshot.coordinates
-        let previousStormRisk = stormRisk
-        let previousSevereRisk = severeRisk
-        let previousFireRisk = fireRisk
-        let previousMesos = mesos
-        let previousWatches = watches
-        var didFail = false
+        var nextRiskSnapshot = riskSnapshot
+        var nextAlertSnapshot = alertSnapshot
+        var completedRiskSections: Set<SummarySection> = []
+        var didReceiveMesos = false
+        var didReceiveWatches = false
+        var riskFailed = false
+        var alertsFailed = false
+        var didApplyRiskSnapshot = false
+        var didApplyAlertSnapshot = false
 
         await withTaskGroup(of: ProgressiveResult.self) { group in
             group.addTask {
                 do {
                     return .stormRisk(try await spcRisk.getStormRisk(for: coord))
                 } catch {
-                    return .failure(error.localizedDescription)
+                    return .stormRiskFailure(error.localizedDescription)
                 }
             }
             group.addTask {
                 do {
                     return .severeRisk(try await spcRisk.getSevereRisk(for: coord))
                 } catch {
-                    return .failure(error.localizedDescription)
+                    return .severeRiskFailure(error.localizedDescription)
                 }
             }
             group.addTask {
                 do {
                     return .fireRisk(try await spcRisk.getFireRisk(for: coord))
                 } catch {
-                    return .failure(error.localizedDescription)
+                    return .fireRiskFailure(error.localizedDescription)
                 }
             }
             group.addTask {
                 do {
                     return .mesos(try await spcRisk.getActiveMesos(at: .now, for: coord))
                 } catch {
-                    return .failure(error.localizedDescription)
+                    return .mesosFailure(error.localizedDescription)
                 }
             }
             group.addTask {
                 do {
                     return .watches(try await arcusQuery.getActiveWatches(context: context))
                 } catch {
-                    return .failure(error.localizedDescription)
+                    return .watchesFailure(error.localizedDescription)
                 }
             }
 
@@ -542,33 +574,65 @@ final class HomeRefreshPipeline {
 
                 switch result {
                 case .stormRisk(let stormRisk):
-                    self.stormRisk = stormRisk
+                    nextRiskSnapshot.stormRisk = stormRisk
+                    completedRiskSections.insert(.stormRisk)
                     resolutionState.finish(task: .stormRisk, resolvedSections: [.stormRisk])
                 case .severeRisk(let severeRisk):
-                    self.severeRisk = severeRisk
+                    nextRiskSnapshot.severeRisk = severeRisk
+                    completedRiskSections.insert(.severeRisk)
                     resolutionState.finish(task: .stormRisk, resolvedSections: [.severeRisk])
                 case .fireRisk(let fireRisk):
-                    self.fireRisk = fireRisk
+                    nextRiskSnapshot.fireRisk = fireRisk
+                    completedRiskSections.insert(.fireRisk)
                     resolutionState.finish(task: .stormRisk, resolvedSections: [.fireRisk])
                 case .mesos(let mesos):
-                    self.mesos = mesos
-                    resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
+                    nextAlertSnapshot.mesos = mesos
+                    didReceiveMesos = true
                 case .watches(let watches):
-                    self.watches = watches
+                    nextAlertSnapshot.watches = watches
+                    didReceiveWatches = true
+                case .stormRiskFailure(let description):
+                    riskFailed = true
+                    completedRiskSections.insert(.stormRisk)
+                    logger.error("Failed to read location-scoped storm risk: \(description, privacy: .public)")
+                    resolutionState.finish(task: .stormRisk, resolvedSections: [.stormRisk])
+                case .severeRiskFailure(let description):
+                    riskFailed = true
+                    completedRiskSections.insert(.severeRisk)
+                    logger.error("Failed to read location-scoped severe risk: \(description, privacy: .public)")
+                    resolutionState.finish(task: .stormRisk, resolvedSections: [.severeRisk])
+                case .fireRiskFailure(let description):
+                    riskFailed = true
+                    completedRiskSections.insert(.fireRisk)
+                    logger.error("Failed to read location-scoped fire risk: \(description, privacy: .public)")
+                    resolutionState.finish(task: .stormRisk, resolvedSections: [.fireRisk])
+                case .mesosFailure(let description):
+                    alertsFailed = true
+                    didReceiveMesos = true
+                    logger.error("Failed to read local mesos snapshot: \(description, privacy: .public)")
+                case .watchesFailure(let description):
+                    alertsFailed = true
+                    didReceiveWatches = true
+                    logger.error("Failed to read local watches snapshot: \(description, privacy: .public)")
+                }
+
+                if !didApplyRiskSnapshot,
+                   !riskFailed,
+                   completedRiskSections == [.stormRisk, .severeRisk, .fireRisk] {
+                    riskSnapshot = nextRiskSnapshot
+                    didApplyRiskSnapshot = true
+                }
+
+                if !didApplyAlertSnapshot,
+                   didReceiveMesos,
+                   didReceiveWatches {
+                    if !alertsFailed {
+                        alertSnapshot = nextAlertSnapshot
+                    }
+                    didApplyAlertSnapshot = true
                     resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
-                case .failure(let description):
-                    didFail = true
-                    logger.error("Failed to read location-scoped data snapshot: \(description, privacy: .public)")
                 }
             }
-        }
-
-        if didFail {
-            stormRisk = previousStormRisk
-            severeRisk = previousSevereRisk
-            fireRisk = previousFireRisk
-            mesos = previousMesos
-            watches = previousWatches
         }
 
         resolutionState.finish(
@@ -592,8 +656,10 @@ final class HomeRefreshPipeline {
             )
             if Task.isCancelled { return }
             snap = context.snapshot
-            mesos = snapshot.mesos
-            watches = snapshot.watches
+            alertSnapshot = HomeAlertSnapshot(
+                mesos: snapshot.mesos,
+                watches: snapshot.watches
+            )
             resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
         } catch {
             logger.error("Failed to read hot feed snapshot: \(error.localizedDescription, privacy: .public)")

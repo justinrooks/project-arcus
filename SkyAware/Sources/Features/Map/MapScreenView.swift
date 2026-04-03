@@ -28,6 +28,7 @@ struct MapScreenView: View {
     @State private var fireRisk: [FireRiskDTO] = []
     @State private var activePolygons = MKMultiPolygon([])
     @State private var activeOverlays: [MapOverlayEntry] = []
+    @State private var cachedDisplayStates: [MapLayer: MapDisplayState] = [:]
     @State private var mapRebuildTask: Task<Void, Never>?
     @Namespace private var layerNamespace
     
@@ -98,7 +99,7 @@ struct MapScreenView: View {
             await loadMapData()
         }
         .onChange(of: selected) { _, _ in
-            scheduleMapStateRebuild()
+            applyDisplayState(for: selected)
         }
         .onDisappear {
             mapRebuildTask?.cancel()
@@ -182,7 +183,6 @@ struct MapScreenView: View {
     private func scheduleMapStateRebuild() {
         mapRebuildTask?.cancel()
 
-        let selected = selected
         let stormRisk = stormRisk
         let severeRisks = severeRisks
         let mesos = mesos
@@ -190,65 +190,50 @@ struct MapScreenView: View {
         let mapper = polygonMapper
 
         mapRebuildTask = Task.detached(priority: .userInitiated) {
-            let renderState = MapRenderStateBuilder.build(
-                selected: selected,
-                stormRisk: stormRisk,
-                severeRisks: severeRisks,
-                mesos: mesos,
-                fireRisk: fireRisk,
-                polygonMapper: mapper
+            let renderStates = Dictionary(
+                uniqueKeysWithValues: MapLayer.allCases.map { layer in
+                    (
+                        layer,
+                        MapRenderStateBuilder.build(
+                            selected: layer,
+                            stormRisk: stormRisk,
+                            severeRisks: severeRisks,
+                            mesos: mesos,
+                            fireRisk: fireRisk,
+                            polygonMapper: mapper
+                        )
+                    )
+                }
             )
 
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
                 if Task.isCancelled { return }
+                var displayStates: [MapLayer: MapDisplayState] = [:]
+                displayStates.reserveCapacity(renderStates.count)
 
-                var polygons: [MKPolygon] = []
-                polygons.reserveCapacity(renderState.polygons.count)
-
-                var polygonsByKey: [String: MKPolygon] = [:]
-                polygonsByKey.reserveCapacity(renderState.polygons.count)
-
-                for polygonEntry in renderState.polygons {
-                    let polygon = polygonEntry.polygon
-                    polygons.append(polygon)
-                    polygonsByKey[polygonEntry.key] = polygon
+                for layer in MapLayer.allCases {
+                    guard let renderState = renderStates[layer] else { continue }
+                    displayStates[layer] = MapDisplayStateBuilder.make(from: renderState)
                 }
 
-                var overlays: [MapOverlayEntry] = []
-                overlays.reserveCapacity(renderState.overlays.count)
-
-                for overlayPlan in renderState.overlays {
-                    guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
-
-                    let overlay: MKOverlay
-                    switch overlayPlan.kind {
-                    case .probability:
-                        overlay = RiskPolygonOverlay.probability(from: polygon)
-                    case .intensity(let level):
-                        let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
-                        overlay = RiskPolygonOverlay.intensity(
-                            from: polygon,
-                            level: level,
-                            strokeColor: style.stroke,
-                            fillColor: style.fill
-                        )
-                    }
-
-                    overlays.append(
-                        MapOverlayEntry(
-                            key: overlayPlan.key,
-                            overlay: overlay
-                        )
-                    )
-                }
-
-                activePolygons = MKMultiPolygon(polygons)
-                activeOverlays = overlays
-                selectedSevereRisks = renderState.selectedSevereRisks
+                cachedDisplayStates = displayStates
+                applyDisplayState(for: selected, using: displayStates)
             }
         }
+    }
+
+    @MainActor
+    private func applyDisplayState(
+        for layer: MapLayer,
+        using displayStates: [MapLayer: MapDisplayState]? = nil
+    ) {
+        let displayStates = displayStates ?? cachedDisplayStates
+        guard let displayState = displayStates[layer] else { return }
+        activePolygons = displayState.polygons
+        activeOverlays = displayState.overlays
+        selectedSevereRisks = displayState.selectedSevereRisks
     }
 }
 
@@ -267,6 +252,63 @@ private struct MapRenderState: Sendable {
     let polygons: [MapPolygonEntry]
     let overlays: [MapOverlayBuildPlan]
     let selectedSevereRisks: [SevereRiskShapeDTO]?
+}
+
+private struct MapDisplayState {
+    let polygons: MKMultiPolygon
+    let overlays: [MapOverlayEntry]
+    let selectedSevereRisks: [SevereRiskShapeDTO]?
+}
+
+private enum MapDisplayStateBuilder {
+    @MainActor
+    static func make(from renderState: MapRenderState) -> MapDisplayState {
+        var polygons: [MKPolygon] = []
+        polygons.reserveCapacity(renderState.polygons.count)
+
+        var polygonsByKey: [String: MKPolygon] = [:]
+        polygonsByKey.reserveCapacity(renderState.polygons.count)
+
+        for polygonEntry in renderState.polygons {
+            let polygon = polygonEntry.polygon
+            polygons.append(polygon)
+            polygonsByKey[polygonEntry.key] = polygon
+        }
+
+        var overlays: [MapOverlayEntry] = []
+        overlays.reserveCapacity(renderState.overlays.count)
+
+        for overlayPlan in renderState.overlays {
+            guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
+
+            let overlay: MKOverlay
+            switch overlayPlan.kind {
+            case .probability:
+                overlay = RiskPolygonOverlay.probability(from: polygon)
+            case .intensity(let level):
+                let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
+                overlay = RiskPolygonOverlay.intensity(
+                    from: polygon,
+                    level: level,
+                    strokeColor: style.stroke,
+                    fillColor: style.fill
+                )
+            }
+
+            overlays.append(
+                MapOverlayEntry(
+                    key: overlayPlan.key,
+                    overlay: overlay
+                )
+            )
+        }
+
+        return MapDisplayState(
+            polygons: MKMultiPolygon(polygons),
+            overlays: overlays,
+            selectedSevereRisks: renderState.selectedSevereRisks
+        )
+    }
 }
 
 private enum MapRenderStateBuilder {

@@ -94,47 +94,83 @@ struct SummaryStatus: View {
 
 private struct SummaryStatusSecondaryLine: View {
     let resolutionState: SummaryResolutionState
+    @State private var displayedMessage: String?
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { context in
-            Group {
-                if let message = message(for: context.date) {
-                    Text(message)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(" ")
-                        .foregroundStyle(.clear)
-                        .accessibilityHidden(true)
-                }
+        Group {
+            if let displayedMessage {
+                Text(displayedMessage)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(" ")
+                    .foregroundStyle(.clear)
+                    .accessibilityHidden(true)
             }
-            .font(.footnote)
-            .lineLimit(1)
-            .contentTransition(.opacity)
-            .frame(minHeight: 18, alignment: .leading)
-            .id(message(for: context.date) ?? "")
+        }
+        .font(.footnote)
+        .lineLimit(1)
+        .contentTransition(.opacity)
+        .frame(minHeight: 18, alignment: .leading)
+        .task(id: taskState) {
+            await updateDisplayedMessage()
         }
     }
 
-    private func message(for date: Date) -> String? {
-        if resolutionState.isRefreshing {
-            return activeMessage(for: date)
+    private var taskState: SecondaryLineTaskState {
+        SecondaryLineTaskState(
+            activeMessages: resolutionState.activeMessages,
+            recentCompletedMessage: resolutionState.recentCompletedMessage,
+            recentCompletedDeadline: resolutionState.recentCompletedDeadline
+        )
+    }
+
+    @MainActor
+    private func updateDisplayedMessage() async {
+        let activeMessages = resolutionState.activeMessages
+        if activeMessages.isEmpty == false {
+            if activeMessages.count == 1 {
+                displayedMessage = activeMessages[0]
+                return
+            }
+
+            var index = 0
+            displayedMessage = activeMessages[index]
+
+            while Task.isCancelled == false {
+                try? await Task.sleep(for: .seconds(3))
+                if Task.isCancelled { return }
+                index = (index + 1) % activeMessages.count
+                displayedMessage = activeMessages[index]
+            }
+
+            return
         }
 
         if let recentCompletedMessage = resolutionState.recentCompletedMessage {
-            return recentCompletedMessage
+            displayedMessage = recentCompletedMessage
+
+            if let recentCompletedDeadline = resolutionState.recentCompletedDeadline {
+                let remainingMilliseconds = max(
+                    Int((recentCompletedDeadline.timeIntervalSinceNow * 1_000).rounded(.up)),
+                    0
+                )
+
+                if remainingMilliseconds > 0 {
+                    try? await Task.sleep(for: .milliseconds(remainingMilliseconds))
+                }
+            }
+
+            if Task.isCancelled { return }
         }
 
-        return nil
+        displayedMessage = nil
     }
+}
 
-    private func activeMessage(for date: Date) -> String? {
-        let messages = resolutionState.activeMessages
-        guard messages.isEmpty == false else { return nil }
-        guard messages.count > 1 else { return messages[0] }
-
-        let index = Int(date.timeIntervalSinceReferenceDate / 3).quotientAndRemainder(dividingBy: messages.count).remainder
-        return messages[index]
-    }
+private struct SecondaryLineTaskState: Equatable {
+    let activeMessages: [String]
+    let recentCompletedMessage: String?
+    let recentCompletedDeadline: Date?
 }
 
 private struct SummarySettledConditionLine: View {
@@ -142,16 +178,14 @@ private struct SummarySettledConditionLine: View {
     let resolutionState: SummaryResolutionState
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-            Group {
-                if shouldShowCondition, let conditionText {
-                    Text(conditionText)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(" ")
-                        .foregroundStyle(.clear)
-                        .accessibilityHidden(true)
-                }
+        Group {
+            if shouldShowCondition, let conditionText {
+                Text(conditionText)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(" ")
+                    .foregroundStyle(.clear)
+                    .accessibilityHidden(true)
             }
         }
     }

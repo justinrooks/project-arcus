@@ -56,11 +56,16 @@ struct SummaryResolutionState: Equatable {
         activeTasks.map(\.statusMessage)
     }
 
+    var recentCompletedDeadline: Date? {
+        guard let lastCompletedAt else { return nil }
+        return lastCompletedAt.addingTimeInterval(1.25)
+    }
+
     var recentCompletedMessage: String? {
         guard
             let lastCompletedTask,
-            let lastCompletedAt,
-            Date().timeIntervalSince(lastCompletedAt) <= 1.25
+            let recentCompletedDeadline,
+            Date() <= recentCompletedDeadline
         else {
             return nil
         }
