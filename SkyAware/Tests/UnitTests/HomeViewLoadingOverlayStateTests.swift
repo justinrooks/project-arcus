@@ -162,7 +162,7 @@ struct SummaryResolutionStateTests {
         state.begin(task: .alerts, sections: [.alerts])
 
         #expect(state.isRefreshing)
-        #expect(state.activeMessages == ["Refreshing local alerts..."])
+        #expect(state.activeMessages == ["Bringing in local alerts…"])
         #expect(state.isResolving(.alerts))
     }
 
@@ -174,7 +174,7 @@ struct SummaryResolutionStateTests {
         state.finish(task: .stormRisk, resolvedSections: [.stormRisk])
 
         #expect(state.isRefreshing)
-        #expect(state.activeMessages == ["Analyzing storm risk..."])
+        #expect(state.activeMessages == ["Getting storm risk…"])
         #expect(state.isResolving(.stormRisk) == false)
         #expect(state.isResolving(.severeRisk))
     }
@@ -189,7 +189,7 @@ struct SummaryResolutionStateTests {
         #expect(state.isRefreshing == false)
         #expect(state.isResolving(.conditions) == false)
         #expect(state.isResolving(.atmosphere) == false)
-        #expect(state.recentCompletedMessage == "Updating conditions...")
+        #expect(state.recentCompletedMessage == "Updating your conditions…")
     }
 
     @Test("reset clears active tasks and sections")

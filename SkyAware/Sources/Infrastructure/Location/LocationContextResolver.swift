@@ -131,13 +131,18 @@ actor LocationContextResolver: LocationContextResolving {
         }
 
         let stream = await locationClient.updates()
-        let snapshot: LocationSnapshot? = try await withTimeout(timeout: locationTimeout) {
-            for await snapshot in stream {
-                if Self.isAccepted(snapshot: snapshot, maximumAge: maximumAcceptedLocationAge) {
-                    return snapshot
+        let snapshot: LocationSnapshot?
+        do {
+            snapshot = try await withTimeout(timeout: locationTimeout) {
+                for await snapshot in stream {
+                    if Self.isAccepted(snapshot: snapshot, maximumAge: maximumAcceptedLocationAge) {
+                        return snapshot
+                    }
                 }
+                return nil
             }
-            return nil
+        } catch OtherErrors.timeoutError {
+            throw LocationContextError.locationTimeout
         }
 
         guard let snapshot else {

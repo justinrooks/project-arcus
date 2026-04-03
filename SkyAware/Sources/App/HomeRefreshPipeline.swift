@@ -524,13 +524,12 @@ final class HomeRefreshPipeline {
         let coord = context.snapshot.coordinates
         var nextRiskSnapshot = riskSnapshot
         var nextAlertSnapshot = alertSnapshot
+        let allRiskSections: Set<SummarySection> = [.stormRisk, .severeRisk, .fireRisk]
         var completedRiskSections: Set<SummarySection> = []
         var didReceiveMesos = false
         var didReceiveWatches = false
-        var riskFailed = false
-        var alertsFailed = false
-        var didApplyRiskSnapshot = false
-        var didApplyAlertSnapshot = false
+        var locationScopedReadFailed = false
+        var didApplyLocationScopedSnapshot = false
 
         await withTaskGroup(of: ProgressiveResult.self) { group in
             group.addTask {
@@ -592,44 +591,39 @@ final class HomeRefreshPipeline {
                     nextAlertSnapshot.watches = watches
                     didReceiveWatches = true
                 case .stormRiskFailure(let description):
-                    riskFailed = true
+                    locationScopedReadFailed = true
                     completedRiskSections.insert(.stormRisk)
                     logger.error("Failed to read location-scoped storm risk: \(description, privacy: .public)")
                     resolutionState.finish(task: .stormRisk, resolvedSections: [.stormRisk])
                 case .severeRiskFailure(let description):
-                    riskFailed = true
+                    locationScopedReadFailed = true
                     completedRiskSections.insert(.severeRisk)
                     logger.error("Failed to read location-scoped severe risk: \(description, privacy: .public)")
                     resolutionState.finish(task: .stormRisk, resolvedSections: [.severeRisk])
                 case .fireRiskFailure(let description):
-                    riskFailed = true
+                    locationScopedReadFailed = true
                     completedRiskSections.insert(.fireRisk)
                     logger.error("Failed to read location-scoped fire risk: \(description, privacy: .public)")
                     resolutionState.finish(task: .stormRisk, resolvedSections: [.fireRisk])
                 case .mesosFailure(let description):
-                    alertsFailed = true
+                    locationScopedReadFailed = true
                     didReceiveMesos = true
                     logger.error("Failed to read local mesos snapshot: \(description, privacy: .public)")
                 case .watchesFailure(let description):
-                    alertsFailed = true
+                    locationScopedReadFailed = true
                     didReceiveWatches = true
                     logger.error("Failed to read local watches snapshot: \(description, privacy: .public)")
                 }
 
-                if !didApplyRiskSnapshot,
-                   !riskFailed,
-                   completedRiskSections == [.stormRisk, .severeRisk, .fireRisk] {
-                    riskSnapshot = nextRiskSnapshot
-                    didApplyRiskSnapshot = true
-                }
-
-                if !didApplyAlertSnapshot,
+                if !didApplyLocationScopedSnapshot,
+                   completedRiskSections == allRiskSections,
                    didReceiveMesos,
                    didReceiveWatches {
-                    if !alertsFailed {
+                    if !locationScopedReadFailed {
+                        riskSnapshot = nextRiskSnapshot
                         alertSnapshot = nextAlertSnapshot
                     }
-                    didApplyAlertSnapshot = true
+                    didApplyLocationScopedSnapshot = true
                     resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
                 }
             }
