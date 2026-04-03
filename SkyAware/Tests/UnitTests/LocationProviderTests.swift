@@ -320,6 +320,31 @@ struct LocationProviderTests {
         #expect(payloads.isEmpty)
     }
 
+    @Test("snapshot pusher skips upload when location-to-signal is disabled")
+    func snapshotPusher_skipsUploadWhenLocationSharingDisabled() async {
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            locationUploadEnabledProvider: { false },
+            retryDelaysSeconds: [0]
+        )
+
+        let snap = LocationSnapshot(
+            coordinates: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            timestamp: Date(timeIntervalSince1970: 1_234_567),
+            accuracy: 42,
+            placemarkSummary: "OKC, OK",
+            h3Cell: sampleH3Cell
+        )
+
+        await pusher.enqueue(snap)
+
+        let payloads = await uploader.uploadedPayloads()
+        #expect(payloads.isEmpty)
+    }
+
     @Test("pushLatestSnapshotWhenAvailable replays cached snapshot immediately")
     func pushLatestSnapshotWhenAvailable_replaysCachedSnapshot() async throws {
         let now = Date(timeIntervalSince1970: 1_234_567)

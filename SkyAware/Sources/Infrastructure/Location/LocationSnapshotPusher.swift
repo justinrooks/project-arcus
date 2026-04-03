@@ -71,15 +71,18 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
     typealias InstallationIDProvider = @Sendable () async -> String
     typealias GridRegionContextProvider = @Sendable () async -> NwsGridRegionContext?
     typealias SubscriptionStatusProvider = @Sendable () -> Bool
+    typealias LocationUploadEnabledProvider = @Sendable () -> Bool
 
     nonisolated private static let userDefaultsSuiteName = "com.justinrooks.skyaware"
     nonisolated private static let serverNotificationEnabledKey = "serverNotificationEnabled"
+    nonisolated private static let locationUploadEnabledKey = "sendL8ntoSignal"
 
     private let uploader: any LocationSnapshotUploading
     private let apnsTokenProvider: APNsTokenProvider
     private let installationIdProvider: InstallationIDProvider
     private let gridRegionContextProvider: GridRegionContextProvider
     private let subscriptionStatusProvider: SubscriptionStatusProvider
+    private let locationUploadEnabledProvider: LocationUploadEnabledProvider
     private let retryDelaysSeconds: [UInt64]
     private let logger = Logger.locationPushPusher
 
@@ -98,6 +101,9 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         subscriptionStatusProvider: @escaping SubscriptionStatusProvider = {
             LocationSnapshotPusher.readSubscriptionStatusFromDefaults()
         },
+        locationUploadEnabledProvider: @escaping LocationUploadEnabledProvider = {
+            LocationSnapshotPusher.readLocationUploadEnabledFromDefaults()
+        },
         retryDelaysSeconds: [UInt64] = [0, 5, 15]
     ) {
         self.uploader = uploader
@@ -105,10 +111,16 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         self.installationIdProvider = installationIdProvider
         self.gridRegionContextProvider = gridRegionContextProvider
         self.subscriptionStatusProvider = subscriptionStatusProvider
+        self.locationUploadEnabledProvider = locationUploadEnabledProvider
         self.retryDelaysSeconds = retryDelaysSeconds
     }
 
     func enqueue(_ snapshot: LocationSnapshot) async {
+        guard locationUploadEnabledProvider() else {
+            logger.debug("Skipping location snapshot upload; disabled in settings")
+            return
+        }
+
         let regionContext = await gridRegionContextProvider()
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -203,6 +215,14 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
     nonisolated private static func readSubscriptionStatusFromDefaults() -> Bool {
         if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
             .object(forKey: serverNotificationEnabledKey) as? Bool {
+            return value
+        }
+        return true
+    }
+
+    nonisolated private static func readLocationUploadEnabledFromDefaults() -> Bool {
+        if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
+            .object(forKey: locationUploadEnabledKey) as? Bool {
             return value
         }
         return true
