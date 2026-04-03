@@ -1,4 +1,4 @@
-This build makes local refreshes wait for complete area context, adds hot-alert fetching when your location changes in the background, and tightens watch filtering and presentation.
+SkyAware v0.1.0(33) makes local refreshes wait for complete area context, adds hot-alert fetching when your location changes in the background, and tightens watch filtering and presentation.
 
 Highlights:
 - SkyAware now waits for complete local context before loading location-based risks, alerts, and current conditions

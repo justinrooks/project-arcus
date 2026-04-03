@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(33)
+
 ### Background & Notifications
 - Resolve a complete local location context before running onboarding, foreground, and background location-based refreshes or uploads, so local alerts and conditions wait for county/fire-zone metadata instead of raw coordinates alone.
 <!-- evidence: 007e00d -->

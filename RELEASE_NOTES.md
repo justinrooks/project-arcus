@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.0(33)
+
 ### Overview
 This update makes local refreshes wait for complete area context, adds hot-alert fetching when your location changes in the background, and tightens watch filtering and presentation.
 
