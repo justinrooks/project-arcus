@@ -31,6 +31,7 @@ final class Dependencies: Sendable {
     private let _locationProvider: LocationProvider?
     private let _locationManager: LocationManager?
     private let _gridProvider: GridPointProvider?
+    private let _locationContextResolver: (any LocationContextResolving)?
     
     // MARK: Weatherkit
     private let _weatherClient: WeatherClient?
@@ -114,6 +115,12 @@ final class Dependencies: Sendable {
     var gridProvider: GridPointProvider {
         guard let value = _gridProvider else {
             fatalError("Dependencies.gridProvider used while unconfigured")
+        }
+        return value
+    }
+    var locationContextResolver: any LocationContextResolving {
+        guard let value = _locationContextResolver else {
+            fatalError("Dependencies.locationContextResolver used while unconfigured")
         }
         return value
     }
@@ -222,6 +229,7 @@ final class Dependencies: Sendable {
         locationProvider: LocationProvider?,
         locationManager: LocationManager?,
         gridProvider: GridPointProvider?,
+        locationContextResolver: (any LocationContextResolving)?,
         spcProvider: SpcProvider?,
         nwsProvider: NwsProvider?,
         arcusProvider: ArcusAlertProvider?,
@@ -243,6 +251,7 @@ final class Dependencies: Sendable {
         self._locationProvider = locationProvider
         self._locationManager = locationManager
         self._gridProvider = gridProvider
+        self._locationContextResolver = locationContextResolver
         self._spcProvider = spcProvider
         self._nwsProvider = nwsProvider
         self._arcusProvider = arcusProvider
@@ -291,24 +300,18 @@ final class Dependencies: Sendable {
         let arcusClient = ArcusHttpClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()
 
-        let snapshotPusher: LocationSnapshotPushing
+        let contextPusher: any LocationContextPushing
         if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
             let uploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
-            snapshotPusher = LocationSnapshotPusher(
-                uploader: uploader,
-                gridRegionContextProvider: { await metadataRepo.currentRegionContextSnapshot() }
-            )
+            contextPusher = LocationSnapshotPusher(uploader: uploader)
             logger.notice("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
         } else {
-            snapshotPusher = NoOpLocationSnapshotPusher()
+            contextPusher = NoOpLocationContextPusher()
             logger.notice("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
         }
         
         // Location
-        let locationProvider = LocationProvider(
-            snapshotPusher: snapshotPusher,
-            snapshotCache: LocationSnapshotCache()
-        )
+        let locationProvider = LocationProvider(snapshotCache: LocationSnapshotCache())
         let sink: LocationSink = { [locationProvider] update in await locationProvider.send(update: update) }
         let locationManager = LocationManager(onUpdate: sink)
         logger.info("LocationManager configured")
@@ -335,8 +338,27 @@ final class Dependencies: Sendable {
         let spcProvider = spc
         logger.debug("SPC provider initialized")
 
-        let gridProvider = GridPointProvider(client: nwsClient, locationProvider: locationProvider, repo: metadataRepo)
+        let gridProvider = GridPointProvider(client: nwsClient, repo: metadataRepo)
         logger.info("GridPoint provider initialized")
+
+        let locationContextResolver = LocationContextResolver(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationProvider: locationProvider,
+            gridPointProvider: gridProvider,
+            contextPusher: contextPusher,
+            authorizationStatusProvider: {
+                await MainActor.run { locationManager.authStatus }
+            },
+            authorizationRequester: { isActive in
+                await MainActor.run {
+                    locationManager.checkLocationAuthorization(isActive: isActive)
+                }
+            },
+            refreshCurrentLocation: { timeout in
+                await locationManager.refreshCurrentLocation(timeout: timeout)
+            }
+        )
+        logger.info("Location context resolver initialized")
         
         let nws = NwsProvider(
             watchRepo: watchRepo,
@@ -348,8 +370,6 @@ final class Dependencies: Sendable {
         
         let arcus = ArcusAlertProvider(
             watchRepo: watchRepo,
-            metadataRepo: metadataRepo,
-            gridMetadataProvider: gridProvider,
             client: arcusClient)
         let arcusProvider = arcus
         logger.debug("Arcus provider initialized")
@@ -375,16 +395,34 @@ final class Dependencies: Sendable {
             sender: Sender(),
             spc: spc
         )
-        
+
+        logger.debug("Composing watch notification engine")
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: DefaultWatchStore()),
+            composer: WatchComposer(),
+            sender: Sender()
+        )
+
+        let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
+            locationContextResolver: locationContextResolver,
+            spcSync: spc,
+            spcRisk: spc,
+            arcusSync: arcus,
+            arcusQuery: arcus,
+            watchEngine: watchEngine
+        )
+
+        locationManager.setBackgroundLocationChangeHandler {
+            await backgroundLocationChangeHandler.handleLocationChange()
+        }
+
         let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
             arcusProvider: arcus,
-            locationProvider: locationProvider,
-            refreshCurrentLocation: { timeout in
-                await locationManager.refreshCurrentLocation(timeout: timeout)
-            },
+            locationContextResolver: locationContextResolver,
             policy: refreshPolicy,
             engine: morning,
             mesoEngine: meso,
@@ -412,6 +450,7 @@ final class Dependencies: Sendable {
             locationProvider: locationProvider,
             locationManager: locationManager,
             gridProvider: gridProvider,
+            locationContextResolver: locationContextResolver,
             spcProvider: spcProvider,
             nwsProvider: nwsProvider,
             arcusProvider: arcusProvider,
@@ -435,6 +474,7 @@ final class Dependencies: Sendable {
                                                          locationProvider: nil,
                                                          locationManager: nil,
                                                          gridProvider: nil,
+                                                         locationContextResolver: nil,
                                                          spcProvider: nil,
                                                          nwsProvider: nil,
                                                          arcusProvider: nil,

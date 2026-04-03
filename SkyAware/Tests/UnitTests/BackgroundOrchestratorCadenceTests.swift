@@ -108,6 +108,24 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(outcome.result == .skipped)
     }
 
+    @Test("Global SPC sync still runs when location context is unavailable")
+    func globalSpcSync_runsBeforeLocationContext() async throws {
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeWatches: [],
+            refreshedLocation: nil,
+            refreshSucceeds: false,
+            cachedSnapshotTimestamp: Date().addingTimeInterval(-(6 * 60)),
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+        )
+
+        _ = await setup.orchestrator.run()
+
+        #expect(await setup.spc.syncMapProductsCount() == 1)
+        #expect(await setup.spc.syncConvectiveOutlooksCount() == 1)
+        #expect((await setup.spc.queriedPoints()).isEmpty)
+    }
+
     @Test("Active meso tightens cadence to short")
     func activeMeso_tightensCadenceToShort() async throws {
         let setup = try await makeSystem(
@@ -180,12 +198,26 @@ private extension BackgroundOrchestratorCadenceTests {
         let healthStore = BgHealthStore(modelContainer: container)
         let spc = FakeSpcProvider(activeMesos: activeMesos)
         let watchProvider = FakeWatchProvider(activeWatches: activeWatches)
-        let locationProvider = LocationProvider(geocoder: ConstantGeocoder(summary: "Norman, OK"))
-        await locationProvider.send(update: .init(
+        let cachedContext = Self.makeContext(
             coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
             timestamp: cachedSnapshotTimestamp,
-            accuracy: 10
-        ))
+            placemarkSummary: "Norman, OK"
+        )
+        let resolvedContext: LocationContext? = if refreshSucceeds, let refreshedLocation {
+            Self.makeContext(
+                coordinates: refreshedLocation,
+                timestamp: Date(),
+                placemarkSummary: "Denver, CO"
+            )
+        } else if Date().timeIntervalSince(cachedSnapshotTimestamp) <= 5 * 60 {
+            cachedContext
+        } else {
+            nil
+        }
+        let locationContextResolver = FakeLocationContextResolver(
+            resolvedContext: resolvedContext,
+            error: resolvedContext == nil ? .locationTimeout : nil
+        )
 
         let morningEngine = MorningEngine(
             rule: NoopMorningRule(),
@@ -204,17 +236,7 @@ private extension BackgroundOrchestratorCadenceTests {
         let orchestrator = BackgroundOrchestrator(
             spcProvider: spc,
             arcusProvider: watchProvider,
-            locationProvider: locationProvider,
-            refreshCurrentLocation: { _ in
-                guard refreshSucceeds, let refreshedLocation else { return false }
-                await locationProvider.send(update: .init(
-                    coordinates: refreshedLocation,
-                    timestamp: Date(),
-                    accuracy: 10,
-                    forceAcceptance: true
-                ))
-                return true
-            },
+            locationContextResolver: locationContextResolver,
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
@@ -264,10 +286,52 @@ private extension BackgroundOrchestratorCadenceTests {
             areaSummary: "Central Oklahoma"
         )
     }
+
+    static func makeContext(
+        coordinates: CLLocationCoordinate2D,
+        timestamp: Date,
+        placemarkSummary: String
+    ) -> LocationContext {
+        let snapshot = LocationSnapshot(
+            coordinates: coordinates,
+            timestamp: timestamp,
+            accuracy: 10,
+            placemarkSummary: placemarkSummary,
+            h3Cell: 0x882681b485fffff
+        )
+        return LocationContext(
+            snapshot: snapshot,
+            h3Cell: 0x882681b485fffff,
+            grid: GridPointSnapshot(
+                nwsId: "https://api.weather.gov/points/\(coordinates.latitude),\(coordinates.longitude)",
+                latitude: coordinates.latitude,
+                longitude: coordinates.longitude,
+                gridId: "OUN",
+                gridX: 34,
+                gridY: 74,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Norman",
+                state: "OK",
+                timeZoneId: "America/Chicago",
+                radarStationId: "KTLX",
+                forecastZone: "OKZ025",
+                countyCode: "OKC109",
+                fireZone: "OKZ025",
+                countyLabel: "Oklahoma County",
+                fireZoneLabel: "Central Oklahoma"
+            )
+        )
+    }
 }
 
 private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private var recordedPoints: [CLLocationCoordinate2D] = []
+    private var syncCalls = 0
+    private var syncMapProductsCalls = 0
+    private var syncConvectiveOutlooksCalls = 0
 
     func getFireRisk(for point: CLLocationCoordinate2D) async throws -> SkyAware.FireRiskLevel {
         recordedPoints.append(point)
@@ -280,10 +344,10 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.activeMesos = activeMesos
     }
 
-    func sync() async {}
-    func syncMapProducts() async {}
+    func sync() async { syncCalls += 1 }
+    func syncMapProducts() async { syncMapProductsCalls += 1 }
     func syncTextProducts() async {}
-    func syncConvectiveOutlooks() async {}
+    func syncConvectiveOutlooks() async { syncConvectiveOutlooksCalls += 1 }
     func syncMesoscaleDiscussions() async {}
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
@@ -312,6 +376,18 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     func queriedPoints() -> [CLLocationCoordinate2D] {
         recordedPoints
     }
+
+    func syncCount() -> Int {
+        syncCalls
+    }
+
+    func syncMapProductsCount() -> Int {
+        syncMapProductsCalls
+    }
+
+    func syncConvectiveOutlooksCount() -> Int {
+        syncConvectiveOutlooksCalls
+    }
 }
 
 private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
@@ -321,18 +397,45 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         self.activeWatches = activeWatches
     }
 
-    func sync(h3Cell: Int64?) async {}
+    func sync(context: LocationContext) async {}
 
-    func getActiveWatches(h3Cell: Int64?) async throws -> [WatchRowDTO] {
+    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
         activeWatches
     }
 }
 
-private struct ConstantGeocoder: LocationGeocoding {
-    let summary: String
+private actor FakeLocationContextResolver: LocationContextResolving {
+    let resolvedContext: LocationContext?
+    let error: LocationContextError?
 
-    func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
-        summary
+    init(resolvedContext: LocationContext?, error: LocationContextError?) {
+        self.resolvedContext = resolvedContext
+        self.error = error
+    }
+
+    func prepareCurrentContext(
+        requiresFreshLocation: Bool,
+        showsAuthorizationPrompt: Bool,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async throws -> LocationContext {
+        if let resolvedContext {
+            return resolvedContext
+        }
+        throw error ?? .locationTimeout
+    }
+
+    func resolveContext(
+        from snapshot: LocationSnapshot,
+        maximumAcceptedLocationAge: TimeInterval?,
+        placemarkTimeout: Double
+    ) async throws -> LocationContext {
+        if let resolvedContext {
+            return resolvedContext
+        }
+        throw error ?? .locationTimeout
     }
 }
 

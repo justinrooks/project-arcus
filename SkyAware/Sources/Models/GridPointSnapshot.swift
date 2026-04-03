@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct GridPointSnapshot {
+struct GridPointSnapshot: Sendable, Equatable {
     let nwsId: String
     let latitude: Double
     let longitude: Double
@@ -25,8 +25,57 @@ struct GridPointSnapshot {
     let forecastZone: String?
     let countyCode: String?
     let fireZone: String?
+    let countyLabel: String?
+    let fireZoneLabel: String?
+
+    init(
+        nwsId: String,
+        latitude: Double,
+        longitude: Double,
+        gridId: String,
+        gridX: Int,
+        gridY: Int,
+        forecastURL: URL?,
+        forecastHourlyURL: URL?,
+        forecastGridDataURL: URL?,
+        observationStationsURL: URL?,
+        city: String?,
+        state: String?,
+        timeZoneId: String?,
+        radarStationId: String?,
+        forecastZone: String?,
+        countyCode: String?,
+        fireZone: String?,
+        countyLabel: String?,
+        fireZoneLabel: String?
+    ) {
+        self.nwsId = nwsId
+        self.latitude = latitude
+        self.longitude = longitude
+        self.gridId = gridId
+        self.gridX = gridX
+        self.gridY = gridY
+        self.forecastURL = forecastURL
+        self.forecastHourlyURL = forecastHourlyURL
+        self.forecastGridDataURL = forecastGridDataURL
+        self.observationStationsURL = observationStationsURL
+        self.city = city
+        self.state = state
+        self.timeZoneId = timeZoneId
+        self.radarStationId = radarStationId
+        self.forecastZone = forecastZone
+        self.countyCode = countyCode
+        self.fireZone = fireZone
+        self.countyLabel = countyLabel
+        self.fireZoneLabel = fireZoneLabel
+    }
     
-    init(from: NWSGridPoint, with coordinates: Coordinate2D) {
+    init(
+        from: NWSGridPoint,
+        with coordinates: Coordinate2D,
+        countyLabel: String? = nil,
+        fireZoneLabel: String? = nil
+    ) {
         let props = from.properties
         
         self.nwsId                  = props.id ?? ""
@@ -46,5 +95,7 @@ struct GridPointSnapshot {
         self.forecastZone           = props.forecastZone?.lastPathComponent
         self.countyCode             = props.county?.lastPathComponent
         self.fireZone               = props.fireWeatherZone?.lastPathComponent
+        self.countyLabel            = countyLabel
+        self.fireZoneLabel          = fireZoneLabel
     }
 }

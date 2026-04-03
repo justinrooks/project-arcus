@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D0AFC5F12F412BAB001F331A /* Journal.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5F02F412BAB001F331A /* Journal.md */; };
 		D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D0AFC5EF2F412BAB001F331A /* AGENTS.md */; };
 		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 /* End PBXBuildFile section */
@@ -34,7 +33,6 @@
 		D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SkyAwareUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0AFC5EF2F412BAB001F331A /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
-		D0AFC5F02F412BAB001F331A /* Journal.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Journal.md; sourceTree = "<group>"; };
 		D0B22B902F465CD600651125 /* SkyAware.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SkyAware.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -48,6 +46,7 @@
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/DeviceAlertPayloadTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
+				UnitTests/HomeRefreshPipelineTests.swift,
 				UnitTests/HomeViewLoadingOverlayStateTests.swift,
 				UnitTests/HTTPDataDownloaderTests.swift,
 				UnitTests/LocationManagerTests.swift,
@@ -71,6 +70,8 @@
 				UnitTests/WatchParserTests.swift,
 				UnitTests/WatchRepoActiveTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
+				UnitTests/WatchRepoRefreshTests.swift,
+				UnitTests/WatchRowDTOTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -81,6 +82,7 @@
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/DeviceAlertPayloadTests.swift,
 				UnitTests/GeoJsonParserTests.swift,
+				UnitTests/HomeRefreshPipelineTests.swift,
 				UnitTests/HomeViewLoadingOverlayStateTests.swift,
 				UnitTests/HTTPDataDownloaderTests.swift,
 				UnitTests/LocationManagerTests.swift,
@@ -104,6 +106,8 @@
 				UnitTests/WatchParserTests.swift,
 				UnitTests/WatchRepoActiveTests.swift,
 				UnitTests/WatchRepoPurgeTests.swift,
+				UnitTests/WatchRepoRefreshTests.swift,
+				UnitTests/WatchRowDTOTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};
@@ -203,7 +207,6 @@
 			children = (
 				D0B22B902F465CD600651125 /* SkyAware.entitlements */,
 				D0AFC5EF2F412BAB001F331A /* AGENTS.md */,
-				D0AFC5F02F412BAB001F331A /* Journal.md */,
 				D048DFB42F21395F0037C3D4 /* ci_scripts */,
 				D03E60782EB2A55E00611081 /* Sources */,
 				D03E62C92EB2A99900611081 /* Resources */,
@@ -344,7 +347,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0AFC5F12F412BAB001F331A /* Journal.md in Resources */,
 				D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

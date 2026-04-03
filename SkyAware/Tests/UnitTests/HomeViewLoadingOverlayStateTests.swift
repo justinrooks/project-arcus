@@ -1,10 +1,12 @@
 import Foundation
 import CoreLocation
+import SwiftUI
 import Testing
 @testable import SkyAware
 
-@Suite("HomeView Startup Snapshot Selection")
-struct HomeViewStartupSnapshotSelectionTests {
+@Suite("HomeView Refresh Triggers")
+@MainActor
+struct HomeViewRefreshTriggerTests {
     private func makeSnapshot(lat: Double, lon: Double, timestamp: TimeInterval) -> LocationSnapshot {
         LocationSnapshot(
             coordinates: .init(latitude: lat, longitude: lon),
@@ -15,117 +17,191 @@ struct HomeViewStartupSnapshotSelectionTests {
         )
     }
 
-    @Test("prefers provider snapshot when both sources exist")
-    func prefersProviderSnapshot() {
-        let provider = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
-        let rendered = makeSnapshot(lat: 35.46, lon: -97.51, timestamp: 50)
-
-        let selected = HomeView.preferredBootstrapSnapshot(
-            providerSnapshot: provider,
-            renderedSnapshot: rendered
-        )
-
-        #expect(selected?.coordinates.latitude == provider.coordinates.latitude)
-        #expect(selected?.coordinates.longitude == provider.coordinates.longitude)
-        #expect(selected?.timestamp == provider.timestamp)
+    @Test("scene active absorbs context changed follow-up work")
+    func sceneActive_absorbsContextChanged() {
+        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.contextChanged))
+        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.timer))
+        #expect(HomeView.RefreshTrigger.manual.absorbs(.sceneActive))
     }
 
-    @Test("falls back to rendered snapshot when provider snapshot is missing")
-    func fallsBackToRenderedSnapshot() {
-        let rendered = makeSnapshot(lat: 35.46, lon: -97.51, timestamp: 50)
-
-        let selected = HomeView.preferredBootstrapSnapshot(
-            providerSnapshot: nil,
-            renderedSnapshot: rendered
+    @Test("duplicate activation refresh is skipped for the same snapshot")
+    func duplicateActivationRefresh_isSkippedForSameSnapshot() {
+        let snapshot = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
+        let lastRefresh = RefreshContext(
+            coordinates: snapshot.coordinates,
+            refreshedAt: snapshot.timestamp
         )
 
-        #expect(selected?.coordinates.latitude == rendered.coordinates.latitude)
-        #expect(selected?.coordinates.longitude == rendered.coordinates.longitude)
-        #expect(selected?.timestamp == rendered.timestamp)
+        #expect(
+            HomeView.shouldPerformLocationRefresh(
+                lastRefreshContext: lastRefresh,
+                snapshot: snapshot,
+                force: false
+            ) == false
+        )
     }
 
-    @Test("returns nil when no snapshot source exists")
-    func returnsNilWithoutAnySnapshot() {
-        let selected = HomeView.preferredBootstrapSnapshot(
-            providerSnapshot: nil,
-            renderedSnapshot: nil
+    @Test("force refresh still bypasses duplicate suppression")
+    func forceRefresh_bypassesDuplicateSuppression() {
+        let snapshot = makeSnapshot(lat: 39.75, lon: -104.44, timestamp: 100)
+        let lastRefresh = RefreshContext(
+            coordinates: snapshot.coordinates,
+            refreshedAt: snapshot.timestamp
         )
 
-        #expect(selected == nil)
+        #expect(
+            HomeView.shouldPerformLocationRefresh(
+                lastRefreshContext: lastRefresh,
+                snapshot: snapshot,
+                force: true
+            )
+        )
     }
 
-    @Test("requests interactive location auth only when status is not determined")
-    func requestsInteractiveLocationAuth_onlyWhenNotDetermined() {
+    @Test("maps startup location acquisition states into loading location readiness")
+    func readinessState_mapsLocationAcquisitionStates() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .notDetermined)
+            HomeView.readinessState(
+                startupState: .idle,
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .loadingLocation
         )
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .authorizedWhenInUse) == false
+            HomeView.readinessState(
+                startupState: .acquiringLocation,
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .loadingLocation
         )
+    }
+
+    @Test("maps resolving context into local context readiness")
+    func readinessState_mapsResolvingContext() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .authorizedAlways) == false
+            HomeView.readinessState(
+                startupState: .resolvingContext,
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .resolvingLocalContext
         )
+    }
+
+    @Test("maps ready state with missing local risks into loading local data")
+    func readinessState_mapsReadyWithMissingRiskData() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .denied) == false
+            HomeView.readinessState(
+                startupState: .ready,
+                hasContext: true,
+                stormRisk: .slight,
+                severeRisk: nil,
+                fireRisk: .elevated
+            ) == .loadingLocalData
         )
+    }
+
+    @Test("maps failed startup into location unavailable readiness")
+    func readinessState_mapsFailure() {
         #expect(
-            HomeView.shouldRequestInteractiveLocationAuthorization(authStatus: .restricted) == false
+            HomeView.readinessState(
+                startupState: .failed("location-unavailable"),
+                hasContext: false,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .locationUnavailable
         )
     }
 }
 
-@Suite("HomeView Loading Overlay State")
-struct HomeViewLoadingOverlayStateTests {
-    @Test("begin shows overlay and message")
-    func begin_showsOverlayAndMessage() {
-        var state = HomeView.LoadingOverlayState()
+@Suite("Foreground Refresh Policies")
+struct ForegroundRefreshPolicyTests {
+    private let alertPolicy = AlertRefreshPolicy(minimumSyncInterval: 120)
+    private let mapPolicy = MapProductRefreshPolicy(minimumSyncInterval: 600)
 
-        state.begin(message: "Refreshing alerts...")
-
-        #expect(state.activeRefreshes == 1)
-        #expect(state.isVisible)
-        #expect(state.displayMessage == "Refreshing alerts...")
+    @Test("alert policy syncs when there is no previous sync")
+    func alertPolicy_syncsWithoutPreviousSync() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        #expect(alertPolicy.shouldSync(now: now, lastSync: nil, force: false))
     }
 
-    @Test("nested begin/end keeps overlay until all refreshes complete")
-    func nestedBeginEnd_keepsOverlayUntilZero() {
-        var state = HomeView.LoadingOverlayState()
-
-        state.begin(message: "Refreshing data...")
-        state.begin(message: "Syncing outlooks...")
-        state.end()
-
-        #expect(state.activeRefreshes == 1)
-        #expect(state.isVisible)
-        #expect(state.displayMessage == "Syncing outlooks...")
-
-        state.end()
-
-        #expect(state.activeRefreshes == 0)
-        #expect(state.isVisible == false)
-        #expect(state.message == nil)
-        #expect(state.displayMessage == "Refreshing data...")
+    @Test("alert policy skips before minimum interval")
+    func alertPolicy_skipsBeforeMinimumInterval() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recent = now.addingTimeInterval(-30)
+        #expect(alertPolicy.shouldSync(now: now, lastSync: recent, force: false) == false)
     }
 
-    @Test("setMessage updates display text while active")
-    func setMessage_updatesDisplayMessage() {
-        var state = HomeView.LoadingOverlayState()
-        state.begin(message: "Refreshing data...")
-
-        state.setMessage("Updating local risks...")
-
-        #expect(state.displayMessage == "Updating local risks...")
+    @Test("map policy skips before minimum interval")
+    func mapPolicy_skipsBeforeMinimumInterval() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recent = now.addingTimeInterval(-300)
+        #expect(mapPolicy.shouldSync(now: now, lastSync: recent, force: false) == false)
     }
 
-    @Test("end clamps at zero and keeps state hidden")
-    func end_clampsAtZero() {
-        var state = HomeView.LoadingOverlayState()
+    @Test("map policy force refresh bypasses interval guard")
+    func mapPolicy_forceBypassesIntervalGuard() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let recent = now.addingTimeInterval(-5)
+        #expect(mapPolicy.shouldSync(now: now, lastSync: recent, force: true))
+    }
+}
 
-        state.end()
+@Suite("Summary Resolution State")
+struct SummaryResolutionStateTests {
+    @Test("begin tracks provider message and resolving sections")
+    func begin_tracksProviderMessageAndSections() {
+        var state = SummaryResolutionState()
 
-        #expect(state.activeRefreshes == 0)
-        #expect(state.isVisible == false)
-        #expect(state.message == nil)
+        state.begin(task: .alerts, sections: [.alerts])
+
+        #expect(state.isRefreshing)
+        #expect(state.activeMessages == ["Bringing in local alerts…"])
+        #expect(state.isResolving(.alerts))
+    }
+
+    @Test("finishing one section keeps the provider active for remaining work")
+    func finish_keepsProviderActiveUntilAllSectionsResolve() {
+        var state = SummaryResolutionState()
+
+        state.begin(task: .stormRisk, sections: [.stormRisk, .severeRisk])
+        state.finish(task: .stormRisk, resolvedSections: [.stormRisk])
+
+        #expect(state.isRefreshing)
+        #expect(state.activeMessages == ["Getting storm risk…"])
+        #expect(state.isResolving(.stormRisk) == false)
+        #expect(state.isResolving(.severeRisk))
+    }
+
+    @Test("finishing remaining sections clears refresh activity")
+    func finish_clearsRefreshWhenTaskCompletes() {
+        var state = SummaryResolutionState()
+
+        state.begin(task: .weather, sections: [.conditions, .atmosphere])
+        state.finish(task: .weather, resolvedSections: [.conditions, .atmosphere])
+
+        #expect(state.isRefreshing == false)
+        #expect(state.isResolving(.conditions) == false)
+        #expect(state.isResolving(.atmosphere) == false)
+        #expect(state.recentCompletedMessage == "Updating your conditions…")
+    }
+
+    @Test("reset clears active tasks and sections")
+    func reset_clearsTrackedState() {
+        var state = SummaryResolutionState()
+
+        state.begin(task: .location, sections: [.conditions])
+        state.reset()
+
+        #expect(state.isRefreshing == false)
+        #expect(state.activeMessages.isEmpty)
+        #expect(state.isResolving(.conditions) == false)
     }
 }
 

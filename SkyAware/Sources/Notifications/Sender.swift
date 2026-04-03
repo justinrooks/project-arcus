@@ -13,7 +13,7 @@ struct Sender: NotificationSending {
     
     func send(title: String, body: String, subtitle: String, id: String) async {
         logger.info("Sending notification")
-        await NotificationManager.shared.notify(title: title, subtitle: subtitle, body: body)
+        await NotificationManager.shared.notify(title: title, subtitle: subtitle, body: body, id: id)
         logger.notice("Notification sent")
     }
 }

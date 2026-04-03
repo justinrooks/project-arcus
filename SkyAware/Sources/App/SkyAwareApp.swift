@@ -20,7 +20,8 @@ struct SkyAwareApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     // Dependencies
-    private let deps = Dependencies.live()
+    private let deps: Dependencies
+    @State private var locationSession: LocationSession
     private let logger = Logger.appMain
     
     // State
@@ -40,7 +41,17 @@ struct SkyAwareApp: App {
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
     
+    @MainActor
     init() {
+        let deps = Dependencies.live()
+        self.deps = deps
+        _locationSession = State(
+            initialValue: LocationSession(
+                locationClient: deps.locationClient,
+                locationManager: deps.locationManager,
+                locationContextResolver: deps.locationContextResolver
+            )
+        )
 #if DEBUG
         print(URL.applicationSupportDirectory.path(percentEncoded: false))
 #endif
@@ -48,52 +59,59 @@ struct SkyAwareApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if onboardingComplete {
-                HomeView()
-                    .environment(\.dependencies, deps)
-                    .appBackground()
-                    .onAppear {
-                        if disclaimerVersion < currentDisclaimerVersion {
-                            showDisclaimerUpdate = true
-                        }
-                        if deps.locationManager.authStatus == .denied || deps.locationManager.authStatus == .restricted {
-                            showLocationPermissionAlert = true
-                        }
-                    }
-                    .sheet(isPresented: $showDisclaimerUpdate) {
-                        // Just show the disclaimer screen in a sheet
-                        NavigationStack {
-                            DisclaimerView {
-                                disclaimerVersion = currentDisclaimerVersion
-                                showDisclaimerUpdate = false
+            Group {
+                if onboardingComplete {
+                    HomeView()
+                        .environment(\.dependencies, deps)
+                        .environment(locationSession)
+                        .appBackground()
+                        .onAppear {
+                            if disclaimerVersion < currentDisclaimerVersion {
+                                showDisclaimerUpdate = true
                             }
-                            .navigationTitle("Updated Disclaimer")
-                            .navigationBarTitleDisplayMode(.inline)
+                            if locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted {
+                                showLocationPermissionAlert = true
+                            }
                         }
-                        .interactiveDismissDisabled() // Can't swipe away
-                    }
-                    .sheet(isPresented: $showLocationPermissionAlert) {
-                        // Just show the location screen in a sheet
-                        NavigationStack {
-                            LocationPermissionView(
-                                isWorking: false,
-                                statusMessage: nil,
-                                onEnable: {
-                                    deps.locationManager.checkLocationAuthorization(isActive: true)
-                                    showLocationPermissionAlert = false
-                                },
-                                onSkip: {
-                                    showLocationPermissionAlert = false
+                        .sheet(isPresented: $showDisclaimerUpdate) {
+                            // Just show the disclaimer screen in a sheet
+                            NavigationStack {
+                                DisclaimerView {
+                                    disclaimerVersion = currentDisclaimerVersion
+                                    showDisclaimerUpdate = false
                                 }
-                            )
-                            .navigationTitle("Location Restricted")
-                            .navigationBarTitleDisplayMode(.inline)
+                                .navigationTitle("Updated Disclaimer")
+                                .navigationBarTitleDisplayMode(.inline)
+                            }
+                            .interactiveDismissDisabled() // Can't swipe away
                         }
-                        .interactiveDismissDisabled() // Can't swipe away
-                    }
-            } else {
-                OnboardingView(locationMgr: deps.locationManager)
-                    .environment(\.dependencies, deps)
+                        .sheet(isPresented: $showLocationPermissionAlert) {
+                            // Just show the location screen in a sheet
+                            NavigationStack {
+                                LocationPermissionView(
+                                    isWorking: false,
+                                    statusMessage: nil,
+                                    onEnable: {
+                                        locationSession.requestInteractiveAuthorization()
+                                        showLocationPermissionAlert = false
+                                    },
+                                    onSkip: {
+                                        showLocationPermissionAlert = false
+                                    }
+                                )
+                                .navigationTitle("Location Restricted")
+                                .navigationBarTitleDisplayMode(.inline)
+                            }
+                            .interactiveDismissDisabled() // Can't swipe away
+                        }
+                } else {
+                    OnboardingView()
+                        .environment(\.dependencies, deps)
+                        .environment(locationSession)
+                }
+            }
+            .onAppear {
+                locationSession.handleScenePhaseChange(scenePhase)
             }
         }
         .modelContainer(deps.modelContainer)
@@ -108,7 +126,7 @@ struct SkyAwareApp: App {
         }
         .onChange(of: scenePhase) { _, newPhase in
             logger.debug("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
-            deps.locationManager.updateMode(for: newPhase)
+            locationSession.handleScenePhaseChange(newPhase)
             
             switch newPhase {
             case .background:

@@ -16,9 +16,8 @@ struct ActiveAlertSummaryView: View {
     
     @State private var selectedMeso: MdDTO? = nil
     @State private var selectedWatch: WatchRowDTO? = nil
-    @State private var mesoSheetHeight: CGFloat = .zero
-    @State private var watchSheetHeight: CGFloat = .zero
-
+    @State private var selectedMesoDetent: PresentationDetent = .medium
+    @State private var selectedWatchDetent: PresentationDetent = .medium
     init(mesos: [MdDTO], watches: [WatchRowDTO], isLoading: Bool = false) {
         self.mesos = mesos
         self.watches = watches
@@ -33,7 +32,10 @@ struct ActiveAlertSummaryView: View {
             label: "Watches",
             items: sortedWatches,
             limit: 3,
-            onSelect: { selectedWatch = $0 }
+            onSelect: {
+                selectedWatchDetent = .medium
+                selectedWatch = $0
+            }
         ) { watch in
             WatchRowView(watch: watch)
         }
@@ -42,7 +44,10 @@ struct ActiveAlertSummaryView: View {
             label: "Mesos",
             items: sortedMesos,
             limit: 3,
-            onSelect: { selectedMeso = $0 }
+            onSelect: {
+                selectedMesoDetent = .medium
+                selectedMeso = $0
+            }
         ) { meso in
             MesoRowView(meso: meso)
         }
@@ -79,15 +84,15 @@ struct ActiveAlertSummaryView: View {
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
         .placeholder(isLoading)
         .sheet(item: $selectedMeso) { meso in
-            sheetContent(height: $mesoSheetHeight) {
-                MesoscaleDiscussionCard(meso: meso, layout: .sheet)
+            sheetContent(selection: $selectedMesoDetent) { isExpanded in
+                MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
             }
         }
         .sheet(item: $selectedWatch) { watch in
-            sheetContent(height: $watchSheetHeight) {
-                WatchDetailView(watch: watch, layout: .sheet)
+            sheetContent(selection: $selectedWatchDetent) { isExpanded in
+                WatchDetailView(watch: watch, layout: .sheet, isExpanded: isExpanded)
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
             }
@@ -96,19 +101,28 @@ struct ActiveAlertSummaryView: View {
 
     @ViewBuilder
     private func sheetContent<Content: View>(
-        height: Binding<CGFloat>,
-        @ViewBuilder content: () -> Content
+        selection: Binding<PresentationDetent>,
+        @ViewBuilder content: @escaping (_ isExpanded: Bool) -> Content
     ) -> some View {
         NavigationStack {
-            ScrollView {
-                content()
+            GeometryReader { geometry in
+                let isExpanded = selection.wrappedValue == .large
+                ScrollView {
+                    content(isExpanded)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: geometry.size.height,
+                            maxHeight: isExpanded ? nil : geometry.size.height,
+                            alignment: .top
+                        )
+                }
+                .scrollBounceBehavior(.basedOnSize)
+                .background(.skyAwareBackground)
             }
-            .background(.skyAwareBackground)
-            .getHeight(for: height)
-            .presentationDetents([.height(height.wrappedValue)])
-            .presentationDragIndicator(.visible)
             .navigationBarTitleDisplayMode(.inline)
         }
+        .presentationDetents([.medium, .large], selection: selection)
+        .presentationDragIndicator(.visible)
     }
 }
 

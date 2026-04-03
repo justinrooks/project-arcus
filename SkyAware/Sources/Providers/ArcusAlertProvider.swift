@@ -6,63 +6,58 @@
 //
 
 import Foundation
-import CoreLocation
 import OSLog
 
 actor ArcusAlertProvider {
     let logger = Logger.providersArcus
     let client: ArcusClient
     let watchRepo: WatchRepo
-    let metadataRepo: NwsMetadataRepo
-    let gridPointProvider: GridPointProvider
-    private var inFlightWatchSyncTasks: [GridRefreshKey: Task<Bool, Never>] = [:]
-    private var lastWatchSyncAtByLocation: [GridRefreshKey: Date] = [:]
-    private let watchSyncCooldownSeconds: TimeInterval = 30
+    private var inFlightSyncs: [LocationContext.RefreshKey: Task<Void, Never>] = [:]
     
-    init(watchRepo: WatchRepo, metadataRepo: NwsMetadataRepo, gridMetadataProvider: GridPointProvider, client: ArcusClient) {
+    init(watchRepo: WatchRepo, client: ArcusClient) {
         self.client = client
         self.watchRepo = watchRepo
-        self.metadataRepo = metadataRepo
-        self.gridPointProvider = gridMetadataProvider
     }
 }
 
 extension ArcusAlertProvider: ArcusAlertSyncing {
-    func sync(h3Cell: Int64?) async {
-        guard let gridMetadata = await gridPointProvider.currentGridPointMetadata() else {
-            logger.warning("No grid metadata available")
+    func sync(context: LocationContext) async {
+        let key = context.refreshKey
+        if let inFlight = inFlightSyncs[key] {
+            logger.debug("Arcus alert sync already in-flight for current location scope; joining existing task")
+            await inFlight.value
             return
         }
-        guard let countyCode = gridMetadata.countyCode, let fireZone = gridMetadata.fireZone else {
-            logger.warning("No county code or fire zone data available")
-            return
-        }
-        
+
         let watchRepo = self.watchRepo
         let client = self.client
         let logger = self.logger
-        do {
-            try await watchRepo.refresh(using: client, for: countyCode, and: fireZone, in: h3Cell)
-        } catch {
-            logger.error("Error syncing Arcus alerts: \(error, privacy: .public)")
+        let task = Task {
+            do {
+                try await watchRepo.refresh(
+                    using: client,
+                    for: context.grid.countyCode ?? "",
+                    and: context.grid.fireZone ?? "",
+                    in: context.h3Cell
+                )
+            } catch {
+                logger.error("Error syncing Arcus alerts: \(error, privacy: .public)")
+            }
         }
+
+        inFlightSyncs[key] = task
+        await task.value
+        inFlightSyncs[key] = nil
     }
 }
 
 extension ArcusAlertProvider: ArcusAlertQuerying {
-    func getActiveWatches(h3Cell: Int64?) async throws -> [WatchRowDTO] {
-        guard let gridMetadata = await gridPointProvider.currentGridPointMetadata() else {
-            logger.warning("No grid metadata available")
-            return []
-        }
-        
-        guard let county = gridMetadata.countyCode, let fireZone = gridMetadata.fireZone else {
-            logger.warning("No county or fire zone data available")
-            return []
-        }
-        
-        //COZ246
-        return try await watchRepo.active(countyCode: county, fireZone: fireZone, cell: h3Cell)
+    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+        try await watchRepo.active(
+            countyCode: context.grid.countyCode ?? "",
+            fireZone: context.grid.fireZone ?? "",
+            cell: context.h3Cell
+        )
     }
 }
 

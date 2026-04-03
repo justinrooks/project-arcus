@@ -8,5 +8,5 @@
 import Foundation
 
 protocol ArcusAlertSyncing: Sendable {
-    func sync(h3Cell: Int64?) async -> Void
+    func sync(context: LocationContext) async -> Void
 }

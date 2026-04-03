@@ -12,11 +12,10 @@ import UserNotifications
 
 @MainActor
 struct OnboardingView: View {
-    @Environment(\.dependencies) private var deps
+    @Environment(LocationSession.self) private var locationSession
 
     private let logger = Logger.appMain
     private let currentDisclaimerVersion = 1
-    let locationMgr: LocationManager
 
     @AppStorage(
         "onboardingComplete",
@@ -31,8 +30,6 @@ struct OnboardingView: View {
     @State private var currentPage = 0
     @State private var locationStepState: PermissionStepState = .idle
     @State private var notificationStepState: PermissionStepState = .idle
-
-    private var sync: any SpcSyncing { deps.spcSync }
 
     private var isArcusSignalPushEnabled: Bool {
         ArcusSignalConfiguration.configuredBaseURL() != nil
@@ -81,7 +78,17 @@ struct OnboardingView: View {
 
         Task { @MainActor in
             locationStepState = .working("Waiting for your location choice...")
-            _ = await resolveLocationAuthorization()
+            _ = await locationSession.prepareCurrentLocationContext(
+                requiresFreshLocation: false,
+                showsAuthorizationPrompt: true
+            )
+
+            if locationSession.authorizationStatus == .authorizedWhenInUse {
+                locationStepState = .working("Requesting Always Allow for background alerts...")
+                try? await Task.sleep(for: .milliseconds(300))
+                _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+            }
+
             locationStepState = .idle
             advanceToNotificationPage()
         }
@@ -93,28 +100,6 @@ struct OnboardingView: View {
         Task { @MainActor in
             await finalizeNotificationOnboarding()
         }
-    }
-
-    @MainActor
-    private func resolveLocationAuthorization(timeout: Double = 30) async -> CLAuthorizationStatus {
-        let currentStatus = locationMgr.authStatus
-        guard currentStatus == .notDetermined else {
-            return currentStatus
-        }
-
-        locationMgr.checkLocationAuthorization(isActive: true)
-
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            let status = locationMgr.authStatus
-            if status != .notDetermined {
-                return status
-            }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-
-        logger.notice("Timed out waiting for onboarding location permission response")
-        return locationMgr.authStatus
     }
 
     @MainActor
@@ -142,17 +127,15 @@ struct OnboardingView: View {
             return
         }
 
-        let hasSnapshot = await deps.locationProvider.snapshot() != nil
-        let canCaptureFreshSnapshot = locationMgr.authStatus.isAuthorizedForOnboardingLocation
-        if hasSnapshot || canCaptureFreshSnapshot {
-            notificationStepState = .working(
-                hasSnapshot
-                    ? "Sending your first location snapshot..."
-                    : "Capturing your first location snapshot..."
+        let canCaptureFreshSnapshot = locationSession.authorizationStatus.isAuthorizedForOnboardingLocation
+        if canCaptureFreshSnapshot {
+            notificationStepState = .working("Capturing your first location context...")
+            let context = await locationSession.prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false
             )
-            let pushedSnapshot = await deps.locationProvider.pushLatestSnapshotWhenAvailable(timeout: 12)
-            if !pushedSnapshot {
-                logger.notice("Continuing onboarding without an uploaded location snapshot; none became available")
+            if context == nil {
+                logger.notice("Continuing onboarding without an uploaded location context; none became available")
             }
         }
 
@@ -170,9 +153,6 @@ struct OnboardingView: View {
     @MainActor
     private func completeOnboarding() {
         onboardingComplete = true
-        Task {
-            await sync.sync()
-        }
     }
 }
 
@@ -220,9 +200,6 @@ private extension UNAuthorizationStatus {
 }
 
 #Preview {
-    let provider = LocationProvider()
-    let sink: LocationSink = { [provider] update in await provider.send(update: update) }
-    let locationMgr = LocationManager(onUpdate: sink)
-    
-    OnboardingView(locationMgr: locationMgr)
+    OnboardingView()
+        .environment(LocationSession.preview)
 }

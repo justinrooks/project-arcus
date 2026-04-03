@@ -30,7 +30,13 @@ struct LocationPermissionView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             
-            Text("Your location data stays on your device and is never shared or tracked.")
+            Text("After you allow While Using, SkyAware will ask for Always Allow so alerts can stay current in the background.")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            Text("Your location data is shared with the server and used for determining weather alerts for your location. It is never shared or tracked.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct SpcProductHeader: View {
-    let layout: DetailLayout = .full
+    let layout: DetailLayout
     let title: String
     let issued: Date
     let validStart: Date
@@ -16,6 +16,26 @@ struct SpcProductHeader: View {
     let subtitle: String?
     let inZone: Bool
     let sender: String?
+
+    init(
+        layout: DetailLayout = .full,
+        title: String,
+        issued: Date,
+        validStart: Date,
+        validEnd: Date,
+        subtitle: String?,
+        inZone: Bool,
+        sender: String?
+    ) {
+        self.layout = layout
+        self.title = title
+        self.issued = issued
+        self.validStart = validStart
+        self.validEnd = validEnd
+        self.subtitle = subtitle
+        self.inZone = inZone
+        self.sender = sender
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: layout == .sheet ? 2 : 4) {

@@ -16,7 +16,7 @@ actor WatchRepo {
     func active(countyCode: String, fireZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
         logger.info("Fetching current local watches")
         
-        let candidates = try modelContext.fetch(currentWatchesDescriptor(date: date))
+        let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
 
         var hits: [Watch] = []
         hits.reserveCapacity(candidates.count)
@@ -55,7 +55,7 @@ actor WatchRepo {
     func purge(asOf now: Date = .init()) throws {
         logger.info("Purging expired NWS watches")
         
-        let expired = try modelContext.fetch(expiredWatchesDescriptor(asOf: now))
+        let expired = try modelContext.fetch(Watch.expiredWatchesDescriptor(asOf: now))
         if expired.isEmpty {
             logger.debug("No expired watches to purge")
             return
@@ -126,28 +126,5 @@ actor WatchRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
-    }
-    
-    // MARK: Fetch Descriptors
-    /// Returns a descriptor that filters watches that active
-    /// - Parameter date: current date
-    /// - Returns: fetch descriptor
-    private func currentWatchesDescriptor(date: Date = .now) -> FetchDescriptor<Watch> {
-        let predicate = #Predicate<Watch> { watch in
-            watch.effective <= date && date <= watch.ends
-        }
-        return FetchDescriptor(predicate: predicate)
-    }
-    
-    /// Returns a fetch descriptor that gets all watches
-    /// - Returns: fetch descriptor
-    private func allWatchesDescriptor() -> FetchDescriptor<Watch> {
-        let predicate = #Predicate<Watch> { _ in true }
-        return FetchDescriptor(predicate: predicate)
-    }
-    
-    private func expiredWatchesDescriptor(asOf now: Date) -> FetchDescriptor<Watch> {
-        let predicate = #Predicate<Watch> { $0.ends < now }
-        return FetchDescriptor(predicate: predicate)
     }
 }

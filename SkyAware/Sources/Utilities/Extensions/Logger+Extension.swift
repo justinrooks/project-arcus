@@ -45,6 +45,7 @@ extension Logger {
     
     // MARK: Location
     static let locationManager = Logger(subsystem: subsystem, category: "location.manager")
+    static let locationContextResolver = Logger(subsystem: subsystem, category: "location.contextResolver")
     static let locationProvider = Logger(subsystem: subsystem, category: "location.provider")
     static let locationPushPusher = Logger(subsystem: subsystem, category: "location.push.pusher")
     static let locationPushUploader = Logger(subsystem: subsystem, category: "location.push.uploader")

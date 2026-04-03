@@ -8,8 +8,9 @@
 import SwiftUI
 
 struct SummaryStatus: View {
-    let location: String
+    let statusText: String
     let weather: SummaryWeather?
+    let resolutionState: SummaryResolutionState
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -38,11 +39,18 @@ struct SummaryStatus: View {
     }
 
     private var contentRow: some View {
-        HStack(spacing: 10) {
-            Label(location, systemImage: "location.fill")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundStyle(.primary)
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(statusText, systemImage: "location.fill")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(.primary)
+
+                SummaryStatusSecondaryLine(
+                    resolutionState: resolutionState
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 8)
 
@@ -52,16 +60,31 @@ struct SummaryStatus: View {
 
     @ViewBuilder
     private var weatherContent: some View {
-        HStack(spacing: 6) {
-            if let weather, let formattedTemperature {
-                Text(formattedTemperature)
-                    .monospacedDigit()
-                Image(systemName: weather.symbolName)
-                    .symbolVariant(.fill)
+        VStack(alignment: .trailing, spacing: 2) {
+            HStack(spacing: 6) {
+                if let weather, let formattedTemperature {
+                    Text(formattedTemperature)
+                        .monospacedDigit()
+                    Image(systemName: weather.symbolName)
+                        .symbolVariant(.fill)
+                }
             }
+            .frame(minHeight: 20, alignment: .trailing)
+
+            Group {
+                SummarySettledConditionLine(
+                    conditionText: weather?.conditionText,
+                    resolutionState: resolutionState
+                )
+            }
+            .font(.footnote)
+            .multilineTextAlignment(.trailing)
+            .lineLimit(1)
+            .frame(minHeight: 18, alignment: .trailing)
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.primary)
+        .frame(minWidth: 88, alignment: .trailing)
     }
 
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
@@ -69,10 +92,113 @@ struct SummaryStatus: View {
     }
 }
 
+private struct SummaryStatusSecondaryLine: View {
+    let resolutionState: SummaryResolutionState
+    @State private var displayedMessage: String?
+
+    var body: some View {
+        Group {
+            if let displayedMessage {
+                Text(displayedMessage)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(" ")
+                    .foregroundStyle(.clear)
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.footnote)
+        .lineLimit(1)
+        .contentTransition(.opacity)
+        .frame(minHeight: 18, alignment: .leading)
+        .task(id: taskState) {
+            await updateDisplayedMessage()
+        }
+    }
+
+    private var taskState: SecondaryLineTaskState {
+        SecondaryLineTaskState(
+            activeMessages: resolutionState.activeMessages,
+            recentCompletedMessage: resolutionState.recentCompletedMessage,
+            recentCompletedDeadline: resolutionState.recentCompletedDeadline
+        )
+    }
+
+    @MainActor
+    private func updateDisplayedMessage() async {
+        let activeMessages = resolutionState.activeMessages
+        if activeMessages.isEmpty == false {
+            if activeMessages.count == 1 {
+                displayedMessage = activeMessages[0]
+                return
+            }
+
+            var index = 0
+            displayedMessage = activeMessages[index]
+
+            while Task.isCancelled == false {
+                try? await Task.sleep(for: .seconds(3))
+                if Task.isCancelled { return }
+                index = (index + 1) % activeMessages.count
+                displayedMessage = activeMessages[index]
+            }
+
+            return
+        }
+
+        if let recentCompletedMessage = resolutionState.recentCompletedMessage {
+            displayedMessage = recentCompletedMessage
+
+            if let recentCompletedDeadline = resolutionState.recentCompletedDeadline {
+                let remainingMilliseconds = max(
+                    Int((recentCompletedDeadline.timeIntervalSinceNow * 1_000).rounded(.up)),
+                    0
+                )
+
+                if remainingMilliseconds > 0 {
+                    try? await Task.sleep(for: .milliseconds(remainingMilliseconds))
+                }
+            }
+
+            if Task.isCancelled { return }
+        }
+
+        displayedMessage = nil
+    }
+}
+
+private struct SecondaryLineTaskState: Equatable {
+    let activeMessages: [String]
+    let recentCompletedMessage: String?
+    let recentCompletedDeadline: Date?
+}
+
+private struct SummarySettledConditionLine: View {
+    let conditionText: String?
+    let resolutionState: SummaryResolutionState
+
+    var body: some View {
+        Group {
+            if shouldShowCondition, let conditionText {
+                Text(conditionText)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(" ")
+                    .foregroundStyle(.clear)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    private var shouldShowCondition: Bool {
+        resolutionState.isRefreshing == false && resolutionState.recentCompletedMessage == nil
+    }
+}
+
 #Preview {
     VStack {
         SummaryStatus(
-            location: "Denver, CO",
+            statusText: "Denver, CO",
             weather: .init(
                 temperature: Measurement(
                     value: 37.0,
@@ -91,10 +217,11 @@ struct SummaryStatus: View {
                 windDirection: "NNW",
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "climbing"
-            )
+            ),
+            resolutionState: SummaryResolutionState()
         )
         SummaryStatus(
-            location: "Topeka, KS",
+            statusText: "Topeka, KS",
             weather: .init(
                 temperature: Measurement(
                     value: 47.0,
@@ -113,7 +240,8 @@ struct SummaryStatus: View {
                 windDirection: "SSE",
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "falling"
-            )
+            ),
+            resolutionState: SummaryResolutionState()
         )
     }
 }

@@ -29,7 +29,7 @@ struct LocationUpdate: Sendable {
     }
 }
 
-struct LocationSnapshot: Sendable {
+struct LocationSnapshot: Sendable, Equatable {
     let coordinates: CLLocationCoordinate2D
     let timestamp: Date
     let accuracy: CLLocationAccuracy
@@ -37,6 +37,15 @@ struct LocationSnapshot: Sendable {
     var placemarkSummary: String?
     /// Hex-encoded H3 cell id used for coarse server-side location bucketing.
     var h3Cell: Int64?
+
+    static func == (lhs: LocationSnapshot, rhs: LocationSnapshot) -> Bool {
+        lhs.coordinates.latitude == rhs.coordinates.latitude &&
+        lhs.coordinates.longitude == rhs.coordinates.longitude &&
+        lhs.timestamp == rhs.timestamp &&
+        lhs.accuracy == rhs.accuracy &&
+        lhs.placemarkSummary == rhs.placemarkSummary &&
+        lhs.h3Cell == rhs.h3Cell
+    }
 }
 
 typealias LocationSink = @Sendable (LocationUpdate) async -> Void
@@ -62,7 +71,6 @@ actor LocationProvider {
 
     private let geocoder: LocationGeocoding
     private let hasher: LocationHashing
-    private let snapshotPusher: LocationSnapshotPushing
     private let snapshotCache: LocationSnapshotCaching
     private let nowProvider: @Sendable () -> Date
     private let logger = Logger.locationProvider
@@ -79,44 +87,17 @@ actor LocationProvider {
     init(
         geocoder: LocationGeocoding = CoreLocationGeocoder(),
         hasher: LocationHashing = SwiftyH3Hasher(),
-        snapshotPusher: LocationSnapshotPushing = NoOpLocationSnapshotPusher(),
         snapshotCache: LocationSnapshotCaching = NoOpLocationSnapshotCache(),
         nowProvider: @escaping @Sendable () -> Date = Date.init
     ) {
         self.geocoder = geocoder
         self.hasher = hasher
-        self.snapshotPusher = snapshotPusher
         self.snapshotCache = snapshotCache
         self.nowProvider = nowProvider
         lastSnapshot = Self.restoredSnapshotIfFresh(snapshotCache.load(), nowProvider: nowProvider)
     }
 
     func snapshot() async -> LocationSnapshot? { lastSnapshot }
-
-    func pushLatestSnapshotWhenAvailable(timeout: Double = 15) async -> Bool {
-        if let lastSnapshot {
-            await snapshotPusher.enqueue(lastSnapshot)
-            return true
-        }
-
-        let stream = updates()
-
-        do {
-            let snapshot: LocationSnapshot? = try await withTimeout(timeout: timeout) {
-                for await snapshot in stream {
-                    return snapshot
-                }
-                return nil
-            }
-
-            guard snapshot != nil else { return false }
-            logger.debug("Observed fresh location snapshot while waiting for uploader readiness")
-            return true
-        } catch {
-            logger.notice("Timed out waiting for a location snapshot to upload")
-            return false
-        }
-    }
 
     func updates() -> AsyncStream<LocationSnapshot> {
         AsyncStream { cont in
@@ -295,9 +276,6 @@ actor LocationProvider {
         snapshotCache.save(snap)
         logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.coordinates.longitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.placemarkSummary ?? "unknown", privacy: .public)")
         continuations.values.forEach { $0.yield(snap) }
-        Task(priority: .utility) { [snapshotPusher] in
-            await snapshotPusher.enqueue(snap)
-        }
     }
     
     private func removeContinuation(id: UUID) {

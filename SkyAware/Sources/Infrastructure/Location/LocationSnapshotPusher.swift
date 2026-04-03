@@ -10,8 +10,8 @@ import Foundation
 import OSLog
 import UIKit
 
-protocol LocationSnapshotPushing: Sendable {
-    func enqueue(_ snapshot: LocationSnapshot) async
+protocol LocationContextPushing: Sendable {
+    func enqueue(_ context: LocationContext) async
 }
 
 enum LocationPushError: Error {
@@ -66,20 +66,21 @@ struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
     }
 }
 
-actor LocationSnapshotPusher: LocationSnapshotPushing {
+actor LocationSnapshotPusher: LocationContextPushing {
     typealias APNsTokenProvider = @Sendable () -> String
     typealias InstallationIDProvider = @Sendable () async -> String
-    typealias GridRegionContextProvider = @Sendable () async -> NwsGridRegionContext?
     typealias SubscriptionStatusProvider = @Sendable () -> Bool
+    typealias LocationUploadEnabledProvider = @Sendable () -> Bool
 
     nonisolated private static let userDefaultsSuiteName = "com.justinrooks.skyaware"
     nonisolated private static let serverNotificationEnabledKey = "serverNotificationEnabled"
+    nonisolated private static let locationUploadEnabledKey = "sendL8ntoSignal"
 
     private let uploader: any LocationSnapshotUploading
     private let apnsTokenProvider: APNsTokenProvider
     private let installationIdProvider: InstallationIDProvider
-    private let gridRegionContextProvider: GridRegionContextProvider
     private let subscriptionStatusProvider: SubscriptionStatusProvider
+    private let locationUploadEnabledProvider: LocationUploadEnabledProvider
     private let retryDelaysSeconds: [UInt64]
     private let logger = Logger.locationPushPusher
 
@@ -94,22 +95,29 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
         installationIdProvider: @escaping InstallationIDProvider = {
             InstallationIdentityStore.shared.installationId()
         },
-        gridRegionContextProvider: @escaping GridRegionContextProvider = { nil },
         subscriptionStatusProvider: @escaping SubscriptionStatusProvider = {
             LocationSnapshotPusher.readSubscriptionStatusFromDefaults()
+        },
+        locationUploadEnabledProvider: @escaping LocationUploadEnabledProvider = {
+            LocationSnapshotPusher.readLocationUploadEnabledFromDefaults()
         },
         retryDelaysSeconds: [UInt64] = [0, 5, 15]
     ) {
         self.uploader = uploader
         self.apnsTokenProvider = apnsTokenProvider
         self.installationIdProvider = installationIdProvider
-        self.gridRegionContextProvider = gridRegionContextProvider
         self.subscriptionStatusProvider = subscriptionStatusProvider
+        self.locationUploadEnabledProvider = locationUploadEnabledProvider
         self.retryDelaysSeconds = retryDelaysSeconds
     }
 
-    func enqueue(_ snapshot: LocationSnapshot) async {
-        let regionContext = await gridRegionContextProvider()
+    func enqueue(_ context: LocationContext) async {
+        guard locationUploadEnabledProvider() else {
+            logger.debug("Skipping location snapshot upload; disabled in settings")
+            return
+        }
+
+        let snapshot = context.snapshot
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         let isSubscribed = subscriptionStatusProvider()
@@ -121,12 +129,12 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
             capturedAt: snapshot.timestamp,
             locationAgeSeconds: Date().timeIntervalSince(snapshot.timestamp),
             horizontalAccuracyMeters: snapshot.accuracy,
-            cellScheme: snapshot.h3Cell == nil ? "ugc-only" : "h3",
-            h3Cell: snapshot.h3Cell,
+            cellScheme: "h3",
+            h3Cell: context.h3Cell,
             h3Resolution: 8, // TODO: Make this global someday
-            countyCode: regionContext?.countyCode,
-            forecastZone: regionContext?.forecastZone,
-            fireZone: regionContext?.fireZone,
+            countyCode: context.grid.countyCode,
+            forecastZone: context.grid.forecastZone,
+            fireZone: context.grid.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: installationId,
             source: "unknown",
@@ -151,8 +159,8 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
                 return "prod"
                 #endif
             }(),
-            countyLabel: regionContext?.countyLabel,
-            fireZoneLabel: regionContext?.fireZoneLabel,
+            countyLabel: context.grid.countyLabel,
+            fireZoneLabel: context.grid.fireZoneLabel,
             isSubscribed: isSubscribed
         )
 
@@ -203,6 +211,14 @@ actor LocationSnapshotPusher: LocationSnapshotPushing {
     nonisolated private static func readSubscriptionStatusFromDefaults() -> Bool {
         if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
             .object(forKey: serverNotificationEnabledKey) as? Bool {
+            return value
+        }
+        return true
+    }
+
+    nonisolated private static func readLocationUploadEnabledFromDefaults() -> Bool {
+        if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
+            .object(forKey: locationUploadEnabledKey) as? Bool {
             return value
         }
         return true
