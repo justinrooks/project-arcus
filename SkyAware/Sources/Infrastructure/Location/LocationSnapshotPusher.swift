@@ -70,14 +70,17 @@ actor LocationSnapshotPusher: LocationContextPushing {
     typealias APNsTokenProvider = @Sendable () -> String
     typealias InstallationIDProvider = @Sendable () async -> String
     typealias SubscriptionStatusProvider = @Sendable () -> Bool
+    typealias LocationUploadEnabledProvider = @Sendable () -> Bool
 
     nonisolated private static let userDefaultsSuiteName = "com.justinrooks.skyaware"
     nonisolated private static let serverNotificationEnabledKey = "serverNotificationEnabled"
+    nonisolated private static let locationUploadEnabledKey = "sendL8ntoSignal"
 
     private let uploader: any LocationSnapshotUploading
     private let apnsTokenProvider: APNsTokenProvider
     private let installationIdProvider: InstallationIDProvider
     private let subscriptionStatusProvider: SubscriptionStatusProvider
+    private let locationUploadEnabledProvider: LocationUploadEnabledProvider
     private let retryDelaysSeconds: [UInt64]
     private let logger = Logger.locationPushPusher
 
@@ -95,16 +98,25 @@ actor LocationSnapshotPusher: LocationContextPushing {
         subscriptionStatusProvider: @escaping SubscriptionStatusProvider = {
             LocationSnapshotPusher.readSubscriptionStatusFromDefaults()
         },
+        locationUploadEnabledProvider: @escaping LocationUploadEnabledProvider = {
+            LocationSnapshotPusher.readLocationUploadEnabledFromDefaults()
+        },
         retryDelaysSeconds: [UInt64] = [0, 5, 15]
     ) {
         self.uploader = uploader
         self.apnsTokenProvider = apnsTokenProvider
         self.installationIdProvider = installationIdProvider
         self.subscriptionStatusProvider = subscriptionStatusProvider
+        self.locationUploadEnabledProvider = locationUploadEnabledProvider
         self.retryDelaysSeconds = retryDelaysSeconds
     }
 
     func enqueue(_ context: LocationContext) async {
+        guard locationUploadEnabledProvider() else {
+            logger.debug("Skipping location snapshot upload; disabled in settings")
+            return
+        }
+
         let snapshot = context.snapshot
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
@@ -199,6 +211,14 @@ actor LocationSnapshotPusher: LocationContextPushing {
     nonisolated private static func readSubscriptionStatusFromDefaults() -> Bool {
         if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
             .object(forKey: serverNotificationEnabledKey) as? Bool {
+            return value
+        }
+        return true
+    }
+
+    nonisolated private static func readLocationUploadEnabledFromDefaults() -> Bool {
+        if let value = UserDefaults(suiteName: userDefaultsSuiteName)?
+            .object(forKey: locationUploadEnabledKey) as? Bool {
             return value
         }
         return true
