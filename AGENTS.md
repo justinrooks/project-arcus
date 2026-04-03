@@ -76,3 +76,4 @@
 
 ## Related Guidance
 - For code review tasks, follow `docs/code_review.md`.
+- For design, UI, brand, screenshots, marketing visuals, and user-facing copy, follow `docs/SkyAware North Star Spec.md`.
