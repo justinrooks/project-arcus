@@ -143,7 +143,6 @@ final class LocationSession {
         guard currentScenePhase == .active, startupState == .ready else { return }
         guard shouldRefreshContext(for: snapshot) else { return }
 
-        currentContext = nil
         startupState = .resolvingContext
         contextRefreshTask?.cancel()
         contextRefreshTask = Task { [weak self] in
@@ -159,6 +158,7 @@ final class LocationSession {
 
                 await MainActor.run {
                     self.currentSnapshot = context.snapshot
+                    self.currentContext = nil
                     self.currentContext = context
                     self.startupState = .ready
                 }

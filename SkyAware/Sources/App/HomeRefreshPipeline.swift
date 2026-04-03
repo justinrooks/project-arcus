@@ -633,9 +633,9 @@ extension HomeView {
 
         var bypassesThrottles: Bool {
             switch self {
-            case .sceneActive, .manual, .contextChanged:
+            case .sceneActive, .manual:
                 return true
-            case .timer:
+            case .timer, .contextChanged:
                 return false
             }
         }
