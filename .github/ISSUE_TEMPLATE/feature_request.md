@@ -1,3 +1,12 @@
+---
+name: Feature request
+about: Suggest an idea for this project
+title: ''
+labels: feature, iOS
+assignees: ''
+
+---
+
 ## Summary
 What needs to be done?
 
@@ -9,9 +18,6 @@ What is in / out?
 
 ## Acceptance Notes
 What should be true when this is done?
-
-## Proposed Solution
-How do we plan to implement this?
 
 ## Related
 ADR / Feature Brief / Parent Epic
