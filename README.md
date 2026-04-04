@@ -22,7 +22,7 @@ SkyAware is a SwiftUI-first iOS app focused on hyper-local severe weather awaren
 
 | Hail Risk | Active Alerts | Watch Detail |
 |---|---|---|
-| ![](docs/images/HailRisk.png) | ![](docs/images/4-ActiveAlerts.png) | ![](docs/images/5-ExampleTornadoWatch.png) |
+| ![](docs/images/12-HailRisk.png) | ![](docs/images/4-ActiveAlerts.png) | ![](docs/images/5-ExampleTornadoWatch.png) |
 
 ## Getting Started
 ### Requirements
