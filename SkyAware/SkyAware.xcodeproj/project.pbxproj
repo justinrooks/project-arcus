@@ -547,8 +547,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to help keep severe-weather awareness and notifications more current, even when the app is not open.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -590,8 +590,8 @@
 				INFOPLIST_KEY_CFBundleDisplayName = SkyAware;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
-				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to deliver accurate, hyper-local severe weather alerts and forecasts tailored to where you are.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to help keep severe-weather awareness and notifications more current, even when the app is not open.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
