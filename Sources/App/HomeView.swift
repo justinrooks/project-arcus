@@ -25,6 +25,7 @@ struct HomeView: View {
         Self.readinessState(
             startupState: locationSession.startupState,
             hasContext: locationSession.currentContext != nil,
+            hasResolvedLocalData: currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey,
             stormRisk: refreshPipeline.stormRisk,
             severeRisk: refreshPipeline.severeRisk,
             fireRisk: refreshPipeline.fireRisk

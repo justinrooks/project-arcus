@@ -83,10 +83,10 @@ SkyAware is a SwiftUI-first iOS app focused on hyper-local severe weather awaren
 - Do not log sensitive location or alert data in production code.
 
 #### Weather Awareness Disclaimer
-SkyAware provides informational severe-weather awareness only and does not issue official warnings. Risk summaries, badges, and notifications are provided on a best-effort basis and should not be relied upon as a sole source of emergency information. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities. See `EULA.md` for full terms.
+SkyAware provides informational severe-weather awareness only and does not issue official warnings. Risk summaries, badges, and notifications are provided on a best-effort basis and should not be relied upon as a sole source of emergency information. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities. See `../legal/EULA.md` for full terms.
 
 #### License
-Use of SkyAware is governed by the End-User License Agreement in `EULA.md`.
+Use of SkyAware is governed by the End-User License Agreement in `../legal/EULA.md`.
 
 
 ## In-App

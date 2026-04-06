@@ -75,6 +75,7 @@ final class HomeRefreshPipeline {
     private var lastMapProductSyncAt: Date?
     private var lastOutlookSyncAt: Date?
     private var lastWeatherKitSyncAt: Date?
+    private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
     private var activeRefreshTrigger: HomeView.RefreshTrigger?
     private var activeRefreshTask: Task<Void, Never>?
     private var pendingRefreshTrigger: HomeView.RefreshTrigger?
@@ -629,6 +630,7 @@ final class HomeRefreshPipeline {
             }
         }
 
+        lastResolvedLocationScopedRefreshKey = context.refreshKey
         resolutionState.finish(
             task: .stormRisk,
             resolvedSections: [.stormRisk, .severeRisk, .fireRisk]

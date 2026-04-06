@@ -223,6 +223,35 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.fireRisk == .critical)
         #expect(pipeline.mesos == initialMesos)
         #expect(pipeline.watches == initialWatches)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+    }
+
+    @Test("failed location-scoped reads still mark the current context as resolved")
+    func locationScopedReadFailure_marksCurrentContextResolvedOnColdStart() async {
+        let pipeline = HomeRefreshPipeline()
+        let context = makeContext()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(locationReadError: TestFailure.failedRead)
+        let watches = FakeWatchProvider(activeWatches: [Watch.sampleWatchRows[1]])
+        let weather = FakeWeatherClient()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                spc: spc,
+                watches: watches,
+                weather: weather,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.stormRisk == nil)
+        #expect(pipeline.severeRisk == nil)
+        #expect(pipeline.fireRisk == nil)
+        #expect(pipeline.mesos.isEmpty)
+        #expect(pipeline.watches.isEmpty)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+        #expect(pipeline.resolutionState.isRefreshing == false)
     }
 
     @Test("manual outlook refresh only touches outlook sync and query paths")

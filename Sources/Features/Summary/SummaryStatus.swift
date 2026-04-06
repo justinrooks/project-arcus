@@ -205,7 +205,7 @@ private struct SummarySettledConditionLine: View {
                     unit: .fahrenheit
                 ),
                 symbolName: "sun.max",
-                conditionText: "test",
+                conditionText: "Clear",
                 asOf: .now,
                 dewPoint: Measurement(
                     value: 45.0,
@@ -228,7 +228,7 @@ private struct SummarySettledConditionLine: View {
                     unit: .fahrenheit
                 ),
                 symbolName: "cloud",
-                conditionText: "test",
+                conditionText: "Cloudy",
                 asOf: .now,
                 dewPoint: Measurement(
                     value: 45.0,

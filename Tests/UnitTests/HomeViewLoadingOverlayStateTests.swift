@@ -64,6 +64,7 @@ struct HomeViewRefreshTriggerTests {
             HomeView.readinessState(
                 startupState: .idle,
                 hasContext: false,
+                hasResolvedLocalData: false,
                 stormRisk: nil,
                 severeRisk: nil,
                 fireRisk: nil
@@ -73,6 +74,7 @@ struct HomeViewRefreshTriggerTests {
             HomeView.readinessState(
                 startupState: .acquiringLocation,
                 hasContext: false,
+                hasResolvedLocalData: false,
                 stormRisk: nil,
                 severeRisk: nil,
                 fireRisk: nil
@@ -86,6 +88,7 @@ struct HomeViewRefreshTriggerTests {
             HomeView.readinessState(
                 startupState: .resolvingContext,
                 hasContext: false,
+                hasResolvedLocalData: false,
                 stormRisk: nil,
                 severeRisk: nil,
                 fireRisk: nil
@@ -99,10 +102,25 @@ struct HomeViewRefreshTriggerTests {
             HomeView.readinessState(
                 startupState: .ready,
                 hasContext: true,
+                hasResolvedLocalData: false,
                 stormRisk: .slight,
                 severeRisk: nil,
                 fireRisk: .elevated
             ) == .loadingLocalData
+        )
+    }
+
+    @Test("maps completed local data attempt with missing risks into ready")
+    func readinessState_mapsCompletedAttemptWithMissingRiskData() {
+        #expect(
+            HomeView.readinessState(
+                startupState: .ready,
+                hasContext: true,
+                hasResolvedLocalData: true,
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil
+            ) == .ready
         )
     }
 
@@ -112,6 +130,7 @@ struct HomeViewRefreshTriggerTests {
             HomeView.readinessState(
                 startupState: .failed("location-unavailable"),
                 hasContext: false,
+                hasResolvedLocalData: false,
                 stormRisk: nil,
                 severeRisk: nil,
                 fireRisk: nil
