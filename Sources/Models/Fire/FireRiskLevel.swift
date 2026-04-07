@@ -31,10 +31,10 @@ enum FireRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
 
     var message: String {
         switch self {
-        case .clear: return "No concerning fire weather products."
-        case .elevated: return "Conditions are above normal for wildfire spread. Wind and low humidity could increase fire potential."
-        case .critical: return "Critical fire weather conditions expected. Strong winds and dry air could support rapid fire spread."
-        case .extreme: return "Extremely critical fire weather forecast. Very strong winds, low humidity, and dry fuels may fuel rapid and intense wildfire spread."
+        case .clear: return "No elevated fire weather risk from wind and low humidity is forecast."
+        case .elevated: return "Elevated fire weather concerns. Wind and dry air may support faster fire spread if a fire starts."
+        case .critical: return "Critical fire weather is forecast. Strong winds and dry air could support rapid fire spread."
+        case .extreme: return "Extremely critical fire weather is forecast. Very strong wind and very dry air could support dangerous, fast-moving fire spread."
         }
     }
 
