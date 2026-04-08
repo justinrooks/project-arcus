@@ -73,6 +73,7 @@ extension HomeView {
     static func readinessState(
         startupState: LocationStartupState,
         hasContext: Bool,
+        hasResolvedLocalData: Bool,
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
         fireRisk: FireRiskLevel?
@@ -88,7 +89,8 @@ extension HomeView {
             if hasContext == false {
                 return SummaryReadinessState.loadingLocation
             }
-            if stormRisk == nil || severeRisk == nil || fireRisk == nil {
+            if hasResolvedLocalData == false &&
+                (stormRisk == nil || severeRisk == nil || fireRisk == nil) {
                 return SummaryReadinessState.loadingLocalData
             }
             return SummaryReadinessState.ready

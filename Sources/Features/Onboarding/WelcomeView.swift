@@ -28,12 +28,12 @@ struct WelcomeView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            Text("How weather-aware do you need to be today? SkyAware tells you in seconds.")
+            Text("How weather-aware do you need to be today? SkyAware helps you understand local severe-weather risk at a glance.")
                 .font(.title3)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
             
-            Text("Get simple, actionable severe weather intelligence based on official NOAA and NWS data.")
+            Text("Get simple, actionable severe-weather awareness based on authoritative public data from the SPC and National Weather Service.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

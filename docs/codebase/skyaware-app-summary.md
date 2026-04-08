@@ -1,21 +1,21 @@
 # SkyAware App Codebase Summary
 
 ## High-Level Overview
-SkyAware is an iOS weather-risk client centered on "what is happening where I am right now." The app resolves the user's live location into an H3 cell plus NWS county/fire-zone context, syncs SPC and Arcus feeds into SwiftData, and projects that state into a five-tab SwiftUI shell: Today, Alerts, Map, Outlooks, and Settings. The architectural shape is a single app target with strong runtime boundaries: transport clients, actor-isolated repos/providers, a shared dependency composition root in [Dependencies.swift](../../SkyAware/Sources/App/Dependencies.swift), and two main UI coordinators in [LocationSession.swift](../../SkyAware/Sources/Infrastructure/Location/LocationSession.swift) and [HomeRefreshPipeline.swift](../../SkyAware/Sources/App/HomeRefreshPipeline.swift).
+SkyAware is an iOS weather-risk client centered on "what is happening where I am right now." The app resolves the user's live location into an H3 cell plus NWS county/fire-zone context, syncs SPC and Arcus feeds into SwiftData, and projects that state into a five-tab SwiftUI shell: Today, Alerts, Map, Outlooks, and Settings. The architectural shape is a single app target with strong runtime boundaries: transport clients, actor-isolated repos/providers, a shared dependency composition root in [Dependencies.swift](../../Sources/App/Dependencies.swift), and two main UI coordinators in [LocationSession.swift](../../Sources/Infrastructure/Location/LocationSession.swift) and [HomeRefreshPipeline.swift](../../Sources/App/HomeRefreshPipeline.swift).
 
 ## Dependencies
 
 ### Apple frameworks
 - `SwiftUI` / `Observation` / `SwiftData` — Purpose: app UI, observable foreground state, and local persistence. Notes: this is a SwiftUI-first app with `@Observable` session/pipeline state and `@ModelActor` repos.
-- `CoreLocation` / `BackgroundTasks` / `UserNotifications` / `UIKit` — Purpose: location, BG refresh, APNs/local notifications, and app delegate bridging. Notes: background location, app refresh, and notification registration are first-class platform features in [SkyAwareApp.swift](../../SkyAware/Sources/App/SkyAwareApp.swift) and [LocationManager.swift](../../SkyAware/Sources/Infrastructure/Location/LocationManager.swift).
+- `CoreLocation` / `BackgroundTasks` / `UserNotifications` / `UIKit` — Purpose: location, BG refresh, APNs/local notifications, and app delegate bridging. Notes: background location, app refresh, and notification registration are first-class platform features in [SkyAwareApp.swift](../../Sources/App/SkyAwareApp.swift) and [LocationManager.swift](../../Sources/Infrastructure/Location/LocationManager.swift).
 - `MapKit` / `WeatherKit` / `OSLog` / `Security` — Purpose: risk-map rendering, current conditions, diagnostics, and Keychain-backed installation identity. Notes: WeatherKit is used for current weather and attribution, not as the main alert/risk source.
 
 ### External packages/libraries
-- `SwiftyH3` — Purpose: H3 hashing for coarse location bucketing. Notes: it is the only external package visible in the project and is used by [SwiftyH3Hasher.swift](../../SkyAware/Sources/Infrastructure/Location/SwiftyH3Hasher.swift).
+- `SwiftyH3` — Purpose: H3 hashing for coarse location bucketing. Notes: it is the only external package visible in the project and is used by [SwiftyH3Hasher.swift](../../Sources/Infrastructure/Location/SwiftyH3Hasher.swift).
 
 ### Platform capabilities
-- `APNs + WeatherKit entitlements` — Purpose: remote notifications and WeatherKit access. Notes: visible in [SkyAware.entitlements](../../SkyAware/SkyAware.entitlements).
-- `Background modes: location, fetch, processing, remote-notification` — Purpose: ongoing location monitoring, BG refresh orchestration, and push-related behavior. Notes: declared in [Info.plist](../../SkyAware/Config/Info.plist).
+- `APNs + WeatherKit entitlements` — Purpose: remote notifications and WeatherKit access. Notes: visible in [SkyAware.entitlements](../../SkyAware.entitlements).
+- `Background modes: location, fetch, processing, remote-notification` — Purpose: ongoing location monitoring, BG refresh orchestration, and push-related behavior. Notes: declared in [Info.plist](../../Config/Info.plist).
 - `iOS 18+, Swift 6` — Purpose: modern Apple-platform baseline. Notes: the project is iPhone/iPad only, iOS-only, with strict concurrency enabled in the project settings.
 
 ### Testing dependencies
@@ -31,59 +31,59 @@ SkyAware is an iOS weather-risk client centered on "what is happening where I am
 ## Features
 
 ### Today / Local Summary
-This is the app's center of gravity. The Today tab combines location readiness, WeatherKit conditions, categorical/severe/fire risk, active local alerts, and latest outlook text into one foreground experience driven by [HomeView.swift](../../SkyAware/Sources/App/HomeView.swift), [SummaryView.swift](../../SkyAware/Sources/Features/Summary/SummaryView.swift), and [HomeRefreshPipeline.swift](../../SkyAware/Sources/App/HomeRefreshPipeline.swift).
+This is the app's center of gravity. The Today tab combines location readiness, WeatherKit conditions, categorical/severe/fire risk, active local alerts, and latest outlook text into one foreground experience driven by [HomeView.swift](../../Sources/App/HomeView.swift), [SummaryView.swift](../../Sources/Features/Summary/SummaryView.swift), and [HomeRefreshPipeline.swift](../../Sources/App/HomeRefreshPipeline.swift).
 
 It looks mature rather than aspirational: pull-to-refresh, throttling, loading overlays, and readiness-state handling are all implemented and backed by tests. The UI is effectively a projection of resolved `LocationContext` plus locally persisted risk/alert data.
 
 ### Active Alerts
-The Alerts tab is a real feature area, not just a list screen. It supports watches and mesos, empty states, manual refresh, and detail drill-ins via [AlertView.swift](../../SkyAware/Sources/Features/Alert/AlertView.swift), [WatchDetailView.swift](../../SkyAware/Sources/Features/Alert/WatchDetailView.swift), and mesoscale detail cards.
+The Alerts tab is a real feature area, not just a list screen. It supports watches and mesos, empty states, manual refresh, and detail drill-ins via [AlertView.swift](../../Sources/Features/Alert/AlertView.swift), [WatchDetailView.swift](../../Sources/Features/Alert/WatchDetailView.swift), and mesoscale detail cards.
 
 Architecturally, this feature is split across two feed paths: Arcus-backed watch data and SPC-backed mesos. That split is coherent in the runtime model even if some older NWS watch-era code still remains in-tree.
 
 ### Onboarding / Permission Bootstrap
-Onboarding is substantial and sequential: welcome, disclaimer, location permission, notification permission, APNs registration, and optional first location-context capture before flipping `onboardingComplete`. The flow in [OnboardingView.swift](../../SkyAware/Sources/Features/Onboarding/OnboardingView.swift) is tightly integrated with [LocationSession.swift](../../SkyAware/Sources/Infrastructure/Location/LocationSession.swift) and [RemoteNotificationRegistrar.swift](../../SkyAware/Sources/Notifications/RemoteNotificationRegistrar.swift).
+Onboarding is substantial and sequential: welcome, disclaimer, location permission, notification permission, APNs registration, and optional first location-context capture before flipping `onboardingComplete`. The flow in [OnboardingView.swift](../../Sources/Features/Onboarding/OnboardingView.swift) is tightly integrated with [LocationSession.swift](../../Sources/Infrastructure/Location/LocationSession.swift) and [RemoteNotificationRegistrar.swift](../../Sources/Notifications/RemoteNotificationRegistrar.swift).
 
 This area looks mature, though denied/restricted-location remediation is less polished than first-run acquisition. There is support for opening Settings, but that path is not strongly surfaced from the restricted-location UI.
 
 ### Convective Outlooks
-Outlooks are implemented as a standalone feature, with list/detail navigation, manual refresh, and summary-card reuse. The stack is backed by RSS ingest into SwiftData through [ConvectiveOutlookRepo.swift](../../SkyAware/Sources/Repos/ConvectiveOutlookRepo.swift) and exposed via SPC provider query surfaces.
+Outlooks are implemented as a standalone feature, with list/detail navigation, manual refresh, and summary-card reuse. The stack is backed by RSS ingest into SwiftData through [ConvectiveOutlookRepo.swift](../../Sources/Repos/ConvectiveOutlookRepo.swift) and exposed via SPC provider query surfaces.
 
 This feels real but still evolving. The feature is solid functionally, yet it is somewhat more isolated than the Today/Alerts flows and shows signs of older UI scaffolding still lingering nearby.
 
 ### Layered Risk Map
-The Map tab is more than decorative. It loads persisted SPC polygons, supports multiple selectable layers, builds overlays off the main thread, and renders a custom legend via [MapScreenView.swift](../../SkyAware/Sources/Features/Map/MapScreenView.swift).
+The Map tab is more than decorative. It loads persisted SPC polygons, supports multiple selectable layers, builds overlays off the main thread, and renders a custom legend via [MapScreenView.swift](../../Sources/Features/Map/MapScreenView.swift).
 
 It is clearly implemented, but it reads as a power-user tool more than a fully reactive live dashboard. A notable architectural caveat is that it appears to load once on appearance and does not obviously subscribe to freshness/scene-phase changes for automatic overlay refresh.
 
 ### Notifications, Background Refresh, and Diagnostics
-SkyAware has a genuine background/runtime operations layer: cadence-based app refresh, location-change-triggered watch checks, morning/meso/watch notification engines, APNs token registration, and persisted background-run history. These flows are centered in [BackgroundOrchestrator.swift](../../SkyAware/Sources/Features/Background/BackgroundOrchestrator.swift), the notification engines under [Sources/Notifications](../../SkyAware/Sources/Notifications), and background diagnostics in [BgHealthDiagnosticsView.swift](../../SkyAware/Sources/Features/Diagnostics/BgHealthDiagnosticsView.swift).
+SkyAware has a genuine background/runtime operations layer: cadence-based app refresh, location-change-triggered watch checks, morning/meso/watch notification engines, APNs token registration, and persisted background-run history. These flows are centered in [BackgroundOrchestrator.swift](../../Sources/Features/Background/BackgroundOrchestrator.swift), the notification engines under [Sources/Notifications](../../Sources/Notifications), and background diagnostics in [BgHealthDiagnosticsView.swift](../../Sources/Features/Diagnostics/BgHealthDiagnosticsView.swift).
 
 This area is evolving rather than finished. The notification engines are well decomposed, but some settings are only partially wired, generic diagnostics are sparse, and server-originated push behavior is not fully visible from the client code.
 
 ## Workflows
 
 ### App Launch and Composition
-Launch starts in [SkyAwareApp.swift](../../SkyAware/Sources/App/SkyAwareApp.swift): a single live dependency container is built, a shared `LocationSession` is created, the SwiftData model container is injected, and routing chooses onboarding or the main tab shell. The app delegate separately establishes notification-center delegate behavior for foreground presentation.
+Launch starts in [SkyAwareApp.swift](../../Sources/App/SkyAwareApp.swift): a single live dependency container is built, a shared `LocationSession` is created, the SwiftData model container is injected, and routing chooses onboarding or the main tab shell. The app delegate separately establishes notification-center delegate behavior for foreground presentation.
 
 The important architectural implication is that composition is explicit and centralized. This is a strength: most runtime behavior can be traced back to `Dependencies.live()` rather than hidden app-global assembly.
 
 ### Location Resolution and Context Formation
-Scene phase drives location mode selection in [LocationManager.swift](../../SkyAware/Sources/Infrastructure/Location/LocationManager.swift): active scenes use live updates, backgrounded scenes with Always auth use significant-location changes, and raw updates are filtered through [LocationProvider.swift](../../SkyAware/Sources/Providers/Location/LocationProvider.swift) for accuracy, throttling, cache restore, H3 hashing, and placemark enrichment.
+Scene phase drives location mode selection in [LocationManager.swift](../../Sources/Infrastructure/Location/LocationManager.swift): active scenes use live updates, backgrounded scenes with Always auth use significant-location changes, and raw updates are filtered through [LocationProvider.swift](../../Sources/Providers/Location/LocationProvider.swift) for accuracy, throttling, cache restore, H3 hashing, and placemark enrichment.
 
 `LocationContextResolver` then turns a snapshot into a richer `LocationContext` containing H3, county/fire-zone, and grid metadata. That context becomes the join point for nearly all downstream alert/risk behavior.
 
 ### Foreground Refresh and UI State Propagation
-`HomeView` delegates most foreground behavior to [HomeRefreshPipeline.swift](../../SkyAware/Sources/App/HomeRefreshPipeline.swift). Triggers include first appearance, scene active, pull-to-refresh, periodic timer refresh, and context changes. The pipeline coalesces triggers, overlaps slow SPC sync with context preparation, syncs hot feeds, reads local SwiftData-backed snapshots, optionally fetches WeatherKit, and writes state back into Today/Alerts/Outlooks UI.
+`HomeView` delegates most foreground behavior to [HomeRefreshPipeline.swift](../../Sources/App/HomeRefreshPipeline.swift). Triggers include first appearance, scene active, pull-to-refresh, periodic timer refresh, and context changes. The pipeline coalesces triggers, overlaps slow SPC sync with context preparation, syncs hot feeds, reads local SwiftData-backed snapshots, optionally fetches WeatherKit, and writes state back into Today/Alerts/Outlooks UI.
 
 This is the core runtime workflow of the app. One subtle implication is that failure tends to preserve the last good UI state, which is good for stability but can conceal repeated sync failure from the user unless diagnostics are consulted.
 
 ### Persistence and Local Query Workflow
-Network fetches pass through [HTTPDataDownloader.swift](../../SkyAware/Sources/Infrastructure/Networking/HTTPDataDownloader.swift), then into repo actors that parse, map, and upsert into SwiftData. After that, most UI paths query local repo state rather than waiting on fresh network responses.
+Network fetches pass through [HTTPDataDownloader.swift](../../Sources/Infrastructure/Networking/HTTPDataDownloader.swift), then into repo actors that parse, map, and upsert into SwiftData. After that, most UI paths query local repo state rather than waiting on fresh network responses.
 
 That gives the app an offline-tolerant, cache-friendly posture. It also means repos are doing more than storage; they are effectively mini data services with parse, dedupe, freshness, and geospatial-query logic.
 
 ### Background App Refresh
-The app registers `com.skyaware.app.refresh` and schedules future work through [BackgroundScheduler.swift](../../SkyAware/Sources/Infrastructure/Scheduling/BackgroundScheduler.swift). When invoked, [BackgroundOrchestrator.swift](../../SkyAware/Sources/Features/Background/BackgroundOrchestrator.swift) syncs slower feeds, resolves a fresh context, syncs hot feeds, reads local risk/alert state, runs notification engines, computes the next cadence, and records a `BgRunSnapshot`.
+The app registers `com.skyaware.app.refresh` and schedules future work through [BackgroundScheduler.swift](../../Sources/Infrastructure/Scheduling/BackgroundScheduler.swift). When invoked, [BackgroundOrchestrator.swift](../../Sources/Features/Background/BackgroundOrchestrator.swift) syncs slower feeds, resolves a fresh context, syncs hot feeds, reads local risk/alert state, runs notification engines, computes the next cadence, and records a `BgRunSnapshot`.
 
 This workflow is architecturally strong and well tested. The main weakness is policy duplication: foreground and background refresh each keep their own last-sync timing state rather than sharing one canonical freshness service.
 
@@ -93,7 +93,7 @@ A separate workflow handles significant location changes while backgrounded. Aft
 This is a nice example of scope-specific orchestration: it avoids the heavier BG refresh path and limits work to the alert type most likely to matter for sudden movement.
 
 ### APNs Registration and Arcus Subscription Context
-Onboarding and Settings can request notification permission through [RemoteNotificationRegistrar.swift](../../SkyAware/Sources/Notifications/RemoteNotificationRegistrar.swift). Once the app has a token and a resolved location context, [LocationSnapshotPusher.swift](../../SkyAware/Sources/Infrastructure/Location/LocationSnapshotPusher.swift) can upload installation ID, APNs token, H3 cell, county/fire-zone, and subscription metadata to Arcus.
+Onboarding and Settings can request notification permission through [RemoteNotificationRegistrar.swift](../../Sources/Notifications/RemoteNotificationRegistrar.swift). Once the app has a token and a resolved location context, [LocationSnapshotPusher.swift](../../Sources/Infrastructure/Location/LocationSnapshotPusher.swift) can upload installation ID, APNs token, H3 cell, county/fire-zone, and subscription metadata to Arcus.
 
 What is directly visible is registration and upload. What is not directly visible is a full client-side path for incoming remote-notification payload handling beyond token capture and foreground display behavior.
 

@@ -6,26 +6,30 @@
 - Prefer concrete repo-specific guidance over generic advice.
 
 ## Project Structure
-- Root Xcode project lives at `SkyAware/SkyAware.xcodeproj`.
-- App source lives in `SkyAware/Sources`.
-- Shared assets and previews live in `SkyAware/Resources`.
-- Config plist files live in `SkyAware/Config`.
+- Root Xcode project lives at `SkyAware.xcodeproj`.
+- App source lives in `Sources`.
+- Shared assets and previews live in `Resources`.
+- Config plist files live in `Config`.
 - Tests live in:
-  - `SkyAware/Tests/UnitTests`
-  - `SkyAware/Tests/UITests`
+  - `Tests/UnitTests`
+  - `Tests/UITests`
+- Release artifacts live in `release`.
+- Legal and policy documents live in `legal`.
+- CI helper scripts live in `tools/ci`.
+- Source-specific agent guidance lives in `Sources/AGENTS.md`.
 - UI reference screenshots live in `docs/images`.
   - Use them to preserve visual consistency when building or revising UI.
   - Treat them as reference material, not as a source of exact truth unless the task explicitly says to match them.
 
 ## Build, Test, and Development Commands
 - Build (Debug):
-  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
 - Run unit + UI tests:
-  `xcodebuild -project SkyAware/SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test`
+  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test`
 - Resolve Swift package dependencies:
-  `xcodebuild -resolvePackageDependencies -project SkyAware/SkyAware.xcodeproj`
+  `xcodebuild -resolvePackageDependencies -project SkyAware.xcodeproj`
 - Open in Xcode:
-  `xed SkyAware`
+  `xed SkyAware.xcodeproj`
 
 ## Platform and Architecture Constraints
 - Swift 6+, iOS 18+ only.

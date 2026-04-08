@@ -1,7 +1,7 @@
 # AGENTS.md — SkyAware App Guidance
 
 ## Purpose
-- This file provides app-specific guidance for agents working in `SkyAware/` and its subdirectories.
+- This file provides app-specific guidance for agents working in `Sources/` and related app-layer code.
 - Apply the repo-level guidance in `../AGENTS.md` first, then use this file for rules that are specific to the iOS app layer.
 - Prefer concrete implementation guidance over high-level project summary.
 
@@ -37,4 +37,4 @@
 - Changes that affect notifications, background work, or location should call out assumptions and validation gaps clearly.
 
 ## Instruction Precedence
-- This file supplements the repo-level `../AGENTS.md` with the more specific rules for code under `SkyAware/`.
+- This file supplements the repo-level `../AGENTS.md` with the more specific rules for code under `Sources/`.

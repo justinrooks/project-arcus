@@ -21,11 +21,11 @@ struct NotificationPermissionView: View {
                 .font(.system(size: 80))
                 .foregroundColor(.skyAwareAccent)
             
-            Text("Stay Informed")
+            Text("Stay Aware")
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            Text("Get notified about:")
+            Text("You can allow notifications such as:")
                 .font(.body)
                 .padding(.horizontal, 32)
             
@@ -33,16 +33,22 @@ struct NotificationPermissionView: View {
                 HStack {
                     Image(systemName: "sunrise.fill")
                         .foregroundColor(.skyAwareAccent)
-                    Text("Morning weather summary")
+                    Text("A morning severe-weather summary")
                 }
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.skyAwareAccent)
-                    Text("Watches and mesoscale discussions issued for your location")
+                    Text("Warnings, watches, and mesoscale discussions relevant to your location")
                 }
             }
             .font(.body)
             .padding(.horizontal, 32)
+            
+            Text("Notifications are designed to help you stay aware of severe weather, but delivery timing may vary. SkyAware does not issue official warnings. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities for emergency information.")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
             
             Spacer()
 
@@ -53,7 +59,7 @@ struct NotificationPermissionView: View {
             }
 
             Button(action: onEnable) {
-                Text("Enable Notifications")
+                Text("Allow Notifications")
                     .font(.headline)
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)

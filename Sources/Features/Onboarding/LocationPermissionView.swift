@@ -25,18 +25,18 @@ struct LocationPermissionView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
             
-            Text("SkyAware needs your location to provide accurate severe weather alerts for your area.")
+            Text("SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.")
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
-            
-            Text("After you allow While Using, SkyAware will ask for Always Allow so alerts can stay current in the background.")
+
+            Text("To support timely location-based notifications, SkyAware may send derived location information such as your county, fire zone, and a coarse geographic index to the server.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            Text("Your location data is shared with the server and used for determining weather alerts for your location. It is never shared or tracked.")
+            Text("SkyAware does not sell your data, use it for advertising, or track you across apps or websites.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
