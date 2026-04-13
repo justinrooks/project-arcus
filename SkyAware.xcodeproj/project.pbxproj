@@ -236,6 +236,7 @@
 				D0F000042F50000100AA1001 /* release */,
 				D095EFA42E16F5690074F867 /* Products */,
 				4FF60265E384AB8FC83C01FB /* Frameworks */,
+				D0A2DAD02F89472C005FF329 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -247,6 +248,14 @@
 				D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D0A2DAD02F89472C005FF329 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				D0F000062F50000100AA1001 /* Sources/AGENTS.md */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -368,7 +377,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0AFC5F22F412BAB001F331A /* AGENTS.md in Resources */,
+				D0AFC5F22F412BAB001F331A /* Sources/AGENTS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

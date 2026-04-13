@@ -116,7 +116,16 @@ actor WatchRepo {
             sender: item.senderName,
             instruction: item.instructions,
             response: item.response,
-            cells: item.h3Cells ?? []
+            cells: item.h3Cells ?? [],
+            tornadoDetection: item.tornadoDetection,
+            tornadoDamageThreat: item.tornadoDamageThreat,
+            maxWindGust: item.maxWindGust,
+            maxHailSize: item.maxHailSize,
+            windThreat: item.windThreat,
+            hailThreat: item.hailThreat,
+            thunderstormDamageThreat: item.thunderstormDamageThreat,
+            flashFloodDetection: item.flashFloodDetection,
+            flashFloodDamageThreat: item.flashFloodDamageThreat
         )
     }
     
