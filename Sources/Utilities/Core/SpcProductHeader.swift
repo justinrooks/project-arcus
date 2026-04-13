@@ -47,7 +47,7 @@ struct SpcProductHeader: View {
                     .minimumScaleFactor(0.85)
                 
                 Spacer()
-                InZonePill(inZone: inZone) // The sheet view is filtered, alters and full are not
+//                InZonePill(inZone: inZone) // The sheet view is filtered, alters and full are not
             }
             if let subtitle {
                 Text(subtitle)
@@ -75,8 +75,17 @@ struct SpcProductHeader: View {
     }
 }
 
-#Preview("Full") {
-    SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: "MD 1913", inZone: false, sender: "NWS Boulder CO")
+#Preview("Full MD") {
+    HStack{
+        SpcProductHeader(title: "Mesoscale Discussion", issued: MD.sampleDiscussionDTOs[1].issued, validStart: MD.sampleDiscussionDTOs[1].validStart, validEnd: MD.sampleDiscussionDTOs[1].validEnd, subtitle: "MD 1913", inZone: false, sender: "NWS Boulder CO")
+    }.padding(11)
+}
+
+#Preview("Full Warning") {
+    let watch = Watch.sampleWatchRows[3]
+    HStack{
+        SpcProductHeader(title: "Severe Thunderstorm Warning", issued: watch.issued, validStart: watch.validStart, validEnd: watch.validEnd, subtitle: "SUBTITLE", inZone: false, sender: "NWS Boulder CO")
+    }.padding(11)
 }
 
 #Preview("No subtitle") {

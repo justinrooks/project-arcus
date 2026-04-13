@@ -58,6 +58,9 @@ struct WatchDetailView: View {
                 LazyVStack(alignment: .leading, spacing: sectionSpacing) {
                     headerCard
 
+                    if let severeRiskTags = watch.severeRiskTags {
+                        detailSection(title: "Severe Risk Tags", text: severeRiskTags, areTags: true)
+                    }
                     detailSection(title: "Areas Affected", text: watch.areaSummary)
                     detailSection(title: "Full Description", text: watch.description)
                 }
@@ -186,14 +189,14 @@ struct WatchDetailView: View {
         }
     }
 
-    private func detailSection(title: String, text: String) -> some View {
+    private func detailSection(title: String, text: String, areTags: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(text)
-                .font(.callout.monospaced())
-                .foregroundStyle(.secondary)
+                .font(areTags ? .subheadline.weight(.semibold)  : .callout.monospaced())
+                .foregroundStyle(areTags ? Color.tornadoRed  : .secondary)
         }
         .padding()
         .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.1, shadowRadius: 12, shadowY: 6)
@@ -216,7 +219,7 @@ struct WatchDetailView: View {
 #Preview("Severe Thunderstorm Watch") {
     NavigationStack {
         ScrollView {
-            WatchDetailView(watch: Watch.sampleWatchRows[1], layout: .full)
+            WatchDetailView(watch: Watch.sampleWatchRows[3], layout: .full)
                 .navigationTitle("Weather Watch")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
