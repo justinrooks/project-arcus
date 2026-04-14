@@ -298,7 +298,7 @@ extension Watch {
                 instruction: "Take shelter in an interior room. Avoid windows. If in a mobile home, move to a sturdier shelter.",
                 response: "Monitor",
                 cells: [],
-                tornadoDetection: "OBSERVED", // RADAR-INDICATED, OBSERVED
+                tornadoDetection: "OBSERVED", // RADAR INDICATED, OBSERVED
                 tornadoDamageThreat: "", // CONSIDERABLE, CATASTROPHIC
                 maxWindGust: "", // NA
                 maxHailSize: "", // NA
@@ -337,8 +337,8 @@ extension Watch {
                 tornadoDamageThreat: "", // NA
                 maxWindGust: "", // 60 mph
                 maxHailSize: "", // 1.25 in
-                windThreat: "", // RADAR-INDICATED, OBSERVED
-                hailThreat: "", // RADAR-INDICATED, OBSERVED
+                windThreat: "", // RADAR INDICATED, OBSERVED
+                hailThreat: "", // RADAR INDICATED, OBSERVED
                 thunderstormDamageThreat: "", // CONSIDERABLE, DESTRUCTIVE
                 flashFloodDetection: "",
                 flashFloodDamageThreat: ""
@@ -368,7 +368,7 @@ extension Watch {
                 instruction: "Review your shelter plan now. Have multiple ways to receive warnings.",
                 response: "Shelter",
                 cells: [],
-                tornadoDetection: "RADAR-INDICATED",
+                tornadoDetection: "RADAR INDICATED",
                 tornadoDamageThreat: "",
                 maxWindGust: "",
                 maxHailSize: "",

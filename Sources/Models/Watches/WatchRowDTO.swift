@@ -115,7 +115,11 @@ struct WatchRowDTO: Identifiable, Sendable, Hashable {
             return nil
         }
         
-        return tags.joined(separator: "\n")
+        if tags.count > 0 {
+            return tags.joined(separator: "\n")
+        } else {
+            return nil
+        }
     }
 }
 
@@ -212,7 +216,7 @@ extension WatchRowDTO {
         case "observed":
             return "Observed tornado"
         case "radar indicated":
-            return "Radar-indicated tornado"
+            return "Radar indicated tornado"
         case "possible":
             return "Tornado possible"
         default:
@@ -225,7 +229,7 @@ extension WatchRowDTO {
         case "observed":
             return "Observed flooding"
         case "radar indicated":
-            return "Radar-indicated flooding"
+            return "Radar indicated flooding"
         default:
             return nil
         }
@@ -236,7 +240,7 @@ extension WatchRowDTO {
         case "observed":
             return "Observed \(noun)"
         case "radar indicated":
-            return "Radar-indicated \(noun)"
+            return "Radar indicated \(noun)"
         default:
             return nil
         }
