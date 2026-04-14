@@ -12,6 +12,7 @@ public enum DeviceAlertPayloadError: Error, Sendable {
     case invalidGeometryJSON
 }
 
+// TODO: Package this logic to share between SkyAware and Arcus-Signal
 public struct DeviceAlertPayload: Sendable, Codable {
     // MARK: Identity
     let id: UUID // Series Id
@@ -49,4 +50,16 @@ public struct DeviceAlertPayload: Sendable, Codable {
     // Arcus can return cell-only matches without UGC metadata.
     let ugc: [String]?
     var h3Cells: [Int64]?
+    
+    // CAP Params
+    let tornadoDetection: String?
+    let tornadoDamageThreat: String?
+    let maxWindGust: String?
+    let maxHailSize: String?
+    let windThreat: String?
+    let hailThreat: String?
+    let thunderstormDamageThreat: String?
+    let flashFloodDetection: String?
+    let flashFloodDamageThreat: String?
+
 }

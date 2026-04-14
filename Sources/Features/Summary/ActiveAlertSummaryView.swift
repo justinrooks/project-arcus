@@ -31,7 +31,7 @@ struct ActiveAlertSummaryView: View {
         ActiveAlertSection(
             label: "Watches",
             items: sortedWatches,
-            limit: 3,
+            limit: 2,
             onSelect: {
                 selectedWatchDetent = .medium
                 selectedWatch = $0
@@ -43,7 +43,7 @@ struct ActiveAlertSummaryView: View {
         ActiveAlertSection(
             label: "Mesos",
             items: sortedMesos,
-            limit: 3,
+            limit: 2,
             onSelect: {
                 selectedMesoDetent = .medium
                 selectedMeso = $0
@@ -169,27 +169,40 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     let limit: Int
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
+    @State private var isExpanded = false
     
     var body: some View {
         if !items.isEmpty {
-            let visibleItems = items.prefix(limit)
+            let visibleItems = isExpanded ? items : Array(items.prefix(limit))
             
             Text(label)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
+//                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
             
             ForEach(visibleItems) { item in
                 Button { onSelect(item) } label: { row(item) }
                     .buttonStyle(.plain)
             }
             
-            if items.count > visibleItems.count {
-                Text("Showing \(visibleItems.count) of \(items.count) \(label.lowercased())")
-                    .font(.footnote.weight(.medium))
+            if items.count > limit {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.24)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(isExpanded ? "Show less" : "See all (\(items.count - visibleItems.count) more)")
+                        Image(systemName: isExpanded ? "arrow.up" : "arrow.right")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.plain)
             }
         }
     }
@@ -203,26 +216,37 @@ private struct MesoRowView: View {
             let (icon, color) = styleForType(.mesoscale, "")
             Image(systemName: icon)
                 .foregroundStyle(color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Meso \(meso.number.formatted(.number.grouping(.never)))")
-                    .font(.subheadline.weight(.semibold))
+
+            VStack(alignment: .leading) {
+                HStack {
+                    Text("Meso \(meso.number.formatted(.number.grouping(.never)))")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    VStack(alignment: .trailing) {
+                        Text("Ends \(meso.validEnd, style: .time)")
+                            .monospacedDigit()
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                }
+                
+                if meso.watchProbability >= 20 {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text("Watch \(Int(meso.watchProbability))%")
+                                .monospacedDigit()
+                                .font(.caption.weight(.semibold))
+                        }
+                        Spacer()
+                    }
+                }
             }
-            
-            Spacer()
-            VStack(alignment: .trailing) {
-                Text("Watch \(Int(meso.watchProbability))%")
-                    .monospacedDigit()
-                    .font(.caption.weight(.semibold))
-                Text("Ends \(meso.validEnd, style: .time)")
-                    .monospacedDigit()
-                    .font(.caption)
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
+
         }
         .padding(.vertical, 3)
+//            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
     }
 }
 
@@ -239,22 +263,35 @@ private struct WatchRowView: View {
             let (icon, color) = styleForType(.watch, watch.title)
             Image(systemName: icon)
                 .foregroundStyle(color)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(watch.title)")
-                    .font(.subheadline.weight(.semibold))
+
+            VStack(alignment: .leading) {
+                HStack {
+                    Text("\(watch.title)")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    VStack(alignment: .trailing) {
+                        let txt = buildDisplay(watch: watch)
+                        Text("Until \(txt) \(watch.validEnd, style: .time)")
+                            .monospacedDigit()
+                            .font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+//                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
+                }
+                if let sevTags = watch.SevereRiskTags {
+                    HStack {
+                        VStack(alignment: .leading) {
+                            Text(sevTags)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Color.tornadoRed)
+                                .lineLimit(2)
+                        }
+                        Spacer()
+                    }
+                }
             }
-            
-            Spacer()
-            VStack(alignment: .trailing) {
-                let txt = buildDisplay(watch: watch)
-                Text("Until \(txt) \(watch.validEnd, style: .time)")
-                    .monospacedDigit()
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
         }
         .padding(.vertical, 3)
     }

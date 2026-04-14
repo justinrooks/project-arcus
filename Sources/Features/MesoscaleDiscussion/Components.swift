@@ -29,10 +29,10 @@ struct InZonePill: View {
             .font(.caption.weight(.semibold))
             .padding(.vertical, 4)
             .padding(.horizontal, 10)
-            .skyAwareChip(
-                cornerRadius: SkyAwareRadius.tile,
-                tint: inZone ? .green.opacity(0.14) : .white.opacity(0.08)
-            )
+//            .skyAwareChip(
+//                cornerRadius: SkyAwareRadius.tile,
+//                tint: inZone ? .green.opacity(0.14) : .white.opacity(0.08)
+//            )
     }
 }
 

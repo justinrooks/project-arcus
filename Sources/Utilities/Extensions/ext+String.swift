@@ -139,4 +139,8 @@ extension String {
         formatter.timeZone = .utc // TimeZone(secondsFromGMT: 0)
         return formatter.date(from: date)
     }
+    
+    var normalizedLowercased: String {
+        trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
 }

@@ -21,7 +21,7 @@ struct MdDTO: Sendable, Identifiable, Hashable, AlertItem {
     let areasAffected: String   // locations affected by the meso
     let summary: String         // description / CDATA
     let concerning: String?     // e.g. "Severe potential... Watch unlikely"
-    
+    let severeRiskTags: String? = nil
     let watchProbability: Double
     let threats: MDThreats?
     let coordinates: [Coordinate2D]

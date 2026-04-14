@@ -133,7 +133,7 @@ extension Watch {
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
             messageId: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
-            title: "Tornado Watch",
+            title: "Tornado Warning",
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-11-25T22:20:00Z")!,   // 4:20 PM CST
             expires: ISO8601DateFormatter().date(from: "2025-11-26T00:00:00Z")!,  // 6:00 PM CST
@@ -146,7 +146,16 @@ extension Watch {
             description: "TORNADO WATCH 641 REMAINS VALID UNTIL 6 PM CST THIS EVENING FOR\nTHE FOLLOWING AREAS\n\nIN ALABAMA THIS WATCH INCLUDES 7 COUNTIES\n\nIN SOUTH CENTRAL ALABAMA\n\nBUTLER                CONECUH               CRENSHAW\nMONROE                WILCOX\n\nIN SOUTHWEST ALABAMA\n\nCLARKE                WASHINGTON\n\nTHIS INCLUDES THE CITIES OF BRANTLEY, CAMDEN, CHATOM, EVERGREEN,\nGREENVILLE, GROVE HILL, HOMEWOOD, JACKSON, LUVERNE, MILLRY,\nMONROEVILLE, PINE HILL, AND THOMASVILLE.",
             instruction: nil,
             response: "Monitor",
-            areaSummary: "Butler; Clarke; Conecuh; Crenshaw; Monroe; Washington; Wilcox (AL)"
+            areaSummary: "Butler; Clarke; Conecuh; Crenshaw; Monroe; Washington; Wilcox (AL)",
+            tornadoDetection: "OBSERVED",
+            tornadoDamageThreat: "",
+            maxWindGust: "",
+            maxHailSize: "",
+            windThreat: "",
+            hailThreat: "",
+            thunderstormDamageThreat: "",
+            flashFloodDetection: "",
+            flashFloodDamageThreat: ""
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
@@ -164,14 +173,23 @@ extension Watch {
             description: "TORNADO WATCH 641 REMAINS VALID UNTIL 6 PM CST THIS EVENING FOR\nTHE FOLLOWING AREAS\n\nIN ALABAMA THIS WATCH INCLUDES 7 COUNTIES\n\nIN SOUTH CENTRAL ALABAMA\n\nBUTLER                CONECUH               CRENSHAW\nMONROE                WILCOX\n\nIN SOUTHWEST ALABAMA\n\nCLARKE                WASHINGTON\n\nTHIS INCLUDES THE CITIES OF BRANTLEY, CAMDEN, CHATOM, EVERGREEN,\nGREENVILLE, GROVE HILL, HOMEWOOD, JACKSON, LUVERNE, MILLRY,\nMONROEVILLE, PINE HILL, AND THOMASVILLE.",
             instruction: nil,
             response: "Monitor",
-            areaSummary: "Sedgwick; Butler; Harvey (KS)"
+            areaSummary: "Sedgwick; Butler; Harvey (KS)",
+            tornadoDetection: "",
+            tornadoDamageThreat: "",
+            maxWindGust: "",
+            maxHailSize: "",
+            windThreat: "",
+            hailThreat: "",
+            thunderstormDamageThreat: "",
+            flashFloodDetection: "",
+            flashFloodDamageThreat: ""
             
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
-            title: "Tornado Watch",
-            headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
+            title: "Tornado Warning",
+            headline: "Tornado Warning issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-05-06T20:10:00Z")!,   // ~3:10 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-05-07T01:00:00Z")!,  // ~8:00 PM CDT
             ends: ISO8601DateFormatter().date(from: "2025-11-26T00:23:00Z")!,  // 5:00 PM CST,
@@ -183,13 +201,22 @@ extension Watch {
             description: "TORNADO WATCH 641 REMAINS VALID UNTIL 6 PM CST THIS EVENING FOR\nTHE FOLLOWING AREAS\n\nIN ALABAMA THIS WATCH INCLUDES 7 COUNTIES\n\nIN SOUTH CENTRAL ALABAMA\n\nBUTLER                CONECUH               CRENSHAW\nMONROE                WILCOX\n\nIN SOUTHWEST ALABAMA\n\nCLARKE                WASHINGTON\n\nTHIS INCLUDES THE CITIES OF BRANTLEY, CAMDEN, CHATOM, EVERGREEN,\nGREENVILLE, GROVE HILL, HOMEWOOD, JACKSON, LUVERNE, MILLRY,\nMONROEVILLE, PINE HILL, AND THOMASVILLE.",
             instruction: nil,
             response: "Monitor",
-            areaSummary: "Cleveland; McClain; Oklahoma; Pottawatomie (OK)"
+            areaSummary: "Cleveland; McClain; Oklahoma; Pottawatomie (OK)",
+            tornadoDetection: "OBSERVED",
+            tornadoDamageThreat: "",
+            maxWindGust: "",
+            maxHailSize: "",
+            windThreat: "",
+            hailThreat: "",
+            thunderstormDamageThreat: "",
+            flashFloodDetection: "",
+            flashFloodDamageThreat: ""
             
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
-            title: "Severe Thunderstorm Watch",
+            title: "Severe Thunderstorm Warning",
             headline: "Severe T-Storm Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-08-12T21:30:00Z")!,   // ~4:30 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-08-13T02:00:00Z")!,  // ~9:00 PM CDT
@@ -202,13 +229,22 @@ extension Watch {
             description: "TORNADO WATCH 641 REMAINS VALID UNTIL 6 PM CST THIS EVENING FOR\nTHE FOLLOWING AREAS\n\nIN ALABAMA THIS WATCH INCLUDES 7 COUNTIES\n\nIN SOUTH CENTRAL ALABAMA\n\nBUTLER                CONECUH               CRENSHAW\nMONROE                WILCOX\n\nIN SOUTHWEST ALABAMA\n\nCLARKE                WASHINGTON\n\nTHIS INCLUDES THE CITIES OF BRANTLEY, CAMDEN, CHATOM, EVERGREEN,\nGREENVILLE, GROVE HILL, HOMEWOOD, JACKSON, LUVERNE, MILLRY,\nMONROEVILLE, PINE HILL, AND THOMASVILLE.",
             instruction: nil,
             response: "Monitor",
-            areaSummary: "Douglas; Sarpy; Cass (NE) / Pottawattamie (IA)"
+            areaSummary: "Douglas; Sarpy; Cass (NE) / Pottawattamie (IA)",
+            tornadoDetection: "POSSIBLE",
+            tornadoDamageThreat: "",
+            maxWindGust: "60",
+            maxHailSize: "1.34",
+            windThreat: "",
+            hailThreat: "",
+            thunderstormDamageThreat: "CONSIDERABLE",
+            flashFloodDetection: "",
+            flashFloodDamageThreat: ""
             
         ),
         WatchRowDTO(
             id: "urn:oid:2.49.0.1.840.0.0d1c2b3a4e5f60718293a4b5c6d7e8f901234567.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.0d1c2b3a4e5f60718293a4b5c6d7e8f901234567.001.1",
-            title: "Tornado Watch",
+            title: "Tornado Warning",
             headline: "Tornado Watch issued November 25 at 4:20PM CST until November 25 at 6:00PM CST by NWS Mobile AL",
             issued: ISO8601DateFormatter().date(from: "2025-09-27T23:45:00Z")!,   // ~6:45 PM CDT
             expires: ISO8601DateFormatter().date(from: "2025-09-28T04:00:00Z")!,  // ~11:00 PM CDT
@@ -221,7 +257,16 @@ extension Watch {
             description: "TORNADO WATCH 641 REMAINS VALID UNTIL 6 PM CST THIS EVENING FOR\nTHE FOLLOWING AREAS\n\nIN ALABAMA THIS WATCH INCLUDES 7 COUNTIES\n\nIN SOUTH CENTRAL ALABAMA\n\nBUTLER                CONECUH               CRENSHAW\nMONROE                WILCOX\n\nIN SOUTHWEST ALABAMA\n\nCLARKE                WASHINGTON\n\nTHIS INCLUDES THE CITIES OF BRANTLEY, CAMDEN, CHATOM, EVERGREEN,\nGREENVILLE, GROVE HILL, HOMEWOOD, JACKSON, LUVERNE, MILLRY,\nMONROEVILLE, PINE HILL, AND THOMASVILLE.",
             instruction: "Take shelter in an interior room of your home. If you are in a mobile home seek shelter in a storm shelter.",
             response: "Monitor",
-            areaSummary: "Johnson; Wyandotte; Jackson (KS/MO metro)"
+            areaSummary: "Johnson; Wyandotte; Jackson (KS/MO metro)",
+            tornadoDetection: "OBSERVED",
+            tornadoDamageThreat: "",
+            maxWindGust: "",
+            maxHailSize: "",
+            windThreat: "",
+            hailThreat: "",
+            thunderstormDamageThreat: "",
+            flashFloodDetection: "",
+            flashFloodDamageThreat: ""
         )
     ]
     
@@ -252,7 +297,16 @@ extension Watch {
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Take shelter in an interior room. Avoid windows. If in a mobile home, move to a sturdier shelter.",
                 response: "Monitor",
-                cells: []
+                cells: [],
+                tornadoDetection: "OBSERVED", // RADAR INDICATED, OBSERVED
+                tornadoDamageThreat: "", // CONSIDERABLE, CATASTROPHIC
+                maxWindGust: "", // NA
+                maxHailSize: "", // NA
+                windThreat: "", // NA
+                hailThreat: "", // NA
+                thunderstormDamageThreat: "", // NA
+                flashFloodDetection: "", // NA
+                flashFloodDamageThreat: "" // NA
             ),
 
             // Severe Thunderstorm Watch (afternoon CDT)
@@ -278,7 +332,16 @@ extension Watch {
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Be prepared to seek sturdy shelter if warnings are issued. Secure outdoor objects.",
                 response: "Monitor",
-                cells: []
+                cells: [],
+                tornadoDetection: "POSSIBLE", // POSSIBLE
+                tornadoDamageThreat: "", // NA
+                maxWindGust: "", // 60 mph
+                maxHailSize: "", // 1.25 in
+                windThreat: "", // RADAR INDICATED, OBSERVED
+                hailThreat: "", // RADAR INDICATED, OBSERVED
+                thunderstormDamageThreat: "", // CONSIDERABLE, DESTRUCTIVE
+                flashFloodDetection: "",
+                flashFloodDamageThreat: ""
             ),
 
             // Tornado Watch (spring outbreak window)
@@ -304,7 +367,16 @@ extension Watch {
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Review your shelter plan now. Have multiple ways to receive warnings.",
                 response: "Shelter",
-                cells: []
+                cells: [],
+                tornadoDetection: "RADAR INDICATED",
+                tornadoDamageThreat: "",
+                maxWindGust: "",
+                maxHailSize: "",
+                windThreat: "",
+                hailThreat: "",
+                thunderstormDamageThreat: "",
+                flashFloodDetection: "",
+                flashFloodDamageThreat: ""
             ),
 
             // Severe Thunderstorm Watch (late summer)
@@ -330,7 +402,16 @@ extension Watch {
                 sender: "w-nws.webmaster@noaa.gov",
                 instruction: "Stay weather-aware this evening. If a warning is issued, move indoors away from windows.",
                 response: "Monitor",
-                cells: [] 
+                cells: [],
+                tornadoDetection: "",
+                tornadoDamageThreat: "",
+                maxWindGust: "",
+                maxHailSize: "",
+                windThreat: "",
+                hailThreat: "",
+                thunderstormDamageThreat: "",
+                flashFloodDetection: "",
+                flashFloodDamageThreat: ""
             )
         ]
     }

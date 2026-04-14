@@ -14,6 +14,7 @@ protocol AlertItem: Identifiable, Hashable {
     var issued: Date { get }
     var link: URL { get }
     var alertType: AlertType { get }
+    var severeRiskTags: String? { get }
 }
 
 enum AlertType: Codable {

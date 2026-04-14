@@ -70,6 +70,15 @@ final class Watch {
     var instruction: String?
     var response: String?
     var h3Cells: [Int64] = []
+    var tornadoDetection: String?
+    var tornadoDamageThreat: String?
+    var maxWindGust: String?
+    var maxHailSize: String?
+    var windThreat: String?
+    var hailThreat: String?
+    var thunderstormDamageThreat: String?
+    var flashFloodDetection: String?
+    var flashFloodDamageThreat: String?
     
     init(
         nwsId: String,
@@ -92,7 +101,16 @@ final class Watch {
         sender: String?,
         instruction: String?,
         response: String?,
-        cells: [Int64]
+        cells: [Int64],
+        tornadoDetection: String?,
+        tornadoDamageThreat: String?,
+        maxWindGust: String?,
+        maxHailSize: String?,
+        windThreat: String?,
+        hailThreat: String?,
+        thunderstormDamageThreat: String?,
+        flashFloodDetection: String?,
+        flashFloodDamageThreat: String?
     ) {
         self.nwsId = nwsId
         self.messageId = messageId
@@ -115,5 +133,14 @@ final class Watch {
         self.instruction = instruction
         self.response = response
         self.h3Cells = cells
+        self.tornadoDetection = tornadoDetection
+        self.tornadoDamageThreat = tornadoDamageThreat
+        self.maxWindGust = maxWindGust
+        self.maxHailSize = maxHailSize
+        self.windThreat = windThreat
+        self.hailThreat = hailThreat
+        self.thunderstormDamageThreat = thunderstormDamageThreat
+        self.flashFloodDetection = flashFloodDetection
+        self.flashFloodDamageThreat = flashFloodDamageThreat
     }
 }

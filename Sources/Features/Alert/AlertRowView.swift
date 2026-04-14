@@ -39,6 +39,14 @@ struct AlertRowView: View {
                 Text("Issued \(relativeDate(alert.issued))")
                     .font(.caption.weight(.medium))
                     .foregroundColor(.secondary)
+                
+//                if alert.alertType == .watch {
+                    if let sevTags = alert.severeRiskTags {
+                        Text(sevTags)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.tornadoRed)
+                    }
+//                }
             }
             Spacer()
 
@@ -76,4 +84,5 @@ struct AlertRowView: View {
         AlertRowView(alert: sample)
     }
     AlertRowView(alert: Watch.sampleWatchRows.last ?? Watch.sampleWatchRows[0])
+    AlertRowView(alert: Watch.sampleWatchRows[3])
 }
