@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		D0AFC5F22F412BAB001F331A /* Sources/AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = D0F000062F50000100AA1001 /* Sources/AGENTS.md */; };
 		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 /* End PBXBuildFile section */
 
@@ -333,7 +332,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 2610;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					D095EFA22E16F5690074F867 = {
 						CreatedOnToolsVersion = 16.4;
@@ -377,7 +376,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D0AFC5F22F412BAB001F331A /* Sources/AGENTS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

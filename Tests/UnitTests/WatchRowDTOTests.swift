@@ -23,7 +23,16 @@ struct WatchRowDTOTests {
             description: "Test",
             instruction: nil,
             response: nil,
-            areaSummary: "Denver Metro"
+            areaSummary: "Denver Metro",
+            tornadoDetection: nil,
+            tornadoDamageThreat: nil,
+            maxWindGust: nil,
+            maxHailSize: nil,
+            windThreat: nil,
+            hailThreat: nil,
+            thunderstormDamageThreat: nil,
+            flashFloodDetection: nil,
+            flashFloodDamageThreat : nil
         )
 
         #expect(sut.isUpdateMessage)

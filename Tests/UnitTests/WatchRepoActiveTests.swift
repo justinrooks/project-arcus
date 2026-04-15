@@ -45,7 +45,16 @@ struct WatchRepoActiveTests {
             sender: "w-nws.webmaster@noaa.gov",
             instruction: "Take shelter in an interior room. Avoid windows. If in a mobile home, move to a sturdier shelter.",
             response: "Monitor",
-            cells: cells
+            cells: cells,
+            tornadoDetection: nil,
+            tornadoDamageThreat: nil,
+            maxWindGust: nil,
+            maxHailSize: nil,
+            windThreat: nil,
+            hailThreat: nil,
+            thunderstormDamageThreat: nil,
+            flashFloodDetection: nil,
+            flashFloodDamageThreat : nil
         )
     }
 

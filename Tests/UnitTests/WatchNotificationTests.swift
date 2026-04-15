@@ -199,7 +199,16 @@ struct WatchNotificationTests {
             description: "",
             instruction: nil,
             response: nil,
-            areaSummary: "Oklahoma"
+            areaSummary: "Oklahoma",
+            tornadoDetection: nil,
+            tornadoDamageThreat: nil,
+            maxWindGust: nil,
+            maxHailSize: nil,
+            windThreat: nil,
+            hailThreat: nil,
+            thunderstormDamageThreat: nil,
+            flashFloodDetection: nil,
+            flashFloodDamageThreat : nil
         )
     }
 
