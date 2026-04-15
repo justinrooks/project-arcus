@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(37)
+## v0.1.0(38)
 
 ### Overview
 This update surfaces richer severe-weather context in supported alert views, makes the active alert summary more compact by default, and clarifies onboarding/privacy messaging around best-effort alerts and location-derived notification targeting.

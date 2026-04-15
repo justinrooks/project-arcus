@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(37)
+## v0.1.0(38)
 
 ### UI / UX
 - Surface severe-risk tags in supported alert rows, summary rows, and detail screens, including tornado, wind, hail, and flash-flood threat context when the source data provides it.

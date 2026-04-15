@@ -1,4 +1,4 @@
-SkyAware v0.1.0(37) surfaces richer severe-weather context in supported alert views, makes active alert summaries more compact by default, and clarifies onboarding/privacy messaging around best-effort alerts and location-derived notification targeting.
+SkyAware v0.1.0(38) surfaces richer severe-weather context in supported alert views, makes active alert summaries more compact by default, and clarifies onboarding/privacy messaging around best-effort alerts and location-derived notification targeting.
 
 Highlights:
 - Supported alerts can now show severe-risk tags for tornado, wind, hail, and flash-flood threat context when the source data includes it
