@@ -215,7 +215,10 @@ private struct MesoRowView: View {
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.mesoscale, "")
             Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
+                .frame(width: 16, alignment: .center)
+                .padding(.top, 6)
 
             VStack(alignment: .leading) {
                 HStack {
@@ -262,7 +265,10 @@ private struct WatchRowView: View {
         HStack(alignment: .top, spacing: 15) {
             let (icon, color) = styleForType(.watch, watch.title)
             Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
+                .frame(width: 16, alignment: .center)
+                .padding(.top, 6)
 
             VStack(alignment: .leading) {
                 HStack {
