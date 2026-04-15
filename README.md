@@ -1,6 +1,14 @@
 # SkyAware
 
-SkyAware is a SwiftUI-first iOS app focused on hyper-local severe weather awareness. It combines NWS and SPC data sources to visualize current risks and deliver weather notifications designed to help users stay informed. The repository is public, but this README is written primarily for internal development use.
+SkyAware is an iOS app built for hyper-local severe weather awareness. It brings together NWS and SPC data to surface current risk, active alerts, and timely notifications in a clear, glanceable way. This repository contains the app and its supporting development context.
+
+## Join the Beta
+Try SkyAware on TestFlight and help shape the app.
+
+[Join the SkyAware beta on TestFlight](https://testflight.apple.com/join/2hnEnj6e)
+
+SkyAware is a severe-weather awareness app in active development. It does not issue official warnings and should not be relied upon as a sole source of emergency information.
+
 
 ## Key Features
 - Visualize current severe weather risks for your location

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.1.0(37)
+
+### Overview
+This update surfaces richer severe-weather context in supported alert views, makes the active alert summary more compact by default, and clarifies onboarding/privacy messaging around best-effort alerts and location-derived notification targeting.
+
+### Highlights
+- Supported alerts can now show severe-risk tags for tornado, wind, hail, and flash-flood threat context when the source data includes it.
+- Active alert summaries now default to fewer items and let you expand the full list with See all / Show less.
+- Condensed alert rows now have cleaner icon alignment.
+- Welcome, disclaimer, and permission screens now more clearly explain best-effort severe-weather awareness and official-warning guidance.
+
+### Maintenance
+- Privacy and public project documentation now describe WeatherKit usage and derived location data used for server-assisted notification targeting.
+
 ## v0.1.0(33)
 
 ### Overview

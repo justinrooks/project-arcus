@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.1.0(37)
+
+### UI / UX
+- Surface severe-risk tags in supported alert rows, summary rows, and detail screens, including tornado, wind, hail, and flash-flood threat context when the source data provides it.
+<!-- evidence: d109e5c -->
+- Show fewer items by default in the active alert summary, add a See all / Show less control, and clean up alert icon alignment in the condensed rows.
+<!-- evidence: d109e5c, be9cf9d -->
+- Refresh the welcome, disclaimer, and permission screens to better explain best-effort severe-weather awareness, official-warning guidance, and derived location data used for notification targeting.
+<!-- evidence: 67445d9 -->
+
+### Maintenance / Cleanup
+- Update the privacy policy and public project documentation to describe WeatherKit usage plus derived location data used for server-assisted notification targeting.
+<!-- evidence: 67445d9, d921c9d -->
+
 ## v0.1.0(33)
 
 ### Background & Notifications
