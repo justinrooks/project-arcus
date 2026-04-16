@@ -25,6 +25,7 @@ final class Dependencies: Sendable {
     private let _stormRiskRepo: StormRiskRepo?
     private let _severeRiskRepo: SevereRiskRepo?
     private let _healthStore: BgHealthStore?
+    private let _homeProjectionStore: HomeProjectionStore?
     
     // MARK: Location / grid
     
@@ -89,6 +90,12 @@ final class Dependencies: Sendable {
     var healthStore: BgHealthStore {
         guard let value = _healthStore else {
             fatalError("Dependencies.healthStore used while unconfigured")
+        }
+        return value
+    }
+    var homeProjectionStore: HomeProjectionStore {
+        guard let value = _homeProjectionStore else {
+            fatalError("Dependencies.homeProjectionStore used while unconfigured")
         }
         return value
     }
@@ -226,6 +233,7 @@ final class Dependencies: Sendable {
         stormRiskRepo: StormRiskRepo?,
         severeRiskRepo: SevereRiskRepo?,
         healthStore: BgHealthStore?,
+        homeProjectionStore: HomeProjectionStore?,
         locationProvider: LocationProvider?,
         locationManager: LocationManager?,
         gridProvider: GridPointProvider?,
@@ -248,6 +256,7 @@ final class Dependencies: Sendable {
         self._stormRiskRepo = stormRiskRepo
         self._severeRiskRepo = severeRiskRepo
         self._healthStore = healthStore
+        self._homeProjectionStore = homeProjectionStore
         self._locationProvider = locationProvider
         self._locationManager = locationManager
         self._gridProvider = gridProvider
@@ -275,7 +284,8 @@ final class Dependencies: Sendable {
             SevereRisk.self,
             BgRunSnapshot.self,
             Watch.self,
-            FireRisk.self
+            FireRisk.self,
+            HomeProjection.self
         ])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         let container: ModelContainer
@@ -324,6 +334,7 @@ final class Dependencies: Sendable {
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
         let fireRiskRepo   = FireRiskRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
+        let homeProjectionStore = HomeProjectionStore(modelContainer: container)
         
         logger.debug("Repositories initialized")
         
@@ -447,6 +458,7 @@ final class Dependencies: Sendable {
             stormRiskRepo: stormRiskRepo,
             severeRiskRepo: severeRiskRepo,
             healthStore: healthStore,
+            homeProjectionStore: homeProjectionStore,
             locationProvider: locationProvider,
             locationManager: locationManager,
             gridProvider: gridProvider,
@@ -471,6 +483,7 @@ final class Dependencies: Sendable {
                                                          stormRiskRepo: nil,
                                                          severeRiskRepo: nil,
                                                          healthStore: nil,
+                                                         homeProjectionStore: nil,
                                                          locationProvider: nil,
                                                          locationManager: nil,
                                                          gridProvider: nil,

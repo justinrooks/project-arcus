@@ -8,7 +8,7 @@
 import Foundation
 
 // DTO for transfering across actor boundaries
-struct MdDTO: Sendable, Identifiable, Hashable, AlertItem {
+struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
     let alertType: AlertType = .mesoscale
     
     let id: UUID                // usually the GUID or derived from it

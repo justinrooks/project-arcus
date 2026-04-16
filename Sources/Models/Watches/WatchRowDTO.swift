@@ -22,7 +22,7 @@ extension WatchRowDTO: AlertItem {
     }
 }
 
-struct WatchRowDTO: Identifiable, Sendable, Hashable {
+struct WatchRowDTO: Identifiable, Sendable, Hashable, Codable {
     // Identity
     let id: String              // nwsId
     let messageId: String?
