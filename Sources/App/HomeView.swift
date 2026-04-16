@@ -7,11 +7,18 @@
 
 import SwiftUI
 import OSLog
+import SwiftData
 
 struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
+
+    @Query(sort: [SortDescriptor(\HomeProjection.updatedAt, order: .reverse)])
+    private var cachedProjections: [HomeProjection]
+
+    @Query(sort: [SortDescriptor(\ConvectiveOutlook.published, order: .reverse)])
+    private var cachedOutlooks: [ConvectiveOutlook]
 
     private let logger = Logger.uiHome
 
@@ -21,32 +28,39 @@ struct HomeView: View {
         locationSession.currentContext?.refreshKey
     }
 
+    private var displayedProjection: HomeProjectionRecord? {
+        Self.selectProjection(
+            from: cachedProjections.map(\.record),
+            currentContext: locationSession.currentContext
+        )
+    }
+
+    private var displayedOutlook: ConvectiveOutlookDTO? {
+        guard displayedProjection != nil else { return nil }
+        return cachedOutlooks.first?.dto
+    }
+
     private var readinessState: SummaryReadinessState {
         Self.readinessState(
             startupState: locationSession.startupState,
             hasContext: locationSession.currentContext != nil,
             hasResolvedLocalData: currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey,
-            stormRisk: refreshPipeline.stormRisk,
-            severeRisk: refreshPipeline.severeRisk,
-            fireRisk: refreshPipeline.fireRisk
+            stormRisk: displayedProjection?.stormRisk,
+            severeRisk: displayedProjection?.severeRisk,
+            fireRisk: displayedProjection?.fireRisk
         )
     }
 
     private var hasMeaningfulSummaryContent: Bool {
-        refreshPipeline.snap != nil ||
-        refreshPipeline.summaryWeather != nil ||
-        refreshPipeline.stormRisk != nil ||
-        refreshPipeline.severeRisk != nil ||
-        refreshPipeline.fireRisk != nil ||
-        refreshPipeline.outlook != nil ||
-        refreshPipeline.mesos.isEmpty == false ||
-        refreshPipeline.watches.isEmpty == false
+        displayedProjection != nil
     }
 
     private var isEmptyResolvingSummary: Bool {
-        readinessState != .locationUnavailable &&
-        hasMeaningfulSummaryContent == false &&
-        (refreshPipeline.resolutionState.isRefreshing || readinessState != .ready)
+        Self.showsBootstrapLoading(
+            readinessState: readinessState,
+            resolutionState: refreshPipeline.resolutionState,
+            hasProjection: hasMeaningfulSummaryContent
+        )
     }
 
     init(
@@ -82,7 +96,8 @@ struct HomeView: View {
             arcusAlerts: dependencies.arcusProvider,
             arcusAlertSync: dependencies.arcusProvider,
             weatherClient: dependencies.weatherClient,
-            locationSession: locationSession
+            locationSession: locationSession,
+            homeProjectionStore: dependencies.homeProjectionStore
         )
     }
 
@@ -95,14 +110,14 @@ struct HomeView: View {
                     NavigationStack {
                         ScrollView {
                             SummaryView(
-                                snap: refreshPipeline.snap,
-                                stormRisk: refreshPipeline.stormRisk,
-                                severeRisk: refreshPipeline.severeRisk,
-                                fireRisk: refreshPipeline.fireRisk,
-                                mesos: refreshPipeline.mesos,
-                                watches: refreshPipeline.watches,
-                                outlook: refreshPipeline.outlook,
-                                weather: refreshPipeline.summaryWeather,
+                                snap: displayedProjection?.locationSnapshot,
+                                stormRisk: displayedProjection?.stormRisk,
+                                severeRisk: displayedProjection?.severeRisk,
+                                fireRisk: displayedProjection?.fireRisk,
+                                mesos: displayedProjection?.activeMesos ?? [],
+                                watches: displayedProjection?.activeAlerts ?? [],
+                                outlook: displayedOutlook,
+                                weather: displayedProjection?.weather,
                                 readinessState: readinessState,
                                 resolutionState: refreshPipeline.resolutionState
                             )
@@ -215,6 +230,30 @@ struct HomeView: View {
     }
 }
 
+extension HomeView {
+    static func selectProjection(
+        from projections: [HomeProjectionRecord],
+        currentContext: LocationContext?
+    ) -> HomeProjectionRecord? {
+        if let currentContext {
+            let projectionKey = HomeProjection.projectionKey(for: currentContext)
+            return projections.first(where: { $0.projectionKey == projectionKey })
+        }
+
+        return projections.max(by: { $0.updatedAt < $1.updatedAt })
+    }
+
+    static func showsBootstrapLoading(
+        readinessState: SummaryReadinessState,
+        resolutionState: SummaryResolutionState,
+        hasProjection: Bool
+    ) -> Bool {
+        readinessState != .locationUnavailable &&
+        hasProjection == false &&
+        (resolutionState.isRefreshing || readinessState != .ready)
+    }
+}
+
 #Preview("Home") {
     HomeView(
         initialSnap: .init(
@@ -233,4 +272,64 @@ struct HomeView: View {
     )
     .environment(\.dependencies, Dependencies.unconfigured)
     .environment(LocationSession.preview)
+    .modelContainer(HomeViewPreviewData.modelContainer)
+}
+
+@MainActor
+private enum HomeViewPreviewData {
+    static let modelContainer: ModelContainer = {
+        let schema = Schema([HomeProjection.self, ConvectiveOutlook.self])
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(for: schema, configurations: configuration)
+        let context = ModelContext(container)
+
+        if let previewContext = LocationSession.preview.currentContext {
+            let projection = HomeProjection(
+                context: previewContext,
+                createdAt: .now,
+                lastViewedAt: .now
+            )
+            projection.weatherPayload = HomeProjectionWeatherPayload(
+                summary: SummaryWeather(
+                    temperature: .init(value: 72, unit: .fahrenheit),
+                    symbolName: "sun.max.fill",
+                    conditionText: "Clear",
+                    asOf: .now,
+                    dewPoint: .init(value: 54, unit: .fahrenheit),
+                    humidity: 0.45,
+                    windSpeed: .init(value: 15, unit: .milesPerHour),
+                    windGust: .init(value: 24, unit: .milesPerHour),
+                    windDirection: "NW",
+                    pressure: .init(value: 29.92, unit: .inchesOfMercury),
+                    pressureTrend: "steady"
+                )
+            )
+            projection.stormRisk = .slight
+            projection.severeRisk = .tornado(probability: 0.10)
+            projection.fireRisk = .extreme
+            projection.activeMesos = MD.sampleDiscussionDTOs
+            projection.activeAlerts = Watch.sampleWatchRows
+            projection.updatedAt = .now
+            context.insert(projection)
+        }
+
+        if let outlook = ConvectiveOutlook.sampleOutlookDtos.first {
+            context.insert(
+                ConvectiveOutlook(
+                    title: outlook.title,
+                    link: outlook.link,
+                    published: outlook.published,
+                    fullText: outlook.fullText,
+                    summary: outlook.summary,
+                    day: outlook.day,
+                    riskLevel: outlook.riskLevel,
+                    issued: outlook.issued ?? outlook.published,
+                    validUntil: outlook.validUntil ?? outlook.published
+                )
+            )
+        }
+
+        try! context.save()
+        return container
+    }()
 }

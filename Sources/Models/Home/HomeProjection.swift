@@ -78,6 +78,18 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let lastWeatherLoadAt: Date?
 }
 
+extension HomeProjectionRecord {
+    var locationSnapshot: LocationSnapshot {
+        LocationSnapshot(
+            coordinates: .init(latitude: latitude, longitude: longitude),
+            timestamp: locationTimestamp,
+            accuracy: 0,
+            placemarkSummary: placemarkSummary,
+            h3Cell: h3Cell
+        )
+    }
+}
+
 @Model
 final class HomeProjection {
     var id: UUID

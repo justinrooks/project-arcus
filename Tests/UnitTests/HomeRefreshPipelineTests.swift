@@ -313,11 +313,105 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.summaryWeather == weatherValue)
     }
 
+    @Test("scene active refresh persists the current projection slices")
+    func sceneActiveRefresh_persistsProjectionSlices() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let weatherValue = sampleWeather()
+        let meso = MD.sampleDiscussionDTOs[1]
+        let watch = Watch.sampleWatchRows[1]
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(activeMesos: [meso])
+        let watches = FakeWatchProvider(activeWatches: [watch])
+        let weather = FakeWeatherClient(weather: weatherValue)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.enqueueRefresh(
+            .sceneActive,
+            environment: makeEnvironment(
+                spc: spc,
+                watches: watches,
+                weather: weather,
+                locationSession: locationSession,
+                homeProjectionStore: projectionStore
+            )
+        )
+        await pipeline.waitForIdle()
+
+        let projection = try await projectionStore.projection(for: context)
+        let stored = try #require(projection)
+
+        #expect(stored.weather == weatherValue)
+        #expect(stored.stormRisk == .enhanced)
+        #expect(stored.severeRisk == .hail(probability: 0.30))
+        #expect(stored.fireRisk == .elevated)
+        #expect(stored.activeMesos == [meso])
+        #expect(stored.activeAlerts == [watch])
+    }
+
+    @Test("failed location-scoped reads keep the existing cached projection")
+    func locationScopedReadFailure_preservesExistingProjection() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let weatherValue = sampleWeather()
+        let originalWatch = Watch.sampleWatchRows[0]
+        let originalMeso = MD.sampleDiscussionDTOs[0]
+
+        _ = try await projectionStore.updateWeather(
+            weatherValue,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.15),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 210)
+        )
+        _ = try await projectionStore.updateHotAlerts(
+            watches: [originalWatch],
+            mesos: [originalMeso],
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 220)
+        )
+
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(locationReadError: TestFailure.failedRead)
+        let watches = FakeWatchProvider(activeWatches: [Watch.sampleWatchRows[1]])
+        let weather = FakeWeatherClient()
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                spc: spc,
+                watches: watches,
+                weather: weather,
+                locationSession: locationSession,
+                homeProjectionStore: projectionStore
+            )
+        )
+
+        let projection = try await projectionStore.projection(for: context)
+        let stored = try #require(projection)
+
+        #expect(stored.weather == weatherValue)
+        #expect(stored.stormRisk == .slight)
+        #expect(stored.severeRisk == .wind(probability: 0.15))
+        #expect(stored.fireRisk == .critical)
+        #expect(stored.activeAlerts == [originalWatch])
+        #expect(stored.activeMesos == [originalMeso])
+    }
+
     private func makeEnvironment(
         spc: FakeSpcProvider,
         watches: FakeWatchProvider,
         weather: FakeWeatherClient,
-        locationSession: FakeLocationSession
+        locationSession: FakeLocationSession,
+        homeProjectionStore: HomeProjectionStore? = nil
     ) -> HomeRefreshPipeline.Environment {
         .init(
             logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
@@ -327,7 +421,8 @@ struct HomeRefreshPipelineTests {
             arcusAlerts: watches,
             arcusAlertSync: watches,
             weatherClient: weather,
-            locationSession: locationSession
+            locationSession: locationSession,
+            homeProjectionStore: homeProjectionStore
         )
     }
 

@@ -59,6 +59,7 @@ final class HomeRefreshPipeline {
         let arcusAlertSync: any ArcusAlertSyncing
         let weatherClient: any HomeWeatherQuerying
         let locationSession: any HomeLocationContextPreparing
+        let homeProjectionStore: HomeProjectionStore?
     }
 
     private let minimumForegroundRefreshInterval: TimeInterval
@@ -319,7 +320,8 @@ final class HomeRefreshPipeline {
                 for: context,
                 logger: environment.logger,
                 spcRisk: environment.spcRisk,
-                arcusQuery: environment.arcusAlerts
+                arcusQuery: environment.arcusAlerts,
+                projectionStore: environment.homeProjectionStore
             )
         } else {
             resolutionState.begin(
@@ -332,19 +334,27 @@ final class HomeRefreshPipeline {
                 for: context,
                 logger: environment.logger,
                 spcRisk: environment.spcRisk,
-                arcusQuery: environment.arcusAlerts
+                arcusQuery: environment.arcusAlerts,
+                projectionStore: environment.homeProjectionStore
             )
         }
 
         if trigger.isHotFeedsOnly == false {
             if shouldSyncWeatherKitNow {
                 resolutionState.begin(task: .weather, sections: [.conditions, .atmosphere])
-                let didRefreshWeather = await refreshWeather(
+                let weather = await refreshWeather(
                     for: context.snapshot.coordinates,
                     weatherClient: environment.weatherClient
                 )
-                if didRefreshWeather {
+                if let weather {
+                    summaryWeather = weather
                     lastWeatherKitSyncAt = now
+                    await persistWeather(
+                        weather,
+                        for: context,
+                        using: environment.homeProjectionStore,
+                        logger: environment.logger
+                    )
                 }
                 resolutionState.finish(
                     task: .weather,
@@ -365,15 +375,13 @@ final class HomeRefreshPipeline {
     private func refreshWeather(
         for coordinates: CLLocationCoordinate2D,
         weatherClient: any HomeWeatherQuerying
-    ) async -> Bool {
-        if Task.isCancelled { return false }
+    ) async -> SummaryWeather? {
+        if Task.isCancelled { return nil }
         let weather = await weatherClient.currentWeather(
             for: CLLocation(latitude: coordinates.latitude, longitude: coordinates.longitude)
         )
-        if Task.isCancelled { return false }
-        guard let weather else { return false }
-        summaryWeather = weather
-        return true
+        if Task.isCancelled { return nil }
+        return weather
     }
 
     private func refreshOutlooks(using outlooksService: any SpcOutlookQuerying) async {
@@ -507,7 +515,8 @@ final class HomeRefreshPipeline {
         for context: LocationContext,
         logger: Logger,
         spcRisk: any SpcRiskQuerying,
-        arcusQuery: any ArcusAlertQuerying
+        arcusQuery: any ArcusAlertQuerying,
+        projectionStore: HomeProjectionStore?
     ) async {
         enum ProgressiveResult: Sendable {
             case stormRisk(StormRiskLevel)
@@ -631,6 +640,15 @@ final class HomeRefreshPipeline {
         }
 
         lastResolvedLocationScopedRefreshKey = context.refreshKey
+        if didApplyLocationScopedSnapshot, locationScopedReadFailed == false {
+            await persistLocationScopedSnapshot(
+                riskSnapshot: nextRiskSnapshot,
+                alertSnapshot: nextAlertSnapshot,
+                for: context,
+                using: projectionStore,
+                logger: logger
+            )
+        }
         resolutionState.finish(
             task: .stormRisk,
             resolvedSections: [.stormRisk, .severeRisk, .fireRisk]
@@ -642,7 +660,8 @@ final class HomeRefreshPipeline {
         for context: LocationContext,
         logger: Logger,
         spcRisk: any SpcRiskQuerying,
-        arcusQuery: any ArcusAlertQuerying
+        arcusQuery: any ArcusAlertQuerying,
+        projectionStore: HomeProjectionStore?
     ) async {
         do {
             let snapshot = try await IngestionSupport.readHotFeedSnapshot(
@@ -656,10 +675,76 @@ final class HomeRefreshPipeline {
                 mesos: snapshot.mesos,
                 watches: snapshot.watches
             )
+            await persistHotAlerts(
+                alertSnapshot,
+                for: context,
+                using: projectionStore,
+                logger: logger
+            )
             resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
         } catch {
             logger.error("Failed to read hot feed snapshot: \(error.localizedDescription, privacy: .public)")
             resolutionState.finish(task: .alerts, resolvedSections: [.alerts])
+        }
+    }
+
+    private func persistWeather(
+        _ weather: SummaryWeather,
+        for context: LocationContext,
+        using store: HomeProjectionStore?,
+        logger: Logger
+    ) async {
+        guard let store else { return }
+
+        do {
+            _ = try await store.updateWeather(weather, for: context)
+        } catch {
+            logger.error("Failed to persist home projection weather: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func persistLocationScopedSnapshot(
+        riskSnapshot: HomeRiskSnapshot,
+        alertSnapshot: HomeAlertSnapshot,
+        for context: LocationContext,
+        using store: HomeProjectionStore?,
+        logger: Logger
+    ) async {
+        guard let store else { return }
+
+        do {
+            _ = try await store.updateSlowProducts(
+                stormRisk: riskSnapshot.stormRisk,
+                severeRisk: riskSnapshot.severeRisk,
+                fireRisk: riskSnapshot.fireRisk,
+                for: context
+            )
+            _ = try await store.updateHotAlerts(
+                watches: alertSnapshot.watches,
+                mesos: alertSnapshot.mesos,
+                for: context
+            )
+        } catch {
+            logger.error("Failed to persist location-scoped home projection data: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func persistHotAlerts(
+        _ alertSnapshot: HomeAlertSnapshot,
+        for context: LocationContext,
+        using store: HomeProjectionStore?,
+        logger: Logger
+    ) async {
+        guard let store else { return }
+
+        do {
+            _ = try await store.updateHotAlerts(
+                watches: alertSnapshot.watches,
+                mesos: alertSnapshot.mesos,
+                for: context
+            )
+        } catch {
+            logger.error("Failed to persist home projection hot alerts: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
