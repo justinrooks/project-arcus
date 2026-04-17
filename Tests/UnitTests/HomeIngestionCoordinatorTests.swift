@@ -4,8 +4,8 @@ import Testing
 
 @Suite("Home Ingestion Coordinator")
 struct HomeIngestionCoordinatorTests {
-    @Test("foreground trigger plans preserve the expected lane selection")
-    func foregroundTriggerPlans_matchExpectedCoverage() {
+    @Test("trigger plans preserve the expected lane selection")
+    func triggerPlans_matchExpectedCoverage() {
         let activatePlan = HomeIngestionPlan(
             request: .init(trigger: .foregroundActivate)
         )
@@ -29,6 +29,18 @@ struct HomeIngestionCoordinatorTests {
         )
         #expect(locationPlan.lanes == [.hotAlerts, .weather])
         #expect(locationPlan.forcedLanes == [.hotAlerts, .weather])
+
+        let backgroundRefreshPlan = HomeIngestionPlan(
+            request: .init(trigger: .backgroundRefresh)
+        )
+        #expect(backgroundRefreshPlan.lanes == .all)
+        #expect(backgroundRefreshPlan.forcedLanes == [.hotAlerts])
+
+        let backgroundLocationPlan = HomeIngestionPlan(
+            request: .init(trigger: .backgroundLocationChange)
+        )
+        #expect(backgroundLocationPlan.lanes == [.hotAlerts, .weather])
+        #expect(backgroundLocationPlan.forcedLanes == [.hotAlerts, .weather])
     }
 
     @Test("runs one ingestion plan at a time")

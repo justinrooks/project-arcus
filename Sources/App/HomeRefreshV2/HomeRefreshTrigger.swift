@@ -165,7 +165,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
             isLocationBearing = false
         case .backgroundLocationChange:
             lanes = [.hotAlerts, .weather]
-            forcedLanes = [.hotAlerts]
+            forcedLanes = [.hotAlerts, .weather]
             locationRequest = .currentPrepared
             provenance = [.background, .locationChange]
             isLocationBearing = true

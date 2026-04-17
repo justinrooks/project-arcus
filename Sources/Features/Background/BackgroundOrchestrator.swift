@@ -30,9 +30,7 @@ protocol NotificationSettingsProviding: Sendable {
 actor BackgroundOrchestrator {
     private let logger = Logger.backgroundOrchestrator
     private let signposter:OSSignposter
-    private let spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying
-    private let arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying
-    private let locationContextResolver: any LocationContextResolving
+    private let coordinator: any HomeIngestionCoordinating
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
     private let mesoEngine: MesoEngine
@@ -41,17 +39,9 @@ actor BackgroundOrchestrator {
     private let notificationSettingsProvider: NotificationSettingsProviding
     
     private let clock = ContinuousClock()
-    private let requestedLocationTimeout: Double = 12
-    private let maximumAcceptedLocationAge: TimeInterval = 5 * 60
-    private let mapProductRefreshPolicy = MapProductRefreshPolicy()
-    private let outlookRefreshPolicy = OutlookRefreshPolicy()
-    private var lastMapProductSyncAt: Date?
-    private var lastOutlookSyncAt: Date?
     
     init(
-        spcProvider: any SpcSyncing & SpcRiskQuerying & SpcOutlookQuerying,
-        arcusProvider: any ArcusAlertSyncing & ArcusAlertQuerying,
-        locationContextResolver: any LocationContextResolving,
+        coordinator: any HomeIngestionCoordinating,
         policy: RefreshPolicy,
         engine: MorningEngine,
         mesoEngine: MesoEngine,
@@ -59,9 +49,7 @@ actor BackgroundOrchestrator {
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding
     ) {
-        self.spcProvider = spcProvider
-        self.arcusProvider = arcusProvider
-        self.locationContextResolver = locationContextResolver
+        self.coordinator = coordinator
         morningEngine = engine
         refreshPolicy = policy
         healthStore = health
@@ -89,29 +77,17 @@ actor BackgroundOrchestrator {
             do {
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
-                
-                // MARK: Get fresh data
-                logger.info("Starting slow SPC sync")
-                let syncInterval = signposter.beginInterval("SPC Sync")
-                let didSyncSlowFeeds = await syncSlowFeeds(now: start)
-                signposter.endInterval("SPC Sync", syncInterval)
-                logger.info("Slow SPC sync completed")
-                if didSyncSlowFeeds {
-                    feedsChanged.insert(.outlookDay1)
-                }
-                
-                // - Get the latest convective outlook details
-                logger.debug("Fetching latest convective outlook")
-                let outlook = try await HTTPExecutionMode.$current.withValue(.background) {
-                    try await spcProvider.getLatestConvectiveOutlook()
-                }
-                logger.debug("Latest convective outlook fetched")
-                
+                let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
+                let snapshot = try await coordinator.enqueueAndWait(
+                    .backgroundRefresh,
+                    locationContext: nil,
+                    remoteAlertContext: nil
+                )
+                signposter.endInterval("Unified Background Ingestion", ingestionInterval)
+
                 try Task.checkCancellation()
-                
-                // MARK: Get location snapshot
-                logger.debug("Attempting to obtain latest device location for background run")
-                guard let context = await resolvedLocationContext() else {
+
+                guard let locationSnapshot = snapshot.locationSnapshot else {
                     logger.info("No current location snapshot available; rechecking in 20m")
                     let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
                     let end = Date()
@@ -122,30 +98,27 @@ actor BackgroundOrchestrator {
                     return .init(next: nextRun, result: .skipped, didNotify: false, feedsChanged: feedsChanged)
                 }
                 
-                logger.debug("Location snapshot obtained; preparing risk queries and placemark update")
-                await HTTPExecutionMode.$current.withValue(.background) {
-                    await IngestionSupport.syncHotFeeds(
-                        spcSync: spcProvider,
-                        arcusSync: arcusProvider,
-                        context: context
-                    )
+                guard
+                    let stormRisk = snapshot.stormRisk,
+                    let severeRisk = snapshot.severeRisk,
+                    let fireRisk = snapshot.fireRisk
+                else {
+                    throw BackgroundOrchestratorError.missingLocationScopedSnapshot
                 }
-                feedsChanged.formUnion([.meso, .watch])
 
-                let localSnapshot = try await HTTPExecutionMode.$current.withValue(.background) {
-                    try await withTimeout(seconds: 8, clock: clock) {
-                        try await IngestionSupport.readLocationScopedSnapshot(
-                            spcRisk: self.spcProvider,
-                            arcusQuery: self.arcusProvider,
-                            context: context
-                        )
-                    }
+                if snapshot.latestOutlook != nil {
+                    feedsChanged.insert(.outlookDay1)
                 }
-                let severeRisk = localSnapshot.severeRisk
-                let stormRisk = localSnapshot.stormRisk
-                let fireRisk = localSnapshot.fireRisk
-                let activeMesos = localSnapshot.mesos
-                let activeWatches = localSnapshot.watches
+                if snapshot.mesos.isEmpty == false {
+                    feedsChanged.insert(.meso)
+                }
+                if snapshot.watches.isEmpty == false {
+                    feedsChanged.insert(.watch)
+                }
+
+                let outlook = snapshot.latestOutlook
+                let activeMesos = snapshot.mesos
+                let activeWatches = snapshot.watches
                 let inMeso = activeMesos.isEmpty == false
                 let inWatch = activeWatches.isEmpty == false
                 
@@ -164,7 +137,7 @@ actor BackgroundOrchestrator {
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
                             fireRisk: fireRisk,
-                            placeMark: context.snapshot.placemarkSummary ?? "Unknown"
+                            placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
                         )
                     )
                     if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
@@ -177,8 +150,8 @@ actor BackgroundOrchestrator {
                         ctx: .init(
                             now: .now,
                             localTZ: .current,
-                            location: context.snapshot.coordinates,
-                            placeMark: context.snapshot.placemarkSummary ?? "Unknown"
+                            location: locationSnapshot.coordinates,
+                            placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
                         ),
                         mesos: activeMesos
                     )
@@ -239,59 +212,6 @@ actor BackgroundOrchestrator {
             logger.notice("Background run cancelled")
         }
     }
-
-    private func resolvedLocationContext() async -> LocationContext? {
-        do {
-            return try await locationContextResolver.prepareCurrentContext(
-                requiresFreshLocation: true,
-                showsAuthorizationPrompt: false,
-                authorizationTimeout: requestedLocationTimeout,
-                locationTimeout: requestedLocationTimeout,
-                maximumAcceptedLocationAge: maximumAcceptedLocationAge,
-                placemarkTimeout: 8
-            )
-        } catch {
-            logger.notice("Skipping location-dependent background work because location context is unavailable: \(String(describing: error), privacy: .public)")
-            return nil
-        }
-    }
-
-    private func syncSlowFeeds(now: Date) async -> Bool {
-        let shouldSyncMapProducts = mapProductRefreshPolicy.shouldSync(
-            now: now,
-            lastSync: lastMapProductSyncAt,
-            force: false
-        )
-        let shouldSyncOutlooks = outlookRefreshPolicy.shouldSync(
-            now: now,
-            lastSync: lastOutlookSyncAt,
-            force: false
-        )
-
-        if shouldSyncMapProducts == false && shouldSyncOutlooks == false {
-            return false
-        }
-
-        await HTTPExecutionMode.$current.withValue(.background) {
-            await withTaskGroup(of: Void.self) { group in
-                if shouldSyncMapProducts {
-                    group.addTask { await self.spcProvider.syncMapProducts() }
-                }
-                if shouldSyncOutlooks {
-                    group.addTask { await self.spcProvider.syncConvectiveOutlooks() }
-                }
-                await group.waitForAll()
-            }
-        }
-
-        if shouldSyncMapProducts {
-            lastMapProductSyncAt = now
-        }
-        if shouldSyncOutlooks {
-            lastOutlookSyncAt = now
-        }
-        return true
-    }
     
     // MARK: Convenience bg run record
     private func recordBgRun(
@@ -323,4 +243,8 @@ actor BackgroundOrchestrator {
                 active: active
             )
     }
+}
+
+private enum BackgroundOrchestratorError: Error {
+    case missingLocationScopedSnapshot
 }

@@ -69,14 +69,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     func run(plan: HomeIngestionPlan) async throws -> HomeSnapshot {
         let context = await resolveContext(for: plan.locationRequest, using: environment.locationSession)
         let now = Date()
+        let executionMode = httpExecutionMode(for: plan)
 
         if shouldSyncHotFeeds(plan: plan, now: now) {
-            await syncHotFeeds(context: context)
+            await syncHotFeeds(context: context, executionMode: executionMode)
             freshness.lastHotFeedSyncAt = now
         }
 
         if shouldSyncSlowFeeds(plan: plan, now: now) {
-            await syncSlowFeeds()
+            await syncSlowFeeds(executionMode: executionMode)
             freshness.lastSlowFeedSyncAt = now
         }
 
@@ -163,16 +164,19 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         return shouldSyncMaps || shouldSyncOutlooks
     }
 
-    private func syncHotFeeds(context: LocationContext?) async {
+    private func syncHotFeeds(
+        context: LocationContext?,
+        executionMode: HTTPExecutionMode
+    ) async {
         guard let context else { return }
-        await HTTPExecutionMode.$current.withValue(.foreground) {
+        await HTTPExecutionMode.$current.withValue(executionMode) {
             await environment.spcSync.syncMesoscaleDiscussions()
             await environment.arcusAlertSync.sync(context: context)
         }
     }
 
-    private func syncSlowFeeds() async {
-        await HTTPExecutionMode.$current.withValue(.foreground) {
+    private func syncSlowFeeds(executionMode: HTTPExecutionMode) async {
+        await HTTPExecutionMode.$current.withValue(executionMode) {
             await environment.spcSync.syncMapProducts()
             await environment.spcSync.syncConvectiveOutlooks()
         }
@@ -245,5 +249,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 "Failed to persist home projection during ingestion: \(error.localizedDescription, privacy: .public)"
             )
         }
+    }
+
+    private func httpExecutionMode(for plan: HomeIngestionPlan) -> HTTPExecutionMode {
+        if plan.provenance.contains(.background) {
+            return .background
+        }
+        return .foreground
     }
 }

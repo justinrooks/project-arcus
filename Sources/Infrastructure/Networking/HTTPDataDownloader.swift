@@ -8,7 +8,7 @@
 import Foundation
 import OSLog
 
-public enum HTTPExecutionMode: Sendable {
+public enum HTTPExecutionMode: Sendable, Equatable {
     case foreground
     case background
 

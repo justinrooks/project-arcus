@@ -100,8 +100,8 @@ struct WatchNotificationTests {
         #expect(sent[0].id == "watch:abc123")
     }
 
-    @Test("background location change syncs hot feeds and sends a watch notification")
-    func backgroundLocationChangeSyncsHotFeedsAndSendsWatchNotification() async {
+    @Test("background location change waits for unified ingestion before sending a watch notification")
+    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async throws {
         let sender = RecordingSender()
         let watchEngine = WatchEngine(
             rule: WatchRule(),
@@ -110,24 +110,36 @@ struct WatchNotificationTests {
             sender: sender
         )
         let context = Self.makeContext()
-        let resolver = FakeLocationContextResolver(context: context)
-        let spc = FakeBackgroundSpcProvider()
-        let arcus = FakeBackgroundArcusProvider(watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))])
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+            ),
+            runGate: gate
+        )
         let handler = BackgroundLocationChangeHandler(
-            locationContextResolver: resolver,
-            spcSync: spc,
-            spcRisk: spc,
-            arcusSync: arcus,
-            arcusQuery: arcus,
+            coordinator: coordinator,
             watchEngine: watchEngine
         )
 
-        await handler.handleLocationChange()
+        let handleTask = Task {
+            await handler.handleLocationChange()
+        }
 
-        #expect(await spc.syncMesoscaleCount() == 1)
-        #expect(await arcus.syncCount() == 1)
-        #expect(await spc.activeMesosQueryCount() == 1)
-        #expect(await arcus.queryCount() == 1)
+        let requestStarted = await waitUntil {
+            await coordinator.requestCount() == 1
+        }
+        #expect(requestStarted)
+        #expect((await sender.sent()).isEmpty)
+
+        let request = try #require(await coordinator.requests().first)
+        #expect(request.trigger == .backgroundLocationChange)
+
+        await gate.open()
+        await handleTask.value
+
         #expect((await sender.sent()).count == 1)
     }
 
@@ -141,15 +153,15 @@ struct WatchNotificationTests {
             sender: sender
         )
         let context = Self.makeContext()
-        let resolver = FakeLocationContextResolver(context: context)
-        let spc = FakeBackgroundSpcProvider()
-        let arcus = FakeBackgroundArcusProvider(watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))])
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+            )
+        )
         let handler = BackgroundLocationChangeHandler(
-            locationContextResolver: resolver,
-            spcSync: spc,
-            spcRisk: spc,
-            arcusSync: arcus,
-            arcusQuery: arcus,
+            coordinator: coordinator,
             watchEngine: watchEngine
         )
 
@@ -157,8 +169,7 @@ struct WatchNotificationTests {
         await handler.handleLocationChange()
 
         #expect((await sender.sent()).count == 1)
-        #expect(await spc.syncMesoscaleCount() == 2)
-        #expect(await arcus.syncCount() == 2)
+        #expect(await coordinator.requestCount() == 2)
     }
 
     private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0, tz: TimeZone) -> Date {
@@ -272,81 +283,99 @@ actor RecordingSender: NotificationSending {
     }
 }
 
-private actor FakeBackgroundSpcProvider: SpcSyncing, SpcRiskQuerying {
-    private var syncMesoscaleCalls = 0
-    private var activeMesosQueries = 0
+private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
+    private let snapshot: HomeSnapshot
+    private let runGate: AsyncGate?
+    private var submittedRequests: [HomeIngestionRequest] = []
 
-    func sync() async {}
-    func syncMapProducts() async {}
-    func syncTextProducts() async {}
-    func syncConvectiveOutlooks() async {}
-
-    func syncMesoscaleDiscussions() async {
-        syncMesoscaleCalls += 1
+    init(
+        snapshot: HomeSnapshot = .empty,
+        runGate: AsyncGate? = nil
+    ) {
+        self.snapshot = snapshot
+        self.runGate = runGate
     }
 
-    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
-        .allClear
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {
+        submittedRequests.append(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            )
+        )
     }
 
-    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
-        .allClear
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        let request = HomeIngestionRequest(
+            trigger: trigger,
+            locationContext: locationContext,
+            remoteAlertContext: remoteAlertContext
+        )
+        return try await enqueueAndWait(request)
     }
 
-    func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
-        activeMesosQueries += 1
-        return []
+    func enqueue(_ request: HomeIngestionRequest) {
+        submittedRequests.append(request)
     }
 
-    func getFireRisk(for point: CLLocationCoordinate2D) async throws -> FireRiskLevel {
-        .clear
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        submittedRequests.append(request)
+        if let runGate {
+            await runGate.wait()
+        }
+        return snapshot
     }
 
-    func syncMesoscaleCount() -> Int { syncMesoscaleCalls }
-    func activeMesosQueryCount() -> Int { activeMesosQueries }
+    func requests() -> [HomeIngestionRequest] {
+        submittedRequests
+    }
+
+    func requestCount() -> Int {
+        submittedRequests.count
+    }
 }
 
-private actor FakeBackgroundArcusProvider: ArcusAlertSyncing, ArcusAlertQuerying {
-    private let watches: [WatchRowDTO]
-    private var syncCalls = 0
-    private var queryCalls = 0
+private actor AsyncGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
 
-    init(watches: [WatchRowDTO]) {
-        self.watches = watches
+    func wait() async {
+        if isOpen {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
     }
 
-    func sync(context: LocationContext) async {
-        syncCalls += 1
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
     }
-
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
-        queryCalls += 1
-        return watches
-    }
-
-    func syncCount() -> Int { syncCalls }
-    func queryCount() -> Int { queryCalls }
 }
 
-private struct FakeLocationContextResolver: LocationContextResolving {
-    let context: LocationContext
-
-    func prepareCurrentContext(
-        requiresFreshLocation: Bool,
-        showsAuthorizationPrompt: Bool,
-        authorizationTimeout: Double,
-        locationTimeout: Double,
-        maximumAcceptedLocationAge: TimeInterval,
-        placemarkTimeout: Double
-    ) async throws -> LocationContext {
-        context
+private func waitUntil(
+    timeout: Duration = .seconds(1),
+    interval: Duration = .milliseconds(20),
+    _ condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: interval)
     }
-
-    func resolveContext(
-        from snapshot: LocationSnapshot,
-        maximumAcceptedLocationAge: TimeInterval?,
-        placemarkTimeout: Double
-    ) async throws -> LocationContext {
-        context
-    }
+    return await condition()
 }

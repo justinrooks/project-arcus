@@ -424,36 +424,6 @@ final class Dependencies: Sendable {
             sender: Sender()
         )
 
-        let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
-            locationContextResolver: locationContextResolver,
-            spcSync: spc,
-            spcRisk: spc,
-            arcusSync: arcus,
-            arcusQuery: arcus,
-            watchEngine: watchEngine
-        )
-
-        locationManager.setBackgroundLocationChangeHandler {
-            await backgroundLocationChangeHandler.handleLocationChange()
-        }
-
-        let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
-        
-        let orchestrator = BackgroundOrchestrator(
-            spcProvider: spc,
-            arcusProvider: arcus,
-            locationContextResolver: locationContextResolver,
-            policy: refreshPolicy,
-            engine: morning,
-            mesoEngine: meso,
-            health: healthStore,
-            cadence: cadencePolicy,
-            notificationSettingsProvider: notificationSettingsProvider
-        )
-        
-        let scheduler = BackgroundScheduler(refreshId: appRefreshID)
-        logger.notice("Providers ready; background orchestrator configured")
-        
         let weatherClient = WeatherClient()
         logger.notice("WeatherKit client created")
 
@@ -478,6 +448,30 @@ final class Dependencies: Sendable {
             )
         )
         let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)
+
+        let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
+            coordinator: homeIngestionCoordinator,
+            watchEngine: watchEngine
+        )
+
+        locationManager.setBackgroundLocationChangeHandler {
+            await backgroundLocationChangeHandler.handleLocationChange()
+        }
+
+        let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
+        
+        let orchestrator = BackgroundOrchestrator(
+            coordinator: homeIngestionCoordinator,
+            policy: refreshPolicy,
+            engine: morning,
+            mesoEngine: meso,
+            health: healthStore,
+            cadence: cadencePolicy,
+            notificationSettingsProvider: notificationSettingsProvider
+        )
+        
+        let scheduler = BackgroundScheduler(refreshId: appRefreshID)
+        logger.notice("Providers ready; background orchestrator configured")
         
         return Dependencies(
             appRefreshID: appRefreshID,

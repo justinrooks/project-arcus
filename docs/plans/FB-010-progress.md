@@ -307,3 +307,85 @@
   - preserving the existing failed-read behavior that keeps the last good projection visible
 - Recommended next step:
   - move to issue `#125` and route background refresh plus background location-change triggers through the same coordinator without expanding into APNs-specific behavior early
+
+## Issue #125 - Route Background Refresh and Background Location Changes Through the Unified Ingestion Flow
+
+### Status
+- Completed
+
+### Scope completed
+- Brief sections advanced:
+  - Background trigger wiring through the unified ingestion flow
+  - Background trigger planning rules
+  - Separation between ingestion and downstream background side effects
+- Issue requirements completed:
+  - Routed background app refresh through `HomeIngestionCoordinator` and awaited unified ingestion before morning/meso evaluation and cadence scheduling
+  - Routed background location changes through `HomeIngestionCoordinator` and kept watch-notification side effects outside the queue
+  - Updated the `background location change` plan to force hot-alert and weather refresh for the new context while still skipping slow-product sync
+  - Preserved background HTTP execution semantics inside `HomeIngestionExecutor` so background-triggered sync work stays on the background request policy
+  - Added focused tests for background trigger coverage, awaited completion behavior, background-mode sync execution, and retained watch-notification behavior
+
+### Key implementation notes
+- `BackgroundOrchestrator` no longer owns direct sync/query logic. It now awaits a `backgroundRefresh` snapshot from the unified queue, then uses that returned snapshot for downstream morning summary evaluation, meso evaluation, health recording, and cadence selection.
+- `BackgroundLocationChangeHandler` is now a thin adapter over `backgroundLocationChange` ingestion. It still runs `WatchEngine` afterward so watch-notification removal stays deferred to issue `#128`.
+- `HomeIngestionExecutor` now chooses `.background` HTTP execution mode for background-triggered sync steps, preserving the longer timeout/retry policy the old background path relied on.
+- When unified background ingestion cannot produce a location-scoped snapshot, `BackgroundOrchestrator` still exits early, records a skipped run, and schedules a shorter retry window instead of evaluating downstream notifications on partial data.
+
+### Files changed
+- `Sources/App/Dependencies.swift`
+- `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`
+- `Sources/App/HomeRefreshV2/HomeRefreshTrigger.swift`
+- `Sources/Features/Background/BackgroundLocationChangeHandler.swift`
+- `Sources/Features/Background/BackgroundOrchestrator.swift`
+- `Sources/Infrastructure/Networking/HTTPDataDownloader.swift`
+- `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`
+- `Tests/UnitTests/HomeIngestionCoordinatorTests.swift`
+- `Tests/UnitTests/WatchNotificationTests.swift`
+- `docs/plans/FB-010-progress.md`
+
+### Tests
+- Updated:
+  - `Tests/UnitTests/HomeIngestionCoordinatorTests.swift`
+    - proves background trigger plans use the expected lane and forced-lane coverage
+  - `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`
+    - proves background refresh still uses the resolved/current location context for risk evaluation
+    - proves location-unavailable background runs still sync slow products and skip downstream notification work
+    - proves unified background refresh is awaited before `BackgroundOrchestrator.run()` completes
+    - proves background-triggered SPC sync work runs under background HTTP execution mode
+    - proves existing cadence decisions still come from the unified snapshot output
+  - `Tests/UnitTests/WatchNotificationTests.swift`
+    - proves background location change waits for unified ingestion before watch-notification evaluation
+    - proves repeated background location changes still avoid duplicate watch notifications while reusing the unified trigger
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests -only-testing:SkyAwareTests/BackgroundOrchestratorCadenceTests -only-testing:SkyAwareTests/WatchNotificationTests test`
+  2. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'generic/platform=iOS Simulator' build`
+  3. Inspect `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.04.17_08-55-40--0600.xcresult` if focused failure details are needed
+- Expected result:
+  - The focused background-routing tests pass.
+  - The `SkyAware` simulator build succeeds.
+  - Background refresh and background location changes both execute through `HomeIngestionCoordinator`, while downstream notification/cadence behavior remains outside the queue.
+
+### Out of scope / intentionally deferred
+- APNs-triggered hot-alert ingestion and notification-open continuation
+- Offline/runtime-state UI and diagnostics/admin surfaces
+- Removing client-side watch notifications from background location handling
+- Broader notification cleanup beyond keeping background notification policy outside the ingestion core
+
+### Risks or follow-ups
+- `BackgroundLocationChangeHandler` still runs `WatchEngine` after unified ingestion; issue `#128` should remove that remaining client-side watch path without regressing the now-shared ingestion flow.
+- `BackgroundOrchestrator.Outcome.feedsChanged` is still a lightweight, best-effort summary derived from the returned snapshot rather than a dedicated ingestion delta; if later work needs precise change reporting, it should build on the future projection-delta issue rather than reintroducing background-only diffing here.
+- The ingestion-side `LocationSession` remains separate from the UI-owned `LocationSession`; later issues should only revisit that if remote/APNs continuation needs stronger shared-session guarantees.
+
+### Handoff to next issue
+- The next issue should assume:
+  - background app refresh and background location changes already submit work through `HomeIngestionCoordinator`
+  - `BackgroundOrchestrator` now treats the unified `HomeSnapshot` as the source of truth for downstream morning/meso/cadence work
+  - background location changes still keep watch notifications outside the queue for now
+- Watch out for:
+  - preserving the precedence rules between remote hot-alert work and any already-running background refresh
+  - not moving APNs completion mapping or notification policy into `HomeIngestionCoordinator`
+  - avoiding premature removal of the watch-notification path before issue `#128`
+- Recommended next step:
+  - move to issue `#126` and wire `remote hot alert received` / `remote hot alert opened` into the same coordinator with the existing background merge semantics
