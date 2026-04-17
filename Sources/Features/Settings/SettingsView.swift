@@ -173,11 +173,11 @@ struct SettingsView: View {
 
                     NavigationLink {
                         DiagnosticsView()
-                            .navigationTitle("Diagnostic Info")
+                            .navigationTitle("Ingestion Diagnostics")
                             .navigationBarTitleDisplayMode(.inline)
                             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                     } label: {
-                        settingsNavRow("Diagnostic Info", systemImage: "stethoscope")
+                        settingsNavRow("Ingestion Diagnostics", systemImage: "stethoscope")
                     }
                     .buttonStyle(.plain)
                     .frame(maxWidth: .infinity, alignment: .leading)

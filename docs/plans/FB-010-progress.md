@@ -567,3 +567,74 @@
   - preserving the small `ArcusHttpClient` reporting seam rather than growing a separate health-check framework unless a later issue truly needs it
 - Recommended next step:
   - move to issue `#128` and remove the remaining client-side watch-notification path while preserving the unified ingestion flow and the new runtime-only offline state behavior
+
+## Issue #129 - Add Ingestion Diagnostics in Settings
+
+### Status
+- Completed
+
+### Scope completed
+- Brief sections advanced:
+  - Diagnostics/admin visibility for ingestion freshness
+  - Settings-accessible ingestion health troubleshooting
+- Issue requirements completed:
+  - Reworked the placeholder diagnostics screen into an ingestion-focused Settings surface
+  - Surfaced the current known last successful load times for hot alerts, slow products, weather, and projection updates using the persisted `HomeProjection` timestamps
+  - Added projection-context details that help explain which cached projection the diagnostics screen is showing
+  - Added focused tests for projection selection and lane freshness mapping
+
+### Key implementation notes
+- The diagnostics screen stays administrative and lightweight. It does not add stale-state language to the primary home experience.
+- Freshness is read from the existing persisted `HomeProjection` fields: `lastHotAlertsLoadAt`, `lastSlowProductsLoadAt`, `lastWeatherLoadAt`, and `updatedAt`.
+- The screen prefers the cached projection for the current resolved location context and falls back to the newest cached projection when no current-context projection exists yet.
+- The existing cache-clear action remains available, but the unused placeholder force-refresh control was removed to keep the surface focused.
+
+### Files changed
+- `Sources/Features/Diagnostics/DiagnosticsView.swift`
+- `Sources/Features/Settings/SettingsView.swift`
+- `Tests/UnitTests/IngestionDiagnosticsDataTests.swift`
+- `SkyAware.xcodeproj/project.pbxproj`
+- `docs/plans/FB-010-progress.md`
+
+### Tests
+- Added:
+  - `Tests/UnitTests/IngestionDiagnosticsDataTests.swift`
+    - proves the diagnostics screen prefers the current-context projection over a newer unrelated cached projection
+    - proves the screen falls back to the newest cached projection when no current-context projection is available
+    - proves the diagnostics data source returns no snapshot when no cached projections exist yet
+    - proves the lane rows map to the persisted hot-alert, slow-product, weather, and projection timestamps
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -only-testing:SkyAwareTests/IngestionDiagnosticsDataTests test`
+  2. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'generic/platform=iOS Simulator' build`
+  3. Launch the app with cached ingestion data, open `Settings` → `Ingestion Diagnostics`, and confirm the screen shows:
+     - the selected projection context
+     - last successful load times for `Hot Alerts`, `Slow Products`, `Weather`, and `Projection Update`
+- Expected result:
+  - The focused ingestion diagnostics tests pass.
+  - The `SkyAware` simulator build succeeds.
+  - The Settings diagnostics surface shows projection-backed freshness timestamps without introducing stale badges into the main summary UI.
+
+### Out of scope / intentionally deferred
+- User-facing stale or freshness badges
+- Additional connectivity or offline messaging beyond the existing Today token from issue `#127`
+- Watch-notification cleanup from issue `#128`
+- Broader observability tooling, logging expansion, or trigger-routing changes
+
+### Risks or follow-ups
+- The diagnostics timestamps reflect the last successful persisted projection write for each lane, not a separate live coordinator heartbeat.
+- When no cached projection exists for the current context yet, the screen intentionally falls back to the newest cached projection; future multi-location work may want a richer explanation of that selection state.
+- The diagnostics surface is intentionally projection-backed. Later work should avoid bypassing it with direct network reads or unrelated notification state.
+
+### Handoff to next issue
+- The next issue should assume:
+  - Settings now includes an admin-focused `Ingestion Diagnostics` screen backed by `HomeProjection`
+  - the screen already exposes the persisted lane timestamps needed for ingestion troubleshooting
+  - no new ingestion coordinator or persistence seams were added for this issue
+- Watch out for:
+  - keeping the diagnostics surface administrative rather than turning it into user-facing stale messaging
+  - not coupling the screen to the watch-notification cleanup in issue `#128`
+  - preserving the current projection-selection behavior unless a later issue explicitly revisits multi-location diagnostics
+- Recommended next step:
+  - issue `#128` remains the only open FB-010 epic item, and it can proceed independently without changing the new diagnostics surface
