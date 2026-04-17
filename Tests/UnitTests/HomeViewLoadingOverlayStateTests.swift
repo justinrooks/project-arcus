@@ -17,11 +17,12 @@ struct HomeViewRefreshTriggerTests {
         )
     }
 
-    @Test("scene active absorbs context changed follow-up work")
-    func sceneActive_absorbsContextChanged() {
-        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.contextChanged))
-        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.timer))
-        #expect(HomeView.RefreshTrigger.manual.absorbs(.sceneActive))
+    @Test("foreground refresh triggers map to the unified ingestion triggers")
+    func refreshTrigger_mapsToUnifiedIngestionTrigger() {
+        #expect(HomeView.RefreshTrigger.sceneActive.ingestionTrigger == .foregroundActivate)
+        #expect(HomeView.RefreshTrigger.manual.ingestionTrigger == .manualRefresh)
+        #expect(HomeView.RefreshTrigger.contextChanged.ingestionTrigger == .foregroundLocationChange)
+        #expect(HomeView.RefreshTrigger.timer.ingestionTrigger == .sessionTick)
     }
 
     @Test("duplicate activation refresh is skipped for the same snapshot")

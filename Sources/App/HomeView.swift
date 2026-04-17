@@ -91,13 +91,9 @@ struct HomeView: View {
         HomeRefreshPipeline.Environment(
             logger: logger,
             sync: dependencies.spcSync,
-            spcRisk: dependencies.spcRisk,
             outlooks: dependencies.spcOutlook,
-            arcusAlerts: dependencies.arcusProvider,
-            arcusAlertSync: dependencies.arcusProvider,
-            weatherClient: dependencies.weatherClient,
-            locationSession: locationSession,
-            homeProjectionStore: dependencies.homeProjectionStore
+            coordinator: dependencies.homeIngestionCoordinator,
+            locationSession: locationSession
         )
     }
 

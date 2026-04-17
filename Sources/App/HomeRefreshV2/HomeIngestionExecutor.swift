@@ -41,6 +41,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let weatherClient: any HomeWeatherQuerying
         let locationSession: any HomeContextPreparing
         let snapshotStore: any HomeSnapshotReading
+        let projectionStore: HomeProjectionStore?
     }
 
     private let environment: Environment
@@ -90,6 +91,17 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             weather: weather,
             freshness: freshness
         )
+
+        if let context {
+            await persistProjection(
+                for: plan,
+                context: context,
+                snapshot: snapshot,
+                weather: weather,
+                loadedAt: now
+            )
+        }
+
         freshness.lastResolvedRefreshKey = snapshot.refreshKey
         return snapshot
     }
@@ -190,5 +202,48 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             freshness.lastWeatherSyncAt = now
         }
         return weather
+    }
+
+    private func persistProjection(
+        for plan: HomeIngestionPlan,
+        context: LocationContext,
+        snapshot: HomeSnapshot,
+        weather: SummaryWeather?,
+        loadedAt: Date
+    ) async {
+        guard let projectionStore = environment.projectionStore else { return }
+
+        do {
+            if plan.lanes.contains(.weather), let weather {
+                _ = try await projectionStore.updateWeather(
+                    weather,
+                    for: context,
+                    loadedAt: loadedAt
+                )
+            }
+
+            if plan.lanes.contains(.slowProducts) || plan.isLocationBearing {
+                _ = try await projectionStore.updateSlowProducts(
+                    stormRisk: snapshot.stormRisk,
+                    severeRisk: snapshot.severeRisk,
+                    fireRisk: snapshot.fireRisk,
+                    for: context,
+                    loadedAt: loadedAt
+                )
+            }
+
+            if plan.lanes.contains(.hotAlerts) {
+                _ = try await projectionStore.updateHotAlerts(
+                    watches: snapshot.watches,
+                    mesos: snapshot.mesos,
+                    for: context,
+                    loadedAt: loadedAt
+                )
+            }
+        } catch {
+            environment.logger.error(
+                "Failed to persist home projection during ingestion: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 }

@@ -26,6 +26,7 @@ final class Dependencies: Sendable {
     private let _severeRiskRepo: SevereRiskRepo?
     private let _healthStore: BgHealthStore?
     private let _homeProjectionStore: HomeProjectionStore?
+    private let _homeIngestionCoordinator: (any HomeIngestionCoordinating)?
     
     // MARK: Location / grid
     
@@ -96,6 +97,12 @@ final class Dependencies: Sendable {
     var homeProjectionStore: HomeProjectionStore {
         guard let value = _homeProjectionStore else {
             fatalError("Dependencies.homeProjectionStore used while unconfigured")
+        }
+        return value
+    }
+    var homeIngestionCoordinator: any HomeIngestionCoordinating {
+        guard let value = _homeIngestionCoordinator else {
+            fatalError("Dependencies.homeIngestionCoordinator used while unconfigured")
         }
         return value
     }
@@ -234,6 +241,7 @@ final class Dependencies: Sendable {
         severeRiskRepo: SevereRiskRepo?,
         healthStore: BgHealthStore?,
         homeProjectionStore: HomeProjectionStore?,
+        homeIngestionCoordinator: (any HomeIngestionCoordinating)?,
         locationProvider: LocationProvider?,
         locationManager: LocationManager?,
         gridProvider: GridPointProvider?,
@@ -257,6 +265,7 @@ final class Dependencies: Sendable {
         self._severeRiskRepo = severeRiskRepo
         self._healthStore = healthStore
         self._homeProjectionStore = homeProjectionStore
+        self._homeIngestionCoordinator = homeIngestionCoordinator
         self._locationProvider = locationProvider
         self._locationManager = locationManager
         self._gridProvider = gridProvider
@@ -447,6 +456,28 @@ final class Dependencies: Sendable {
         
         let weatherClient = WeatherClient()
         logger.notice("WeatherKit client created")
+
+        let homeSnapshotStore = HomeSnapshotStore(
+            spcRisk: spc,
+            spcOutlook: spc,
+            arcusAlerts: arcus
+        )
+        let homeIngestionExecutor = HomeIngestionExecutor(
+            environment: .init(
+                logger: logger,
+                spcSync: spc,
+                arcusAlertSync: arcus,
+                weatherClient: weatherClient,
+                locationSession: LocationSession(
+                    locationClient: makeLocationClient(provider: locationProvider),
+                    locationManager: locationManager,
+                    locationContextResolver: locationContextResolver
+                ),
+                snapshotStore: homeSnapshotStore,
+                projectionStore: homeProjectionStore
+            )
+        )
+        let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)
         
         return Dependencies(
             appRefreshID: appRefreshID,
@@ -459,6 +490,7 @@ final class Dependencies: Sendable {
             severeRiskRepo: severeRiskRepo,
             healthStore: healthStore,
             homeProjectionStore: homeProjectionStore,
+            homeIngestionCoordinator: homeIngestionCoordinator,
             locationProvider: locationProvider,
             locationManager: locationManager,
             gridProvider: gridProvider,
@@ -484,6 +516,7 @@ final class Dependencies: Sendable {
                                                          severeRiskRepo: nil,
                                                          healthStore: nil,
                                                          homeProjectionStore: nil,
+                                                         homeIngestionCoordinator: nil,
                                                          locationProvider: nil,
                                                          locationManager: nil,
                                                          gridProvider: nil,

@@ -7,134 +7,71 @@ import Testing
 @Suite("Home Refresh Pipeline")
 @MainActor
 struct HomeRefreshPipelineTests {
-    @Test("scene active absorbs a follow-up context change while work is in flight")
-    func sceneActive_absorbsContextChangedWhileRefreshing() async {
-        let gate = AsyncGate()
+    @Test("scene active submits foreground activate to the unified queue")
+    func sceneActive_submitsForegroundActivate() async throws {
         let context = makeContext()
-        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context, prepareGate: gate)
-        let spc = FakeSpcProvider()
-        let watches = FakeWatchProvider()
-        let weather = FakeWeatherClient()
-        let pipeline = HomeRefreshPipeline()
-        let environment = makeEnvironment(
-            spc: spc,
-            watches: watches,
-            weather: weather,
-            locationSession: locationSession
-        )
-
-        let sceneActiveTask = Task { @MainActor in
-            await pipeline.enqueueRefresh(.sceneActive, environment: environment)
-        }
-
-        let prepareStarted = await waitUntil {
-            locationSession.prepareCalls.count == 1
-        }
-        #expect(prepareStarted)
-
-        await pipeline.enqueueRefresh(.contextChanged, environment: environment)
-        await gate.open()
-        await sceneActiveTask.value
-        await pipeline.waitForIdle()
-
-        #expect(locationSession.prepareCalls.count == 1)
-        #expect(await spc.syncMapProductsCount() == 1)
-        #expect(await spc.syncConvectiveOutlooksCount() == 1)
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
-        #expect(await spc.stormRiskQueryCount() == 1)
-        #expect(await spc.severeRiskQueryCount() == 1)
-        #expect(await spc.fireRiskQueryCount() == 1)
-        #expect(await spc.activeMesosQueryCount() == 1)
-        #expect(await watches.syncCount() == 1)
-        #expect(await watches.queryCount() == 1)
-    }
-
-    @Test("timer refresh only syncs hot feeds when a current context already exists")
-    func timerRefresh_usesCurrentContextAndSkipsSlowFeedsAndWeather() async {
-        let context = makeContext()
-        let locationSession = FakeLocationSession(currentContext: context, preparedContext: nil)
-        let spc = FakeSpcProvider()
-        let watches = FakeWatchProvider()
-        let weather = FakeWeatherClient()
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
-        await pipeline.enqueueRefresh(
-            .timer,
+        await pipeline.handleScenePhaseChange(
+            .active,
             environment: makeEnvironment(
-                spc: spc,
-                watches: watches,
-                weather: weather,
+                coordinator: coordinator,
                 locationSession: locationSession
             )
         )
         await pipeline.waitForIdle()
 
-        #expect(locationSession.prepareCalls.isEmpty)
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
-        #expect(await watches.syncCount() == 1)
-        #expect(await spc.activeMesosQueryCount() == 1)
-        #expect(await watches.queryCount() == 1)
-        #expect(await spc.syncMapProductsCount() == 0)
-        #expect(await spc.syncConvectiveOutlooksCount() == 0)
-        #expect(await spc.outlookQueryCount() == 0)
-        #expect(await spc.stormRiskQueryCount() == 0)
-        #expect(await spc.severeRiskQueryCount() == 0)
-        #expect(await spc.fireRiskQueryCount() == 0)
-        #expect(await weather.callCount() == 0)
+        let request = try #require(await coordinator.requests().first)
+        #expect(request.trigger == .foregroundActivate)
+        #expect(request.locationContext == nil)
     }
 
-    @Test("timer refresh falls back to preparing context without prompting or requiring fresh location")
-    func timerRefresh_preparesContextWhenCurrentContextMissing() async {
+    @Test("context change forwards the current resolved context to the unified queue")
+    func contextChanged_submitsExplicitLocationContext() async throws {
         let context = makeContext()
-        let locationSession = FakeLocationSession(currentContext: nil, preparedContext: context)
-        let spc = FakeSpcProvider()
-        let watches = FakeWatchProvider()
-        let weather = FakeWeatherClient()
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
         await pipeline.enqueueRefresh(
-            .timer,
+            .contextChanged,
             environment: makeEnvironment(
-                spc: spc,
-                watches: watches,
-                weather: weather,
+                coordinator: coordinator,
                 locationSession: locationSession
             )
         )
         await pipeline.waitForIdle()
 
-        #expect(locationSession.prepareCalls.count == 1)
-        #expect(locationSession.prepareCalls[0] == .init(requiresFreshLocation: false, showsAuthorizationPrompt: false))
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
-        #expect(await weather.callCount() == 0)
+        let request = try #require(await coordinator.requests().first)
+        #expect(request.trigger == .foregroundLocationChange)
+        #expect(request.locationContext == context)
     }
 
-    @Test("force refresh waits for the full refresh to finish when loading is shown")
-    func forceRefresh_waitsUntilWorkCompletes() async {
+    @Test("force refresh waits for unified queue completion when loading is shown")
+    func forceRefresh_waitsUntilCoordinatorCompletes() async {
         let gate = AsyncGate()
-        let context = makeContext()
-        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context, prepareGate: gate)
-        let spc = FakeSpcProvider()
-        let watches = FakeWatchProvider()
-        let weather = FakeWeatherClient()
+        let coordinator = RecordingHomeIngestionCoordinator(runGate: gate)
+        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
         let pipeline = HomeRefreshPipeline()
-        let environment = makeEnvironment(
-            spc: spc,
-            watches: watches,
-            weather: weather,
-            locationSession: locationSession
-        )
         let completion = CompletionFlag()
 
         let refreshTask = Task { @MainActor in
-            await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
             await completion.markFinished()
         }
 
-        let prepareStarted = await waitUntil {
-            locationSession.prepareCalls.count == 1
+        let requestStarted = await waitUntil {
+            await coordinator.requestCount() == 1
         }
-        #expect(prepareStarted)
+        #expect(requestStarted)
         #expect(pipeline.resolutionState.isRefreshing)
         #expect(await completion.isFinished() == false)
 
@@ -143,163 +80,19 @@ struct HomeRefreshPipelineTests {
 
         #expect(await completion.isFinished())
         #expect(pipeline.resolutionState.isRefreshing == false)
-        #expect(locationSession.prepareCalls.count == 1)
     }
 
-    @Test("manual refresh supersedes a pending timer refresh")
-    func manualRefresh_supersedesPendingTimerRefresh() async {
-        let gate = AsyncGate()
-        let currentContext = makeContext()
-        let preparedContext = makeContext(timestamp: 200)
-        let locationSession = FakeLocationSession(currentContext: currentContext, preparedContext: preparedContext)
-        let spc = FakeSpcProvider(syncMesoscaleGate: gate)
-        let watches = FakeWatchProvider()
-        let weather = FakeWeatherClient(weather: sampleWeather())
-        let pipeline = HomeRefreshPipeline()
-        let environment = makeEnvironment(
-            spc: spc,
-            watches: watches,
-            weather: weather,
-            locationSession: locationSession
-        )
-
-        let timerTask = Task { @MainActor in
-            await pipeline.enqueueRefresh(.timer, environment: environment)
-        }
-
-        let timerStarted = await waitUntil {
-            await spc.syncMesoscaleDiscussionsCount() == 1
-        }
-        #expect(timerStarted)
-
-        await pipeline.enqueueRefresh(.manual, environment: environment)
-        await gate.open()
-        await timerTask.value
-        await pipeline.waitForIdle()
-
-        #expect(locationSession.prepareCalls.count == 1)
-        #expect(locationSession.prepareCalls[0] == .init(requiresFreshLocation: true, showsAuthorizationPrompt: false))
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 2)
-        #expect(await watches.syncCount() == 2)
-        #expect(await spc.syncMapProductsCount() == 1)
-        #expect(await spc.syncConvectiveOutlooksCount() == 1)
-        #expect(await spc.outlookQueryCount() == 1)
-        #expect(await spc.stormRiskQueryCount() == 1)
-        #expect(await spc.severeRiskQueryCount() == 1)
-        #expect(await spc.fireRiskQueryCount() == 1)
-        #expect(await weather.callCount() == 1)
-        #expect(pipeline.summaryWeather == sampleWeather())
-    }
-
-    @Test("failed location-scoped reads preserve existing displayed state")
-    func locationScopedReadFailure_preservesExistingState() async {
-        let initialMesos = [MD.sampleDiscussionDTOs[0]]
-        let initialWatches = [Watch.sampleWatchRows[0]]
-        let pipeline = HomeRefreshPipeline(
-            initialStormRisk: .slight,
-            initialSevereRisk: .wind(probability: 0.15),
-            initialFireRisk: .critical,
-            initialMesos: initialMesos,
-            initialWatches: initialWatches
-        )
+    @Test("timer refresh keeps sync work on the hot-alert lane")
+    func timerRefresh_syncsHotFeedsOnly() async {
         let context = makeContext()
-        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
-        let spc = FakeSpcProvider(locationReadError: TestFailure.failedRead)
-        let watches = FakeWatchProvider(activeWatches: [Watch.sampleWatchRows[1]])
-        let weather = FakeWeatherClient()
-
-        await pipeline.forceRefreshCurrentContext(
-            showsLoading: true,
-            environment: makeEnvironment(
-                spc: spc,
-                watches: watches,
-                weather: weather,
-                locationSession: locationSession
-            )
-        )
-
-        #expect(pipeline.stormRisk == .slight)
-        #expect(pipeline.severeRisk == .wind(probability: 0.15))
-        #expect(pipeline.fireRisk == .critical)
-        #expect(pipeline.mesos == initialMesos)
-        #expect(pipeline.watches == initialWatches)
-        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
-    }
-
-    @Test("failed location-scoped reads still mark the current context as resolved")
-    func locationScopedReadFailure_marksCurrentContextResolvedOnColdStart() async {
-        let pipeline = HomeRefreshPipeline()
-        let context = makeContext()
-        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
-        let spc = FakeSpcProvider(locationReadError: TestFailure.failedRead)
-        let watches = FakeWatchProvider(activeWatches: [Watch.sampleWatchRows[1]])
-        let weather = FakeWeatherClient()
-
-        await pipeline.forceRefreshCurrentContext(
-            showsLoading: true,
-            environment: makeEnvironment(
-                spc: spc,
-                watches: watches,
-                weather: weather,
-                locationSession: locationSession
-            )
-        )
-
-        #expect(pipeline.stormRisk == nil)
-        #expect(pipeline.severeRisk == nil)
-        #expect(pipeline.fireRisk == nil)
-        #expect(pipeline.mesos.isEmpty)
-        #expect(pipeline.watches.isEmpty)
-        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
-        #expect(pipeline.resolutionState.isRefreshing == false)
-    }
-
-    @Test("manual outlook refresh only touches outlook sync and query paths")
-    func refreshOutlooksManually_onlyTouchesOutlookPaths() async {
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: nil)
         let spc = FakeSpcProvider(outlooks: sampleOutlooks())
         let watches = FakeWatchProvider()
         let weather = FakeWeatherClient()
-        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
-        let pipeline = HomeRefreshPipeline()
-
-        await pipeline.refreshOutlooksManually(
-            environment: makeEnvironment(
-                spc: spc,
-                watches: watches,
-                weather: weather,
-                locationSession: locationSession
-            )
-        )
-
-        #expect(await spc.syncConvectiveOutlooksCount() == 1)
-        #expect(await spc.outlookQueryCount() == 1)
-        #expect(await spc.syncMapProductsCount() == 0)
-        #expect(await spc.syncMesoscaleDiscussionsCount() == 0)
-        #expect(await spc.stormRiskQueryCount() == 0)
-        #expect(await spc.severeRiskQueryCount() == 0)
-        #expect(await spc.fireRiskQueryCount() == 0)
-        #expect(await watches.syncCount() == 0)
-        #expect(await watches.queryCount() == 0)
-        #expect(locationSession.prepareCalls.isEmpty)
-        #expect(await weather.callCount() == 0)
-        #expect(pipeline.resolutionState.isRefreshing == false)
-        #expect(pipeline.outlooks.map(\.title) == sampleOutlooks().map(\.title))
-        #expect(pipeline.outlooks.map(\.published) == sampleOutlooks().map(\.published))
-        #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
-    }
-
-    @Test("scene active refresh updates summary weather from the weather client")
-    func sceneActiveRefresh_updatesSummaryWeather() async {
-        let context = makeContext()
-        let weatherValue = sampleWeather()
-        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
-        let spc = FakeSpcProvider()
-        let watches = FakeWatchProvider()
-        let weather = FakeWeatherClient(weather: weatherValue)
         let pipeline = HomeRefreshPipeline()
 
         await pipeline.enqueueRefresh(
-            .sceneActive,
+            .timer,
             environment: makeEnvironment(
                 spc: spc,
                 watches: watches,
@@ -309,11 +102,15 @@ struct HomeRefreshPipelineTests {
         )
         await pipeline.waitForIdle()
 
-        #expect(await weather.callCount() == 1)
-        #expect(pipeline.summaryWeather == weatherValue)
+        #expect(locationSession.prepareCalls.isEmpty)
+        #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
+        #expect(await watches.syncCount() == 1)
+        #expect(await spc.syncMapProductsCount() == 0)
+        #expect(await spc.syncConvectiveOutlooksCount() == 0)
+        #expect(await weather.callCount() == 0)
     }
 
-    @Test("scene active refresh persists the current projection slices")
+    @Test("scene active refresh persists projection slices through the unified flow")
     func sceneActiveRefresh_persistsProjectionSlices() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
@@ -322,13 +119,13 @@ struct HomeRefreshPipelineTests {
         let meso = MD.sampleDiscussionDTOs[1]
         let watch = Watch.sampleWatchRows[1]
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
-        let spc = FakeSpcProvider(activeMesos: [meso])
+        let spc = FakeSpcProvider(activeMesos: [meso], outlooks: sampleOutlooks())
         let watches = FakeWatchProvider(activeWatches: [watch])
         let weather = FakeWeatherClient(weather: weatherValue)
         let pipeline = HomeRefreshPipeline()
 
-        await pipeline.enqueueRefresh(
-            .sceneActive,
+        await pipeline.handleScenePhaseChange(
+            .active,
             environment: makeEnvironment(
                 spc: spc,
                 watches: watches,
@@ -350,7 +147,7 @@ struct HomeRefreshPipelineTests {
         #expect(stored.activeAlerts == [watch])
     }
 
-    @Test("failed location-scoped reads keep the existing cached projection")
+    @Test("failed location-scoped reads keep the existing cached projection and still mark the context resolved")
     func locationScopedReadFailure_preservesExistingProjection() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
@@ -378,11 +175,17 @@ struct HomeRefreshPipelineTests {
             loadedAt: Date(timeIntervalSince1970: 220)
         )
 
+        let pipeline = HomeRefreshPipeline(
+            initialStormRisk: .slight,
+            initialSevereRisk: .wind(probability: 0.15),
+            initialFireRisk: .critical,
+            initialMesos: [originalMeso],
+            initialWatches: [originalWatch]
+        )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
-        let spc = FakeSpcProvider(locationReadError: TestFailure.failedRead)
+        let spc = FakeSpcProvider(outlooks: sampleOutlooks(), locationReadError: TestFailure.failedRead)
         let watches = FakeWatchProvider(activeWatches: [Watch.sampleWatchRows[1]])
         let weather = FakeWeatherClient()
-        let pipeline = HomeRefreshPipeline()
 
         await pipeline.forceRefreshCurrentContext(
             showsLoading: true,
@@ -404,26 +207,85 @@ struct HomeRefreshPipelineTests {
         #expect(stored.fireRisk == .critical)
         #expect(stored.activeAlerts == [originalWatch])
         #expect(stored.activeMesos == [originalMeso])
+        #expect(pipeline.stormRisk == .slight)
+        #expect(pipeline.severeRisk == .wind(probability: 0.15))
+        #expect(pipeline.fireRisk == .critical)
+        #expect(pipeline.mesos == [originalMeso])
+        #expect(pipeline.watches == [originalWatch])
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+    }
+
+    @Test("manual outlook refresh only touches outlook sync and query paths")
+    func refreshOutlooksManually_onlyTouchesOutlookPaths() async {
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let spc = FakeSpcProvider(outlooks: sampleOutlooks())
+        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.refreshOutlooksManually(
+            environment: makeEnvironment(
+                spc: spc,
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+        #expect(await spc.outlookQueryCount() == 1)
+        #expect(await spc.syncMapProductsCount() == 0)
+        #expect(await spc.syncMesoscaleDiscussionsCount() == 0)
+        #expect(await coordinator.requestCount() == 0)
+        #expect(pipeline.outlooks.map(\.title) == sampleOutlooks().map(\.title))
+        #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
     }
 
     private func makeEnvironment(
-        spc: FakeSpcProvider,
-        watches: FakeWatchProvider,
-        weather: FakeWeatherClient,
+        spc: FakeSpcProvider = FakeSpcProvider(),
+        watches: FakeWatchProvider = FakeWatchProvider(),
+        weather: FakeWeatherClient = FakeWeatherClient(),
+        coordinator: (any HomeIngestionCoordinating)? = nil,
         locationSession: FakeLocationSession,
         homeProjectionStore: HomeProjectionStore? = nil
     ) -> HomeRefreshPipeline.Environment {
         .init(
             logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
             sync: spc,
-            spcRisk: spc,
             outlooks: spc,
-            arcusAlerts: watches,
-            arcusAlertSync: watches,
-            weatherClient: weather,
-            locationSession: locationSession,
-            homeProjectionStore: homeProjectionStore
+            coordinator: coordinator ?? makeCoordinator(
+                spc: spc,
+                watches: watches,
+                weather: weather,
+                locationSession: locationSession,
+                homeProjectionStore: homeProjectionStore
+            ),
+            locationSession: locationSession
         )
+    }
+
+    private func makeCoordinator(
+        spc: FakeSpcProvider,
+        watches: FakeWatchProvider,
+        weather: FakeWeatherClient,
+        locationSession: FakeLocationSession,
+        homeProjectionStore: HomeProjectionStore?
+    ) -> any HomeIngestionCoordinating {
+        let snapshotStore = HomeSnapshotStore(
+            spcRisk: spc,
+            spcOutlook: spc,
+            arcusAlerts: watches
+        )
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: watches,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: homeProjectionStore
+            )
+        )
+        return HomeIngestionCoordinator(executor: executor)
     }
 
     private func makeContext(timestamp: TimeInterval = 100) -> LocationContext {
@@ -502,12 +364,76 @@ struct HomeRefreshPipelineTests {
     }
 }
 
+private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
+    private let snapshot: HomeSnapshot
+    private let runGate: AsyncGate?
+    private var submittedRequests: [HomeIngestionRequest] = []
+
+    init(
+        snapshot: HomeSnapshot = .empty,
+        runGate: AsyncGate? = nil
+    ) {
+        self.snapshot = snapshot
+        self.runGate = runGate
+    }
+
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {
+        submittedRequests.append(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            )
+        )
+    }
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        let request = HomeIngestionRequest(
+            trigger: trigger,
+            locationContext: locationContext,
+            remoteAlertContext: remoteAlertContext
+        )
+        return try await enqueueAndWait(request)
+    }
+
+    func enqueue(_ request: HomeIngestionRequest) {
+        submittedRequests.append(request)
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        submittedRequests.append(request)
+        if let runGate {
+            await runGate.wait()
+        }
+        return snapshot
+    }
+
+    func requests() -> [HomeIngestionRequest] {
+        submittedRequests
+    }
+
+    func requestCount() -> Int {
+        submittedRequests.count
+    }
+}
+
 private actor AsyncGate {
     private var continuation: CheckedContinuation<Void, Never>?
     private var isOpen = false
 
     func wait() async {
-        if isOpen { return }
+        if isOpen {
+            return
+        }
+
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
@@ -537,7 +463,7 @@ private enum TestFailure: Error {
 }
 
 @MainActor
-private final class FakeLocationSession: HomeLocationContextPreparing {
+private final class FakeLocationSession: HomeLocationContextPreparing, HomeContextPreparing {
     struct PrepareCall: Equatable {
         let requiresFreshLocation: Bool
         let showsAuthorizationPrompt: Bool
@@ -577,6 +503,10 @@ private final class FakeLocationSession: HomeLocationContextPreparing {
             await prepareGate.wait()
         }
         return preparedContext
+    }
+
+    func currentPreparedContext() async -> LocationContext? {
+        currentContext
     }
 }
 
@@ -654,16 +584,25 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
         severeRiskQueries += 1
+        if let locationReadError {
+            throw locationReadError
+        }
         return .hail(probability: 0.30)
     }
 
     func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
         activeMesosQueries += 1
+        if let locationReadError {
+            throw locationReadError
+        }
         return activeMesos
     }
 
     func getFireRisk(for point: CLLocationCoordinate2D) async throws -> FireRiskLevel {
         fireRiskQueries += 1
+        if let locationReadError {
+            throw locationReadError
+        }
         return .elevated
     }
 

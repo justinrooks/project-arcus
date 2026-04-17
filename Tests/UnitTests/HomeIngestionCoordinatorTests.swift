@@ -4,6 +4,33 @@ import Testing
 
 @Suite("Home Ingestion Coordinator")
 struct HomeIngestionCoordinatorTests {
+    @Test("foreground trigger plans preserve the expected lane selection")
+    func foregroundTriggerPlans_matchExpectedCoverage() {
+        let activatePlan = HomeIngestionPlan(
+            request: .init(trigger: .foregroundActivate)
+        )
+        #expect(activatePlan.lanes == .all)
+        #expect(activatePlan.forcedLanes.isEmpty)
+
+        let manualPlan = HomeIngestionPlan(
+            request: .init(trigger: .manualRefresh)
+        )
+        #expect(manualPlan.lanes == .all)
+        #expect(manualPlan.forcedLanes == .all)
+
+        let tickPlan = HomeIngestionPlan(
+            request: .init(trigger: .sessionTick)
+        )
+        #expect(tickPlan.lanes == [.hotAlerts])
+        #expect(tickPlan.forcedLanes.isEmpty)
+
+        let locationPlan = HomeIngestionPlan(
+            request: .init(trigger: .foregroundLocationChange)
+        )
+        #expect(locationPlan.lanes == [.hotAlerts, .weather])
+        #expect(locationPlan.forcedLanes == [.hotAlerts, .weather])
+    }
+
     @Test("runs one ingestion plan at a time")
     func enqueue_serializesExecution() async {
         let gate = AsyncGate()

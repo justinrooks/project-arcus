@@ -7,7 +7,24 @@
 
 import Foundation
 
-actor HomeIngestionCoordinator {
+protocol HomeIngestionCoordinating: Actor, Sendable {
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext?,
+        remoteAlertContext: HomeRemoteAlertContext?
+    )
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext?,
+        remoteAlertContext: HomeRemoteAlertContext?
+    ) async throws -> HomeSnapshot
+
+    func enqueue(_ request: HomeIngestionRequest)
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot
+}
+
+actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private struct Waiter {
         let id: UUID
         let requestedPlan: HomeIngestionPlan
