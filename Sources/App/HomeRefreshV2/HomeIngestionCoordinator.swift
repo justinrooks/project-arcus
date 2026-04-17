@@ -35,6 +35,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private var activePlan: HomeIngestionPlan?
     private var activeTask: Task<HomeSnapshot, Error>?
+    private var activeRunCanAbsorbRemoteHotAlert = false
     private var pendingPlan: HomeIngestionPlan?
     private var waiters: [UUID: Waiter] = [:]
 
@@ -85,7 +86,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private func submit(_ requestedPlan: HomeIngestionPlan, waiter: Waiter?) {
-        if let activePlan, activePlan.satisfies(requestedPlan) {
+        if let activePlan, activePlan.satisfies(requestedPlan), activePlanCanSatisfy(requestedPlan) {
             store(waiter)
             return
         }
@@ -111,9 +112,17 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private func startRun(with plan: HomeIngestionPlan) {
         activePlan = plan
+        activeRunCanAbsorbRemoteHotAlert = plan.forcedLanes.contains(.hotAlerts)
 
         let task = Task {
-            try await executor.run(plan: plan)
+            try await executor.run(
+                plan: plan,
+                progress: HomeIngestionRunProgress(
+                    markHotAlertsCompleted: {
+                        await self.markHotAlertsCompleted(for: plan)
+                    }
+                )
+            )
         }
         activeTask = task
 
@@ -130,6 +139,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func finishRun(plan: HomeIngestionPlan, result: Result<HomeSnapshot, Error>) {
         activePlan = nil
         activeTask = nil
+        activeRunCanAbsorbRemoteHotAlert = false
 
         let satisfiedWaiterIDs = waiters.compactMap { id, waiter in
             plan.satisfies(waiter.requestedPlan) ? id : nil
@@ -149,6 +159,18 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
         self.pendingPlan = nil
         startRun(with: pendingPlan)
+    }
+
+    private func activePlanCanSatisfy(_ requestedPlan: HomeIngestionPlan) -> Bool {
+        guard requestedPlan.remoteAlertContext != nil else {
+            return true
+        }
+        return activeRunCanAbsorbRemoteHotAlert
+    }
+
+    private func markHotAlertsCompleted(for plan: HomeIngestionPlan) {
+        guard activePlan == plan else { return }
+        activeRunCanAbsorbRemoteHotAlert = false
     }
 }
 

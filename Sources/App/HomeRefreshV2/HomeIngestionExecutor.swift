@@ -9,6 +9,12 @@ import CoreLocation
 import Foundation
 import OSLog
 
+struct HomeIngestionRunProgress: Sendable {
+    let markHotAlertsCompleted: @Sendable () async -> Void
+
+    static let none = HomeIngestionRunProgress(markHotAlertsCompleted: {})
+}
+
 @MainActor
 protocol HomeContextPreparing: AnyObject, Sendable {
     func prepareCurrentLocationContext(
@@ -30,7 +36,7 @@ extension LocationSession: HomeContextPreparing {
 }
 
 protocol HomeIngestionExecuting: Sendable {
-    func run(plan: HomeIngestionPlan) async throws -> HomeSnapshot
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot
 }
 
 actor HomeIngestionExecutor: HomeIngestionExecuting {
@@ -66,15 +72,17 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         self.weatherKitRefreshPolicy = weatherKitRefreshPolicy
     }
 
-    func run(plan: HomeIngestionPlan) async throws -> HomeSnapshot {
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress = .none) async throws -> HomeSnapshot {
         let context = await resolveContext(for: plan.locationRequest, using: environment.locationSession)
         let now = Date()
         let executionMode = httpExecutionMode(for: plan)
 
         if shouldSyncHotFeeds(plan: plan, now: now) {
-            await syncHotFeeds(context: context, executionMode: executionMode)
+            await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
             freshness.lastHotFeedSyncAt = now
         }
+
+        await progress.markHotAlertsCompleted()
 
         if shouldSyncSlowFeeds(plan: plan, now: now) {
             await syncSlowFeeds(executionMode: executionMode)
@@ -165,9 +173,31 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     private func syncHotFeeds(
+        plan: HomeIngestionPlan,
         context: LocationContext?,
         executionMode: HTTPExecutionMode
     ) async {
+        if let remoteAlertContext = plan.remoteAlertContext {
+            await HTTPExecutionMode.$current.withValue(executionMode) {
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { await self.environment.spcSync.syncMesoscaleDiscussions() }
+                    group.addTask {
+                        await self.environment.arcusAlertSync.syncRemoteAlert(
+                            id: remoteAlertContext.alertID,
+                            revisionSent: remoteAlertContext.revisionSent
+                        )
+                    }
+
+                    if plan.lanes != [.hotAlerts], let context {
+                        group.addTask { await self.environment.arcusAlertSync.sync(context: context) }
+                    }
+
+                    await group.waitForAll()
+                }
+            }
+            return
+        }
+
         guard let context else { return }
         await HTTPExecutionMode.$current.withValue(executionMode) {
             await environment.spcSync.syncMesoscaleDiscussions()

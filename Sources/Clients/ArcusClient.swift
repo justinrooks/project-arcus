@@ -10,6 +10,7 @@ import OSLog
 
 protocol ArcusClient: Sendable {
     func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data
 }
 
 struct ArcusHttpClient: ArcusClient {
@@ -41,6 +42,27 @@ struct ArcusHttpClient: ArcusClient {
             ]
         )
         
+        return try await fetch(from: url)
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        logger.info("Arcus request started endpoint=/alerts id=\(id, privacy: .private(mask: .hash))")
+
+        var queryItems = [URLQueryItem(name: "id", value: id)]
+        if let revisionSent {
+            queryItems.append(
+                URLQueryItem(
+                    name: "sent",
+                    value: revisionSent.ISO8601Format()
+                )
+            )
+        }
+
+        let url = try makeUrl(
+            path: ArcusSignalConfiguration.alertsPath,
+            queryItems: queryItems
+        )
+
         return try await fetch(from: url)
     }
     

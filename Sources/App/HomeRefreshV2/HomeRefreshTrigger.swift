@@ -20,12 +20,12 @@ enum HomeRefreshTrigger: String, Sendable, Equatable {
 }
 
 struct HomeRemoteAlertContext: Sendable, Equatable {
-    let eventKey: String
-    let revision: Int?
+    let alertID: String
+    let revisionSent: Date?
 
-    init(eventKey: String, revision: Int? = nil) {
-        self.eventKey = eventKey
-        self.revision = revision
+    init(alertID: String, revisionSent: Date? = nil) {
+        self.alertID = alertID
+        self.revisionSent = revisionSent
     }
 }
 

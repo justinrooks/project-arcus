@@ -46,7 +46,7 @@ struct HomeIngestionCoordinatorTests {
     @Test("runs one ingestion plan at a time")
     func enqueue_serializesExecution() async {
         let gate = AsyncGate()
-        let executor = FakeHomeIngestionExecutor(runGate: gate)
+        let executor = FakeHomeIngestionExecutor(beforeHotAlertsGate: gate)
         let coordinator = HomeIngestionCoordinator(executor: executor)
 
         await coordinator.enqueue(.sessionTick)
@@ -71,9 +71,12 @@ struct HomeIngestionCoordinatorTests {
     @Test("merges pending plans by unioning lanes and force requirements")
     func pendingPlan_mergeUnionsRequirements() async throws {
         let gate = AsyncGate()
-        let executor = FakeHomeIngestionExecutor(runGate: gate)
+        let executor = FakeHomeIngestionExecutor(beforeHotAlertsGate: gate)
         let coordinator = HomeIngestionCoordinator(executor: executor)
-        let remoteContext = HomeRemoteAlertContext(eventKey: "event-123", revision: 7)
+        let remoteContext = HomeRemoteAlertContext(
+            alertID: "alert-123",
+            revisionSent: Date(timeIntervalSince1970: 700)
+        )
 
         await coordinator.enqueue(.sessionTick)
         let firstStarted = await waitUntil {
@@ -104,7 +107,7 @@ struct HomeIngestionCoordinatorTests {
     @Test("manual refresh escalates a queued follow-up plan to a full forced refresh")
     func manualRefresh_escalatesPendingWork() async throws {
         let gate = AsyncGate()
-        let executor = FakeHomeIngestionExecutor(runGate: gate)
+        let executor = FakeHomeIngestionExecutor(beforeHotAlertsGate: gate)
         let coordinator = HomeIngestionCoordinator(executor: executor)
 
         await coordinator.enqueue(.sessionTick)
@@ -132,7 +135,7 @@ struct HomeIngestionCoordinatorTests {
     @Test("newest location-bearing request wins when pending work is merged")
     func locationBearingRequest_replacesOlderPendingLocation() async throws {
         let gate = AsyncGate()
-        let executor = FakeHomeIngestionExecutor(runGate: gate)
+        let executor = FakeHomeIngestionExecutor(beforeHotAlertsGate: gate)
         let coordinator = HomeIngestionCoordinator(executor: executor)
         let firstContext = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
         let secondContext = makeContext(latitude: 39.90, longitude: -104.10, timestamp: 200)
@@ -165,7 +168,10 @@ struct HomeIngestionCoordinatorTests {
     func remoteHotAlert_attachesToSufficientActiveRun() async throws {
         let gate = AsyncGate()
         let snapshot = HomeSnapshot(weather: makeWeather())
-        let executor = FakeHomeIngestionExecutor(snapshot: snapshot, runGate: gate)
+        let executor = FakeHomeIngestionExecutor(
+            snapshot: snapshot,
+            beforeHotAlertsGate: gate
+        )
         let coordinator = HomeIngestionCoordinator(executor: executor)
 
         await coordinator.enqueue(.backgroundRefresh)
@@ -177,7 +183,10 @@ struct HomeIngestionCoordinatorTests {
         let remoteWaitTask = Task {
             try await coordinator.enqueueAndWait(
                 .remoteHotAlertReceived,
-                remoteAlertContext: .init(eventKey: "event-456", revision: 9)
+                remoteAlertContext: .init(
+                    alertID: "alert-456",
+                    revisionSent: Date(timeIntervalSince1970: 900)
+                )
             )
         }
 
@@ -189,6 +198,49 @@ struct HomeIngestionCoordinatorTests {
         let resolvedSnapshot = try await remoteWaitTask.value
         #expect(resolvedSnapshot == snapshot)
         #expect(await executor.startedPlanCount() == 1)
+    }
+
+    @Test("remote hot-alert requests queue a follow-up once the active run has passed hot-alert sync")
+    func remoteHotAlert_queuesFollowUpAfterHotAlertsComplete() async throws {
+        let gate = AsyncGate()
+        let executor = FakeHomeIngestionExecutor(afterHotAlertsGate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        await coordinator.enqueue(.backgroundRefresh)
+        let firstStarted = await waitUntil {
+            await executor.startedPlanCount() == 1
+        }
+        #expect(firstStarted)
+
+        let hotAlertsCompleted = await waitUntil {
+            await executor.completedHotAlertsCount() == 1
+        }
+        #expect(hotAlertsCompleted)
+
+        let remoteWaitTask = Task {
+            try await coordinator.enqueueAndWait(
+                .remoteHotAlertReceived,
+                remoteAlertContext: .init(
+                    alertID: "alert-follow-up",
+                    revisionSent: Date(timeIntervalSince1970: 950)
+                )
+            )
+        }
+
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await executor.startedPlanCount() == 1)
+
+        await gate.open()
+
+        let secondStarted = await waitUntil {
+            await executor.startedPlanCount() == 2
+        }
+        #expect(secondStarted)
+
+        _ = try await remoteWaitTask.value
+        let plans = await executor.executedPlans()
+        #expect(plans.count == 2)
+        #expect(plans[1].remoteAlertContext?.alertID == "alert-follow-up")
     }
 
     private func makeContext(
@@ -246,22 +298,33 @@ struct HomeIngestionCoordinatorTests {
 
 private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
     private let snapshot: HomeSnapshot
-    private let runGate: AsyncGate?
+    private let beforeHotAlertsGate: AsyncGate?
+    private let afterHotAlertsGate: AsyncGate?
     private var plans: [HomeIngestionPlan] = []
+    private var completedHotAlerts = 0
 
     init(
         snapshot: HomeSnapshot = .empty,
-        runGate: AsyncGate? = nil
+        beforeHotAlertsGate: AsyncGate? = nil,
+        afterHotAlertsGate: AsyncGate? = nil
     ) {
         self.snapshot = snapshot
-        self.runGate = runGate
+        self.beforeHotAlertsGate = beforeHotAlertsGate
+        self.afterHotAlertsGate = afterHotAlertsGate
     }
 
-    func run(plan: HomeIngestionPlan) async throws -> HomeSnapshot {
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
         plans.append(plan)
 
-        if plans.count == 1, let runGate {
-            await runGate.wait()
+        if plans.count == 1, let beforeHotAlertsGate {
+            await beforeHotAlertsGate.wait()
+        }
+
+        completedHotAlerts += 1
+        await progress.markHotAlertsCompleted()
+
+        if plans.count == 1, let afterHotAlertsGate {
+            await afterHotAlertsGate.wait()
         }
 
         return snapshot
@@ -273,6 +336,10 @@ private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
 
     func executedPlans() -> [HomeIngestionPlan] {
         plans
+    }
+
+    func completedHotAlertsCount() -> Int {
+        completedHotAlerts
     }
 }
 

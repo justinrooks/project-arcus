@@ -47,6 +47,7 @@ final class Watch {
     // properties.
     @Attribute(.unique) var nwsId: String
     var messageId: String? // Current URN
+    var currentRevisionSent: Date?
 
     // properties.geocode
     var areaDesc: String        // human-readable region
@@ -83,6 +84,7 @@ final class Watch {
     init(
         nwsId: String,
         messageId: String,
+        currentRevisionSent: Date? = nil,
         areaDesc: String,
         ugcZones: [String],
         sent: Date,
@@ -114,6 +116,7 @@ final class Watch {
     ) {
         self.nwsId = nwsId
         self.messageId = messageId
+        self.currentRevisionSent = currentRevisionSent
         self.areaDesc = areaDesc
         self.ugcZones = ugcZones
         self.sent = sent

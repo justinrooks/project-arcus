@@ -36,10 +36,20 @@ actor WatchRepo {
         return hits.removingDuplicates(by: \.nwsId).map { WatchRowDTO.init(from: $0) }
     }
 
+    func watch(id: String) throws -> WatchRowDTO? {
+        let canonicalID = ArcusAlertIdentifier.canonical(id)
+        let predicate = #Predicate<Watch> { watch in
+            watch.nwsId == canonicalID
+        }
+        var descriptor = FetchDescriptor<Watch>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first.map(WatchRowDTO.init(from:))
+    }
+
     func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, in cell: Int64?) async throws {
         let data = try await client.fetchActiveAlerts(for: countyCode, or: fireZone, in: cell)
-        
-        guard let decoded:[DeviceAlertPayload] = JsonParser.decode(from: data) else {
+
+        guard let decoded = decodePayloads(from: data) else {
             logger.error("Unable to parse Arcus watch data")
             throw ArcusError.parsingError
         }
@@ -49,6 +59,19 @@ actor WatchRepo {
         
         try upsert(watches)
         logger.debug("Parsed \(watches.count, privacy: .public) watch\(watches.count > 1 ? "es" : "", privacy: .public) from Arcus")
+    }
+
+    func refreshAlert(using client: any ArcusClient, id: String, revisionSent: Date?) async throws {
+        let data = try await client.fetchAlert(id: id, revisionSent: revisionSent)
+
+        guard let decoded = decodePayloads(from: data) else {
+            logger.error("Unable to parse targeted Arcus watch data")
+            throw ArcusError.parsingError
+        }
+
+        let watches = decoded.compactMap(makeWatch(from:))
+        try upsert(watches)
+        logger.debug("Parsed \(watches.count, privacy: .public) targeted Arcus alert payloads")
     }
 
     /// Removes any expired watches from the database
@@ -96,8 +119,9 @@ actor WatchRepo {
         }
 
         return .init(
-            nwsId: "\(item.id)",
+            nwsId: ArcusAlertIdentifier.canonical(item.id),
             messageId: item.currentRevisionUrn,
+            currentRevisionSent: item.currentRevisionSent,
             areaDesc: item.areaDesc ?? "",
             ugcZones: item.ugc ?? [],
             sent: sent,
@@ -127,6 +151,18 @@ actor WatchRepo {
             flashFloodDetection: item.flashFloodDetection,
             flashFloodDamageThreat: item.flashFloodDamageThreat
         )
+    }
+
+    private func decodePayloads(from data: Data) -> [DeviceAlertPayload]? {
+        if let payloads: [DeviceAlertPayload] = JsonParser.decode(from: data) {
+            return payloads
+        }
+
+        if let payload: DeviceAlertPayload = JsonParser.decode(from: data) {
+            return [payload]
+        }
+
+        return nil
     }
     
     // MARK: Upsert

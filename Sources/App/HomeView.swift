@@ -13,6 +13,7 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
+    @Environment(RemoteAlertPresentationState.self) private var remoteAlertPresentationState
 
     @Query(sort: [SortDescriptor(\HomeProjection.updatedAt, order: .reverse)])
     private var cachedProjections: [HomeProjection]
@@ -23,6 +24,7 @@ struct HomeView: View {
     private let logger = Logger.uiHome
 
     @State private var refreshPipeline: HomeRefreshPipeline
+    @State private var selectedTab: HomeTab = .today
 
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
         locationSession.currentContext?.refreshKey
@@ -101,8 +103,8 @@ struct HomeView: View {
         ZStack {
             Color(.skyAwareBackground).ignoresSafeArea()
 
-            TabView {
-                Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted") {
+            TabView(selection: $selectedTab) {
+                Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted", value: .today) {
                     NavigationStack {
                         ScrollView {
                             SummaryView(
@@ -131,11 +133,12 @@ struct HomeView: View {
                     .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
 
-                Tab("Alerts", systemImage: "exclamationmark.triangle") {
+                Tab("Alerts", systemImage: "exclamationmark.triangle", value: .alerts) {
                     NavigationStack {
                         AlertView(
                             mesos: refreshPipeline.mesos,
                             watches: refreshPipeline.watches,
+                            focusedWatchRequest: remoteAlertPresentationState.focusRequest,
                             onRefresh: {
                                 logger.debug("refreshing alerts")
                                 refreshPipeline.resetLocationRefreshContext()
@@ -155,12 +158,12 @@ struct HomeView: View {
                 }
                 .badge(refreshPipeline.mesos.count + refreshPipeline.watches.count)
 
-                Tab("Map", systemImage: "map") {
+                Tab("Map", systemImage: "map", value: .map) {
                     MapScreenView()
                         .toolbar(.hidden, for: .navigationBar)
                 }
 
-                Tab("Outlooks", systemImage: "list.clipboard.fill") {
+                Tab("Outlooks", systemImage: "list.clipboard.fill", value: .outlooks) {
                     NavigationStack {
                         ConvectiveOutlookView(
                             dtos: refreshPipeline.outlooks,
@@ -178,7 +181,7 @@ struct HomeView: View {
                     .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
 
-                Tab("Settings", systemImage: "gearshape") {
+                Tab("Settings", systemImage: "gearshape", value: .settings) {
                     NavigationStack {
                         SettingsView()
                             .background(.skyAwareBackground)
@@ -223,10 +226,22 @@ struct HomeView: View {
                 await refreshPipeline.enqueueRefresh(.contextChanged, environment: refreshEnvironment)
             }
         }
+        .onChange(of: remoteAlertPresentationState.focusRequest?.id) { _, newValue in
+            guard newValue != nil else { return }
+            selectedTab = .alerts
+        }
     }
 }
 
 extension HomeView {
+    enum HomeTab: Hashable {
+        case today
+        case alerts
+        case map
+        case outlooks
+        case settings
+    }
+
     static func selectProjection(
         from projections: [HomeProjectionRecord],
         currentContext: LocationContext?
@@ -268,6 +283,7 @@ extension HomeView {
     )
     .environment(\.dependencies, Dependencies.unconfigured)
     .environment(LocationSession.preview)
+    .environment(RemoteAlertPresentationState())
     .modelContainer(HomeViewPreviewData.modelContainer)
 }
 

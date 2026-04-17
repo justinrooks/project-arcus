@@ -22,6 +22,7 @@ struct SkyAwareApp: App {
     // Dependencies
     private let deps: Dependencies
     @State private var locationSession: LocationSession
+    @State private var remoteAlertPresentationState: RemoteAlertPresentationState
     private let logger = Logger.appMain
     
     // State
@@ -45,11 +46,20 @@ struct SkyAwareApp: App {
     init() {
         let deps = Dependencies.live()
         self.deps = deps
+        let remoteAlertPresentationState = RemoteAlertPresentationState()
+        _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
         _locationSession = State(
             initialValue: LocationSession(
                 locationClient: deps.locationClient,
                 locationManager: deps.locationManager,
                 locationContextResolver: deps.locationContextResolver
+            )
+        )
+        SkyAwareAppDelegate.install(
+            remoteHotAlertHandler: RemoteHotAlertHandler(
+                coordinator: deps.homeIngestionCoordinator,
+                arcusAlerts: deps.arcusProvider,
+                presentationState: remoteAlertPresentationState
             )
         )
 #if DEBUG
@@ -110,6 +120,7 @@ struct SkyAwareApp: App {
                         .environment(locationSession)
                 }
             }
+            .environment(remoteAlertPresentationState)
             .onAppear {
                 locationSession.handleScenePhaseChange(scenePhase)
             }

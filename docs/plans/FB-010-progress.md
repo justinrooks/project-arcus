@@ -389,3 +389,105 @@
   - avoiding premature removal of the watch-notification path before issue `#128`
 - Recommended next step:
   - move to issue `#126` and wire `remote hot alert received` / `remote hot alert opened` into the same coordinator with the existing background merge semantics
+
+## Issue #126 - Implement Remote Hot-Alert Ingestion for APNs Receipt and Open
+
+### Status
+- Completed
+
+### Scope completed
+- Brief sections advanced:
+  - Remote hot-alert `received` / `opened` trigger rules
+  - Unified ingestion precedence for APNs-driven hot-alert work
+  - APNs-driven cache warming and in-app continuity for warned events
+- Issue requirements completed:
+  - Wired APNs receipt into the unified ingestion queue through `remoteHotAlertReceived`
+  - Wired notification-open continuation into the unified ingestion queue through `remoteHotAlertOpened`
+  - Added the targeted Arcus single-alert fetch/update path used to warm the warned event locally
+  - Preserved background merge semantics so active runs absorb remote hot-alert work only until the hot-alert phase has passed, then queue an immediate follow-up verification
+  - Mapped APNs receipt handling to `.newData`, `.noData`, and `.failed`
+  - Added notification-open presentation continuity so the alerted watch becomes visible in-app after the unified run completes
+
+### Key implementation notes
+- `RemoteHotAlertHandler` is the thin APNs adapter for this issue. It keeps receipt/open handling outside `HomeIngestionCoordinator` while still funneling both paths through the same queue.
+- `HomeIngestionExecutor` now uses the new targeted Arcus refresh when a remote alert payload is present, while still keeping mesos in the hot-alert lane and preserving a broader context sync when the plan is wider than pure hot-alert work.
+- `HomeIngestionCoordinator` now tracks whether the active run can still satisfy remote hot-alert work. Once the hot-alert phase is marked complete, later APNs requests queue an immediate follow-up instead of incorrectly attaching to a run that has already passed the relevant step.
+- `SkyAwareAppDelegate` now parses supported APNs hot-alert payloads, routes receipt to `UIBackgroundFetchResult`, and routes notification-open continuation through the same handler.
+- `ArcusAlertIdentifier` introduces a deliberately narrow client-side canonicalization seam for UUID-style series IDs so APNs payload IDs, targeted Arcus refreshes, and local SwiftData lookups match reliably even before the server contract is finalized.
+
+### Files changed
+- `Sources/App/HomeRefreshV2/HomeRefreshTrigger.swift`
+- `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift`
+- `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`
+- `Sources/App/HomeView.swift`
+- `Sources/App/RemoteHotAlertHandler.swift`
+- `Sources/App/SkyAwareApp.swift`
+- `Sources/App/SkyAwareAppDelegate.swift`
+- `Sources/Clients/ArcusClient.swift`
+- `Sources/Features/Alert/AlertView.swift`
+- `Sources/Infrastructure/Parsing/Arcus/ArcusAlertIdentifier.swift`
+- `Sources/Interfaces/Arcus/ArcusAlertQuerying.swift`
+- `Sources/Interfaces/Arcus/ArcusAlertSyncing.swift`
+- `Sources/Models/Watches/Watch.swift`
+- `Sources/Models/Watches/WatchRowDTO.swift`
+- `Sources/Providers/ArcusAlertProvider.swift`
+- `Sources/Repos/WatchRepo.swift`
+- `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`
+- `Tests/UnitTests/HomeIngestionCoordinatorTests.swift`
+- `Tests/UnitTests/HomeRefreshPipelineTests.swift`
+- `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`
+- `Tests/UnitTests/WatchRepoRefreshTests.swift`
+- `SkyAware.xcodeproj/project.pbxproj`
+- `docs/plans/FB-010-progress.md`
+
+### Tests
+- Added:
+  - `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`
+    - proves APNs receipt maps to `.newData` when the warned event becomes locally available
+    - proves APNs receipt maps to `.noData` when the pushed revision is already present locally
+    - proves APNs receipt maps to `.failed` when the warned event is still unavailable after unified ingestion
+    - proves notification-open publishes a focus request after unified ingestion completes
+- Updated:
+  - `Tests/UnitTests/HomeIngestionCoordinatorTests.swift`
+    - proves remote hot-alert requests queue an immediate follow-up once an active run has already passed hot-alert sync
+  - `Tests/UnitTests/WatchRepoRefreshTests.swift`
+    - proves targeted single-alert Arcus refresh decodes a single payload and persists the revision timestamp for UUID-style series IDs
+  - `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`
+  - `Tests/UnitTests/HomeRefreshPipelineTests.swift`
+    - updated fake Arcus providers/clients to satisfy the new targeted-alert seam without changing their existing test intent
+  - `SkyAware.xcodeproj/project.pbxproj`
+    - adds the new remote-hot-alert test file to the synced-folder exceptions so it builds only with the test target
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests -only-testing:SkyAwareTests/RemoteHotAlertHandlerTests -only-testing:SkyAwareTests/WatchRepoRefreshTests test`
+  2. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'generic/platform=iOS Simulator' build`
+  3. Inspect `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.04.17_13-22-53--0600.xcresult` if focused failure details or coverage are needed
+- Expected result:
+  - The focused remote-hot-alert tests pass.
+  - The `SkyAware` simulator build succeeds.
+  - APNs receipt enters the unified queue, maps receipt outcomes correctly, and warms the warned event locally when possible.
+  - Notification-open continuation enters the same queue and leaves the targeted watch ready to present from local state.
+
+### Out of scope / intentionally deferred
+- Runtime offline-state tracking and the offline token UI
+- Diagnostics/admin freshness surfaces
+- Broader notification cleanup beyond the remote hot-alert path
+- Replacing the temporary client-side UUID canonicalization seam with a finalized server-owned series-id contract
+
+### Risks or follow-ups
+- `ArcusAlertIdentifier` is intentionally temporary. Once the server/APNs contract guarantees one explicit series-id format end-to-end, later work should remove that client-side normalization seam rather than letting it become permanent incidental behavior.
+- Notification-open continuity currently relies on the existing Alerts tab data surface plus a focused local watch lookup. Follow-on alerts-surface work should preserve that presentation path instead of reintroducing direct network reads.
+- `SkyAwareAppDelegate` currently accepts several legacy/compatible payload key names while the contract is still settling. Server integration work should tighten that list once the production payload is fixed.
+
+### Handoff to next issue
+- The next issue should assume:
+  - APNs receipt and notification-open now submit work through `HomeIngestionCoordinator`
+  - targeted Arcus single-alert refresh exists and is safe for UUID-style series IDs
+  - the remote hot-alert path already distinguishes merge-vs-follow-up behavior around the hot-alert phase boundary
+- Watch out for:
+  - keeping runtime offline-state work separate from APNs continuation logic
+  - not moving notification policy or `UIBackgroundFetchResult` mapping into the coordinator actor
+  - preserving the current local-first notification-open continuity while future UI/data-surface issues continue migrating tabs
+- Recommended next step:
+  - move to issue `#127` and add runtime offline-state tracking plus the simple offline token without disturbing the new APNs hot-alert path

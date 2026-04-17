@@ -10,9 +10,11 @@ import SwiftUI
 struct AlertView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
+    let focusedWatchRequest: RemoteAlertFocusRequest?
     let onRefresh: (() async -> Void)?
 
     @State private var selectedMeso: MdDTO?
+    @State private var selectedWatch: WatchRowDTO?
 
     private var hasNoAlerts: Bool {
         watches.isEmpty && mesos.isEmpty
@@ -21,10 +23,12 @@ struct AlertView: View {
     init(
         mesos: [MdDTO],
         watches: [WatchRowDTO],
+        focusedWatchRequest: RemoteAlertFocusRequest? = nil,
         onRefresh: (() async -> Void)? = nil
     ) {
         self.mesos = mesos
         self.watches = watches
+        self.focusedWatchRequest = focusedWatchRequest
         self.onRefresh = onRefresh
     }
 
@@ -51,7 +55,9 @@ struct AlertView: View {
                             symbol: "exclamationmark.triangle.fill"
                         ) {
                             ForEach(watches) { watch in
-                                NavigationLink(value: watch) {
+                                Button {
+                                    selectedWatch = watch
+                                } label: {
                                     AlertRowView(alert: watch)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
@@ -95,9 +101,13 @@ struct AlertView: View {
             guard let onRefresh else { return }
             await onRefresh()
         }
+        .task(id: focusedWatchRequest?.id) {
+            guard let focusedWatch = focusedWatchRequest?.watch else { return }
+            selectedWatch = focusedWatch
+        }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .navigationDestination(for: WatchRowDTO.self) { watch in
+        .navigationDestination(item: $selectedWatch) { watch in
             ScrollView {
                 WatchDetailView(watch: watch, layout: .full)
                     .padding(.top, 8)

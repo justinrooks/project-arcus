@@ -506,8 +506,14 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
 
     func sync(context: LocationContext) async {}
 
+    func syncRemoteAlert(id: String, revisionSent: Date?) async {}
+
     func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
         activeWatches
+    }
+
+    func getWatch(id: String) async throws -> WatchRowDTO? {
+        activeWatches.first(where: { $0.id == id })
     }
 }
 

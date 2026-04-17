@@ -49,6 +49,14 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
         await task.value
         inFlightSyncs[key] = nil
     }
+
+    func syncRemoteAlert(id: String, revisionSent: Date?) async {
+        do {
+            try await watchRepo.refreshAlert(using: client, id: id, revisionSent: revisionSent)
+        } catch {
+            logger.error("Error syncing targeted Arcus alert: \(error, privacy: .public)")
+        }
+    }
 }
 
 extension ArcusAlertProvider: ArcusAlertQuerying {
@@ -58,6 +66,10 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
             fireZone: context.grid.fireZone ?? "",
             cell: context.h3Cell
         )
+    }
+
+    func getWatch(id: String) async throws -> WatchRowDTO? {
+        try await watchRepo.watch(id: id)
     }
 }
 
