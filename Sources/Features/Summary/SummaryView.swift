@@ -41,6 +41,7 @@ struct SummaryView: View {
     let weather: SummaryWeather?
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
+    let showsOfflineToken: Bool
 
     private var hasActiveAlerts: Bool {
         !mesos.isEmpty || !watches.isEmpty
@@ -126,7 +127,8 @@ struct SummaryView: View {
                 SummaryStatus(
                     statusText: statusText,
                     weather: weather,
-                    resolutionState: resolutionState
+                    resolutionState: resolutionState,
+                    showsOfflineToken: showsOfflineToken
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -239,7 +241,8 @@ struct SummaryView: View {
             outlook: ConvectiveOutlook.sampleOutlookDtos.first,
             weather: nil,
             readinessState: .ready,
-            resolutionState: SummaryResolutionState()
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: false
         )
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -262,7 +265,8 @@ struct SummaryView: View {
             outlook: nil,
             weather: nil,
             readinessState: .loadingLocalData,
-            resolutionState: SummaryResolutionState()
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: true
         )
         .toolbar(.hidden, for: .navigationBar)
     }

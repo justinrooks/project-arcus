@@ -14,6 +14,7 @@ struct HomeView: View {
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
     @Environment(RemoteAlertPresentationState.self) private var remoteAlertPresentationState
+    @Environment(RuntimeConnectivityState.self) private var runtimeConnectivityState
 
     @Query(sort: [SortDescriptor(\HomeProjection.updatedAt, order: .reverse)])
     private var cachedProjections: [HomeProjection]
@@ -117,7 +118,8 @@ struct HomeView: View {
                                 outlook: displayedOutlook,
                                 weather: displayedProjection?.weather,
                                 readinessState: readinessState,
-                                resolutionState: refreshPipeline.resolutionState
+                                resolutionState: refreshPipeline.resolutionState,
+                                showsOfflineToken: runtimeConnectivityState.isOffline
                             )
                             .toolbar(.hidden, for: .navigationBar)
                             .background(.skyAwareBackground)
@@ -284,6 +286,7 @@ extension HomeView {
     .environment(\.dependencies, Dependencies.unconfigured)
     .environment(LocationSession.preview)
     .environment(RemoteAlertPresentationState())
+    .environment(RuntimeConnectivityState.preview)
     .modelContainer(HomeViewPreviewData.modelContainer)
 }
 

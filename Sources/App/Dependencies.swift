@@ -281,7 +281,9 @@ final class Dependencies: Sendable {
     }
     
     @MainActor
-    static func live() -> Dependencies {
+    static func live(
+        arcusReachabilityTracker: any ArcusSignalReachabilityReporting = NoOpArcusSignalReachabilityReporter()
+    ) -> Dependencies {
         let logger = Logger.appDependencies
         let appRefreshID = "com.skyaware.app.refresh"
         
@@ -316,7 +318,11 @@ final class Dependencies: Sendable {
         let nwsClient = NwsHttpClient(http: httpClient)
         let spcClient = SpcHttpClient(http: httpClient)
         let arcusBaseURL = ArcusSignalConfiguration.resolvedBaseURL()
-        let arcusClient = ArcusHttpClient(baseURL: arcusBaseURL, http: httpClient)
+        let arcusClient = ArcusHttpClient(
+            baseURL: arcusBaseURL,
+            http: httpClient,
+            reachabilityReporter: arcusReachabilityTracker
+        )
         let metadataRepo = NwsMetadataRepo()
 
         let contextPusher: any LocationContextPushing

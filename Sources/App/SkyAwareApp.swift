@@ -23,6 +23,7 @@ struct SkyAwareApp: App {
     private let deps: Dependencies
     @State private var locationSession: LocationSession
     @State private var remoteAlertPresentationState: RemoteAlertPresentationState
+    @State private var runtimeConnectivityState: RuntimeConnectivityState
     private let logger = Logger.appMain
     
     // State
@@ -44,9 +45,19 @@ struct SkyAwareApp: App {
     
     @MainActor
     init() {
-        let deps = Dependencies.live()
+        let runtimeConnectivityState = RuntimeConnectivityState()
+        runtimeConnectivityState.startMonitoringIfNeeded()
+
+        let deps = Dependencies.live(
+            arcusReachabilityTracker: ArcusSignalReachabilityTracker { availability in
+                await MainActor.run {
+                    runtimeConnectivityState.updateArcusSignalAvailability(availability)
+                }
+            }
+        )
         self.deps = deps
         let remoteAlertPresentationState = RemoteAlertPresentationState()
+        _runtimeConnectivityState = State(initialValue: runtimeConnectivityState)
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
         _locationSession = State(
             initialValue: LocationSession(
@@ -121,6 +132,7 @@ struct SkyAwareApp: App {
                 }
             }
             .environment(remoteAlertPresentationState)
+            .environment(runtimeConnectivityState)
             .onAppear {
                 locationSession.handleScenePhaseChange(scenePhase)
             }

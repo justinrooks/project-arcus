@@ -491,3 +491,79 @@
   - preserving the current local-first notification-open continuity while future UI/data-surface issues continue migrating tabs
 - Recommended next step:
   - move to issue `#127` and add runtime offline-state tracking plus the simple offline token without disturbing the new APNs hot-alert path
+
+## Issue #127 - Add Runtime Offline State and Surface the Offline Token
+
+### Status
+- Completed
+
+### Scope completed
+- Brief sections advanced:
+  - Runtime offline state layered on top of the cached home projection
+  - General connectivity and hot-alert lane reachability rules
+  - Calm home-summary communication of offline state
+- Issue requirements completed:
+  - Added a runtime-only `RuntimeConnectivityState` service that uses `NWPathMonitor` for general path availability
+  - Wired Arcus hot-alert reachability into the existing `ArcusHttpClient`, marking the hot-alert lane unavailable when requests fall back to cache or cannot obtain a live response
+  - Injected the runtime state through `SkyAwareApp` and surfaced a restrained `Offline` token in the Today `Current Conditions` header while leaving cached projection content visible
+  - Added focused tests covering runtime path-state transitions and Arcus reachability reporting
+
+### Key implementation notes
+- `RuntimeConnectivityState` is intentionally runtime-only. It is not persisted to SwiftData and does not alter `HomeProjection` freshness or ownership.
+- The Arcus reachability signal stays narrowly tied to real hot-alert fetch outcomes instead of inventing a separate probe endpoint. Live and revalidated responses clear the offline token; cache fallback and failed fetches assert it.
+- The token is rendered in `SummaryStatus` so the home summary communicates connectivity loss without adding a staleness badge or changing the cached Today payload.
+
+### Files changed
+- `Sources/App/Dependencies.swift`
+- `Sources/App/HomeView.swift`
+- `Sources/App/RuntimeConnectivityState.swift`
+- `Sources/App/SkyAwareApp.swift`
+- `Sources/Clients/ArcusClient.swift`
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/NwsHttpClientTests.swift`
+- `docs/plans/FB-010-progress.md`
+
+### Tests
+- Updated:
+  - `Tests/UnitTests/NwsHttpClientTests.swift`
+    - proves live Arcus responses mark hot-alert reachability as reachable
+    - proves cache-fallback Arcus responses still return cached data while marking hot-alert freshness as unavailable
+    - proves runtime connectivity state stays online while the general path is available and flips offline when the general path becomes unavailable
+    - proves Arcus reachability alone can assert and clear the offline token while cached content remains available
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -only-testing:SkyAwareTests/ArcusHttpClientTests -only-testing:SkyAwareTests/RuntimeConnectivityStateTests test`
+  2. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'generic/platform=iOS Simulator' build`
+  3. Inspect `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.04.17_13-50-36--0600.xcresult` and `xcrun xccov view --report <xcresult>` if focused coverage details are needed
+- Expected result:
+  - The focused offline-state tests pass.
+  - The `SkyAware` simulator build succeeds.
+  - The Today summary continues rendering cached content while an `Offline` token appears whenever the general network path or live Arcus alert reachability is unavailable.
+  - Focused coverage from the recorded xcresult shows:
+    - `Sources/App/RuntimeConnectivityState.swift`: `76.19% (64/84)`
+    - `Sources/Clients/ArcusClient.swift`: `50.40% (63/125)`
+    - `Tests/UnitTests/NwsHttpClientTests.swift`: `41.85% (131/313)`
+
+### Out of scope / intentionally deferred
+- Diagnostics/admin freshness UI
+- Surfacing the offline token on additional tabs or settings/diagnostics surfaces
+- Adding a dedicated Arcus health-probe endpoint beyond the existing hot-alert fetch path
+- Notification cleanup, projection deltas, or other non-issue ingestion work
+
+### Risks or follow-ups
+- Arcus reachability is updated when real Arcus fetches run. If the app regains general connectivity between hot-alert refreshes, the token can remain until the next live Arcus check confirms recovery.
+- The runtime connectivity service currently lives at the app shell and feeds the Today summary only. Future work should keep it runtime-only and resist folding it into persisted projection state or coordinator policy.
+
+### Handoff to next issue
+- The next issue should assume:
+  - the Today summary now has a runtime-only offline token layered over cached projection content
+  - `RuntimeConnectivityState` owns general-path monitoring and receives hot-alert reachability updates from `ArcusHttpClient`
+  - cache-fallback Arcus responses intentionally count as offline for the hot-alert lane because they do not verify fresh alert data
+- Watch out for:
+  - not turning the offline token into a general stale-data badge
+  - not moving connectivity UI state into SwiftData or `HomeProjection`
+  - preserving the small `ArcusHttpClient` reporting seam rather than growing a separate health-check framework unless a later issue truly needs it
+- Recommended next step:
+  - move to issue `#128` and remove the remaining client-side watch-notification path while preserving the unified ingestion flow and the new runtime-only offline state behavior

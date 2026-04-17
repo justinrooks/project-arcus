@@ -11,6 +11,7 @@ struct SummaryStatus: View {
     let statusText: String
     let weather: SummaryWeather?
     let resolutionState: SummaryResolutionState
+    let showsOfflineToken: Bool
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -34,8 +35,16 @@ struct SummaryStatus: View {
     }
 
     private var header: some View {
-        Text("Current Conditions")
-            .sectionLabel()
+        HStack(spacing: 10) {
+            Text("Current Conditions")
+                .sectionLabel()
+
+            Spacer(minLength: 12)
+
+            if showsOfflineToken {
+                SummaryOfflineToken()
+            }
+        }
     }
 
     private var contentRow: some View {
@@ -90,6 +99,34 @@ struct SummaryStatus: View {
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
         Self.temperatureFormatter.string(from: temperature)
     }
+}
+
+private struct SummaryOfflineToken: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var tint: Color {
+        .fireWeather
+    }
+
+    var body: some View {
+        Label("Offline", systemImage: "wifi.slash")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .skyAwareChip(
+                cornerRadius: SkyAwareRadius.chipCompact,
+                tint: tint.opacity(colorScheme == .dark ? 0.20 : 0.12)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: SkyAwareRadius.chipCompact, style: .continuous)
+                    .stroke(
+                        tint.opacity(colorScheme == .dark ? 0.34 : 0.22),
+                        lineWidth: 1
+                    )
+            }
+            .accessibilityLabel("Offline")
+        }
 }
 
 private struct SummaryStatusSecondaryLine: View {
@@ -218,7 +255,8 @@ private struct SummarySettledConditionLine: View {
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "climbing"
             ),
-            resolutionState: SummaryResolutionState()
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: false
         )
         SummaryStatus(
             statusText: "Topeka, KS",
@@ -241,7 +279,8 @@ private struct SummarySettledConditionLine: View {
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "falling"
             ),
-            resolutionState: SummaryResolutionState()
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: true
         )
     }
 }
