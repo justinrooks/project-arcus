@@ -17,8 +17,7 @@ struct AlertRowView: View {
     }()
 
     private var iconAndColor: (icon: String, color: Color) {
-        let title = parseWatchType(from: alert.title)
-        let style = styleForType(alert.alertType, title)
+        let style = styleForType(alert.alertType, alert.title)
         return (style.0, style.1)
     }
 
@@ -64,18 +63,6 @@ struct AlertRowView: View {
     
     private func relativeDate(_ date: Date) -> String {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
-    }
-    
-    private func parseWatchType(from text: String) -> String? {
-        let pattern = #"(.+?)\s+Watch\b"#
-
-        if let match = text.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
-            let issued = String(text[match])
-            
-            return issued.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-
-        return nil
     }
 }
 
