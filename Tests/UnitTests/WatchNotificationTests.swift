@@ -120,8 +120,8 @@ struct WatchNotificationTests {
             runGate: gate
         )
         let handler = BackgroundLocationChangeHandler(
-            coordinator: coordinator,
-            watchEngine: watchEngine
+            coordinator: coordinator//,
+//            watchEngine: watchEngine
         )
 
         let handleTask = Task {
@@ -161,8 +161,8 @@ struct WatchNotificationTests {
             )
         )
         let handler = BackgroundLocationChangeHandler(
-            coordinator: coordinator,
-            watchEngine: watchEngine
+            coordinator: coordinator//,
+//            watchEngine: watchEngine
         )
 
         await handler.handleLocationChange()

@@ -18,7 +18,7 @@ func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
             case "Tornado Warning": return ("tornado", .tornadoRed)
             case "Severe Thunderstorm Watch": return ("cloud.bolt.fill", .severeTstormWarn)
             case "Severe Thunderstorm Warning": return ("cloud.bolt.fill", .severeTstormWarn)
-            case "Flash Flood Warning": return ("flood.fill", .floodWarning)
+            case "Flash Flood Warning": return ("flood.fill", .hailBlue) // TODO: Create a flood color
             default: return ("exclamationmark.triangle", .red)
             }
         } else {
