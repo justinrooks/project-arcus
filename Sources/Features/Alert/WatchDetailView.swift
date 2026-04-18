@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct WatchDetailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let watch: WatchRowDTO
     let layout: DetailLayout
     let isExpanded: Bool
@@ -150,7 +152,7 @@ struct WatchDetailView: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.24, extraBounce: 0), value: isExpanded)
+        .animation(SkyAwareMotion.disclosure(reduceMotion), value: isExpanded)
     }
 
     @ViewBuilder

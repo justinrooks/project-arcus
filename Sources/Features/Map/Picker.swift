@@ -64,6 +64,7 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
 // MARK: - Tile
 
 struct LayerTile: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     let layer: MapLayer
     let isSelected: Bool
@@ -104,6 +105,7 @@ struct LayerTile: View {
                         RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
                             .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
                     }
+                    .scaleEffect(isSelected ? 1.02 : 1)
 
                 Text(layer.title)
                     .font(.subheadline.weight(.semibold))
@@ -117,6 +119,7 @@ struct LayerTile: View {
             .accessibilityLabel(layer.title + (isSelected ? ", selected" : ""))
         }
         .buttonStyle(.plain)
+        .animation(SkyAwareMotion.layerChange(reduceMotion), value: isSelected)
     }
 }
 
@@ -129,6 +132,7 @@ struct LayerPickerSheet: View {
     var triggerNamespace: Namespace.ID? = nil
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     private let columns = [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 14)]
 
@@ -174,7 +178,9 @@ struct LayerPickerSheet: View {
     }
 
     private func toggle(_ layer: MapLayer) {
-        selection = layer
+        withAnimation(SkyAwareMotion.press(reduceMotion)) {
+            selection = layer
+        }
         dismiss()
     }
 }

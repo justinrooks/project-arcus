@@ -12,6 +12,8 @@ import Foundation
 enum DetailLayout { case full, sheet }
 
 struct MesoscaleDiscussionContent: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let meso: MdDTO
     let layout: DetailLayout
     let isExpanded: Bool
@@ -91,7 +93,7 @@ struct MesoscaleDiscussionContent: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.24, extraBounce: 0), value: isExpanded)
+        .animation(SkyAwareMotion.disclosure(reduceMotion), value: isExpanded)
     }
 
     @ViewBuilder

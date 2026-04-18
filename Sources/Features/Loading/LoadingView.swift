@@ -8,12 +8,15 @@
 import SwiftUI
 
 struct LoadingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var message: String = "Checking current conditions..."
 
-    @State private var glowScale: CGFloat = 0.92
+    @State private var glowDrift = CGSize.zero
     @State private var glowOpacity: Double = 0.18
-    @State private var glowPulseOpacity: Double = 0.68
-    @State private var glowPulseScale: CGFloat = 0.9
+    @State private var glowPulseOpacity: Double = 0.72
+    @State private var glowPulseScale: CGFloat = 0.98
+    @State private var ghostOpacity: Double = 0.32
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -33,18 +36,18 @@ struct LoadingView: View {
                         .fill(Color.skyAwareAccent.opacity(glowOpacity))
                         .frame(width: 112, height: 96)
                         .blur(radius: 34)
-                        .scaleEffect(glowScale * glowPulseScale)
+                        .scaleEffect(glowPulseScale)
                         .opacity(glowPulseOpacity)
-                        .offset(x: -6, y: 4)
+                        .offset(x: -6 + glowDrift.width, y: 4 + glowDrift.height)
                         .rotationEffect(.degrees(-8))
 
                     Ellipse()
                         .fill(Color.skyAwareAccent.opacity(glowOpacity * 0.55))
                         .frame(width: 84, height: 66)
                         .blur(radius: 30)
-                        .scaleEffect(glowScale * glowPulseScale * 1.02)
+                        .scaleEffect(glowPulseScale * 1.01)
                         .opacity(glowPulseOpacity)
-                        .offset(x: 10, y: -6)
+                        .offset(x: 10 - (glowDrift.width * 0.7), y: -6 - (glowDrift.height * 0.7))
                         .rotationEffect(.degrees(12))
 
                     Circle()
@@ -72,17 +75,32 @@ struct LoadingView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 18)
         .transition(.opacity)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.8).repeatForever(autoreverses: true)) {
-                glowScale = 1.08
-                glowOpacity = 0.24
+        .animation(SkyAwareMotion.message(reduceMotion), value: message)
+        .task(id: reduceMotion) {
+            guard reduceMotion == false else {
+                glowDrift = .zero
+                glowOpacity = 0.18
+                glowPulseOpacity = 0.72
+                glowPulseScale = 1
+                ghostOpacity = 0.32
+                return
             }
+
             withAnimation(
-                .timingCurve(0.4, 0.02, 0.6, 0.98, duration: 0.75)
+                .easeInOut(duration: SkyAwareMotion.ambientDriftDuration)
                     .repeatForever(autoreverses: true)
             ) {
-                glowPulseOpacity = 1.0
-                glowPulseScale = 1.1
+                glowDrift = CGSize(width: 4, height: -3)
+                glowOpacity = 0.22
+                ghostOpacity = 0.37
+            }
+
+            withAnimation(
+                .easeInOut(duration: SkyAwareMotion.ambientPulseDuration)
+                    .repeatForever(autoreverses: true)
+            ) {
+                glowPulseOpacity = 0.88
+                glowPulseScale = 1.03
             }
         }
     }
@@ -123,7 +141,7 @@ struct LoadingView: View {
                 .frame(height: 128)
         }
         .blur(radius: 8)
-        .opacity(0.32)
+        .opacity(ghostOpacity)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
