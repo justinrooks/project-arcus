@@ -63,6 +63,8 @@ final class HomeRefreshPipeline {
     private var environment: Environment?
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
+    private var lastHandledScenePhase: ScenePhase?
+    private var deferredContextRefreshKey: LocationContext.RefreshKey?
     private var activeRefreshCount = 0
 
     var snap: LocationSnapshot?
@@ -118,17 +120,34 @@ final class HomeRefreshPipeline {
         self.environment = environment
     }
 
-    func resetLocationRefreshContext() {}
+    func resetLocationRefreshContext() {
+        deferredContextRefreshKey = nil
+    }
 
     func handleScenePhaseChange(_ newPhase: ScenePhase, environment: Environment) async {
         updateEnvironment(environment)
 
+        if lastHandledScenePhase == newPhase {
+            if newPhase == .active {
+                startForegroundTimerIfNeeded()
+            }
+            environment.logger.debug(
+                "Ignoring duplicate home refresh scene phase change phase=\(newPhase.logName, privacy: .public)"
+            )
+            return
+        }
+        lastHandledScenePhase = newPhase
+
         if newPhase == .active {
             startForegroundTimerIfNeeded()
+            environment.logger.info(
+                "Scheduling foreground refresh trigger=\(HomeRefreshTrigger.foregroundActivate.logName, privacy: .public)"
+            )
             await submit(.sceneActive, waitsForCompletion: false)
             return
         }
 
+        environment.logger.debug("Stopping foreground refresh timer phase=\(newPhase.logName, privacy: .public)")
         foregroundTimerTask?.cancel()
         foregroundTimerTask = nil
     }
@@ -150,6 +169,35 @@ final class HomeRefreshPipeline {
     func enqueueRefresh(_ trigger: HomeView.RefreshTrigger, environment: Environment) async {
         updateEnvironment(environment)
         await submit(trigger, waitsForCompletion: false)
+    }
+
+    func handleContextRefreshKeyChange(
+        _ newKey: LocationContext.RefreshKey?,
+        scenePhase: ScenePhase,
+        environment: Environment
+    ) async {
+        updateEnvironment(environment)
+        guard scenePhase == .active, let newKey else { return }
+
+        if activeRefreshCount > 0 {
+            environment.logger.debug(
+                "Deferring foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) while activeRefreshCount=\(self.activeRefreshCount, privacy: .public)"
+            )
+            deferredContextRefreshKey = newKey
+            return
+        }
+
+        guard newKey != lastResolvedLocationScopedRefreshKey else {
+            environment.logger.debug(
+                "Skipping foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) because the location scope is already resolved"
+            )
+            return
+        }
+
+        environment.logger.info(
+            "Scheduling foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public)"
+        )
+        await submit(.contextChanged, waitsForCompletion: false)
     }
 
     func waitForIdle() async {
@@ -177,6 +225,9 @@ final class HomeRefreshPipeline {
     private func submit(_ trigger: HomeView.RefreshTrigger, waitsForCompletion: Bool) async {
         guard let environment else { return }
 
+        environment.logger.info(
+            "Foreground refresh started trigger=\(trigger.logName, privacy: .public) waitsForCompletion=\(waitsForCompletion, privacy: .public)"
+        )
         beginForegroundRefresh()
 
         if waitsForCompletion {
@@ -196,29 +247,41 @@ final class HomeRefreshPipeline {
         _ trigger: HomeView.RefreshTrigger,
         environment: Environment
     ) async {
+        let startedAt = Date()
         do {
             let snapshot = try await environment.coordinator.enqueueAndWait(
                 makeRequest(for: trigger, using: environment.locationSession)
             )
             apply(snapshot)
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            environment.logger.info(
+                "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
+            )
         } catch {
             if let refreshKey = environment.locationSession.currentContext?.refreshKey {
                 lastResolvedLocationScopedRefreshKey = refreshKey
             }
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.error(
-                "Foreground refresh failed for trigger=\(String(describing: trigger), privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
         }
     }
 
     private func refreshOutlooks(using outlooksService: any SpcOutlookQuerying) async {
+        let startedAt = Date()
         do {
             let dtos = try await outlooksService.getConvectiveOutlooks()
             let latest = dtos.max(by: { $0.published < $1.published })
             outlookSnapshot = HomeOutlookSnapshot(outlooks: dtos, outlook: latest)
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+            environment?.logger.info(
+                "Manual convective outlook refresh finished result=success durationMs=\(durationMs, privacy: .public) outlooks=\(dtos.count, privacy: .public)"
+            )
         } catch {
+            let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment?.logger.error(
-                "Manual outlook refresh failed: \(error.localizedDescription, privacy: .public)"
+                "Manual convective outlook refresh finished result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
         }
     }
@@ -235,6 +298,22 @@ final class HomeRefreshPipeline {
         activeRefreshCount -= 1
         if activeRefreshCount == 0 {
             resolutionState.finish(task: .finalizing, resolvedSections: [])
+            let deferredContextRefreshKey = self.deferredContextRefreshKey
+            self.deferredContextRefreshKey = nil
+            guard
+                lastHandledScenePhase == .active,
+                deferredContextRefreshKey != nil,
+                deferredContextRefreshKey != lastResolvedLocationScopedRefreshKey
+            else {
+                return
+            }
+
+            environment?.logger.info(
+                "Submitting deferred foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public)"
+            )
+            Task { @MainActor [weak self] in
+                await self?.submit(.contextChanged, waitsForCompletion: false)
+            }
         }
     }
 
@@ -292,6 +371,34 @@ extension HomeView {
             case .timer:
                 return .sessionTick
             }
+        }
+
+        var logName: String {
+            switch self {
+            case .sceneActive:
+                return "sceneActive"
+            case .manual:
+                return "manual"
+            case .contextChanged:
+                return "contextChanged"
+            case .timer:
+                return "timer"
+            }
+        }
+    }
+}
+
+private extension ScenePhase {
+    var logName: String {
+        switch self {
+        case .active:
+            return "active"
+        case .inactive:
+            return "inactive"
+        case .background:
+            return "background"
+        @unknown default:
+            return "unknown"
         }
     }
 }

@@ -35,7 +35,6 @@ struct ArcusHttpClient: ArcusClient {
             logger.error("Missing required h3 cell address")
             throw ArcusError.missingH3Cell
         }
-        logger.info("Arcus request started endpoint=/alerts ugc=\(ugc, privacy: .private(mask: .hash)) fire=\(fire, privacy: .private(mask: .hash)) h3Cell=\(cell, privacy: .private(mask: .hash))")
         let url = try makeUrl(
             path: ArcusSignalConfiguration.alertsPath,
             queryItems: [
@@ -44,13 +43,14 @@ struct ArcusHttpClient: ArcusClient {
                 URLQueryItem(name: "h3", value: "\(cell)")
             ]
         )
+        logger.info(
+            "Arcus request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) queryScope=location-context"
+        )
         
         return try await fetch(from: url)
     }
 
     func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
-        logger.info("Arcus request started endpoint=/alerts id=\(id, privacy: .private(mask: .hash))")
-
         var queryItems = [URLQueryItem(name: "id", value: id)]
         if let revisionSent {
             queryItems.append(
@@ -64,6 +64,9 @@ struct ArcusHttpClient: ArcusClient {
         let url = try makeUrl(
             path: ArcusSignalConfiguration.alertsPath,
             queryItems: queryItems
+        )
+        logger.info(
+            "Arcus request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) queryScope=targeted-alert"
         )
 
         return try await fetch(from: url)
@@ -97,6 +100,9 @@ struct ArcusHttpClient: ArcusClient {
                     await reachabilityReporter.markReachable()
                 }
 
+                logger.info(
+                    "Arcus request completed endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
+                )
                 return data
             case .rateLimited(let retryAfter):
                 let error = ArcusError.rateLimited(retryAfterSeconds: retryAfter)

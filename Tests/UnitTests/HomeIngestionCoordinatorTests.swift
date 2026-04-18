@@ -27,7 +27,7 @@ struct HomeIngestionCoordinatorTests {
         let locationPlan = HomeIngestionPlan(
             request: .init(trigger: .foregroundLocationChange)
         )
-        #expect(locationPlan.lanes == [.hotAlerts, .weather])
+        #expect(locationPlan.lanes == .all)
         #expect(locationPlan.forcedLanes == [.hotAlerts, .weather])
 
         let backgroundRefreshPlan = HomeIngestionPlan(
@@ -39,7 +39,7 @@ struct HomeIngestionCoordinatorTests {
         let backgroundLocationPlan = HomeIngestionPlan(
             request: .init(trigger: .backgroundLocationChange)
         )
-        #expect(backgroundLocationPlan.lanes == [.hotAlerts, .weather])
+        #expect(backgroundLocationPlan.lanes == .all)
         #expect(backgroundLocationPlan.forcedLanes == [.hotAlerts, .weather])
     }
 

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import OSLog
 
 protocol HomeIngestionCoordinating: Actor, Sendable {
     func enqueue(
@@ -32,9 +33,11 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private let executor: any HomeIngestionExecuting
+    private let logger = Logger.appHomeRefresh
 
     private var activePlan: HomeIngestionPlan?
     private var activeTask: Task<HomeSnapshot, Error>?
+    private var activeRunStartedAt: Date?
     private var activeRunCanAbsorbRemoteHotAlert = false
     private var pendingPlan: HomeIngestionPlan?
     private var waiters: [UUID: Waiter] = [:]
@@ -87,14 +90,24 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private func submit(_ requestedPlan: HomeIngestionPlan, waiter: Waiter?) {
         if let activePlan, activePlan.satisfies(requestedPlan), activePlanCanSatisfy(requestedPlan) {
+            logger.debug(
+                "Home ingestion request joined active run requested={\(requestedPlan.logDescription)} active={\(activePlan.logDescription)}"
+            )
             store(waiter)
             return
         }
 
         if activeTask != nil {
             if let pendingPlan {
-                self.pendingPlan = pendingPlan.merged(with: requestedPlan)
+                let mergedPlan = pendingPlan.merged(with: requestedPlan)
+                logger.debug(
+                    "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingPlan.logDescription)} merged={\(mergedPlan.logDescription)}"
+                )
+                self.pendingPlan = mergedPlan
             } else {
+                logger.debug(
+                    "Home ingestion request queued as follow-up requested={\(requestedPlan.logDescription)}"
+                )
                 pendingPlan = requestedPlan
             }
             store(waiter)
@@ -112,7 +125,9 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private func startRun(with plan: HomeIngestionPlan) {
         activePlan = plan
+        activeRunStartedAt = Date()
         activeRunCanAbsorbRemoteHotAlert = plan.forcedLanes.contains(.hotAlerts)
+        logger.info("Home ingestion run started plan={\(plan.logDescription)}")
 
         let task = Task {
             try await executor.run(
@@ -137,8 +152,12 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private func finishRun(plan: HomeIngestionPlan, result: Result<HomeSnapshot, Error>) {
+        let durationMs = activeRunStartedAt.map { startedAt in
+            Int(Date().timeIntervalSince(startedAt) * 1000)
+        } ?? 0
         activePlan = nil
         activeTask = nil
+        activeRunStartedAt = nil
         activeRunCanAbsorbRemoteHotAlert = false
 
         let satisfiedWaiterIDs = waiters.compactMap { id, waiter in
@@ -155,9 +174,21 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
             }
         }
 
+        switch result {
+        case .success(let snapshot):
+            logger.info(
+                "Home ingestion run finished plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public) pendingFollowUp=\((self.pendingPlan != nil), privacy: .public)"
+            )
+        case .failure(let error):
+            logger.error(
+                "Home ingestion run finished plan={\(plan.logDescription)} result=failure durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) pendingFollowUp=\((self.pendingPlan != nil), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+            )
+        }
+
         guard let pendingPlan else { return }
 
         self.pendingPlan = nil
+        logger.info("Starting queued follow-up home ingestion plan={\(pendingPlan.logDescription)}")
         startRun(with: pendingPlan)
     }
 

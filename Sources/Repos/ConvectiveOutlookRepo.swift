@@ -23,7 +23,7 @@ actor ConvectiveOutlookRepo {
         }
         
         guard let channel = rss.channel else {
-            logger.error("Error parsing convective channel items")
+            logger.error("Convective RSS parsed without a channel; leaving persisted outlooks unchanged")
             return
         }
         
@@ -33,7 +33,7 @@ actor ConvectiveOutlookRepo {
             .compactMap { makeConvectiveOutlook(from: $0) }
         
         try upsert(outlooks)
-        logger.debug("Parsed \(outlooks.count, privacy: .public) outlook\(outlooks.count > 1 ? "s" : "", privacy: .public) from SPC")
+        logger.debug("Persisted convective outlook refresh count=\(outlooks.count, privacy: .public)")
     }
     
     func fetchConvectiveOutlooks(for day:Int = 1) throws -> [ConvectiveOutlookDTO] {

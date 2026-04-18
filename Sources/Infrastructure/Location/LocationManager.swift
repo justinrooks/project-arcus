@@ -69,9 +69,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             stopAll()
             logger.critical("You've denied SkyAware access to your location. Please enable in settings. All services stopped")
         case .authorizedAlways:
-            logger.debug("Location always is authorized")
+            logger.debug("Location authorization available status=authorizedAlways")
         case .authorizedWhenInUse:
-            logger.debug("Location when in use is authorized")
+            logger.debug("Location authorization available status=authorizedWhenInUse")
         @unknown default:
             stopAll()
             logger.error("Unknown authorization status. All services stopped")
@@ -86,7 +86,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         onAuthorizationChange?(status)
 
         guard status == .authorizedWhenInUse else {
-            logger.debug("Skipping always-authorization upgrade; current status is \(status.rawValue, privacy: .public)")
+            logger.debug("Skipping always-authorization upgrade; current status=\(status.logName, privacy: .public)")
             return false
         }
 
@@ -116,7 +116,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     func refreshCurrentLocation(timeout: Double = 12) async -> Bool {
         let status = manager.authorizationStatus
         guard status == .authorizedAlways || status == .authorizedWhenInUse else {
-            logger.notice("Skipping one-shot location refresh due to auth status \(status.rawValue, privacy: .public)")
+            logger.notice("Skipping one-shot location refresh due to auth status=\(status.logName, privacy: .public)")
             return false
         }
 
@@ -126,7 +126,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
                 return await self.awaitFreshLocationRequest()
             }
         } catch {
-            logger.notice("Timed out waiting for one-shot location refresh")
+            logger.notice("Timed out waiting for one-shot location refresh; the resolver may still fall back to cached or streamed location data")
             resolvePendingRefreshLocationContinuations(with: false)
             return false
         }
@@ -162,7 +162,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             logger.debug("Stopping location services")
             stopAll()
         }
-        logger.debug("Phase = \(String(describing: phase), privacy: .public) auth = \(status.rawValue, privacy: .public) -> mode = \(String(describing: desired), privacy: .public)")
+        logger.debug(
+            "Updated location manager mode phase=\(phase.logName, privacy: .public) auth=\(status.logName, privacy: .public) mode=\(desired.logName, privacy: .public)"
+        )
         currentMode = desired
     }
     
@@ -177,6 +179,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
         Task { @MainActor in
             authStatus = status
+            logger.info("Location authorization changed status=\(status.logName, privacy: .public)")
             onAuthorizationChange?(status)
             updateMode(for: lastPhase)
         }
@@ -218,7 +221,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     
     private func startForegroundStreaming() {
         guard streamTask == nil else { return }
-        logger.debug("Starting CLLocationupdate live update stream")
+        logger.debug("Starting CLLocation live update stream")
         streamTask = Task { [weak self] in
             do{
                 let updates = CLLocationUpdate.liveUpdates(.otherNavigation)
@@ -244,7 +247,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     
     private func stopForegroundStreaming() {
         if let task = streamTask {
-            logger.debug("Stopping CLLOcation live updates stream")
+            logger.debug("Stopping CLLocation live update stream")
             task.cancel()
             streamTask = nil
         }
@@ -270,5 +273,52 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         let continuations = pendingRefreshLocationContinuations
         pendingRefreshLocationContinuations.removeAll()
         continuations.forEach { $0.resume(returning: success) }
+    }
+}
+
+private extension LocationManager.Mode {
+    var logName: String {
+        switch self {
+        case .stopped:
+            return "stopped"
+        case .foreground:
+            return "foreground"
+        case .background:
+            return "background"
+        }
+    }
+}
+
+private extension ScenePhase {
+    var logName: String {
+        switch self {
+        case .active:
+            return "active"
+        case .inactive:
+            return "inactive"
+        case .background:
+            return "background"
+        @unknown default:
+            return "unknown"
+        }
+    }
+}
+
+private extension CLAuthorizationStatus {
+    var logName: String {
+        switch self {
+        case .notDetermined:
+            return "notDetermined"
+        case .restricted:
+            return "restricted"
+        case .denied:
+            return "denied"
+        case .authorizedAlways:
+            return "authorizedAlways"
+        case .authorizedWhenInUse:
+            return "authorizedWhenInUse"
+        @unknown default:
+            return "unknown"
+        }
     }
 }

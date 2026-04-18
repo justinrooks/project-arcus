@@ -33,6 +33,7 @@ final class Dependencies: Sendable {
     private let _locationProvider: LocationProvider?
     private let _locationManager: LocationManager?
     private let _gridProvider: GridPointProvider?
+    private let _locationSession: LocationSession?
     private let _locationContextResolver: (any LocationContextResolving)?
     
     // MARK: Weatherkit
@@ -129,6 +130,13 @@ final class Dependencies: Sendable {
     var gridProvider: GridPointProvider {
         guard let value = _gridProvider else {
             fatalError("Dependencies.gridProvider used while unconfigured")
+        }
+        return value
+    }
+    @MainActor
+    var locationSession: LocationSession {
+        guard let value = _locationSession else {
+            fatalError("Dependencies.locationSession used while unconfigured")
         }
         return value
     }
@@ -245,6 +253,7 @@ final class Dependencies: Sendable {
         locationProvider: LocationProvider?,
         locationManager: LocationManager?,
         gridProvider: GridPointProvider?,
+        locationSession: LocationSession?,
         locationContextResolver: (any LocationContextResolving)?,
         spcProvider: SpcProvider?,
         nwsProvider: NwsProvider?,
@@ -269,6 +278,7 @@ final class Dependencies: Sendable {
         self._locationProvider = locationProvider
         self._locationManager = locationManager
         self._gridProvider = gridProvider
+        self._locationSession = locationSession
         self._locationContextResolver = locationContextResolver
         self._spcProvider = spcProvider
         self._nwsProvider = nwsProvider
@@ -329,10 +339,10 @@ final class Dependencies: Sendable {
         if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
             let uploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
             contextPusher = LocationSnapshotPusher(uploader: uploader)
-            logger.notice("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
+            logger.info("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
         } else {
             contextPusher = NoOpLocationContextPusher()
-            logger.notice("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
+            logger.info("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
         }
         
         // Location
@@ -385,6 +395,13 @@ final class Dependencies: Sendable {
             }
         )
         logger.info("Location context resolver initialized")
+
+        let locationSession = LocationSession(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationManager: locationManager,
+            locationContextResolver: locationContextResolver
+        )
+        logger.info("Location session initialized")
         
         let nws = NwsProvider(
             watchRepo: watchRepo,
@@ -431,7 +448,7 @@ final class Dependencies: Sendable {
         )
 
         let weatherClient = WeatherClient()
-        logger.notice("WeatherKit client created")
+        logger.debug("WeatherKit client initialized")
 
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
@@ -440,15 +457,11 @@ final class Dependencies: Sendable {
         )
         let homeIngestionExecutor = HomeIngestionExecutor(
             environment: .init(
-                logger: logger,
+                logger: Logger.appHomeRefresh,
                 spcSync: spc,
                 arcusAlertSync: arcus,
                 weatherClient: weatherClient,
-                locationSession: LocationSession(
-                    locationClient: makeLocationClient(provider: locationProvider),
-                    locationManager: locationManager,
-                    locationContextResolver: locationContextResolver
-                ),
+                locationSession: locationSession,
                 snapshotStore: homeSnapshotStore,
                 projectionStore: homeProjectionStore
             )
@@ -477,7 +490,7 @@ final class Dependencies: Sendable {
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
-        logger.notice("Providers ready; background orchestrator configured")
+        logger.info("Dependencies configured; background orchestrator ready")
         
         return Dependencies(
             appRefreshID: appRefreshID,
@@ -494,6 +507,7 @@ final class Dependencies: Sendable {
             locationProvider: locationProvider,
             locationManager: locationManager,
             gridProvider: gridProvider,
+            locationSession: locationSession,
             locationContextResolver: locationContextResolver,
             spcProvider: spcProvider,
             nwsProvider: nwsProvider,
@@ -520,6 +534,7 @@ final class Dependencies: Sendable {
                                                          locationProvider: nil,
                                                          locationManager: nil,
                                                          gridProvider: nil,
+                                                         locationSession: nil,
                                                          locationContextResolver: nil,
                                                          spcProvider: nil,
                                                          nwsProvider: nil,

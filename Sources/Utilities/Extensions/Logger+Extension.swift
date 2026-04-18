@@ -14,12 +14,16 @@ extension Logger {
     // MARK: Main
     static let appMain = Logger(subsystem: subsystem, category: "app.main")
     static let appDependencies = Logger(subsystem: subsystem, category: "app.dependencies")
+    static let appHomeRefresh = Logger(subsystem: subsystem, category: "app.homeRefresh")
     
     // MARK: Plumbing
     static let providersSpcClient = Logger(subsystem: subsystem, category: "providers.spc.client")
     static let networkDownloader = Logger(subsystem: subsystem, category: "network.downloader")
     static let providersSpc = Logger(subsystem: subsystem, category: "providers.spc")
     static let parsingRss = Logger(subsystem: subsystem, category: "parsing.rss")
+    static let parsingJson = Logger(subsystem: subsystem, category: "parsing.json")
+    static let parsingGeoJson = Logger(subsystem: subsystem, category: "parsing.geojson")
+    static let parsingNws = Logger(subsystem: subsystem, category: "parsing.nws")
     static let providersNwsClient = Logger(subsystem: subsystem, category: "providers.nws.client")
     static let providersArcusClient = Logger(subsystem: subsystem, category: "providers.arcus.client")
     static let providersNws = Logger(subsystem: subsystem, category: "providers.nws")

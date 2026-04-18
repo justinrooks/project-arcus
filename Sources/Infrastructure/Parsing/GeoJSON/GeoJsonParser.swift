@@ -15,27 +15,23 @@ enum GeoJsonParser {
     @available(*, deprecated, message: "Use the Arcus instead")
     static func decode(from data: Data) -> GeoJSONFeatureCollection {
         let decoder = DecoderFactory.base
+        let logger = Logger.parsingGeoJson
         do {
             return try decoder.decode(GeoJSONFeatureCollection.self, from: data)
         } catch let DecodingError.dataCorrupted(context) {
-            let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Data corrupted – \(context.debugDescription, privacy: .public)")
+            logger.error("GeoJSON decoding failed; returning an empty collection: Data corrupted – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch let DecodingError.keyNotFound(key, context) {
-            let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Missing key '\(key.stringValue, privacy: .public)' – \(context.debugDescription, privacy: .public)")
+            logger.error("GeoJSON decoding failed; returning an empty collection: Missing key '\(key.stringValue, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch let DecodingError.typeMismatch(type, context) {
-            let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Type mismatch for type '\(type, privacy: .public)' – \(context.debugDescription, privacy: .public)")
+            logger.error("GeoJSON decoding failed; returning an empty collection: Type mismatch for type '\(type, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch let DecodingError.valueNotFound(value, context) {
-            let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("GeoJSON decoding failed: Missing value '\(value, privacy: .public)' – \(context.debugDescription, privacy: .public)")
+            logger.error("GeoJSON decoding failed; returning an empty collection: Missing value '\(value, privacy: .public)' – \(context.debugDescription, privacy: .public)")
             return .empty
         } catch {
-            let logger = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "GeoJsonParser")
-            logger.error("Unexpected GeoJSON decode error: \(error.localizedDescription, privacy: .public)")
+            logger.error("Unexpected GeoJSON decode error; returning an empty collection: \(error.localizedDescription, privacy: .public)")
             return .empty
         }
     }

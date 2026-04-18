@@ -14,8 +14,6 @@ actor WatchRepo {
     private let logger = Logger.reposWatch
     
     func active(countyCode: String, fireZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
-        logger.info("Fetching current local watches")
-        
         let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
 
         var hits: [Watch] = []
@@ -33,7 +31,11 @@ actor WatchRepo {
         }
         
         // Dedupe before returning since its possible to be in the same cell and county/fire zone.
-        return hits.removingDuplicates(by: \.nwsId).map { WatchRowDTO.init(from: $0) }
+        let rows = hits.removingDuplicates(by: \.nwsId).map { WatchRowDTO.init(from: $0) }
+        logger.debug(
+            "Resolved current local watches candidates=\(candidates.count, privacy: .public) matches=\(rows.count, privacy: .public) hasCell=\((cell != nil), privacy: .public)"
+        )
+        return rows
     }
 
     func watch(id: String) throws -> WatchRowDTO? {
@@ -50,7 +52,7 @@ actor WatchRepo {
         let data = try await client.fetchActiveAlerts(for: countyCode, or: fireZone, in: cell)
 
         guard let decoded = decodePayloads(from: data) else {
-            logger.error("Unable to parse Arcus watch data")
+            logger.error("Arcus alert payload decode failed; leaving persisted watches unchanged")
             throw ArcusError.parsingError
         }
         
@@ -58,20 +60,20 @@ actor WatchRepo {
             .compactMap { makeWatch(from: $0) }
         
         try upsert(watches)
-        logger.debug("Parsed \(watches.count, privacy: .public) watch\(watches.count > 1 ? "es" : "", privacy: .public) from Arcus")
+        logger.debug("Persisted Arcus watch refresh count=\(watches.count, privacy: .public)")
     }
 
     func refreshAlert(using client: any ArcusClient, id: String, revisionSent: Date?) async throws {
         let data = try await client.fetchAlert(id: id, revisionSent: revisionSent)
 
         guard let decoded = decodePayloads(from: data) else {
-            logger.error("Unable to parse targeted Arcus watch data")
+            logger.error("Targeted Arcus alert payload decode failed; leaving persisted watches unchanged")
             throw ArcusError.parsingError
         }
 
         let watches = decoded.compactMap(makeWatch(from:))
         try upsert(watches)
-        logger.debug("Parsed \(watches.count, privacy: .public) targeted Arcus alert payloads")
+        logger.debug("Persisted targeted Arcus alert refresh count=\(watches.count, privacy: .public)")
     }
 
     /// Removes any expired watches from the database

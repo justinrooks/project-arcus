@@ -152,7 +152,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
             provenance = .sessionTick
             isLocationBearing = false
         case .foregroundLocationChange:
-            lanes = [.hotAlerts, .weather]
+            lanes = .all
             forcedLanes = [.hotAlerts, .weather]
             locationRequest = .currentPrepared
             provenance = [.foregroundActivate, .locationChange]
@@ -164,7 +164,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
             provenance = .background
             isLocationBearing = false
         case .backgroundLocationChange:
-            lanes = [.hotAlerts, .weather]
+            lanes = .all
             forcedLanes = [.hotAlerts, .weather]
             locationRequest = .currentPrepared
             provenance = [.background, .locationChange]
@@ -226,5 +226,87 @@ struct HomeIngestionPlan: Sendable, Equatable {
 
     private func covers(_ lhs: HomeIngestionLane, _ rhs: HomeIngestionLane) -> Bool {
         lhs.intersection(rhs) == rhs
+    }
+}
+
+extension HomeRefreshTrigger {
+    var logName: String { rawValue }
+}
+
+extension HomeIngestionLane {
+    var logDescription: String {
+        if isEmpty {
+            return "none"
+        }
+
+        var values: [String] = []
+        if contains(.hotAlerts) {
+            values.append("hotAlerts")
+        }
+        if contains(.slowProducts) {
+            values.append("slowProducts")
+        }
+        if contains(.weather) {
+            values.append("weather")
+        }
+        return values.joined(separator: ",")
+    }
+}
+
+extension HomeIngestionProvenance {
+    var logDescription: String {
+        if isEmpty {
+            return "none"
+        }
+
+        var values: [String] = []
+        if contains(.bootstrap) {
+            values.append("bootstrap")
+        }
+        if contains(.foregroundActivate) {
+            values.append("foregroundActivate")
+        }
+        if contains(.manualRefresh) {
+            values.append("manualRefresh")
+        }
+        if contains(.sessionTick) {
+            values.append("sessionTick")
+        }
+        if contains(.locationChange) {
+            values.append("locationChange")
+        }
+        if contains(.background) {
+            values.append("background")
+        }
+        if contains(.remoteHotAlertReceived) {
+            values.append("remoteHotAlertReceived")
+        }
+        if contains(.remoteHotAlertOpened) {
+            values.append("remoteHotAlertOpened")
+        }
+        return values.joined(separator: ",")
+    }
+}
+
+extension HomeIngestionLocationRequest {
+    var logDescription: String {
+        switch self {
+        case .currentPrepared:
+            return "currentPrepared"
+        case .prepare(let requiresFreshLocation, let showsAuthorizationPrompt):
+            return "prepare(fresh=\(requiresFreshLocation),prompt=\(showsAuthorizationPrompt))"
+        case .explicit:
+            return "explicit"
+        }
+    }
+}
+
+extension HomeIngestionPlan {
+    var logDescription: String {
+        "lanes=\(lanes.logDescription) " +
+        "forced=\(forcedLanes.logDescription) " +
+        "locationRequest=\(locationRequest.logDescription) " +
+        "provenance=\(provenance.logDescription) " +
+        "remoteAlert=\(remoteAlertContext != nil)"
     }
 }

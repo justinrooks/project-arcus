@@ -34,6 +34,7 @@ extension SpcProvider: SpcSyncing {
             return
         }
 
+        logger.info("SPC map sync started")
         let task = Task { [self] in
             await runMapProductsSync()
         }
@@ -50,6 +51,9 @@ extension SpcProvider: SpcSyncing {
             if !Task.isCancelled && completedWithoutFailures {
                 lastMapSyncFinishedAt = Date()
             }
+            logger.info(
+                "SPC map sync finished result=\(completedWithoutFailures ? "success" : "partial-failure", privacy: .public)"
+            )
         }
 
         if Task.isCancelled { return }
@@ -114,13 +118,18 @@ extension SpcProvider: SpcSyncing {
 
     func syncConvectiveOutlooks() async {
         let runInterval = signposter.beginInterval("Spc Sync Convective Outlooks")
+        logger.info("SPC convective outlook sync started")
         do {
             try await outlookRepo.refreshConvectiveOutlooks(using: client)
             
             // After refresh, fetch the latest and publish (keeps it simple and reactive)
             if let d = try? await latestIssue(for: .convective) {
-                logger.info("Convective outlook published: \(d, privacy: .public)")
+                logger.info(
+                    "SPC convective outlook sync finished result=success latestPersistedPublished=\(d, privacy: .public)"
+                )
                 publishConvectiveIssue(d)
+            } else {
+                logger.info("SPC convective outlook sync finished result=success latestPersistedPublished=none")
             }
             signposter.endInterval("Background Run", runInterval)
         } catch is CancellationError {
@@ -139,6 +148,7 @@ extension SpcProvider: SpcSyncing {
             return
         }
 
+        logger.info("SPC meso sync started")
         let task = Task { [self] in
             await runMesoscaleDiscussionSync()
         }
@@ -155,6 +165,7 @@ extension SpcProvider: SpcSyncing {
 
         do {
             try await mesoRepo.refreshMesoscaleDiscussions(using: client)
+            logger.info("SPC meso sync finished result=success")
         } catch is CancellationError {
             logger.notice("Mesoscale discussion sync cancelled")
         } catch {

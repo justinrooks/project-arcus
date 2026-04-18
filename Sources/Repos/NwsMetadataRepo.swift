@@ -21,22 +21,28 @@ actor NwsMetadataRepo {
     private var currentRegionContext: NwsGridRegionContext?
 
     func getPointMetadata(using client: any NwsClient, for location: Coordinate2D) async throws -> NWSGridPoint {
+        logger.debug("Decoding NWS point metadata response")
         let data = try await client.fetchPointMetadata(for: location)
 
         guard let decoded: NWSGridPoint = JsonParser.decode(from: data) else {
             throw NwsError.parsingError
         }
 
+        logger.debug("Decoded NWS point metadata successfully")
         return decoded
     }
     
     func getLocationLabels(using client: any NwsClient, for countyCode: String?, and fireZone: String?) async throws -> (String?, String?) {
+        logger.debug("Resolving NWS location labels")
         let countyMetadata = try await zoneMetadata(using: client, type: .county, identifier: countyCode)
         let fireZoneMetadata = try await zoneMetadata(using: client, type: .fire, identifier: fireZone)
 
         let countyLabel = countyMetadata.map { "\($0.name) \($0.type)".capitalized }
         let fireZoneLabel = fireZoneMetadata?.name
 
+        logger.debug(
+            "Resolved NWS location labels hasCountyLabel=\((countyLabel != nil), privacy: .public) hasFireZoneLabel=\((fireZoneLabel != nil), privacy: .public)"
+        )
         return (countyLabel, fireZoneLabel)
     }
     

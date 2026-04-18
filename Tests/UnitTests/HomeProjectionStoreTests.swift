@@ -118,6 +118,30 @@ struct HomeProjectionStoreTests {
         #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 370))
     }
 
+    @Test("updating hot alerts with empty arrays still creates a projection snapshot")
+    func updateHotAlerts_emptySlicesStillCreateProjection() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let loadedAt = Date(timeIntervalSince1970: 450)
+
+        let updated = try await store.updateHotAlerts(
+            watches: [],
+            mesos: [],
+            for: context,
+            loadedAt: loadedAt
+        )
+
+        #expect(updated.activeAlerts.isEmpty)
+        #expect(updated.activeMesos.isEmpty)
+        #expect(updated.lastHotAlertsLoadAt == loadedAt)
+
+        let persisted = try #require(await store.projection(for: context))
+        #expect(persisted.activeAlerts.isEmpty)
+        #expect(persisted.activeMesos.isEmpty)
+        #expect(persisted.lastHotAlertsLoadAt == loadedAt)
+    }
+
     private func makeContext(
         latitude: Double = 39.75,
         longitude: Double = -104.44,

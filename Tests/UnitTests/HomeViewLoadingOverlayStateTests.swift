@@ -275,6 +275,46 @@ struct HomeViewProjectionLaunchTests {
     }
 }
 
+@Suite("SummaryView Local Alerts")
+@MainActor
+struct SummaryViewLocalAlertsTests {
+    @Test("shows empty state when no local alerts are available after context resolution")
+    func localAlertsPresentationState_showsEmptyStateWithoutAlerts() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .loadingLocalData,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .ready,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+    }
+
+    @Test("keeps placeholder only while location context is still loading")
+    func localAlertsPresentationState_limitsPlaceholderToLocationResolution() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .loadingLocation,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .loading
+        )
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .resolvingLocalContext,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .loading
+        )
+    }
+}
+
 @Suite("Foreground Refresh Policies")
 struct ForegroundRefreshPolicyTests {
     private let alertPolicy = AlertRefreshPolicy(minimumSyncInterval: 120)

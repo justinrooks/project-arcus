@@ -49,6 +49,51 @@ struct HomeRefreshPipelineTests {
         #expect(request.locationContext == context)
     }
 
+    @Test("initial context publication during startup does not queue a second refresh")
+    func startupContextPublication_doesNotQueueFollowUpRefresh() async throws {
+        let context = makeContext()
+        let gate = AsyncGate()
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .hail(probability: 0.30),
+            fireRisk: .elevated,
+            outlooks: sampleOutlooks(),
+            latestOutlook: sampleOutlooks().first
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot, runGate: gate)
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: locationSession
+        )
+
+        Task {
+            await pipeline.handleScenePhaseChange(.active, environment: environment)
+        }
+
+        let requestStarted = await waitUntil {
+            await coordinator.requestCount() == 1
+        }
+        #expect(requestStarted)
+
+        await pipeline.handleContextRefreshKeyChange(
+            context.refreshKey,
+            scenePhase: .active,
+            environment: environment
+        )
+
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(await coordinator.requestCount() == 1)
+
+        await gate.open()
+        await pipeline.waitForIdle()
+
+        #expect(await coordinator.requestCount() == 1)
+    }
+
     @Test("force refresh waits for unified queue completion when loading is shown")
     func forceRefresh_waitsUntilCoordinatorCompletes() async {
         let gate = AsyncGate()
@@ -145,6 +190,36 @@ struct HomeRefreshPipelineTests {
         #expect(stored.fireRisk == .elevated)
         #expect(stored.activeMesos == [meso])
         #expect(stored.activeAlerts == [watch])
+    }
+
+    @Test("scene active refresh persists empty alert slices for the resolved context")
+    func sceneActiveRefresh_persistsEmptyAlertSlices() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(outlooks: sampleOutlooks())
+        let watches = FakeWatchProvider(activeWatches: [])
+        let weather = FakeWeatherClient()
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.handleScenePhaseChange(
+            .active,
+            environment: makeEnvironment(
+                spc: spc,
+                watches: watches,
+                weather: weather,
+                locationSession: locationSession,
+                homeProjectionStore: projectionStore
+            )
+        )
+        await pipeline.waitForIdle()
+
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(projection.activeMesos.isEmpty)
+        #expect(projection.activeAlerts.isEmpty)
+        #expect(projection.lastHotAlertsLoadAt != nil)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
     }
 
     @Test("failed location-scoped reads keep the existing cached projection and still mark the context resolved")

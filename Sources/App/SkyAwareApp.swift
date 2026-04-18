@@ -59,13 +59,7 @@ struct SkyAwareApp: App {
         let remoteAlertPresentationState = RemoteAlertPresentationState()
         _runtimeConnectivityState = State(initialValue: runtimeConnectivityState)
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
-        _locationSession = State(
-            initialValue: LocationSession(
-                locationClient: deps.locationClient,
-                locationManager: deps.locationManager,
-                locationContextResolver: deps.locationContextResolver
-            )
-        )
+        _locationSession = State(initialValue: deps.locationSession)
         SkyAwareAppDelegate.install(
             remoteHotAlertHandler: RemoteHotAlertHandler(
                 coordinator: deps.homeIngestionCoordinator,
@@ -74,7 +68,7 @@ struct SkyAwareApp: App {
             )
         )
 #if DEBUG
-        print(URL.applicationSupportDirectory.path(percentEncoded: false))
+        Logger.appMain.debug("Application support directory: \(URL.applicationSupportDirectory.path(percentEncoded: false), privacy: .public)")
 #endif
     }
     
@@ -190,17 +184,17 @@ struct SkyAwareApp: App {
                 //       to happen on every single activation.
                 if onboardingComplete {
                     Task {
-                        logger.notice("Starting data cleanup")
+                        logger.notice("Starting activation cleanup")
                         try? await deps.healthStore.purge()
-                        logger.notice("Starting spc provider cleanup and sync")
+                        logger.notice("Starting SPC cleanup")
                         await deps.spcProvider.cleanup()
-                        logger.info("Spc provider cleanup finished")
+                        logger.info("SPC cleanup finished")
                         await deps.arcusProvider.cleanup()
-                        logger.info("Nws provider cleanup finished")
+                        logger.info("Arcus alert cleanup finished")
                         
                         // HomeView owns foreground startup refresh and map product sync.
                         // Keep app-level activation work focused on cleanup/scheduling.
-                        logger.info("Startup cleanup finished; HomeView will drive foreground data refresh")
+                        logger.info("Activation cleanup finished; HomeView will drive foreground data refresh")
                     }
                 }
             @unknown default:

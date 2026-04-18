@@ -73,20 +73,33 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress = .none) async throws -> HomeSnapshot {
+        let startedAt = Date()
+        environment.logger.info("Executing home ingestion plan={\(plan.logDescription)}")
         let context = await resolveContext(for: plan.locationRequest, using: environment.locationSession)
         let now = Date()
         let executionMode = httpExecutionMode(for: plan)
+        environment.logger.debug(
+            "Home ingestion context resolution finished available=\((context != nil), privacy: .public) mode=\(executionMode.logName, privacy: .public)"
+        )
 
         if shouldSyncHotFeeds(plan: plan, now: now) {
+            environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
             await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
             freshness.lastHotFeedSyncAt = now
+            environment.logger.debug("Finished home ingestion hot-alert sync")
+        } else {
+            environment.logger.debug("Skipping home ingestion hot-alert sync reason=freshness")
         }
 
         await progress.markHotAlertsCompleted()
 
         if shouldSyncSlowFeeds(plan: plan, now: now) {
+            environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
             await syncSlowFeeds(executionMode: executionMode)
             freshness.lastSlowFeedSyncAt = now
+            environment.logger.debug("Finished home ingestion slow-product sync")
+        } else {
+            environment.logger.debug("Skipping home ingestion slow-product sync reason=freshness")
         }
 
         let weather = await refreshWeatherIfNeeded(
@@ -112,6 +125,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
 
         freshness.lastResolvedRefreshKey = snapshot.refreshKey
+        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        environment.logger.info(
+            "Completed home ingestion plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
+        )
         return snapshot
     }
 
@@ -217,13 +234,20 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         context: LocationContext?,
         now: Date
     ) async -> SummaryWeather? {
-        guard plan.lanes.contains(.weather) else { return nil }
-        guard let context else { return nil }
+        guard plan.lanes.contains(.weather) else {
+            environment.logger.debug("Skipping home ingestion weather refresh reason=lane-not-requested")
+            return nil
+        }
+        guard let context else {
+            environment.logger.debug("Skipping home ingestion weather refresh reason=no-location-context")
+            return nil
+        }
         guard weatherKitRefreshPolicy.shouldSync(
             now: now,
             lastSync: freshness.lastWeatherSyncAt,
             force: plan.forcedLanes.contains(.weather)
         ) else {
+            environment.logger.debug("Skipping home ingestion weather refresh reason=freshness")
             return nil
         }
 
@@ -231,9 +255,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             latitude: context.snapshot.coordinates.latitude,
             longitude: context.snapshot.coordinates.longitude
         )
+        environment.logger.info("Running home ingestion weather refresh")
         let weather = await environment.weatherClient.currentWeather(for: location)
         if weather != nil {
             freshness.lastWeatherSyncAt = now
+            environment.logger.debug("Finished home ingestion weather refresh result=success")
+        } else {
+            environment.logger.debug("Finished home ingestion weather refresh result=empty")
         }
         return weather
     }

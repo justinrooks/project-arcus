@@ -31,6 +31,13 @@ enum SummaryReadinessState: Equatable {
 }
 
 struct SummaryView: View {
+    enum LocalAlertsPresentationState: Equatable {
+        case unavailable
+        case loading
+        case alerts
+        case empty
+    }
+
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -69,6 +76,14 @@ struct SummaryView: View {
 
     private var isLocationUnavailable: Bool {
         readinessState == .locationUnavailable
+    }
+
+    private var localAlertsPresentationState: LocalAlertsPresentationState {
+        Self.localAlertsPresentationState(
+            readinessState: readinessState,
+            hasActiveAlerts: hasActiveAlerts,
+            isLocationUnavailable: isLocationUnavailable
+        )
     }
 
     private var hasMeaningfulContent: Bool {
@@ -150,22 +165,23 @@ struct SummaryView: View {
                 .padding(16)
                 .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
 
-                if isLocationUnavailable {
+                switch localAlertsPresentationState {
+                case .unavailable:
                     unavailableCard(
                         title: "Location Required",
                         message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
                         symbol: "location.slash"
                     )
-                } else if isSummaryLoading && hasActiveAlerts == false {
+                case .loading:
                     ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
                         .summaryResolving(resolutionState.isResolving(.alerts))
-                } else if hasActiveAlerts {
+                case .alerts:
                     ActiveAlertSummaryView(
                         mesos: mesos,
                         watches: watches
                     )
                     .summaryResolving(resolutionState.isResolving(.alerts))
-                } else {
+                case .empty:
                     emptySectionCard(
                         title: "No Active Alerts",
                         message: "Your local area currently has no active watches or mesoscale discussions.",
@@ -220,6 +236,26 @@ struct SummaryView: View {
 
     private func unavailableCard(title: String, message: String, symbol: String) -> some View {
         emptySectionCard(title: title, message: message, symbol: symbol)
+    }
+
+    static func localAlertsPresentationState(
+        readinessState: SummaryReadinessState,
+        hasActiveAlerts: Bool,
+        isLocationUnavailable: Bool
+    ) -> LocalAlertsPresentationState {
+        if isLocationUnavailable {
+            return .unavailable
+        }
+        if hasActiveAlerts {
+            return .alerts
+        }
+
+        switch readinessState {
+        case .loadingLocation, .resolvingLocalContext:
+            return .loading
+        case .loadingLocalData, .ready, .locationUnavailable:
+            return .empty
+        }
     }
 }
 

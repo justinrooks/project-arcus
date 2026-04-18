@@ -22,13 +22,17 @@ struct HomeView: View {
     @Query(sort: [SortDescriptor(\ConvectiveOutlook.published, order: .reverse)])
     private var cachedOutlooks: [ConvectiveOutlook]
 
-    private let logger = Logger.uiHome
+    private let logger = Logger.appHomeRefresh
 
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
 
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
         locationSession.currentContext?.refreshKey
+    }
+
+    private var cachedOutlookDTOs: [ConvectiveOutlookDTO] {
+        cachedOutlooks.map(\.dto)
     }
 
     private var displayedProjection: HomeProjectionRecord? {
@@ -38,9 +42,58 @@ struct HomeView: View {
         )
     }
 
+    private var isCurrentContextResolvedInPipeline: Bool {
+        guard let currentContextRefreshKey else { return false }
+        return currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey
+    }
+
+    private var usesPipelineSummaryFallback: Bool {
+        displayedProjection == nil && isCurrentContextResolvedInPipeline
+    }
+
+    private var displayedLocationSnapshot: LocationSnapshot? {
+        displayedProjection?.locationSnapshot ?? (usesPipelineSummaryFallback ? refreshPipeline.snap : nil)
+    }
+
+    private var displayedStormRisk: StormRiskLevel? {
+        displayedProjection?.stormRisk ?? (usesPipelineSummaryFallback ? refreshPipeline.stormRisk : nil)
+    }
+
+    private var displayedSevereRisk: SevereWeatherThreat? {
+        displayedProjection?.severeRisk ?? (usesPipelineSummaryFallback ? refreshPipeline.severeRisk : nil)
+    }
+
+    private var displayedFireRisk: FireRiskLevel? {
+        displayedProjection?.fireRisk ?? (usesPipelineSummaryFallback ? refreshPipeline.fireRisk : nil)
+    }
+
+    private var displayedWeather: SummaryWeather? {
+        displayedProjection?.weather ?? (usesPipelineSummaryFallback ? refreshPipeline.summaryWeather : nil)
+    }
+
+    private var displayedMesos: [MdDTO] {
+        if isCurrentContextResolvedInPipeline {
+            return refreshPipeline.mesos
+        }
+        return displayedProjection?.activeMesos ?? []
+    }
+
+    private var displayedWatches: [WatchRowDTO] {
+        if isCurrentContextResolvedInPipeline {
+            return refreshPipeline.watches
+        }
+        return displayedProjection?.activeAlerts ?? []
+    }
+
     private var displayedOutlook: ConvectiveOutlookDTO? {
-        guard displayedProjection != nil else { return nil }
-        return cachedOutlooks.first?.dto
+        displayedOutlooks.first ?? refreshPipeline.outlook
+    }
+
+    private var displayedOutlooks: [ConvectiveOutlookDTO] {
+        if refreshPipeline.outlooks.isEmpty == false {
+            return refreshPipeline.outlooks
+        }
+        return cachedOutlookDTOs
     }
 
     private var readinessState: SummaryReadinessState {
@@ -48,14 +101,14 @@ struct HomeView: View {
             startupState: locationSession.startupState,
             hasContext: locationSession.currentContext != nil,
             hasResolvedLocalData: currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey,
-            stormRisk: displayedProjection?.stormRisk,
-            severeRisk: displayedProjection?.severeRisk,
-            fireRisk: displayedProjection?.fireRisk
+            stormRisk: displayedStormRisk,
+            severeRisk: displayedSevereRisk,
+            fireRisk: displayedFireRisk
         )
     }
 
     private var hasMeaningfulSummaryContent: Bool {
-        displayedProjection != nil
+        displayedProjection != nil || usesPipelineSummaryFallback
     }
 
     private var isEmptyResolvingSummary: Bool {
@@ -109,14 +162,14 @@ struct HomeView: View {
                     NavigationStack {
                         ScrollView {
                             SummaryView(
-                                snap: displayedProjection?.locationSnapshot,
-                                stormRisk: displayedProjection?.stormRisk,
-                                severeRisk: displayedProjection?.severeRisk,
-                                fireRisk: displayedProjection?.fireRisk,
-                                mesos: displayedProjection?.activeMesos ?? [],
-                                watches: displayedProjection?.activeAlerts ?? [],
+                                snap: displayedLocationSnapshot,
+                                stormRisk: displayedStormRisk,
+                                severeRisk: displayedSevereRisk,
+                                fireRisk: displayedFireRisk,
+                                mesos: displayedMesos,
+                                watches: displayedWatches,
                                 outlook: displayedOutlook,
-                                weather: displayedProjection?.weather,
+                                weather: displayedWeather,
                                 readinessState: readinessState,
                                 resolutionState: refreshPipeline.resolutionState,
                                 showsOfflineToken: runtimeConnectivityState.isOffline
@@ -138,11 +191,11 @@ struct HomeView: View {
                 Tab("Alerts", systemImage: "exclamationmark.triangle", value: .alerts) {
                     NavigationStack {
                         AlertView(
-                            mesos: refreshPipeline.mesos,
-                            watches: refreshPipeline.watches,
+                            mesos: displayedMesos,
+                            watches: displayedWatches,
                             focusedWatchRequest: remoteAlertPresentationState.focusRequest,
                             onRefresh: {
-                                logger.debug("refreshing alerts")
+                                logger.notice("Manual alerts refresh requested")
                                 refreshPipeline.resetLocationRefreshContext()
                                 await refreshPipeline.forceRefreshCurrentContext(
                                     showsLoading: true,
@@ -158,7 +211,7 @@ struct HomeView: View {
                     }
                     .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
-                .badge(refreshPipeline.mesos.count + refreshPipeline.watches.count)
+                .badge(displayedMesos.count + displayedWatches.count)
 
                 Tab("Map", systemImage: "map", value: .map) {
                     MapScreenView()
@@ -168,9 +221,9 @@ struct HomeView: View {
                 Tab("Outlooks", systemImage: "list.clipboard.fill", value: .outlooks) {
                     NavigationStack {
                         ConvectiveOutlookView(
-                            dtos: refreshPipeline.outlooks,
+                            dtos: displayedOutlooks,
                             onRefresh: {
-                                logger.debug("refreshing outlooks")
+                                logger.notice("Manual convective outlook refresh requested")
                                 await refreshPipeline.refreshOutlooksManually(environment: refreshEnvironment)
                             }
                         )
@@ -223,9 +276,12 @@ struct HomeView: View {
             }
         }
         .onChange(of: currentContextRefreshKey) { _, newKey in
-            guard scenePhase == .active, newKey != nil else { return }
             Task {
-                await refreshPipeline.enqueueRefresh(.contextChanged, environment: refreshEnvironment)
+                await refreshPipeline.handleContextRefreshKeyChange(
+                    newKey,
+                    scenePhase: scenePhase,
+                    environment: refreshEnvironment
+                )
             }
         }
         .onChange(of: remoteAlertPresentationState.focusRequest?.id) { _, newValue in
