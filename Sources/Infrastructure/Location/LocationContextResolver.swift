@@ -61,6 +61,8 @@ actor LocationContextResolver: LocationContextResolving {
     typealias AuthorizationRequester = @Sendable (Bool) async -> Void
     typealias CurrentLocationRefresher = @Sendable (Double) async -> Bool
 
+    private static let freshLocationReuseMaxAge: TimeInterval = 15
+
     private let locationClient: LocationClient
     private let locationProvider: LocationProvider
     private let gridPointProvider: GridPointProvider
@@ -108,6 +110,20 @@ actor LocationContextResolver: LocationContextResolving {
 
         guard authorizationStatus.isLocationAuthorized else {
             throw LocationContextError.locationUnavailable
+        }
+
+        if requiresFreshLocation,
+           let currentSnapshot = await locationClient.snapshot(),
+           Self.isAccepted(
+               snapshot: currentSnapshot,
+               maximumAge: min(maximumAcceptedLocationAge, Self.freshLocationReuseMaxAge)
+           ) {
+            logger.debug("Using recent live location snapshot for context resolution")
+            return try await resolveContext(
+                from: currentSnapshot,
+                maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+                placemarkTimeout: placemarkTimeout
+            )
         }
 
         let didRefreshCurrentLocation = requiresFreshLocation

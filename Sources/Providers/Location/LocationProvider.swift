@@ -121,6 +121,14 @@ actor LocationProvider {
             logger.trace("Location accuracy too low: \(update.accuracy)")
             return
         }
+
+        let resolvedH3Cell = resolveH3Cell(for: update.coordinates) ?? lastSnapshot?.h3Cell
+
+        if isRedundantForcedUpdate(update, resolvedH3Cell: resolvedH3Cell) {
+            suppressedCount &+= 1
+            logger.debug("Skipping redundant forced location update")
+            return
+        }
         
         // 2) Check accept & update snapshot and task the placemark update
         let now = update.timestamp
@@ -130,7 +138,7 @@ actor LocationProvider {
                                         timestamp: update.timestamp,
                                         accuracy: update.accuracy,
                                         placemarkSummary: lastSnapshot?.placemarkSummary,
-                                        h3Cell: resolveH3Cell(for: update.coordinates) ?? lastSnapshot?.h3Cell)
+                                        h3Cell: resolvedH3Cell)
             saveAndYieldSnapshot(snap, reason: "accepted-update")
             
             // 3) Reverse geocode – fire-and-forget
@@ -166,7 +174,9 @@ actor LocationProvider {
                                            accuracy: base.accuracy,
                                            placemarkSummary: place,
                                            h3Cell: resolveH3Cell(for: coord) ?? base.h3Cell)
-            saveAndYieldSnapshot(updated, reason: "placemark-resolved")
+            if updated != base {
+                saveAndYieldSnapshot(updated, reason: "placemark-resolved")
+            }
             return updated
         } catch {
             logger.info("Placemark resolution failed; falling back to the most recent snapshot when available")
@@ -256,6 +266,21 @@ actor LocationProvider {
         if dt >= throttle.maxSilenceSeconds { return true }
         
         return false
+    }
+
+    private func isRedundantForcedUpdate(
+        _ update: LocationUpdate,
+        resolvedH3Cell: Int64?
+    ) -> Bool {
+        guard update.forceAcceptance, let lastSnapshot else { return false }
+
+        let elapsed = update.timestamp.timeIntervalSince(lastSnapshot.timestamp)
+        guard elapsed >= 0, elapsed <= 5 else { return false }
+
+        let movedMeters = haversine(lastSnapshot.coordinates, update.coordinates)
+        guard movedMeters < 100 else { return false }
+
+        return resolvedH3Cell == lastSnapshot.h3Cell
     }
     
     // Simple haversine (meters)

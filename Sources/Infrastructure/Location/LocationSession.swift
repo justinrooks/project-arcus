@@ -175,8 +175,8 @@ final class LocationSession {
 
     private func shouldRefreshContext(for snapshot: LocationSnapshot) -> Bool {
         guard let currentContext else { return true }
-        return currentContext.h3Cell != snapshot.h3Cell ||
-        currentContext.refreshKey.gridKey != GridRefreshKey(coord: snapshot.coordinates)
+        guard let snapshotH3Cell = snapshot.h3Cell else { return false }
+        return currentContext.h3Cell != snapshotH3Cell
     }
 
     private static func failureCode(for error: Error) -> String {
