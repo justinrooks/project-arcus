@@ -439,13 +439,13 @@ final class Dependencies: Sendable {
             spc: spc
         )
 
-        logger.debug("Composing watch notification engine")
-        let watchEngine = WatchEngine(
-            rule: WatchRule(),
-            gate: WatchGate(store: DefaultWatchStore()),
-            composer: WatchComposer(),
-            sender: Sender()
-        )
+//        logger.debug("Composing watch notification engine")
+//        let watchEngine = WatchEngine(
+//            rule: WatchRule(),
+//            gate: WatchGate(store: DefaultWatchStore()),
+//            composer: WatchComposer(),
+//            sender: Sender()
+//        )
 
         let weatherClient = WeatherClient()
         logger.debug("WeatherKit client initialized")
@@ -469,8 +469,8 @@ final class Dependencies: Sendable {
         let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)
 
         let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
-            coordinator: homeIngestionCoordinator,
-            watchEngine: watchEngine
+            coordinator: homeIngestionCoordinator//,
+//            watchEngine: watchEngine
         )
 
         locationManager.setBackgroundLocationChangeHandler {

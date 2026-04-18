@@ -11,15 +11,13 @@ import OSLog
 actor BackgroundLocationChangeHandler {
     private let logger = Logger.backgroundOrchestrator
     private let coordinator: any HomeIngestionCoordinating
-    private let watchEngine: WatchEngine
+//    private let watchEngine: WatchEngine
     private var activeTask: Task<Void, Never>?
 
     init(
-        coordinator: any HomeIngestionCoordinating,
-        watchEngine: WatchEngine
+        coordinator: any HomeIngestionCoordinating
     ) {
         self.coordinator = coordinator
-        self.watchEngine = watchEngine
     }
 
     func handleLocationChange() async {
@@ -30,7 +28,7 @@ actor BackgroundLocationChangeHandler {
         }
 
         let coordinator = self.coordinator
-        let watchEngine = self.watchEngine
+//        let watchEngine = self.watchEngine
         let logger = self.logger
 
         let task = Task {
@@ -45,15 +43,15 @@ actor BackgroundLocationChangeHandler {
                     return
                 }
 
-                _ = await watchEngine.run(
-                    ctx: .init(
-                        now: .now,
-                        localTZ: .current,
-                        location: locationSnapshot.coordinates,
-                        placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
-                    ),
-                    watches: snapshot.watches
-                )
+//                _ = await watchEngine.run(
+//                    ctx: .init(
+//                        now: .now,
+//                        localTZ: .current,
+//                        location: locationSnapshot.coordinates,
+//                        placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
+//                    ),
+//                    watches: snapshot.watches
+//                )
             } catch {
                 logger.error(
                     "Failed to execute background location-change ingestion: \(error.localizedDescription, privacy: .public)"
