@@ -20,6 +20,32 @@ struct AlertView: View {
         watches.isEmpty && mesos.isEmpty
     }
 
+    private var sortedWatches: [WatchRowDTO] {
+        watches.sorted { lhs, rhs in
+            if lhs.ends != rhs.ends {
+                return lhs.ends < rhs.ends
+            }
+            return lhs.issued > rhs.issued
+        }
+    }
+
+    private var sortedMesos: [MdDTO] {
+        mesos.sorted { lhs, rhs in
+            if lhs.validEnd != rhs.validEnd {
+                return lhs.validEnd < rhs.validEnd
+            }
+            return lhs.issued > rhs.issued
+        }
+    }
+
+    private var latestIssued: Date? {
+        (watches.map(\.issued) + mesos.map(\.issued)).max()
+    }
+
+    private var totalAlertCount: Int {
+        watches.count + mesos.count
+    }
+
     init(
         mesos: [MdDTO],
         watches: [WatchRowDTO],
@@ -35,6 +61,8 @@ struct AlertView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
+                overviewCard
+
                 if hasNoAlerts {
                     emptySectionCard(
                         title: "No active watches or mesos",
@@ -42,19 +70,13 @@ struct AlertView: View {
                         symbol: "checkmark.shield"
                     )
                 } else {
-                    if watches.isEmpty {
-                        emptySectionCard(
-                            title: "No active watches",
-                            subtitle: "There are no active weather watches.",
-                            symbol: "checkmark.seal"
-                        )
-                    } else {
+                    if sortedWatches.isEmpty == false {
                         alertSection(
                             title: "Watches",
                             subtitle: "\(watches.count) active",
                             symbol: "exclamationmark.triangle.fill"
                         ) {
-                            ForEach(watches) { watch in
+                            ForEach(sortedWatches) { watch in
                                 Button {
                                     selectedWatch = watch
                                 } label: {
@@ -62,24 +84,24 @@ struct AlertView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(
+                                    SkyAwarePressableButtonStyle(
+                                        cornerRadius: SkyAwareRadius.row,
+                                        pressedScale: 0.988,
+                                        pressedOverlayOpacity: 0.06
+                                    )
+                                )
                             }
                         }
                     }
 
-                    if mesos.isEmpty {
-                        emptySectionCard(
-                            title: "No active mesoscale discussions",
-                            subtitle: "There are no active mesoscale discussions.",
-                            symbol: "checkmark.seal"
-                        )
-                    } else {
+                    if sortedMesos.isEmpty == false {
                         alertSection(
                             title: "Mesoscale Discussions",
                             subtitle: "\(mesos.count) active",
                             symbol: "waveform.path.ecg"
                         ) {
-                            ForEach(mesos) { meso in
+                            ForEach(sortedMesos) { meso in
                                 Button {
                                     selectedMeso = meso
                                 } label: {
@@ -87,7 +109,13 @@ struct AlertView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(
+                                    SkyAwarePressableButtonStyle(
+                                        cornerRadius: SkyAwareRadius.row,
+                                        pressedScale: 0.988,
+                                        pressedOverlayOpacity: 0.06
+                                    )
+                                )
                             }
                         }
                     }
@@ -131,6 +159,48 @@ struct AlertView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.skyAwareBackground, for: .navigationBar)
         }
+    }
+
+    private var overviewCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(
+                hasNoAlerts ? "Quiet right now" : "\(totalAlertCount) active local alerts",
+                systemImage: hasNoAlerts ? "checkmark.shield" : "bolt.badge.clock"
+            )
+            .font(.headline.weight(.semibold))
+
+            Text(overviewMessage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            if let latestIssued {
+                Text("Most recent product: \(latestIssued.relativeDate())")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.08))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+    }
+
+    private var overviewMessage: String {
+        if hasNoAlerts {
+            return "SkyAware is monitoring your local area. New watches and mesoscale discussions will appear here as soon as they are issued."
+        }
+
+        if sortedWatches.isEmpty {
+            return "Mesoscale discussions are active for your area. Open one to check timing, concern area, and watch potential."
+        }
+
+        if sortedMesos.isEmpty {
+            return "Weather watches are active for your area. Open one to check timing, affected counties, and official instructions."
+        }
+
+        return "Open any alert for timing, impacted areas, and the full official product. Items that end sooner are surfaced first."
     }
 
     private func alertSection<Content: View>(

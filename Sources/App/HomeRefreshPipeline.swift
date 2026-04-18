@@ -289,7 +289,7 @@ final class HomeRefreshPipeline {
     private func beginForegroundRefresh() {
         activeRefreshCount += 1
         if activeRefreshCount == 1 {
-            resolutionState.begin(task: .finalizing, sections: [])
+            resolutionState.begin(task: .finalizing, sections: SummarySection.resolveForwardSections)
         }
     }
 
@@ -297,7 +297,7 @@ final class HomeRefreshPipeline {
         guard activeRefreshCount > 0 else { return }
         activeRefreshCount -= 1
         if activeRefreshCount == 0 {
-            resolutionState.finish(task: .finalizing, resolvedSections: [])
+            resolutionState.finish(task: .finalizing, resolvedSections: SummarySection.resolveForwardSections)
             let deferredContextRefreshKey = self.deferredContextRefreshKey
             self.deferredContextRefreshKey = nil
             guard

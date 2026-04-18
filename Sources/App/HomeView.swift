@@ -10,6 +10,7 @@ import OSLog
 import SwiftData
 
 struct HomeView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
@@ -26,6 +27,8 @@ struct HomeView: View {
 
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
+    @State private var selectedMapLayer: MapLayer = .categorical
+    @State private var todayHeaderCondenseProgress: CGFloat = 0
 
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
         locationSession.currentContext?.refreshKey
@@ -172,10 +175,20 @@ struct HomeView: View {
                                 weather: displayedWeather,
                                 readinessState: readinessState,
                                 resolutionState: refreshPipeline.resolutionState,
-                                showsOfflineToken: runtimeConnectivityState.isOffline
+                                showsOfflineToken: runtimeConnectivityState.isOffline,
+                                headerCondenseProgress: todayHeaderCondenseProgress,
+                                onOpenMapLayer: openMap,
+                                onOpenAlerts: { selectedTab = .alerts },
+                                onOpenOutlooks: { selectedTab = .outlooks }
                             )
                             .toolbar(.hidden, for: .navigationBar)
                             .background(.skyAwareBackground)
+                        }
+                        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                            geometry.contentOffset.y + geometry.contentInsets.top
+                        } action: { _, newValue in
+                            let normalizedProgress = min(max(newValue / 46, 0), 1)
+                            todayHeaderCondenseProgress = normalizedProgress
                         }
                         .background(Color(.skyAwareBackground).ignoresSafeArea())
                         .refreshable {
@@ -214,7 +227,7 @@ struct HomeView: View {
                 .badge(displayedMesos.count + displayedWatches.count)
 
                 Tab("Map", systemImage: "map", value: .map) {
-                    MapScreenView()
+                    MapScreenView(selectedLayer: $selectedMapLayer)
                         .toolbar(.hidden, for: .navigationBar)
                 }
 
@@ -251,7 +264,7 @@ struct HomeView: View {
             .background(Color(.skyAwareBackground).ignoresSafeArea())
             .toolbarBackground(.visible, for: .tabBar)
             .toolbarBackground(.skyAwareBackground.opacity(isEmptyResolvingSummary ? 0.68 : 1.0), for: .tabBar)
-            .animation(.easeInOut(duration: 0.35), value: isEmptyResolvingSummary)
+            .animation(SkyAwareMotion.settle(reduceMotion), value: isEmptyResolvingSummary)
             .ignoresSafeArea(edges: .bottom)
 
             if isEmptyResolvingSummary {
@@ -292,6 +305,11 @@ struct HomeView: View {
 }
 
 extension HomeView {
+    private func openMap(_ layer: MapLayer) {
+        selectedMapLayer = layer
+        selectedTab = .map
+    }
+
     enum HomeTab: Hashable {
         case today
         case alerts

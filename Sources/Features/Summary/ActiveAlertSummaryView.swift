@@ -11,6 +11,7 @@ struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let isLoading: Bool
+    let onOpenAlertCenter: (() -> Void)?
     private let sortedMesos: [MdDTO]
     private let sortedWatches: [WatchRowDTO]
     
@@ -18,10 +19,16 @@ struct ActiveAlertSummaryView: View {
     @State private var selectedWatch: WatchRowDTO? = nil
     @State private var selectedMesoDetent: PresentationDetent = .medium
     @State private var selectedWatchDetent: PresentationDetent = .medium
-    init(mesos: [MdDTO], watches: [WatchRowDTO], isLoading: Bool = false) {
+    init(
+        mesos: [MdDTO],
+        watches: [WatchRowDTO],
+        isLoading: Bool = false,
+        onOpenAlertCenter: (() -> Void)? = nil
+    ) {
         self.mesos = mesos
         self.watches = watches
         self.isLoading = isLoading
+        self.onOpenAlertCenter = onOpenAlertCenter
         self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
         self.sortedWatches = watches.sorted { $0.expires < $1.expires }
     }
@@ -61,8 +68,37 @@ struct ActiveAlertSummaryView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                .sectionLabel()
+            HStack(alignment: .center, spacing: 12) {
+                Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                    .sectionLabel()
+
+                Spacer(minLength: 12)
+
+                if let onOpenAlertCenter, isLoading == false {
+                    Button {
+                        onOpenAlertCenter()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("Alert Center")
+                            Image(systemName: "arrow.right")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                    }
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.chipCompact,
+                            pressedScale: 0.985,
+                            pressedOverlayOpacity: 0.08
+                        )
+                    )
+                    .accessibilityHint("Opens the full alerts tab.")
+                }
+            }
 
             if #available(iOS 26, *) {
                 GlassEffectContainer(spacing: 12) {
@@ -164,6 +200,8 @@ private struct PlaceholderAlertSection: View {
 }
 
 private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let label: String
     let items: [Item]
     let limit: Int
@@ -184,12 +222,18 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
             
             ForEach(visibleItems) { item in
                 Button { onSelect(item) } label: { row(item) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.row,
+                            pressedScale: 0.988,
+                            pressedOverlayOpacity: 0.06
+                        )
+                    )
             }
             
             if items.count > limit {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.24)) {
+                    withAnimation(SkyAwareMotion.disclosure(reduceMotion)) {
                         isExpanded.toggle()
                     }
                 } label: {
@@ -202,7 +246,13 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 6)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(
+                    SkyAwarePressableButtonStyle(
+                        cornerRadius: SkyAwareRadius.chipCompact,
+                        pressedScale: 0.985,
+                        pressedOverlayOpacity: 0.08
+                    )
+                )
             }
         }
     }
