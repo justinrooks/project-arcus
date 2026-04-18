@@ -236,7 +236,7 @@ struct LocationProviderTests {
     func send_acceptsExplicitRefreshWhenStationary() async throws {
         let provider = LocationProvider()
         let first = Date(timeIntervalSince1970: 1_000)
-        let second = first.addingTimeInterval(1)
+        let second = first.addingTimeInterval(6)
 
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: first, accuracy: 50))
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: second, accuracy: 50, forceAcceptance: true))
@@ -478,9 +478,10 @@ struct LocationProviderTests {
     @Test("ensurePlacemark does not rewrite an unchanged snapshot")
     func ensurePlacemark_doesNotRewriteUnchangedSnapshot() async {
         let coord = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        let timestamp = Date()
         let snapshot = LocationSnapshot(
             coordinates: coord,
-            timestamp: Date(timeIntervalSince1970: 3_000),
+            timestamp: timestamp,
             accuracy: 25,
             placemarkSummary: "Denver, CO",
             h3Cell: sampleH3Cell
@@ -488,7 +489,9 @@ struct LocationProviderTests {
         let cache = MockSnapshotCache(storedSnapshot: snapshot)
         let provider = LocationProvider(
             geocoder: MockGeocoder(mode: .success("Denver, CO")),
-            snapshotCache: cache
+            hasher: MockHasher(mode: .success(sampleH3Cell)),
+            snapshotCache: cache,
+            nowProvider: { timestamp }
         )
 
         let resolved = await provider.ensurePlacemark(for: coord, timeout: 1)
