@@ -222,7 +222,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
     }
 
-    @Test("failed location-scoped reads keep the existing cached projection and still mark the context resolved")
+    @Test("failed location-scoped reads keep the existing cached projection without marking the context resolved")
     func locationScopedReadFailure_preservesExistingProjection() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
@@ -287,7 +287,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.fireRisk == .critical)
         #expect(pipeline.mesos == [originalMeso])
         #expect(pipeline.watches == [originalWatch])
-        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
     }
 
     @Test("manual outlook refresh only touches outlook sync and query paths")
