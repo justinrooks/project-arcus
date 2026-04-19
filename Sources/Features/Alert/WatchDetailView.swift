@@ -209,7 +209,7 @@ struct WatchDetailView: View {
     NavigationStack {
         ScrollView {
             WatchDetailView(watch: Watch.sampleWatchRows.last!, layout: .full)
-                .navigationTitle("Weather Watch")
+                .navigationTitle("Weather Alert")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)
@@ -222,7 +222,7 @@ struct WatchDetailView: View {
     NavigationStack {
         ScrollView {
             WatchDetailView(watch: Watch.sampleWatchRows[3], layout: .full)
-                .navigationTitle("Weather Watch")
+                .navigationTitle("Weather Alert")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)

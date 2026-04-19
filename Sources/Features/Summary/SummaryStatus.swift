@@ -44,12 +44,32 @@ struct SummaryStatus: View {
         12 - (3 * clampedCondenseProgress)
     }
 
+    private var cardCornerRadius: CGFloat {
+        SkyAwareRadius.section - clampedCondenseProgress
+    }
+
+    private var cardShadowOpacity: Double {
+        0.08 - (0.03 * clampedCondenseProgress)
+    }
+
+    private var cardShadowRadius: CGFloat {
+        8 - (2 * clampedCondenseProgress)
+    }
+
+    private var cardShadowY: CGFloat {
+        3 - clampedCondenseProgress
+    }
+
     private var titleFont: Font {
         clampedCondenseProgress > 0.5 ? .subheadline.weight(.semibold) : .headline.weight(.semibold)
     }
 
     private var locationFont: Font {
-        clampedCondenseProgress > 0.55 ? .subheadline.weight(.bold) : .headline.weight(.bold)
+        .headline.weight(.bold)
+    }
+
+    private var settledConditionOpacity: Double {
+        1 - (0.55 * clampedCondenseProgress)
     }
 
     var body: some View {
@@ -59,7 +79,12 @@ struct SummaryStatus: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, verticalPadding)
-        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(
+            cornerRadius: cardCornerRadius,
+            shadowOpacity: cardShadowOpacity,
+            shadowRadius: cardShadowRadius,
+            shadowY: cardShadowY
+        )
         .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
     }
 
@@ -106,7 +131,6 @@ struct SummaryStatus: View {
                 SummaryStatusSecondaryLine(
                     resolutionState: resolutionState
                 )
-                .opacity(0.92 - (0.14 * clampedCondenseProgress))
             }
             .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -137,6 +161,7 @@ struct SummaryStatus: View {
                 )
             }
             .font(.footnote)
+            .opacity(settledConditionOpacity)
             .multilineTextAlignment(.trailing)
             .lineLimit(1)
             .frame(minHeight: 18, alignment: .trailing)
@@ -184,25 +209,29 @@ private struct SummaryOfflineToken: View {
     }
 
     var body: some View {
-        Label("Offline", systemImage: "wifi.slash")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(tint)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .skyAwareChip(
-                cornerRadius: SkyAwareRadius.chipCompact,
-                tint: tint.opacity(colorScheme == .dark ? 0.20 : 0.12)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: SkyAwareRadius.chipCompact, style: .continuous)
-                    .stroke(
-                        tint.opacity(colorScheme == .dark ? 0.34 : 0.22),
-                        lineWidth: 1
-                    )
-            }
-            .accessibilityLabel("Offline")
-            .accessibilityHint("Shows what offline mode means.")
+        HStack(spacing: 6) {
+            Label("Offline", systemImage: "wifi.slash")
+            Image(systemName: "info.circle")
+                .font(.caption2.weight(.bold))
         }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(tint)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .skyAwareChip(
+            cornerRadius: SkyAwareRadius.chipCompact,
+            tint: tint.opacity(colorScheme == .dark ? 0.20 : 0.12)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: SkyAwareRadius.chipCompact, style: .continuous)
+                .stroke(
+                    tint.opacity(colorScheme == .dark ? 0.34 : 0.22),
+                    lineWidth: 1
+                )
+        }
+        .accessibilityLabel("Offline")
+        .accessibilityHint("Shows what offline mode means.")
+    }
 }
 
 private struct SummaryStatusSecondaryLine: View {
@@ -211,21 +240,37 @@ private struct SummaryStatusSecondaryLine: View {
     let resolutionState: SummaryResolutionState
     @State private var displayedMessage: String?
 
+    private var messageTransition: AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+
+        return .asymmetric(
+            insertion: .offset(y: 8).combined(with: .opacity),
+            removal: .offset(y: -8).combined(with: .opacity)
+        )
+    }
+
     var body: some View {
-        Group {
+        ZStack(alignment: .leading) {
             if let displayedMessage {
                 Text(displayedMessage)
+                    .id(displayedMessage)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(messageTransition)
             } else {
                 Text(" ")
                     .foregroundStyle(.clear)
                     .accessibilityHidden(true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .font(.footnote)
+        .font(.footnote.weight(.medium))
         .lineLimit(1)
-        .contentTransition(.opacity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(minHeight: 18, alignment: .leading)
+        .clipped()
         .animation(SkyAwareMotion.message(reduceMotion), value: displayedMessage)
         .task(id: taskState) {
             await updateDisplayedMessage()

@@ -187,7 +187,7 @@ struct HomeView: View {
                         .onScrollGeometryChange(for: CGFloat.self) { geometry in
                             geometry.contentOffset.y + geometry.contentInsets.top
                         } action: { _, newValue in
-                            let normalizedProgress = min(max(newValue / 46, 0), 1)
+                            let normalizedProgress = min(max((newValue - 6) / 68, 0), 1)
                             todayHeaderCondenseProgress = normalizedProgress
                         }
                         .background(Color(.skyAwareBackground).ignoresSafeArea())
