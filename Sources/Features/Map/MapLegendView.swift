@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct MapLegend: View {
+    @State private var showsHatchingExplanation = false
+
     let layer: MapLayer
     let severeRisks: [SevereRiskShapeDTO]?
     let fireRisks: [FireRiskDTO]?
@@ -47,7 +49,22 @@ struct MapLegend: View {
                         .padding(.top, 10)
                         .padding(.bottom, 6)
 
-                    HatchLegendRow(hatchStyles: HatchStyle.legendPreviewStyles)
+                    Button {
+                        showsHatchingExplanation = true
+                    } label: {
+                        HatchLegendRow(hatchStyles: HatchStyle.legendPreviewStyles)
+                    }
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.row,
+                            pressedScale: 0.99,
+                            pressedOverlayOpacity: 0.06
+                        )
+                    )
+                    .popover(isPresented: $showsHatchingExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                        HatchingExplanationView()
+                            .presentationCompactAdaptation(.popover)
+                    }
                 }
             }
         }
@@ -109,6 +126,28 @@ struct MapLegend: View {
             return true
         }
         return false
+    }
+}
+
+private struct HatchingExplanationView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Hatched Risk Areas")
+                .font(.headline.weight(.semibold))
+
+            Text("Hatching marks where stronger storms are more likely inside the broader risk area.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("When you see hatching on tornado, hail, or wind layers, SPC is signaling a higher chance of significant reports in that area.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(width: 300, alignment: .leading)
     }
 }
 

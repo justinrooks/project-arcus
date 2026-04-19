@@ -16,8 +16,9 @@ actor WeatherClient {
 
     func currentWeather(for location: CLLocation) async -> SummaryWeather? {
         do {
-            logger.info("Fetching conditions from WeatherKit")
+            logger.info("WeatherKit request started mode=\(HTTPExecutionMode.current.logName, privacy: .public)")
             let currentWeather = try await self.service.weather(for: location, including: .current)
+            logger.info("WeatherKit request completed result=success")
             
             return .init(
                 temperature: currentWeather.temperature,
@@ -33,7 +34,7 @@ actor WeatherClient {
                 pressureTrend: currentWeather.pressureTrend.description
             )
         } catch {
-            logger.error("WeatherKit request failed: \(error, privacy: .public)")
+            logger.error("WeatherKit request completed result=failure error=\(error, privacy: .public)")
             return nil
         }
     }

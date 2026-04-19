@@ -307,7 +307,13 @@ private struct AtmosphereMetricTile: View {
                 } label: {
                     tileContent
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(
+                    SkyAwarePressableButtonStyle(
+                        cornerRadius: SkyAwareRadius.medium,
+                        pressedScale: 0.99,
+                        pressedOverlayOpacity: 0.06
+                    )
+                )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Dew Point \(metric.value)")

@@ -67,8 +67,10 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the Data
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
-        logger.info("Fetching GeoJSON for \(String(describing: product), privacy: .public)")
         let url = try getGeoJSONUrl(for: product)
+        logger.info(
+            "SPC request started kind=geojson product=\(product.description, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) endpoint=\(url.path, privacy: .public)"
+        )
         return try await fetchSpcData(for: url, headers: HTTPRequestHeaders.spcGeoJSON())
     }
     
@@ -76,8 +78,10 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: product to obtain data for
     /// - Returns: the Data
     func fetchRssData(for product: RssProduct) async throws -> Data {
-        logger.info("Fetching data for \(String(describing: product), privacy: .public)")
         let url = try getRssUrl(for: product)
+        logger.info(
+            "SPC request started kind=rss product=\(product.description, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) endpoint=\(url.path, privacy: .public)"
+        )
         return try await fetchSpcData(for: url, headers: HTTPRequestHeaders.spcRss())
     }
     
@@ -114,6 +118,9 @@ struct SpcHttpClient: SpcClient {
             throw SpcError.missingData
         }
 
+        logger.info(
+            "SPC request completed endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
+        )
         return data
     }
 

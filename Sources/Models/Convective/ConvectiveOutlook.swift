@@ -49,3 +49,19 @@ final class ConvectiveOutlook {
         
     }
 }
+
+extension ConvectiveOutlook {
+    var dto: ConvectiveOutlookDTO {
+        ConvectiveOutlookDTO(
+            title: title,
+            link: link,
+            published: published,
+            summary: summary,
+            fullText: fullText ?? "Full text not yet parsed",
+            day: day,
+            riskLevel: riskLevel,
+            issued: issued,
+            validUntil: validUntil
+        )
+    }
+}

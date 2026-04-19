@@ -10,6 +10,7 @@ import MapKit
 import OSLog
 
 struct MapScreenView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dependencies) private var deps
     @Environment(LocationSession.self) private var locationSession
     private let logger = Logger.uiMap
@@ -18,7 +19,7 @@ struct MapScreenView: View {
     // MARK: Local handles
     private var svc: any SpcMapData { deps.spcMapData }
     
-    @State private var selected: MapLayer = .categorical
+    @Binding private var selected: MapLayer
     @State private var showLayerPicker = false
     
     @State private var mesos: [MdDTO] = []
@@ -31,6 +32,14 @@ struct MapScreenView: View {
     @State private var cachedDisplayStates: [MapLayer: MapDisplayState] = [:]
     @State private var mapRebuildTask: Task<Void, Never>?
     @Namespace private var layerNamespace
+
+    init(selectedLayer: Binding<MapLayer> = .constant(.categorical)) {
+        _selected = selectedLayer
+    }
+
+    private var legendAllowsInteraction: Bool {
+        (selectedSevereRisks ?? []).contains { $0.intensityLevel != nil }
+    }
     
     var body: some View {
         ZStack {
@@ -54,6 +63,7 @@ struct MapScreenView: View {
                             Text(selected.title)
                                 .font(.subheadline.weight(.semibold))
                                 .lineLimit(1)
+                                .contentTransition(.opacity)
                             Image(systemName: "chevron.down")
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(.secondary)
@@ -66,7 +76,8 @@ struct MapScreenView: View {
                     .accessibilityLabel("Map layers")
                     .accessibilityValue(selected.title)
                     .scaleEffect(showLayerPicker ? 0.98 : 1)
-                    .animation(.snappy(duration: 0.20), value: showLayerPicker)
+                    .animation(SkyAwareMotion.press(reduceMotion), value: showLayerPicker)
+                    .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
                     .modifier(MapLayerPickerButtonStyle())
                     .modifier(MapLayerButtonMorph(namespace: layerNamespace))
                 }
@@ -84,11 +95,11 @@ struct MapScreenView: View {
                     MapLegend(layer: selected, severeRisks: selectedSevereRisks, fireRisks: fireRisk)
                 }
                 .transition(.opacity)
-                .animation(.default, value: selected)
+                .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
                 .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .allowsHitTesting(false)
+            .allowsHitTesting(legendAllowsInteraction)
         }
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(selection: $selected,

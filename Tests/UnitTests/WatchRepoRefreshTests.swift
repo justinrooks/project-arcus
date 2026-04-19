@@ -9,6 +9,10 @@ private struct StubArcusClient: ArcusClient {
     func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data {
         payload
     }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        payload
+    }
 }
 
 @Suite("WatchRepo refresh()")
@@ -73,5 +77,48 @@ struct WatchRepoRefreshTests {
         )
 
         #expect(hits.isEmpty)
+    }
+
+    @Test("targeted refresh decodes a single alert payload and stores its revision timestamp")
+    func targetedRefresh_decodesSinglePayload() async throws {
+        let json = """
+        {
+          "id": "123e4567-e89b-12d3-a456-426614174001",
+          "event": "Tornado Watch",
+          "currentRevisionUrn": "urn:alert:targeted",
+          "currentRevisionSent": "2026-03-24T12:15:00Z",
+          "messageType": "Alert",
+          "state": "Active",
+          "created": "2026-03-24T12:00:00Z",
+          "updated": "2026-03-24T12:15:00Z",
+          "lastSeenActive": "2026-03-24T12:15:00Z",
+          "sent": "2026-03-24T12:15:00Z",
+          "effective": "2026-03-24T12:15:00Z",
+          "onset": "2026-03-24T12:15:00Z",
+          "expires": "2026-03-24T13:15:00Z",
+          "ends": "2026-03-24T13:15:00Z",
+          "severity": "Extreme",
+          "urgency": "Immediate",
+          "certainty": "Observed",
+          "areaDesc": "Denver Metro",
+          "senderName": "NWS Test",
+          "headline": "Test headline",
+          "description": "Test description",
+          "instructions": "Test instructions",
+          "response": "Monitor",
+          "ugc": ["COC031"],
+          "h3Cells": [613725958748241919]
+        }
+        """
+
+        try await repo.refreshAlert(
+            using: StubArcusClient(payload: Data(json.utf8)),
+            id: "123e4567-e89b-12d3-a456-426614174001",
+            revisionSent: Date(timeIntervalSince1970: 1_711_282_900)
+        )
+
+        let watch = try #require(await repo.watch(id: "123e4567-e89b-12d3-a456-426614174001"))
+        #expect(watch.messageId == "urn:alert:targeted")
+        #expect(watch.currentRevisionSent == ISO8601DateFormatter().date(from: "2026-03-24T12:15:00Z"))
     }
 }

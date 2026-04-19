@@ -10,12 +10,18 @@ import SwiftUI
 struct OutlookSummaryCard: View {
     let outlook: ConvectiveOutlookDTO?
     let isLoading: Bool
+    let onBrowseAllOutlooks: (() -> Void)?
     
     @State private var navigateToFull = false
 
-    init(outlook: ConvectiveOutlookDTO?, isLoading: Bool = false) {
+    init(
+        outlook: ConvectiveOutlookDTO?,
+        isLoading: Bool = false,
+        onBrowseAllOutlooks: (() -> Void)? = nil
+    ) {
         self.outlook = outlook
         self.isLoading = isLoading
+        self.onBrowseAllOutlooks = onBrowseAllOutlooks
     }
 
     private var summaryText: String {
@@ -24,8 +30,37 @@ struct OutlookSummaryCard: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Outlook Summary", systemImage: "sun.max.fill")
-                .sectionLabel()
+            HStack(alignment: .center, spacing: 12) {
+                Label("Outlook Summary", systemImage: "sun.max.fill")
+                    .sectionLabel()
+
+                Spacer(minLength: 12)
+
+                if let onBrowseAllOutlooks {
+                    Button {
+                        onBrowseAllOutlooks()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text("All Outlooks")
+                            Image(systemName: "arrow.right")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                    }
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.chipCompact,
+                            pressedScale: 0.985,
+                            pressedOverlayOpacity: 0.08
+                        )
+                    )
+                    .accessibilityHint("Opens the full outlook list.")
+                }
+            }
 
             Text(summaryText)
                 .font(.body)

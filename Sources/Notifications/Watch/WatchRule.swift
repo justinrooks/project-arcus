@@ -8,6 +8,7 @@
 import Foundation
 import OSLog
 
+@available(*, deprecated, message: "Remove References")
 struct WatchRule: WatchNotificationRuleEvaluating {
     private let logger = Logger.notificationsWatchRule
 

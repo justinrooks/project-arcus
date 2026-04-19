@@ -61,6 +61,8 @@ actor LocationContextResolver: LocationContextResolving {
     typealias AuthorizationRequester = @Sendable (Bool) async -> Void
     typealias CurrentLocationRefresher = @Sendable (Double) async -> Bool
 
+    private static let freshLocationReuseMaxAge: TimeInterval = 15
+
     private let locationClient: LocationClient
     private let locationProvider: LocationProvider
     private let gridPointProvider: GridPointProvider
@@ -96,6 +98,9 @@ actor LocationContextResolver: LocationContextResolving {
         maximumAcceptedLocationAge: TimeInterval = 5 * 60,
         placemarkTimeout: Double = 8
     ) async throws -> LocationContext {
+        logger.info(
+            "Preparing current location context requiresFreshLocation=\(requiresFreshLocation, privacy: .public) promptAuthorization=\(showsAuthorizationPrompt, privacy: .public)"
+        )
         var authorizationStatus = await authorizationStatusProvider()
 
         if showsAuthorizationPrompt && authorizationStatus == .notDetermined {
@@ -107,6 +112,20 @@ actor LocationContextResolver: LocationContextResolving {
             throw LocationContextError.locationUnavailable
         }
 
+        if requiresFreshLocation,
+           let currentSnapshot = await locationClient.snapshot(),
+           Self.isAccepted(
+               snapshot: currentSnapshot,
+               maximumAge: min(maximumAcceptedLocationAge, Self.freshLocationReuseMaxAge)
+           ) {
+            logger.debug("Using recent live location snapshot for context resolution")
+            return try await resolveContext(
+                from: currentSnapshot,
+                maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+                placemarkTimeout: placemarkTimeout
+            )
+        }
+
         let didRefreshCurrentLocation = requiresFreshLocation
             ? await refreshCurrentLocation(locationTimeout)
             : false
@@ -114,6 +133,7 @@ actor LocationContextResolver: LocationContextResolving {
         if didRefreshCurrentLocation,
            let refreshedSnapshot = await locationClient.snapshot(),
            Self.isAccepted(snapshot: refreshedSnapshot, maximumAge: maximumAcceptedLocationAge) {
+            logger.debug("Using freshly requested location snapshot for context resolution")
             return try await resolveContext(
                 from: refreshedSnapshot,
                 maximumAcceptedLocationAge: maximumAcceptedLocationAge,
@@ -123,6 +143,7 @@ actor LocationContextResolver: LocationContextResolving {
 
         if let cachedSnapshot = await locationClient.snapshot(),
            Self.isAccepted(snapshot: cachedSnapshot, maximumAge: maximumAcceptedLocationAge) {
+            logger.debug("Using cached location snapshot for context resolution")
             return try await resolveContext(
                 from: cachedSnapshot,
                 maximumAcceptedLocationAge: maximumAcceptedLocationAge,
@@ -131,6 +152,7 @@ actor LocationContextResolver: LocationContextResolving {
         }
 
         let stream = await locationClient.updates()
+        logger.debug("Waiting for streamed location snapshot to resolve context")
         let snapshot: LocationSnapshot?
         do {
             snapshot = try await withTimeout(timeout: locationTimeout) {
@@ -187,6 +209,9 @@ actor LocationContextResolver: LocationContextResolving {
 
         let context = LocationContext(snapshot: enrichedSnapshot, h3Cell: h3Cell, grid: grid)
         await contextPusher.enqueue(context)
+        logger.info(
+            "Location context resolved hasPlacemark=\((enrichedSnapshot.placemarkSummary != nil), privacy: .public) hasCounty=\((grid.countyCode?.isEmpty == false), privacy: .public) hasFireZone=\((grid.fireZone?.isEmpty == false), privacy: .public)"
+        )
         return context
     }
 

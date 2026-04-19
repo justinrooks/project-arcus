@@ -37,7 +37,6 @@ struct NwsHttpClient: NwsClient {
     
     func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data {
         let (lat, lon) = truncatedCoordinates(for: location)
-        logger.info("NWS request started endpoint=/alerts/active lat=\(lat, privacy: .private(mask: .hash)) lon=\(lon, privacy: .private(mask: .hash))")
         let point = "\(lat),\(lon)"
         let url = try makeNwsUrl(
             path: "/alerts/active",
@@ -46,6 +45,9 @@ struct NwsHttpClient: NwsClient {
                 URLQueryItem(name: "message_type", value: "alert,update"),
                 URLQueryItem(name: "point", value: point)
             ]
+        )
+        logger.info(
+            "NWS request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=active-alerts"
         )
         
         return try await fetch(from: url)
@@ -56,14 +58,19 @@ struct NwsHttpClient: NwsClient {
             case .county: try makeNwsUrl(path: "/zones/county/\(zone)")
             case .fire: try makeNwsUrl(path: "/zones/fire/\(zone)")
         }
+        logger.info(
+            "NWS request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=zone-metadata"
+        )
         
         return try await fetch(from: url)
     }
     
     func fetchPointMetadata(for location: Coordinate2D) async throws -> Data {
         let (lat, lon) = truncatedCoordinates(for: location)
-        logger.info("NWS request started endpoint=/points lat=\(lat, privacy: .private(mask: .hash)) lon=\(lon, privacy: .private(mask: .hash))")
         let url = try makeNwsUrl(path: "/points/\(lat),\(lon)")
+        logger.info(
+            "NWS request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) request=point-metadata"
+        )
         
         return try await fetch(from: url)
     }
@@ -113,7 +120,10 @@ struct NwsHttpClient: NwsClient {
             logger.error("NWS response missing body endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public)")
             throw NwsError.missingData
         }
-        
+
+        logger.info(
+            "NWS request completed endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
+        )
         return data
     }
 

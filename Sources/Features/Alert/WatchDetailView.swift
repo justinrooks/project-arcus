@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct WatchDetailView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let watch: WatchRowDTO
     let layout: DetailLayout
     let isExpanded: Bool
@@ -150,7 +152,7 @@ struct WatchDetailView: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.24, extraBounce: 0), value: isExpanded)
+        .animation(SkyAwareMotion.disclosure(reduceMotion), value: isExpanded)
     }
 
     @ViewBuilder
@@ -207,7 +209,7 @@ struct WatchDetailView: View {
     NavigationStack {
         ScrollView {
             WatchDetailView(watch: Watch.sampleWatchRows.last!, layout: .full)
-                .navigationTitle("Weather Watch")
+                .navigationTitle("Weather Alert")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)
@@ -220,7 +222,7 @@ struct WatchDetailView: View {
     NavigationStack {
         ScrollView {
             WatchDetailView(watch: Watch.sampleWatchRows[3], layout: .full)
-                .navigationTitle("Weather Watch")
+                .navigationTitle("Weather Alert")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)

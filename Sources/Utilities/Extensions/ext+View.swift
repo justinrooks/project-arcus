@@ -7,6 +7,48 @@
 
 import SwiftUI
 
+private struct PlaceholderModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .redacted(reason: isActive ? .placeholder : [])
+            .opacity(isActive ? SkyAwareMotion.placeholderOpacity : 1)
+            .animation(SkyAwareMotion.settle(reduceMotion), value: isActive)
+    }
+}
+
+struct SkyAwarePressableButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let cornerRadius: CGFloat
+    let pressedScale: CGFloat
+    let pressedOverlayOpacity: Double
+
+    init(
+        cornerRadius: CGFloat = SkyAwareRadius.medium,
+        pressedScale: CGFloat = 0.985,
+        pressedOverlayOpacity: Double = 0.08
+    ) {
+        self.cornerRadius = cornerRadius
+        self.pressedScale = pressedScale
+        self.pressedOverlayOpacity = pressedOverlayOpacity
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? pressedScale : 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(.white.opacity(configuration.isPressed ? pressedOverlayOpacity : 0))
+                    .allowsHitTesting(false)
+            }
+            .animation(SkyAwareMotion.press(reduceMotion), value: configuration.isPressed)
+    }
+}
+
 extension View {
     @ViewBuilder
     func sectionLabel() -> some View {
@@ -110,10 +152,7 @@ extension View {
     /// - Parameter isActive: boolean evaluating to true/false. True redacts content, false displays it
     /// - Returns: a redaction configuration to apply to the view
     func placeholder(_ isActive: Bool) -> some View {
-        self
-            .redacted(reason: isActive ? .placeholder : [])
-            .opacity(isActive ? 0.8 : 1)
-            .animation(.snappy, value: isActive)
+        modifier(PlaceholderModifier(isActive: isActive))
     }
     
     @ViewBuilder

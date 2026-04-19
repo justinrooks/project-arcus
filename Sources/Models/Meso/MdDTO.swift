@@ -8,8 +8,8 @@
 import Foundation
 
 // DTO for transfering across actor boundaries
-struct MdDTO: Sendable, Identifiable, Hashable, AlertItem {
-    let alertType: AlertType = .mesoscale
+struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
+    var alertType: AlertType { .mesoscale }
     
     let id: UUID                // usually the GUID or derived from it
     let number: Int             // the MD number 1895
@@ -21,7 +21,7 @@ struct MdDTO: Sendable, Identifiable, Hashable, AlertItem {
     let areasAffected: String   // locations affected by the meso
     let summary: String         // description / CDATA
     let concerning: String?     // e.g. "Severe potential... Watch unlikely"
-    let severeRiskTags: String? = nil
+    var severeRiskTags: String? { nil }
     let watchProbability: Double
     let threats: MDThreats?
     let coordinates: [Coordinate2D]

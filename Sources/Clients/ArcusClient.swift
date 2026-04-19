@@ -10,20 +10,24 @@ import OSLog
 
 protocol ArcusClient: Sendable {
     func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data
 }
 
 struct ArcusHttpClient: ArcusClient {
     private let http: HTTPClient
     private let baseURL: URL
+    private let reachabilityReporter: any ArcusSignalReachabilityReporting
     private let logger = Logger.providersArcusClient
     // https://skyaware.bennettbunker.com/api/v1/alerts?ugc=COZ245&fire=AKZ326&h3=613725958748241919
     
     init(
         baseURL: URL = ArcusSignalConfiguration.defaultBaseURL,
-        http: HTTPClient = URLSessionHTTPClient()
+        http: HTTPClient = URLSessionHTTPClient(),
+        reachabilityReporter: any ArcusSignalReachabilityReporting = NoOpArcusSignalReachabilityReporter()
     ) {
         self.baseURL = baseURL
         self.http = http
+        self.reachabilityReporter = reachabilityReporter
     }
     
     func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data {
@@ -31,7 +35,6 @@ struct ArcusHttpClient: ArcusClient {
             logger.error("Missing required h3 cell address")
             throw ArcusError.missingH3Cell
         }
-        logger.info("Arcus request started endpoint=/alerts ugc=\(ugc, privacy: .private(mask: .hash)) fire=\(fire, privacy: .private(mask: .hash)) h3Cell=\(cell, privacy: .private(mask: .hash))")
         let url = try makeUrl(
             path: ArcusSignalConfiguration.alertsPath,
             queryItems: [
@@ -40,7 +43,32 @@ struct ArcusHttpClient: ArcusClient {
                 URLQueryItem(name: "h3", value: "\(cell)")
             ]
         )
+        logger.info(
+            "Arcus request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) queryScope=location-context"
+        )
         
+        return try await fetch(from: url)
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        var queryItems = [URLQueryItem(name: "id", value: id)]
+        if let revisionSent {
+            queryItems.append(
+                URLQueryItem(
+                    name: "sent",
+                    value: revisionSent.ISO8601Format()
+                )
+            )
+        }
+
+        let url = try makeUrl(
+            path: ArcusSignalConfiguration.alertsPath,
+            queryItems: queryItems
+        )
+        logger.info(
+            "Arcus request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) queryScope=targeted-alert"
+        )
+
         return try await fetch(from: url)
     }
     
@@ -49,41 +77,52 @@ struct ArcusHttpClient: ArcusClient {
     }
     
     private func fetch(from url: URL) async throws -> Data {
-        try Task.checkCancellation()
+        do {
+            try Task.checkCancellation()
 
-        let resp = try await http.get(url, headers: requestHeaders)
-        try Task.checkCancellation()
+            let resp = try await http.get(url, headers: requestHeaders)
+            try Task.checkCancellation()
 
-        if resp.source != .live {
-            logger.notice("Arcus response served from \(resp.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
-        }
+            if resp.source != .live {
+                logger.notice("Arcus response served from \(resp.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
+            }
 
-        switch resp.classifyStatus() {
-        case .success:
-            break
-        case .notModified:
-            // Downloader already rehydrates cached body for 304 when available.
-            break
-        case .rateLimited(let retryAfter):
-            let error = ArcusError.rateLimited(retryAfterSeconds: retryAfter)
-            logFailure(error: error, endpoint: url.path, status: resp.status)
-            throw error
-        case .serviceUnavailable(let retryAfter):
-            let error = ArcusError.serviceUnavailable(retryAfterSeconds: retryAfter)
-            logFailure(error: error, endpoint: url.path, status: resp.status)
-            throw error
-        case .failure(let status):
-            let error = ArcusError.networkError(status: status)
-            logFailure(error: error, endpoint: url.path, status: status)
+            switch resp.classifyStatus() {
+            case .success, .notModified:
+                guard let data = resp.data else {
+                    logger.error("Arcus response missing body endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public)")
+                    throw ArcusError.missingData
+                }
+
+                if resp.source == .cacheFallback {
+                    await reachabilityReporter.markUnavailable()
+                } else {
+                    await reachabilityReporter.markReachable()
+                }
+
+                logger.info(
+                    "Arcus request completed endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
+                )
+                return data
+            case .rateLimited(let retryAfter):
+                let error = ArcusError.rateLimited(retryAfterSeconds: retryAfter)
+                logFailure(error: error, endpoint: url.path, status: resp.status)
+                throw error
+            case .serviceUnavailable(let retryAfter):
+                let error = ArcusError.serviceUnavailable(retryAfterSeconds: retryAfter)
+                logFailure(error: error, endpoint: url.path, status: resp.status)
+                throw error
+            case .failure(let status):
+                let error = ArcusError.networkError(status: status)
+                logFailure(error: error, endpoint: url.path, status: status)
+                throw error
+            }
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            await reachabilityReporter.markUnavailable()
             throw error
         }
-        
-        guard let data = resp.data else {
-            logger.error("Arcus response missing body endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public)")
-            throw ArcusError.missingData
-        }
-        
-        return data
     }
     
     private func logFailure(error: ArcusError, endpoint: String, status: Int) {
