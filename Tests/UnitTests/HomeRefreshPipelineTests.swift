@@ -290,6 +290,41 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
     }
 
+    @Test("refresh failures preserve the previously resolved location scope key")
+    func refreshFailure_preservesPreviousResolvedLocationScopeKey() async {
+        let originalContext = makeContext(timestamp: 100)
+        let changedContext = makeContext(timestamp: 200)
+        let successSnapshot = HomeSnapshot(
+            locationSnapshot: originalContext.snapshot,
+            refreshKey: originalContext.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .hail(probability: 0.30),
+            fireRisk: .elevated,
+            outlooks: sampleOutlooks(),
+            latestOutlook: sampleOutlooks().first
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(
+            results: [
+                .success(successSnapshot),
+                .failure(TestFailure.failedRead)
+            ]
+        )
+        let locationSession = FakeLocationSession(currentContext: originalContext, preparedContext: originalContext)
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == originalContext.refreshKey)
+
+        locationSession.currentContext = changedContext
+        await pipeline.enqueueRefresh(.contextChanged, environment: environment)
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == originalContext.refreshKey)
+    }
+
     @Test("manual outlook refresh only touches outlook sync and query paths")
     func refreshOutlooksManually_onlyTouchesOutlookPaths() async {
         let coordinator = RecordingHomeIngestionCoordinator()
@@ -441,14 +476,17 @@ struct HomeRefreshPipelineTests {
 
 private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let snapshot: HomeSnapshot
+    private var results: [Result<HomeSnapshot, Error>]
     private let runGate: AsyncGate?
     private var submittedRequests: [HomeIngestionRequest] = []
 
     init(
         snapshot: HomeSnapshot = .empty,
+        results: [Result<HomeSnapshot, Error>] = [],
         runGate: AsyncGate? = nil
     ) {
         self.snapshot = snapshot
+        self.results = results
         self.runGate = runGate
     }
 
@@ -487,6 +525,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         submittedRequests.append(request)
         if let runGate {
             await runGate.wait()
+        }
+        if results.isEmpty == false {
+            let result = results.removeFirst()
+            return try result.get()
         }
         return snapshot
     }

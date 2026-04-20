@@ -248,6 +248,7 @@ final class HomeRefreshPipeline {
         environment: Environment
     ) async {
         let startedAt = Date()
+        let previousResolvedRefreshKey = lastResolvedLocationScopedRefreshKey
         do {
             let snapshot = try await environment.coordinator.enqueueAndWait(
                 makeRequest(for: trigger, using: environment.locationSession)
@@ -258,6 +259,7 @@ final class HomeRefreshPipeline {
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
             )
         } catch {
+            lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.error(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
