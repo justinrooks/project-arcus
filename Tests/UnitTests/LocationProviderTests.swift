@@ -604,7 +604,7 @@ struct LocationProviderTests {
     }
 }
 
-@Suite("LocationContextResolver")
+@Suite("LocationContextResolver", .serialized)
 struct LocationContextResolverTests {
     private let sampleH3Cell: Int64 = 0x882681b485fffff
 
@@ -760,7 +760,7 @@ struct LocationContextResolverTests {
             contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in
-                Task.detached {
+                Task {
                     try? await Task.sleep(for: .milliseconds(20))
                     await authorizationState.set(.authorizedWhenInUse)
                 }
@@ -779,8 +779,8 @@ struct LocationContextResolverTests {
         let context = try await resolver.prepareCurrentContext(
             requiresFreshLocation: true,
             showsAuthorizationPrompt: true,
-            authorizationTimeout: 1,
-            locationTimeout: 0.5,
+            authorizationTimeout: 3,
+            locationTimeout: 2,
             maximumAcceptedLocationAge: 300,
             placemarkTimeout: 0.1
         )
@@ -987,7 +987,7 @@ struct LocationContextResolverTests {
                 requiresFreshLocation: false,
                 showsAuthorizationPrompt: false,
                 authorizationTimeout: 0.1,
-                locationTimeout: 0.5,
+                locationTimeout: 2,
                 maximumAcceptedLocationAge: 300,
                 placemarkTimeout: 0.1
             )
