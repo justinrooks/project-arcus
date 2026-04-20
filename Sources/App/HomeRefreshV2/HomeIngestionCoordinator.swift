@@ -196,6 +196,11 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         guard requestedPlan.remoteAlertContext != nil else {
             return true
         }
+
+        guard activePlan?.remoteAlertContext != nil else {
+            return false
+        }
+
         return activeRunCanAbsorbRemoteHotAlert
     }
 

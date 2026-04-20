@@ -164,8 +164,8 @@ struct HomeIngestionCoordinatorTests {
         }
     }
 
-    @Test("remote hot-alert requests can wait on an already-sufficient active plan")
-    func remoteHotAlert_attachesToSufficientActiveRun() async throws {
+    @Test("remote hot-alert requests queue follow-up when active run is not remote-aware")
+    func remoteHotAlert_queuesFollowUpWhenActiveRunLacksRemoteContext() async throws {
         let gate = AsyncGate()
         let snapshot = HomeSnapshot(weather: makeWeather())
         let executor = FakeHomeIngestionExecutor(
@@ -195,9 +195,17 @@ struct HomeIngestionCoordinatorTests {
 
         await gate.open()
 
+        let secondStarted = await waitUntil {
+            await executor.startedPlanCount() == 2
+        }
+        #expect(secondStarted)
+
         let resolvedSnapshot = try await remoteWaitTask.value
         #expect(resolvedSnapshot == snapshot)
-        #expect(await executor.startedPlanCount() == 1)
+
+        let plans = await executor.executedPlans()
+        #expect(plans.count == 2)
+        #expect(plans[1].remoteAlertContext?.alertID == "alert-456")
     }
 
     @Test("remote hot-alert requests queue a follow-up once the active run has passed hot-alert sync")
