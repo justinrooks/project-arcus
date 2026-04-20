@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## v0.1.0(42)
+
+### Background & Notifications
+- Route foreground, background, and remote-alert refresh triggers through a shared Home ingestion flow so cached Home data, location-based updates, and alert-driven refreshes stay in sync.
+<!-- evidence: d841412, 55af4bd, e4f7a6d, 245c01b, 49a0ca4, e5e8bdb, a30739b, 59b7c71, 54e542e -->
+- Refresh local alert data when a remote hot-alert notification is received or opened, and focus the relevant alert after opening the notification.
+<!-- evidence: 245c01b, 59b7c71, 54e542e -->
+
+### Data & Repos
+- Persist location-scoped Home projections in SwiftData and restore the Home experience from cached local weather, risks, alerts, and outlook data while fresh loads complete.
+<!-- evidence: c8461ad, 11d7db5 -->
+
+### UI / UX
+- Show an offline token on Home with an explanation popover, and add ingestion diagnostics in Settings with projection context plus lane-by-lane load timestamps.
+<!-- evidence: bffc873, 53d0024, e76160b -->
+- Let Home summary cards jump directly to relevant map layers, Alerts, and Outlooks, and make the summary header condense into a tighter compact state while you scroll.
+<!-- evidence: 48e8525, e76160b -->
+- Refresh Alerts and Outlook surfaces with clearer overview cards, better ordering, updated "Weather Alert" wording, broader warning-title styling, and reduce-motion-aware interaction polish across loading, summary, alerts, and map views.
+<!-- evidence: 5652410, 48e8525, e76160b, 9718bc6, 21936aa -->
+
+### Tests / QA
+- Expand regression coverage for home-ingestion coordination, cached Home projection persistence, remote hot-alert handling, ingestion diagnostics, location refresh edge cases, and Xcode Cloud timing-sensitive pipeline tests.
+<!-- evidence: 21936aa, 1b27db0, 2698085, 36c7811, d841412, 11d7db5, 245c01b, 53d0024, a30739b, 59b7c71, 54e542e -->
+
+### Maintenance / Cleanup
+- Deprecate local watch-engine plumbing and add FB-010 architecture, runbook, and progress docs for the unified ingestion rollout.
+<!-- evidence: 294cdbb, c8461ad, d841412, 11d7db5, 55af4bd, e4f7a6d, 245c01b, 53d0024 -->
+
 ## v0.1.0(38)
 
 ### UI / UX

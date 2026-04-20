@@ -1,3 +1,13 @@
+SkyAware v0.1.0(42) unifies Home ingestion across foreground, background, and remote alert triggers, restores Home from cached projections while fresh data loads, and adds new diagnostics plus summary/alert polish.
+
+Highlights:
+- Home now restores from cached local weather, risk, alert, and outlook data while fresh loading completes
+- Foreground, background, and remote hot-alert refreshes now share one ingestion flow for more consistent local updates
+- Opening a remote hot-alert notification now refreshes local alert data and focuses the relevant alert in-app
+- Home now shows an offline token with more context, and Settings adds ingestion diagnostics with projection details and per-lane load timestamps
+- Home summary cards can jump directly to related map layers, Alerts, and Outlooks, with a more compact scrolling summary header
+- Alerts and Outlooks now have clearer overview cards, improved ordering, updated "Weather Alert" wording, and broader motion/interaction polish
+
 SkyAware v0.1.0(38) surfaces richer severe-weather context in supported alert views, makes active alert summaries more compact by default, and clarifies onboarding/privacy messaging around best-effort alerts and location-derived notification targeting.
 
 Highlights:
