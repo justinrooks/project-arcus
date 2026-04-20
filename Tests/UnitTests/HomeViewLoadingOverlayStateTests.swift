@@ -17,11 +17,12 @@ struct HomeViewRefreshTriggerTests {
         )
     }
 
-    @Test("scene active absorbs context changed follow-up work")
-    func sceneActive_absorbsContextChanged() {
-        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.contextChanged))
-        #expect(HomeView.RefreshTrigger.sceneActive.absorbs(.timer))
-        #expect(HomeView.RefreshTrigger.manual.absorbs(.sceneActive))
+    @Test("foreground refresh triggers map to the unified ingestion triggers")
+    func refreshTrigger_mapsToUnifiedIngestionTrigger() {
+        #expect(HomeView.RefreshTrigger.sceneActive.ingestionTrigger == .foregroundActivate)
+        #expect(HomeView.RefreshTrigger.manual.ingestionTrigger == .manualRefresh)
+        #expect(HomeView.RefreshTrigger.contextChanged.ingestionTrigger == .foregroundLocationChange)
+        #expect(HomeView.RefreshTrigger.timer.ingestionTrigger == .sessionTick)
     }
 
     @Test("duplicate activation refresh is skipped for the same snapshot")
@@ -135,6 +136,181 @@ struct HomeViewRefreshTriggerTests {
                 severeRisk: nil,
                 fireRisk: nil
             ) == .locationUnavailable
+        )
+    }
+}
+
+@Suite("HomeView Projection Launch")
+@MainActor
+struct HomeViewProjectionLaunchTests {
+    @Test("cached launch prefers the projection for the current resolved context")
+    func cachedLaunch_prefersCurrentContextProjection() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let matching = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newerFallback = makeProjectionRecord(
+            context: makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200"),
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let selected = HomeView.selectProjection(
+            from: [newerFallback, matching],
+            currentContext: currentContext
+        )
+
+        #expect(selected == matching)
+    }
+
+    @Test("launch falls back to the newest cached projection while context is still resolving")
+    func cachedLaunch_fallsBackToLatestProjectionWhileContextUnavailable() {
+        let older = makeProjectionRecord(
+            context: makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214"),
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = makeProjectionRecord(
+            context: makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200"),
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let selected = HomeView.selectProjection(
+            from: [older, newer],
+            currentContext: nil
+        )
+
+        #expect(selected == newer)
+    }
+
+    @Test("bootstrap loading stays visible until a cached projection exists")
+    func bootstrapLoading_requiresCachedProjection() {
+        #expect(
+            HomeView.showsBootstrapLoading(
+                readinessState: .loadingLocalData,
+                resolutionState: SummaryResolutionState(),
+                hasProjection: false
+            )
+        )
+        #expect(
+            HomeView.showsBootstrapLoading(
+                readinessState: .loadingLocalData,
+                resolutionState: SummaryResolutionState(),
+                hasProjection: true
+            ) == false
+        )
+        #expect(
+            HomeView.showsBootstrapLoading(
+                readinessState: .locationUnavailable,
+                resolutionState: SummaryResolutionState(),
+                hasProjection: false
+            ) == false
+        )
+    }
+
+    private func makeContext(
+        h3Cell: Int64,
+        countyCode: String,
+        fireZone: String
+    ) -> LocationContext {
+        let snapshot = LocationSnapshot(
+            coordinates: .init(latitude: 39.75, longitude: -104.44),
+            timestamp: Date(timeIntervalSince1970: 100),
+            accuracy: 25,
+            placemarkSummary: "Bennett, CO",
+            h3Cell: h3Cell
+        )
+        let grid = GridPointSnapshot(
+            nwsId: "BOU/10,20",
+            latitude: 39.75,
+            longitude: -104.44,
+            gridId: "BOU",
+            gridX: 10,
+            gridY: 20,
+            forecastURL: nil,
+            forecastHourlyURL: nil,
+            forecastGridDataURL: nil,
+            observationStationsURL: nil,
+            city: "Bennett",
+            state: "CO",
+            timeZoneId: "America/Denver",
+            radarStationId: nil,
+            forecastZone: "COZ038",
+            countyCode: countyCode,
+            fireZone: fireZone,
+            countyLabel: "Arapahoe",
+            fireZoneLabel: "Front Range"
+        )
+        return LocationContext(snapshot: snapshot, h3Cell: h3Cell, grid: grid)
+    }
+
+    private func makeProjectionRecord(
+        context: LocationContext,
+        updatedAt: Date
+    ) -> HomeProjectionRecord {
+        HomeProjectionRecord(
+            id: UUID(),
+            projectionKey: HomeProjection.projectionKey(for: context),
+            latitude: context.snapshot.coordinates.latitude,
+            longitude: context.snapshot.coordinates.longitude,
+            h3Cell: context.h3Cell,
+            countyCode: context.grid.countyCode ?? "",
+            forecastZone: context.grid.forecastZone,
+            fireZone: context.grid.fireZone ?? "",
+            placemarkSummary: context.snapshot.placemarkSummary,
+            timeZoneId: context.grid.timeZoneId,
+            locationTimestamp: context.snapshot.timestamp,
+            createdAt: updatedAt,
+            updatedAt: updatedAt,
+            lastViewedAt: updatedAt,
+            weather: nil,
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            activeAlerts: [],
+            activeMesos: [],
+            lastHotAlertsLoadAt: nil,
+            lastSlowProductsLoadAt: nil,
+            lastWeatherLoadAt: nil
+        )
+    }
+}
+
+@Suite("SummaryView Local Alerts")
+@MainActor
+struct SummaryViewLocalAlertsTests {
+    @Test("shows empty state when no local alerts are available after context resolution")
+    func localAlertsPresentationState_showsEmptyStateWithoutAlerts() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .loadingLocalData,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .ready,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+    }
+
+    @Test("keeps placeholder only while location context is still loading")
+    func localAlertsPresentationState_limitsPlaceholderToLocationResolution() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .loadingLocation,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .loading
+        )
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .resolvingLocalContext,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .loading
         )
     }
 }

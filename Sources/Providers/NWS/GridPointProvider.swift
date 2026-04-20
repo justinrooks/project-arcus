@@ -22,6 +22,7 @@ actor GridPointProvider {
     }
     
     func resolveGridPoint(for point: CLLocationCoordinate2D) async -> GridPointSnapshot?{
+        logger.info("Resolving NWS grid point metadata")
         do {
             let coordinates:Coordinate2D = .init(latitude: point.latitude, longitude: point.longitude)
             let decoded = try await metadataRepo.getPointMetadata(using: client, for: coordinates)
@@ -49,7 +50,10 @@ actor GridPointProvider {
                 countyLabel: countyLabel,
                 fireZoneLabel: fireZoneLabel
             )
-            
+
+            logger.info(
+                "Resolved NWS grid point metadata hasCounty=\((snapshot.countyCode?.isEmpty == false), privacy: .public) hasFireZone=\((snapshot.fireZone?.isEmpty == false), privacy: .public)"
+            )
             return snapshot
         } catch {
             logger.error("Failed to fetch gridpoint metadata: \(error, privacy: .public)")

@@ -22,10 +22,11 @@ extension WatchRowDTO: AlertItem {
     }
 }
 
-struct WatchRowDTO: Identifiable, Sendable, Hashable {
+struct WatchRowDTO: Identifiable, Sendable, Hashable, Codable {
     // Identity
     let id: String              // nwsId
     let messageId: String?
+    var currentRevisionSent: Date? = nil
     
     // Primary display
     let title: String           // "Tornado Watch"
@@ -127,6 +128,7 @@ extension WatchRowDTO {
     init(from watch: Watch) {
         self.id = watch.nwsId
         self.messageId = watch.messageId
+        self.currentRevisionSent = watch.currentRevisionSent
         self.title = watch.event
         self.headline = watch.headline
         self.issued = watch.sent

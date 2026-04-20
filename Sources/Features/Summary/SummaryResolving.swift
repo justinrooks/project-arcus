@@ -18,6 +18,18 @@ enum SummarySection: Hashable {
     case outlook
 }
 
+extension SummarySection {
+    static let resolveForwardSections: [SummarySection] = [
+        .conditions,
+        .stormRisk,
+        .severeRisk,
+        .fireRisk,
+        .atmosphere,
+        .alerts,
+        .outlook,
+    ]
+}
+
 enum SummaryProviderTask: Hashable {
     case location
     case weather
@@ -127,13 +139,15 @@ struct SummaryResolutionState: Equatable {
 }
 
 private struct SummaryResolvingModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let isResolving: Bool
 
     func body(content: Content) -> some View {
         content
-            .blur(radius: isResolving ? 2.5 : 0)
-            .opacity(isResolving ? 0.86 : 1)
-            .animation(.easeInOut(duration: 0.32), value: isResolving)
+            .blur(radius: isResolving ? SkyAwareMotion.resolvingBlur : 0)
+            .opacity(isResolving ? SkyAwareMotion.resolvingOpacity : 1)
+            .animation(SkyAwareMotion.resolve(reduceMotion), value: isResolving)
     }
 }
 

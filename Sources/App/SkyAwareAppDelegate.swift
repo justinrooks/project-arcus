@@ -12,6 +12,11 @@ import UserNotifications
 @MainActor
 final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
     private let logger = Logger.notificationsRemote
+    private static var remoteHotAlertHandler: RemoteHotAlertHandler?
+
+    static func install(remoteHotAlertHandler: RemoteHotAlertHandler) {
+        self.remoteHotAlertHandler = remoteHotAlertHandler
+    }
 
     func application(
         _ application: UIApplication,
@@ -37,38 +42,25 @@ final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
     }
     
     func application(
-            _ application: UIApplication,
-            didReceiveRemoteNotification userInfo: [AnyHashable: Any],
-            fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
-        ) {
-            Task {
-                do {
-                    // Parse your app-specific payload.
-                    guard
-                        let eventKey = userInfo["eventKey"] as? String,
-                        let revision = userInfo["revision"] as? Int
-                    else {
-                        completionHandler(.noData)
-                        return
-                    }
-
-                    // Call the same refresh/sync pipeline you would use elsewhere.
-                    let didUpdate = try await refreshEventState(eventKey: eventKey, revision: revision)
-
-                    completionHandler(didUpdate ? .newData : .noData)
-                } catch {
-                    completionHandler(.failed)
-                }
-            }
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        guard let handler = Self.remoteHotAlertHandler else {
+            logger.notice("Remote hot-alert handler unavailable for APNs receipt")
+            completionHandler(.noData)
+            return
         }
-    
-    private func refreshEventState(eventKey: String, revision: Int) async throws -> Bool {
-        // Example:
-        // 1. Fetch canonical/latest event details from your backend or source URL
-        // 2. Update local persistence
-        // 3. Return true if local state changed
-        logger.notice("Refresh triggered from Arcus-Signal")
-        return true
+
+        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
+            logger.notice("Ignoring remote notification without a supported hot-alert payload")
+            completionHandler(.noData)
+            return
+        }
+
+        Task {
+            completionHandler(await handler.handleRemoteNotification(remoteAlertContext))
+        }
     }
 }
 
@@ -79,5 +71,29 @@ extension SkyAwareAppDelegate: @MainActor UNUserNotificationCenterDelegate {
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
         completionHandler([.banner, .list, .sound, .badge])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        guard let handler = Self.remoteHotAlertHandler else {
+            logger.notice("Remote hot-alert handler unavailable for notification open")
+            completionHandler()
+            return
+        }
+
+        let userInfo = response.notification.request.content.userInfo
+        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
+            logger.notice("Ignoring notification open without a supported hot-alert payload")
+            completionHandler()
+            return
+        }
+
+        Task {
+            await handler.handleNotificationOpen(remoteAlertContext)
+            completionHandler()
+        }
     }
 }

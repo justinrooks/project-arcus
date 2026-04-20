@@ -8,11 +8,22 @@
 import Foundation
 import OSLog
 
-public enum HTTPExecutionMode: Sendable {
+public enum HTTPExecutionMode: Sendable, Equatable {
     case foreground
     case background
 
     @TaskLocal public static var current: HTTPExecutionMode = .background
+}
+
+extension HTTPExecutionMode {
+    var logName: String {
+        switch self {
+        case .foreground:
+            return "foreground"
+        case .background:
+            return "background"
+        }
+    }
 }
 
 public struct HTTPRequestPolicy: Sendable {

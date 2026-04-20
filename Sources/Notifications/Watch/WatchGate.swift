@@ -8,6 +8,7 @@
 import Foundation
 import OSLog
 
+@available(*, deprecated, message: "Remove References")
 struct WatchGate: NotificationGating {
     private let logger = Logger.notificationsWatchGate
     private let store: NotificationStateStoring

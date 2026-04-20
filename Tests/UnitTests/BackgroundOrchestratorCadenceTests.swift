@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import SwiftData
 import CoreLocation
+import OSLog
 @testable import SkyAware
 
 @Suite("BackgroundScheduler replacement policy", .serialized)
@@ -123,7 +124,73 @@ struct BackgroundOrchestratorCadenceTests {
 
         #expect(await setup.spc.syncMapProductsCount() == 1)
         #expect(await setup.spc.syncConvectiveOutlooksCount() == 1)
+        #expect(await setup.spc.syncExecutionModes().allSatisfy { $0 == .background })
         #expect((await setup.spc.queriedPoints()).isEmpty)
+    }
+
+    @Test("Background refresh waits for unified ingestion before finishing")
+    func backgroundRefresh_waitsForUnifiedIngestionBeforeFinishing() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
+
+        let gate = AsyncGate()
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .clear
+            ),
+            runGate: gate
+        )
+        let orchestrator = BackgroundOrchestrator(
+            coordinator: coordinator,
+            policy: RefreshPolicy(),
+            engine: MorningEngine(
+                rule: NoopMorningRule(),
+                gate: AllowAllGate(),
+                composer: NoopComposer(),
+                sender: NoopSender()
+            ),
+            mesoEngine: MesoEngine(
+                rule: NoopMesoRule(),
+                gate: AllowAllGate(),
+                composer: NoopComposer(),
+                sender: NoopSender(),
+                spc: FakeSpcProvider(activeMesos: [])
+            ),
+            health: BgHealthStore(modelContainer: container),
+            cadence: CadencePolicy(),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+            )
+        )
+        let completion = CompletionFlag()
+
+        let runTask = Task {
+            _ = await orchestrator.run()
+            await completion.markFinished()
+        }
+
+        let requestStarted = await waitUntil {
+            await coordinator.requestCount() == 1
+        }
+        #expect(requestStarted)
+        #expect(await completion.isFinished() == false)
+
+        let request = try #require(await coordinator.requests().first)
+        #expect(request.trigger == .backgroundRefresh)
+
+        await gate.open()
+        await runTask.value
+
+        #expect(await completion.isFinished())
     }
 
     @Test("Active meso tightens cadence to short")
@@ -214,10 +281,12 @@ private extension BackgroundOrchestratorCadenceTests {
         } else {
             nil
         }
-        let locationContextResolver = FakeLocationContextResolver(
-            resolvedContext: resolvedContext,
-            error: resolvedContext == nil ? .locationTimeout : nil
-        )
+        let locationSession = await MainActor.run {
+            FakeLocationSession(
+                currentContext: nil,
+                preparedContext: resolvedContext
+            )
+        }
 
         let morningEngine = MorningEngine(
             rule: NoopMorningRule(),
@@ -232,11 +301,27 @@ private extension BackgroundOrchestratorCadenceTests {
             sender: NoopSender(),
             spc: spc
         )
+        let snapshotStore = HomeSnapshotStore(
+            spcRisk: spc,
+            spcOutlook: spc,
+            arcusAlerts: watchProvider
+        )
+        let coordinator = HomeIngestionCoordinator(
+            executor: HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "BackgroundOrchestratorCadenceTests"),
+                    spcSync: spc,
+                    arcusAlertSync: watchProvider,
+                    weatherClient: FakeWeatherClient(),
+                    locationSession: locationSession,
+                    snapshotStore: snapshotStore,
+                    projectionStore: nil
+                )
+            )
+        )
 
         let orchestrator = BackgroundOrchestrator(
-            spcProvider: spc,
-            arcusProvider: watchProvider,
-            locationContextResolver: locationContextResolver,
+            coordinator: coordinator,
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
@@ -341,6 +426,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private var syncCalls = 0
     private var syncMapProductsCalls = 0
     private var syncConvectiveOutlooksCalls = 0
+    private var syncExecutionModeValues: [HTTPExecutionMode] = []
 
     func getFireRisk(for point: CLLocationCoordinate2D) async throws -> SkyAware.FireRiskLevel {
         recordedPoints.append(point)
@@ -354,10 +440,18 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     }
 
     func sync() async { syncCalls += 1 }
-    func syncMapProducts() async { syncMapProductsCalls += 1 }
+    func syncMapProducts() async {
+        syncMapProductsCalls += 1
+        syncExecutionModeValues.append(HTTPExecutionMode.current)
+    }
     func syncTextProducts() async {}
-    func syncConvectiveOutlooks() async { syncConvectiveOutlooksCalls += 1 }
-    func syncMesoscaleDiscussions() async {}
+    func syncConvectiveOutlooks() async {
+        syncConvectiveOutlooksCalls += 1
+        syncExecutionModeValues.append(HTTPExecutionMode.current)
+    }
+    func syncMesoscaleDiscussions() async {
+        syncExecutionModeValues.append(HTTPExecutionMode.current)
+    }
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
         recordedPoints.append(point)
@@ -397,6 +491,10 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     func syncConvectiveOutlooksCount() -> Int {
         syncConvectiveOutlooksCalls
     }
+
+    func syncExecutionModes() -> [HTTPExecutionMode] {
+        syncExecutionModeValues
+    }
 }
 
 private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
@@ -408,43 +506,143 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
 
     func sync(context: LocationContext) async {}
 
+    func syncRemoteAlert(id: String, revisionSent: Date?) async {}
+
     func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
         activeWatches
     }
+
+    func getWatch(id: String) async throws -> WatchRowDTO? {
+        activeWatches.first(where: { $0.id == id })
+    }
 }
 
-private actor FakeLocationContextResolver: LocationContextResolving {
-    let resolvedContext: LocationContext?
-    let error: LocationContextError?
+@MainActor
+private final class FakeLocationSession: HomeContextPreparing {
+    var currentContext: LocationContext?
+    var preparedContext: LocationContext?
 
-    init(resolvedContext: LocationContext?, error: LocationContextError?) {
-        self.resolvedContext = resolvedContext
-        self.error = error
+    init(
+        currentContext: LocationContext?,
+        preparedContext: LocationContext?
+    ) {
+        self.currentContext = currentContext
+        self.preparedContext = preparedContext
     }
 
-    func prepareCurrentContext(
+    func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
         placemarkTimeout: Double
-    ) async throws -> LocationContext {
-        if let resolvedContext {
-            return resolvedContext
-        }
-        throw error ?? .locationTimeout
+    ) async -> LocationContext? {
+        preparedContext
     }
 
-    func resolveContext(
-        from snapshot: LocationSnapshot,
-        maximumAcceptedLocationAge: TimeInterval?,
-        placemarkTimeout: Double
-    ) async throws -> LocationContext {
-        if let resolvedContext {
-            return resolvedContext
+    func currentPreparedContext() async -> LocationContext? {
+        currentContext
+    }
+}
+
+private actor FakeWeatherClient: HomeWeatherQuerying {
+    func currentWeather(for location: CLLocation) async -> SummaryWeather? {
+        nil
+    }
+}
+
+private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
+    private let snapshot: HomeSnapshot
+    private let runGate: AsyncGate?
+    private var submittedRequests: [HomeIngestionRequest] = []
+
+    init(
+        snapshot: HomeSnapshot = .empty,
+        runGate: AsyncGate? = nil
+    ) {
+        self.snapshot = snapshot
+        self.runGate = runGate
+    }
+
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {
+        submittedRequests.append(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            )
+        )
+    }
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        let request = HomeIngestionRequest(
+            trigger: trigger,
+            locationContext: locationContext,
+            remoteAlertContext: remoteAlertContext
+        )
+        return try await enqueueAndWait(request)
+    }
+
+    func enqueue(_ request: HomeIngestionRequest) {
+        submittedRequests.append(request)
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        submittedRequests.append(request)
+        if let runGate {
+            await runGate.wait()
         }
-        throw error ?? .locationTimeout
+        return snapshot
+    }
+
+    func requests() -> [HomeIngestionRequest] {
+        submittedRequests
+    }
+
+    func requestCount() -> Int {
+        submittedRequests.count
+    }
+}
+
+private actor AsyncGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        if isOpen {
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor CompletionFlag {
+    private var finished = false
+
+    func markFinished() {
+        finished = true
+    }
+
+    func isFinished() -> Bool {
+        finished
     }
 }
 
@@ -482,4 +680,19 @@ private struct NoopComposer: NotificationComposing {
 
 private struct NoopSender: NotificationSending {
     func send(title: String, body: String, subtitle: String, id: String) async {}
+}
+
+private func waitUntil(
+    timeout: Duration = .seconds(1),
+    interval: Duration = .milliseconds(20),
+    _ condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: interval)
+    }
+    return await condition()
 }

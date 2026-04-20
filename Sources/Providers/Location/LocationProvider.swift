@@ -121,6 +121,14 @@ actor LocationProvider {
             logger.trace("Location accuracy too low: \(update.accuracy)")
             return
         }
+
+        let resolvedH3Cell = resolveH3Cell(for: update.coordinates) ?? lastSnapshot?.h3Cell
+
+        if isRedundantForcedUpdate(update, resolvedH3Cell: resolvedH3Cell) {
+            suppressedCount &+= 1
+            logger.debug("Skipping redundant forced location update")
+            return
+        }
         
         // 2) Check accept & update snapshot and task the placemark update
         let now = update.timestamp
@@ -130,8 +138,8 @@ actor LocationProvider {
                                         timestamp: update.timestamp,
                                         accuracy: update.accuracy,
                                         placemarkSummary: lastSnapshot?.placemarkSummary,
-                                        h3Cell: resolveH3Cell(for: update.coordinates) ?? lastSnapshot?.h3Cell)
-            saveAndYieldSnapshot(snap)
+                                        h3Cell: resolvedH3Cell)
+            saveAndYieldSnapshot(snap, reason: "accepted-update")
             
             // 3) Reverse geocode – fire-and-forget
             Task { await updatePlacemarkIfNeeded(for: update.coordinates, timestamp: update.timestamp) }
@@ -148,7 +156,7 @@ actor LocationProvider {
     ///   - timeout: timeout so we don't consume all our background budget
     /// - Returns: updated location snap
     func ensurePlacemark(for coord: CLLocationCoordinate2D, timeout: Double = 8) async -> LocationSnapshot {
-        logger.debug("Updating placemark for background task")
+        logger.debug("Resolving placemark for location context")
         do {
             let place = try await withTimeout(timeout: timeout) {
                 return try await self.geocoder.reverseGeocode(coord)
@@ -166,10 +174,12 @@ actor LocationProvider {
                                            accuracy: base.accuracy,
                                            placemarkSummary: place,
                                            h3Cell: resolveH3Cell(for: coord) ?? base.h3Cell)
-            saveAndYieldSnapshot(updated)
+            if updated != base {
+                saveAndYieldSnapshot(updated, reason: "placemark-resolved")
+            }
             return updated
         } catch {
-            logger.info("Failed to update placemark, falling back to last snapshot")
+            logger.info("Placemark resolution failed; falling back to the most recent snapshot when available")
             // On failure or timeout, return the most recent snapshot if available, otherwise create a minimal one without a placemark.
             if let snap = lastSnapshot { return snap }
             let snap = LocationSnapshot(
@@ -179,14 +189,14 @@ actor LocationProvider {
                 placemarkSummary: nil,
                 h3Cell: resolveH3Cell(for: coord)
             )
-            saveAndYieldSnapshot(snap)
+            saveAndYieldSnapshot(snap, reason: "placemark-fallback")
             return snap
         }
     }
     
     // MARK: Placemark Helpers
     private func updatePlacemarkIfNeeded(for coord: CLLocationCoordinate2D, timestamp: Date) async {
-        logger.debug("Starting reverse geocoding")
+        logger.debug("Resolving placemark for accepted location update")
         do {
             let summary = try await geocoder.reverseGeocode(coord)
             
@@ -201,7 +211,7 @@ actor LocationProvider {
                                         accuracy: snap.accuracy,
                                         placemarkSummary: summary,
                                         h3Cell: snap.h3Cell)
-                saveAndYieldSnapshot(snap)
+                saveAndYieldSnapshot(snap, reason: "placemark-enriched")
             }
         } catch {
             logger.error("Reverse geocoding failed: \(error.localizedDescription, privacy: .public)")
@@ -257,6 +267,21 @@ actor LocationProvider {
         
         return false
     }
+
+    private func isRedundantForcedUpdate(
+        _ update: LocationUpdate,
+        resolvedH3Cell: Int64?
+    ) -> Bool {
+        guard update.forceAcceptance, let lastSnapshot else { return false }
+
+        let elapsed = update.timestamp.timeIntervalSince(lastSnapshot.timestamp)
+        guard elapsed >= 0, elapsed <= 5 else { return false }
+
+        let movedMeters = haversine(lastSnapshot.coordinates, update.coordinates)
+        guard movedMeters < 100 else { return false }
+
+        return resolvedH3Cell == lastSnapshot.h3Cell
+    }
     
     // Simple haversine (meters)
     private func haversine(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
@@ -271,10 +296,12 @@ actor LocationProvider {
     }
     
     // MARK: Helpers
-    private func saveAndYieldSnapshot(_ snap: LocationSnapshot) {
+    private func saveAndYieldSnapshot(_ snap: LocationSnapshot, reason: String) {
         lastSnapshot = snap
         snapshotCache.save(snap)
-        logger.debug("New location snapshot saved: \(self.lastSnapshot?.coordinates.latitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.coordinates.longitude ?? 0.0, privacy: .public), \(self.lastSnapshot?.placemarkSummary ?? "unknown", privacy: .public)")
+        logger.debug(
+            "Saved location snapshot reason=\(reason, privacy: .public) hasPlacemark=\((snap.placemarkSummary != nil), privacy: .public) hasH3=\((snap.h3Cell != nil), privacy: .public)"
+        )
         continuations.values.forEach { $0.yield(snap) }
     }
     

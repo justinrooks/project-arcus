@@ -213,6 +213,41 @@ private final class ArcusMockHTTPClient: HTTPClient, @unchecked Sendable {
     }
 }
 
+private final class TestNetworkPathMonitor: NetworkPathMonitoring, @unchecked Sendable {
+    private var handler: (@Sendable (Bool) -> Void)?
+    private(set) var didStart = false
+
+    func setUpdateHandler(_ handler: @escaping @Sendable (Bool) -> Void) {
+        self.handler = handler
+    }
+
+    func start(queue: DispatchQueue) {
+        didStart = true
+    }
+
+    func cancel() {}
+
+    func emit(isSatisfied: Bool) {
+        handler?(isSatisfied)
+    }
+}
+
+private actor ReachabilityRecorder: ArcusSignalReachabilityReporting {
+    private var updates: [ArcusSignalAvailability] = []
+
+    func markReachable() async {
+        updates.append(.reachable)
+    }
+
+    func markUnavailable() async {
+        updates.append(.unavailable)
+    }
+
+    func lastUpdate() -> ArcusSignalAvailability? {
+        updates.last
+    }
+}
+
 @Suite("ArcusHttpClient")
 struct ArcusHttpClientTests {
     @Test("fetchActiveAlerts builds alerts endpoint from Arcus signal base URL")
@@ -240,6 +275,81 @@ struct ArcusHttpClientTests {
         #expect(components.queryItems?.first(where: { $0.name == "h3" })?.value == "613725958748241919")
         #expect(request.headers["Accept"] == "application/json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)
+    }
+
+    @Test("live Arcus responses mark hot-alert reachability as reachable")
+    func liveResponse_marksReachabilityReachable() async throws {
+        let payload = Data("{\"ok\":true}".utf8)
+        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 200, headers: [:], data: payload))
+        let reachability = ReachabilityRecorder()
+        let client = ArcusHttpClient(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: http,
+            reachabilityReporter: reachability
+        )
+
+        _ = try await client.fetchActiveAlerts(for: "COC001", or: "COZ245", in: 613725958748241919)
+
+        #expect(await reachability.lastUpdate() == .reachable)
+    }
+
+    @Test("cache fallback marks hot-alert reachability unavailable while still returning cached data")
+    func cacheFallback_marksReachabilityUnavailable() async throws {
+        let payload = Data("{\"cached\":true}".utf8)
+        let http = ArcusMockHTTPClient(
+            response: HTTPResponse(status: 200, headers: [:], data: payload, source: .cacheFallback)
+        )
+        let reachability = ReachabilityRecorder()
+        let client = ArcusHttpClient(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: http,
+            reachabilityReporter: reachability
+        )
+
+        let data = try await client.fetchActiveAlerts(for: "COC001", or: "COZ245", in: 613725958748241919)
+
+        #expect(data == payload)
+        #expect(await reachability.lastUpdate() == .unavailable)
+    }
+}
+
+@MainActor
+@Suite("RuntimeConnectivityState")
+struct RuntimeConnectivityStateTests {
+    @Test("path monitor updates mark the app offline only when the general path is unavailable")
+    func pathMonitorUpdates_driveOfflineState() async {
+        let monitor = TestNetworkPathMonitor()
+        let state = RuntimeConnectivityState(pathMonitorFactory: { monitor })
+
+        state.startMonitoringIfNeeded()
+        #expect(monitor.didStart)
+
+        monitor.emit(isSatisfied: true)
+        await Task.yield()
+
+        #expect(state.generalPathAvailability == .available)
+        #expect(state.arcusSignalAvailability == .unknown)
+        #expect(state.isOffline == false)
+
+        monitor.emit(isSatisfied: false)
+        await Task.yield()
+
+        #expect(state.generalPathAvailability == .unavailable)
+        #expect(state.isOffline)
+    }
+
+    @Test("Arcus reachability keeps cached content online until live alert freshness is unavailable")
+    func arcusReachability_controlsOfflineToken() {
+        let state = RuntimeConnectivityState(pathMonitorFactory: { TestNetworkPathMonitor() })
+
+        state.updateGeneralPathAvailability(isSatisfied: true)
+        #expect(state.isOffline == false)
+
+        state.updateArcusSignalAvailability(.unavailable)
+        #expect(state.isOffline)
+
+        state.updateArcusSignalAvailability(.reachable)
+        #expect(state.isOffline == false)
     }
 }
 

@@ -17,6 +17,22 @@ struct ConvectiveOutlookView: View {
         dtos.isEmpty
     }
 
+    private var sortedOutlooks: [ConvectiveOutlookDTO] {
+        dtos.sorted { lhs, rhs in
+            let lhsDate = lhs.issued ?? lhs.published
+            let rhsDate = rhs.issued ?? rhs.published
+            return lhsDate > rhsDate
+        }
+    }
+
+    private var latestOutlook: ConvectiveOutlookDTO? {
+        sortedOutlooks.first
+    }
+
+    private var earlierOutlooks: [ConvectiveOutlookDTO] {
+        Array(sortedOutlooks.dropFirst())
+    }
+
     init(
         dtos: [ConvectiveOutlookDTO],
         onRefresh: (() async -> Void)? = nil
@@ -28,21 +44,32 @@ struct ConvectiveOutlookView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                sectionTitle
+                overviewCard
 
                 if hasNoOutlooks {
                     emptyCard
                 } else {
-                    VStack(spacing: 10) {
-                        ForEach(dtos) { dto in
-                            Button {
-                                selectedOutlook = dto
-                            } label: {
-                                OutlookRowView(outlook: dto)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
+                    if let latestOutlook {
+                        outlookSection(
+                            title: "Latest Outlook",
+                            subtitle: "Newest SPC product",
+                            symbol: "sparkles.rectangle.stack.fill"
+                        ) {
+                            outlookButton(for: latestOutlook)
+                        }
+                    }
+
+                    if earlierOutlooks.isEmpty == false {
+                        outlookSection(
+                            title: "Earlier Outlooks",
+                            subtitle: "\(earlierOutlooks.count) more",
+                            symbol: "clock.arrow.trianglehead.counterclockwise.rotate.90"
+                        ) {
+                            VStack(spacing: 10) {
+                                ForEach(earlierOutlooks) { dto in
+                                    outlookButton(for: dto)
+                                }
                             }
-                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -62,11 +89,11 @@ struct ConvectiveOutlookView: View {
         }
     }
 
-    private var sectionTitle: some View {
+    private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Forecast Discussions")
+            Text(hasNoOutlooks ? "Outlooks pending" : "Forecast Discussions")
                 .font(.headline.weight(.semibold))
-            Text("Latest convective outlook products from SPC.")
+            Text(overviewMessage)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -86,6 +113,57 @@ struct ConvectiveOutlookView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+    }
+
+    private var overviewMessage: String {
+        if let latestOutlook {
+            return "Open the latest SPC discussion first, then work backward if you want earlier issuances for comparison. Most recent update: \((latestOutlook.issued ?? latestOutlook.published).relativeDate())."
+        }
+
+        return "Latest convective outlook products from SPC will appear here once sync completes."
+    }
+
+    private func outlookSection<Content: View>(
+        title: String,
+        subtitle: String,
+        symbol: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: symbol)
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Text(subtitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+            }
+
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+    }
+
+    private func outlookButton(for outlook: ConvectiveOutlookDTO) -> some View {
+        Button {
+            selectedOutlook = outlook
+        } label: {
+            OutlookRowView(outlook: outlook)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(
+            SkyAwarePressableButtonStyle(
+                cornerRadius: SkyAwareRadius.row,
+                pressedScale: 0.988,
+                pressedOverlayOpacity: 0.06
+            )
+        )
     }
 }
 

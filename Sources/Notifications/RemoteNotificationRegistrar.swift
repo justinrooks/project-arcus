@@ -55,7 +55,7 @@ final class RemoteNotificationRegistrar {
         tokenWaiters.removeAll()
         waiters.forEach { $0.resume(returning: token) }
 #if DEBUG
-        logger.debug("APNs device token (debug): \(token, privacy: .public)")
+        logger.debug("APNs device token stored for debug run")
 #endif
     }
 

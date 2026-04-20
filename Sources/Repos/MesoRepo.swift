@@ -23,7 +23,7 @@ actor MesoRepo {
         }
         
         guard let channel = rss.channel else {
-            logger.error("Error parsing mesoscale items")
+            logger.error("Mesoscale RSS parsed without a channel; leaving persisted mesos unchanged")
             return
         }
         
@@ -33,12 +33,10 @@ actor MesoRepo {
             .compactMap { makeMD(from: $0) }
         
         try upsert(mesos)
-        logger.debug("Parsed \(mesos.count, privacy: .public) meso discussion\(mesos.count > 1 ? "s" : "", privacy: .public) from SPC")
+        logger.debug("Persisted mesoscale discussion refresh count=\(mesos.count, privacy: .public)")
     }
     
     func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MdDTO] {
-        logger.info("Fetching current local mesos")
-        
         // Filter by our rough box
         let lat = point.latitude
         let lon = point.longitude
@@ -61,8 +59,7 @@ actor MesoRepo {
                 hits.append(md)
             }
         }
-        
-        return hits.map {
+        let dtos = hits.map {
             MdDTO(
                 number: $0.number,
                 title: $0.title,
@@ -77,6 +74,10 @@ actor MesoRepo {
                 coordinates: $0.coordinates
             )
         }
+        logger.debug(
+            "Resolved active mesos from datastore candidates=\(candidates.count, privacy: .public) matches=\(dtos.count, privacy: .public)"
+        )
+        return dtos
     }
     
     func getLatestMapData(asOf date: Date = .init()) throws -> [MdDTO] {

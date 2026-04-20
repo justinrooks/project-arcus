@@ -25,12 +25,15 @@ final class Dependencies: Sendable {
     private let _stormRiskRepo: StormRiskRepo?
     private let _severeRiskRepo: SevereRiskRepo?
     private let _healthStore: BgHealthStore?
+    private let _homeProjectionStore: HomeProjectionStore?
+    private let _homeIngestionCoordinator: (any HomeIngestionCoordinating)?
     
     // MARK: Location / grid
     
     private let _locationProvider: LocationProvider?
     private let _locationManager: LocationManager?
     private let _gridProvider: GridPointProvider?
+    private let _locationSession: LocationSession?
     private let _locationContextResolver: (any LocationContextResolving)?
     
     // MARK: Weatherkit
@@ -92,6 +95,18 @@ final class Dependencies: Sendable {
         }
         return value
     }
+    var homeProjectionStore: HomeProjectionStore {
+        guard let value = _homeProjectionStore else {
+            fatalError("Dependencies.homeProjectionStore used while unconfigured")
+        }
+        return value
+    }
+    var homeIngestionCoordinator: any HomeIngestionCoordinating {
+        guard let value = _homeIngestionCoordinator else {
+            fatalError("Dependencies.homeIngestionCoordinator used while unconfigured")
+        }
+        return value
+    }
     var locationProvider: LocationProvider {
         guard let value = _locationProvider else {
             fatalError("Dependencies.locationProvider used while unconfigured")
@@ -115,6 +130,13 @@ final class Dependencies: Sendable {
     var gridProvider: GridPointProvider {
         guard let value = _gridProvider else {
             fatalError("Dependencies.gridProvider used while unconfigured")
+        }
+        return value
+    }
+    @MainActor
+    var locationSession: LocationSession {
+        guard let value = _locationSession else {
+            fatalError("Dependencies.locationSession used while unconfigured")
         }
         return value
     }
@@ -226,9 +248,12 @@ final class Dependencies: Sendable {
         stormRiskRepo: StormRiskRepo?,
         severeRiskRepo: SevereRiskRepo?,
         healthStore: BgHealthStore?,
+        homeProjectionStore: HomeProjectionStore?,
+        homeIngestionCoordinator: (any HomeIngestionCoordinating)?,
         locationProvider: LocationProvider?,
         locationManager: LocationManager?,
         gridProvider: GridPointProvider?,
+        locationSession: LocationSession?,
         locationContextResolver: (any LocationContextResolving)?,
         spcProvider: SpcProvider?,
         nwsProvider: NwsProvider?,
@@ -248,9 +273,12 @@ final class Dependencies: Sendable {
         self._stormRiskRepo = stormRiskRepo
         self._severeRiskRepo = severeRiskRepo
         self._healthStore = healthStore
+        self._homeProjectionStore = homeProjectionStore
+        self._homeIngestionCoordinator = homeIngestionCoordinator
         self._locationProvider = locationProvider
         self._locationManager = locationManager
         self._gridProvider = gridProvider
+        self._locationSession = locationSession
         self._locationContextResolver = locationContextResolver
         self._spcProvider = spcProvider
         self._nwsProvider = nwsProvider
@@ -263,7 +291,9 @@ final class Dependencies: Sendable {
     }
     
     @MainActor
-    static func live() -> Dependencies {
+    static func live(
+        arcusReachabilityTracker: any ArcusSignalReachabilityReporting = NoOpArcusSignalReachabilityReporter()
+    ) -> Dependencies {
         let logger = Logger.appDependencies
         let appRefreshID = "com.skyaware.app.refresh"
         
@@ -275,7 +305,8 @@ final class Dependencies: Sendable {
             SevereRisk.self,
             BgRunSnapshot.self,
             Watch.self,
-            FireRisk.self
+            FireRisk.self,
+            HomeProjection.self
         ])
         let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         let container: ModelContainer
@@ -297,17 +328,21 @@ final class Dependencies: Sendable {
         let nwsClient = NwsHttpClient(http: httpClient)
         let spcClient = SpcHttpClient(http: httpClient)
         let arcusBaseURL = ArcusSignalConfiguration.resolvedBaseURL()
-        let arcusClient = ArcusHttpClient(baseURL: arcusBaseURL, http: httpClient)
+        let arcusClient = ArcusHttpClient(
+            baseURL: arcusBaseURL,
+            http: httpClient,
+            reachabilityReporter: arcusReachabilityTracker
+        )
         let metadataRepo = NwsMetadataRepo()
 
         let contextPusher: any LocationContextPushing
         if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
             let uploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
             contextPusher = LocationSnapshotPusher(uploader: uploader)
-            logger.notice("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
+            logger.info("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
         } else {
             contextPusher = NoOpLocationContextPusher()
-            logger.notice("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
+            logger.info("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
         }
         
         // Location
@@ -324,6 +359,7 @@ final class Dependencies: Sendable {
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
         let fireRiskRepo   = FireRiskRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
+        let homeProjectionStore = HomeProjectionStore(modelContainer: container)
         
         logger.debug("Repositories initialized")
         
@@ -359,6 +395,13 @@ final class Dependencies: Sendable {
             }
         )
         logger.info("Location context resolver initialized")
+
+        let locationSession = LocationSession(
+            locationClient: makeLocationClient(provider: locationProvider),
+            locationManager: locationManager,
+            locationContextResolver: locationContextResolver
+        )
+        logger.info("Location session initialized")
         
         let nws = NwsProvider(
             watchRepo: watchRepo,
@@ -396,21 +439,38 @@ final class Dependencies: Sendable {
             spc: spc
         )
 
-        logger.debug("Composing watch notification engine")
-        let watchEngine = WatchEngine(
-            rule: WatchRule(),
-            gate: WatchGate(store: DefaultWatchStore()),
-            composer: WatchComposer(),
-            sender: Sender()
+//        logger.debug("Composing watch notification engine")
+//        let watchEngine = WatchEngine(
+//            rule: WatchRule(),
+//            gate: WatchGate(store: DefaultWatchStore()),
+//            composer: WatchComposer(),
+//            sender: Sender()
+//        )
+
+        let weatherClient = WeatherClient()
+        logger.debug("WeatherKit client initialized")
+
+        let homeSnapshotStore = HomeSnapshotStore(
+            spcRisk: spc,
+            spcOutlook: spc,
+            arcusAlerts: arcus
         )
+        let homeIngestionExecutor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger.appHomeRefresh,
+                spcSync: spc,
+                arcusAlertSync: arcus,
+                weatherClient: weatherClient,
+                locationSession: locationSession,
+                snapshotStore: homeSnapshotStore,
+                projectionStore: homeProjectionStore
+            )
+        )
+        let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)
 
         let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
-            locationContextResolver: locationContextResolver,
-            spcSync: spc,
-            spcRisk: spc,
-            arcusSync: arcus,
-            arcusQuery: arcus,
-            watchEngine: watchEngine
+            coordinator: homeIngestionCoordinator//,
+//            watchEngine: watchEngine
         )
 
         locationManager.setBackgroundLocationChangeHandler {
@@ -420,9 +480,7 @@ final class Dependencies: Sendable {
         let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(
-            spcProvider: spc,
-            arcusProvider: arcus,
-            locationContextResolver: locationContextResolver,
+            coordinator: homeIngestionCoordinator,
             policy: refreshPolicy,
             engine: morning,
             mesoEngine: meso,
@@ -432,10 +490,7 @@ final class Dependencies: Sendable {
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)
-        logger.notice("Providers ready; background orchestrator configured")
-        
-        let weatherClient = WeatherClient()
-        logger.notice("WeatherKit client created")
+        logger.info("Dependencies configured; background orchestrator ready")
         
         return Dependencies(
             appRefreshID: appRefreshID,
@@ -447,9 +502,12 @@ final class Dependencies: Sendable {
             stormRiskRepo: stormRiskRepo,
             severeRiskRepo: severeRiskRepo,
             healthStore: healthStore,
+            homeProjectionStore: homeProjectionStore,
+            homeIngestionCoordinator: homeIngestionCoordinator,
             locationProvider: locationProvider,
             locationManager: locationManager,
             gridProvider: gridProvider,
+            locationSession: locationSession,
             locationContextResolver: locationContextResolver,
             spcProvider: spcProvider,
             nwsProvider: nwsProvider,
@@ -471,9 +529,12 @@ final class Dependencies: Sendable {
                                                          stormRiskRepo: nil,
                                                          severeRiskRepo: nil,
                                                          healthStore: nil,
+                                                         homeProjectionStore: nil,
+                                                         homeIngestionCoordinator: nil,
                                                          locationProvider: nil,
                                                          locationManager: nil,
                                                          gridProvider: nil,
+                                                         locationSession: nil,
                                                          locationContextResolver: nil,
                                                          spcProvider: nil,
                                                          nwsProvider: nil,

@@ -31,6 +31,15 @@ enum SummaryReadinessState: Equatable {
 }
 
 struct SummaryView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    enum LocalAlertsPresentationState: Equatable {
+        case unavailable
+        case loading
+        case alerts
+        case empty
+    }
+
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -41,6 +50,11 @@ struct SummaryView: View {
     let weather: SummaryWeather?
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
+    let showsOfflineToken: Bool
+    let headerCondenseProgress: CGFloat
+    let onOpenMapLayer: (MapLayer) -> Void
+    let onOpenAlerts: () -> Void
+    let onOpenOutlooks: () -> Void
 
     private var hasActiveAlerts: Bool {
         !mesos.isEmpty || !watches.isEmpty
@@ -70,6 +84,14 @@ struct SummaryView: View {
         readinessState == .locationUnavailable
     }
 
+    private var localAlertsPresentationState: LocalAlertsPresentationState {
+        Self.localAlertsPresentationState(
+            readinessState: readinessState,
+            hasActiveAlerts: hasActiveAlerts,
+            isLocationUnavailable: isLocationUnavailable
+        )
+    }
+
     private var hasMeaningfulContent: Bool {
         snap != nil ||
         weather != nil ||
@@ -86,6 +108,19 @@ struct SummaryView: View {
         (isSummaryLoading || resolutionState.isRefreshing)
     }
 
+    private var severeMapLayer: MapLayer {
+        switch severeRisk ?? .allClear {
+        case .allClear:
+            return .categorical
+        case .wind:
+            return .wind
+        case .hail:
+            return .hail
+        case .tornado:
+            return .tornado
+        }
+    }
+
     @ViewBuilder
     private var riskSnapshotContent: some View {
         VStack(spacing: 12) {
@@ -94,26 +129,65 @@ struct SummaryView: View {
             //       Make the option that, if its clear to show
             //       the row. Default should be to hide a no fire
             //       danger
-            FireWeatherRailView(level: fireRisk ?? .clear)
-                .placeholder(fireRisk == nil)
-                .summaryResolving(resolutionState.isResolving(.fireRisk))
+            Button {
+                onOpenMapLayer(.fire)
+            } label: {
+                FireWeatherRailView(level: fireRisk ?? .clear)
+                    .placeholder(fireRisk == nil)
+                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+            }
+            .buttonStyle(
+                SkyAwarePressableButtonStyle(
+                    cornerRadius: SkyAwareRadius.large,
+                    pressedScale: 0.992,
+                    pressedOverlayOpacity: 0.06
+                )
+            )
+            .summaryResolving(resolutionState.isResolving(.fireRisk))
+            .accessibilityHint("Opens the fire risk map.")
             AtmosphereRailView(weather: weather)
                 .allowsHitTesting(!isWeatherLoading)
                 .summaryResolving(resolutionState.isResolving(.atmosphere))
-                .animation(.snappy, value: isWeatherLoading)
+                .animation(SkyAwareMotion.settle(reduceMotion), value: isWeatherLoading)
         }
     }
 
     @ViewBuilder
     private var badgeRow: some View {
         HStack {
-            StormRiskBadgeView(level: stormRisk ?? .allClear)
-                .placeholder(stormRisk == nil)
-                .summaryResolving(resolutionState.isResolving(.stormRisk))
+            Button {
+                onOpenMapLayer(.categorical)
+            } label: {
+                StormRiskBadgeView(level: stormRisk ?? .allClear)
+                    .placeholder(stormRisk == nil)
+                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+            }
+            .buttonStyle(
+                SkyAwarePressableButtonStyle(
+                    cornerRadius: SkyAwareRadius.large,
+                    pressedScale: 0.992,
+                    pressedOverlayOpacity: 0.06
+                )
+            )
+            .summaryResolving(resolutionState.isResolving(.stormRisk))
+            .accessibilityHint("Opens the severe risk map.")
             Spacer()
-            SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
-                .placeholder(severeRisk == nil)
-                .summaryResolving(resolutionState.isResolving(.severeRisk))
+            Button {
+                onOpenMapLayer(severeMapLayer)
+            } label: {
+                SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
+                    .placeholder(severeRisk == nil)
+                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+            }
+            .buttonStyle(
+                SkyAwarePressableButtonStyle(
+                    cornerRadius: SkyAwareRadius.large,
+                    pressedScale: 0.992,
+                    pressedOverlayOpacity: 0.06
+                )
+            )
+            .summaryResolving(resolutionState.isResolving(.severeRisk))
+            .accessibilityHint("Opens the highlighted severe threat map.")
         }
         .padding(.top, 8)
     }
@@ -126,7 +200,9 @@ struct SummaryView: View {
                 SummaryStatus(
                     statusText: statusText,
                     weather: weather,
-                    resolutionState: resolutionState
+                    resolutionState: resolutionState,
+                    showsOfflineToken: showsOfflineToken,
+                    condenseProgress: headerCondenseProgress
                 )
 
                 VStack(alignment: .leading, spacing: 12) {
@@ -148,22 +224,24 @@ struct SummaryView: View {
                 .padding(16)
                 .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
 
-                if isLocationUnavailable {
+                switch localAlertsPresentationState {
+                case .unavailable:
                     unavailableCard(
                         title: "Location Required",
                         message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
                         symbol: "location.slash"
                     )
-                } else if isSummaryLoading && hasActiveAlerts == false {
+                case .loading:
                     ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
                         .summaryResolving(resolutionState.isResolving(.alerts))
-                } else if hasActiveAlerts {
+                case .alerts:
                     ActiveAlertSummaryView(
                         mesos: mesos,
-                        watches: watches
+                        watches: watches,
+                        onOpenAlertCenter: onOpenAlerts
                     )
                     .summaryResolving(resolutionState.isResolving(.alerts))
-                } else {
+                case .empty:
                     emptySectionCard(
                         title: "No Active Alerts",
                         message: "Your local area currently has no active watches or mesoscale discussions.",
@@ -173,10 +251,17 @@ struct SummaryView: View {
                 }
 
                 if let outlook {
-                    OutlookSummaryCard(outlook: outlook)
+                    OutlookSummaryCard(
+                        outlook: outlook,
+                        onBrowseAllOutlooks: onOpenOutlooks
+                    )
                         .summaryResolving(resolutionState.isResolving(.outlook))
                 } else if readinessState == .loadingLocation || readinessState == .resolvingLocalContext {
-                    OutlookSummaryCard(outlook: nil, isLoading: true)
+                    OutlookSummaryCard(
+                        outlook: nil,
+                        isLoading: true,
+                        onBrowseAllOutlooks: onOpenOutlooks
+                    )
                         .summaryResolving(resolutionState.isResolving(.outlook))
                 } else {
                     emptySectionCard(
@@ -195,7 +280,7 @@ struct SummaryView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 20)
-        .animation(.easeInOut(duration: 0.35), value: showsEmptyResolving)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: showsEmptyResolving)
     }
 
     private func sectionTitle(_ title: String, icon: String) -> some View {
@@ -219,6 +304,26 @@ struct SummaryView: View {
     private func unavailableCard(title: String, message: String, symbol: String) -> some View {
         emptySectionCard(title: title, message: message, symbol: symbol)
     }
+
+    static func localAlertsPresentationState(
+        readinessState: SummaryReadinessState,
+        hasActiveAlerts: Bool,
+        isLocationUnavailable: Bool
+    ) -> LocalAlertsPresentationState {
+        if isLocationUnavailable {
+            return .unavailable
+        }
+        if hasActiveAlerts {
+            return .alerts
+        }
+
+        switch readinessState {
+        case .loadingLocation, .resolvingLocalContext:
+            return .loading
+        case .loadingLocalData, .ready, .locationUnavailable:
+            return .empty
+        }
+    }
 }
 
 // MARK: Previews
@@ -239,7 +344,12 @@ struct SummaryView: View {
             outlook: ConvectiveOutlook.sampleOutlookDtos.first,
             weather: nil,
             readinessState: .ready,
-            resolutionState: SummaryResolutionState()
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: false,
+            headerCondenseProgress: 0,
+            onOpenMapLayer: { _ in },
+            onOpenAlerts: {},
+            onOpenOutlooks: {}
         )
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -262,7 +372,12 @@ struct SummaryView: View {
             outlook: nil,
             weather: nil,
             readinessState: .loadingLocalData,
-            resolutionState: SummaryResolutionState()
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: true,
+            headerCondenseProgress: 0,
+            onOpenMapLayer: { _ in },
+            onOpenAlerts: {},
+            onOpenOutlooks: {}
         )
         .toolbar(.hidden, for: .navigationBar)
     }

@@ -9,4 +9,5 @@ import Foundation
 
 protocol ArcusAlertQuerying: Sendable {
     func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO]
+    func getWatch(id: String) async throws -> WatchRowDTO?
 }

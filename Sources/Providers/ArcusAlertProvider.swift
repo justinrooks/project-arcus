@@ -32,6 +32,7 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
         let watchRepo = self.watchRepo
         let client = self.client
         let logger = self.logger
+        logger.info("Arcus alert sync started scope=location-context")
         let task = Task {
             do {
                 try await watchRepo.refresh(
@@ -48,6 +49,17 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
         inFlightSyncs[key] = task
         await task.value
         inFlightSyncs[key] = nil
+        logger.info("Arcus alert sync finished scope=location-context")
+    }
+
+    func syncRemoteAlert(id: String, revisionSent: Date?) async {
+        logger.info("Arcus alert sync started scope=targeted-alert")
+        do {
+            try await watchRepo.refreshAlert(using: client, id: id, revisionSent: revisionSent)
+            logger.info("Arcus alert sync finished scope=targeted-alert")
+        } catch {
+            logger.error("Error syncing targeted Arcus alert: \(error, privacy: .public)")
+        }
     }
 }
 
@@ -59,6 +71,10 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
             cell: context.h3Cell
         )
     }
+
+    func getWatch(id: String) async throws -> WatchRowDTO? {
+        try await watchRepo.watch(id: id)
+    }
 }
 
 extension ArcusAlertProvider: Cleaning {
@@ -66,7 +82,7 @@ extension ArcusAlertProvider: Cleaning {
         do {
             try await watchRepo.purge()
         } catch {
-            logger.error("Error cleaning up old NWS data: \(error.localizedDescription, privacy: .public)")
+            logger.error("Error cleaning up Arcus-backed watch data: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
