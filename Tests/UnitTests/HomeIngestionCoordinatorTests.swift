@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import SkyAware
 
-@Suite("Home Ingestion Coordinator")
+@Suite("Home Ingestion Coordinator", .serialized)
 struct HomeIngestionCoordinatorTests {
     @Test("trigger plans preserve the expected lane selection")
     func triggerPlans_matchExpectedCoverage() {
@@ -373,7 +373,8 @@ private actor AsyncGate {
 }
 
 private func waitUntil(
-    timeout: Duration = .seconds(1),
+    // Full-target CI runs can heavily contend actor scheduling for these queueing tests.
+    timeout: Duration = .seconds(2),
     condition: @escaping () async -> Bool
 ) async -> Bool {
     let deadline = ContinuousClock.now + timeout
