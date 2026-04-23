@@ -12,34 +12,11 @@ import UIKit
 struct MapOverlayEntry {
     let key: String
     let overlay: MKOverlay
+    let signature: Int
 }
 
 struct MapCanvasView: UIViewRepresentable {
-    let polygons: MKMultiPolygon
-    let overlays: [MapOverlayEntry]
-    let coordinates: CLLocationCoordinate2D?
-
-    init(
-        polygons: MKMultiPolygon,
-        overlays: [MapOverlayEntry] = [],
-        coordinates: CLLocationCoordinate2D?
-    ) {
-        self.polygons = polygons
-        self.overlays = overlays
-        self.coordinates = coordinates
-    }
-
-    init(
-        polygons: [MKPolygon],
-        overlays: [MapOverlayEntry] = [],
-        coordinates: CLLocationCoordinate2D?
-    ) {
-        self.init(
-            polygons: MKMultiPolygon(polygons),
-            overlays: overlays,
-            coordinates: coordinates
-        )
-    }
+    let state: MapCanvasState
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -48,25 +25,29 @@ struct MapCanvasView: UIViewRepresentable {
         mapView.showsUserLocation = true
 
         // Initial viewport: center once when we first get a coordinate.
-        if let coord = coordinates {
+        if let coord = state.initialCenterCoordinate {
             let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
             mapView.setRegion(region, animated: false)
             context.coordinator.lastCenteredCoordinate = coord
         }
 
-        let incoming = resolvedIncomingOverlays(using: context.coordinator)
-        for entry in incoming {
-            context.coordinator.registerOverlay(entry.overlay, key: entry.key)
+        if !state.overlays.isEmpty {
+            for entry in state.overlays {
+                context.coordinator.registerOverlay(entry.overlay, key: entry.key, signature: entry.signature)
+            }
+            mapView.addOverlays(state.overlays.map(\.overlay))
         }
-        mapView.addOverlays(incoming.map(\.overlay))
+        context.coordinator.lastAppliedOverlayRevision = state.overlayRevision
         return mapView
     }
 
     func updateUIView(_ uiView: MKMapView, context: Context) {
-        let incoming = resolvedIncomingOverlays(using: context.coordinator)
-        syncOverlays(on: uiView, incoming: incoming, coordinator: context.coordinator)
+        if context.coordinator.lastAppliedOverlayRevision != state.overlayRevision {
+            syncOverlays(on: uiView, incoming: state.overlays, coordinator: context.coordinator)
+            context.coordinator.lastAppliedOverlayRevision = state.overlayRevision
+        }
 
-        if context.coordinator.lastCenteredCoordinate == nil, let coord = coordinates {
+        if context.coordinator.lastCenteredCoordinate == nil, let coord = state.initialCenterCoordinate {
             let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
             uiView.setRegion(region, animated: true)
             context.coordinator.lastCenteredCoordinate = coord
@@ -75,33 +56,6 @@ struct MapCanvasView: UIViewRepresentable {
     
     func makeCoordinator() -> MapCoordinator {
         MapCoordinator()
-    }
-
-    private func resolvedIncomingOverlays(using coordinator: MapCoordinator) -> [MapOverlayEntry] {
-        if !overlays.isEmpty {
-            return overlays
-        }
-
-        return polygons.polygons.enumerated().map { index, polygon in
-            let key = fallbackKey(for: polygon, index: index)
-            let overlay = coordinator.overlay(for: key) ?? coordinator.makeProbabilityOverlay(from: polygon)
-            return MapOverlayEntry(key: key, overlay: overlay)
-        }
-    }
-
-    private func fallbackKey(for polygon: MKPolygon, index: Int) -> String {
-        let rect = polygon.boundingMapRect
-        return [
-            "fallback",
-            String(index),
-            String(polygon.pointCount),
-            String(Int(rect.origin.x.rounded())),
-            String(Int(rect.origin.y.rounded())),
-            String(Int(rect.size.width.rounded())),
-            String(Int(rect.size.height.rounded())),
-            polygon.title ?? "",
-            polygon.subtitle ?? ""
-        ].joined(separator: "|")
     }
 
     private func syncOverlays(
@@ -124,7 +78,11 @@ struct MapCanvasView: UIViewRepresentable {
         desiredOverlays.reserveCapacity(incoming.count)
 
         for entry in incoming {
-            let overlay = coordinator.resolvedOverlay(for: entry.key, incomingOverlay: entry.overlay)
+            let overlay = coordinator.resolvedOverlay(
+                for: entry.key,
+                incomingOverlay: entry.overlay,
+                signature: entry.signature
+            )
             desiredOverlays.append(overlay)
         }
 

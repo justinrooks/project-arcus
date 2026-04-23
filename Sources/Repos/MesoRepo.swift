@@ -82,7 +82,7 @@ actor MesoRepo {
     
     func getLatestMapData(asOf date: Date = .init()) throws -> [MdDTO] {
         // 1) Fetch only risks that are currently valid
-        let pred = #Predicate<MD> { $0.validStart <= date && date < $0.validEnd }
+        let pred = #Predicate<MD> { $0.validStart <= date && date <= $0.validEnd }
         var desc = FetchDescriptor<MD>(predicate: pred)
         desc.sortBy = [SortDescriptor(\.issued, order: .reverse)]
         

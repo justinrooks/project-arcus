@@ -65,7 +65,7 @@ actor StormRiskRepo {
     
     func getLatestMapData(asOf date: Date = .init()) throws -> [StormRiskDTO] {
         // 1) Fetch only risks that are currently valid
-        let pred = #Predicate<StormRisk> { $0.valid <= date && date < $0.expires }
+        let pred = #Predicate<StormRisk> { $0.valid <= date && date <= $0.expires }
         let desc = FetchDescriptor<StormRisk>(predicate: pred)
         // We'll dedupe by risk level and keep the freshest issuance for each level.
         let risks = try modelContext.fetch(desc)

@@ -64,6 +64,43 @@ struct MapPolygonMapperTests {
         #expect(Set(firstKeys).count == firstKeys.count)
     }
 
+    @Test("Meso polygon keys remain stable when source order changes")
+    func mesoKeys_areStableAcrossInputReordering() throws {
+        let firstMeso = try makeMeso(
+            number: 1001,
+            coordinates: [
+                Coordinate2D(latitude: 35.0, longitude: -97.0),
+                Coordinate2D(latitude: 35.1, longitude: -96.9),
+                Coordinate2D(latitude: 35.2, longitude: -97.1)
+            ]
+        )
+        let secondMeso = try makeMeso(
+            number: 1002,
+            coordinates: [
+                Coordinate2D(latitude: 36.0, longitude: -98.0),
+                Coordinate2D(latitude: 36.1, longitude: -97.9),
+                Coordinate2D(latitude: 36.2, longitude: -98.1)
+            ]
+        )
+
+        let forward = mapper.polygons(
+            for: .meso,
+            stormRisk: [],
+            severeRisks: [],
+            mesos: [firstMeso, secondMeso],
+            fires: []
+        )
+        let reversed = mapper.polygons(
+            for: .meso,
+            stormRisk: [],
+            severeRisks: [],
+            mesos: [secondMeso, firstMeso],
+            fires: []
+        )
+
+        #expect(Set(forward.keyedPolygons.map(\.key)) == Set(reversed.keyedPolygons.map(\.key)))
+    }
+
     @Test("Severe layers only include polygons for selected threat type")
     func severePolygons_areFilteredByThreatType() {
         let severeRisks: [SevereRiskShapeDTO] = [

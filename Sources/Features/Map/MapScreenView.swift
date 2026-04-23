@@ -6,50 +6,77 @@
 //
 
 import SwiftUI
-import MapKit
-import OSLog
+import CoreLocation
 
 struct MapScreenView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dependencies) private var deps
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
-    private let logger = Logger.uiMap
-    private let polygonMapper = MapPolygonMapper()
-    
-    // MARK: Local handles
-    private var svc: any SpcMapData { deps.spcMapData }
-    
+
     @Binding private var selected: MapLayer
+    @State private var model = MapFeatureModel()
     @State private var showLayerPicker = false
-    
-    @State private var mesos: [MdDTO] = []
-    @State private var stormRisk: [StormRiskDTO] = []
-    @State private var severeRisks: [SevereRiskShapeDTO] = []
-    @State private var selectedSevereRisks: [SevereRiskShapeDTO]? = nil
-    @State private var fireRisk: [FireRiskDTO] = []
-    @State private var activePolygons = MKMultiPolygon([])
-    @State private var activeOverlays: [MapOverlayEntry] = []
-    @State private var cachedDisplayStates: [MapLayer: MapDisplayState] = [:]
-    @State private var mapRebuildTask: Task<Void, Never>?
     @Namespace private var layerNamespace
 
     init(selectedLayer: Binding<MapLayer> = .constant(.categorical)) {
         _selected = selectedLayer
     }
 
-    private var legendAllowsInteraction: Bool {
-        (selectedSevereRisks ?? []).contains { $0.intensityLevel != nil }
+    private var viewportCoordinate: ViewportCoordinate? {
+        guard let coordinates = locationSession.currentSnapshot?.coordinates else { return nil }
+        return ViewportCoordinate(coordinates)
     }
-    
+
+    var body: some View {
+        MapScreenContent(
+            selected: $selected,
+            showLayerPicker: $showLayerPicker,
+            scene: model.activeScene,
+            layerNamespace: layerNamespace
+        )
+        .onAppear {
+            Task {
+                await model.reload(
+                    using: dependencies.spcMapData,
+                    selectedLayer: selected
+                )
+            }
+        }
+        .onChange(of: selected, initial: true) { _, newValue in
+            model.selectLayer(newValue)
+        }
+        .onChange(of: scenePhase, initial: true) { _, newValue in
+            guard newValue == .active else { return }
+            Task {
+                await model.reload(
+                    using: dependencies.spcMapData,
+                    selectedLayer: selected
+                )
+            }
+        }
+        .onChange(of: viewportCoordinate, initial: true) { _, newValue in
+            model.captureInitialCenterCoordinateIfNeeded(newValue?.coordinate)
+        }
+        .onDisappear {
+            model.cancelWork()
+        }
+    }
+}
+
+private struct MapScreenContent: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    @Binding var selected: MapLayer
+    @Binding var showLayerPicker: Bool
+
+    let scene: MapLayerScene
+    let layerNamespace: Namespace.ID
+
     var body: some View {
         ZStack {
-            MapCanvasView(
-                polygons: activePolygons,
-                overlays: activeOverlays,
-                coordinates: locationSession.currentSnapshot?.coordinates
-            )
+            MapCanvasView(state: scene.canvasState)
                 .ignoresSafeArea()
-            
+
             VStack(alignment: .trailing) {
                 HStack(spacing: 10) {
                     Button {
@@ -87,331 +114,37 @@ struct MapScreenView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             .zIndex(3)
-            
-            // Legend in bottom-right (stable container)
+
             VStack {
                 Spacer()
-                Group {
-                    MapLegend(layer: selected, severeRisks: selectedSevereRisks, fireRisks: fireRisk)
-                }
-                .transition(.opacity)
-                .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
-                .padding([.bottom, .trailing])
+                MapLegend(state: scene.legendState)
+                    .transition(.opacity)
+                    .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+                    .padding([.bottom, .trailing])
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .allowsHitTesting(legendAllowsInteraction)
+            .allowsHitTesting(scene.legendState.allowsInteraction)
         }
         .sheet(isPresented: $showLayerPicker) {
-            LayerPickerSheet(selection: $selected,
-                             title: "Map Layers",
-                             triggerNamespace: layerNamespace)
-        }
-        .task {
-            await loadMapData()
-        }
-        .onChange(of: selected) { _, _ in
-            applyDisplayState(for: selected)
-        }
-        .onDisappear {
-            mapRebuildTask?.cancel()
-            mapRebuildTask = nil
-        }
-    }
-    
-    @MainActor
-    private func loadMapData() async {
-        async let severeTask = fetchSevereRiskShapes()
-        async let stormTask = fetchStormRiskShapes()
-        async let mesoTask = fetchMesoShapes()
-        async let fireTask = fetchFireRiskShapes()
-
-        let (severeResult, stormResult, mesoResult, fireResult) = await (severeTask, stormTask, mesoTask, fireTask)
-
-        switch severeResult {
-        case .success(let data):
-            severeRisks = data
-        case .failure(let error):
-            logger.error("Failed to load severe risk map data: \(error.localizedDescription, privacy: .public)")
-        }
-
-        switch stormResult {
-        case .success(let data):
-            stormRisk = data
-        case .failure(let error):
-            logger.error("Failed to load categorical map data: \(error.localizedDescription, privacy: .public)")
-        }
-
-        switch mesoResult {
-        case .success(let data):
-            mesos = data
-        case .failure(let error):
-            logger.error("Failed to load mesoscale map data: \(error.localizedDescription, privacy: .public)")
-        }
-        
-        switch fireResult {
-        case .success(let data):
-            fireRisk = data
-        case .failure(let error):
-            logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
-        }
-
-        scheduleMapStateRebuild()
-    }
-
-    private func fetchSevereRiskShapes() async -> Result<[SevereRiskShapeDTO], any Error> {
-        do {
-            return .success(try await svc.getSevereRiskShapes())
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    private func fetchStormRiskShapes() async -> Result<[StormRiskDTO], any Error> {
-        do {
-            return .success(try await svc.getStormRiskMapData())
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    private func fetchMesoShapes() async -> Result<[MdDTO], any Error> {
-        do {
-            return .success(try await svc.getMesoMapData())
-        } catch {
-            return .failure(error)
-        }
-    }
-    
-    private func fetchFireRiskShapes() async -> Result<[FireRiskDTO], any Error> {
-        do {
-            return .success(try await svc.getFireRisk())
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    @MainActor
-    private func scheduleMapStateRebuild() {
-        mapRebuildTask?.cancel()
-
-        let stormRisk = stormRisk
-        let severeRisks = severeRisks
-        let mesos = mesos
-        let fireRisk = fireRisk
-        let mapper = polygonMapper
-
-        mapRebuildTask = Task.detached(priority: .userInitiated) {
-            let renderStates = Dictionary(
-                uniqueKeysWithValues: MapLayer.allCases.map { layer in
-                    (
-                        layer,
-                        MapRenderStateBuilder.build(
-                            selected: layer,
-                            stormRisk: stormRisk,
-                            severeRisks: severeRisks,
-                            mesos: mesos,
-                            fireRisk: fireRisk,
-                            polygonMapper: mapper
-                        )
-                    )
-                }
-            )
-
-            guard !Task.isCancelled else { return }
-
-            await MainActor.run {
-                if Task.isCancelled { return }
-                var displayStates: [MapLayer: MapDisplayState] = [:]
-                displayStates.reserveCapacity(renderStates.count)
-
-                for layer in MapLayer.allCases {
-                    guard let renderState = renderStates[layer] else { continue }
-                    displayStates[layer] = MapDisplayStateBuilder.make(from: renderState)
-                }
-
-                cachedDisplayStates = displayStates
-                applyDisplayState(for: selected, using: displayStates)
-            }
-        }
-    }
-
-    @MainActor
-    private func applyDisplayState(
-        for layer: MapLayer,
-        using displayStates: [MapLayer: MapDisplayState]? = nil
-    ) {
-        let displayStates = displayStates ?? cachedDisplayStates
-        guard let displayState = displayStates[layer] else { return }
-        activePolygons = displayState.polygons
-        activeOverlays = displayState.overlays
-        selectedSevereRisks = displayState.selectedSevereRisks
-    }
-}
-
-private struct MapOverlayBuildPlan: Sendable {
-    enum Kind: Sendable {
-        case probability
-        case intensity(level: Int)
-    }
-
-    let key: String
-    let polygonKey: String
-    let kind: Kind
-}
-
-private struct MapRenderState: Sendable {
-    let polygons: [MapPolygonEntry]
-    let overlays: [MapOverlayBuildPlan]
-    let selectedSevereRisks: [SevereRiskShapeDTO]?
-}
-
-private struct MapDisplayState {
-    let polygons: MKMultiPolygon
-    let overlays: [MapOverlayEntry]
-    let selectedSevereRisks: [SevereRiskShapeDTO]?
-}
-
-private enum MapDisplayStateBuilder {
-    @MainActor
-    static func make(from renderState: MapRenderState) -> MapDisplayState {
-        var polygons: [MKPolygon] = []
-        polygons.reserveCapacity(renderState.polygons.count)
-
-        var polygonsByKey: [String: MKPolygon] = [:]
-        polygonsByKey.reserveCapacity(renderState.polygons.count)
-
-        for polygonEntry in renderState.polygons {
-            let polygon = polygonEntry.polygon
-            polygons.append(polygon)
-            polygonsByKey[polygonEntry.key] = polygon
-        }
-
-        var overlays: [MapOverlayEntry] = []
-        overlays.reserveCapacity(renderState.overlays.count)
-
-        for overlayPlan in renderState.overlays {
-            guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
-
-            let overlay: MKOverlay
-            switch overlayPlan.kind {
-            case .probability:
-                overlay = RiskPolygonOverlay.probability(from: polygon)
-            case .intensity(let level):
-                let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
-                overlay = RiskPolygonOverlay.intensity(
-                    from: polygon,
-                    level: level,
-                    strokeColor: style.stroke,
-                    fillColor: style.fill
-                )
-            }
-
-            overlays.append(
-                MapOverlayEntry(
-                    key: overlayPlan.key,
-                    overlay: overlay
-                )
+            LayerPickerSheet(
+                selection: $selected,
+                title: "Map Layers",
+                triggerNamespace: layerNamespace
             )
         }
-
-        return MapDisplayState(
-            polygons: MKMultiPolygon(polygons),
-            overlays: overlays,
-            selectedSevereRisks: renderState.selectedSevereRisks
-        )
     }
 }
 
-private enum MapRenderStateBuilder {
-    static func build(
-        selected: MapLayer,
-        stormRisk: [StormRiskDTO],
-        severeRisks: [SevereRiskShapeDTO],
-        mesos: [MdDTO],
-        fireRisk: [FireRiskDTO],
-        polygonMapper: MapPolygonMapper
-    ) -> MapRenderState {
-        let mappedPolygons = polygonMapper.polygons(
-            for: selected,
-            stormRisk: stormRisk,
-            severeRisks: severeRisks,
-            mesos: mesos,
-            fires: fireRisk
-        )
+private struct ViewportCoordinate: Equatable {
+    let coordinate: CLLocationCoordinate2D
 
-        if Task.isCancelled {
-            return MapRenderState(
-                polygons: mappedPolygons.keyedPolygons,
-                overlays: [],
-                selectedSevereRisks: nil
-            )
-        }
-
-        var probabilityOverlays: [MapOverlayBuildPlan] = []
-        var intensityOverlaysByLevel: [(level: Int, plan: MapOverlayBuildPlan)] = []
-        probabilityOverlays.reserveCapacity(mappedPolygons.keyedPolygons.count)
-
-        for keyedPolygon in mappedPolygons.keyedPolygons {
-            if Task.isCancelled { break }
-            let metadata = StormRiskPolygonStyleMetadata.decode(from: keyedPolygon.subtitle)
-            if let cigLevel = metadata?.cigLevel {
-                intensityOverlaysByLevel.append(
-                    (
-                        level: cigLevel,
-                        plan: MapOverlayBuildPlan(
-                            key: "\(keyedPolygon.key)|intensity|\(cigLevel)",
-                            polygonKey: keyedPolygon.key,
-                            kind: .intensity(level: cigLevel)
-                        )
-                    )
-                )
-            } else {
-                probabilityOverlays.append(
-                    MapOverlayBuildPlan(
-                        key: "\(keyedPolygon.key)|probability",
-                        polygonKey: keyedPolygon.key,
-                        kind: .probability
-                    )
-                )
-            }
-        }
-
-        // Draw intensity overlays after probabilities, with higher CIG drawn last (on top):
-        // bottom -> top = CIG1, CIG2, CIG3.
-        let orderedIntensityOverlays = intensityOverlaysByLevel
-            .sorted { $0.level < $1.level }
-            .map(\.plan)
-
-        return MapRenderState(
-            polygons: mappedPolygons.keyedPolygons,
-            overlays: probabilityOverlays + orderedIntensityOverlays,
-            selectedSevereRisks: severeRisksForSelectedLayer(selected, severeRisks: severeRisks)
-        )
+    init(_ coordinate: CLLocationCoordinate2D) {
+        self.coordinate = coordinate
     }
 
-    private static func severeRisksForSelectedLayer(
-        _ layer: MapLayer,
-        severeRisks: [SevereRiskShapeDTO]
-    ) -> [SevereRiskShapeDTO]? {
-        switch layer {
-        case .tornado:
-            severeRisksForType(.tornado, severeRisks: severeRisks)
-        case .hail:
-            severeRisksForType(.hail, severeRisks: severeRisks)
-        case .wind:
-            severeRisksForType(.wind, severeRisks: severeRisks)
-        default:
-            nil
-        }
-    }
-
-    private static func severeRisksForType(
-        _ type: ThreatType,
-        severeRisks: [SevereRiskShapeDTO]
-    ) -> [SevereRiskShapeDTO] {
-        severeRisks
-            .filter { $0.type == type }
-            .sorted { $0.probabilities.intValue < $1.probabilities.intValue }
+    static func == (lhs: ViewportCoordinate, rhs: ViewportCoordinate) -> Bool {
+        lhs.coordinate.latitude == rhs.coordinate.latitude &&
+        lhs.coordinate.longitude == rhs.coordinate.longitude
     }
 }
 
@@ -450,6 +183,18 @@ private struct MapLayerButtonMorph: ViewModifier {
 }
 
 #Preview {
-    MapScreenView()
-        .environment(LocationSession.preview)
+    MapScreenContentPreview()
+}
+
+private struct MapScreenContentPreview: View {
+    @Namespace private var layerNamespace
+
+    var body: some View {
+        MapScreenContent(
+            selected: .constant(.categorical),
+            showLayerPicker: .constant(false),
+            scene: MapLayerScene.placeholder(for: .categorical),
+            layerNamespace: layerNamespace
+        )
+    }
 }

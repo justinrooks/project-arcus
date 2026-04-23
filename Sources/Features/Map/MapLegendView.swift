@@ -3,17 +3,11 @@ import SwiftUI
 struct MapLegend: View {
     @State private var showsHatchingExplanation = false
 
-    let layer: MapLayer
-    let severeRisks: [SevereRiskShapeDTO]?
-    let fireRisks: [FireRiskDTO]?
-
-    private var hasHatching: Bool {
-        (severeRisks ?? []).contains { $0.intensityLevel != nil }
-    }
+    let state: MapLegendState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            switch layer {
+            switch state.layer {
             case .categorical:
                 Text("Severe Risk")
                     .font(.caption.weight(.semibold))
@@ -24,26 +18,26 @@ struct MapLegend: View {
             case .meso:
                 Text("Legend")
                     .font(.caption.weight(.semibold))
-                MesoLegendRow(risk: layer.key.capitalized) // MESO
+                MesoLegendRow(risk: state.layer.key.capitalized) // MESO
             
             case .fire:
-                let risks = fireLevels
+                let risks = state.fireItems
                 Text(risks.isEmpty ? "No fire risk" : "Fire Risk")
                     .font(.caption.weight(.semibold))
-                ForEach(risks, id: \.riskLevel) { risk in
+                ForEach(risks) { risk in
                     FireLegendRow(risk: risk)
                 }
 
             case .tornado, .hail, .wind:
-                let risks = severeLevels
-                Text(risks.isEmpty ? "No \(layer.title.lowercased()) risk" : "\(layer.title) Risk")
+                let risks = state.severeItems
+                Text(risks.isEmpty ? "No \(state.layer.title.lowercased()) risk" : "\(state.layer.title) Risk")
                     .font(.caption.weight(.semibold))
 
-                ForEach(risks, id: \.title) { risk in
-                    SevereLegendRow(layer: layer, risk: risk)
+                ForEach(risks) { risk in
+                    SevereLegendRow(layer: state.layer, risk: risk)
                 }
 
-                if hasHatching && !risks.isEmpty {
+                if state.showsHatchingExplanation && !risks.isEmpty {
                     Divider()
                         .overlay(.secondary.opacity(0.25))
                         .padding(.top, 10)
@@ -77,55 +71,6 @@ struct MapLegend: View {
             shadowRadius: 8,
             shadowY: 3
         )
-    }
-
-    private var fireLevels: [FireRiskDTO] {
-        let source = fireRisks ?? []
-        let mostRecentByLevel = Dictionary(
-            source.map { ($0.riskLevel, $0) },
-            uniquingKeysWith: { lhs, rhs in lhs.valid >= rhs.valid ? lhs : rhs }
-        )
-        return mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
-    }
-
-    private var severeLevels: [SevereRiskShapeDTO] {
-        // CIG overlays are map texture-only for now; hide them from legend entries.
-        // Also hide 0% severe rows (current feed representation for intensity-only data).
-        let source = (severeRisks ?? []).filter { risk in
-            if risk.intensityLevel != nil {
-                return false
-            }
-            if case .percent(let value) = risk.probabilities, value <= 0 {
-                return false
-            }
-            return true
-        }
-        let dedupedByTitle = Dictionary(
-            source.map { ($0.title, $0) },
-            uniquingKeysWith: { lhs, _ in lhs }
-        )
-        return dedupedByTitle.values.sorted {
-            let lhsProbability = $0.probabilities.intValue
-            let rhsProbability = $1.probabilities.intValue
-            if lhsProbability != rhsProbability {
-                return lhsProbability < rhsProbability
-            }
-
-            let lhsSignificanceRank = isSignificant($0.probabilities) ? 1 : 0
-            let rhsSignificanceRank = isSignificant($1.probabilities) ? 1 : 0
-            if lhsSignificanceRank != rhsSignificanceRank {
-                return lhsSignificanceRank < rhsSignificanceRank
-            }
-
-            return $0.title < $1.title
-        }
-    }
-
-    private func isSignificant(_ probability: ThreatProbability) -> Bool {
-        if case .significant = probability {
-            return true
-        }
-        return false
     }
 }
 
@@ -193,15 +138,15 @@ private struct MesoLegendRow: View {
 
 private struct SevereLegendRow: View {
     let layer: MapLayer
-    let risk: SevereRiskShapeDTO
+    let risk: SevereLegendItem
 
     var body: some View {
-        let probability = risk.probabilities
+        let probability = risk.probability
         let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(
             risk: "\(layer.key) - \(probability)",
             probability: String(probability.intValue),
-            spcFillHex: risk.fill,
-            spcStrokeHex: risk.stroke
+            spcFillHex: risk.fillHex,
+            spcStrokeHex: risk.strokeHex
         )
         HStack {
             Circle()
@@ -224,14 +169,14 @@ private struct SevereLegendRow: View {
 }
 
 private struct FireLegendRow: View {
-    let risk: FireRiskDTO
+    let risk: FireLegendItem
 
     var body: some View {
         let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(
             risk: "FIRE \(risk.riskLevel)",
             probability: "0",
-            spcFillHex: risk.fill,
-            spcStrokeHex: risk.stroke
+            spcFillHex: risk.fillHex,
+            spcStrokeHex: risk.strokeHex
         )
         HStack {
             Circle()
@@ -332,26 +277,27 @@ private struct HatchSwatchView: View {
 // MARK: - Previews
 
 #Preview("Categorical") {
-    MapLegend(layer: .categorical, severeRisks: nil, fireRisks: nil)
+    MapLegend(state: .empty(for: .categorical))
         .padding()
         .background(.thinMaterial)
 }
 
 #Preview("Tornado 10% + SIGN") {
-    MapLegend(
+    MapLegend(state: MapLegendState(
         layer: .tornado,
-        severeRisks: [
-            SevereRiskShapeDTO(type: .tornado, probabilities: .percent(0.10), stroke: nil, fill: nil, polygons: []),
-            SevereRiskShapeDTO(type: .tornado, probabilities: .significant(25), stroke: nil, fill: nil, polygons: [])
+        severeItems: [
+            SevereLegendItem(id: "10%", probability: .percent(0.10), fillHex: nil, strokeHex: nil),
+            SevereLegendItem(id: "25% Significant", probability: .significant(25), fillHex: nil, strokeHex: nil)
         ],
-        fireRisks: nil
-    )
+        fireItems: [],
+        showsHatchingExplanation: true
+    ))
         .padding()
         .background(.thinMaterial)
 }
 
 #Preview("Meso") {
-    MapLegend(layer: .meso, severeRisks: nil, fireRisks: nil)
+    MapLegend(state: .empty(for: .meso))
         .padding()
         .background(.thinMaterial)
 }

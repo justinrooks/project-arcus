@@ -12,6 +12,7 @@ import UIKit
 @MainActor
 final class MapCoordinator: NSObject, MKMapViewDelegate {
     var lastCenteredCoordinate: CLLocationCoordinate2D?
+    var lastAppliedOverlayRevision: Int?
     private var overlayByKey: [String: MKOverlay] = [:]
     private var keyByOverlayIdentifier: [ObjectIdentifier: String] = [:]
     private var signatureByKey: [String: OverlaySignature] = [:]
@@ -33,23 +34,32 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
     }
 
     func resolvedOverlay(for key: String, incomingOverlay: MKOverlay) -> MKOverlay {
-        let incomingSignature = overlaySignature(for: incomingOverlay)
+        resolvedOverlay(
+            for: key,
+            incomingOverlay: incomingOverlay,
+            signature: overlaySignature(for: incomingOverlay).fingerprint
+        )
+    }
+
+    func resolvedOverlay(for key: String, incomingOverlay: MKOverlay, signature: Int) -> MKOverlay {
+        let incomingSignature = OverlaySignature(fingerprint: signature)
 
         if let cachedOverlay = overlayByKey[key],
            signatureByKey[key] == incomingSignature {
-            registerOverlay(cachedOverlay, key: key, signature: incomingSignature)
+            registerOverlay(cachedOverlay, key: key, signature: signature)
             return cachedOverlay
         }
 
-        registerOverlay(incomingOverlay, key: key, signature: incomingSignature)
+        registerOverlay(incomingOverlay, key: key, signature: signature)
         return incomingOverlay
     }
 
     func registerOverlay(_ overlay: MKOverlay, key: String) {
-        registerOverlay(overlay, key: key, signature: nil)
+        let incomingSignature = overlaySignature(for: overlay)
+        registerOverlay(overlay, key: key, signature: incomingSignature.fingerprint)
     }
 
-    private func registerOverlay(_ overlay: MKOverlay, key: String, signature: OverlaySignature?) {
+    func registerOverlay(_ overlay: MKOverlay, key: String, signature: Int) {
         if let previousOverlay = overlayByKey[key],
            (previousOverlay as AnyObject) !== (overlay as AnyObject) {
             let previousIdentifier = ObjectIdentifier(previousOverlay as AnyObject)
@@ -58,7 +68,7 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
 
         let identifier = ObjectIdentifier(overlay as AnyObject)
         overlayByKey[key] = overlay
-        signatureByKey[key] = signature ?? overlaySignature(for: overlay)
+        signatureByKey[key] = OverlaySignature(fingerprint: signature)
         keyByOverlayIdentifier[identifier] = key
     }
 
@@ -81,6 +91,9 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
         overlayByKey = overlayByKey.filter { keys.contains($0.key) }
         signatureByKey = signatureByKey.filter { keys.contains($0.key) }
         keyByOverlayIdentifier = keyByOverlayIdentifier.filter { keys.contains($0.value) }
+        if keys.isEmpty {
+            lastAppliedOverlayRevision = nil
+        }
     }
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {

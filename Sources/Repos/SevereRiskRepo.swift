@@ -132,7 +132,7 @@ actor SevereRiskRepo {
         // Target only items that are both valid and not expired.
         let desc = FetchDescriptor<SevereRisk>(
             predicate: #Predicate<SevereRisk> {
-                $0.valid <= date && date < $0.expires
+                $0.valid <= date && date <= $0.expires
             }
         )
 

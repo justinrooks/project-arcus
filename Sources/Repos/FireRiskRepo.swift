@@ -75,7 +75,7 @@ actor FireRiskRepo {
     func getLatestMapData(asOf date: Date = .init()) throws -> [FireRiskDTO] {
         // 1) Fetch only risks that are currently valid
         let pred = #Predicate<FireRisk> {
-            $0.valid <= date && date < $0.expires
+            $0.valid <= date && date <= $0.expires
         }
         let desc = FetchDescriptor<FireRisk>(predicate: pred)
         // We'll dedupe by risk level and keep the freshest issuance for each level.
