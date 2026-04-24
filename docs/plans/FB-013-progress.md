@@ -45,35 +45,55 @@ Related GitHub issues:
   - Epic `#131`: `Ready`, `P0`
   - Child issues: `Ready`, `P1`
 - Issue bodies have been normalized to the FB-010 issue format.
-- No implementation work has started yet.
+- Issue `#132` is complete in Project Arcus and mirrored in the Arcus Signal payload model.
+- Remaining child issues are still pending and should continue in sequence.
 
 ---
 
 ## Issue #132 - Add Shared Nullable Geometry to DeviceAlertPayload
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Add nullable warning geometry to the shared app/server `DeviceAlertPayload` contract.
-- Preserve decode compatibility for payloads without geometry.
-- Support polygon and multipolygon transport.
-- Document nil geometry as no renderable warning polygon.
+### Scope completed
+- Brief sections advanced:
+  - Goals 1 and 2 by defining the shared warning geometry transport shape.
+  - Constraints / Invariants covering nil geometry semantics and polygon plus multipolygon compatibility.
+  - Acceptance criteria 1 and 9 by adding the nullable payload contract and decoding support for both geometry families.
+- Issue requirements completed:
+  - Added nullable `geometry` to the app and server `DeviceAlertPayload` models.
+  - Supported `Polygon` and `MultiPolygon` transport payloads.
+  - Preserved decode compatibility when `geometry` is missing.
+  - Documented transport coordinate order as longitude then latitude.
+  - Left rendering, persistence, and notification behavior untouched.
 
 ### Key implementation notes
-- App payload model currently lives at `Sources/Models/Watches/DeviceAlertPayload.swift`.
-- Server payload model currently lives at `/Users/justin/Code/arcus-signal/Sources/App/Models/Device/DeviceAlertPayload.swift`.
-- Server canonical geometry semantics already exist as `GeoShape` in `/Users/justin/Code/arcus-signal/Sources/App/Models/NWS/ArcusEvent.swift`.
-- This issue should avoid rendering, SwiftData persistence, and notification changes.
+- Added a narrow `DeviceAlertGeometry` enum instead of reusing the server's broader `GeoShape`, because v1 only needs polygon and multipolygon transport and this issue should not smuggle in unsupported geometry types.
+- Transport coordinates are modeled as `[longitude, latitude]` arrays via `DeviceAlertCoordinate`, with map-native conversion deferred to the rendering edge.
+- `swift-concurrency-expert` was not applicable because this issue does not change async flows, actors, SwiftData actors, or cross-concurrency boundaries.
+- `build-ios-apps:swiftui-ui-patterns` was not applicable because this issue does not touch SwiftUI, view composition, or picker controls.
 
-### Files expected to change
+### Files changed
 - `Sources/Models/Watches/DeviceAlertPayload.swift`
-- Possibly `/Users/justin/Code/arcus-signal/Sources/App/Models/Device/DeviceAlertPayload.swift`
-- Tests under `Tests/UnitTests`
+- `Tests/UnitTests/DeviceAlertPayloadTests.swift`
+- `/Users/justin/Code/arcus-signal/Sources/App/Models/Device/DeviceAlertPayload.swift`
 
-### Verification target
-- Payload decode tests prove missing, polygon, and multipolygon geometry behavior.
-- Existing alert payload decoding remains compatible.
+### Tests
+- Added:
+  - `DeviceAlertPayloadTests.polygonGeometry_decodes`
+  - `DeviceAlertPayloadTests.multiPolygonGeometry_decodes`
+- Updated:
+  - `DeviceAlertPayloadTests.missingUgc_decodes`
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -only-testing:SkyAwareTests/DeviceAlertPayloadTests test`
+  2. Confirm the suite passes for missing geometry, polygon geometry, and multipolygon geometry decoding.
+  3. Confirm the app and Arcus Signal payload models both expose `geometry: DeviceAlertGeometry?`.
+- Expected result:
+  - Payloads without `geometry` still decode.
+  - `Polygon` and `MultiPolygon` payloads decode with longitude/latitude transport order preserved.
+  - Nil geometry remains the explicit no-polygon contract.
 
 ### Out of scope / intentionally deferred
 - Server endpoint exposure
@@ -81,8 +101,20 @@ Related GitHub issues:
 - Map rendering
 - Toggle UI
 
+### Risks or follow-ups
+- The app and server now mirror the same contract shape, but they are still duplicated source files. A future packaging/shared-model cleanup can remove that drift risk without broadening FB-013 scope.
+- Server-side endpoint exposure and row mapping are still deferred to `arcus-signal#48`.
+
 ### Handoff to next issue
-- The next issue should assume the shared payload contract has a nullable geometry property with nil-as-no-polygon semantics.
+- The next issue should assume:
+  - `DeviceAlertPayload.geometry` exists and is nullable in both repos.
+  - The transport shape supports only `Polygon` and `MultiPolygon`.
+  - Coordinate arrays are stored as longitude then latitude until the rendering edge.
+- Watch out for:
+  - Do not re-encode geometry into map-native coordinate objects inside payload or persistence layers.
+  - Do not broaden the contract to points or interior rings unless a later issue explicitly requires it.
+- Recommended next step:
+  - Implement `arcus-signal#48` so `/api/v1/alerts` actually populates the new payload field from latest series geometry.
 
 ---
 
