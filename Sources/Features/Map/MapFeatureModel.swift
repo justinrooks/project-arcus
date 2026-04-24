@@ -16,6 +16,13 @@ final class MapFeatureModel {
     private let logger = Logger.uiMap
     private let polygonMapper = MapPolygonMapper()
     private let planner = MapScenePlanner()
+    private let shouldInjectTemporaryWarningSamples: Bool = {
+#if DEBUG
+        return NSClassFromString("XCTestCase") == nil
+#else
+        return false
+#endif
+    }()
 
     private var renderPlans: [MapLayer: MapLayerRenderPlan] = [:]
     private var cachedScenes: [MapLayer: MapLayerScene] = [:]
@@ -89,7 +96,7 @@ final class MapFeatureModel {
         let activeWarnings: [ActiveWarningGeometry]
         switch warningResult {
         case .success(let value):
-            activeWarnings = value
+            activeWarnings = injectTemporaryWarningSamples(into: value)
         case .failure(let error):
             if error is CancellationError {
                 return
@@ -251,6 +258,66 @@ final class MapFeatureModel {
         } catch {
             return .failure(error)
         }
+    }
+
+    private func injectTemporaryWarningSamples(
+        into warnings: [ActiveWarningGeometry]
+    ) -> [ActiveWarningGeometry] {
+        guard shouldInjectTemporaryWarningSamples else {
+            return warnings
+        }
+
+        return warnings + Self.temporaryWarningSamples(
+            around: initialCenterCoordinate ?? CLLocationCoordinate2D(latitude: 39.0, longitude: -97.0)
+        )
+    }
+
+    private static func temporaryWarningSamples(
+        around center: CLLocationCoordinate2D
+    ) -> [ActiveWarningGeometry] {
+        [
+            warningSample(
+                id: "debug-severe-thunderstorm",
+                event: "Severe Thunderstorm Warning",
+                center: CLLocationCoordinate2D(latitude: center.latitude + 0.55, longitude: center.longitude - 0.85)
+            ),
+            warningSample(
+                id: "debug-tornado",
+                event: "Tornado Warning",
+                center: center
+            ),
+            warningSample(
+                id: "debug-flash-flood",
+                event: "Flash Flood Warning",
+                center: CLLocationCoordinate2D(latitude: center.latitude - 0.55, longitude: center.longitude + 0.85)
+            )
+        ]
+    }
+
+    private static func warningSample(
+        id: String,
+        event: String,
+        center: CLLocationCoordinate2D
+    ) -> ActiveWarningGeometry {
+        ActiveWarningGeometry(
+            id: id,
+            messageId: id,
+            currentRevisionSent: Date(timeIntervalSince1970: 1_735_689_600),
+            event: event,
+            issued: Date(timeIntervalSince1970: 1_735_689_600),
+            effective: Date(timeIntervalSince1970: 1_735_689_600),
+            expires: Date(timeIntervalSince1970: 1_735_693_200),
+            ends: Date(timeIntervalSince1970: 1_735_693_200),
+            messageType: "Alert",
+            geometry: .polygon(
+                rings: [[
+                    DeviceAlertCoordinate(longitude: center.longitude - 0.35, latitude: center.latitude - 0.20),
+                    DeviceAlertCoordinate(longitude: center.longitude + 0.35, latitude: center.latitude - 0.20),
+                    DeviceAlertCoordinate(longitude: center.longitude + 0.35, latitude: center.latitude + 0.20),
+                    DeviceAlertCoordinate(longitude: center.longitude - 0.35, latitude: center.latitude + 0.20)
+                ]]
+            )
+        )
     }
 }
 
