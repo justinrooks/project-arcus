@@ -729,27 +729,60 @@ Related GitHub issues:
 ## Issue #139 - Validate Offline Warning Geometry Rendering from SwiftData
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Validate that active warning geometry renders from SwiftData while the app is offline.
+### Scope completed
+- Brief sections advanced:
+  - `Offline Rendering and Validation` by tightening test coverage around offline warning-only rendering and lifecycle filtering.
+  - `Active Warning Geometry Query` by proving local-time and lifecycle exclusion rules on SwiftData-backed warning geometry reads.
+  - `Warning Geometry Toggle` by validating hide/show behavior against offline-rendered warning polygons.
+  - `App Persistence` by validating the query returns the latest geometry persisted in SwiftData.
+- Issue requirements completed:
+  - Added query-side validation for inactive lifecycle exclusions including future-effective and superseded warnings.
+  - Added query-side validation that the latest stored warning geometry is what is returned for rendering.
+  - Added map composition validation that warning-only overlays render from fake cached warning geometry and respond correctly to the toggle.
+  - Kept validation and implementation scoped to warning geometry behavior; no network, notification, or background policy changes.
 
 ### Key implementation notes
-- SwiftData is the cache source for warning geometry.
-- Validate active filtering with local time and status rules.
-- Expired or canceled alerts should not render offline even if geometry exists locally.
-- Keep validation focused on warning geometry behavior.
+- `WatchRepo.activeWarningGeometries(on:)` remains the SwiftData-backed filter seam for offline warning rendering.
+- Local lifecycle filtering now has explicit test coverage for:
+  - expired time windows
+  - canceled/cancelled message/status semantics
+  - non-active/superseded status
+  - not-yet-effective warnings
+- Added an explicit test proving map composition can render from warning query data with no thematic overlays and that the warning toggle hides/shows those offline-rendered polygons.
+- `swift-concurrency-expert` applied lightly: this issue touches `@ModelActor` query behavior and async query consumption, but no actor-isolation changes were required.
+- `build-ios-apps:swiftui-ui-patterns` applied lightly: this issue validates existing map/toggle composition behavior without introducing new SwiftUI structure.
 
-### Files expected to change
-- Tests under `Tests/UnitTests`
-- Possibly small test seams in map/query code if required
+### Files changed
+- `Tests/UnitTests/WatchRepoActiveTests.swift`
+- `Tests/UnitTests/MapFeatureModelTests.swift`
 - `docs/plans/FB-013-progress.md`
 
-### Verification target
-- Active warning with stored geometry renders offline.
-- Expired warning with stored geometry does not render offline.
-- Canceled or non-active warning with stored geometry does not render offline.
-- Toggle still hides and shows offline-rendered warning geometry.
+### Tests
+- Added:
+  - `WatchRepoActiveTests.activeWarningGeometries_returnsLatestStoredGeometry`
+  - `MapFeatureModelTests.offlineWarningGeometry_rendersAndToggles`
+- Updated:
+  - `WatchRepoActiveTests.activeWarningGeometries_excludesInactiveLifecycle` (expanded lifecycle/time coverage)
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/WatchRepoActiveTests -only-testing:SkyAwareTests/MapFeatureModelTests test`
+- Result:
+  - Passed
+- Test artifact:
+  - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.04.24_16-08-28--0600.xcresult`
+
+### Focused manual validation path
+1. Launch app with network/server reachable; navigate to a location with an active Tornado/Severe Thunderstorm/Flash Flood Warning and confirm warning polygon appears.
+2. Kill app.
+3. Disable connectivity to Arcus/SPC endpoints (for example: airplane mode or local network off plus backend unavailable).
+4. Relaunch app at the same location and open map.
+5. Confirm active warning polygon still renders from local cache.
+6. In the map picker, toggle `Show Active Alerts` off and confirm warning polygon hides.
+7. Toggle `Show Active Alerts` on and confirm the same warning polygon reappears.
+8. Repeat with a warning that has expired or been canceled/superseded, then relaunch offline and confirm no warning polygon renders.
 
 ### Out of scope / intentionally deferred
 - URLCache-specific warning geometry implementation
@@ -758,7 +791,8 @@ Related GitHub issues:
 - Broad unrelated map regression work
 
 ### Handoff to next issue
-- This is the final planned FB-013 implementation issue. Any remaining gaps should be recorded here as follow-up issues rather than silently expanding scope.
+- FB-013 planned issue sequence is now complete through `#139`.
+- Any remaining gaps should be tracked as follow-up issues rather than broadening this slice.
 
 ---
 

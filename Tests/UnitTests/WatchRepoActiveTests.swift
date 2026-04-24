@@ -261,16 +261,83 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
+        let futureEffective = makeWatch(
+            number: "future-effective",
+            issued: now.addingTimeInterval(-60),
+            effective: now.addingTimeInterval(600),
+            validEnd: now.addingTimeInterval(1200),
+            status: "Active",
+            messageType: "Alert",
+            event: "Tornado Warning",
+            geometry: geometry
+        )
+        let supersededState = makeWatch(
+            number: "superseded-state",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            status: "Superseded",
+            messageType: "Update",
+            event: "Tornado Warning",
+            geometry: geometry
+        )
 
         ctx.insert(expired)
         ctx.insert(canceledMessage)
         ctx.insert(cancelledState)
         ctx.insert(nonActiveState)
+        ctx.insert(futureEffective)
+        ctx.insert(supersededState)
         try ctx.save()
 
         let geometries = try await repo.activeWarningGeometries(on: now)
 
         #expect(geometries.isEmpty)
+    }
+
+    @Test("Active warning geometry query returns latest stored geometry from SwiftData")
+    func activeWarningGeometries_returnsLatestStoredGeometry() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let initialGeometry = testPolygonGeometry()
+        let latestGeometry: DeviceAlertGeometry = .polygon(
+            rings: [
+                [
+                    DeviceAlertCoordinate(longitude: -105.0200, latitude: 39.7000),
+                    DeviceAlertCoordinate(longitude: -104.7000, latitude: 39.7000),
+                    DeviceAlertCoordinate(longitude: -104.7000, latitude: 39.9500),
+                    DeviceAlertCoordinate(longitude: -105.0200, latitude: 39.9500),
+                    DeviceAlertCoordinate(longitude: -105.0200, latitude: 39.7000)
+                ]
+            ]
+        )
+
+        let watch = makeWatch(
+            number: "latest-warning",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(900),
+            status: "Active",
+            messageType: "Update",
+            event: "Tornado Warning",
+            geometry: initialGeometry
+        )
+
+        ctx.insert(watch)
+        try ctx.save()
+
+        watch.messageId = "urn:test:latest"
+        watch.currentRevisionSent = now.addingTimeInterval(120)
+        watch.geometry = latestGeometry
+        try ctx.save()
+
+        let geometries = try await repo.activeWarningGeometries(on: now)
+        let warning = try #require(geometries.first(where: { $0.id == "latest-warning" }))
+
+        #expect(geometries.count == 1)
+        #expect(warning.messageId == "urn:test:latest")
+        #expect(warning.currentRevisionSent == now.addingTimeInterval(120))
+        #expect(warning.geometry == latestGeometry)
     }
 
     @Test("Provider active warning geometry query reads local SwiftData without network")

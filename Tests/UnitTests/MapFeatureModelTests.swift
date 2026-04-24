@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import MapKit
 import Testing
 @testable import SkyAware
 
@@ -401,6 +402,50 @@ struct MapFeatureModelTests {
         #expect(restoredKeys.last?.contains("warn|") == true)
     }
 
+    @Test("offline cached warning geometry renders from query data and toggle hides and shows it")
+    func offlineWarningGeometry_rendersAndToggles() async throws {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let expectedCoordinates = [
+            CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.2, longitude: -96.7),
+            CLLocationCoordinate2D(latitude: 35.3, longitude: -97.2)
+        ]
+        let warningGeometry: DeviceAlertGeometry = .polygon(
+            rings: [[
+                DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+                DeviceAlertCoordinate(longitude: -96.7, latitude: 35.2),
+                DeviceAlertCoordinate(longitude: -97.2, latitude: 35.3)
+            ]]
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning", geometry: warningGeometry)])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+
+        let renderedCoordinates = try #require(singleWarningPolygonCoordinates(in: model.activeScene))
+        #expect(renderedCoordinates.count == expectedCoordinates.count)
+        for (rendered, expected) in zip(renderedCoordinates, expectedCoordinates) {
+            #expect(coordinatesEqual(rendered, expected))
+        }
+
+        model.setWarningGeometryVisible(false)
+        #expect(model.activeScene.canvasState.overlays.isEmpty)
+
+        model.setWarningGeometryVisible(true)
+        let restoredCoordinates = try #require(singleWarningPolygonCoordinates(in: model.activeScene))
+        #expect(restoredCoordinates.count == expectedCoordinates.count)
+        for (restored, expected) in zip(restoredCoordinates, expectedCoordinates) {
+            #expect(coordinatesEqual(restored, expected))
+        }
+    }
+
     @Test("reload keeps thematic layers when the warning query fails")
     func reload_warningQueryFailurePreservesThematicLayers() async {
         let model = MapFeatureModel()
@@ -563,6 +608,20 @@ struct MapFeatureModelTests {
 
     private func overlayKeys(in scene: MapLayerScene) -> [String] {
         scene.canvasState.overlays.map(\.key)
+    }
+
+    private func singleWarningPolygonCoordinates(in scene: MapLayerScene) -> [CLLocationCoordinate2D]? {
+        guard scene.canvasState.overlays.count == 1,
+              let polygon = scene.canvasState.overlays.first?.overlay as? MKPolygon else {
+            return nil
+        }
+
+        return polygonCoordinates(of: polygon)
+    }
+
+    private func polygonCoordinates(of polygon: MKPolygon) -> [CLLocationCoordinate2D] {
+        let points = polygon.points()
+        return (0..<polygon.pointCount).map { points[$0].coordinate }
     }
 }
 
