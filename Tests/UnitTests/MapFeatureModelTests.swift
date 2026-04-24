@@ -40,8 +40,9 @@ struct MapFeatureModelTests {
             mesos: .success([]),
             fireRisk: .success([])
         )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-        await model.reload(using: service, selectedLayer: .tornado)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
 
         let scene = model.activeScene
         #expect(scene.legendState.layer == .tornado)
@@ -61,8 +62,9 @@ struct MapFeatureModelTests {
             mesos: .success([]),
             fireRisk: .success([])
         )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
 
         let scene = model.activeScene
         #expect(scene.legendState.layer == .categorical)
@@ -92,8 +94,9 @@ struct MapFeatureModelTests {
                 )
             ])
         )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         model.selectLayer(.fire)
 
         let scene = model.activeScene
@@ -118,8 +121,9 @@ struct MapFeatureModelTests {
             mesos: .success([]),
             fireRisk: .success([])
         )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
 
         #expect(overlayTitles(in: model.activeScene) == ["TSTM", "MRGL", "SLGT", "ENH", "MDT"])
     }
@@ -139,8 +143,9 @@ struct MapFeatureModelTests {
                 mesos: .success([]),
                 fireRisk: .success([])
             )
+            let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-            await model.reload(using: service, selectedLayer: layer)
+            await model.reload(using: service, warningSource: warnings, selectedLayer: layer)
 
             #expect(
                 overlayTitles(in: model.activeScene) == [
@@ -164,9 +169,10 @@ struct MapFeatureModelTests {
             fireRisk: []
         )
         let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-        await model.reload(using: service, selectedLayer: .categorical)
-        await model.reload(using: service, selectedLayer: .fire)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .fire)
 
         let counts = await counter.snapshot()
         #expect(counts.severe == 2)
@@ -198,8 +204,9 @@ struct MapFeatureModelTests {
         )
         let service = MutableSpcMapData(store: store)
         let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         model.selectLayer(.fire)
         #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [5])
 
@@ -221,7 +228,7 @@ struct MapFeatureModelTests {
             ]
         )
 
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         #expect(overlayTitles(in: model.activeScene) == ["ENH"])
 
         model.selectLayer(.fire)
@@ -240,13 +247,14 @@ struct MapFeatureModelTests {
             secondStormRisk: [makeStormRisk(level: .enhanced, title: "ENH")]
         )
         let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
         let firstReload = Task { @MainActor in
-            await model.reload(using: service, selectedLayer: .categorical)
+            await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         }
 
         await gate.waitUntilFirstStormFetchStarts()
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         await gate.releaseFirstStormFetch()
         await firstReload.value
 
@@ -267,9 +275,10 @@ struct MapFeatureModelTests {
             mesos: .success([]),
             fireRisk: .success([])
         )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
         model.captureInitialCenterCoordinateIfNeeded(first)
-        await model.reload(using: service, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         model.captureInitialCenterCoordinateIfNeeded(second)
 
         let stored = try #require(model.initialCenterCoordinate)
@@ -277,6 +286,144 @@ struct MapFeatureModelTests {
 
         #expect(coordinatesEqual(stored, first))
         #expect(coordinatesEqual(canvasCoordinate, first))
+    }
+
+    @Test("reload composes warning overlays above the selected thematic layer")
+    func reload_composesWarningOverlaysAboveSelectedLayer() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning")])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+
+        let keys = overlayKeys(in: model.activeScene)
+        #expect(keys.count == 2)
+        #expect(keys.first?.contains("cat|") == true)
+        #expect(keys.last?.contains("warn|") == true)
+    }
+
+    @Test("reload composes warning overlays for every layer")
+    func reload_composesWarningOverlaysForEveryLayer() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .wind, probability: .percent(0.15), title: "15% Wind Risk"),
+                makeSevereRisk(type: .hail, probability: .percent(0.15), title: "15% Hail Risk"),
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([
+                makeMeso(
+                    number: 1,
+                    coordinates: [
+                        Coordinate2D(latitude: 35.0, longitude: -97.0),
+                        Coordinate2D(latitude: 35.2, longitude: -96.8),
+                        Coordinate2D(latitude: 35.3, longitude: -97.1)
+                    ]
+                )
+            ]),
+            fireRisk: .success([
+                FireRiskDTO(
+                    product: "WindRH",
+                    issued: now,
+                    expires: now.addingTimeInterval(3_600),
+                    valid: now,
+                    riskLevel: 8,
+                    riskLevelDescription: "Critical",
+                    label: "Critical Fire Weather Area",
+                    stroke: "#123456",
+                    fill: "#ABCDEF",
+                    polygons: [makeGeoPolygon(title: "Critical Fire Weather Area")]
+                )
+            ])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Severe Thunderstorm Warning")])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+
+        for layer in MapLayer.allCases {
+            model.selectLayer(layer)
+            let keys = overlayKeys(in: model.activeScene)
+            #expect(keys.last?.contains("warn|") == true)
+            #expect(keys.count >= 2)
+        }
+    }
+
+    @Test("reload keeps thematic layers when the warning query fails")
+    func reload_warningQueryFailurePreservesThematicLayers() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .enhanced, title: "ENH")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .failure(StubError()))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+
+        #expect(overlayTitles(in: model.activeScene) == ["ENH"])
+        #expect(model.activeScene.canvasState.overlays.count == 1)
+    }
+
+    @Test("reload updates overlay revision when warning geometry changes")
+    func reload_warningGeometryChangesUpdateOverlayRevision() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let baselineWarnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(
+                    event: "Flash Flood Warning",
+                    geometry: .polygon(
+                        rings: [[
+                            DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+                            DeviceAlertCoordinate(longitude: -96.8, latitude: 35.1),
+                            DeviceAlertCoordinate(longitude: -97.1, latitude: 35.3)
+                        ]]
+                    )
+                )
+            ])
+        )
+        let revisedWarnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(
+                    event: "Flash Flood Warning",
+                    geometry: .polygon(
+                        rings: [[
+                            DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+                            DeviceAlertCoordinate(longitude: -96.6, latitude: 35.2),
+                            DeviceAlertCoordinate(longitude: -97.2, latitude: 35.4)
+                        ]]
+                    )
+                )
+            ])
+        )
+
+        await model.reload(using: service, warningSource: baselineWarnings, selectedLayer: .categorical)
+        let baselineRevision = model.activeScene.canvasState.overlayRevision
+        let baselineKeys = overlayKeys(in: model.activeScene)
+
+        await model.reload(using: service, warningSource: revisedWarnings, selectedLayer: .categorical)
+        let revisedRevision = model.activeScene.canvasState.overlayRevision
+        let revisedKeys = overlayKeys(in: model.activeScene)
+
+        #expect(baselineRevision != revisedRevision)
+        #expect(baselineKeys != revisedKeys)
+        #expect(revisedKeys.last?.contains("warn|") == true)
     }
 
     private func makeStormRisk(level: StormRiskLevel, title: String) -> StormRiskDTO {
@@ -316,6 +463,46 @@ struct MapFeatureModelTests {
         GeoPolygonEntity(title: title, coordinates: coordinates)
     }
 
+    private func makeMeso(number: Int, coordinates: [Coordinate2D]) -> MdDTO {
+        MdDTO(
+            number: number,
+            title: "SPC MD \(number)",
+            link: URL(string: "https://example.com/md/\(number)")!,
+            issued: now,
+            validStart: now,
+            validEnd: now.addingTimeInterval(3_600),
+            areasAffected: "Test Area",
+            summary: "Test Summary",
+            watchProbability: "40",
+            threats: nil,
+            coordinates: coordinates
+        )
+    }
+
+    private func makeWarning(
+        event: String,
+        geometry: DeviceAlertGeometry = .polygon(
+            rings: [[
+                DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
+                DeviceAlertCoordinate(longitude: -96.9, latitude: 35.1),
+                DeviceAlertCoordinate(longitude: -97.1, latitude: 35.2)
+            ]]
+        )
+    ) -> ActiveWarningGeometry {
+        ActiveWarningGeometry(
+            id: "warn-1",
+            messageId: "msg-1",
+            currentRevisionSent: now,
+            event: event,
+            issued: now,
+            effective: now,
+            expires: now.addingTimeInterval(3_600),
+            ends: now.addingTimeInterval(3_600),
+            messageType: "Alert",
+            geometry: geometry
+        )
+    }
+
     private func coordinatesEqual(
         _ lhs: CLLocationCoordinate2D,
         _ rhs: CLLocationCoordinate2D,
@@ -329,6 +516,10 @@ struct MapFeatureModelTests {
         scene.canvasState.overlays.compactMap { entry in
             (entry.overlay as? RiskPolygonOverlay)?.polygon.title
         }
+    }
+
+    private func overlayKeys(in scene: MapLayerScene) -> [String] {
+        scene.canvasState.overlays.map(\.key)
     }
 }
 
@@ -352,6 +543,22 @@ private struct StubSpcMapData: SpcMapData {
 
     func getFireRisk() async throws -> [FireRiskDTO] {
         try fireRisk.get()
+    }
+}
+
+private struct StubArcusAlertQuerying: ArcusAlertQuerying {
+    let activeWarnings: Result<[ActiveWarningGeometry], Error>
+
+    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+        []
+    }
+
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
+        try activeWarnings.get()
+    }
+
+    func getWatch(id: String) async throws -> WatchRowDTO? {
+        nil
     }
 }
 

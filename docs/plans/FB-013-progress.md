@@ -493,37 +493,169 @@ Related GitHub issues:
 ## Issue #137 - Compose Warning Overlays above Every Map Layer
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
+### Scope completed
 - Compose warning overlays above every selected thematic map layer.
 
 ### Key implementation notes
 - Warning geometry is a baseline overlay, not a new exclusive map layer.
-- Append warning overlays last so they render above thematic overlays.
-- Preserve layer warming and cached scene behavior where practical.
-- Query warning geometry from SwiftData-backed alert state.
-- Warning query failures should not break unrelated map layers.
+- `MapFeatureModel.reload` now fetches active warning geometry alongside SPC map data through the existing `ArcusAlertQuerying` boundary.
+- Warning query failures are logged and treated as empty warning geometry; cancellation still aborts the reload so superseded work does not apply stale scenes.
+- `MapDataPayload` now carries `activeWarnings`, and `MapRenderPlanBuilder` appends warning overlay plans after thematic overlay plans for every `MapLayer`.
+- Warning overlay plans materialize as plain `MKPolygon` overlays so the warning-specific renderer path from issue `#136` applies without changing thematic overlay behavior.
+- Overlay revision calculation now includes appended warning plans, so warning add/remove/revision changes invalidate cached overlay state correctly while leaving non-warning key/signature behavior unchanged.
+- Layer warming and cached per-layer scene behavior stay intact because warnings are composed inside the existing `MapLayerRenderPlan` pipeline rather than through a separate cache or map layer system.
+- `swift-concurrency-expert` was applicable because this issue added an async query through the provider boundary. The implementation kept the existing `@MainActor` model, reused immutable value payloads, and preserved cancellation semantics instead of introducing detached work or broader isolation changes.
+- `build-ios-apps:swiftui-ui-patterns` was applicable because the map screen wires the reload call from SwiftUI. The only UI change was passing the existing environment dependency into the existing `onAppear` and scene-phase reload hooks; no new view state or control surface was introduced.
 
-### Files expected to change
+### Files changed
 - `Sources/Features/Map/MapFeatureModel.swift`
 - `Sources/Features/Map/MapScreenView.swift`
-- Map scene planning/materialization code in `Sources/Features/Map`
-- Tests under `Tests/UnitTests`
+- `Tests/UnitTests/MapFeatureModelTests.swift`
+- `docs/plans/FB-013-progress.md`
 
-### Verification target
-- Warning polygons can render over categorical, wind, hail, tornado, meso, and fire layers.
-- Warning overlays render above existing overlays.
-- Existing map layers still render without warnings.
+### Tests
+- Added:
+  - `MapFeatureModelTests.reload_composesWarningOverlaysAboveSelectedLayer`
+  - `MapFeatureModelTests.reload_composesWarningOverlaysForEveryLayer`
+  - `MapFeatureModelTests.reload_warningQueryFailurePreservesThematicLayers`
+  - `MapFeatureModelTests.reload_warningGeometryChangesUpdateOverlayRevision`
+- Updated:
+  - Existing `MapFeatureModelTests` reload call sites to inject the Arcus warning query stub.
+
+### Verification
+- Ran:
+  1. `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/MapFeatureModelTests test`
+  2. `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/MapPolygonMapperTests -only-testing:SkyAwareTests/RiskPolygonOverlayTests test`
+  3. `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' build`
+- Result:
+  - Focused map composition tests passed, including overlay ordering, per-layer warning composition, warning-query failure isolation, and overlay revision updates when warning geometry changes.
+  - Existing warning overlay mapping and rendering tests also passed.
+  - Full app build succeeded after the reload dependency change.
 
 ### Out of scope / intentionally deferred
 - Picker toggle UI
 - Legend polish
 - Alert detail routing
 - Overlap resolution
+- Tap/select behavior
+- Warning detail routing or selection
+- Any architecture broadening beyond the existing map scene plan/materializer path
 
 ### Handoff to next issue
 - Toggle work should only control whether composed warning overlays are included, not how alert geometry is fetched or persisted.
+
+---
+
+## Issue #137 Implementation Plan
+
+### 1. Issue-specific scope summary
+- Compose already-queryable active warning geometry into the existing map scene planning/rendering path.
+- Warnings should render as baseline situational context above every selected thematic map layer: categorical, wind, hail, tornado, meso, and fire.
+- The implementation should query SwiftData-backed warning state through `ArcusAlertQuerying.getActiveWarningGeometries(on:)`, convert it through the existing warning polygon mapper, and append warning overlay plans after the thematic overlay plans for each `MapLayer`.
+- Existing map layers must continue rendering when warning geometry is empty or when the warning query fails.
+- This issue should not add user controls. Until issue `#138`, warning overlay composition is effectively default-on whenever the query succeeds.
+
+### 2. Relevant feature-brief sections used
+- `Map Scene Composition`
+  - Warning overlays compose above every selected thematic layer.
+  - Warning geometry is baseline context, not a mutually exclusive map layer.
+  - Warning overlays should append last or otherwise render above thematic overlays.
+  - Layer warming, scene caching, and overlay revision/signature behavior should be preserved where practical.
+  - Warning query failures should not prevent unrelated thematic layers from rendering.
+- `Map Overlay Mapping`
+  - Warning polygon/multipolygon conversion and deterministic warning overlay identity already exist from issue `#135`.
+  - Revised geometry should change overlay identity or signature so stale polygons are replaced.
+  - Non-warning overlay key/signature behavior must remain unchanged.
+- `Active Warning Geometry Query`
+  - Query active supported warnings from the existing repository/provider boundary.
+  - Keep the query network-free and sourced from SwiftData-backed alert state.
+- `Architecture Direction`
+  - Keep warning geometry on the Arcus alert path and render from DTO/render-ready values, not raw SwiftData models.
+  - Preserve the current map layer architecture unless current seams are insufficient.
+- `Explicitly Out of Scope for V1`
+  - No tap/select behavior, warning detail routing, overlap resolution, watch geometry, meso behavior changes, historical geometry rendering, notification changes, or broad GIS/map-layer frameworks.
+
+### 3. Existing map/rendering seams discovered
+- `MapScreenView` owns `MapFeatureModel` and currently calls `model.reload(using: dependencies.spcMapData, selectedLayer:)` from `onAppear` and active scene-phase refreshes.
+- `MapFeatureModel.performReload(using:)` concurrently fetches severe, categorical, meso, and fire map products, converts failures to empty thematic payloads, then asks `MapScenePlanner` to build one render plan per `MapLayer`.
+- `MapScenePlanner.buildRenderPlans(payload:polygonMapper:)` builds all layer plans up front; `MapFeatureModel` then materializes the selected layer immediately and warms the remaining layers from the already-built plans.
+- `MapRenderPlanBuilder.build(layer:payload:polygonMapper:)` maps the selected thematic layer into `MapPolygonEntry` values, creates `MapOverlayBuildPlan` values, and computes `overlayRevision` from plan keys and signatures.
+- `MapSceneMaterializer.materialize(plan:initialCenterCoordinate:)` turns `MapOverlayBuildPlan` values into `MKOverlay`s in plan order.
+- `MapCanvasView` registers and adds overlays in `state.overlays` order, compares `overlayRevision` to decide whether to sync, and reorders overlays if the final MKMapView order differs from desired key order.
+- `MapCoordinator` caches overlays by stable key/signature and already renders plain `MKPolygon`s with warning-specific styling when the polygon title matches a supported warning event.
+- `MapPolygonMapper.warningPolygons(from:)` already converts `ActiveWarningGeometry` into stable `warn|...` `MapPolygonEntry` values with geometry fingerprints.
+
+### 4. Expected files to touch
+- `Sources/Features/Map/MapFeatureModel.swift`
+  - Add warning geometry to the reload payload.
+  - Add warning overlay build-plan support and append warning plans last for every layer.
+  - Add a warning query helper that treats non-cancellation failures as empty warning geometry.
+- `Sources/Features/Map/MapScreenView.swift`
+  - Pass the existing Arcus alert query provider into `MapFeatureModel.reload`.
+- `Tests/UnitTests/MapFeatureModelTests.swift`
+  - Add focused render-plan/order/failure tests and update existing test stubs for the new reload dependency.
+- Possibly `Sources/App/Dependencies.swift`
+  - Only if a protocol-typed `arcusAlerts: any ArcusAlertQuerying` accessor is needed for cleaner injection. Prefer using the existing `dependencies.arcusProvider` if it compiles cleanly.
+
+### 5. Smallest safe implementation plan
+1. Extend `MapFeatureModel.reload`/`performReload` to accept an `any ArcusAlertQuerying` warning source in addition to `any SpcMapData`.
+2. Add a fifth concurrent fetch in `performReload` for `getActiveWarningGeometries(on: .now)` or the default extension method.
+3. Treat warning cancellation like other map fetch cancellation: if the warning task is canceled, exit the reload without partially applying stale work.
+4. Treat non-cancellation warning query failures as `[]`, log through `Logger.uiMap`, and continue building thematic scenes from the SPC results.
+5. Add `activeWarnings: [ActiveWarningGeometry]` to `MapDataPayload`.
+6. In `MapRenderPlanBuilder.build`, call `polygonMapper.warningPolygons(from: payload.activeWarnings)` once per layer or pass precomputed warning entries into the builder if that is cleaner.
+7. Extend `MapOverlayBuildPlan.Kind` with a warning case and materialize warning plans as plain `MKPolygon` overlays so `MapCoordinator` uses the warning styling path added in issue `#136`.
+8. Compose each layer plan as `thematicPolygonEntries + warningPolygonEntries` and `thematicOverlayPlans + warningOverlayPlans`, with warning overlay plans appended last.
+9. Keep existing thematic key/signature generation intact. Warning overlay keys should come from `MapPolygonMapper.warningPolygons(from:)`; warning signatures should participate in `overlayRevision(for:)` so adding/removing/revising warnings invalidates cached scene overlays.
+10. Preserve existing scene warming/caching by keeping warning overlays inside the same per-layer `MapLayerRenderPlan` objects. When a reload receives different warning geometry, replacing `renderPlans` and clearing `cachedScenes` should naturally refresh selected and warmed scenes.
+
+### 6. Risks/ambiguities
+- Query timing: use `.now` at reload time unless implementation discovers an existing injected clock pattern nearby. Adding a broad clock abstraction for this issue would be overreach.
+- Dependency injection: `MapScreenView` can likely pass `dependencies.arcusProvider`, because it conforms to `ArcusAlertQuerying`. If that causes type or actor-isolation friction, add the smallest protocol accessor on `Dependencies`.
+- Cancellation semantics need care. A canceled warning query should not be silently treated as empty because that could apply a scene during teardown or superseded reload work.
+- Warning overlay identity already includes geometry fingerprints in the key. The implementation should avoid adding a second, conflicting identity system. Let the existing key/signature/revision flow do its job.
+- `MapFeatureModelTests.overlayTitles(in:)` currently only reads `RiskPolygonOverlay` titles. Warning overlays will be plain `MKPolygon`s, so tests that inspect order should account for both overlay types.
+- The current materializer is private inside `MapFeatureModel.swift`. If tests need deeper render-plan assertions, prefer testing through `model.activeScene` before exposing internals.
+
+### 7. Tests/checks to add or run
+- Add `MapFeatureModelTests.reload_composesWarningOverlaysAboveSelectedLayer`:
+  - Stub one thematic polygon and one warning geometry.
+  - Verify overlay order places the warning key/title after the thematic overlay.
+- Add `MapFeatureModelTests.reload_composesWarningOverlaysForEveryLayer`:
+  - After one reload, select categorical, wind, hail, tornado, meso, and fire.
+  - Verify each scene includes warning overlays appended after that layer's thematic overlays.
+- Add `MapFeatureModelTests.reload_warningQueryFailurePreservesThematicLayers`:
+  - Warning source throws a non-cancellation error.
+  - Verify selected thematic overlays still render and no warning overlays are present.
+- Add `MapFeatureModelTests.reload_warningGeometryChangesUpdateOverlayRevision`:
+  - Reload once with one warning geometry, reload again with changed warning geometry.
+  - Verify warning keys/revision change so stale polygons are replaced.
+- Add or adapt a cancellation test only if the new fifth task makes existing cancellation behavior ambiguous.
+- Run focused tests:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/MapFeatureModelTests test`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/MapPolygonMapperTests -only-testing:SkyAwareTests/RiskPolygonOverlayTests test`
+- Run a build if implementation touches protocol/dependency surfaces:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' build`
+
+### 8. Explicit out-of-scope items
+- Picker toggle UI or visibility preference persistence.
+- Legend polish or warning legend entries.
+- Alert detail routing.
+- Tap/select behavior for warning polygons.
+- Overlap resolution.
+- Notification behavior, APNs payloads, targeting policy, or background refresh policy.
+- Watch polygon rendering.
+- Meso rendering or meso layer behavior changes.
+- Historical/revision-level geometry rendering.
+- Broad map architecture, GIS, or preference framework changes.
+
+### 9. Recommendation for implementation model/intelligence
+- Use a high-reasoning implementation pass. The code change is probably small, but the failure/cancellation/cache/order interactions are easy to get subtly wrong.
+- `swift-concurrency-expert` should be used for implementation review because this issue adds an async SwiftData-backed query into a `@MainActor` feature model and coordinates it with concurrent SPC fetches.
+- `build-ios-apps:swiftui-ui-patterns` should be used lightly because `MapScreenView` dependency injection and lifecycle-triggered reloads are SwiftUI state/lifecycle seams, even though this issue should not alter visible UI.
+- Avoid broad delegation for implementation. If using a helper agent, keep it to one narrow read-only check such as "verify render-plan order and cache behavior after the patch."
 
 ---
 

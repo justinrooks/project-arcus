@@ -38,6 +38,7 @@ struct MapScreenView: View {
             Task {
                 await model.reload(
                     using: dependencies.spcMapData,
+                    warningSource: dependencies.arcusProvider,
                     selectedLayer: selected
                 )
             }
@@ -50,6 +51,7 @@ struct MapScreenView: View {
             Task {
                 await model.reload(
                     using: dependencies.spcMapData,
+                    warningSource: dependencies.arcusProvider,
                     selectedLayer: selected
                 )
             }

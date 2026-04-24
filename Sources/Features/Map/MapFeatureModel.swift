@@ -27,7 +27,11 @@ final class MapFeatureModel {
     private(set) var activeScene = MapLayerScene.placeholder(for: .categorical)
     private(set) var initialCenterCoordinate: CLLocationCoordinate2D?
 
-    func reload(using service: any SpcMapData, selectedLayer: MapLayer) async {
+    func reload(
+        using service: any SpcMapData,
+        warningSource: any ArcusAlertQuerying,
+        selectedLayer: MapLayer
+    ) async {
         selectLayer(selectedLayer)
 
         if isLoading {
@@ -43,23 +47,37 @@ final class MapFeatureModel {
 
         while Task.isCancelled == false {
             pendingReload = false
-            await performReload(using: service)
+            await performReload(using: service, warningSource: warningSource)
 
             guard pendingReload else { return }
         }
     }
 
-    private func performReload(using service: any SpcMapData) async {
+    private func performReload(
+        using service: any SpcMapData,
+        warningSource: any ArcusAlertQuerying
+    ) async {
         async let severeTask = fetchSevereRiskShapes(using: service)
         async let stormTask = fetchStormRiskShapes(using: service)
         async let mesoTask = fetchMesoShapes(using: service)
         async let fireTask = fetchFireRiskShapes(using: service)
+        async let warningTask = fetchActiveWarningGeometry(using: warningSource)
 
-        let (severeResult, stormResult, mesoResult, fireResult) = await (severeTask, stormTask, mesoTask, fireTask)
+        let (severeResult, stormResult, mesoResult, fireResult, warningResult) = await (
+            severeTask,
+            stormTask,
+            mesoTask,
+            fireTask,
+            warningTask
+        )
 
         guard !Task.isCancelled else { return }
 
-        if severeResult.isCancellation || stormResult.isCancellation || mesoResult.isCancellation || fireResult.isCancellation {
+        if severeResult.isCancellation ||
+            stormResult.isCancellation ||
+            mesoResult.isCancellation ||
+            fireResult.isCancellation ||
+            warningResult.isCancellation {
             return
         }
 
@@ -67,12 +85,24 @@ final class MapFeatureModel {
         let stormRisk = stormResult.value(orLogging: "categorical map data", logger: logger)
         let mesos = mesoResult.value(orLogging: "mesoscale map data", logger: logger)
         let fireRisk = fireResult.value(orLogging: "fire map data", logger: logger)
+        let activeWarnings: [ActiveWarningGeometry]
+        switch warningResult {
+        case .success(let value):
+            activeWarnings = value
+        case .failure(let error):
+            if error is CancellationError {
+                return
+            }
+            logger.error("Failed to load active warning geometry: \(error.localizedDescription, privacy: .public)")
+            activeWarnings = []
+        }
 
         let payload = MapDataPayload(
             stormRisk: stormRisk,
             severeRisks: severeRisks,
             mesos: mesos,
-            fireRisk: fireRisk
+            fireRisk: fireRisk,
+            activeWarnings: activeWarnings
         )
 
         let plannedScenes = await planner.buildRenderPlans(
@@ -196,6 +226,18 @@ final class MapFeatureModel {
             return .failure(error)
         }
     }
+
+    private func fetchActiveWarningGeometry(
+        using warningSource: any ArcusAlertQuerying
+    ) async -> Result<[ActiveWarningGeometry], Error> {
+        do {
+            return .success(try await warningSource.getActiveWarningGeometries())
+        } catch is CancellationError {
+            return .failure(CancellationError())
+        } catch {
+            return .failure(error)
+        }
+    }
 }
 
 struct MapLayerScene {
@@ -280,12 +322,14 @@ private struct MapDataPayload: Sendable {
     let severeRisks: [SevereRiskShapeDTO]
     let mesos: [MdDTO]
     let fireRisk: [FireRiskDTO]
+    let activeWarnings: [ActiveWarningGeometry]
 }
 
 struct MapOverlayBuildPlan: Sendable {
     enum Kind: Sendable {
         case probability
         case intensity(level: Int)
+        case warning
     }
 
     let key: String
@@ -353,6 +397,8 @@ private enum MapSceneMaterializer {
                     strokeColor: style.stroke,
                     fillColor: style.fill
                 )
+            case .warning:
+                overlay = polygon
             }
 
             overlays.append(
@@ -388,6 +434,7 @@ private enum MapRenderPlanBuilder {
             mesos: payload.mesos,
             fires: payload.fireRisk
         )
+        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
 
         var probabilityOverlays: [MapOverlayBuildPlan] = []
         var intensityOverlaysByLevel: [(level: Int, plan: MapOverlayBuildPlan)] = []
@@ -419,11 +466,17 @@ private enum MapRenderPlanBuilder {
             .sorted { $0.level < $1.level }
             .map(\.plan)
 
-        let overlayPlans = probabilityOverlays + orderedIntensityOverlays
+        let warningOverlays = warningPolygons.keyedPolygons.map {
+            overlayPlan(
+                for: $0,
+                kind: .warning
+            )
+        }
+        let overlayPlans = probabilityOverlays + orderedIntensityOverlays + warningOverlays
 
         return MapLayerRenderPlan(
             layer: layer,
-            polygonEntries: mappedPolygons.keyedPolygons,
+            polygonEntries: mappedPolygons.keyedPolygons + warningPolygons.keyedPolygons,
             overlayPlans: overlayPlans,
             overlayRevision: overlayRevision(for: overlayPlans),
             legendState: legendState(
@@ -444,6 +497,8 @@ private enum MapRenderPlanBuilder {
             key = "\(polygonEntry.key)|probability"
         case .intensity(let level):
             key = "\(polygonEntry.key)|intensity|\(level)"
+        case .warning:
+            key = "\(polygonEntry.key)|warning"
         }
 
         return MapOverlayBuildPlan(
@@ -473,6 +528,8 @@ private enum MapRenderPlanBuilder {
         case .intensity(let level):
             hasher.combine("intensity")
             hasher.combine(level)
+        case .warning:
+            hasher.combine("warning")
         }
 
         return hasher.intValue
