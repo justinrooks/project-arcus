@@ -796,6 +796,65 @@ Related GitHub issues:
 
 ---
 
+## FB-013 Final Review Finding - Stale Warning Geometry after Cancellation/Supersession
+
+### Status
+- Completed
+
+### Scope completed
+- Brief sections advanced:
+  - `App Persistence` by reconciling terminal Arcus lifecycle payloads onto existing local rows instead of dropping them pre-upsert.
+  - `Active Warning Geometry Query` by preserving its defensive lifecycle filtering while ensuring persisted lifecycle state is current.
+  - `Offline Rendering and Validation` by clearing stored geometry when alerts transition to cancelled/superseded/expired lifecycle states.
+  - `Explicitly Out of Scope for V1` by keeping map styling/composition, notification policy, and refresh orchestration unchanged.
+- Finding requirements completed:
+  - Split ingestion into renderable upsert path and terminal lifecycle reconciliation path in `WatchRepo`.
+  - Terminal payloads now update existing rows (when present), update lifecycle/revision/timing fields when available, clear geometry, and save.
+  - Unseen terminal payloads are ignored and do not create rows.
+  - `activeWarningGeometries(on:)` remains a defensive filter, but is no longer the only safeguard against stale terminal geometry.
+  - `active()` now excludes non-renderable lifecycle rows so terminal reconciliations do not leak into active alert list projections.
+
+### Key implementation notes
+- Canonical identity remains unchanged: `Watch.nwsId == ArcusAlertIdentifier.canonical(item.id)`.
+- Reconciliation is implemented at the ingestion boundary (`WatchRepo.refresh` and `refreshAlert`) rather than map query logic.
+- Terminal lifecycle rules are explicit and conservative:
+  - cancellation message types (`cancel`, `cancelled`)
+  - terminal states (`superseded`, `expired`, `canceled`, `cancelled`)
+- Geometry removal is implemented as row update (`existing.geometry = nil`) rather than deletion.
+
+### Files changed
+- `Sources/Repos/WatchRepo.swift`
+- `Tests/UnitTests/WatchRepoRefreshTests.swift`
+- `Tests/UnitTests/WatchRepoActiveTests.swift`
+- `docs/plans/FB-013-progress.md`
+
+### Tests
+- Added:
+  - `WatchRepoRefreshTests.refresh_reconcilesCancelledPayloads`
+  - `WatchRepoRefreshTests.refresh_reconcilesSupersededPayloads`
+  - `WatchRepoRefreshTests.refresh_reconcilesExpiredPayloads`
+  - `WatchRepoRefreshTests.refresh_ignoresUnseenTerminalPayload`
+  - `WatchRepoActiveTests.active_excludesTerminalLifecycleRows`
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/WatchRepoRefreshTests -only-testing:SkyAwareTests/WatchRepoActiveTests test`
+- Result:
+  - Passed
+- Test artifact:
+  - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.04.24_16-48-13--0600.xcresult`
+
+### Out of scope / intentionally deferred
+- Map overlay mapping/styling/composition behavior changes
+- Notification policy changes
+- New background refresh behavior
+- Row deletion strategy changes
+
+### Remaining risk
+- If Arcus introduces new terminal lifecycle strings beyond the explicit set, they will remain non-terminal until added to the lifecycle helper. Existing defensive query filtering still limits rendering risk for unsupported non-active values.
+
+---
+
 ## Progress Entry Template
 
 Use this shape when completing each issue:

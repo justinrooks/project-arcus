@@ -250,12 +250,171 @@ struct WatchRepoRefreshTests {
         #expect(reloaded.messageId == "urn:alert:updated")
         #expect(reloaded.geometry == nil)
     }
+
+    @Test("refresh reconciles cancellation payloads by clearing stored geometry and active visibility")
+    func refresh_reconcilesCancelledPayloads() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174006"
+        let initial = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:initial",
+            currentRevisionSent: "2026-03-24T12:15:00Z",
+            geometry: polygonGeometryJSON()
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(initial.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let cancelled = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:cancelled",
+            currentRevisionSent: "2026-03-24T12:45:00Z",
+            messageType: "Cancel",
+            state: "Cancelled"
+        )
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(cancelled.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let reloaded = try #require(await repo.watch(id: id))
+        #expect(reloaded.messageId == "urn:alert:cancelled")
+        #expect(reloaded.messageType == "Cancel")
+        #expect(reloaded.geometry == nil)
+
+        let now = ISO8601DateFormatter().date(from: "2026-03-24T12:50:00Z")!
+        let activeWarnings = try await repo.activeWarningGeometries(on: now)
+        #expect(activeWarnings.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }) == false)
+
+        let activeAlerts = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            cell: 613725958748241919,
+            on: now
+        )
+        #expect(activeAlerts.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }) == false)
+    }
+
+    @Test("refresh reconciles superseded payloads by clearing stored geometry")
+    func refresh_reconcilesSupersededPayloads() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174007"
+        let initial = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:initial",
+            currentRevisionSent: "2026-03-24T12:15:00Z",
+            geometry: polygonGeometryJSON()
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(initial.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let superseded = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:superseded",
+            currentRevisionSent: "2026-03-24T12:45:00Z",
+            messageType: "Update",
+            state: "Superseded"
+        )
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(superseded.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let reloaded = try #require(await repo.watch(id: id))
+        #expect(reloaded.messageId == "urn:alert:superseded")
+        #expect(reloaded.messageType == "Update")
+        #expect(reloaded.geometry == nil)
+
+        let now = ISO8601DateFormatter().date(from: "2026-03-24T12:50:00Z")!
+        let activeWarnings = try await repo.activeWarningGeometries(on: now)
+        #expect(activeWarnings.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }) == false)
+    }
+
+    @Test("refresh reconciles expired payloads by clearing stored geometry")
+    func refresh_reconcilesExpiredPayloads() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174008"
+        let initial = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:initial",
+            currentRevisionSent: "2026-03-24T12:15:00Z",
+            geometry: polygonGeometryJSON()
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(initial.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let expired = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:expired",
+            currentRevisionSent: "2026-03-24T12:45:00Z",
+            messageType: "Update",
+            state: "Expired",
+            ends: "2026-03-24T13:15:00Z"
+        )
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(expired.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let reloaded = try #require(await repo.watch(id: id))
+        #expect(reloaded.messageId == "urn:alert:expired")
+        #expect(reloaded.messageType == "Update")
+        #expect(reloaded.geometry == nil)
+
+        let now = ISO8601DateFormatter().date(from: "2026-03-24T12:50:00Z")!
+        let activeWarnings = try await repo.activeWarningGeometries(on: now)
+        #expect(activeWarnings.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }) == false)
+    }
+
+    @Test("refresh ignores unseen terminal payloads without creating rows")
+    func refresh_ignoresUnseenTerminalPayload() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174009"
+        let terminal = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:terminal",
+            currentRevisionSent: "2026-03-24T12:45:00Z",
+            messageType: "Cancel",
+            state: "Cancelled"
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(terminal.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        #expect(try await repo.watch(id: id) == nil)
+
+        let count = try ModelContext(container).fetchCount(Watch.allWatchesDescriptor())
+        #expect(count == 0)
+    }
 }
 
 private func alertPayloadArrayJSON(
     id: String,
     messageId: String = "urn:alert:test",
     currentRevisionSent: String = "2026-03-24T12:15:00Z",
+    messageType: String = "Alert",
+    state: String = "Active",
+    ends: String = "2026-03-24T13:15:00Z",
     geometry: String? = nil
 ) -> String {
     let geometryField = geometry.map { ",\n            \"geometry\": \($0)" } ?? ""
@@ -267,8 +426,8 @@ private func alertPayloadArrayJSON(
             "event": "Tornado Warning",
             "currentRevisionUrn": "\(messageId)",
             "currentRevisionSent": "\(currentRevisionSent)",
-            "messageType": "Alert",
-            "state": "Active",
+            "messageType": "\(messageType)",
+            "state": "\(state)",
             "created": "2026-03-24T12:00:00Z",
             "updated": "\(currentRevisionSent)",
             "lastSeenActive": "\(currentRevisionSent)",
@@ -276,7 +435,7 @@ private func alertPayloadArrayJSON(
             "effective": "2026-03-24T12:00:00Z",
             "onset": "2026-03-24T12:00:00Z",
             "expires": "2026-03-24T13:15:00Z",
-            "ends": "2026-03-24T13:15:00Z",
+            "ends": "\(ends)",
             "severity": "Extreme",
             "urgency": "Immediate",
             "certainty": "Observed",

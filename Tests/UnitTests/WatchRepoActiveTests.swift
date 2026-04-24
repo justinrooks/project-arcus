@@ -120,6 +120,46 @@ struct WatchRepoActiveTests {
         #expect(hits.map(\.id) == ["1\(tag)"])
     }
 
+    @Test("active excludes non-renderable lifecycle rows")
+    func active_excludesTerminalLifecycleRows() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+
+        let activeWatch = makeWatch(
+            number: "active",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            status: "Active",
+            messageType: "Alert"
+        )
+        let cancelled = makeWatch(
+            number: "cancelled",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            status: "Cancelled",
+            messageType: "Cancel"
+        )
+        let superseded = makeWatch(
+            number: "superseded",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            status: "Superseded",
+            messageType: "Update"
+        )
+
+        ctx.insert(activeWatch)
+        ctx.insert(cancelled)
+        ctx.insert(superseded)
+        try ctx.save()
+
+        let hits = try await repo.active(countyCode: "ALC013", fireZone: "COZ245", cell: nil, on: now)
+
+        #expect(hits.map(\.id) == ["active"])
+    }
+
     @Test("Active warning geometry includes supported warnings with geometry")
     func activeWarningGeometries_includesSupportedWarningsWithGeometry() async throws {
         let ctx = ModelContext(container)
