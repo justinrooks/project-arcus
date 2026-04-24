@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MapLegend: View {
     @State private var showsHatchingExplanation = false
@@ -71,6 +72,66 @@ struct MapLegend: View {
             shadowRadius: 8,
             shadowY: 3
         )
+    }
+}
+
+struct WarningLegend: View {
+    private let items: [WarningLegendItem] = [
+        .init(event: "Tornado Warning", title: "Tornado"),
+        .init(event: "Severe Thunderstorm Warning", title: "Severe Thunderstorm"),
+        .init(event: "Flash Flood Warning", title: "Flash Flood")
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Active Warnings")
+                .font(.caption.weight(.semibold))
+
+            ForEach(items) { item in
+                WarningLegendRow(item: item)
+            }
+        }
+        .padding(16)
+        .frame(width: 160, alignment: .leading)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.row,
+            shadowOpacity: 0.10,
+            shadowRadius: 8,
+            shadowY: 3
+        )
+    }
+}
+
+private struct WarningLegendItem: Identifiable {
+    let event: String
+    let title: String
+
+    var id: String { event }
+}
+
+private struct WarningLegendRow: View {
+    let item: WarningLegendItem
+
+    var body: some View {
+        let style = warningPolygonStyle(for: item.event)
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color(style?.fill ?? UIColor.secondaryLabel))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .stroke(Color(style?.stroke ?? UIColor.secondaryLabel), lineWidth: 1.15)
+                )
+                .frame(width: 14, height: 14)
+
+            Text(item.title)
+                .font(.caption)
+                .fontWeight(.regular)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(item.title)
     }
 }
 
@@ -298,6 +359,12 @@ private struct HatchSwatchView: View {
 
 #Preview("Meso") {
     MapLegend(state: .empty(for: .meso))
+        .padding()
+        .background(.thinMaterial)
+}
+
+#Preview("Warnings") {
+    WarningLegend()
         .padding()
         .background(.thinMaterial)
 }

@@ -130,12 +130,22 @@ private struct MapScreenContent: View {
 
             VStack {
                 Spacer()
-                MapLegend(state: scene.legendState)
-                    .transition(.opacity)
-                    .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
-                    .padding([.bottom, .trailing])
+                HStack(alignment: .bottom, spacing: 10) {
+                    if showsWarningLegend {
+                        WarningLegend()
+                            .transition(.opacity)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    MapLegend(state: scene.legendState)
+                        .transition(.opacity)
+                        .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(scene.legendState.allowsInteraction)
         }
         .sheet(isPresented: $showLayerPicker) {
@@ -146,6 +156,10 @@ private struct MapScreenContent: View {
                 triggerNamespace: layerNamespace
             )
         }
+    }
+
+    private var showsWarningLegend: Bool {
+        scene.canvasState.overlays.contains { $0.key.hasPrefix("warn|") }
     }
 }
 
