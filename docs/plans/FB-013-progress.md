@@ -48,7 +48,8 @@ Related GitHub issues:
 - Issue `#132` is complete in Project Arcus and mirrored in the Arcus Signal payload model.
 - Issue `arcus-signal#48` is complete in Arcus Signal.
 - Issue `#133` is complete in Project Arcus.
-- Remaining Project Arcus child issues are still pending and should continue in sequence from `#137`.
+- Issue `#138` is complete in Project Arcus.
+- Remaining Project Arcus child issues are still pending and should continue in sequence from `#139`.
 
 ---
 
@@ -662,17 +663,30 @@ Related GitHub issues:
 ## Issue #138 - Add Default-On Warning Geometry Toggle to Map Picker
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Add a default-on map picker control for showing or hiding warning geometry.
+### Scope completed
+- Brief sections advanced:
+  - `Warning Geometry Toggle` by adding the user-facing picker control with default-on behavior.
+  - `Map Scene Composition` by threading the toggle state into map scene materialization and cache invalidation.
+  - `Product Intent` by preserving the selected thematic layer while letting warning geometry hide/show independently.
+  - `Explicitly Out of Scope for V1` by keeping the work render-only and avoiding interaction, overlap, or separate layer changes.
+- Issue requirements completed:
+  - Added a default-on warning geometry toggle to the existing map picker surface.
+  - Persisted the preference with the app's existing lightweight `@AppStorage` pattern.
+  - Threaded warning visibility into `MapFeatureModel` scene composition.
+  - Hid warning polygons without changing the selected thematic layer.
+  - Restored warning polygons from the existing cached/rendered scene state when toggled back on.
+  - Preserved alert data, lifecycle state, network refresh behavior, and current thematic layer selection.
 
 ### Key implementation notes
-- Place the toggle in the existing map picker or selector surface.
-- Toggle rendering only.
-- Do not mutate SwiftData alert records.
-- Preserve existing thematic layer selection behavior.
-- Persist preference only if an existing lightweight preference pattern makes that straightforward.
+- Added `showsWarningGeometry` as persisted view state on `MapScreenView` using `@AppStorage("mapWarningGeometryVisible", store: UserDefaults.shared)`.
+- Threaded the binding into `LayerPickerSheet` so the control stays in the existing picker surface rather than creating a separate settings path.
+- Added `MapFeatureModel.setWarningGeometryVisible(_:)` to invalidate cached scenes and re-materialize the selected layer with the current warning-visibility state.
+- Computed overlay revision from the rendered overlay list so toggling warnings forces `MapCanvasView` to sync without refetching data.
+- Kept the toggle local to rendering and scene composition; no alert records, geometry payloads, or network fetches were changed.
+- `build-ios-apps:swiftui-ui-patterns` applied because this is a SwiftUI `@Binding`/sheet/picker state-flow change.
+- `swift-concurrency-expert` applied lightly because `MapFeatureModel` is `@MainActor` and this change threads UI state through an async reload path without altering isolation.
 
 ### Files expected to change
 - `Sources/Features/Map/Picker.swift`
@@ -680,10 +694,26 @@ Related GitHub issues:
 - Possibly `Sources/Features/Map/MapFeatureModel.swift`
 - Tests under `Tests/UnitTests` or focused UI smoke coverage
 
+### Files changed
+- `Sources/Features/Map/Picker.swift`
+- `Sources/Features/Map/MapScreenView.swift`
+- `Sources/Features/Map/MapFeatureModel.swift`
+- `Tests/UnitTests/MapFeatureModelTests.swift`
+
 ### Verification target
 - Warning geometry defaults on.
 - Toggle off removes warning polygons without changing the selected thematic layer.
 - Toggle on restores warning polygons from cached/rendered state.
+
+### Tests
+- Added:
+  - `MapFeatureModelTests.warningGeometryToggle_hidesAndRestoresOverlays`
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" -only-testing:SkyAwareTests/MapFeatureModelTests test`
+- Result:
+  - Passed
 
 ### Out of scope / intentionally deferred
 - Alert detail interactions
@@ -691,7 +721,8 @@ Related GitHub issues:
 - Separate warning layer tile
 
 ### Handoff to next issue
-- Offline validation should verify toggle behavior works with warning overlays rendered from SwiftData without network access.
+- Issue `#139` should assume the toggle already exists and controls only rendering.
+- Keep offline validation focused on SwiftData-backed active geometry, lifecycle filtering, and hide/show behavior.
 
 ---
 

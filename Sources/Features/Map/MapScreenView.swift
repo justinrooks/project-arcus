@@ -12,6 +12,10 @@ struct MapScreenView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
+    @AppStorage(
+        "mapWarningGeometryVisible",
+        store: UserDefaults.shared
+    ) private var showsWarningGeometry: Bool = true
 
     @Binding private var selected: MapLayer
     @State private var model = MapFeatureModel()
@@ -31,10 +35,12 @@ struct MapScreenView: View {
         MapScreenContent(
             selected: $selected,
             showLayerPicker: $showLayerPicker,
+            showsWarningGeometry: $showsWarningGeometry,
             scene: model.activeScene,
             layerNamespace: layerNamespace
         )
         .onAppear {
+            model.setWarningGeometryVisible(showsWarningGeometry)
             Task {
                 await model.reload(
                     using: dependencies.spcMapData,
@@ -46,8 +52,12 @@ struct MapScreenView: View {
         .onChange(of: selected, initial: true) { _, newValue in
             model.selectLayer(newValue)
         }
+        .onChange(of: showsWarningGeometry, initial: true) { _, newValue in
+            model.setWarningGeometryVisible(newValue)
+        }
         .onChange(of: scenePhase, initial: true) { _, newValue in
             guard newValue == .active else { return }
+            model.setWarningGeometryVisible(showsWarningGeometry)
             Task {
                 await model.reload(
                     using: dependencies.spcMapData,
@@ -70,6 +80,7 @@ private struct MapScreenContent: View {
 
     @Binding var selected: MapLayer
     @Binding var showLayerPicker: Bool
+    @Binding var showsWarningGeometry: Bool
 
     let scene: MapLayerScene
     let layerNamespace: Namespace.ID
@@ -130,6 +141,7 @@ private struct MapScreenContent: View {
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(
                 selection: $selected,
+                showsWarningGeometry: $showsWarningGeometry,
                 title: "Map Layers",
                 triggerNamespace: layerNamespace
             )
@@ -195,6 +207,7 @@ private struct MapScreenContentPreview: View {
         MapScreenContent(
             selected: .constant(.categorical),
             showLayerPicker: .constant(false),
+            showsWarningGeometry: .constant(true),
             scene: MapLayerScene.placeholder(for: .categorical),
             layerNamespace: layerNamespace
         )

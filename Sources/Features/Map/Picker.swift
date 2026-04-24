@@ -128,6 +128,7 @@ struct LayerTile: View {
 struct LayerPickerSheet: View {
     /// Use a Set for multi-select; for single-select pass allowsMultipleSelection = false
     @Binding var selection: MapLayer
+    @Binding var showsWarningGeometry: Bool
     var title: String = "Map Layers"
     var triggerNamespace: Namespace.ID? = nil
 
@@ -169,11 +170,22 @@ struct LayerPickerSheet: View {
             Text("Choose a layer")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-                .padding(.bottom, 8)
+                .padding(.bottom, 4)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
+                    .toggleStyle(.switch)
+
+                Text("Show active alerts on the map.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 10)
         }
         .padding(.top, 8)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .presentationDetents([.height(410), .medium])
+        .presentationDetents([.height(510), .large])
         .interactiveDismissDisabled(false)
     }
 
@@ -241,6 +253,7 @@ struct MapWithLayerPickerDemo: View {
         }
         .sheet(isPresented: $showPicker) {
             LayerPickerSheet(selection: $selected,
+                             showsWarningGeometry: .constant(true),
                              title: "Map Layers")
         }
         // Use `selected` to drive which overlays you render
@@ -254,7 +267,7 @@ struct MapWithLayerPickerDemo: View {
 // MARK: - Preview
 
 #Preview("Layer Picker Sheet") {
-    LayerPickerSheet(selection: .constant(.categorical))
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
 }
 
 #Preview("In-Map Demo") {

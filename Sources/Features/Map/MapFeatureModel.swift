@@ -21,6 +21,7 @@ final class MapFeatureModel {
     private var cachedScenes: [MapLayer: MapLayerScene] = [:]
     private var warmScenesTask: Task<Void, Never>?
     private var currentSelectedLayer: MapLayer = .categorical
+    private var showsWarningGeometry = true
     private var isLoading = false
     private var pendingReload = false
 
@@ -126,6 +127,17 @@ final class MapFeatureModel {
         applySelectedLayer(layer)
     }
 
+    func setWarningGeometryVisible(_ isVisible: Bool) {
+        guard showsWarningGeometry != isVisible else { return }
+
+        showsWarningGeometry = isVisible
+        cachedScenes.removeAll(keepingCapacity: true)
+        warmScenesTask?.cancel()
+        warmScenesTask = nil
+        applySelectedLayer(currentSelectedLayer)
+        scheduleWarmRemainingScenes()
+    }
+
     func captureInitialCenterCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D?) {
         guard initialCenterCoordinate == nil, let coordinate else { return }
 
@@ -158,7 +170,8 @@ final class MapFeatureModel {
 
         let scene = MapSceneMaterializer.materialize(
             plan: plan,
-            initialCenterCoordinate: initialCenterCoordinate
+            initialCenterCoordinate: initialCenterCoordinate,
+            showsWarningGeometry: showsWarningGeometry
         )
         cachedScenes[layer] = scene
         activeScene = scene
@@ -179,7 +192,8 @@ final class MapFeatureModel {
 
                 self.cachedScenes[layer] = MapSceneMaterializer.materialize(
                     plan: plan,
-                    initialCenterCoordinate: self.initialCenterCoordinate
+                    initialCenterCoordinate: self.initialCenterCoordinate,
+                    showsWarningGeometry: self.showsWarningGeometry
                 )
 
                 await Task.yield()
@@ -370,7 +384,8 @@ private actor MapScenePlanner {
 private enum MapSceneMaterializer {
     static func materialize(
         plan: MapLayerRenderPlan,
-        initialCenterCoordinate: CLLocationCoordinate2D?
+        initialCenterCoordinate: CLLocationCoordinate2D?,
+        showsWarningGeometry: Bool
     ) -> MapLayerScene {
         var polygonsByKey: [String: MKPolygon] = [:]
         polygonsByKey.reserveCapacity(plan.polygonEntries.count)
@@ -383,6 +398,10 @@ private enum MapSceneMaterializer {
         overlays.reserveCapacity(plan.overlayPlans.count)
 
         for overlayPlan in plan.overlayPlans {
+            if case .warning = overlayPlan.kind, showsWarningGeometry == false {
+                continue
+            }
+
             guard let polygon = polygonsByKey[overlayPlan.polygonKey] else { continue }
 
             let overlay: MKOverlay
@@ -413,11 +432,23 @@ private enum MapSceneMaterializer {
         return MapLayerScene(
             canvasState: MapCanvasState(
                 overlays: overlays,
-                overlayRevision: plan.overlayRevision,
+                overlayRevision: overlayRevision(for: overlays),
                 initialCenterCoordinate: initialCenterCoordinate
             ),
             legendState: plan.legendState
         )
+    }
+
+    private static func overlayRevision(for overlays: [MapOverlayEntry]) -> Int {
+        var hasher = StableMapHasher()
+        hasher.combine(overlays.count)
+
+        for overlay in overlays {
+            hasher.combine(overlay.key)
+            hasher.combine(overlay.signature)
+        }
+
+        return hasher.intValue
     }
 }
 

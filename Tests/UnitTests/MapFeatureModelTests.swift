@@ -358,6 +358,49 @@ struct MapFeatureModelTests {
         }
     }
 
+    @Test("warning geometry toggle hides and restores overlays across thematic layers")
+    func warningGeometryToggle_hidesAndRestoresOverlays() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([
+                FireRiskDTO(
+                    product: "WindRH",
+                    issued: now,
+                    expires: now.addingTimeInterval(3_600),
+                    valid: now,
+                    riskLevel: 8,
+                    riskLevelDescription: "Critical",
+                    label: "Critical Fire Weather Area",
+                    stroke: "#123456",
+                    fill: "#ABCDEF",
+                    polygons: [makeGeoPolygon(title: "Critical Fire Weather Area")]
+                )
+            ])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning")])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        #expect(overlayKeys(in: model.activeScene).count == 2)
+
+        model.setWarningGeometryVisible(false)
+        #expect(overlayKeys(in: model.activeScene).count == 1)
+        #expect(overlayKeys(in: model.activeScene).first?.contains("cat|") == true)
+
+        model.selectLayer(.fire)
+        #expect(overlayKeys(in: model.activeScene).count == 1)
+        #expect(overlayKeys(in: model.activeScene).first?.contains("fire|8|") == true)
+
+        model.setWarningGeometryVisible(true)
+        let restoredKeys = overlayKeys(in: model.activeScene)
+        #expect(restoredKeys.count == 2)
+        #expect(restoredKeys.last?.contains("warn|") == true)
+    }
+
     @Test("reload keeps thematic layers when the warning query fails")
     func reload_warningQueryFailurePreservesThematicLayers() async {
         let model = MapFeatureModel()
