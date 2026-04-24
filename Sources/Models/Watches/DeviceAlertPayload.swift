@@ -12,7 +12,7 @@ public enum DeviceAlertPayloadError: Error, Sendable {
     case invalidGeometryJSON
 }
 
-public enum DeviceAlertGeometry: Sendable, Codable, Equatable {
+public enum DeviceAlertGeometry: Sendable, Codable, Equatable, Hashable {
     case polygon(rings: [[DeviceAlertCoordinate]])
     case multiPolygon(polygons: [[[DeviceAlertCoordinate]]])
 
@@ -56,7 +56,7 @@ public enum DeviceAlertGeometry: Sendable, Codable, Equatable {
 
 /// GeoJSON-like transport coordinate stored as `[longitude, latitude]`.
 /// Convert to map-native coordinate types only at the rendering edge.
-public struct DeviceAlertCoordinate: Sendable, Codable, Equatable {
+public struct DeviceAlertCoordinate: Sendable, Codable, Equatable, Hashable {
     public let longitude: Double
     public let latitude: Double
 
@@ -75,6 +75,24 @@ public struct DeviceAlertCoordinate: Sendable, Codable, Equatable {
         var container = encoder.unkeyedContainer()
         try container.encode(longitude)
         try container.encode(latitude)
+    }
+}
+
+extension DeviceAlertGeometry {
+    init?(encodedData: Data?) {
+        guard let encodedData else {
+            return nil
+        }
+
+        guard let geometry = try? JSONDecoder().decode(DeviceAlertGeometry.self, from: encodedData) else {
+            return nil
+        }
+
+        self = geometry
+    }
+
+    var encodedData: Data? {
+        try? JSONEncoder().encode(self)
     }
 }
 

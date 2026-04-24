@@ -15,7 +15,7 @@ private struct StubArcusClient: ArcusClient {
     }
 }
 
-@Suite("WatchRepo refresh()")
+@Suite("WatchRepo refresh()", .serialized)
 struct WatchRepoRefreshTests {
     let container: ModelContainer
     let repo: WatchRepo
@@ -120,5 +120,259 @@ struct WatchRepoRefreshTests {
         let watch = try #require(await repo.watch(id: "123e4567-e89b-12d3-a456-426614174001"))
         #expect(watch.messageId == "urn:alert:targeted")
         #expect(watch.currentRevisionSent == ISO8601DateFormatter().date(from: "2026-03-24T12:15:00Z"))
+        #expect(watch.geometry == nil)
     }
+
+    @Test("refresh persists polygon geometry from Arcus payloads")
+    func refresh_persistsPolygonGeometry() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174002"
+        let json = alertPayloadArrayJSON(id: id, geometry: polygonGeometryJSON())
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(json.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let watch = try #require(await repo.watch(id: id))
+        #expect(watch.geometry == polygonGeometry())
+
+        let active = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            cell: 613725958748241919,
+            on: ISO8601DateFormatter().date(from: "2026-03-24T12:30:00Z")!
+        )
+        #expect(active.map(\.id) == [ArcusAlertIdentifier.canonical(id)])
+        #expect(active.first?.geometry == polygonGeometry())
+    }
+
+    @Test("refresh persists multipolygon geometry from Arcus payloads")
+    func refresh_persistsMultiPolygonGeometry() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174003"
+        let json = alertPayloadArrayJSON(id: id, geometry: multiPolygonGeometryJSON())
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(json.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let watch = try #require(await repo.watch(id: id))
+        #expect(watch.geometry == multiPolygonGeometry())
+    }
+
+    @Test("refresh replaces stored geometry for an existing alert")
+    func refresh_replacesStoredGeometry() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174004"
+        let initial = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:initial",
+            currentRevisionSent: "2026-03-24T12:15:00Z",
+            geometry: polygonGeometryJSON()
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(initial.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let stored = try #require(await repo.watch(id: id))
+        #expect(stored.messageId == "urn:alert:initial")
+        #expect(stored.geometry == polygonGeometry())
+
+        let updated = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:updated",
+            currentRevisionSent: "2026-03-24T12:45:00Z",
+            geometry: multiPolygonGeometryJSON()
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(updated.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let reloaded = try #require(await repo.watch(id: id))
+        let expectedRevisionSent = ISO8601DateFormatter().date(from: "2026-03-24T12:45:00Z")
+        #expect(reloaded.messageId == "urn:alert:updated")
+        #expect(reloaded.currentRevisionSent == expectedRevisionSent)
+        #expect(reloaded.geometry == multiPolygonGeometry())
+
+        let canonicalID = ArcusAlertIdentifier.canonical(id)
+        let predicate = #Predicate<Watch> { watch in
+            watch.nwsId == canonicalID
+        }
+        let storedCount = try ModelContext(container).fetchCount(FetchDescriptor<Watch>(predicate: predicate))
+        #expect(storedCount == 1)
+    }
+
+    @Test("refresh clears stored geometry when an existing alert payload omits geometry")
+    func refresh_clearsStoredGeometry() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174005"
+        let initial = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:initial",
+            currentRevisionSent: "2026-03-24T12:15:00Z",
+            geometry: polygonGeometryJSON()
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(initial.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let stored = try #require(await repo.watch(id: id))
+        #expect(stored.geometry == polygonGeometry())
+
+        let updated = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:updated",
+            currentRevisionSent: "2026-03-24T12:45:00Z"
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(updated.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let reloaded = try #require(await repo.watch(id: id))
+        #expect(reloaded.messageId == "urn:alert:updated")
+        #expect(reloaded.geometry == nil)
+    }
+}
+
+private func alertPayloadArrayJSON(
+    id: String,
+    messageId: String = "urn:alert:test",
+    currentRevisionSent: String = "2026-03-24T12:15:00Z",
+    geometry: String? = nil
+) -> String {
+    let geometryField = geometry.map { ",\n            \"geometry\": \($0)" } ?? ""
+
+    return """
+        [
+          {
+            "id": "\(id)",
+            "event": "Tornado Warning",
+            "currentRevisionUrn": "\(messageId)",
+            "currentRevisionSent": "\(currentRevisionSent)",
+            "messageType": "Alert",
+            "state": "Active",
+            "created": "2026-03-24T12:00:00Z",
+            "updated": "\(currentRevisionSent)",
+            "lastSeenActive": "\(currentRevisionSent)",
+            "sent": "\(currentRevisionSent)",
+            "effective": "2026-03-24T12:00:00Z",
+            "onset": "2026-03-24T12:00:00Z",
+            "expires": "2026-03-24T13:15:00Z",
+            "ends": "2026-03-24T13:15:00Z",
+            "severity": "Extreme",
+            "urgency": "Immediate",
+            "certainty": "Observed",
+            "areaDesc": "Denver Metro",
+            "senderName": "NWS Test",
+            "headline": "Test headline",
+            "description": "Test description",
+            "instructions": "Test instructions",
+            "response": "Monitor",
+            "ugc": ["COC031"],
+            "h3Cells": [613725958748241919]\(geometryField)
+          }
+        ]
+        """
+}
+
+private func polygonGeometryJSON() -> String {
+    """
+    {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [-104.9903, 39.7392],
+          [-104.8200, 39.7392],
+          [-104.8200, 39.8800],
+          [-104.9903, 39.8800],
+          [-104.9903, 39.7392]
+        ]
+      ]
+    }
+    """
+}
+
+private func polygonGeometry() -> DeviceAlertGeometry {
+    .polygon(
+        rings: [
+            [
+                DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392),
+                DeviceAlertCoordinate(longitude: -104.8200, latitude: 39.7392),
+                DeviceAlertCoordinate(longitude: -104.8200, latitude: 39.8800),
+                DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.8800),
+                DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392)
+            ]
+        ]
+    )
+}
+
+private func multiPolygonGeometryJSON() -> String {
+    """
+    {
+      "type": "MultiPolygon",
+      "coordinates": [
+        [
+          [
+            [-104.9903, 39.7392],
+            [-104.8200, 39.7392],
+            [-104.8200, 39.8800],
+            [-104.9903, 39.8800],
+            [-104.9903, 39.7392]
+          ]
+        ],
+        [
+          [
+            [-105.1200, 39.6500],
+            [-104.9800, 39.6500],
+            [-104.9800, 39.7600],
+            [-105.1200, 39.7600],
+            [-105.1200, 39.6500]
+          ]
+        ]
+      ]
+    }
+    """
+}
+
+private func multiPolygonGeometry() -> DeviceAlertGeometry {
+    .multiPolygon(
+        polygons: [
+            [
+                [
+                    DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392),
+                    DeviceAlertCoordinate(longitude: -104.8200, latitude: 39.7392),
+                    DeviceAlertCoordinate(longitude: -104.8200, latitude: 39.8800),
+                    DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.8800),
+                    DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392)
+                ]
+            ],
+            [
+                [
+                    DeviceAlertCoordinate(longitude: -105.1200, latitude: 39.6500),
+                    DeviceAlertCoordinate(longitude: -104.9800, latitude: 39.6500),
+                    DeviceAlertCoordinate(longitude: -104.9800, latitude: 39.7600),
+                    DeviceAlertCoordinate(longitude: -105.1200, latitude: 39.7600),
+                    DeviceAlertCoordinate(longitude: -105.1200, latitude: 39.6500)
+                ]
+            ]
+        ]
+    )
 }

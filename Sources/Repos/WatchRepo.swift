@@ -143,6 +143,7 @@ actor WatchRepo {
             instruction: item.instructions,
             response: item.response,
             cells: item.h3Cells ?? [],
+            geometry: item.geometry,
             tornadoDetection: item.tornadoDetection,
             tornadoDamageThreat: item.tornadoDamageThreat,
             maxWindGust: item.maxWindGust,

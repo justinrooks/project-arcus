@@ -53,6 +53,8 @@ struct WatchRowDTO: Identifiable, Sendable, Hashable, Codable {
     
     // Geography (shortened / display-ready)
     let areaSummary: String     // e.g. "South Central Alabama"
+    // Keep projection-cache persistence SwiftData-safe; use `geometry` at call sites.
+    var geometryData: Data? = nil
     
     // CAP Params
     let tornadoDetection: String?
@@ -143,6 +145,7 @@ extension WatchRowDTO {
         self.response = watch.response
         self.sender = watch.sender
         self.description = watch.watchDescription
+        self.geometryData = watch.geometryData
         self.tornadoDetection = watch.tornadoDetection
         self.tornadoDamageThreat = watch.tornadoDamageThreat
         self.maxWindGust = watch.maxWindGust
@@ -154,6 +157,15 @@ extension WatchRowDTO {
         self.flashFloodDamageThreat = watch.flashFloodDamageThreat
     }
     
+    var geometry: DeviceAlertGeometry? {
+        get {
+            DeviceAlertGeometry(encodedData: geometryData)
+        }
+        set {
+            geometryData = newValue?.encodedData
+        }
+    }
+
     // MARK: CAP Severe Tag Parsing
     private func trimmedNonEmpty(_ value: String?) -> String? {
         guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),

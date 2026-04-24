@@ -46,7 +46,9 @@ Related GitHub issues:
   - Child issues: `Ready`, `P1`
 - Issue bodies have been normalized to the FB-010 issue format.
 - Issue `#132` is complete in Project Arcus and mirrored in the Arcus Signal payload model.
-- Remaining child issues are still pending and should continue in sequence.
+- Issue `arcus-signal#48` is complete in Arcus Signal.
+- Issue `#133` is complete in Project Arcus.
+- Remaining Project Arcus child issues are still pending and should continue in sequence from `#134`.
 
 ---
 
@@ -121,30 +123,55 @@ Related GitHub issues:
 ## Issue arcus-signal#48 - Expose Latest Series Geometry in DeviceAlertPayload
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Include latest available current-series geometry in `/api/v1/alerts` responses.
-- Source geometry from `arcus_geolocation.geometry`.
-- Preserve existing `h3Cells` and notification behavior.
+### Scope completed
+- Brief sections advanced:
+  - Goals 1 and 2 by wiring server-side warning geometry into the existing device alert payload path.
+  - Target Behavior requiring the server and app to share the warning geometry contract through `DeviceAlertPayload`.
+  - Constraints / Invariants requiring server geometry to come from latest current-series `arcus_geolocation.geometry`.
+  - Acceptance criteria 1 and 9 by serving nullable polygon and multipolygon geometry through the shared payload shape.
+- Issue requirements completed:
+  - `/api/v1/alerts` row mapping now selects joined `arcus_geolocation.geometry`.
+  - `AlertSeriesRow.asDeviceAlertPayload()` passes nullable joined geometry through to `DeviceAlertPayload.geometry`.
+  - `ArcusSeriesModel.asDeviceAlertPayload()` passes eager-loaded `ArcusGeolocationModel.geometry` through for model-based payload creation.
+  - `GeoShape.point` maps to nil because v1 has no renderable warning polygon for point geometry.
+  - Existing `h3Cells` behavior remains unchanged.
+  - No schema migration, APNs payload change, targeting policy change, or revision-level geometry persistence was introduced.
 
 ### Key implementation notes
-- This issue lives in `/Users/justin/Code/arcus-signal`.
-- Read the Arcus Signal `AGENTS.md`, `docs/architecture.md`, and `docs/epics-stories.md` before implementing.
-- Do not use deprecated `arcus_series.geometry`.
-- Do not add revision-level geometry persistence.
+- Added a narrow `DeviceAlertGeometry.init?(geoShape:)` conversion helper that accepts only polygon and multipolygon server geometry.
+- The alert response SQL continues to left join `arcus_geolocation`; missing geolocation rows produce nil geometry and empty `h3Cells`.
+- The row projection explicitly selects `g.geometry AS geometry` and avoids the deprecated `arcus_series.geometry` column.
+- `swift-concurrency-expert` was applicable because this is server Swift/Vapor payload code. It did not require actor or isolation changes; the implementation stayed in immutable `Sendable` value mapping and did not alter async handler behavior.
+- `build-ios-apps:swiftui-ui-patterns` was not applicable because this issue does not touch SwiftUI, view composition, picker controls, or user-facing app UI.
 
-### Files expected to change
+### Files changed
 - `/Users/justin/Code/arcus-signal/Sources/App/Models/Device/DeviceAlertPayload.swift`
 - `/Users/justin/Code/arcus-signal/Sources/App/Models/API/AlertSeriesRow.swift`
 - `/Users/justin/Code/arcus-signal/Sources/App/Models/NWS/ArcusSeriesModel.swift`
-- `/Users/justin/Code/arcus-signal/Sources/App/Controllers/AlertsController.swift`
-- Server tests under `/Users/justin/Code/arcus-signal/Tests/AppTests`
+- `/Users/justin/Code/arcus-signal/Tests/AppTests/AppTests.swift`
 
-### Verification target
-- `/api/v1/alerts` payloads include geometry when joined geolocation has geometry.
-- Payloads omit or null geometry when none exists.
-- Existing notification behavior remains unchanged.
+### Tests
+- Added:
+  - `AppTests.deviceAlertPayloadIncludesGeolocationGeometry`
+  - `AppTests.deviceAlertGeometryConvertsMultipolygonGeoShape`
+  - `AppTests.alertSeriesRowPayloadIncludesJoinedGeometry`
+  - `AppTests.alertSeriesRowSelectsJoinedGeolocationGeometry`
+- Updated:
+  - `AppTests.deviceAlertPayloadIncludesGeolocationCells`
+  - `AppTests.alertSeriesRowPayloadAllowsMissingGeolocation`
+
+### Verification
+- How to verify:
+  1. In `/Users/justin/Code/arcus-signal`, run `swift test --filter AppTests`.
+  2. In `/Users/justin/Code/arcus-signal`, run `swift build`.
+  3. Confirm an alert row with joined `arcus_geolocation.geometry` maps that geometry into `DeviceAlertPayload.geometry`.
+  4. Confirm an alert row without joined geolocation still returns `geometry == nil` and `h3Cells == []`.
+- Expected result:
+  - `/api/v1/alerts` payload rows include geometry when `arcus_geolocation.geometry` is present and renderable.
+  - Payload rows omit/null geometry when geolocation is absent or geometry is a non-renderable point.
+  - Existing notification and H3 cell behavior is unchanged.
 
 ### Out of scope / intentionally deferred
 - Historical/revision geometry persistence
@@ -152,47 +179,101 @@ Related GitHub issues:
 - Targeting policy changes
 - App rendering
 
+### Risks or follow-ups
+- The epic checkbox for `arcus-signal#48` was already checked even though the issue itself remained open and the progress log still said not started. Treat this entry as the durable implementation record.
+- The endpoint-level behavior is covered through row/model payload mapping tests rather than a live database-backed `/api/v1/alerts` integration test, because the existing test harness does not create alert/geolocation rows for that endpoint.
+- Pre-existing local changes in Arcus Signal SQL scratch docs and `Package.resolved` were present before this issue work and were left untouched.
+
 ### Handoff to next issue
-- The app persistence issue should assume Arcus payloads can include nullable latest series geometry.
+- The app persistence issue should assume:
+  - Arcus `/api/v1/alerts` payloads can include nullable latest-series `DeviceAlertPayload.geometry`.
+  - Nil geometry still means no renderable warning polygon.
+  - Transport coordinates remain longitude then latitude.
+- Watch out for:
+  - Persist geometry as optional/defaulted state on the existing `Watch` model; do not rename the model.
+  - Do not convert coordinates to map-native types in persistence.
+  - Preserve existing alert matching, H3, and notification semantics.
+- Recommended next step:
+  - Implement Project Arcus `#133` to persist optional geometry from Arcus payloads into SwiftData and surface it through `WatchRowDTO`.
 
 ---
 
 ## Issue #133 - Persist Warning Geometry from Arcus Payloads into SwiftData
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Decode warning geometry from Arcus alert payloads.
-- Persist optional geometry on the existing SwiftData alert model.
-- Surface geometry through `WatchRowDTO`.
+### Scope completed
+- Brief sections advanced:
+  - Goals 1 and 3 by carrying active warning geometry from Arcus payloads into local alert state.
+  - Target Behavior requiring warning geometry to be available from the local SwiftData cache.
+  - Constraints / Invariants requiring SwiftData to be the client source for active warning geometry.
+  - Acceptance criteria 6, 7, and 9 by persisting nullable polygon and multipolygon geometry without changing active alert matching.
+- Issue requirements completed:
+  - Decoded `DeviceAlertPayload.geometry` now flows into `WatchRepo.makeWatch(from:)`.
+  - The existing `Watch` SwiftData model stores optional warning geometry through a SwiftData-safe JSON `Data` backing column.
+  - `Watch.geometry` and `WatchRowDTO.geometry` expose typed `DeviceAlertGeometry?` to call sites.
+  - Missing or later-omitted geometry persists as nil and clears stale stored geometry on refresh.
+  - Existing UGC/H3 active matching and alert UI data flow remain unchanged.
 
 ### Key implementation notes
-- Keep the `Watch` model name for this feature even though it carries warnings.
-- Geometry should be optional/defaulted for migration safety.
-- Preserve existing UGC/H3 matching and alert UI behavior.
+- Kept the existing `Watch` model name even though it now carries warning geometry.
+- Did not persist `DeviceAlertGeometry?` directly because SwiftData traps on the associated-value enum as an optional composite attribute. `Watch.geometryData` stores encoded JSON `Data?`, while `Watch.geometry` remains the typed boundary.
+- Mirrored that storage pattern in `WatchRowDTO` because `HomeProjection.activeAlerts` persists `[WatchRowDTO]`; direct enum storage there would create the same SwiftData risk for cached home projections.
+- Added `Hashable` to `DeviceAlertGeometry` and `DeviceAlertCoordinate` so `WatchRowDTO` remains `Hashable`.
+- Marked `WatchRepoRefreshTests` serialized because the suite exercises one in-memory SwiftData repo with unique-id replacement semantics.
+- `swift-concurrency-expert` was applicable because this issue touches SwiftData and a `@ModelActor` repository. The final shape keeps immutable `Sendable` value transport and does not alter actor isolation or async flow.
+- `build-ios-apps:swiftui-ui-patterns` was not applicable because this issue does not touch SwiftUI views, picker controls, map composition, or user-facing UI.
 
-### Files expected to change
+### Files changed
+- `Sources/Models/Watches/DeviceAlertPayload.swift`
 - `Sources/Models/Watches/Watch.swift`
 - `Sources/Models/Watches/WatchRowDTO.swift`
 - `Sources/Repos/WatchRepo.swift`
-- `Tests/UnitTests/DeviceAlertPayloadTests.swift`
+- `Tests/UnitTests/HomeProjectionStoreTests.swift`
 - `Tests/UnitTests/WatchRepoRefreshTests.swift`
-- `Tests/UnitTests/WatchRepoActiveTests.swift`
 
-### Verification target
-- Missing geometry still decodes and persists normally.
-- Polygon and multipolygon geometry persist.
-- Updated geometry replaces stored geometry.
-- Existing active alert matching still works.
+### Tests
+- Added:
+  - `WatchRepoRefreshTests.refresh_persistsPolygonGeometry`
+  - `WatchRepoRefreshTests.refresh_persistsMultiPolygonGeometry`
+  - `WatchRepoRefreshTests.refresh_replacesStoredGeometry`
+  - `WatchRepoRefreshTests.refresh_clearsStoredGeometry`
+  - `HomeProjectionStoreTests.updateHotAlerts_preservesWarningGeometry`
+- Updated:
+  - `WatchRepoRefreshTests.targetedRefresh_decodesSinglePayload`
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/WatchRepoRefreshTests -only-testing:SkyAwareTests/HomeProjectionStoreTests test`
+  2. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/DeviceAlertPayloadTests -only-testing:SkyAwareTests/WatchRepoActiveTests test`
+  3. Confirm polygon and multipolygon payload geometry persist into `Watch` and surface through `WatchRowDTO`.
+  4. Confirm refreshing the same alert replaces geometry without duplicating the stored row.
+  5. Confirm a later payload with missing geometry clears the stored geometry.
+- Expected result:
+  - Payloads without geometry still decode and persist normally.
+  - Polygon and multipolygon geometries persist in SwiftData-backed alert state.
+  - Updated geometry replaces stored geometry for the same canonical alert id.
+  - Existing active alert matching by UGC/H3 continues to work.
+  - Cached home projections can persist and reload `WatchRowDTO` values carrying warning geometry.
 
 ### Out of scope / intentionally deferred
 - Map rendering
 - UI controls
 - Model renaming
+- Notification behavior changes
 
 ### Handoff to next issue
-- The active warning geometry query should read persisted geometry from SwiftData-backed alert state.
+- The active warning geometry query should assume:
+  - `Watch.geometry` and `WatchRowDTO.geometry` expose typed optional `DeviceAlertGeometry`.
+  - The persisted SwiftData column is `geometryData`, not a direct enum property.
+  - Nil geometry means no renderable warning polygon and should be filtered out by the query.
+- Watch out for:
+  - Query typed geometry through the computed `geometry` property; do not reach into `geometryData` outside persistence/cache boundaries.
+  - Keep active filtering explicit and local: supported warning events, active lifecycle state, current time window, and non-nil geometry.
+  - Do not fetch network state from the map or query layer.
+- Recommended next step:
+  - Implement Project Arcus `#134` to add a SwiftData-backed active warning geometry query for supported warning types only.
 
 ---
 
