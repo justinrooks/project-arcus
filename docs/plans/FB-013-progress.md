@@ -363,35 +363,71 @@ Related GitHub issues:
 ## Issue #135 - Convert Active Warning Geometry into Stable Map Overlays
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Convert active warning polygon and multipolygon geometry into stable map overlay entries.
+### Scope completed
+- Brief sections advanced:
+  - `Map Overlay Mapping` by converting active warning polygon and multipolygon geometry into stable keyed map overlay entries.
+  - `Active Warning Geometry Query` by consuming the issue `#134` result shape (`ActiveWarningGeometry`) at the map-mapping seam.
+  - `Architecture Direction` by reusing existing map overlay mapping structures and avoiding broader architecture changes.
+  - `Explicitly Out of Scope for V1` by keeping the change render-mapping only with no tap/select, toggle, overlap handling, or notification work.
+- Issue requirements completed:
+  - Added warning geometry mapping in `MapPolygonMapper`.
+  - Supported polygon and multipolygon exterior rings only.
+  - Generated deterministic warning overlay keys from alert id, revision identity fallback, event type, polygon index, and geometry fingerprint.
+  - Ensured geometry changes produce new overlay identity keys so stale geometry is replaced.
+  - Left existing SPC/fire/meso key and signature behavior unchanged.
 
 ### Key implementation notes
-- Generate deterministic keys from alert id, revision identifier or sent date, event type, polygon index, and polygon fingerprint.
-- Support exterior rings for v1.
-- Preserve existing overlay key/signature behavior.
-- Do not add tap/select behavior.
+- Added `MapPolygonMapper.warningPolygons(from:)` as an issue-local seam that maps `ActiveWarningGeometry` into `KeyedMapPolygons`.
+- Multipolygon conversion emits one overlay entry per polygon using the exterior ring only; interior rings are intentionally ignored for v1.
+- Warning entries are sorted deterministically by event, id, revision identity, and issued date before mapping, so output remains stable regardless of input ordering.
+- Warning key format includes a geometry fingerprint derived from normalized coordinates, allowing revised geometry to replace stale overlays without touching non-warning key behavior.
+- `swift-concurrency-expert` was evaluated and not applicable for this issue because no async flow, actor isolation, or Sendable boundary changed.
+- `build-ios-apps:swiftui-ui-patterns` was evaluated and not applicable because this issue does not touch SwiftUI views or map screen composition.
 
-### Files expected to change
+### Files changed
 - `Sources/Features/Map/MapPolygonMapper.swift`
-- Possibly `Sources/Features/Map/RiskPolygonOverlay.swift`
 - `Tests/UnitTests/MapPolygonMapperTests.swift`
 
-### Verification target
-- Polygon and multipolygon warning geometry map to stable overlay entries.
-- Revised geometry changes identity/signature enough to replace stale overlays.
-- Existing SPC/fire/meso mapping still works.
+### Tests
+- Added:
+  - `MapPolygonMapperTests.warningPolygonMapping_usesExteriorRingOnly`
+  - `MapPolygonMapperTests.warningMultipolygonMapping_createsStableEntries`
+  - `MapPolygonMapperTests.warningOverlayKeys_areDeterministic`
+  - `MapPolygonMapperTests.warningOverlayEntries_haveStableOrdering`
+  - `MapPolygonMapperTests.warningGeometryChanges_updateOverlayIdentityFingerprint`
+- Updated:
+  - None
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/MapPolygonMapperTests test`
+  2. Confirm new warning mapping tests pass for polygon/multipolygon conversion, deterministic keying, stable ordering, and geometry update identity changes.
+  3. Confirm existing `MapPolygonMapperTests` for categorical/severe/meso/fire still pass.
+- Expected result:
+  - Warning geometry maps into stable keyed overlay entries for polygon and multipolygon shapes.
+  - Geometry revisions produce changed key fingerprints for replacement behavior.
+  - Existing non-warning overlay mapping behavior remains unchanged.
 
 ### Out of scope / intentionally deferred
 - Final warning styling
-- Toggle UI
+- Warning overlay composition above all map layers
+- Warning toggle in picker
 - Tap/select behavior
 - Overlap resolution
+- Notification behavior changes
 
 ### Handoff to next issue
-- Warning styling should be able to rely on stable overlay metadata or typed warning overlay entries.
+- The next issue should assume:
+  - Warning geometry can already be converted into deterministic keyed overlay entries via `MapPolygonMapper`.
+  - Multipolygon and polygon exterior rings map to stable entries with per-polygon identity.
+  - Non-warning key/signature behavior is unchanged.
+- Watch out for:
+  - Do not rework warning key semantics when implementing styling.
+  - Keep warning styling isolated to overlay appearance, not overlay identity.
+- Recommended next step:
+  - Implement issue `#136` to add warning-specific visual styling on top of these stable warning overlay entries.
 
 ---
 

@@ -63,7 +63,7 @@ Read in this order before doing any implementation work:
 
 1. The current repo `AGENTS.md`
 2. `docs/plans/FB-013-issue-runbook.md`
-3. `/Users/justin/Library/Mobile Documents/iCloud~md~obsidian/Documents/Second Brain/+/FB-013 Add Active Warning Geometry.md`
+3. The relevant sections of the feature brief: `/Users/justin/Library/Mobile Documents/iCloud~md~obsidian/Documents/Second Brain/+/FB-013 Add Active Warning Geometry.md`
 4. `docs/plans/FB-013-progress.md`
 5. the current GitHub issue under epic `#131 [Epic] Add active warning geometry to the map`
 6. the relevant code paths, models, map rendering, persistence, tests, and supporting docs touched by that issue

@@ -120,6 +120,26 @@ struct MapPolygonMapper: Sendable {
         }
     }
 
+    func warningPolygons(
+        from warnings: [ActiveWarningGeometry]
+    ) -> KeyedMapPolygons {
+        let orderedWarnings = warnings.sorted {
+            let lhsRevision = warningRevisionIdentity(for: $0)
+            let rhsRevision = warningRevisionIdentity(for: $1)
+
+            if $0.event != $1.event { return $0.event < $1.event }
+            if $0.id != $1.id { return $0.id < $1.id }
+            if lhsRevision != rhsRevision { return lhsRevision < rhsRevision }
+            return $0.issued < $1.issued
+        }
+
+        let entries = orderedWarnings.flatMap { warning -> [MapPolygonEntry] in
+            warningPolygonEntries(from: warning)
+        }
+
+        return KeyedMapPolygons(entries: entries)
+    }
+
     private func severeProbabilityKey(_ probability: ThreatProbability) -> String {
         switch probability {
         case .percent(let value):
@@ -198,6 +218,73 @@ struct MapPolygonMapper: Sendable {
             hasher.combine(coordinate)
         }
 
+        return hasher.hexString
+    }
+
+    private func warningPolygonEntries(
+        from warning: ActiveWarningGeometry
+    ) -> [MapPolygonEntry] {
+        let coordinatesByPolygonIndex: [[Coordinate2D]]
+        switch warning.geometry {
+        case .polygon(let rings):
+            guard let exteriorRing = exteriorRing(from: rings) else { return [] }
+            coordinatesByPolygonIndex = [exteriorRing]
+
+        case .multiPolygon(let polygons):
+            coordinatesByPolygonIndex = polygons.compactMap { polygon in
+                exteriorRing(from: polygon)
+            }
+        }
+
+        let revisionIdentity = warningRevisionIdentity(for: warning)
+        let eventKey = sanitizedKeyPart(warning.event)
+        let alertID = sanitizedKeyPart(warning.id)
+
+        return coordinatesByPolygonIndex.enumerated().map { index, coordinates in
+            let geometryFingerprint = warningGeometryFingerprint(for: coordinates)
+            return MapPolygonEntry(
+                key: "warn|\(alertID)|\(revisionIdentity)|\(eventKey)|\(index)|\(geometryFingerprint)",
+                title: warning.event,
+                subtitle: nil,
+                coordinates: coordinates
+            )
+        }
+    }
+
+    private func exteriorRing(
+        from rings: [[DeviceAlertCoordinate]]
+    ) -> [Coordinate2D]? {
+        guard let firstRing = rings.first, !firstRing.isEmpty else {
+            return nil
+        }
+
+        return firstRing.map { coordinate in
+            Coordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        }
+    }
+
+    private func warningRevisionIdentity(
+        for warning: ActiveWarningGeometry
+    ) -> String {
+        let messageID = warning.messageId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let messageID, !messageID.isEmpty {
+            return "rev-\(sanitizedKeyPart(messageID))"
+        }
+
+        let revisionSent = warning.currentRevisionSent ?? warning.issued
+        return "sent-\(Int(revisionSent.timeIntervalSince1970))"
+    }
+
+    private func warningGeometryFingerprint(
+        for coordinates: [Coordinate2D]
+    ) -> String {
+        var hasher = StableMapHasher()
+        hasher.combine(coordinates.count)
+        for coordinate in coordinates {
+            hasher.combine(coordinate)
+        }
         return hasher.hexString
     }
 }
