@@ -280,36 +280,83 @@ Related GitHub issues:
 ## Issue #134 - Add SwiftData-Backed Active Warning Geometry Query
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
-- Add a focused query that returns active supported warnings with geometry from SwiftData.
+### Scope completed
+- Brief sections advanced:
+  - Goals 1, 2, and 3 by exposing locally persisted warning geometry as client-consumable active alert state.
+  - Target Behavior requiring warning geometry to be surfaced from the SwiftData cache for app rendering.
+  - Constraints / Invariants requiring explicit lifecycle filtering, supported warning filtering, and nil-geometry exclusion.
+  - Acceptance criteria 6, 7, 9, and the lifecycle portions of 3 by querying cached polygon/multipolygon geometry only for active supported warnings.
+- Issue requirements completed:
+  - Added `ActiveWarningGeometry` as a narrow immutable result shape for future map overlay conversion.
+  - Added `ArcusAlertQuerying.getActiveWarningGeometries(on:)`.
+  - Implemented the query through `ArcusAlertProvider` and `WatchRepo`.
+  - Included only Tornado Warning, Severe Thunderstorm Warning, and Flash Flood Warning.
+  - Excluded watches, unsupported alert types, nil geometry, expired warnings, canceled messages, and non-active states.
+  - Kept the query SwiftData-backed and network-free.
 
 ### Key implementation notes
-- Include only:
-  - Tornado Warning
-  - Severe Thunderstorm Warning
-  - Flash Flood Warning
-- Exclude watches, mesos, unsupported alert types, non-active alerts, and nil geometry.
-- Use local active rules based on status/message type and current time window.
+- The query returns all locally persisted active supported warning geometries, rather than location-filtering a second time. The local cache already represents the app's Arcus-backed alert state, and future map composition can consume this without issuing network requests.
+- `ActiveWarningGeometry` carries alert id, revision identifier, revision sent date, event type, lifecycle timing fields, message type, and typed `DeviceAlertGeometry`.
+- Local lifecycle filtering treats `Active` and legacy CAP-style `Actual` statuses as renderable only when the warning is within its effective/end window and the message type is not cancel/cancelled.
+- Kept geometry in the existing `Watch` model and typed `DeviceAlertGeometry` boundary; no map-native coordinate conversion was introduced.
+- `swift-concurrency-expert` was applicable because the issue touches a SwiftData `@ModelActor` and an async provider protocol. The implementation returns immutable `Sendable` values from the actor and does not alter actor isolation or introduce detached work.
+- `build-ios-apps:swiftui-ui-patterns` was not applicable because this issue does not touch SwiftUI views, picker controls, `@State`, `@Binding`, map composition, or layout.
 
-### Files expected to change
+### Files changed
 - `Sources/Interfaces/Arcus/ArcusAlertQuerying.swift`
+- `Sources/Models/Watches/WatchRowDTO.swift`
 - `Sources/Providers/ArcusAlertProvider.swift`
 - `Sources/Repos/WatchRepo.swift`
-- Tests under `Tests/UnitTests`
+- `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`
+- `Tests/UnitTests/HomeRefreshPipelineTests.swift`
+- `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`
+- `Tests/UnitTests/WatchRepoActiveTests.swift`
 
-### Verification target
-- Query returns only active supported warning geometries.
-- Query works without network access.
-- Result shape is sufficient for map overlay rendering.
+### Tests
+- Added:
+  - `WatchRepoActiveTests.activeWarningGeometries_includesSupportedWarningsWithGeometry`
+  - `WatchRepoActiveTests.activeWarningGeometries_excludesUnsupportedAndNilGeometry`
+  - `WatchRepoActiveTests.activeWarningGeometries_excludesInactiveLifecycle`
+  - `WatchRepoActiveTests.providerActiveWarningGeometries_usesLocalRepoWithoutNetwork`
+- Updated:
+  - Arcus alert query test fakes to satisfy the new `getActiveWarningGeometries(on:)` protocol requirement.
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.4.1' -only-testing:SkyAwareTests/WatchRepoActiveTests test`
+  2. Confirm the new active warning geometry tests pass.
+  3. Confirm `providerActiveWarningGeometries_usesLocalRepoWithoutNetwork` passes with an `ArcusClient` that would fail any network fetch.
+  4. Run a full app build to verify the protocol change compiles across app and test targets.
+- Expected result:
+  - Supported active warnings with polygon or multipolygon geometry are returned from SwiftData.
+  - Watches, unsupported events, nil geometry, expired warnings, canceled messages, and non-active states are excluded.
+  - Querying through `ArcusAlertProvider` does not call Arcus network fetch methods.
+  - The result contains enough identity, revision, lifecycle, event, and geometry data for issue `#135` to build stable overlays.
 
 ### Out of scope / intentionally deferred
 - Map overlay construction
 - Network fetch behavior changes
+- Map styling
+- Toggle UI
+- Notification behavior changes
+
+### Risks or follow-ups
+- The query currently sorts by event then id for deterministic results. Future overlay conversion should define its own stable overlay identity and not rely on result order as map z-order.
+- The result shape intentionally carries transport geometry, not `CLLocationCoordinate2D` or `MKPolygon`; conversion remains deferred to `#135`.
 
 ### Handoff to next issue
-- The map overlay conversion issue should consume this focused query result rather than reaching into network or raw persistence details.
+- The map overlay conversion issue should assume:
+  - `ArcusAlertQuerying.getActiveWarningGeometries(on:)` returns cached active warning geometry without network access.
+  - `ActiveWarningGeometry.geometry` is still GeoJSON-like transport geometry with longitude/latitude coordinate order.
+  - Nil, inactive, expired, canceled, watch, meso, and unsupported warning rows have already been filtered out.
+- Watch out for:
+  - Do not reach into `Watch.geometryData` or raw SwiftData from map overlay conversion.
+  - Do not add tap/select behavior while converting overlays.
+  - Do not change meso or watch rendering.
+- Recommended next step:
+  - Implement Project Arcus `#135` by mapping `ActiveWarningGeometry` polygon and multipolygon exterior rings into stable map overlay entries.
 
 ---
 

@@ -9,5 +9,12 @@ import Foundation
 
 protocol ArcusAlertQuerying: Sendable {
     func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO]
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry]
     func getWatch(id: String) async throws -> WatchRowDTO?
+}
+
+extension ArcusAlertQuerying {
+    func getActiveWarningGeometries() async throws -> [ActiveWarningGeometry] {
+        try await getActiveWarningGeometries(on: .now)
+    }
 }

@@ -38,6 +38,36 @@ actor WatchRepo {
         return rows
     }
 
+    func activeWarningGeometries(on date: Date = .now) throws -> [ActiveWarningGeometry] {
+        let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
+
+        let rows = candidates.compactMap { watch -> ActiveWarningGeometry? in
+            guard isSupportedWarningGeometryEvent(watch.event),
+                  isRenderableWarningLifecycle(watch, on: date),
+                  let geometry = watch.geometry else {
+                return nil
+            }
+
+            return ActiveWarningGeometry(
+                id: watch.nwsId,
+                messageId: watch.messageId,
+                currentRevisionSent: watch.currentRevisionSent,
+                event: watch.event,
+                issued: watch.sent,
+                effective: watch.effective,
+                expires: watch.expires,
+                ends: watch.ends,
+                messageType: watch.messageType,
+                geometry: geometry
+            )
+        }
+
+        return rows.sorted {
+            if $0.event != $1.event { return $0.event < $1.event }
+            return $0.id < $1.id
+        }
+    }
+
     func watch(id: String) throws -> WatchRowDTO? {
         let canonicalID = ArcusAlertIdentifier.canonical(id)
         let predicate = #Predicate<Watch> { watch in
@@ -166,6 +196,30 @@ actor WatchRepo {
         }
 
         return nil
+    }
+
+    private func isSupportedWarningGeometryEvent(_ event: String) -> Bool {
+        switch event.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase {
+        case "tornado warning", "severe thunderstorm warning", "flash flood warning":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func isRenderableWarningLifecycle(_ watch: Watch, on date: Date) -> Bool {
+        let status = watch.status.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        let messageType = watch.messageType.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+
+        guard watch.effective <= date && date <= watch.ends else {
+            return false
+        }
+
+        guard status == "active" || status == "actual" else {
+            return false
+        }
+
+        return messageType != "cancel" && messageType != "cancelled"
     }
     
     // MARK: Upsert

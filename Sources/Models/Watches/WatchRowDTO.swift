@@ -126,6 +126,19 @@ struct WatchRowDTO: Identifiable, Sendable, Hashable, Codable {
     }
 }
 
+struct ActiveWarningGeometry: Identifiable, Sendable, Hashable {
+    let id: String
+    let messageId: String?
+    let currentRevisionSent: Date?
+    let event: String
+    let issued: Date
+    let effective: Date
+    let expires: Date
+    let ends: Date
+    let messageType: String
+    let geometry: DeviceAlertGeometry
+}
+
 extension WatchRowDTO {
     init(from watch: Watch) {
         self.id = watch.nwsId
