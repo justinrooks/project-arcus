@@ -137,6 +137,28 @@ struct RiskPolygonOverlayTests {
         #expect(coordinator.key(for: changedStyle) == key)
     }
 
+    @MainActor
+    @Test("MapCoordinator renders warning polygons with warning-specific styling")
+    func mapCoordinator_rendersWarningPolygonWithWarningStyle() {
+        let coordinator = MapCoordinator()
+        let polygon = makeWarningPolygon(title: "Severe Thunderstorm Warning")
+        let expected = rgba(.warningYellow)
+
+        let renderer = coordinator.mapView(MKMapView(), rendererFor: polygon)
+
+        guard let polygonRenderer = renderer as? MKPolygonRenderer else {
+            Issue.record("Expected MKPolygonRenderer")
+            return
+        }
+
+        #expect(abs(polygonRenderer.lineWidth - 2) < 0.001)
+        #expect(rgba(polygonRenderer.strokeColor ?? .clear) == expected)
+        #expect(rgba(polygonRenderer.fillColor ?? .clear).red == expected.red)
+        #expect(rgba(polygonRenderer.fillColor ?? .clear).green == expected.green)
+        #expect(rgba(polygonRenderer.fillColor ?? .clear).blue == expected.blue)
+        #expect(abs(rgba(polygonRenderer.fillColor ?? .clear).alpha - 0.22) < 0.001)
+    }
+
     private func makePolygon() -> MKPolygon {
         var coordinates = [
             CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
@@ -162,6 +184,17 @@ struct RiskPolygonOverlayTests {
             fillHex: fillHex,
             strokeHex: strokeHex
         ).encoded
+        return polygon
+    }
+
+    private func makeWarningPolygon(title: String) -> MKPolygon {
+        var coordinates = [
+            CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.1, longitude: -96.9),
+            CLLocationCoordinate2D(latitude: 35.2, longitude: -97.1)
+        ]
+        let polygon = MKPolygon(coordinates: &coordinates, count: coordinates.count)
+        polygon.title = title
         return polygon
     }
 

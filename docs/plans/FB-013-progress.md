@@ -48,7 +48,7 @@ Related GitHub issues:
 - Issue `#132` is complete in Project Arcus and mirrored in the Arcus Signal payload model.
 - Issue `arcus-signal#48` is complete in Arcus Signal.
 - Issue `#133` is complete in Project Arcus.
-- Remaining Project Arcus child issues are still pending and should continue in sequence from `#134`.
+- Remaining Project Arcus child issues are still pending and should continue in sequence from `#137`.
 
 ---
 
@@ -434,9 +434,9 @@ Related GitHub issues:
 ## Issue #136 - Add Warning-Specific Map Polygon Styling
 
 ### Status
-- Not started
+- Completed
 
-### Scope planned
+### Scope completed
 - Add warning-specific stroke/fill treatments for supported warning types.
 
 ### Key implementation notes
@@ -446,14 +446,35 @@ Related GitHub issues:
 - Stroke should be stronger than fill.
 - Fill should stay light and translucent.
 - Do not overload SPC probability styling with warning semantics.
+- Added a focused warning polygon style helper instead of threading warning semantics through the SPC probability resolver.
+- The renderer now checks warning styling first for generic `MKPolygon` overlays and falls back to existing SPC styling for non-warning polygons.
+- `swift-concurrency-expert` was not applicable because this issue does not change async flow, actor isolation, SwiftData concurrency, or other cross-boundary sendability concerns.
+- `build-ios-apps:swiftui-ui-patterns` was not applicable because this issue does not change SwiftUI view composition, state flow, or picker/map screen structure.
 
-### Files expected to change
+### Files changed
 - `Sources/Utilities/Core/AlertStyling.swift`
 - `Sources/Utilities/Extensions/ext+Color.swift`
-- `Sources/Features/Map/PolygonStyleProvider.swift` or a new focused warning style helper
-- `Sources/Features/Map/RiskPolygonOverlay.swift`
-- `Sources/Features/Map/RiskPolygonRenderer.swift`
-- Tests under `Tests/UnitTests`
+- `Sources/Features/Map/MapCoordinator.swift`
+- `Tests/UnitTests/AlertStylingTests.swift`
+- `Tests/UnitTests/RiskPolygonOverlayTests.swift`
+
+### Tests
+- Added:
+  - `AlertStylingTests.warningPolygonStyle_usesTornadoRed`
+  - `AlertStylingTests.warningPolygonStyle_usesYellowForSevereThunderstormWarning`
+  - `AlertStylingTests.warningPolygonStyle_usesBlueForFlashFloodWarning`
+  - `AlertStylingTests.warningPolygonStyle_ignoresUnsupportedWarnings`
+  - `RiskPolygonOverlayTests.mapCoordinator_rendersWarningPolygonWithWarningStyle`
+
+### Verification
+- How to verify:
+  1. Run `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/AlertStylingTests -only-testing:SkyAwareTests/RiskPolygonOverlayTests test`
+  2. Confirm the new warning-style tests pass for Tornado Warning, Severe Thunderstorm Warning, Flash Flood Warning, and unsupported warning titles.
+  3. Confirm the renderer path returns a warning-specific `MKPolygonRenderer` with stronger stroke styling for warning-titled polygons.
+- Result:
+  - Focused unit tests passed.
+  - The xcresult summary showed no test failures.
+  - Coverage information was present in the result bundle, but no explicit coverage percentage was surfaced by the summary command we inspected.
 
 ### Verification target
 - Each supported warning type maps to a distinct deterministic style.
@@ -465,7 +486,7 @@ Related GitHub issues:
 - Tap/select behavior
 
 ### Handoff to next issue
-- Map composition should be able to append warning overlays with finalized visual treatment above thematic layers.
+- Map composition can now append warning overlays using finalized visual treatment above thematic layers.
 
 ---
 

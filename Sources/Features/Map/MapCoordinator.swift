@@ -102,6 +102,14 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
         }
 
         if let polygon = overlay as? MKPolygon {
+            if let warningStyle = warningPolygonStyle(for: polygon.title ?? "") {
+                let renderer = MKPolygonRenderer(polygon: polygon)
+                renderer.lineWidth = 2
+                renderer.strokeColor = warningStyle.stroke
+                renderer.fillColor = warningStyle.fill
+                return renderer
+            }
+
             let renderer = MKPolygonRenderer(polygon: polygon)
             renderer.lineWidth = 1
             let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
