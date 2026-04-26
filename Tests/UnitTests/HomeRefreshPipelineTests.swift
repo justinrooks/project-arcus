@@ -23,9 +23,12 @@ struct HomeRefreshPipelineTests {
         )
         await pipeline.waitForIdle()
 
-        let request = try #require(await coordinator.requests().first)
-        #expect(request.trigger == .foregroundActivate)
-        #expect(request.locationContext == nil)
+        let requests = await coordinator.requests()
+        #expect(requests.count == 2)
+        #expect(requests[0].trigger == .foregroundPrime)
+        #expect(requests[0].locationContext == nil)
+        #expect(requests[1].trigger == .foregroundActivate)
+        #expect(requests[1].locationContext == nil)
     }
 
     @Test("context change forwards the current resolved context to the unified queue")
@@ -44,9 +47,12 @@ struct HomeRefreshPipelineTests {
         )
         await pipeline.waitForIdle()
 
-        let request = try #require(await coordinator.requests().first)
-        #expect(request.trigger == .foregroundLocationChange)
-        #expect(request.locationContext == context)
+        let requests = await coordinator.requests()
+        #expect(requests.count == 2)
+        #expect(requests[0].trigger == .foregroundPrime)
+        #expect(requests[0].locationContext == context)
+        #expect(requests[1].trigger == .foregroundLocationChange)
+        #expect(requests[1].locationContext == context)
     }
 
     @Test("initial context publication during startup does not queue a second refresh")
@@ -91,7 +97,7 @@ struct HomeRefreshPipelineTests {
         await gate.open()
         await pipeline.waitForIdle()
 
-        #expect(await coordinator.requestCount() == 1)
+        #expect(await coordinator.requestCount() == 2)
     }
 
     @Test("force refresh waits for unified queue completion when loading is shown")

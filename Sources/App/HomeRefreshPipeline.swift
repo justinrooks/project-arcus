@@ -66,6 +66,7 @@ final class HomeRefreshPipeline {
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
     private var activeRefreshCount = 0
+    private var followUpRefreshCount = 0
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
@@ -201,7 +202,7 @@ final class HomeRefreshPipeline {
     }
 
     func waitForIdle() async {
-        while activeRefreshCount > 0 {
+        while activeRefreshCount > 0 || followUpRefreshCount > 0 {
             try? await Task.sleep(for: .milliseconds(25))
         }
     }
@@ -250,10 +251,19 @@ final class HomeRefreshPipeline {
         let startedAt = Date()
         let previousResolvedRefreshKey = lastResolvedLocationScopedRefreshKey
         do {
-            let snapshot = try await environment.coordinator.enqueueAndWait(
-                makeRequest(for: trigger, using: environment.locationSession)
-            )
+            let request = makeRequest(for: trigger, using: environment.locationSession)
+            let snapshot: HomeSnapshot
+            if shouldPrimeSummary(for: trigger) {
+                snapshot = try await environment.coordinator.enqueueAndWait(
+                    makePrimeRequest(for: trigger, using: environment.locationSession)
+                )
+            } else {
+                snapshot = try await environment.coordinator.enqueueAndWait(request)
+            }
             apply(snapshot)
+            if shouldPrimeSummary(for: trigger) {
+                scheduleFollowUpRefresh(request, environment: environment)
+            }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.info(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
@@ -324,6 +334,50 @@ final class HomeRefreshPipeline {
             trigger: trigger.ingestionTrigger,
             locationContext: trigger == .contextChanged ? locationSession.currentContext : nil
         )
+    }
+
+    private func makePrimeRequest(
+        for trigger: HomeView.RefreshTrigger,
+        using locationSession: any HomeLocationContextPreparing
+    ) -> HomeIngestionRequest {
+        HomeIngestionRequest(
+            trigger: .foregroundPrime,
+            locationContext: trigger == .contextChanged ? locationSession.currentContext : nil
+        )
+    }
+
+    private func shouldPrimeSummary(for trigger: HomeView.RefreshTrigger) -> Bool {
+        switch trigger {
+        case .sceneActive, .contextChanged:
+            return true
+        case .manual, .timer:
+            return false
+        }
+    }
+
+    private func scheduleFollowUpRefresh(
+        _ request: HomeIngestionRequest,
+        environment: Environment
+    ) {
+        followUpRefreshCount += 1
+        environment.logger.debug(
+            "Scheduling non-blocking follow-up refresh trigger=\(request.trigger.logName, privacy: .public)"
+        )
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.followUpRefreshCount -= 1 }
+            do {
+                let snapshot = try await environment.coordinator.enqueueAndWait(request)
+                self.apply(snapshot)
+                environment.logger.debug(
+                    "Finished non-blocking follow-up refresh trigger=\(request.trigger.logName, privacy: .public) result=success"
+                )
+            } catch {
+                environment.logger.error(
+                    "Non-blocking follow-up refresh failed trigger=\(request.trigger.logName, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
     }
 
     private func apply(_ snapshot: HomeSnapshot) {
