@@ -8,7 +8,6 @@
 import Foundation
 import OSLog
 
-@available(*, deprecated, message: "Remove References")
 struct WatchComposer: NotificationComposing {
     private let logger = Logger.notificationsWatchComposer
 
