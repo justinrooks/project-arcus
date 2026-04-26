@@ -11,7 +11,13 @@ import OSLog
 import UIKit
 
 protocol LocationContextPushing: Sendable {
-    func enqueue(_ context: LocationContext) async
+    func enqueue(_ context: LocationContext, forceUpload: Bool) async
+}
+
+extension LocationContextPushing {
+    func enqueue(_ context: LocationContext) async {
+        await enqueue(context, forceUpload: false)
+    }
 }
 
 enum LocationPushError: Error {
@@ -111,8 +117,8 @@ actor LocationSnapshotPusher: LocationContextPushing {
         self.retryDelaysSeconds = retryDelaysSeconds
     }
 
-    func enqueue(_ context: LocationContext) async {
-        guard locationUploadEnabledProvider() else {
+    func enqueue(_ context: LocationContext, forceUpload: Bool = false) async {
+        guard forceUpload || locationUploadEnabledProvider() else {
             logger.debug("Skipping location snapshot upload; disabled in settings")
             return
         }

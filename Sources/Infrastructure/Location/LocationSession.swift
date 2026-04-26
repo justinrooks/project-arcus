@@ -128,6 +128,26 @@ final class LocationSession {
         }
     }
 
+    func pushServerNotificationPreferenceUpdate(forceUpload: Bool = false) async {
+        if let currentContext {
+            await locationContextResolver.enqueueForPush(currentContext, forceUpload: forceUpload)
+            return
+        }
+
+        guard let currentSnapshot else { return }
+        guard let resolvedContext = try? await locationContextResolver.resolveContext(
+            from: currentSnapshot,
+            maximumAcceptedLocationAge: nil,
+            placemarkTimeout: 8
+        ) else {
+            return
+        }
+
+        self.currentSnapshot = resolvedContext.snapshot
+        self.currentContext = nil
+        self.currentContext = resolvedContext
+    }
+
     private func syncAuthorizationStatus() {
         let status = locationManager.authStatus
         if authorizationStatus != status {

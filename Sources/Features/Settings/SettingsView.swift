@@ -125,9 +125,16 @@ struct SettingsView: View {
                         .onChange(of: mesoNotificationEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Meso Notifications")
                         }
-                    Toggle("Server Notifications", isOn: $serverNotificationEnabled)
+                    Toggle("Subscribe to Server Notifications", isOn: $serverNotificationEnabled)
                         .onChange(of: serverNotificationEnabled) { _, newValue in
                             handleNotificationToggle(newValue, for: "Server Notifications")
+                            if newValue, sendL8nToSignal == false {
+                                sendL8nToSignal = true
+                                return
+                            }
+                            Task {
+                                await locationSession.pushServerNotificationPreferenceUpdate()
+                            }
                         }
                 }
 
@@ -196,11 +203,28 @@ struct SettingsView: View {
                     .contentShape(Rectangle())
                 }
 
-                sectionCard(title: "Location & Notification", symbol: "iphone.badge.location", accent: .orange) {
-                    Toggle("Send Location to Signal", isOn: $sendL8nToSignal)
-                        .onChange(of: sendL8nToSignal) { _, newValue in
-                            handleNotificationToggle(newValue, for: "Send Location to Signal")
-                        }
+                sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .orange) {
+                    VStack() {
+                        Toggle("Share Location with Signal", isOn: $sendL8nToSignal)
+                            .onChange(of: sendL8nToSignal) { _, newValue in
+                                handleNotificationToggle(newValue, for: "Send Location to Signal")
+                                if newValue {
+                                    _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+                                    Task {
+                                        await locationSession.pushServerNotificationPreferenceUpdate()
+                                    }
+                                } else {
+                                    serverNotificationEnabled = false
+                                    Task {
+                                        await locationSession.pushServerNotificationPreferenceUpdate(forceUpload: true)
+                                    }
+                                }
+                            }
+                        Text("Share your approximate location information with the alert server. This allows SkyAware to send you notifications relevant to your current location.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Installation ID")
                             .font(.subheadline.weight(.semibold))

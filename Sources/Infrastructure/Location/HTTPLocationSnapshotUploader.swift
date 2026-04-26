@@ -13,7 +13,7 @@ protocol LocationSnapshotUploading: Sendable {
 }
 
 struct NoOpLocationContextPusher: LocationContextPushing {
-    func enqueue(_ context: LocationContext) async {}
+    func enqueue(_ context: LocationContext, forceUpload: Bool) async {}
 }
 
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
