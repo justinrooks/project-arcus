@@ -117,7 +117,13 @@ struct ActiveAlertSummaryView: View {
             }
         }
         .padding(18)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3,
+            allowsGlass: false
+        )
         .placeholder(isLoading)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in

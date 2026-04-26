@@ -17,6 +17,7 @@ struct MapOverlayEntry {
 
 struct MapCanvasView: UIViewRepresentable {
     let state: MapCanvasState
+    private let defaultViewportMeters: CLLocationDistance = 1_450_000//2_200_000
     
     func makeUIView(context: Context) -> MKMapView {
         let mapView = MKMapView()
@@ -26,7 +27,11 @@ struct MapCanvasView: UIViewRepresentable {
 
         // Initial viewport: center once when we first get a coordinate.
         if let coord = state.initialCenterCoordinate {
-            let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
+            let region = MKCoordinateRegion(
+                center: coord,
+                latitudinalMeters: defaultViewportMeters,
+                longitudinalMeters: defaultViewportMeters
+            )
             mapView.setRegion(region, animated: false)
             context.coordinator.lastCenteredCoordinate = coord
         }
@@ -48,7 +53,11 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         if context.coordinator.lastCenteredCoordinate == nil, let coord = state.initialCenterCoordinate {
-            let region = MKCoordinateRegion(center: coord, latitudinalMeters: 1_450_000, longitudinalMeters: 1_450_000)
+            let region = MKCoordinateRegion(
+                center: coord,
+                latitudinalMeters: defaultViewportMeters,
+                longitudinalMeters: defaultViewportMeters
+            )
             uiView.setRegion(region, animated: true)
             context.coordinator.lastCenteredCoordinate = coord
         }

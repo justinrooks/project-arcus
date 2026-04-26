@@ -148,7 +148,6 @@ struct SummaryView: View {
             AtmosphereRailView(weather: weather)
                 .allowsHitTesting(!isWeatherLoading)
                 .summaryResolving(resolutionState.isResolving(.atmosphere))
-                .animation(SkyAwareMotion.settle(reduceMotion), value: isWeatherLoading)
         }
     }
 
@@ -222,7 +221,13 @@ struct SummaryView: View {
                     }
                 }
                 .padding(16)
-                .cardBackground(cornerRadius: SkyAwareRadius.hero, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
+                .cardBackground(
+                    cornerRadius: SkyAwareRadius.hero,
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
+                    shadowY: 3,
+                    allowsGlass: false
+                )
 
                 switch localAlertsPresentationState {
                 case .unavailable:
