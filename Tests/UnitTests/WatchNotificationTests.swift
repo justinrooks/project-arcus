@@ -100,6 +100,40 @@ struct WatchNotificationTests {
         #expect(sent[0].id == "watch:abc123")
     }
 
+    @Test("composer uses server-aligned wording for known watch event types")
+    func composerUsesServerAlignedWordingForWatchType() {
+        let event = NotificationEvent(
+            kind: .watchNotification,
+            key: "watch:abc123",
+            payload: [
+                "watchId": "abc123",
+                "title": "Tornado Watch",
+                "headline": "Severe storms are possible",
+                "placeMark": "Oklahoma City, OK",
+                "localDay": "2026-01-02"
+            ]
+        )
+
+        let message = WatchComposer().compose(event)
+        #expect(message.title == "Tornado Watch")
+        #expect(message.body == "Conditions are favorable for tornadoes in your area.")
+        #expect(message.subtitle == "For your area")
+    }
+
+    @Test("composer falls back to generic server-aligned weather alert wording")
+    func composerFallsBackToGenericServerAlignedWording() {
+        let event = NotificationEvent(
+            kind: .watchNotification,
+            key: "watch:missing",
+            payload: [:]
+        )
+
+        let message = WatchComposer().compose(event)
+        #expect(message.title == "Weather Alert")
+        #expect(message.body == "Weather conditions indicated for your area.")
+        #expect(message.subtitle == "For your area")
+    }
+
     @Test("background location change waits for unified ingestion before sending a watch notification")
     func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async throws {
         let sender = RecordingSender()
