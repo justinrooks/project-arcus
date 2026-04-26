@@ -17,7 +17,7 @@ actor StormRiskRepo {
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
         
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
         
         let dtos = decoded.features.compactMap {
             let props = $0.properties

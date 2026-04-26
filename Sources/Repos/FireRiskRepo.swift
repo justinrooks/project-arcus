@@ -16,7 +16,7 @@ actor FireRiskRepo {
 
     func refreshFireRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .fireRH)
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
 
         let dtos = decoded.features.compactMap {
             let props = $0.properties
