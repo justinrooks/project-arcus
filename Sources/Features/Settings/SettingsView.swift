@@ -117,25 +117,45 @@ struct SettingsView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 sectionCard(title: "Notification Preferences", symbol: "bell.badge.fill") {
-                    Toggle("Morning Summaries", isOn: $morningSummaryEnabled)
-                        .onChange(of: morningSummaryEnabled) { _, newValue in
-                            handleNotificationToggle(newValue, for: "Morning Summaries")
-                        }
-                    Toggle("Meso Notifications", isOn: $mesoNotificationEnabled)
-                        .onChange(of: mesoNotificationEnabled) { _, newValue in
-                            handleNotificationToggle(newValue, for: "Meso Notifications")
-                        }
-                    Toggle("Subscribe to Server Notifications", isOn: $serverNotificationEnabled)
-                        .onChange(of: serverNotificationEnabled) { _, newValue in
-                            handleNotificationToggle(newValue, for: "Server Notifications")
-                            if newValue, sendL8nToSignal == false {
-                                sendL8nToSignal = true
-                                return
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Morning Summaries", isOn: $morningSummaryEnabled)
+                            .onChange(of: morningSummaryEnabled) { _, newValue in
+                                handleNotificationToggle(newValue, for: "Morning Summaries")
                             }
-                            Task {
-                                await locationSession.pushServerNotificationPreferenceUpdate()
+                        Text("Get a daily morning update with a concise overview of local weather hazards and outlook conditions.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Meso Notifications", isOn: $mesoNotificationEnabled)
+                            .onChange(of: mesoNotificationEnabled) { _, newValue in
+                                handleNotificationToggle(newValue, for: "Meso Notifications")
                             }
-                        }
+                        Text("Receive alerts when new mesoscale discussions are issued for your area.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Subscribe to Server Notifications", isOn: $serverNotificationEnabled)
+                            .onChange(of: serverNotificationEnabled) { _, newValue in
+                                handleNotificationToggle(newValue, for: "Server Notifications")
+                                if newValue, sendL8nToSignal == false {
+                                    sendL8nToSignal = true
+                                    return
+                                }
+                                Task {
+                                    await locationSession.pushServerNotificationPreferenceUpdate()
+                                }
+                            }
+                        Text("Subscribe this device to server-driven push alerts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
 
 //                sectionCard(title: "AI Summary Preferences", symbol: "sparkles") {
@@ -254,7 +274,13 @@ struct SettingsView: View {
                 }
                 
                 sectionCard(title: "Onboarding Debug", symbol: "ladybug.fill", accent: .orange) {
-                    Toggle("Onboarding flow complete", isOn: $onboardingComplete)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Onboarding flow complete", isOn: $onboardingComplete)
+                        Text("Marks onboarding as completed so the app skips first-run onboarding screens on launch.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                     infoRow("Disclaimer Accepted Version", "\(disclaimerVersion)")
                     Button("Reset disclaimer") {
                         UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
