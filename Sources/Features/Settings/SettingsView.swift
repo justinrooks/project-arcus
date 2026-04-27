@@ -66,21 +66,9 @@ struct SettingsView: View {
     ) private var sendL8nToSignal: Bool = true
     
     @AppStorage(
-        "onboardingComplete",
-        store: UserDefaults.shared
-    ) private var onboardingComplete: Bool = false
-    
-    @AppStorage(
         "disclaimerAcceptedVersion",
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
-    
-    @AppStorage(
-        RemoteNotificationRegistrar.apnsDeviceTokenKey,
-        store: UserDefaults.shared
-    ) private var apnsDeviceToken: String = ""
-    
-    @State private var installationId: String = ""
     
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
@@ -102,21 +90,10 @@ struct SettingsView: View {
         )
     }
     
-    private var h3CellDisplay: String {
-        guard let h3Cell = locationSession.currentSnapshot?.h3Cell else {
-            return "No location hash yet"
-        }
-        return String(UInt64(bitPattern: h3Cell), radix: 16)
-    }
-
-    private var installationIdDisplay: String {
-        installationId.isEmpty ? "Not available yet" : installationId
-    }
-    
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                sectionCard(title: "Notification Preferences", symbol: "bell.badge.fill") {
+                sectionCard(title: "Notification Preferences", symbol: "bell.badge", accent: .orange) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Morning Summaries", isOn: $morningSummaryEnabled)
                             .onChange(of: morningSummaryEnabled) { _, newValue in
@@ -185,44 +162,6 @@ struct SettingsView: View {
 //                    }
 //                }
 
-                sectionCard(title: "Diagnostics", symbol: "stethoscope", accent: .orange) {
-                    NavigationLink {
-                        BgHealthDiagnosticsView()
-                            .navigationTitle("Background Refresh History")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    } label: {
-                        settingsNavRow("Background Refresh History", systemImage: "waveform.path.ecg")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-
-                    NavigationLink {
-                        DiagnosticsView()
-                            .navigationTitle("Ingestion Diagnostics")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    } label: {
-                        settingsNavRow("Ingestion Diagnostics", systemImage: "stethoscope")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-
-                    NavigationLink {
-                        LogViewerView()
-                            .navigationTitle("Log Viewer")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    } label: {
-                        settingsNavRow("Log Viewer", systemImage: "doc.text.magnifyingglass")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-
                 sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .orange) {
                     VStack() {
                         Toggle("Share Location with Signal", isOn: $sendL8nToSignal)
@@ -245,53 +184,21 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Installation ID")
-                            .font(.subheadline.weight(.semibold))
-                        Text(installationIdDisplay)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("APNs Device Token")
-                            .font(.subheadline.weight(.semibold))
-                        Text(apnsDeviceToken.isEmpty ? "Not registered yet" : apnsDeviceToken)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Current H3 Cell (Res 8)")
-                            .font(.subheadline.weight(.semibold))
-                        Text(h3CellDisplay)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
                 }
                 
-                sectionCard(title: "Onboarding Debug", symbol: "ladybug.fill", accent: .orange) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Onboarding flow complete", isOn: $onboardingComplete)
-                        Text("Marks onboarding as completed so the app skips first-run onboarding screens on launch.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    infoRow("Disclaimer Accepted Version", "\(disclaimerVersion)")
-                    Button("Reset disclaimer") {
-                        UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
-                        UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
-                    }
-                    .skyAwareGlassButtonStyle()
-                }
-
-                sectionCard(title: "About", symbol: "info.circle.fill") {
+                sectionCard(title: "About", symbol: "info.circle", accent: .orange) {
                     infoRow("Version", Bundle.main.fullVersion)
                     infoRow("Disclaimer", "\(disclaimerVersion)")
+                    NavigationLink("Diagnostics") {
+                        SettingsDiagnosticsView()
+                            .navigationTitle("Diagnostics")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                    .font(.subheadline.weight(.medium))
                 }
             }
             .padding(.horizontal, 16)
@@ -300,16 +207,6 @@ struct SettingsView: View {
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .task {
-            await loadInstallationId()
-        }
-    }
-
-    private func loadInstallationId() async {
-        let value = await InstallationIdentityStore.shared.installationId()
-        await MainActor.run {
-            installationId = value
-        }
     }
 
     private func sectionCard<Content: View>(
@@ -341,21 +238,6 @@ struct SettingsView: View {
         .font(.subheadline)
     }
 
-    private func settingsNavRow(_ title: String, systemImage: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: systemImage)
-                .frame(width: 18)
-            Text(title)
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .padding(.vertical, 4)
-        .font(.subheadline.weight(.medium))
-        .contentShape(Rectangle())
-    }
 }
 
 extension SettingsView {
