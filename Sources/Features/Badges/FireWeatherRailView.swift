@@ -10,6 +10,7 @@ import SwiftUI
 struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
     let level: FireRiskLevel
+    var isOffline: Bool = false
     var label: String {
         switch level {
         case .clear: return "No"
@@ -18,35 +19,37 @@ struct FireWeatherRailView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: level.symbol)
-                .formatBadgeImage()
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(label) Fire Risk")
-                    .formatMessageText()
-                Text(level.message)
-                    .formatSummaryText(for: colorScheme)
+        Group {
+            if isOffline {
+                offlineContent
+            } else {
+                HStack(spacing: 12) {
+                    Image(systemName: level.symbol)
+                        .formatBadgeImage()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("\(label) Fire Risk")
+                            .formatMessageText()
+                        Text(level.message)
+                            .formatSummaryText(for: colorScheme)
+                    }
+                }
+                .railStyle(background: level.iconColor(for: colorScheme))
             }
-
-//            Spacer(minLength: 10)
-//
-//            Text(level.status)
-//                .font(.caption.weight(.semibold))
-//                .padding(.horizontal, 10)
-//                .padding(.vertical, 6)
-//                .skyAwareChip(cornerRadius: 12, tint: level.tint.opacity(0.20))
         }
-        .railStyle(background: level.iconColor(for: colorScheme))
-//        .badgeStyle(background: level.iconColor(for: colorScheme))
-//        .padding(14)
-//        .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
-//        .skyAwareSurface(
-//            cornerRadius: 22,
-//            tint: level.iconColor(for: colorScheme),//level.tint.opacity(0.12),
-//            shadowOpacity: 0.06,
-//            shadowRadius: 6,
-//            shadowY: 2
-//        )
+    }
+
+    private var offlineContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Offline", systemImage: "wifi.slash")
+                .sectionLabel()
+            Text("Fire risk is unavailable while the server is offline.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+        .padding([.leading, .trailing], 15)
+        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
     }
 }
 

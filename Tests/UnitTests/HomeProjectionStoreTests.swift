@@ -142,6 +142,37 @@ struct HomeProjectionStoreTests {
         #expect(persisted.lastHotAlertsLoadAt == loadedAt)
     }
 
+    @Test("updating hot alerts preserves warning geometry in the cached projection")
+    func updateHotAlerts_preservesWarningGeometry() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        var watch = Watch.sampleWatchRows[0]
+        watch.geometry = .polygon(
+            rings: [
+                [
+                    DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392),
+                    DeviceAlertCoordinate(longitude: -104.8200, latitude: 39.7392),
+                    DeviceAlertCoordinate(longitude: -104.8200, latitude: 39.8800),
+                    DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.8800),
+                    DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392)
+                ]
+            ]
+        )
+
+        let updated = try await store.updateHotAlerts(
+            watches: [watch],
+            mesos: [],
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 460)
+        )
+
+        #expect(updated.activeAlerts.first?.geometry == watch.geometry)
+
+        let persisted = try #require(await store.projection(for: context))
+        #expect(persisted.activeAlerts.first?.geometry == watch.geometry)
+    }
+
     private func makeContext(
         latitude: Double = 39.75,
         longitude: Double = -104.44,

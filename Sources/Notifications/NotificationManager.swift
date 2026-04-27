@@ -29,7 +29,7 @@ struct NotificationManager: Sendable {
         subtitle: String,
         body: String,
         id: String,
-        interval: TimeInterval = 10,
+        interval: TimeInterval = 0.25,
         sound: UNNotificationSound = .default,
         badge: NSNumber = 0,
         repeats: Bool = false

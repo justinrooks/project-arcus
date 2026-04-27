@@ -17,7 +17,7 @@ actor SevereRiskRepo {
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
 
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
 
         if decoded.features.count == 0 {
             logger.debug("No hail risk features to parse")
@@ -37,7 +37,7 @@ actor SevereRiskRepo {
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
 
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
 
         if decoded.features.count == 0 {
             logger.debug("No wind risk features to parse")
@@ -58,7 +58,7 @@ actor SevereRiskRepo {
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
 
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
 
         if decoded.features.count == 0 {
             logger.debug("No tornado risk features to parse")
@@ -132,7 +132,7 @@ actor SevereRiskRepo {
         // Target only items that are both valid and not expired.
         let desc = FetchDescriptor<SevereRisk>(
             predicate: #Predicate<SevereRisk> {
-                $0.valid <= date && date < $0.expires
+                $0.valid <= date && date <= $0.expires
             }
         )
 

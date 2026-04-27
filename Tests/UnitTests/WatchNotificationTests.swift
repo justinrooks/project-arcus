@@ -100,77 +100,111 @@ struct WatchNotificationTests {
         #expect(sent[0].id == "watch:abc123")
     }
 
-//    @Test("background location change waits for unified ingestion before sending a watch notification")
-//    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async throws {
-//        let sender = RecordingSender()
-//        let watchEngine = WatchEngine(
-//            rule: WatchRule(),
-//            gate: WatchGate(store: InMemoryNotificationStore()),
-//            composer: WatchComposer(),
-//            sender: sender
-//        )
-//        let context = Self.makeContext()
-//        let gate = AsyncGate()
-//        let coordinator = RecordingHomeIngestionCoordinator(
-//            snapshot: HomeSnapshot(
-//                locationSnapshot: context.snapshot,
-//                refreshKey: context.refreshKey,
-//                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
-//            ),
-//            runGate: gate
-//        )
-//        let handler = BackgroundLocationChangeHandler(
-//            coordinator: coordinator//,
-////            watchEngine: watchEngine
-//        )
-//
-//        let handleTask = Task {
-//            await handler.handleLocationChange()
-//        }
-//
-//        let requestStarted = await waitUntil {
-//            await coordinator.requestCount() == 1
-//        }
-//        #expect(requestStarted)
-//        #expect((await sender.sent()).isEmpty)
-//
-//        let request = try #require(await coordinator.requests().first)
-//        #expect(request.trigger == .backgroundLocationChange)
-//
-//        await gate.open()
-//        await handleTask.value
-//
-//        #expect((await sender.sent()).count == 1)
-//    }
+    @Test("composer uses server-aligned wording for known watch event types")
+    func composerUsesServerAlignedWordingForWatchType() {
+        let event = NotificationEvent(
+            kind: .watchNotification,
+            key: "watch:abc123",
+            payload: [
+                "watchId": "abc123",
+                "title": "Tornado Watch",
+                "headline": "Severe storms are possible",
+                "placeMark": "Oklahoma City, OK",
+                "localDay": "2026-01-02"
+            ]
+        )
 
-//    @Test("duplicate background location changes do not re-notify the same watch")
-//    func duplicateBackgroundLocationChangesDoNotRenotifySameWatch() async {
-//        let sender = RecordingSender()
-//        let watchEngine = WatchEngine(
-//            rule: WatchRule(),
-//            gate: WatchGate(store: InMemoryNotificationStore()),
-//            composer: WatchComposer(),
-//            sender: sender
-//        )
-//        let context = Self.makeContext()
-//        let coordinator = RecordingHomeIngestionCoordinator(
-//            snapshot: HomeSnapshot(
-//                locationSnapshot: context.snapshot,
-//                refreshKey: context.refreshKey,
-//                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
-//            )
-//        )
-//        let handler = BackgroundLocationChangeHandler(
-//            coordinator: coordinator//,
-////            watchEngine: watchEngine
-//        )
-//
-//        await handler.handleLocationChange()
-//        await handler.handleLocationChange()
-//
-//        #expect((await sender.sent()).count == 1)
-//        #expect(await coordinator.requestCount() == 2)
-//    }
+        let message = WatchComposer().compose(event)
+        #expect(message.title == "Tornado Watch")
+        #expect(message.body == "Conditions are favorable for tornadoes in your area.")
+        #expect(message.subtitle == "For your area")
+    }
+
+    @Test("composer falls back to generic server-aligned weather alert wording")
+    func composerFallsBackToGenericServerAlignedWording() {
+        let event = NotificationEvent(
+            kind: .watchNotification,
+            key: "watch:missing",
+            payload: [:]
+        )
+
+        let message = WatchComposer().compose(event)
+        #expect(message.title == "Weather Alert")
+        #expect(message.body == "Weather conditions indicated for your area.")
+        #expect(message.subtitle == "For your area")
+    }
+
+    @Test("background location change waits for unified ingestion before sending a watch notification")
+    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async throws {
+        let sender = RecordingSender()
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: InMemoryNotificationStore()),
+            composer: WatchComposer(),
+            sender: sender
+        )
+        let context = Self.makeContext()
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+            ),
+            runGate: gate
+        )
+        let handler = BackgroundLocationChangeHandler(
+            coordinator: coordinator,
+            watchEngine: watchEngine
+        )
+
+        let handleTask = Task {
+            await handler.handleLocationChange()
+        }
+
+        let requestStarted = await waitUntil {
+            await coordinator.requestCount() == 1
+        }
+        #expect(requestStarted)
+        #expect((await sender.sent()).isEmpty)
+
+        let request = try #require(await coordinator.requests().first)
+        #expect(request.trigger == .backgroundLocationChange)
+
+        await gate.open()
+        await handleTask.value
+
+        #expect((await sender.sent()).count == 1)
+    }
+
+    @Test("duplicate background location changes do not re-notify the same watch")
+    func duplicateBackgroundLocationChangesDoNotRenotifySameWatch() async {
+        let sender = RecordingSender()
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: InMemoryNotificationStore()),
+            composer: WatchComposer(),
+            sender: sender
+        )
+        let context = Self.makeContext()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+            )
+        )
+        let handler = BackgroundLocationChangeHandler(
+            coordinator: coordinator,
+            watchEngine: watchEngine
+        )
+
+        await handler.handleLocationChange()
+        await handler.handleLocationChange()
+
+        #expect((await sender.sent()).count == 1)
+        #expect(await coordinator.requestCount() == 2)
+    }
 
     private func makeDate(year: Int, month: Int, day: Int, hour: Int, minute: Int = 0, tz: TimeZone) -> Date {
         var calendar = Calendar(identifier: .gregorian)

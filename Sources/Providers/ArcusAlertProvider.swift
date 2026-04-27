@@ -72,6 +72,10 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
         )
     }
 
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
+        try await watchRepo.activeWarningGeometries(on: date)
+    }
+
     func getWatch(id: String) async throws -> WatchRowDTO? {
         try await watchRepo.watch(id: id)
     }

@@ -25,7 +25,7 @@ actor WatchRepo {
             let matchesCell = cell.map { cells.contains($0) } ?? false
             let matchesUGC = ugc.contains(countyCode) || ugc.contains(fireZone)
             
-            if matchesCell || matchesUGC {
+            if (matchesCell || matchesUGC) && isRenderableAlertLifecycle(status: watch.status, messageType: watch.messageType) {
                 hits.append(watch)
             }
         }
@@ -36,6 +36,36 @@ actor WatchRepo {
             "Resolved current local watches candidates=\(candidates.count, privacy: .public) matches=\(rows.count, privacy: .public) hasCell=\((cell != nil), privacy: .public)"
         )
         return rows
+    }
+
+    func activeWarningGeometries(on date: Date = .now) throws -> [ActiveWarningGeometry] {
+        let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
+
+        let rows = candidates.compactMap { watch -> ActiveWarningGeometry? in
+            guard isSupportedWarningGeometryEvent(watch.event),
+                  isRenderableWarningLifecycle(watch, on: date),
+                  let geometry = watch.geometry else {
+                return nil
+            }
+
+            return ActiveWarningGeometry(
+                id: watch.nwsId,
+                messageId: watch.messageId,
+                currentRevisionSent: watch.currentRevisionSent,
+                event: watch.event,
+                issued: watch.sent,
+                effective: watch.effective,
+                expires: watch.expires,
+                ends: watch.ends,
+                messageType: watch.messageType,
+                geometry: geometry
+            )
+        }
+
+        return rows.sorted {
+            if $0.event != $1.event { return $0.event < $1.event }
+            return $0.id < $1.id
+        }
     }
 
     func watch(id: String) throws -> WatchRowDTO? {
@@ -56,11 +86,29 @@ actor WatchRepo {
             throw ArcusError.parsingError
         }
         
-        let watches = decoded
-            .compactMap { makeWatch(from: $0) }
-        
-        try upsert(watches)
-        logger.debug("Persisted Arcus watch refresh count=\(watches.count, privacy: .public)")
+        var watches: [Watch] = []
+        watches.reserveCapacity(decoded.count)
+        var reconciledTerminalCount = 0
+
+        for payload in decoded {
+            if isTerminalLifecyclePayload(payload) {
+                if try reconcileExistingWatchForTerminalPayload(payload) {
+                    reconciledTerminalCount += 1
+                }
+                continue
+            }
+
+            if let watch = makeWatch(from: payload) {
+                watches.append(watch)
+            }
+        }
+
+        if watches.isEmpty == false {
+            try upsert(watches)
+        }
+        logger.debug(
+            "Persisted Arcus watch refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
+        )
     }
 
     func refreshAlert(using client: any ArcusClient, id: String, revisionSent: Date?) async throws {
@@ -71,9 +119,29 @@ actor WatchRepo {
             throw ArcusError.parsingError
         }
 
-        let watches = decoded.compactMap(makeWatch(from:))
-        try upsert(watches)
-        logger.debug("Persisted targeted Arcus alert refresh count=\(watches.count, privacy: .public)")
+        var watches: [Watch] = []
+        watches.reserveCapacity(decoded.count)
+        var reconciledTerminalCount = 0
+
+        for payload in decoded {
+            if isTerminalLifecyclePayload(payload) {
+                if try reconcileExistingWatchForTerminalPayload(payload) {
+                    reconciledTerminalCount += 1
+                }
+                continue
+            }
+
+            if let watch = makeWatch(from: payload) {
+                watches.append(watch)
+            }
+        }
+
+        if watches.isEmpty == false {
+            try upsert(watches)
+        }
+        logger.debug(
+            "Persisted targeted Arcus alert refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
+        )
     }
 
     /// Removes any expired watches from the database
@@ -98,13 +166,8 @@ actor WatchRepo {
         let state = item.state.trimmingCharacters(in: .whitespacesAndNewlines)
         let messageType = item.messageType.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard state.localizedCaseInsensitiveCompare("active") == .orderedSame else {
+        guard isRenderableAlertLifecycle(status: state, messageType: messageType) else {
             logger.debug("Skipping Arcus alert with non-active state: \(state, privacy: .public)")
-            return nil
-        }
-
-        guard messageType.localizedCaseInsensitiveCompare("cancel") != .orderedSame else {
-            logger.debug("Skipping Arcus alert with cancel message type")
             return nil
         }
 
@@ -143,6 +206,7 @@ actor WatchRepo {
             instruction: item.instructions,
             response: item.response,
             cells: item.h3Cells ?? [],
+            geometry: item.geometry,
             tornadoDetection: item.tornadoDetection,
             tornadoDamageThreat: item.tornadoDamageThreat,
             maxWindGust: item.maxWindGust,
@@ -165,6 +229,109 @@ actor WatchRepo {
         }
 
         return nil
+    }
+
+    private func isTerminalLifecyclePayload(_ item: DeviceAlertPayload) -> Bool {
+        isTerminalLifecycle(status: item.state, messageType: item.messageType)
+    }
+
+    private func reconcileExistingWatchForTerminalPayload(_ item: DeviceAlertPayload) throws -> Bool {
+        let canonicalID = ArcusAlertIdentifier.canonical(item.id)
+        let predicate = #Predicate<Watch> { watch in
+            watch.nwsId == canonicalID
+        }
+        var descriptor = FetchDescriptor<Watch>(predicate: predicate)
+        descriptor.fetchLimit = 1
+
+        guard let existing = try modelContext.fetch(descriptor).first else {
+            logger.debug("Ignoring terminal Arcus alert with no local row id=\(canonicalID, privacy: .public)")
+            return false
+        }
+
+        let state = item.state.trimmingCharacters(in: .whitespacesAndNewlines)
+        if state.isEmpty == false {
+            existing.status = state
+        }
+
+        let messageType = item.messageType.trimmingCharacters(in: .whitespacesAndNewlines)
+        if messageType.isEmpty == false {
+            existing.messageType = messageType
+        }
+
+        let revisionID = item.currentRevisionUrn.trimmingCharacters(in: .whitespacesAndNewlines)
+        if revisionID.isEmpty == false {
+            existing.messageId = revisionID
+        }
+
+        if let currentRevisionSent = item.currentRevisionSent {
+            existing.currentRevisionSent = currentRevisionSent
+        }
+        if let sent = item.sent {
+            existing.sent = sent
+        }
+        if let effective = item.effective {
+            existing.effective = effective
+        }
+        if let onset = item.onset {
+            existing.onset = onset
+        }
+        if let expires = item.expires {
+            existing.expires = expires
+        }
+        if let ends = item.ends {
+            existing.ends = ends
+        }
+
+        existing.geometry = nil
+        try modelContext.save()
+        return true
+    }
+
+    private func isSupportedWarningGeometryEvent(_ event: String) -> Bool {
+        switch event.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase {
+        case "tornado warning", "severe thunderstorm warning", "flash flood warning":
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func isRenderableWarningLifecycle(_ watch: Watch, on date: Date) -> Bool {
+        let status = watch.status
+        let messageType = watch.messageType
+
+        guard watch.effective <= date && date <= watch.ends else {
+            return false
+        }
+
+        return isRenderableAlertLifecycle(status: status, messageType: messageType)
+    }
+
+    private func isRenderableAlertLifecycle(status: String, messageType: String) -> Bool {
+        let normalizedStatus = status.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        let normalizedMessageType = messageType.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+
+        guard normalizedStatus == "active" || normalizedStatus == "actual" else {
+            return false
+        }
+
+        return normalizedMessageType != "cancel" && normalizedMessageType != "cancelled"
+    }
+
+    private func isTerminalLifecycle(status: String, messageType: String) -> Bool {
+        let normalizedStatus = status.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+        let normalizedMessageType = messageType.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
+
+        if normalizedMessageType == "cancel" || normalizedMessageType == "cancelled" {
+            return true
+        }
+
+        switch normalizedStatus {
+        case "superseded", "expired", "canceled", "cancelled":
+            return true
+        default:
+            return false
+        }
     }
     
     // MARK: Upsert

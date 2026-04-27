@@ -512,6 +512,10 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         activeWatches
     }
 
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
+        []
+    }
+
     func getWatch(id: String) async throws -> WatchRowDTO? {
         activeWatches.first(where: { $0.id == id })
     }

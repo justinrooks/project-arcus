@@ -49,7 +49,9 @@ struct GeoJsonParserTests {
     @Test("decode parses a valid GeoJSON FeatureCollection")
     func decode_validGeoJson() throws {
         let data = try #require(validGeoJson.data(using: .utf8))
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = try #require(
+            JsonParser.decode(from: data) as GeoJSONFeatureCollection?
+        )
 
         #expect(decoded.type == "FeatureCollection")
         #expect(decoded.features.count == 1)
@@ -68,7 +70,7 @@ struct GeoJsonParserTests {
         { "type": "FeatureCollection" }
         """
         let data = try #require(missingFeatures.data(using: .utf8))
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded = (JsonParser.decode(from: data) as GeoJSONFeatureCollection?) ?? .empty
 
         #expect(decoded.features.isEmpty)
     }
@@ -76,7 +78,7 @@ struct GeoJsonParserTests {
     @Test("decode returns empty for corrupted JSON")
     func decode_corruptedJsonReturnsEmpty() throws {
         let data = try #require("{ not json".data(using: .utf8))
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded = (JsonParser.decode(from: data) as GeoJSONFeatureCollection?) ?? .empty
 
         #expect(decoded.features.isEmpty)
     }
@@ -84,7 +86,9 @@ struct GeoJsonParserTests {
     @Test("createPolygonEntities returns entities for each ring in MultiPolygon")
     func createPolygonEntities_multiPolygon() throws {
         let data = try #require(validGeoJson.data(using: .utf8))
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = try #require(
+            JsonParser.decode(from: data) as GeoJSONFeatureCollection?
+        )
         let feature = try #require(decoded.features.first)
 
         let entities = feature.createPolygonEntities(polyTitle: "Test Risk")

@@ -50,14 +50,14 @@ struct MapPolygonMapper: Sendable {
         case .categorical:
             // Draw lower categories first so higher severity sits on top.
             let source = stormRisk.sorted { $0.riskLevel < $1.riskLevel }
-            let entries = source.enumerated().flatMap { riskIndex, risk -> [MapPolygonEntry] in
-                risk.polygons.enumerated().map { polygonIndex, polygon in
+            let entries = source.flatMap { risk -> [MapPolygonEntry] in
+                risk.polygons.map { polygon in
                     let subtitle = StormRiskPolygonStyleMetadata(
                         fillHex: risk.fill,
                         strokeHex: risk.stroke
                     ).encoded
                     return MapPolygonEntry(
-                        key: "cat|\(risk.riskLevel.rawValue)|\(Int(risk.issued.timeIntervalSince1970))|\(riskIndex)|\(polygonIndex)",
+                        key: "cat|\(risk.riskLevel.rawValue)|\(Int(risk.issued.timeIntervalSince1970))|\(polygonFingerprint(for: polygon))",
                         title: polygon.title,
                         subtitle: subtitle,
                         coordinates: polygon.coordinates
@@ -91,9 +91,9 @@ struct MapPolygonMapper: Sendable {
             )
 
         case .meso:
-            let entries = mesos.enumerated().map { index, meso in
+            let entries = mesos.map { meso in
                 return MapPolygonEntry(
-                    key: "meso|\(meso.number)|\(index)",
+                    key: "meso|\(meso.number)|\(polygonFingerprint(title: meso.title, coordinates: meso.coordinates))",
                     title: layer.key,
                     subtitle: nil,
                     coordinates: meso.coordinates
@@ -102,14 +102,14 @@ struct MapPolygonMapper: Sendable {
             return KeyedMapPolygons(entries: entries)
             
         case .fire:
-            let entries = fires.enumerated().flatMap { fireIndex, fire -> [MapPolygonEntry] in
-                fire.polygons.enumerated().map { polygonIndex, polygon in
+            let entries = fires.flatMap { fire -> [MapPolygonEntry] in
+                fire.polygons.map { polygon in
                     let subtitle = StormRiskPolygonStyleMetadata(
                         fillHex: fire.fill,
                         strokeHex: fire.stroke
                     ).encoded
                     return MapPolygonEntry(
-                        key: "fire|\(fire.riskLevel)|\(Int(fire.issued.timeIntervalSince1970))|\(fireIndex)|\(polygonIndex)",
+                        key: "fire|\(fire.riskLevel)|\(Int(fire.issued.timeIntervalSince1970))|\(polygonFingerprint(for: polygon))",
                         title: polygon.title,
                         subtitle: subtitle,
                         coordinates: polygon.coordinates
@@ -118,6 +118,26 @@ struct MapPolygonMapper: Sendable {
             }
             return KeyedMapPolygons(entries: entries)
         }
+    }
+
+    func warningPolygons(
+        from warnings: [ActiveWarningGeometry]
+    ) -> KeyedMapPolygons {
+        let orderedWarnings = warnings.sorted {
+            let lhsRevision = warningRevisionIdentity(for: $0)
+            let rhsRevision = warningRevisionIdentity(for: $1)
+
+            if $0.event != $1.event { return $0.event < $1.event }
+            if $0.id != $1.id { return $0.id < $1.id }
+            if lhsRevision != rhsRevision { return lhsRevision < rhsRevision }
+            return $0.issued < $1.issued
+        }
+
+        let entries = orderedWarnings.flatMap { warning -> [MapPolygonEntry] in
+            warningPolygonEntries(from: warning)
+        }
+
+        return KeyedMapPolygons(entries: entries)
     }
 
     private func severeProbabilityKey(_ probability: ThreatProbability) -> String {
@@ -159,17 +179,17 @@ struct MapPolygonMapper: Sendable {
                 return $0.title < $1.title
             }
 
-        return source.enumerated().flatMap { riskIndex, severe -> [MapPolygonEntry] in
+        return source.flatMap { severe -> [MapPolygonEntry] in
             let probabilityKey = severeProbabilityKey(severe.probabilities)
             let labelKey = sanitizedKeyPart(severe.label)
-            return severe.polygons.enumerated().map { polygonIndex, polygon in
+            return severe.polygons.map { polygon in
                 let subtitle = StormRiskPolygonStyleMetadata(
                     fillHex: severe.fill,
                     strokeHex: severe.stroke,
                     cigLevel: severe.intensityLevel
                 ).encoded
                 return MapPolygonEntry(
-                    key: "sev|\(type.rawValue)|\(probabilityKey)|\(labelKey)|\(riskIndex)|\(polygonIndex)",
+                    key: "sev|\(type.rawValue)|\(probabilityKey)|\(labelKey)|\(polygonFingerprint(for: polygon))",
                     title: polygon.title,
                     subtitle: subtitle,
                     coordinates: polygon.coordinates
@@ -183,5 +203,88 @@ struct MapPolygonMapper: Sendable {
             return true
         }
         return false
+    }
+
+    private func polygonFingerprint(for polygon: GeoPolygonEntity) -> String {
+        polygonFingerprint(title: polygon.title, coordinates: polygon.coordinates)
+    }
+
+    private func polygonFingerprint(title: String, coordinates: [Coordinate2D]) -> String {
+        var hasher = StableMapHasher()
+        hasher.combine(title)
+        hasher.combine(coordinates.count)
+
+        for coordinate in coordinates {
+            hasher.combine(coordinate)
+        }
+
+        return hasher.hexString
+    }
+
+    private func warningPolygonEntries(
+        from warning: ActiveWarningGeometry
+    ) -> [MapPolygonEntry] {
+        let coordinatesByPolygonIndex: [[Coordinate2D]]
+        switch warning.geometry {
+        case .polygon(let rings):
+            guard let exteriorRing = exteriorRing(from: rings) else { return [] }
+            coordinatesByPolygonIndex = [exteriorRing]
+
+        case .multiPolygon(let polygons):
+            coordinatesByPolygonIndex = polygons.compactMap { polygon in
+                exteriorRing(from: polygon)
+            }
+        }
+
+        let revisionIdentity = warningRevisionIdentity(for: warning)
+        let eventKey = sanitizedKeyPart(warning.event)
+        let alertID = sanitizedKeyPart(warning.id)
+
+        return coordinatesByPolygonIndex.enumerated().map { index, coordinates in
+            let geometryFingerprint = warningGeometryFingerprint(for: coordinates)
+            return MapPolygonEntry(
+                key: "warn|\(alertID)|\(revisionIdentity)|\(eventKey)|\(index)|\(geometryFingerprint)",
+                title: warning.event,
+                subtitle: nil,
+                coordinates: coordinates
+            )
+        }
+    }
+
+    private func exteriorRing(
+        from rings: [[DeviceAlertCoordinate]]
+    ) -> [Coordinate2D]? {
+        guard let firstRing = rings.first, !firstRing.isEmpty else {
+            return nil
+        }
+
+        return firstRing.map { coordinate in
+            Coordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        }
+    }
+
+    private func warningRevisionIdentity(
+        for warning: ActiveWarningGeometry
+    ) -> String {
+        let messageID = warning.messageId?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let messageID, !messageID.isEmpty {
+            return "rev-\(sanitizedKeyPart(messageID))"
+        }
+
+        let revisionSent = warning.currentRevisionSent ?? warning.issued
+        return "sent-\(Int(revisionSent.timeIntervalSince1970))"
+    }
+
+    private func warningGeometryFingerprint(
+        for coordinates: [Coordinate2D]
+    ) -> String {
+        var hasher = StableMapHasher()
+        hasher.combine(coordinates.count)
+        for coordinate in coordinates {
+            hasher.combine(coordinate)
+        }
+        return hasher.hexString
     }
 }

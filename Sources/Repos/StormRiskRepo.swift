@@ -17,7 +17,7 @@ actor StormRiskRepo {
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
         
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
         
         let dtos = decoded.features.compactMap {
             let props = $0.properties
@@ -65,7 +65,7 @@ actor StormRiskRepo {
     
     func getLatestMapData(asOf date: Date = .init()) throws -> [StormRiskDTO] {
         // 1) Fetch only risks that are currently valid
-        let pred = #Predicate<StormRisk> { $0.valid <= date && date < $0.expires }
+        let pred = #Predicate<StormRisk> { $0.valid <= date && date <= $0.expires }
         let desc = FetchDescriptor<StormRisk>(predicate: pred)
         // We'll dedupe by risk level and keep the freshest issuance for each level.
         let risks = try modelContext.fetch(desc)

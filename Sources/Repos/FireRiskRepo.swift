@@ -16,7 +16,7 @@ actor FireRiskRepo {
 
     func refreshFireRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .fireRH)
-        let decoded = GeoJsonParser.decode(from: data)
+        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
 
         let dtos = decoded.features.compactMap {
             let props = $0.properties
@@ -75,7 +75,7 @@ actor FireRiskRepo {
     func getLatestMapData(asOf date: Date = .init()) throws -> [FireRiskDTO] {
         // 1) Fetch only risks that are currently valid
         let pred = #Predicate<FireRisk> {
-            $0.valid <= date && date < $0.expires
+            $0.valid <= date && date <= $0.expires
         }
         let desc = FetchDescriptor<FireRisk>(predicate: pred)
         // We'll dedupe by risk level and keep the freshest issuance for each level.

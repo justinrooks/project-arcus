@@ -8,7 +8,6 @@
 import Foundation
 import OSLog
 
-@available(*, deprecated, message: "Remove References")
 struct WatchEngine: Sendable {
     private let logger = Logger.notificationsWatchEngine
 

@@ -88,6 +88,7 @@ struct AlertView: View {
                                     pressedOverlayOpacity: 0.06
                                 )
                             )
+                            .accessibilityIdentifier("alert-center-watch-row-\(watch.id)")
                         }
                     }
                 }
@@ -137,6 +138,7 @@ struct AlertView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 24)
             }
+            .accessibilityIdentifier("alert-center-watch-detail-view")
             .scrollContentBackground(.hidden)
             .background(.skyAwareBackground)
             .navigationTitle("Weather Alert")
