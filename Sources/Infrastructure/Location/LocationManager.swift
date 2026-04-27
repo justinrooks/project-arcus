@@ -29,6 +29,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private var lastPhase: ScenePhase = .inactive
     
     private let manager: CLLocationManager
+    private let authorizationOverride: CLAuthorizationStatus?
     private let logger = Logger.locationManager
     private let onUpdate: LocationSink
     private var onBackgroundLocationChange: (@Sendable () async -> Void)?
@@ -42,6 +43,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         onUpdate: @escaping LocationSink
     ) {
         self.manager = manager
+        self.authorizationOverride = Self.authorizationOverrideFromEnvironment()
         self.onUpdate = onUpdate
         
         super.init()
@@ -51,16 +53,18 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         //        manager.showsBackgroundLocationIndicator = true
         manager.distanceFilter = 1650 // causes the manager to not report location changes less than 1650m
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        authStatus = currentAuthorizationStatus()
     }
     
     
     func checkLocationAuthorization(isActive: Bool) {
-        self.authStatus = manager.authorizationStatus
+        self.authStatus = currentAuthorizationStatus()
         onAuthorizationChange?(authStatus)
         guard isActive else { return } // never prompt in background
         
-        switch manager.authorizationStatus {
+        switch authStatus {
         case .notDetermined:
+            guard authorizationOverride == nil else { return }
             manager.requestWhenInUseAuthorization()
         case .restricted:
             stopAll()
@@ -81,9 +85,14 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     @discardableResult
     func requestAlwaysAuthorizationUpgradeIfNeeded() -> Bool {
-        let status = manager.authorizationStatus
+        let status = currentAuthorizationStatus()
         authStatus = status
         onAuthorizationChange?(status)
+
+        guard authorizationOverride == nil else {
+            logger.debug("Skipping always-authorization upgrade due to UI test authorization override")
+            return false
+        }
 
         guard status == .authorizedWhenInUse else {
             logger.debug("Skipping always-authorization upgrade; current status=\(status.logName, privacy: .public)")
@@ -114,7 +123,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     }
 
     func refreshCurrentLocation(timeout: Double = 12) async -> Bool {
-        let status = manager.authorizationStatus
+        let status = currentAuthorizationStatus()
         guard status == .authorizedAlways || status == .authorizedWhenInUse else {
             logger.notice("Skipping one-shot location refresh due to auth status=\(status.logName, privacy: .public)")
             return false
@@ -135,7 +144,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     // MARK: - Mode management
     func updateMode(for phase: ScenePhase) {
         lastPhase = phase
-        let status = manager.authorizationStatus
+        let status = currentAuthorizationStatus()
         
         if phase == .inactive { return }
         
@@ -175,12 +184,12 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     }
     
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let status = manager.authorizationStatus
         // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
         Task { @MainActor in
-            authStatus = status
-            logger.info("Location authorization changed status=\(status.logName, privacy: .public)")
-            onAuthorizationChange?(status)
+            let effectiveStatus = currentAuthorizationStatus()
+            authStatus = effectiveStatus
+            logger.info("Location authorization changed status=\(effectiveStatus.logName, privacy: .public)")
+            onAuthorizationChange?(effectiveStatus)
             updateMode(for: lastPhase)
         }
     }
@@ -273,6 +282,21 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         let continuations = pendingRefreshLocationContinuations
         pendingRefreshLocationContinuations.removeAll()
         continuations.forEach { $0.resume(returning: success) }
+    }
+
+    private func currentAuthorizationStatus() -> CLAuthorizationStatus {
+        authorizationOverride ?? manager.authorizationStatus
+    }
+
+    private static func authorizationOverrideFromEnvironment() -> CLAuthorizationStatus? {
+        switch ProcessInfo.processInfo.environment["UI_TESTS_LOCATION_AUTH_MODE"] {
+        case "restricted":
+            return .denied
+        case "authorized":
+            return .authorizedWhenInUse
+        default:
+            return nil
+        }
     }
 }
 
