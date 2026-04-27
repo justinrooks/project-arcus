@@ -94,10 +94,10 @@ struct ArcusHttpClient: ArcusClient {
                     throw ArcusError.missingData
                 }
 
-                if resp.source == .cacheFallback {
-                    await reachabilityReporter.markUnavailable()
-                } else {
+                if resp.source.isNetworkBacked {
                     await reachabilityReporter.markReachable()
+                } else {
+                    await reachabilityReporter.markUnavailable()
                 }
 
                 logger.info(

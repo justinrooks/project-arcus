@@ -132,8 +132,8 @@ struct SummaryView: View {
             Button {
                 onOpenMapLayer(.fire)
             } label: {
-                FireWeatherRailView(level: fireRisk ?? .clear)
-                    .placeholder(fireRisk == nil)
+                FireWeatherRailView(level: fireRisk ?? .clear, isOffline: showsOfflineToken)
+                    .placeholder(fireRisk == nil && showsOfflineToken == false)
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
             .buttonStyle(
@@ -143,11 +143,12 @@ struct SummaryView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .summaryResolving(resolutionState.isResolving(.fireRisk))
+            .summaryResolving(resolutionState.isResolving(.fireRisk) && showsOfflineToken == false)
             .accessibilityHint("Opens the fire risk map.")
-            AtmosphereRailView(weather: weather)
+            AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
                 .allowsHitTesting(!isWeatherLoading)
-                .summaryResolving(resolutionState.isResolving(.atmosphere))
+                .placeholder(isWeatherLoading && showsOfflineToken == false)
+                .summaryResolving(resolutionState.isResolving(.atmosphere) && showsOfflineToken == false)
         }
     }
 
@@ -157,8 +158,8 @@ struct SummaryView: View {
             Button {
                 onOpenMapLayer(.categorical)
             } label: {
-                StormRiskBadgeView(level: stormRisk ?? .allClear)
-                    .placeholder(stormRisk == nil)
+                StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
+                    .placeholder(stormRisk == nil && showsOfflineToken == false)
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
             .buttonStyle(
@@ -168,14 +169,14 @@ struct SummaryView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .summaryResolving(resolutionState.isResolving(.stormRisk))
+            .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
             .accessibilityHint("Opens the severe risk map.")
             Spacer()
             Button {
                 onOpenMapLayer(severeMapLayer)
             } label: {
-                SevereWeatherBadgeView(threat: severeRisk ?? .allClear)
-                    .placeholder(severeRisk == nil)
+                SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
+                    .placeholder(severeRisk == nil && showsOfflineToken == false)
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
             .buttonStyle(
@@ -185,7 +186,7 @@ struct SummaryView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .summaryResolving(resolutionState.isResolving(.severeRisk))
+            .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
             .accessibilityHint("Opens the highlighted severe threat map.")
         }
         .padding(.top, 8)
@@ -237,22 +238,33 @@ struct SummaryView: View {
                         symbol: "location.slash"
                     )
                 case .loading:
-                    ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true)
-                        .summaryResolving(resolutionState.isResolving(.alerts))
+                    ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true, isOffline: showsOfflineToken)
+                        .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
                 case .alerts:
                     ActiveAlertSummaryView(
                         mesos: mesos,
                         watches: watches,
+                        isOffline: showsOfflineToken,
                         onOpenAlertCenter: onOpenAlerts
                     )
-                    .summaryResolving(resolutionState.isResolving(.alerts))
+                    .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
                 case .empty:
-                    emptySectionCard(
-                        title: "No Active Alerts",
-                        message: "Your local area currently has no active watches or mesoscale discussions.",
-                        symbol: "checkmark.shield"
-                    )
-                    .summaryResolving(resolutionState.isResolving(.alerts))
+                    if showsOfflineToken {
+                        ActiveAlertSummaryView(
+                            mesos: [],
+                            watches: [],
+                            isOffline: true,
+                            onOpenAlertCenter: onOpenAlerts
+                        )
+                        .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
+                    } else {
+                        emptySectionCard(
+                            title: "No Active Alerts",
+                            message: "Your local area currently has no active watches or mesoscale discussions.",
+                            symbol: "checkmark.shield"
+                        )
+                        .summaryResolving(resolutionState.isResolving(.alerts))
+                    }
                 }
 
                 if let outlook {

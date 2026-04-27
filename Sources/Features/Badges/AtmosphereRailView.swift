@@ -11,6 +11,7 @@ struct AtmosphereRailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var activeTip: AtmosphereTip?
     let weather: SummaryWeather?
+    var isOffline: Bool = false
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -127,29 +128,49 @@ struct AtmosphereRailView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "gauge.with.dots.needle.50percent")
-                    .symbolVariant(.fill)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+        Group {
+            if isOffline {
+                offlineContent
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "gauge.with.dots.needle.50percent")
+                            .symbolVariant(.fill)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
 
-                Text("Atmospheric Conditions")
-                    .sectionLabel()
+                        Text("Atmospheric Conditions")
+                            .sectionLabel()
+                    }
+
+                    Text(atmosphereSummary)
+                        .formatSummaryText(for: colorScheme)
+                        .lineLimit(1)
+
+                    Divider()
+                        .overlay(colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.14))
+
+                    metricGrid
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 9)
+                .railStyle(background: atmosphereBackground)
             }
+        }
+    }
 
-            Text(atmosphereSummary)
-                .formatSummaryText(for: colorScheme)
-                .lineLimit(1)
-
-            Divider()
-                .overlay(colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.14))
-
-            metricGrid
+    private var offlineContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Offline", systemImage: "wifi.slash")
+                .sectionLabel()
+            Text("Atmospheric conditions are unavailable while the server is offline.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 9)
-        .railStyle(background: atmosphereBackground)
+        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+        .padding([.leading, .trailing], 15)
+        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
     }
 
     @ViewBuilder
