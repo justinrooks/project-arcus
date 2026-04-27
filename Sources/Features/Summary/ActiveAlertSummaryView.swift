@@ -138,6 +138,7 @@ struct ActiveAlertSummaryView: View {
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
             }
+            .accessibilityIdentifier("summary-watch-detail-sheet")
         }
     }
 
@@ -235,6 +236,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                             pressedOverlayOpacity: 0.06
                         )
                     )
+                    .accessibilityIdentifier("\(label.lowercased())-row-\(String(describing: item.id))")
             }
             
             if items.count > limit {

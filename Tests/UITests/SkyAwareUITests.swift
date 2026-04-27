@@ -129,6 +129,44 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testSummaryAlertTapShowsSheetAndAlertTabTapShowsWatchDetailView() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let todayTab = app.tabBars.buttons["Today"]
+        XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist.")
+
+        let summaryWatchRow = app.buttons["watches-row-ui-test-watch-001"]
+        XCTAssertTrue(summaryWatchRow.waitForExistence(timeout: 10), "Expected seeded watch row to appear in Summary local alerts.")
+        summaryWatchRow.tap()
+
+        let summarySheetDetail = app.otherElements["summary-watch-detail-sheet"]
+        XCTAssertTrue(summarySheetDetail.waitForExistence(timeout: 10), "Expected WatchDetailView sheet to appear from Summary tap.")
+        XCTAssertFalse(app.navigationBars["Weather Alert"].exists, "Summary local alert should open as a sheet, not push full detail.")
+
+        summarySheetDetail.swipeDown()
+        XCTAssertTrue(
+            summarySheetDetail.waitForNonExistence(timeout: 10),
+            "Expected Summary watch detail sheet to dismiss before continuing."
+        )
+        XCTAssertTrue(summaryWatchRow.waitForExistence(timeout: 10), "Expected sheet dismissal to return to Summary.")
+
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
+        alertsTab.tap()
+
+        let alertCenterWatchText = app.staticTexts["UI Test Tornado Watch"].firstMatch
+        XCTAssertTrue(alertCenterWatchText.waitForExistence(timeout: 10), "Expected seeded watch to appear in Alerts tab.")
+        alertCenterWatchText.tap()
+
+        XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected Alert tab watch tap to push WatchDetailView.")
+    }
+
+    @MainActor
     private func completeOnboardingIfNeeded(in app: XCUIApplication) {
         if app.buttons["Get Started"].waitForExistence(timeout: 2) {
             app.buttons["Get Started"].tap()

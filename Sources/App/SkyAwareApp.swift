@@ -79,7 +79,13 @@ struct SkyAwareApp: App {
         WindowGroup {
             Group {
                 if onboardingComplete {
-                    HomeView()
+                    Group {
+                        if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
+                            HomeView(initialWatches: Self.uiTestSeedWatches)
+                        } else {
+                            HomeView()
+                        }
+                    }
                         .environment(\.dependencies, deps)
                         .environment(locationSession)
                         .appBackground()
@@ -257,5 +263,41 @@ private extension SkyAwareApp {
         default:
             break
         }
+    }
+
+    static var uiTestSeedWatches: [WatchRowDTO] {
+        let issued = Date().addingTimeInterval(-1_800)
+        let ends = Date().addingTimeInterval(7_200)
+        return [
+            WatchRowDTO(
+                id: "ui-test-watch-001",
+                messageId: "ui-test-watch-message-001",
+                currentRevisionSent: issued,
+                title: "UI Test Tornado Watch",
+                headline: "UI Test Tornado Watch Headline",
+                issued: issued,
+                expires: ends,
+                ends: ends,
+                messageType: "Alert",
+                sender: "NWS Test Office",
+                severity: "Severe",
+                urgency: "Immediate",
+                certainty: "Likely",
+                description: "UI test watch description for navigation and sheet validation.",
+                instruction: "Seek shelter if threatening weather approaches.",
+                response: "Execute",
+                areaSummary: "UI Test County",
+                geometryData: nil,
+                tornadoDetection: "Radar indicated",
+                tornadoDamageThreat: "Possible",
+                maxWindGust: "70",
+                maxHailSize: "1.00",
+                windThreat: nil,
+                hailThreat: nil,
+                thunderstormDamageThreat: nil,
+                flashFloodDetection: nil,
+                flashFloodDamageThreat: nil
+            )
+        ]
     }
 }

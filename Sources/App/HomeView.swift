@@ -30,6 +30,10 @@ struct HomeView: View {
     @State private var selectedMapLayer: MapLayer = .categorical
     @State private var todayHeaderCondenseProgress: CGFloat = 0
 
+    private var isUITestStaticMode: Bool {
+        ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
+    }
+
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
         locationSession.currentContext?.refreshKey
     }
@@ -75,6 +79,9 @@ struct HomeView: View {
     }
 
     private var displayedMesos: [MdDTO] {
+        if isUITestStaticMode && refreshPipeline.mesos.isEmpty == false {
+            return refreshPipeline.mesos
+        }
         if isCurrentContextResolvedInPipeline {
             return refreshPipeline.mesos
         }
@@ -82,6 +89,9 @@ struct HomeView: View {
     }
 
     private var displayedWatches: [WatchRowDTO] {
+        if isUITestStaticMode && refreshPipeline.watches.isEmpty == false {
+            return refreshPipeline.watches
+        }
         if isCurrentContextResolvedInPipeline {
             return refreshPipeline.watches
         }
@@ -280,15 +290,18 @@ struct HomeView: View {
         .tint(.skyAwareAccent)
         .task {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
+            if isUITestStaticMode { return }
             refreshPipeline.updateEnvironment(refreshEnvironment)
             await refreshPipeline.handleScenePhaseChange(scenePhase, environment: refreshEnvironment)
         }
         .onChange(of: scenePhase) { _, newPhase in
+            guard isUITestStaticMode == false else { return }
             Task {
                 await refreshPipeline.handleScenePhaseChange(newPhase, environment: refreshEnvironment)
             }
         }
         .onChange(of: currentContextRefreshKey) { _, newKey in
+            guard isUITestStaticMode == false else { return }
             Task {
                 await refreshPipeline.handleContextRefreshKeyChange(
                     newKey,
