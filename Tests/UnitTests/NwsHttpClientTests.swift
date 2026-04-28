@@ -311,6 +311,25 @@ struct ArcusHttpClientTests {
         #expect(data == payload)
         #expect(await reachability.lastUpdate() == .unavailable)
     }
+
+    @Test("local cache hit does not overwrite Arcus reachability state")
+    func localCache_doesNotOverwriteReachability() async throws {
+        let payload = Data("{\"cached\":true}".utf8)
+        let http = ArcusMockHTTPClient(
+            response: HTTPResponse(status: 200, headers: [:], data: payload, source: .localCache)
+        )
+        let reachability = ReachabilityRecorder()
+        let client = ArcusHttpClient(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: http,
+            reachabilityReporter: reachability
+        )
+
+        let data = try await client.fetchActiveAlerts(for: "COC001", or: "COZ245", in: 613725958748241919)
+
+        #expect(data == payload)
+        #expect(await reachability.lastUpdate() == nil)
+    }
 }
 
 @MainActor

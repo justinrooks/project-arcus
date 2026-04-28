@@ -263,4 +263,65 @@ struct LocationSessionTests {
         #expect(await resolver.recordedLastForceUpload() == false)
         #expect(session.currentContext == context)
     }
+
+    @MainActor
+    @Test("pushServerNotificationPreferenceUpdate resolves missing context and enqueues with force flag")
+    func pushServerNotificationPreferenceUpdate_resolvesMissingContext_andEnqueuesWithForceFlag() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(onUpdate: { _ in })
+        manager.locationManagerDidChangeAuthorization(
+            LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        )
+        try await Task.sleep(for: .milliseconds(20))
+
+        let context = LocationContext(
+            snapshot: LocationSnapshot(
+                coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+                timestamp: Date(timeIntervalSince1970: 1_234_567),
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: GridPointSnapshot(
+                nwsId: "https://api.weather.gov/points/39.7392,-104.9903",
+                latitude: 39.7392,
+                longitude: -104.9903,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Denver",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC031",
+                fireZone: "COZ246",
+                countyLabel: "Denver County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        )
+        let resolver = StubResolver(context: context, error: nil)
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver
+        )
+
+        // Let initialization tasks settle, then set deterministic test state.
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentSnapshot = context.snapshot
+        session.currentContext = nil
+
+        await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
+
+        #expect(await resolver.recordedEnqueueCount() == 1)
+        #expect(await resolver.recordedLastForceUpload() == true)
+        #expect(session.currentContext == context)
+        #expect(session.currentSnapshot == context.snapshot)
+    }
 }

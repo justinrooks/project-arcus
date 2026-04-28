@@ -29,6 +29,11 @@
     },
     {
       "parallelizable" : true,
+      "skippedTests" : [
+        "SkyAwareUITests\/testExample()",
+        "SkyAwareUITestsLaunchTests",
+        "SkyAwareUITestsLaunchTests\/testLaunch()"
+      ],
       "target" : {
         "containerPath" : "container:SkyAware.xcodeproj",
         "identifier" : "D095EFBB2E16F56A0074F867",

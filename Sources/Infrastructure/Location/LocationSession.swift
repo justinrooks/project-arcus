@@ -146,6 +146,7 @@ final class LocationSession {
         self.currentSnapshot = resolvedContext.snapshot
         self.currentContext = nil
         self.currentContext = resolvedContext
+        await locationContextResolver.enqueueForPush(resolvedContext, forceUpload: forceUpload)
     }
 
     private func syncAuthorizationStatus() {

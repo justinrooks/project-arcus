@@ -94,10 +94,14 @@ struct ArcusHttpClient: ArcusClient {
                     throw ArcusError.missingData
                 }
 
-                if resp.source.isNetworkBacked {
+                switch resp.source {
+                case .live, .cacheRevalidated304:
                     await reachabilityReporter.markReachable()
-                } else {
+                case .cacheFallback:
                     await reachabilityReporter.markUnavailable()
+                case .localCache:
+                    // A local-cache hit does not prove Arcus is unreachable. Preserve prior signal state.
+                    break
                 }
 
                 logger.info(
