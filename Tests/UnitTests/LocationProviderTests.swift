@@ -457,10 +457,12 @@ struct LocationProviderTests {
 
     @Test("ensurePlacemark falls back when timeout elapses")
     func ensurePlacemark_timesOutAndFallsBack() async {
-        let provider = LocationProvider(geocoder: MockGeocoder(mode: .delay(seconds: 1.0, then: .success("Late City"))))
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .delay(seconds: 10.0, then: .success("Late City")))
+        )
         let coord = CLLocationCoordinate2D(latitude: 39.0, longitude: -104.0)
 
-        let snap = await provider.ensurePlacemark(for: coord, timeout: 0.005)
+        let snap = await provider.ensurePlacemark(for: coord, timeout: 0.1)
         #expect(snap.placemarkSummary == nil)
     }
 

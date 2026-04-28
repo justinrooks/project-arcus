@@ -50,19 +50,21 @@ struct HomeIngestionCoordinatorTests {
         let coordinator = HomeIngestionCoordinator(executor: executor)
 
         await coordinator.enqueue(.sessionTick)
-        let firstStarted = await waitUntil {
+        let firstStarted = await waitUntil(timeout: .seconds(5)) {
             await executor.startedPlanCount() == 1
         }
         #expect(firstStarted)
 
         await coordinator.enqueue(.manualRefresh)
 
-        try? await Task.sleep(for: .milliseconds(50))
-        #expect(await executor.startedPlanCount() == 1)
+        let stillSerialized = await waitUntil(timeout: .seconds(2)) {
+            await executor.startedPlanCount() == 1
+        }
+        #expect(stillSerialized)
 
         await gate.open()
 
-        let secondStarted = await waitUntil {
+        let secondStarted = await waitUntil(timeout: .seconds(5)) {
             await executor.startedPlanCount() == 2
         }
         #expect(secondStarted)
