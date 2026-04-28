@@ -183,6 +183,10 @@ private actor StubArcusAlertStore: ArcusAlertQuerying {
         []
     }
 
+    func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
+        []
+    }
+
     func getWatch(id: String) async throws -> WatchRowDTO? {
         guard watches.isEmpty == false else { return nil }
         return watches.removeFirst()

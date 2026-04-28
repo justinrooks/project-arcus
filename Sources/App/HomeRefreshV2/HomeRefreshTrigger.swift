@@ -9,6 +9,7 @@ import Foundation
 
 enum HomeRefreshTrigger: String, Sendable, Equatable {
     case bootstrap
+    case foregroundPrime
     case foregroundActivate
     case manualRefresh
     case sessionTick
@@ -132,6 +133,12 @@ struct HomeIngestionPlan: Sendable, Equatable {
             forcedLanes = .all
             locationRequest = .prepare(requiresFreshLocation: true, showsAuthorizationPrompt: true)
             provenance = .bootstrap
+            isLocationBearing = false
+        case .foregroundPrime:
+            lanes = [.hotAlerts]
+            forcedLanes = [.hotAlerts]
+            locationRequest = .prepare(requiresFreshLocation: true, showsAuthorizationPrompt: true)
+            provenance = .foregroundActivate
             isLocationBearing = false
         case .foregroundActivate:
             lanes = .all

@@ -8,7 +8,6 @@
 import CoreLocation
 import Foundation
 
-@available(*, deprecated, message: "Remove References")
 struct WatchContext: Sendable {
     let now: Date
     let localTZ: TimeZone

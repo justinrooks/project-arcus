@@ -7,6 +7,12 @@
 
 import Foundation
 import SwiftUI
+import UIKit
+
+struct WarningPolygonStyle {
+    let fill: UIColor
+    let stroke: UIColor
+}
 
 // TODO: There's likely a better place for this than its own file. Move it when we figure it out.
 func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
@@ -25,5 +31,33 @@ func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
             return ("exclamationmark.triangle", .red)
         }
     case .mesoscale: return ("waveform.path.ecg.magnifyingglass", .mesoPurple)
+    }
+}
+
+func warningPolygonStyle(for event: String) -> WarningPolygonStyle? {
+    let normalizedEvent = event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    let fillAlpha: CGFloat = 0.22
+
+    switch normalizedEvent {
+    case "tornado warning":
+        return WarningPolygonStyle(
+            fill: UIColor.tornadoRed.withAlphaComponent(fillAlpha),
+            stroke: .tornadoRed
+        )
+
+    case "severe thunderstorm warning":
+        return WarningPolygonStyle(
+            fill: UIColor.warningYellow.withAlphaComponent(fillAlpha),
+            stroke: .warningYellow
+        )
+
+    case "flash flood warning":
+        return WarningPolygonStyle(
+            fill: UIColor.floodBlue.withAlphaComponent(fillAlpha),
+            stroke: .floodBlue
+        )
+
+    default:
+        return nil
     }
 }

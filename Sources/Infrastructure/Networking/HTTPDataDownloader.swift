@@ -139,6 +139,7 @@ public enum HTTPRequestHeaders {
 public struct HTTPResponse {
     public enum Source: Sendable, Equatable, CustomStringConvertible {
         case live
+        case localCache
         case cacheFallback
         case cacheRevalidated304
 
@@ -146,10 +147,21 @@ public struct HTTPResponse {
             switch self {
             case .live:
                 "live"
+            case .localCache:
+                "localCache"
             case .cacheFallback:
                 "cacheFallback"
             case .cacheRevalidated304:
                 "cacheRevalidated304"
+            }
+        }
+
+        var isNetworkBacked: Bool {
+            switch self {
+            case .live, .cacheRevalidated304:
+                true
+            case .localCache, .cacheFallback:
+                false
             }
         }
     }
@@ -309,7 +321,8 @@ public final class URLSessionHTTPClient: HTTPClient {
                     )
                 }
 
-                let (data, response) = try await session.data(for: req, delegate: nil)
+                let metricsCollector = URLSessionTaskMetricsCollector()
+                let (data, response) = try await session.data(for: req, delegate: metricsCollector)
 
                 guard let http = response as? HTTPURLResponse else {
                     throw URLError(.badServerResponse)
@@ -318,10 +331,11 @@ public final class URLSessionHTTPClient: HTTPClient {
                 await observer.didReceive(response: http, for: url)
 
                 let responseHeaders = normalizedHeaders(from: http.allHeaderFields)
+                let responseSource = source(for: metricsCollector.metrics)
                 let liveResponse = HTTPResponse(status: http.statusCode,
                                                 headers: responseHeaders,
                                                 data: data.isEmpty ? nil : data,
-                                                source: .live)
+                                                source: responseSource)
                 switch liveResponse.classifyStatus(now: now()) {
                 case .success:
                     return liveResponse
@@ -467,6 +481,21 @@ public final class URLSessionHTTPClient: HTTPClient {
 
         return output
     }
+
+    private func source(for metrics: URLSessionTaskMetrics?) -> HTTPResponse.Source {
+        guard let fetchType = metrics?.transactionMetrics.last?.resourceFetchType else {
+            return .live
+        }
+
+        switch fetchType {
+        case .localCache:
+            return .localCache
+        case .networkLoad, .serverPush, .unknown:
+            return .live
+        @unknown default:
+            return .live
+        }
+    }
     
     private func isTransient(_ error: Error) -> Bool {
         let e = error as? URLError
@@ -479,5 +508,13 @@ public final class URLSessionHTTPClient: HTTPClient {
         default:
             return false
         }
+    }
+}
+
+private final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
+    private(set) var metrics: URLSessionTaskMetrics?
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+        self.metrics = metrics
     }
 }

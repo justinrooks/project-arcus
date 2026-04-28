@@ -11,6 +11,7 @@ struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let isLoading: Bool
+    let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
     private let sortedMesos: [MdDTO]
     private let sortedWatches: [WatchRowDTO]
@@ -23,11 +24,13 @@ struct ActiveAlertSummaryView: View {
         mesos: [MdDTO],
         watches: [WatchRowDTO],
         isLoading: Bool = false,
+        isOffline: Bool = false,
         onOpenAlertCenter: (() -> Void)? = nil
     ) {
         self.mesos = mesos
         self.watches = watches
         self.isLoading = isLoading
+        self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
         self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
         self.sortedWatches = watches.sorted { $0.expires < $1.expires }
@@ -100,25 +103,35 @@ struct ActiveAlertSummaryView: View {
                 }
             }
 
-            if #available(iOS 26, *) {
-                GlassEffectContainer(spacing: 12) {
+            if isOffline {
+                offlineContent
+            } else {
+                if #available(iOS 26, *) {
+                    GlassEffectContainer(spacing: 12) {
+                        if isLoading {
+                            placeholderAlertsContent
+                        } else {
+                            alertsContent
+                        }
+                    }
+                } else {
                     if isLoading {
                         placeholderAlertsContent
                     } else {
                         alertsContent
                     }
                 }
-            } else {
-                if isLoading {
-                    placeholderAlertsContent
-                } else {
-                    alertsContent
-                }
             }
         }
         .padding(18)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-        .placeholder(isLoading)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3,
+            allowsGlass: false
+        )
+        .placeholder(isLoading && isOffline == false)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
@@ -132,7 +145,20 @@ struct ActiveAlertSummaryView: View {
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
             }
+            .accessibilityIdentifier("summary-watch-detail-sheet")
         }
+    }
+
+    private var offlineContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Offline", systemImage: "wifi.slash")
+                .sectionLabel()
+            Text("Local alert details are unavailable while the server is offline.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(2)
     }
 
     @ViewBuilder
@@ -229,6 +255,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                             pressedOverlayOpacity: 0.06
                         )
                     )
+                    .accessibilityIdentifier("\(label.lowercased())-row-\(String(describing: item.id))")
             }
             
             if items.count > limit {

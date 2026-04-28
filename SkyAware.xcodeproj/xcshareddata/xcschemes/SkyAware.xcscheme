@@ -33,6 +33,9 @@
             reference = "container:Tests/SkyAware_Tests.xctestplan"
             default = "YES">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Tests/SkyAware_All_Tests.xctestplan">
+         </TestPlanReference>
       </TestPlans>
       <Testables>
          <TestableReference

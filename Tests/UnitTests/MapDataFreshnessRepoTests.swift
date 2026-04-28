@@ -70,6 +70,37 @@ struct MapDataFreshnessRepoTests {
         #expect(byLevel[5]?.issued == level5Issue)
     }
 
+    @Test("Fire map includes products exactly at the expiry boundary")
+    func fireMapIncludesProductsAtExpiryBoundary() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [FireRisk.self]) }
+        try await MainActor.run { try TestStore.reset(FireRisk.self, in: container) }
+
+        let repo = FireRiskRepo(modelContainer: container)
+        let asOf = makeUTCDate(2026, 3, 1, 21, 0)
+        let valid = makeUTCDate(2026, 3, 1, 9, 0)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                FireRisk(
+                    product: "FireRH",
+                    issued: makeUTCDate(2026, 3, 1, 11, 0),
+                    expires: asOf,
+                    valid: valid,
+                    riskLevel: 8,
+                    label: "Critical",
+                    stroke: "#BB0000",
+                    fill: "#220000",
+                    polygons: []
+                )
+            )
+            try context.save()
+        }
+
+        let results = try await repo.getLatestMapData(asOf: asOf)
+        #expect(results.map(\.riskLevel) == [8])
+    }
+
     @Test("Categorical map returns newest issuance per storm level")
     func stormMapReturnsNewestIssuancePerLevel() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
@@ -127,6 +158,35 @@ struct MapDataFreshnessRepoTests {
         let byLevel = Dictionary(uniqueKeysWithValues: results.map { ($0.riskLevel, $0) })
         #expect(byLevel[.enhanced]?.issued == newerIssue)
         #expect(byLevel[.slight]?.issued == slightIssue)
+    }
+
+    @Test("Categorical map includes products exactly at the expiry boundary")
+    func stormMapIncludesProductsAtExpiryBoundary() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
+        try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
+
+        let repo = StormRiskRepo(modelContainer: container)
+        let asOf = makeUTCDate(2026, 3, 1, 22, 0)
+        let valid = makeUTCDate(2026, 3, 1, 8, 0)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                StormRisk(
+                    riskLevel: .enhanced,
+                    issued: makeUTCDate(2026, 3, 1, 11, 30),
+                    expires: asOf,
+                    valid: valid,
+                    stroke: "#333333",
+                    fill: "#444444",
+                    polygons: []
+                )
+            )
+            try context.save()
+        }
+
+        let results = try await repo.getLatestMapData(asOf: asOf)
+        #expect(results.map(\.riskLevel) == [.enhanced])
     }
 
     @Test("Severe map returns newest issuance per type and probability bucket")
@@ -201,6 +261,39 @@ struct MapDataFreshnessRepoTests {
         #expect(significant15?.fill == "#330000")
     }
 
+    @Test("Severe map includes products exactly at the expiry boundary")
+    func severeMapIncludesProductsAtExpiryBoundary() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+
+        let repo = SevereRiskRepo(modelContainer: container)
+        let asOf = makeUTCDate(2026, 3, 1, 23, 0)
+        let valid = makeUTCDate(2026, 3, 1, 7, 0)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                SevereRisk(
+                    type: .tornado,
+                    probability: .percent(0.15),
+                    threatLevel: .tornado(probability: 0.15),
+                    issued: makeUTCDate(2026, 3, 1, 11, 0),
+                    valid: valid,
+                    expires: asOf,
+                    dn: 15,
+                    stroke: "#BB0000",
+                    fill: "#220000",
+                    polygons: [],
+                    label: "0.15"
+                )
+            )
+            try context.save()
+        }
+
+        let results = try await repo.getSevereRiskShapes(asOf: asOf)
+        #expect(results.map(\.type) == [.tornado])
+    }
+
     @Test("Severe map keeps separate CIG intensity buckets")
     func severeMapKeepsSeparateCigBuckets() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
@@ -251,6 +344,41 @@ struct MapDataFreshnessRepoTests {
         #expect(results.count == 2)
         #expect(results.contains { $0.label == "CIG1" && $0.intensityLevel == 1 })
         #expect(results.contains { $0.label == "CIG2" && $0.intensityLevel == 2 })
+    }
+
+    @Test("Mesoscale map includes discussions exactly at the valid-end boundary")
+    func mesoMapIncludesProductsAtValidEndBoundary() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [MD.self]) }
+        try await MainActor.run { try TestStore.reset(MD.self, in: container) }
+
+        let repo = MesoRepo(modelContainer: container)
+        let asOf = makeUTCDate(2026, 3, 1, 18, 0)
+        let issued = makeUTCDate(2026, 3, 1, 16, 0)
+        let validStart = makeUTCDate(2026, 3, 1, 15, 0)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                MD(
+                    number: 1895,
+                    title: "SPC MD 1895",
+                    link: URL(string: "https://example.com/md1895.html")!,
+                    issued: issued,
+                    validStart: validStart,
+                    validEnd: asOf,
+                    areasAffected: "Wisconsin",
+                    summary: "Boundary inclusion check",
+                    watchProbability: "40",
+                    threats: nil,
+                    coordinates: [],
+                    alertType: .mesoscale
+                )
+            )
+            try context.save()
+        }
+
+        let results = try await repo.getLatestMapData(asOf: asOf)
+        #expect(results.map(\.number) == [1895])
     }
 
     @Test("Severe risk key differentiates CIG label with same DN and issuance")

@@ -339,6 +339,31 @@ struct LocationProviderTests {
         #expect(payloads.isEmpty)
     }
 
+    @Test("snapshot pusher can force upload when location-to-signal is disabled")
+    func snapshotPusher_forceUploadWhenLocationSharingDisabled() async throws {
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { false },
+            locationUploadEnabledProvider: { false },
+            retryDelaysSeconds: [0]
+        )
+
+        let context = makeContext(
+            timestamp: Date(timeIntervalSince1970: 1_234_567),
+            placemark: "OKC, OK",
+            h3Cell: sampleH3Cell
+        )
+
+        await pusher.enqueue(context, forceUpload: true)
+
+        let payloads = await uploader.uploadedPayloads()
+        let payload = try #require(payloads.first)
+        #expect(payload.isSubscribed == false)
+    }
+
     @Test("send suppresses rapid updates inside minSeconds window")
     func send_suppressesBurstingUpdates() async throws {
         let provider = LocationProvider()
@@ -432,10 +457,12 @@ struct LocationProviderTests {
 
     @Test("ensurePlacemark falls back when timeout elapses")
     func ensurePlacemark_timesOutAndFallsBack() async {
-        let provider = LocationProvider(geocoder: MockGeocoder(mode: .delay(seconds: 1.0, then: .success("Late City"))))
+        let provider = LocationProvider(
+            geocoder: MockGeocoder(mode: .delay(seconds: 10.0, then: .success("Late City")))
+        )
         let coord = CLLocationCoordinate2D(latitude: 39.0, longitude: -104.0)
 
-        let snap = await provider.ensurePlacemark(for: coord, timeout: 0.005)
+        let snap = await provider.ensurePlacemark(for: coord, timeout: 0.1)
         #expect(snap.placemarkSummary == nil)
     }
 
@@ -655,7 +682,7 @@ struct LocationContextResolverTests {
     private actor RecordingContextPusher: LocationContextPushing {
         private var contexts: [LocationContext] = []
 
-        func enqueue(_ context: LocationContext) async {
+        func enqueue(_ context: LocationContext, forceUpload: Bool) async {
             contexts.append(context)
         }
 

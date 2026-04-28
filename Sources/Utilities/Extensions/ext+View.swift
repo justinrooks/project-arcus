@@ -11,12 +11,13 @@ private struct PlaceholderModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isActive: Bool
+    let animated: Bool
 
     func body(content: Content) -> some View {
         content
             .redacted(reason: isActive ? .placeholder : [])
             .opacity(isActive ? SkyAwareMotion.placeholderOpacity : 1)
-            .animation(SkyAwareMotion.settle(reduceMotion), value: isActive)
+            .animation(animated ? SkyAwareMotion.settle(reduceMotion) : nil, value: isActive)
     }
 }
 
@@ -151,8 +152,8 @@ extension View {
     /// while content is loading as an example.
     /// - Parameter isActive: boolean evaluating to true/false. True redacts content, false displays it
     /// - Returns: a redaction configuration to apply to the view
-    func placeholder(_ isActive: Bool) -> some View {
-        modifier(PlaceholderModifier(isActive: isActive))
+    func placeholder(_ isActive: Bool, animated: Bool = false) -> some View {
+        modifier(PlaceholderModifier(isActive: isActive, animated: animated))
     }
     
     @ViewBuilder
@@ -160,15 +161,29 @@ extension View {
         cornerRadius: CGFloat = SkyAwareRadius.hero,
         shadowOpacity: Double = 0.10,
         shadowRadius: CGFloat = 10,
-        shadowY: CGFloat = 4
+        shadowY: CGFloat = 4,
+        allowsGlass: Bool = true
     ) -> some View {
-        self.skyAwareSurface(
-            cornerRadius: cornerRadius,
-            tint: .white.opacity(0.10),
-            shadowOpacity: shadowOpacity,
-            shadowRadius: shadowRadius,
-            shadowY: shadowY
-        )
+        if #available(iOS 26, *), allowsGlass == false {
+            self.background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(.cardBackground)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .strokeBorder(.white.opacity(0.12), lineWidth: 1)
+                            .allowsHitTesting(false)
+                    }
+                    .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
+            )
+        } else {
+            self.skyAwareSurface(
+                cornerRadius: cornerRadius,
+                tint: .white.opacity(0.10),
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
+            )
+        }
     }
     
     func cardRowBackground(

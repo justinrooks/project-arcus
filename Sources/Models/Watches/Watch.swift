@@ -71,6 +71,8 @@ final class Watch {
     var instruction: String?
     var response: String?
     var h3Cells: [Int64] = []
+    // SwiftData cannot persist the associated-value geometry enum directly.
+    var geometryData: Data? = nil
     var tornadoDetection: String?
     var tornadoDamageThreat: String?
     var maxWindGust: String?
@@ -104,6 +106,7 @@ final class Watch {
         instruction: String?,
         response: String?,
         cells: [Int64],
+        geometry: DeviceAlertGeometry? = nil,
         tornadoDetection: String?,
         tornadoDamageThreat: String?,
         maxWindGust: String?,
@@ -136,6 +139,7 @@ final class Watch {
         self.instruction = instruction
         self.response = response
         self.h3Cells = cells
+        self.geometryData = geometry?.encodedData
         self.tornadoDetection = tornadoDetection
         self.tornadoDamageThreat = tornadoDamageThreat
         self.maxWindGust = maxWindGust
@@ -145,5 +149,16 @@ final class Watch {
         self.thunderstormDamageThreat = thunderstormDamageThreat
         self.flashFloodDetection = flashFloodDetection
         self.flashFloodDamageThreat = flashFloodDamageThreat
+    }
+}
+
+extension Watch {
+    var geometry: DeviceAlertGeometry? {
+        get {
+            DeviceAlertGeometry(encodedData: geometryData)
+        }
+        set {
+            geometryData = newValue?.encodedData
+        }
     }
 }

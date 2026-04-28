@@ -45,6 +45,8 @@ struct SkyAwareApp: App {
     
     @MainActor
     init() {
+        Self.applyUITestDefaultsOverridesIfNeeded()
+
         let runtimeConnectivityState = RuntimeConnectivityState()
         runtimeConnectivityState.startMonitoringIfNeeded()
 
@@ -59,6 +61,7 @@ struct SkyAwareApp: App {
         let remoteAlertPresentationState = RemoteAlertPresentationState()
         _runtimeConnectivityState = State(initialValue: runtimeConnectivityState)
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
+        Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
         _locationSession = State(initialValue: deps.locationSession)
         SkyAwareAppDelegate.install(
             remoteHotAlertHandler: RemoteHotAlertHandler(
@@ -76,7 +79,13 @@ struct SkyAwareApp: App {
         WindowGroup {
             Group {
                 if onboardingComplete {
-                    HomeView()
+                    Group {
+                        if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
+                            HomeView(initialWatches: Self.uiTestSeedWatches)
+                        } else {
+                            HomeView()
+                        }
+                    }
                         .environment(\.dependencies, deps)
                         .environment(locationSession)
                         .appBackground()
@@ -84,7 +93,9 @@ struct SkyAwareApp: App {
                             if disclaimerVersion < currentDisclaimerVersion {
                                 showDisclaimerUpdate = true
                             }
-                            if locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted {
+                            let suppressLocationRestrictedSheet = ProcessInfo.processInfo.environment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] == "1"
+                            if (locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted) &&
+                                suppressLocationRestrictedSheet == false {
                                 showLocationPermissionAlert = true
                             }
                         }
@@ -202,5 +213,91 @@ struct SkyAwareApp: App {
                 break
             }
         }
+    }
+}
+
+private extension SkyAwareApp {
+    @MainActor
+    static func applyUITestDefaultsOverridesIfNeeded() {
+        let env = ProcessInfo.processInfo.environment
+        let shouldResetOnboarding = env["UI_TESTS_RESET_ONBOARDING"] == "1"
+        let shouldForceOnboardingComplete = env["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] == "1"
+
+        guard shouldResetOnboarding || shouldForceOnboardingComplete else { return }
+
+        let suiteName = "com.justinrooks.skyaware"
+        guard let sharedDefaults = UserDefaults(suiteName: suiteName) else { return }
+
+        if shouldResetOnboarding {
+            sharedDefaults.removePersistentDomain(forName: suiteName)
+        }
+
+        if shouldForceOnboardingComplete {
+            sharedDefaults.set(true, forKey: "onboardingComplete")
+            sharedDefaults.set(1, forKey: "disclaimerAcceptedVersion")
+            UserDefaults.standard.set(true, forKey: "onboardingComplete")
+            UserDefaults.standard.set(1, forKey: "disclaimerAcceptedVersion")
+        } else {
+            sharedDefaults.set(false, forKey: "onboardingComplete")
+            sharedDefaults.set(0, forKey: "disclaimerAcceptedVersion")
+            UserDefaults.standard.removeObject(forKey: "onboardingComplete")
+            UserDefaults.standard.removeObject(forKey: "disclaimerAcceptedVersion")
+        }
+
+        sharedDefaults.synchronize()
+        UserDefaults.standard.synchronize()
+    }
+
+    @MainActor
+    static func applyUITestLocationOverridesIfNeeded(locationSession: LocationSession) {
+        switch ProcessInfo.processInfo.environment["UI_TESTS_LOCATION_AUTH_MODE"] {
+        case "restricted":
+            locationSession.authorizationStatus = .denied
+            locationSession.currentContext = nil
+            locationSession.startupState = .failed("location-unavailable")
+        case "authorized":
+            locationSession.authorizationStatus = .authorizedWhenInUse
+            if case .failed = locationSession.startupState {
+                locationSession.startupState = .acquiringLocation
+            }
+        default:
+            break
+        }
+    }
+
+    static var uiTestSeedWatches: [WatchRowDTO] {
+        let issued = Date().addingTimeInterval(-1_800)
+        let ends = Date().addingTimeInterval(7_200)
+        return [
+            WatchRowDTO(
+                id: "ui-test-watch-001",
+                messageId: "ui-test-watch-message-001",
+                currentRevisionSent: issued,
+                title: "UI Test Tornado Watch",
+                headline: "UI Test Tornado Watch Headline",
+                issued: issued,
+                expires: ends,
+                ends: ends,
+                messageType: "Alert",
+                sender: "NWS Test Office",
+                severity: "Severe",
+                urgency: "Immediate",
+                certainty: "Likely",
+                description: "UI test watch description for navigation and sheet validation.",
+                instruction: "Seek shelter if threatening weather approaches.",
+                response: "Execute",
+                areaSummary: "UI Test County",
+                geometryData: nil,
+                tornadoDetection: "Radar indicated",
+                tornadoDamageThreat: "Possible",
+                maxWindGust: "70",
+                maxHailSize: "1.00",
+                windThreat: nil,
+                hailThreat: nil,
+                thunderstormDamageThreat: nil,
+                flashFloodDetection: nil,
+                flashFloodDamageThreat: nil
+            )
+        ]
     }
 }

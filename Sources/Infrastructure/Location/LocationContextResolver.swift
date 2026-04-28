@@ -54,6 +54,8 @@ protocol LocationContextResolving: Sendable {
         maximumAcceptedLocationAge: TimeInterval?,
         placemarkTimeout: Double
     ) async throws -> LocationContext
+
+    func enqueueForPush(_ context: LocationContext, forceUpload: Bool) async
 }
 
 actor LocationContextResolver: LocationContextResolving {
@@ -213,6 +215,10 @@ actor LocationContextResolver: LocationContextResolving {
             "Location context resolved hasPlacemark=\((enrichedSnapshot.placemarkSummary != nil), privacy: .public) hasCounty=\((grid.countyCode?.isEmpty == false), privacy: .public) hasFireZone=\((grid.fireZone?.isEmpty == false), privacy: .public)"
         )
         return context
+    }
+
+    func enqueueForPush(_ context: LocationContext, forceUpload: Bool = false) async {
+        await contextPusher.enqueue(context, forceUpload: forceUpload)
     }
 
     private func waitForAuthorizationResolution(timeout: Double) async throws -> CLAuthorizationStatus {

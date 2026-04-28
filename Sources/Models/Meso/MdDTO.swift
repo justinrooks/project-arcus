@@ -11,7 +11,8 @@ import Foundation
 struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
     var alertType: AlertType { .mesoscale }
     
-    let id: UUID                // usually the GUID or derived from it
+    // Stable identity for SwiftUI diffing. MD numbers are unique in our store.
+    var id: Int { number }
     let number: Int             // the MD number 1895
     let title: String           // e.g., "Day 1 Convective Outlook"
     let link: URL               // link to full outlook page
@@ -27,7 +28,6 @@ struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
     let coordinates: [Coordinate2D]
     
     init(number: Int, title: String, link: URL, issued: Date, validStart: Date, validEnd: Date, areasAffected: String, summary: String, concerning: String? = nil, watchProbability: String, threats: MDThreats?, coordinates: [Coordinate2D]) {
-        self.id = UUID()
         self.number = number
         self.title = title
         self.link = link
