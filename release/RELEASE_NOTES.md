@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## v0.1.0(45)
+
+### Overview
+This update adds active warning polygons to the map, improves map overlay/rendering stability, and hardens watch-notification reliability.
+
+### Highlights
+- Active warning polygons now flow from alert payloads into persisted map data and render as warning overlays with dedicated styling.
+- Warning overlays now appear in the map legend and layer above thematic map content for clearer alert context.
+- Map rendering now prioritizes the selected layer first and uses stable overlay identity/revision checks to reduce redraw churn.
+- Watch-notification handling now filters non-active watch payloads before persistence and tightens notification behavior/language consistency.
+- Automated coverage was expanded for map rendering, watch repo behavior, payload parsing, location handling, and map UI behavior.
+
+### Maintenance
+- Warning sample development data has been disabled.
+
 ## v0.1.0(42)
 
 ### Overview

@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## v0.1.0(45)
+
+### Background & Notifications
+- Improve notification reliability by filtering non-active watch payloads before persistence and tightening watch-notification behavior/language consistency.
+<!-- evidence: d217663 -->
+
+### Data & Repos
+- Add warning geometry support from alert payload models through persistence/querying so active warning polygons can be rendered on the map.
+<!-- evidence: d217663 -->
+
+### UI / UX
+- Add warning map overlays with warning-specific styling, map-legend support, and warning layering above thematic overlays.
+<!-- evidence: d217663 -->
+- Shift map rendering to selected-layer-first materialization with stable overlay identity/revision handling to reduce unnecessary redraw churn.
+<!-- evidence: d217663 -->
+
+### Tests / QA
+- Expand automated coverage for map rendering, watch repository behavior, payload parsing, location handling, and UI map behavior; update the shared test plan.
+<!-- evidence: d217663 -->
+
+### Maintenance / Cleanup
+- Disable bundled warning sample data used during map warning development.
+<!-- evidence: 3f71515 -->
+
 ## v0.1.0(42)
 
 ### Background & Notifications

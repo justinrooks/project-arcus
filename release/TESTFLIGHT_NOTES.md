@@ -1,3 +1,12 @@
+SkyAware v0.1.0(45) adds active warning polygons on the map, improves overlay/rendering stability, and hardens watch-notification reliability.
+
+Highlights:
+- Active warning polygons now flow from alert payloads into persisted map data and render with warning-specific styling
+- Warning overlays now appear in the map legend and layer above thematic overlays for clearer alert context
+- Map rendering now prioritizes the selected layer first and uses stable overlay identity/revision checks to reduce redraw churn
+- Watch-notification handling now filters non-active watch payloads before persistence and tightens behavior/language consistency
+- Automated coverage was expanded for map rendering, watch repository behavior, payload parsing, location handling, and map UI behavior
+
 SkyAware v0.1.0(42) unifies Home ingestion across foreground, background, and remote alert triggers, restores Home from cached projections while fresh data loads, and adds new diagnostics plus summary/alert polish.
 
 Highlights:
