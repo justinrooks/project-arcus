@@ -17,11 +17,11 @@ final class MapFeatureModel {
     private let polygonMapper = MapPolygonMapper()
     private let planner = MapScenePlanner()
     private let shouldInjectTemporaryWarningSamples: Bool = {
-#if DEBUG
-        return NSClassFromString("XCTestCase") == nil
-#else
+//#if DEBUG
+//        return NSClassFromString("XCTestCase") == nil
+//#else
         return false
-#endif
+//#endif
     }()
 
     private var renderPlans: [MapLayer: MapLayerRenderPlan] = [:]
