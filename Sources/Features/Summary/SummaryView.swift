@@ -33,6 +33,11 @@ enum SummaryReadinessState: Equatable {
 struct SummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    struct LocationReliabilityRailState {
+        let onOpen: () -> Void
+        let onDismiss: () -> Void
+    }
+
     enum LocalAlertsPresentationState: Equatable {
         case unavailable
         case loading
@@ -52,6 +57,7 @@ struct SummaryView: View {
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
     let headerCondenseProgress: CGFloat
+    let locationReliabilityRailState: LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
@@ -230,6 +236,13 @@ struct SummaryView: View {
                     allowsGlass: false
                 )
 
+                if let locationReliabilityRailState {
+                    LocationReliabilitySummaryRailView(
+                        onOpen: locationReliabilityRailState.onOpen,
+                        onDismiss: locationReliabilityRailState.onDismiss
+                    )
+                }
+
                 switch localAlertsPresentationState {
                 case .unavailable:
                     unavailableCard(
@@ -364,6 +377,10 @@ struct SummaryView: View {
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
             headerCondenseProgress: 0,
+            locationReliabilityRailState: .init(
+                onOpen: {},
+                onDismiss: {}
+            ),
             onOpenMapLayer: { _ in },
             onOpenAlerts: {},
             onOpenOutlooks: {}
@@ -392,6 +409,7 @@ struct SummaryView: View {
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: true,
             headerCondenseProgress: 0,
+            locationReliabilityRailState: nil,
             onOpenMapLayer: { _ in },
             onOpenAlerts: {},
             onOpenOutlooks: {}

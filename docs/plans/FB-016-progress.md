@@ -318,15 +318,23 @@ Related GitHub issues:
 ## Issue #148 - Add Summary Rail Eligibility and Rail UI
 
 ### Status
-- Not Started
+- Completed
 
-### Planned scope
-- Add a compact Summary reliability rail using existing SkyAware rail patterns.
-- Compute rail eligibility from reliability state, storm risk, severe threat, and ask ledger state.
-- Show only for While Using plus qualifying elevated risk.
-- Count a rail impression as an ask.
-- Include a clear `Not Now` dismiss affordance.
-- Suppress same-day repeats after impression, dismissal, or action.
+### Scope completed
+- Added a compact Summary reliability rail styled with existing rail/chip/button patterns.
+- Kept `SummaryView` value-driven by passing rail visibility and callbacks from `HomeView`.
+- Computed rail eligibility from:
+  - `LocationSession.reliabilityState`
+  - displayed storm/severe risk values
+  - ask ledger snapshot state
+- Enforced eligibility gates for:
+  - While Using authorization only
+  - qualifying elevated risk (`.marginal`, `.slight`, `.enhanced`, `.moderate`, `.high`, or severe hail/tornado)
+  - ask-cap availability
+  - same-day and minimum-interval suppression from the ledger
+- Counted a rail impression as an ask when the rail is shown.
+- Added `Not Now` dismissal and same-day suppression behavior.
+- Suppressed same-day repeats after rail impression, dismissal, or rail action.
 
 ### Relevant feature brief sections
 - `Decision`
@@ -339,14 +347,51 @@ Related GitHub issues:
 ### Model recommendation
 - GPT-5.3-Codex
 
-### Expected verification
-- Unit tests for rail eligibility, including `.slight`, hail/tornado severe risk, non-qualifying states, Reduced Accuracy-only, and cap exhaustion.
-- Manual or UI validation that the rail fits the Summary layout without disturbing loading states.
+### Key implementation notes
+- Added `LocationReliabilitySummaryRailView` as a compact rail component with:
+  - reliability-focused message
+  - explicit `Not Now` affordance
+  - tap-to-open callback
+- Added `HomeView.LocationReliabilityRailState` deterministic helper to keep rail decision/testing isolated.
+- Rail tap currently opens a minimal placeholder sheet stub to keep tap wiring in place without implementing #149 sheet body.
+- Reduced Accuracy remains Settings-only and does not independently trigger rail visibility.
 
-### Handoff notes
-- Prefer having `HomeView` compute/pass a small rail state and callbacks into `SummaryView`.
-- Keep `SummaryView` value-driven.
-- Do not implement the full explanation sheet body unless a minimal stub is needed for tap wiring.
+### Files changed
+- `Sources/App/HomeView.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Summary/LocationReliabilitySummaryRailView.swift`
+- `Tests/UnitTests/SevereWeatherThreatTests.swift`
+
+### Tests
+- Updated:
+  - `LocationReliabilityTests` coverage for:
+    - hail/tornado severe qualification
+    - non-While-Using non-qualifying auth state
+    - Reduced Accuracy-only non-trigger state
+    - same-day `Not Now` suppression and no ask refund semantics
+    - HomeView rail-state first-display impression intent
+    - HomeView rail-state same-day no-double-record intent
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/SevereWeatherThreatTests test`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/LocationReliabilityTests test`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" build`
+- Result:
+  - `TEST SUCCEEDED` for `SevereWeatherThreatTests`
+  - `TEST SUCCEEDED` for `LocationReliabilityTests`
+  - `BUILD SUCCEEDED`
+
+### Out of scope / intentionally deferred
+- Full Summary explanation sheet content and Always request flow remain in `#149`.
+- Settings reliability UI remains in `#147` and onboarding branch behavior remains in `#146`.
+
+### Handoff to next issue
+- `#149` should replace the placeholder Summary sheet body with:
+  - compact Current / Recommended row
+  - `Enable Always` and `Not Now` actions
+  - native Always request/fallback handling
+- Keep Summary rail suppression and ask-count semantics unchanged while filling in the sheet behavior.
 
 ---
 
