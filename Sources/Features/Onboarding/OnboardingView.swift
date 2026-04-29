@@ -15,6 +15,7 @@ struct OnboardingView: View {
     @Environment(LocationSession.self) private var locationSession
 
     private let logger = Logger.appMain
+    private let locationReliabilityLogger = Logger.uiLocationReliability
     private let currentDisclaimerVersion = 1
 
     @AppStorage(
@@ -57,7 +58,7 @@ struct OnboardingView: View {
                 isWorking: locationStepState.isWorking,
                 statusMessage: locationStepState.statusMessage,
                 onEnable: requestLocationPermission,
-                onSkip: advanceToNotificationPage
+                onSkip: skipLocationPermissionStep
             )
             .tag(2)
 
@@ -65,7 +66,7 @@ struct OnboardingView: View {
                 isWorking: alwaysUpgradeStepState.isWorking,
                 statusMessage: alwaysUpgradeStepState.statusMessage,
                 onEnableAlways: requestAlwaysUpgradeDuringOnboarding,
-                onSkip: advanceToNotificationPage
+                onSkip: skipAlwaysUpgradeStep
             )
             .tag(3)
 
@@ -94,10 +95,12 @@ struct OnboardingView: View {
 
             if locationSession.authorizationStatus == .authorizedWhenInUse {
                 locationStepState = .idle
+                locationReliabilityLogger.notice("Onboarding routed to the Always upgrade page after While Using authorization")
                 advanceToAlwaysUpgradePage()
                 return
             }
 
+            locationReliabilityLogger.info("Onboarding continued past the location step without While Using authorization")
             locationStepState = .idle
             advanceToNotificationPage()
         }
@@ -109,10 +112,25 @@ struct OnboardingView: View {
         Task { @MainActor in
             alwaysUpgradeStepState = .working("Requesting Always for more reliable background alerts...")
             try? await Task.sleep(for: .milliseconds(300))
-            _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+            let didRequestUpgrade = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+            if didRequestUpgrade {
+                locationReliabilityLogger.notice("Onboarding submitted the native Always upgrade request")
+            } else {
+                locationReliabilityLogger.info("Onboarding could not submit the native Always upgrade request; continuing to notifications")
+            }
             alwaysUpgradeStepState = .idle
             advanceToNotificationPage()
         }
+    }
+
+    private func skipLocationPermissionStep() {
+        locationReliabilityLogger.info("Onboarding skipped the location permission step")
+        advanceToNotificationPage()
+    }
+
+    private func skipAlwaysUpgradeStep() {
+        locationReliabilityLogger.info("Onboarding skipped the Always upgrade step")
+        advanceToNotificationPage()
     }
 
     private func requestNotificationPermission() {

@@ -42,6 +42,7 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 struct SettingsView: View {
     @Environment(LocationSession.self) private var locationSession
     private let logger = Logger.uiSettings
+    private let locationReliabilityLogger = Logger.uiLocationReliability
     
     // MARK: Notification Settings
     @AppStorage(
@@ -284,6 +285,11 @@ extension SettingsView {
     }
 
     func handleReliabilityAction(_ action: LocationReliabilitySettingsAction) {
+        let reliability = locationSession.reliabilityState
+        locationReliabilityLogger.debug(
+            "Settings reliability action=\(action.logName, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public)"
+        )
+
         switch action {
         case .requestWhenInUse:
             locationSession.requestInteractiveAuthorization()

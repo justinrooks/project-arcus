@@ -68,6 +68,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         switch authStatus {
         case .notDetermined:
             guard authorizationOverride == nil else { return }
+            logger.notice("Requesting when-in-use location authorization")
             manager.requestWhenInUseAuthorization()
         case .restricted:
             stopAll()
@@ -104,7 +105,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             return false
         }
 
-        logger.debug("Requesting location always authorization upgrade")
+        logger.notice(
+            "Requesting location always authorization upgrade accuracy=\(accuracy.logName, privacy: .public)"
+        )
         manager.requestAlwaysAuthorization()
         return true
     }
@@ -195,7 +198,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
             let effectiveAccuracy = currentAccuracyAuthorization()
             authStatus = effectiveStatus
             accuracyAuthorization = effectiveAccuracy
-            logger.info("Location authorization changed status=\(effectiveStatus.logName, privacy: .public)")
+            logger.info(
+                "Location authorization changed status=\(effectiveStatus.logName, privacy: .public) accuracy=\(effectiveAccuracy.logName, privacy: .public)"
+            )
             onAuthorizationChange?(effectiveStatus, effectiveAccuracy)
             updateMode(for: lastPhase)
         }
@@ -353,6 +358,30 @@ private extension CLAuthorizationStatus {
         case .authorizedWhenInUse:
             return "authorizedWhenInUse"
         @unknown default:
+            return "unknown"
+        }
+    }
+}
+
+private extension CLAccuracyAuthorization {
+    var logName: String {
+        switch self {
+        case .fullAccuracy:
+            return "fullAccuracy"
+        case .reducedAccuracy:
+            return "reducedAccuracy"
+        @unknown default:
+            return "unknown"
+        }
+    }
+}
+
+private extension Optional where Wrapped == CLAccuracyAuthorization {
+    var logName: String {
+        switch self {
+        case .some(let accuracy):
+            return accuracy.logName
+        case .none:
             return "unknown"
         }
     }

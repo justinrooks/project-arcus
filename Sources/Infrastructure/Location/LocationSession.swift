@@ -7,6 +7,7 @@
 
 import CoreLocation
 import Observation
+import OSLog
 import SwiftUI
 
 enum LocationStartupState: Equatable {
@@ -21,6 +22,7 @@ enum LocationStartupState: Equatable {
 @MainActor
 @Observable
 final class LocationSession {
+    private let logger = Logger.locationSession
     private let locationClient: LocationClient
     private let locationManager: LocationManager
     private let locationContextResolver: any LocationContextResolving
@@ -57,16 +59,7 @@ final class LocationSession {
 
         locationManager.setAuthorizationChangeHandler { [weak self] status, accuracy in
             guard let self else { return }
-            if self.authorizationStatus != status {
-                self.authorizationStatus = status
-            }
-            if self.accuracyAuthorization != accuracy {
-                self.accuracyAuthorization = accuracy
-            }
-            if status.isLocationAuthorized == false {
-                self.currentContext = nil
-                self.startupState = .failed("location-unavailable")
-            }
+            self.applyAuthorizationSnapshot(status: status, accuracy: accuracy, source: "authorization-change")
         }
 
         updatesTask = Task { [weak self] in
@@ -161,13 +154,41 @@ final class LocationSession {
     }
 
     private func syncAuthorizationStatus() {
-        let status = locationManager.authStatus
-        let accuracy = locationManager.accuracyAuthorization
-        if authorizationStatus != status {
+        applyAuthorizationSnapshot(
+            status: locationManager.authStatus,
+            accuracy: locationManager.accuracyAuthorization,
+            source: "sync"
+        )
+    }
+
+    private func applyAuthorizationSnapshot(
+        status: CLAuthorizationStatus,
+        accuracy: CLAccuracyAuthorization?,
+        source: String
+    ) {
+        let hadAuthorizationChange = authorizationStatus != status
+        let hadAccuracyChange = accuracyAuthorization != accuracy
+        let hadChange = hadAuthorizationChange || hadAccuracyChange
+
+        if hadAuthorizationChange {
             authorizationStatus = status
         }
-        if accuracyAuthorization != accuracy {
+        if hadAccuracyChange {
             accuracyAuthorization = accuracy
+        }
+
+        guard hadChange else { return }
+
+        let reliability = reliabilityState
+        logger.info(
+            "Location reliability updated source=\(source, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public) nextAction=\(reliability.nextAction.logName, privacy: .public)"
+        )
+
+        if status.isLocationAuthorized == false {
+            let hadContext = currentContext != nil
+            currentContext = nil
+            startupState = .failed("location-unavailable")
+            logger.notice("Location access unavailable; currentContextReset=\(hadContext, privacy: .public)")
         }
     }
 

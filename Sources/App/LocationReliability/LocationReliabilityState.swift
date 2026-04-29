@@ -286,3 +286,84 @@ struct LocationReliabilitySummaryRailEligibility {
         return String(format: "%04d-%02d-%02d", year, month, day)
     }
 }
+
+extension LocationReliabilityAuthorization {
+    var logName: String {
+        switch self {
+        case .notDetermined:
+            return "notDetermined"
+        case .denied:
+            return "denied"
+        case .restricted:
+            return "restricted"
+        case .whileUsing:
+            return "whileUsing"
+        case .always:
+            return "always"
+        }
+    }
+}
+
+extension LocationReliabilityAccuracy {
+    var logName: String {
+        switch self {
+        case .precise:
+            return "precise"
+        case .reduced:
+            return "reduced"
+        case .unknown:
+            return "unknown"
+        }
+    }
+}
+
+extension LocationReliabilityNextAction {
+    var logName: String {
+        switch self {
+        case .none:
+            return "none"
+        case .requestWhenInUse:
+            return "requestWhenInUse"
+        case .requestAlwaysUpgrade:
+            return "requestAlwaysUpgrade"
+        case .openSettings:
+            return "openSettings"
+        }
+    }
+}
+
+extension LocationReliabilitySettingsAction {
+    var logName: String {
+        switch self {
+        case .none:
+            return "none"
+        case .requestWhenInUse:
+            return "requestWhenInUse"
+        case .requestAlwaysUpgrade:
+            return "requestAlwaysUpgrade"
+        case .openSettings:
+            return "openSettings"
+        }
+    }
+}
+
+extension LocationReliabilitySummaryRailEligibilityReason {
+    var logName: String {
+        switch self {
+        case .eligible:
+            return "eligible"
+        case .authorizationNotWhileUsing:
+            return "authorizationNotWhileUsing"
+        case .notElevatedRisk:
+            return "notElevatedRisk"
+        case .askCapExhausted:
+            return "askCapExhausted"
+        case .sameDaySuppressed:
+            return "sameDaySuppressed"
+        case .waitingForNextQualifyingDay:
+            return "waitingForNextQualifyingDay"
+        case .waitingForMinimumInterval:
+            return "waitingForMinimumInterval"
+        }
+    }
+}

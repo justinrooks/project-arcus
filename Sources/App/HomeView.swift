@@ -24,6 +24,7 @@ struct HomeView: View {
     private var cachedOutlooks: [ConvectiveOutlook]
 
     private let logger = Logger.appHomeRefresh
+    private let locationReliabilityLogger = Logger.uiLocationReliability
 
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
@@ -31,6 +32,7 @@ struct HomeView: View {
     @State private var todayHeaderCondenseProgress: CGFloat = 0
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
+    @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
     @State private var showsLocationReliabilitySheet: Bool = false
 
     private var isUITestStaticMode: Bool {
@@ -457,34 +459,64 @@ extension HomeView {
 
     private func refreshLocationReliabilityRail() {
         if isUITestForceReliabilityRail {
+            let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(
+                for: .now,
+                timeZone: .autoupdatingCurrent
+            )
+            if showsLocationReliabilityRail == false {
+                locationReliabilityLogger.debug("Forcing location reliability rail visible for UI test coverage")
+            }
             showsLocationReliabilityRail = true
+            locationReliabilityRailQualifyingDay = qualifyingDay
+            locationReliabilityRailLastEligibilityReason = .eligible
             return
         }
 
         let now = Date.now
         let timeZone = TimeZone.autoupdatingCurrent
+        let reliability = locationSession.reliabilityState
         let ledger = LocationReliabilityAskLedger.live()
-        let state = Self.locationReliabilityRailState(
-            reliability: locationSession.reliabilityState,
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
             stormRisk: displayedStormRisk,
             severeRisk: displayedSevereRisk,
             ledger: ledger.snapshot(),
             now: now,
-            timeZone: timeZone,
-            currentlyShownQualifyingDay: locationReliabilityRailQualifyingDay
+            timeZone: timeZone
         )
 
-        if state.shouldShowRail == false {
+        guard decision.isEligible else {
+            if locationReliabilityRailLastEligibilityReason != decision.reason {
+                locationReliabilityLogger.debug(
+                    "Location reliability rail not shown reason=\(decision.reason.logName, privacy: .public)"
+                )
+                locationReliabilityRailLastEligibilityReason = decision.reason
+            }
             showsLocationReliabilityRail = false
             locationReliabilityRailQualifyingDay = nil
             return
         }
 
-        showsLocationReliabilityRail = true
-        locationReliabilityRailQualifyingDay = state.qualifyingDay
+        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
+        let shouldRecordImpression = locationReliabilityRailQualifyingDay != qualifyingDay
 
-        if state.shouldRecordImpression, let qualifyingDay = state.qualifyingDay {
+        if showsLocationReliabilityRail == false {
+            let snapshot = ledger.snapshot()
+            locationReliabilityLogger.notice(
+                "Showing location reliability rail qualifyingDay=\(qualifyingDay, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public) stormRisk=\(String(describing: displayedStormRisk), privacy: .public) severeRisk=\(String(describing: displayedSevereRisk), privacy: .public) askCount=\(snapshot.askCount, privacy: .public)"
+            )
+        }
+
+        showsLocationReliabilityRail = true
+        locationReliabilityRailQualifyingDay = qualifyingDay
+        locationReliabilityRailLastEligibilityReason = .eligible
+
+        if shouldRecordImpression {
             ledger.recordCountedRailImpression(at: now, qualifyingDay: qualifyingDay)
+            let updatedSnapshot = ledger.snapshot()
+            locationReliabilityLogger.info(
+                "Counted location reliability rail impression qualifyingDay=\(qualifyingDay, privacy: .public) askCount=\(updatedSnapshot.askCount, privacy: .public)"
+            )
         }
     }
 
@@ -494,12 +526,14 @@ extension HomeView {
         let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
         let ledger = LocationReliabilityAskLedger.live()
         ledger.recordSameDaySuppression(qualifyingDay: qualifyingDay)
+        locationReliabilityLogger.notice("Dismissed location reliability rail for qualifyingDay=\(qualifyingDay, privacy: .public)")
         showsLocationReliabilityRail = false
         locationReliabilityRailQualifyingDay = nil
     }
 
     private func openLocationReliabilityRail() {
         recordLocationReliabilitySameDaySuppression()
+        locationReliabilityLogger.notice("Opened location reliability explanation sheet from the summary rail")
         showsLocationReliabilitySheet = true
         showsLocationReliabilityRail = false
         locationReliabilityRailQualifyingDay = nil
@@ -507,6 +541,7 @@ extension HomeView {
 
     private func dismissLocationReliabilitySheetForToday() {
         recordLocationReliabilitySameDaySuppression()
+        locationReliabilityLogger.info("Deferred the location reliability explanation sheet for today")
         showsLocationReliabilitySheet = false
     }
 
@@ -516,9 +551,11 @@ extension HomeView {
             requestAlwaysIfNeeded: { locationSession.requestAlwaysAuthorizationUpgradeIfNeeded() },
             openSettings: { locationSession.openSettings() }
         )
-        if action == .openedSettings {
-            showsLocationReliabilitySheet = false
-            return
+        switch action {
+        case .requestedNative:
+            locationReliabilityLogger.notice("Requested the native Always upgrade from the location reliability sheet")
+        case .openedSettings:
+            locationReliabilityLogger.notice("Opened system Settings from the location reliability sheet")
         }
 
         showsLocationReliabilitySheet = false

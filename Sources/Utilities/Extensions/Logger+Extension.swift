@@ -49,6 +49,7 @@ extension Logger {
     
     // MARK: Location
     static let locationManager = Logger(subsystem: subsystem, category: "location.manager")
+    static let locationSession = Logger(subsystem: subsystem, category: "location.session")
     static let locationContextResolver = Logger(subsystem: subsystem, category: "location.contextResolver")
     static let locationProvider = Logger(subsystem: subsystem, category: "location.provider")
     static let locationPushPusher = Logger(subsystem: subsystem, category: "location.push.pusher")
@@ -64,6 +65,7 @@ extension Logger {
     static let uiSettings = Logger(subsystem: subsystem, category: "ui.settings")
     static let uiDiagnostics = Logger(subsystem: subsystem, category: "ui.diagnostics")
     static let uiOnboarding = Logger(subsystem: subsystem, category: "ui.onboarding")
+    static let uiLocationReliability = Logger(subsystem: subsystem, category: "ui.locationReliability")
     
     // MARK: Notification
     static let notificationsManager = Logger(subsystem: subsystem, category: "notifications.manager")
