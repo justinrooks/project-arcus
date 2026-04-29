@@ -198,6 +198,33 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_FORCE_RELIABILITY_RAIL"] = "1"
+        app.launch()
+
+        let rail = app.otherElements["summary-reliability-rail"]
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "Expected reliability rail in Summary.")
+        rail.tap()
+
+        let sheetTitle = app.navigationBars["Enable Always"]
+        XCTAssertTrue(sheetTitle.waitForExistence(timeout: 10), "Expected reliability explanation sheet.")
+
+        let statusRow = app.otherElements["summary-reliability-status-row"]
+        XCTAssertTrue(statusRow.waitForExistence(timeout: 10), "Expected Current/Recommended status row in sheet.")
+
+        let notNowButton = app.buttons["summary-reliability-sheet-not-now"]
+        XCTAssertTrue(notNowButton.waitForExistence(timeout: 10), "Expected Not Now action in reliability sheet.")
+        notNowButton.tap()
+
+        XCTAssertTrue(rail.waitForNonExistence(timeout: 10), "Expected same-day suppression to keep rail hidden after dismissal.")
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app to remain on Summary after dismissal.")
+    }
+
+    @MainActor
     private func completeOnboardingIfNeeded(in app: XCUIApplication) {
         if app.buttons["Get Started"].waitForExistence(timeout: 2) {
             app.buttons["Get Started"].tap()

@@ -398,15 +398,17 @@ Related GitHub issues:
 ## Issue #149 - Add Summary Explanation Sheet and Always Request Flow
 
 ### Status
-- Not Started
+- Completed
 
-### Planned scope
-- Add the lightweight in-app explanation sheet opened from the Summary rail.
-- Include Current / Recommended status row.
-- Include reliability-oriented copy, `Enable Always`, and `Not Now`.
-- Wire `Enable Always` to the native Always upgrade path when available.
-- Fall back gracefully to system Settings when needed.
-- Preserve same-day suppression after action.
+### Scope completed
+- Replaced the Summary rail placeholder with a lightweight in-app explanation sheet.
+- Added reliability-oriented copy focused on more reliable background severe-weather alerts.
+- Added compact `Current` / `Recommended` status row in the sheet.
+- Added `Enable Always` and `Not Now` actions in the sheet.
+- Wired `Enable Always` to the existing `LocationSession.requestAlwaysAuthorizationUpgradeIfNeeded()` path.
+- Added graceful fallback to `openSettings()` when native Always upgrade is unavailable.
+- Preserved same-day suppression after rail open, `Enable Always`, and `Not Now` actions.
+- Preserved existing Summary alert/detail sheet behavior.
 
 ### Relevant feature brief sections
 - `Decision`
@@ -420,14 +422,42 @@ Related GitHub issues:
 ### Model recommendation
 - GPT-5.3-Codex
 
-### Expected verification
-- Tests or UI smoke validation that tapping the rail opens the sheet.
-- Validation that `Enable Always` uses the existing request path from While Using.
-- Validation that `Not Now` dismisses and preserves suppression.
+### Key implementation notes
+- Kept #148 rail eligibility and ask ledger semantics intact; only replaced the rail tap destination and action flow.
+- Added a small, testable helper in `HomeView` for native-request vs Settings-fallback behavior.
+- Added a UI-test-only rail visibility override (`UI_TESTS_FORCE_RELIABILITY_RAIL`) to enable focused sheet smoke validation.
+
+### Files changed
+- `Sources/App/HomeView.swift`
+- `Sources/Features/Summary/LocationReliabilitySummaryExplanationSheet.swift`
+- `Tests/UnitTests/SevereWeatherThreatTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+
+### Tests
+- Added unit coverage:
+  - `home-view reliability upgrade requests native path when available`
+  - `home-view reliability upgrade falls back to settings when native path unavailable`
+- Added UI smoke test:
+  - `testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses`
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" build`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/SevereWeatherThreatTests test`
+- Result:
+  - `BUILD SUCCEEDED`
+  - `TEST SUCCEEDED`
+- UI test run status:
+  - Direct `-only-testing:SkyAwareUITests/...` execution still fails under current scheme/test-plan configuration because `SkyAwareUITests` is not a member of the active plan.
+
+### Out of scope / intentionally deferred
+- Summary rail eligibility changes remain in `#148`.
+- Settings reliability UI remains in `#147`.
+- Broader FB-016 coverage consolidation remains in `#150`.
 
 ### Handoff notes
-- Keep sheet content focused and app-styled.
-- Avoid technical copy.
+- Keep user-visible copy non-technical and reliability-focused.
+- If the scheme/test-plan is updated to include `SkyAwareUITests`, run the new smoke test directly to complete automated rail-sheet validation.
 - Share small local components with onboarding only if it naturally reduces duplication without broadening scope.
 
 ---

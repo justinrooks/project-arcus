@@ -31,10 +31,14 @@ struct HomeView: View {
     @State private var todayHeaderCondenseProgress: CGFloat = 0
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
-    @State private var showsLocationReliabilitySheetStub: Bool = false
+    @State private var showsLocationReliabilitySheet: Bool = false
 
     private var isUITestStaticMode: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
+    }
+
+    private var isUITestForceReliabilityRail: Bool {
+        ProcessInfo.processInfo.environment["UI_TESTS_FORCE_RELIABILITY_RAIL"] == "1"
     }
 
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
@@ -310,21 +314,12 @@ struct HomeView: View {
         .onChange(of: displayedSevereRisk) { _, _ in
             refreshLocationReliabilityRail()
         }
-        .sheet(isPresented: $showsLocationReliabilitySheetStub) {
-            NavigationStack {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("Location Reliability", systemImage: "location.fill")
-                        .sectionLabel()
-                    Text("Detailed reliability guidance is coming in the next FB-016 slice.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(20)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .background(Color(.skyAwareBackground))
-                .navigationTitle("Enable Always")
-                .navigationBarTitleDisplayMode(.inline)
-            }
+        .sheet(isPresented: $showsLocationReliabilitySheet) {
+            LocationReliabilitySummaryExplanationSheet(
+                reliability: locationSession.reliabilityState,
+                onEnableAlways: enableAlwaysFromReliabilitySheet,
+                onNotNow: dismissLocationReliabilitySheetForToday
+            )
         }
         .task(id: locationSession.reliabilityState) {
             refreshLocationReliabilityRail()
@@ -461,6 +456,11 @@ extension HomeView {
     }
 
     private func refreshLocationReliabilityRail() {
+        if isUITestForceReliabilityRail {
+            showsLocationReliabilityRail = true
+            return
+        }
+
         let now = Date.now
         let timeZone = TimeZone.autoupdatingCurrent
         let ledger = LocationReliabilityAskLedger.live()
@@ -499,14 +499,51 @@ extension HomeView {
     }
 
     private func openLocationReliabilityRail() {
-        let now = Date.now
-        let timeZone = TimeZone.autoupdatingCurrent
-        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
-        let ledger = LocationReliabilityAskLedger.live()
-        ledger.recordSameDaySuppression(qualifyingDay: qualifyingDay)
-        showsLocationReliabilitySheetStub = true
+        recordLocationReliabilitySameDaySuppression()
+        showsLocationReliabilitySheet = true
         showsLocationReliabilityRail = false
         locationReliabilityRailQualifyingDay = nil
+    }
+
+    private func dismissLocationReliabilitySheetForToday() {
+        recordLocationReliabilitySameDaySuppression()
+        showsLocationReliabilitySheet = false
+    }
+
+    private func enableAlwaysFromReliabilitySheet() {
+        recordLocationReliabilitySameDaySuppression()
+        let action = Self.locationReliabilityUpgradeAction(
+            requestAlwaysIfNeeded: { locationSession.requestAlwaysAuthorizationUpgradeIfNeeded() },
+            openSettings: { locationSession.openSettings() }
+        )
+        if action == .openedSettings {
+            showsLocationReliabilitySheet = false
+            return
+        }
+
+        showsLocationReliabilitySheet = false
+    }
+
+    private func recordLocationReliabilitySameDaySuppression(now: Date = .now, timeZone: TimeZone = .autoupdatingCurrent) {
+        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
+        LocationReliabilityAskLedger.live().recordSameDaySuppression(qualifyingDay: qualifyingDay)
+    }
+
+    enum LocationReliabilityUpgradeAction: Equatable {
+        case requestedNative
+        case openedSettings
+    }
+
+    static func locationReliabilityUpgradeAction(
+        requestAlwaysIfNeeded: () -> Bool,
+        openSettings: () -> Void
+    ) -> LocationReliabilityUpgradeAction {
+        if requestAlwaysIfNeeded() {
+            return .requestedNative
+        }
+
+        openSettings()
+        return .openedSettings
     }
 }
 
