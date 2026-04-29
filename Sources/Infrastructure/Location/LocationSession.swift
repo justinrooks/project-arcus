@@ -35,7 +35,14 @@ final class LocationSession {
     var currentSnapshot: LocationSnapshot?
     var currentContext: LocationContext?
     var authorizationStatus: CLAuthorizationStatus
+    var accuracyAuthorization: CLAccuracyAuthorization?
     var startupState: LocationStartupState = .idle
+    var reliabilityState: LocationReliabilityState {
+        LocationReliabilityState(
+            authorizationStatus: authorizationStatus,
+            accuracyAuthorization: accuracyAuthorization
+        )
+    }
 
     init(
         locationClient: LocationClient,
@@ -46,11 +53,15 @@ final class LocationSession {
         self.locationManager = locationManager
         self.locationContextResolver = locationContextResolver
         self.authorizationStatus = locationManager.authStatus
+        self.accuracyAuthorization = locationManager.accuracyAuthorization
 
-        locationManager.setAuthorizationChangeHandler { [weak self] status in
+        locationManager.setAuthorizationChangeHandler { [weak self] status, accuracy in
             guard let self else { return }
             if self.authorizationStatus != status {
                 self.authorizationStatus = status
+            }
+            if self.accuracyAuthorization != accuracy {
+                self.accuracyAuthorization = accuracy
             }
             if status.isLocationAuthorized == false {
                 self.currentContext = nil
@@ -151,8 +162,12 @@ final class LocationSession {
 
     private func syncAuthorizationStatus() {
         let status = locationManager.authStatus
+        let accuracy = locationManager.accuracyAuthorization
         if authorizationStatus != status {
             authorizationStatus = status
+        }
+        if accuracyAuthorization != accuracy {
+            accuracyAuthorization = accuracy
         }
     }
 

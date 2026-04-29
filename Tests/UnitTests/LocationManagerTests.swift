@@ -7,11 +7,13 @@ import Testing
 struct LocationManagerTests {
     fileprivate final class StubAuthorizationManager: CLLocationManager {
         var stubStatus: CLAuthorizationStatus
+        var stubAccuracy: CLAccuracyAuthorization
         private(set) var requestWhenInUseCount = 0
         private(set) var requestAlwaysCount = 0
 
-        init(status: CLAuthorizationStatus) {
+        init(status: CLAuthorizationStatus, accuracy: CLAccuracyAuthorization = .fullAccuracy) {
             self.stubStatus = status
+            self.stubAccuracy = accuracy
             super.init()
         }
 
@@ -21,6 +23,7 @@ struct LocationManagerTests {
         }
 
         override var authorizationStatus: CLAuthorizationStatus { stubStatus }
+        override var accuracyAuthorization: CLAccuracyAuthorization { stubAccuracy }
 
         override func requestWhenInUseAuthorization() {
             requestWhenInUseCount += 1
@@ -42,6 +45,20 @@ struct LocationManagerTests {
         try await Task.sleep(for: .milliseconds(20))
 
         #expect(sut.authStatus == .authorizedAlways)
+    }
+
+    @MainActor
+    @Test("authorization callback updates cached accuracyAuthorization")
+    func locationManagerDidChangeAuthorization_updatesAccuracyAuthorization() async throws {
+        let manager = StubAuthorizationManager(status: .authorizedWhenInUse, accuracy: .fullAccuracy)
+        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        #expect(sut.accuracyAuthorization == .fullAccuracy)
+
+        manager.stubAccuracy = .reducedAccuracy
+        sut.locationManagerDidChangeAuthorization(manager)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(sut.accuracyAuthorization == .reducedAccuracy)
     }
 
     @MainActor
@@ -323,5 +340,75 @@ struct LocationSessionTests {
         #expect(await resolver.recordedLastForceUpload() == true)
         #expect(session.currentContext == context)
         #expect(session.currentSnapshot == context.snapshot)
+    }
+
+    @MainActor
+    @Test("reliability state reflects authorization and accuracy updates")
+    func reliabilityState_reflectsAuthorizationAndAccuracy() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManagerTests.StubAuthorizationManager(
+            status: .authorizedWhenInUse,
+            accuracy: .reducedAccuracy
+        )
+        let locationManager = LocationManager(manager: manager, onUpdate: { _ in })
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: locationManager,
+            locationContextResolver: StubResolver(context: nil, error: .locationUnavailable)
+        )
+
+        #expect(session.authorizationStatus == .authorizedWhenInUse)
+        #expect(session.accuracyAuthorization == .reducedAccuracy)
+        #expect(session.reliabilityState.authorization == .whileUsing)
+        #expect(session.reliabilityState.accuracy == .reduced)
+
+        manager.stubStatus = .authorizedAlways
+        manager.stubAccuracy = .fullAccuracy
+        locationManager.locationManagerDidChangeAuthorization(manager)
+        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(session.authorizationStatus == .authorizedAlways)
+        #expect(session.accuracyAuthorization == .fullAccuracy)
+        #expect(session.reliabilityState.authorization == .always)
+        #expect(session.reliabilityState.accuracy == .precise)
+    }
+}
+
+@Suite("LocationReliabilityState")
+struct LocationReliabilityStateTests {
+    @Test("maps while-using plus precise accuracy")
+    func mapsWhileUsingPrecise() {
+        let state = LocationReliabilityState(
+            authorizationStatus: .authorizedWhenInUse,
+            accuracyAuthorization: .fullAccuracy
+        )
+
+        #expect(state.authorization == .whileUsing)
+        #expect(state.accuracy == .precise)
+        #expect(state.nextAction == .requestAlwaysUpgrade)
+    }
+
+    @Test("maps always plus reduced accuracy")
+    func mapsAlwaysReducedAccuracy() {
+        let state = LocationReliabilityState(
+            authorizationStatus: .authorizedAlways,
+            accuracyAuthorization: .reducedAccuracy
+        )
+
+        #expect(state.authorization == .always)
+        #expect(state.accuracy == .reduced)
+        #expect(state.nextAction == .openSettings)
+    }
+
+    @Test("maps missing accuracy as unknown")
+    func mapsMissingAccuracyAsUnknown() {
+        let state = LocationReliabilityState(
+            authorizationStatus: .denied,
+            accuracyAuthorization: nil
+        )
+
+        #expect(state.authorization == .denied)
+        #expect(state.accuracy == .unknown)
+        #expect(state.nextAction == .openSettings)
     }
 }

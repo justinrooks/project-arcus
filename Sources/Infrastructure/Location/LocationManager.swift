@@ -33,10 +33,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     private let logger = Logger.locationManager
     private let onUpdate: LocationSink
     private var onBackgroundLocationChange: (@Sendable () async -> Void)?
-    private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus) -> Void)?
+    private var onAuthorizationChange: (@MainActor @Sendable (CLAuthorizationStatus, CLAccuracyAuthorization?) -> Void)?
     private var streamTask: Task<Void, Never>?
     private var pendingRefreshLocationContinuations: [CheckedContinuation<Bool, Never>] = []
     private(set) var authStatus: CLAuthorizationStatus = .notDetermined
+    private(set) var accuracyAuthorization: CLAccuracyAuthorization?
     
     init(
         manager: CLLocationManager = CLLocationManager(),
@@ -54,12 +55,14 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 1650 // causes the manager to not report location changes less than 1650m
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         authStatus = currentAuthorizationStatus()
+        accuracyAuthorization = currentAccuracyAuthorization()
     }
     
     
     func checkLocationAuthorization(isActive: Bool) {
         self.authStatus = currentAuthorizationStatus()
-        onAuthorizationChange?(authStatus)
+        self.accuracyAuthorization = currentAccuracyAuthorization()
+        onAuthorizationChange?(authStatus, accuracyAuthorization)
         guard isActive else { return } // never prompt in background
         
         switch authStatus {
@@ -86,8 +89,10 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     @discardableResult
     func requestAlwaysAuthorizationUpgradeIfNeeded() -> Bool {
         let status = currentAuthorizationStatus()
+        let accuracy = currentAccuracyAuthorization()
         authStatus = status
-        onAuthorizationChange?(status)
+        accuracyAuthorization = accuracy
+        onAuthorizationChange?(status, accuracy)
 
         guard authorizationOverride == nil else {
             logger.debug("Skipping always-authorization upgrade due to UI test authorization override")
@@ -111,7 +116,7 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
     }
 
     func setAuthorizationChangeHandler(
-        _ handler: (@MainActor @Sendable (CLAuthorizationStatus) -> Void)?
+        _ handler: (@MainActor @Sendable (CLAuthorizationStatus, CLAccuracyAuthorization?) -> Void)?
     ) {
         onAuthorizationChange = handler
     }
@@ -187,9 +192,11 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         // Explicitly ensure we remain on the MainActor even if Core Location calls off-main.
         Task { @MainActor in
             let effectiveStatus = currentAuthorizationStatus()
+            let effectiveAccuracy = currentAccuracyAuthorization()
             authStatus = effectiveStatus
+            accuracyAuthorization = effectiveAccuracy
             logger.info("Location authorization changed status=\(effectiveStatus.logName, privacy: .public)")
-            onAuthorizationChange?(effectiveStatus)
+            onAuthorizationChange?(effectiveStatus, effectiveAccuracy)
             updateMode(for: lastPhase)
         }
     }
@@ -286,6 +293,10 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     private func currentAuthorizationStatus() -> CLAuthorizationStatus {
         authorizationOverride ?? manager.authorizationStatus
+    }
+
+    private func currentAccuracyAuthorization() -> CLAccuracyAuthorization? {
+        authorizationOverride == nil ? manager.accuracyAuthorization : nil
     }
 
     private static func authorizationOverrideFromEnvironment() -> CLAuthorizationStatus? {

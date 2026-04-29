@@ -120,13 +120,14 @@ Related GitHub issues:
 ## Issue #145 - Expose Authorization and Accuracy Reliability State
 
 ### Status
-- Not Started
+- Completed
 
-### Planned scope
-- Extend the existing `LocationManager` / `LocationSession` path to expose current accuracy authorization alongside `CLAuthorizationStatus`.
-- Ensure state refreshes when Core Location authorization changes.
-- Preserve the existing Always upgrade request path.
-- Preserve existing background location behavior.
+### Scope completed
+- Extended `LocationManager` to expose and refresh `accuracyAuthorization` alongside `authStatus`.
+- Updated `LocationSession` to track both authorization and accuracy state and expose a UI-consumable `reliabilityState`.
+- Ensured auth + accuracy refresh together when Core Location authorization changes.
+- Preserved `requestAlwaysAuthorizationUpgradeIfNeeded()` behavior (native request only from `.authorizedWhenInUse`).
+- Preserved existing background mode selection and monitoring behavior.
 
 ### Relevant feature brief sections
 - `Decision`
@@ -139,13 +140,43 @@ Related GitHub issues:
 ### Model recommendation
 - GPT-5.3-Codex
 
-### Expected verification
-- Unit tests for authorization and accuracy mapping.
-- Existing `LocationManagerTests` should still pass.
+### Key implementation notes
+- Kept Core Location details behind `LocationManager`/`LocationSession` boundaries so feature views can consume reliability state without direct `CLLocationManager` access.
+- Added focused reliability mapping tests for authorization + accuracy combinations used by upcoming Settings/Summary work.
 
-### Handoff notes
-- Prefer exposing accuracy through existing location boundaries rather than letting views instantiate or query Core Location directly.
-- Reduced Accuracy remains Settings-only for v1.
+### Files changed
+- `Sources/Infrastructure/Location/LocationManager.swift`
+- `Sources/Infrastructure/Location/LocationSession.swift`
+- `Tests/UnitTests/LocationManagerTests.swift`
+
+### Tests
+- Added:
+  - `LocationReliabilityStateTests` coverage for:
+    - While Using + Precise mapping
+    - Always + Reduced mapping
+    - Missing accuracy -> Unknown mapping
+- Updated:
+  - `LocationManagerTests` coverage for:
+    - authorization-change updates to cached accuracy
+    - `LocationSession` reliability state updates from auth+accuracy changes
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/LocationManagerTests test`
+- Result:
+  - `TEST SUCCEEDED`
+
+### Out of scope / intentionally deferred
+- Settings Alerts / Location Reliability UI remains in `#147`.
+- Summary rail UI and explanation sheet remain in `#148`/`#149`.
+- Onboarding branch changes remain in `#146`.
+
+### Handoff to next issue
+- `LocationSession.reliabilityState` is now available as the intended app-layer source for Settings/Summary reliability presentation.
+- Reduced Accuracy remains Settings-only for v1; no Summary rail behavior was added here.
+- Specialist skills:
+  - `swift-concurrency-expert` considered applicable and followed for callback/state propagation consistency.
+  - `build-ios-apps:swiftui-ui-patterns` not applicable because this issue made no SwiftUI UI changes.
 
 ---
 
