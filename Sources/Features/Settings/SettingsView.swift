@@ -185,6 +185,39 @@ struct SettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
+
+                sectionCard(title: "Alerts / Location Reliability", symbol: "checkmark.circle", accent: .orange) {
+                    let reliability = locationSession.reliabilityState
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text("Location Access")
+                            Spacer()
+                            Text(reliability.settingsAuthorizationText)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack(spacing: 8) {
+                            Text("Location Precision")
+                            Spacer()
+                            Text(reliability.settingsAccuracyText)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.subheadline)
+
+                    Text(reliability.settingsReliabilityCopy)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+
+                    if let actionTitle = reliability.settingsActionTitle {
+                        Button(actionTitle) {
+                            handleReliabilityAction(reliability.settingsAction)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .font(.subheadline.weight(.semibold))
+                    }
+                }
                 
                 sectionCard(title: "About", symbol: "info.circle", accent: .orange) {
                     infoRow("Version", Bundle.main.fullVersion)
@@ -247,6 +280,19 @@ extension SettingsView {
         logger.info("Notification enabled for \(notificationType, privacy: .public)")
         Task {
             await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
+        }
+    }
+
+    func handleReliabilityAction(_ action: LocationReliabilitySettingsAction) {
+        switch action {
+        case .requestWhenInUse:
+            locationSession.requestInteractiveAuthorization()
+        case .requestAlwaysUpgrade:
+            _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+        case .openSettings:
+            locationSession.openSettings()
+        case .none:
+            return
         }
     }
 }

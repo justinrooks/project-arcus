@@ -246,15 +246,25 @@ Related GitHub issues:
 ## Issue #147 - Add Settings Alerts / Location Reliability Section
 
 ### Status
-- Not Started
+- Completed
 
-### Planned scope
-- Add an Alerts / Location Reliability section in Settings.
-- Display current authorization and accuracy state.
-- Show state-specific reliability copy.
-- Surface Reduced Accuracy / Precise Location as a Settings concern.
-- Offer native Always request when useful and system Settings fallback when needed.
-- Ensure viewing Settings does not consume the Summary rail ask budget.
+### Scope completed
+- Added an `Alerts / Location Reliability` Settings card without changing the broader Settings hierarchy.
+- Displayed current location access and location precision values from `LocationSession.reliabilityState`.
+- Added state-specific reliability copy for:
+  - Always + Precise
+  - Always + Reduced Accuracy
+  - While Using + Precise
+  - While Using + Reduced Accuracy
+  - Denied / Restricted
+  - Not Determined
+- Surfaced Reduced Accuracy as a Settings concern with reliability copy and Settings upgrade path.
+- Added state-driven reliability actions:
+  - While Using: `Enable Always` (native always-upgrade request path)
+  - Not Determined: `Enable Location` (interactive location authorization request path)
+  - Denied / Restricted / Always + Reduced: `Open Settings` fallback
+- Kept Settings informational only; no Summary rail UI and no ask-ledger side effects were introduced in this slice.
+- Preserved existing notification and location preference toggles/behavior.
 
 ### Relevant feature brief sections
 - `Decision`
@@ -267,13 +277,41 @@ Related GitHub issues:
 ### Model recommendation
 - GPT-5.3-Codex
 
-### Expected verification
-- Tests or focused UI validation for Settings state copy and action availability where practical.
-- Existing Settings notification/location preference behavior remains stable.
+### Files changed
+- `Sources/App/LocationReliability/LocationReliabilityState.swift`
+- `Sources/Features/Settings/SettingsView.swift`
+- `Tests/UnitTests/LocationManagerTests.swift`
 
-### Handoff notes
-- Coordinate with #144 and #145 reliability state.
-- Keep user-visible copy non-technical.
+### Tests
+- Added focused `LocationReliabilityStateTests` coverage for Settings copy/action mapping:
+  - always + precise
+  - always + reduced
+  - while using + precise
+  - while using + reduced
+  - denied + restricted
+  - not determined
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/LocationManagerTests test`
+- Result:
+  - `TEST SUCCEEDED`
+- Attempted UI smoke verification for existing Settings tab path:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareUITests/SkyAwareUITests/testTabNavigationLoadsEachPrimaryView test`
+- Result:
+  - Fails under current scheme/test-plan config because `SkyAwareUITests` is not a member of the specified test plan.
+
+### Out of scope / intentionally deferred
+- Summary rail UI and eligibility presentation remain in `#148`.
+- Summary explanation sheet and rail action flow remain in `#149`.
+- No onboarding behavior changes were added here (remains in `#146`).
+
+### Handoff to next issue
+- `SettingsView` now consumes `LocationSession.reliabilityState` through explicit Settings-oriented presentation helpers.
+- `#148` should continue to keep Reduced Accuracy as Settings-only and must not trigger rail eligibility on Reduced Accuracy alone.
+- Specialist skills:
+  - `build-ios-apps:swiftui-ui-patterns` applied for SwiftUI settings composition and state-driven actions.
+  - `swift-concurrency-expert` evaluated as not required for this slice beyond existing `@MainActor` `LocationSession` boundaries.
 
 ---
 

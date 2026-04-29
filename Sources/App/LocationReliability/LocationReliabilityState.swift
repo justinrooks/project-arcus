@@ -22,6 +22,13 @@ enum LocationReliabilityNextAction: Equatable {
     case openSettings
 }
 
+enum LocationReliabilitySettingsAction: Equatable {
+    case none
+    case requestWhenInUse
+    case requestAlwaysUpgrade
+    case openSettings
+}
+
 struct LocationReliabilityState: Equatable {
     static let recommendedAuthorization: LocationReliabilityAuthorization = .always
     static let recommendedAccuracy: LocationReliabilityAccuracy = .precise
@@ -35,6 +42,85 @@ struct LocationReliabilityState: Equatable {
 
     var isRecommended: Bool {
         authorization == recommendedAuthorization && accuracy == recommendedAccuracy
+    }
+
+    var settingsAuthorizationText: String {
+        switch authorization {
+        case .always:
+            return "Always"
+        case .whileUsing:
+            return "While Using"
+        case .denied:
+            return "Off"
+        case .restricted:
+            return "Restricted"
+        case .notDetermined:
+            return "Not Set"
+        }
+    }
+
+    var settingsAccuracyText: String {
+        switch accuracy {
+        case .precise:
+            return "Precise"
+        case .reduced:
+            return "Reduced"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+
+    var settingsReliabilityCopy: String {
+        switch authorization {
+        case .always:
+            switch accuracy {
+            case .precise:
+                return "Background alerts are set up for the best reliability."
+            case .reduced:
+                return "Background alerts are enabled. Precise Location can make alerts more accurate for your area."
+            case .unknown:
+                return "Background alerts are enabled. Check your location settings to improve reliability."
+            }
+        case .whileUsing:
+            switch accuracy {
+            case .precise:
+                return "SkyAware can alert while you are using the app. Enable Always for more reliable background alerts."
+            case .reduced:
+                return "SkyAware can alert while you are using the app. Enable Always and Precise Location for more reliable alerts."
+            case .unknown:
+                return "SkyAware can alert while you are using the app. Enable Always for more reliable alerts."
+            }
+        case .denied, .restricted:
+            return "Location is off for SkyAware. Enable location to receive alerts for your area."
+        case .notDetermined:
+            return "Choose how SkyAware can use location to send alerts for your area."
+        }
+    }
+
+    var settingsAction: LocationReliabilitySettingsAction {
+        switch nextAction {
+        case .requestWhenInUse:
+            return .requestWhenInUse
+        case .requestAlwaysUpgrade:
+            return .requestAlwaysUpgrade
+        case .openSettings:
+            return .openSettings
+        case .none:
+            return .none
+        }
+    }
+
+    var settingsActionTitle: String? {
+        switch settingsAction {
+        case .requestWhenInUse:
+            return "Enable Location"
+        case .requestAlwaysUpgrade:
+            return "Enable Always"
+        case .openSettings:
+            return "Open Settings"
+        case .none:
+            return nil
+        }
     }
 
     init(

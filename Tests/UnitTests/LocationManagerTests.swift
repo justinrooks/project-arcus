@@ -411,4 +411,73 @@ struct LocationReliabilityStateTests {
         #expect(state.accuracy == .unknown)
         #expect(state.nextAction == .openSettings)
     }
+
+    @Test("settings copy and action for always plus precise")
+    func settingsPresentation_alwaysPrecise() {
+        let state = LocationReliabilityState(authorization: .always, accuracy: .precise)
+
+        #expect(state.settingsAuthorizationText == "Always")
+        #expect(state.settingsAccuracyText == "Precise")
+        #expect(state.settingsReliabilityCopy == "Background alerts are set up for the best reliability.")
+        #expect(state.settingsAction == .none)
+        #expect(state.settingsActionTitle == nil)
+    }
+
+    @Test("settings copy and action for always plus reduced accuracy")
+    func settingsPresentation_alwaysReduced() {
+        let state = LocationReliabilityState(authorization: .always, accuracy: .reduced)
+
+        #expect(state.settingsAuthorizationText == "Always")
+        #expect(state.settingsAccuracyText == "Reduced")
+        #expect(state.settingsReliabilityCopy == "Background alerts are enabled. Precise Location can make alerts more accurate for your area.")
+        #expect(state.settingsAction == .openSettings)
+        #expect(state.settingsActionTitle == "Open Settings")
+    }
+
+    @Test("settings copy and action for while using plus precise")
+    func settingsPresentation_whileUsingPrecise() {
+        let state = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+
+        #expect(state.settingsAuthorizationText == "While Using")
+        #expect(state.settingsAccuracyText == "Precise")
+        #expect(state.settingsReliabilityCopy == "SkyAware can alert while you are using the app. Enable Always for more reliable background alerts.")
+        #expect(state.settingsAction == .requestAlwaysUpgrade)
+        #expect(state.settingsActionTitle == "Enable Always")
+    }
+
+    @Test("settings copy and action for while using plus reduced accuracy")
+    func settingsPresentation_whileUsingReduced() {
+        let state = LocationReliabilityState(authorization: .whileUsing, accuracy: .reduced)
+
+        #expect(state.settingsAuthorizationText == "While Using")
+        #expect(state.settingsAccuracyText == "Reduced")
+        #expect(state.settingsReliabilityCopy == "SkyAware can alert while you are using the app. Enable Always and Precise Location for more reliable alerts.")
+        #expect(state.settingsAction == .requestAlwaysUpgrade)
+        #expect(state.settingsActionTitle == "Enable Always")
+    }
+
+    @Test("settings copy and action for denied and restricted")
+    func settingsPresentation_deniedAndRestricted() {
+        let denied = LocationReliabilityState(authorization: .denied, accuracy: .unknown)
+        let restricted = LocationReliabilityState(authorization: .restricted, accuracy: .unknown)
+
+        #expect(denied.settingsAuthorizationText == "Off")
+        #expect(restricted.settingsAuthorizationText == "Restricted")
+        #expect(denied.settingsReliabilityCopy == "Location is off for SkyAware. Enable location to receive alerts for your area.")
+        #expect(restricted.settingsReliabilityCopy == "Location is off for SkyAware. Enable location to receive alerts for your area.")
+        #expect(denied.settingsAction == .openSettings)
+        #expect(restricted.settingsAction == .openSettings)
+        #expect(denied.settingsActionTitle == "Open Settings")
+    }
+
+    @Test("settings copy and action for not determined")
+    func settingsPresentation_notDetermined() {
+        let state = LocationReliabilityState(authorization: .notDetermined, accuracy: .unknown)
+
+        #expect(state.settingsAuthorizationText == "Not Set")
+        #expect(state.settingsAccuracyText == "Unknown")
+        #expect(state.settingsReliabilityCopy == "Choose how SkyAware can use location to send alerts for your area.")
+        #expect(state.settingsAction == .requestWhenInUse)
+        #expect(state.settingsActionTitle == "Enable Location")
+    }
 }
