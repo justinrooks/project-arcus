@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SkyAware
 
@@ -59,5 +60,152 @@ struct SevereWeatherThreatTests {
         #expect(SevereWeatherThreat.wind(probability: 0.1).with(probability: 0.9) == .wind(probability: 0.9))
         #expect(SevereWeatherThreat.hail(probability: 0.1).with(probability: 0.9) == .hail(probability: 0.9))
         #expect(SevereWeatherThreat.tornado(probability: 0.1).with(probability: 0.9) == .tornado(probability: 0.9))
+    }
+}
+
+@Suite("LocationReliability")
+struct LocationReliabilityTests {
+    @Test("elevated-risk helper includes slight")
+    func elevatedRisk_includesSlight() {
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .slight, severeRisk: nil))
+    }
+
+    @Test("quiet day does not consume asks")
+    func quietDay_doesNotConsumeAsk() {
+        let suite = "LocationReliabilityTests-quiet-day-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        #expect(ledger.snapshot().askCount == 0)
+
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            ledger: ledger.snapshot(),
+            now: iso("2026-04-29T18:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .notElevatedRisk)
+        #expect(ledger.snapshot().askCount == 0)
+    }
+
+    @Test("ask count increments on counted rail impression and caps at three")
+    func askCount_incrementsAndCaps() {
+        let suite = "LocationReliabilityTests-cap-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        ledger.recordCountedRailImpression(at: iso("2026-04-20T12:00:00Z"), qualifyingDay: "2026-04-20")
+        ledger.recordCountedRailImpression(at: iso("2026-04-21T12:00:00Z"), qualifyingDay: "2026-04-21")
+        ledger.recordCountedRailImpression(at: iso("2026-04-22T12:00:00Z"), qualifyingDay: "2026-04-22")
+        ledger.recordCountedRailImpression(at: iso("2026-04-23T12:00:00Z"), qualifyingDay: "2026-04-23")
+
+        let snapshot = ledger.snapshot()
+        #expect(snapshot.askCount == 3)
+        #expect(snapshot.hasExhaustedCap)
+        #expect(snapshot.lastCountedQualifyingDay == "2026-04-23")
+    }
+
+    @Test("eligibility fails when cap is exhausted")
+    func eligibility_failsWhenCapExhausted() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 3,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: nil,
+            lastCountedQualifyingDay: nil,
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: snapshot,
+            now: iso("2026-04-29T12:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .askCapExhausted)
+    }
+
+    @Test("same-day suppression blocks repeat ask")
+    func sameDaySuppression_blocksEligibility() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 1,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: iso("2026-04-29T01:00:00Z"),
+            lastCountedQualifyingDay: "2026-04-29",
+            lastSuppressedQualifyingDay: "2026-04-29"
+        )
+
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .moderate,
+            severeRisk: .allClear,
+            ledger: snapshot,
+            now: iso("2026-04-29T20:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .sameDaySuppressed)
+    }
+
+    @Test("next qualifying day and 24-hour minimum both required")
+    func nextQualifyingDay_requiresLaterDayAnd24Hours() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let ledger = LocationReliabilityAskLedgerSnapshot(
+            askCount: 1,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: iso("2026-04-29T12:00:00Z"),
+            lastCountedQualifyingDay: "2026-04-29",
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let sameDayDecision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger,
+            now: iso("2026-04-29T23:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(sameDayDecision.isEligible == false)
+        #expect(sameDayDecision.reason == .waitingForNextQualifyingDay)
+
+        let nextDayTooSoon = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger,
+            now: iso("2026-04-30T10:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(nextDayTooSoon.isEligible == false)
+        #expect(nextDayTooSoon.reason == .waitingForMinimumInterval)
+
+        let eligible = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger,
+            now: iso("2026-04-30T12:30:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(eligible.isEligible)
+        #expect(eligible.reason == .eligible)
+    }
+
+    private func iso(_ value: String) -> Date {
+        ISO8601DateFormatter().date(from: value)!
     }
 }
