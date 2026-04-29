@@ -97,6 +97,37 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launch()
+
+        XCTAssertTrue(app.buttons["Get Started"].waitForExistence(timeout: 10), "Expected onboarding welcome screen.")
+        app.buttons["Get Started"].tap()
+
+        XCTAssertTrue(app.buttons["I Understand"].waitForExistence(timeout: 10), "Expected onboarding disclaimer screen.")
+        app.buttons["I Understand"].tap()
+
+        let enableLocationButton = app.buttons["Enable Location"]
+        XCTAssertTrue(enableLocationButton.waitForExistence(timeout: 10), "Expected location permission step.")
+        enableLocationButton.tap()
+
+        let enableAlwaysButton = app.buttons["Enable Always"]
+        XCTAssertTrue(enableAlwaysButton.waitForExistence(timeout: 10), "Expected Always upgrade onboarding page.")
+
+        let notNowButton = app.buttons["Not Now"]
+        XCTAssertTrue(notNowButton.waitForExistence(timeout: 10), "Expected Not Now action on Always upgrade page.")
+        notNowButton.tap()
+
+        let notificationSkipButton = app.buttons["Skip for Now"]
+        XCTAssertTrue(notificationSkipButton.waitForExistence(timeout: 10), "Expected notification permission onboarding step.")
+        notificationSkipButton.tap()
+
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app home tabs after onboarding completion.")
+    }
+
+    @MainActor
     func testSummaryShowsTwoLocationRequiredBlocksWhenLocationIsRestricted() throws {
         let app = launchHomeForLocationPermissionScenario(mode: "restricted")
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected Today tab to exist.")

@@ -29,6 +29,7 @@ struct OnboardingView: View {
 
     @State private var currentPage = 0
     @State private var locationStepState: PermissionStepState = .idle
+    @State private var alwaysUpgradeStepState: PermissionStepState = .idle
     @State private var notificationStepState: PermissionStepState = .idle
 
     private var isArcusSignalPushEnabled: Bool {
@@ -60,13 +61,21 @@ struct OnboardingView: View {
             )
             .tag(2)
 
+            OnboardingAlwaysUpgradeView(
+                isWorking: alwaysUpgradeStepState.isWorking,
+                statusMessage: alwaysUpgradeStepState.statusMessage,
+                onEnableAlways: requestAlwaysUpgradeDuringOnboarding,
+                onSkip: advanceToNotificationPage
+            )
+            .tag(3)
+
             NotificationPermissionView(
                 isWorking: notificationStepState.isWorking,
                 statusMessage: notificationStepState.statusMessage,
                 onEnable: requestNotificationPermission,
                 onSkip: completeOnboarding
             )
-            .tag(3)
+            .tag(4)
         }
         .tabViewStyle(.page)
         .indexViewStyle(.page(backgroundDisplayMode: .always))
@@ -84,12 +93,24 @@ struct OnboardingView: View {
             )
 
             if locationSession.authorizationStatus == .authorizedWhenInUse {
-                locationStepState = .working("Requesting Always Allow for background alerts...")
-                try? await Task.sleep(for: .milliseconds(300))
-                _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+                locationStepState = .idle
+                advanceToAlwaysUpgradePage()
+                return
             }
 
             locationStepState = .idle
+            advanceToNotificationPage()
+        }
+    }
+
+    private func requestAlwaysUpgradeDuringOnboarding() {
+        guard !alwaysUpgradeStepState.isWorking else { return }
+
+        Task { @MainActor in
+            alwaysUpgradeStepState = .working("Requesting Always for more reliable background alerts...")
+            try? await Task.sleep(for: .milliseconds(300))
+            _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+            alwaysUpgradeStepState = .idle
             advanceToNotificationPage()
         }
     }
@@ -145,6 +166,13 @@ struct OnboardingView: View {
 
     @MainActor
     private func advanceToNotificationPage() {
+        withAnimation {
+            currentPage = 4
+        }
+    }
+
+    @MainActor
+    private func advanceToAlwaysUpgradePage() {
         withAnimation {
             currentPage = 3
         }

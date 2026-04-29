@@ -183,14 +183,14 @@ Related GitHub issues:
 ## Issue #146 - Add Onboarding Always Upgrade Branch
 
 ### Status
-- Not Started
+- Completed
 
-### Planned scope
-- Replace the current immediate Always re-prompt after While Using with a dedicated explanatory onboarding page.
-- Provide `Enable Always` and skip/not-now actions.
-- Use reliability-oriented copy about more reliable background severe-weather alerts.
-- Preserve notification onboarding and onboarding completion behavior.
-- Ensure this branch does not count toward the post-onboarding ask budget.
+### Scope completed
+- Replaced the immediate Always re-prompt after While Using with a dedicated onboarding explanatory page.
+- Added an onboarding-only `Enable Always` action and a clear `Not Now` path.
+- Added reliability-oriented copy focused on more reliable background severe-weather alerts.
+- Preserved notification onboarding sequencing and onboarding completion behavior.
+- Kept onboarding branch behavior separate from post-onboarding ask ledger counting.
 
 ### Relevant feature brief sections
 - `Decision`
@@ -203,12 +203,43 @@ Related GitHub issues:
 ### Model recommendation
 - GPT-5.3-Codex
 
-### Expected verification
-- Focused behavior or UI smoke coverage for the onboarding branch.
-- Existing first-launch skip path still reaches the main app.
+### Key implementation notes
+- `OnboardingView` now routes to a dedicated Always-upgrade page only when location authorization resolves to While Using.
+- Location step skip path still routes directly to notification onboarding.
+- `Enable Always` reuses `LocationSession.requestAlwaysAuthorizationUpgradeIfNeeded()` and continues onboarding without trapping the user.
+- `Not Now` advances directly to notification onboarding.
 
-### Handoff notes
-- Existing `OnboardingView` already calls `requestAlwaysAuthorizationUpgradeIfNeeded()` immediately after While Using. This issue should replace that behavior, not add a duplicate prompt path.
+### Files changed
+- `Sources/Features/Onboarding/OnboardingView.swift`
+- `Sources/Features/Onboarding/OnboardingAlwaysUpgradeView.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+
+### Tests
+- Added:
+  - `SkyAwareUITests.testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow`
+- Preserved:
+  - `SkyAwareUITests.testFirstLaunchOnboardingCompletesSuccessfully` (first-launch skip path still validated)
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" build`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/LocationManagerTests test`
+- Result:
+  - `TEST SUCCEEDED`
+  - Note: direct `SkyAwareUITests` filtering currently fails under this scheme/test-plan configuration with:
+    - `Tests in the target “SkyAwareUITests” can’t be run because “SkyAwareUITests” isn’t a member of the specified test plan or scheme.`
+
+### Out of scope / intentionally deferred
+- Settings Alerts / Location Reliability UI remains in `#147`.
+- Summary rail behavior remains in `#148`.
+- Summary explanation sheet behavior remains in `#149`.
+
+### Handoff to next issue
+- `#147` can continue to use `LocationSession.reliabilityState` for Settings without onboarding flow changes.
+- Keep FB-016 reliability copy direction consistent across Settings and Summary surfaces.
+- Specialist skills:
+  - `build-ios-apps:swiftui-ui-patterns` applied for onboarding flow/page structure consistency.
+  - `swift-concurrency-expert` applied for `@MainActor` task sequencing and non-blocking upgrade handling.
 
 ---
 
