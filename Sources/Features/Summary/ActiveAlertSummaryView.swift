@@ -113,8 +113,7 @@ struct ActiveAlertSummaryView: View {
                 if #available(iOS 26, *) {
                     GlassEffectContainer(spacing: 12) {
                         if isLoading {
-                            emptyContent
-                                .placeholder(true)
+                            loadingContent
                         } else if hasRenderableAlerts {
                             alertsContent
                         } else {
@@ -123,8 +122,7 @@ struct ActiveAlertSummaryView: View {
                     }
                 } else {
                     if isLoading {
-                        emptyContent
-                            .placeholder(true)
+                        loadingContent
                     } else if hasRenderableAlerts {
                         alertsContent
                     } else {
@@ -177,6 +175,23 @@ struct ActiveAlertSummaryView: View {
             Text("Your local area currently has no active watches or mesoscale discussions.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var loadingContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Checking local alerts", systemImage: "antenna.radiowaves.left.and.right")
+                .sectionLabel()
+            Text("Bringing in local alerts…")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            placeholderAlertsContent
+                .placeholder(true)
+                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(2)

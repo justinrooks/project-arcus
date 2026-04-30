@@ -9,10 +9,27 @@ import CoreLocation
 import Foundation
 import OSLog
 
+enum HomeIngestionProgressScope: Sendable, Equatable {
+    case location
+    case lane(HomeIngestionLane)
+}
+
+enum HomeIngestionProgressEvent: Sendable, Equatable {
+    case started(HomeIngestionProgressScope)
+    case completed(HomeIngestionProgressScope)
+    case skipped(HomeIngestionProgressScope)
+}
+
+typealias HomeIngestionProgressHandler = @Sendable (HomeIngestionProgressEvent) async -> Void
+
 struct HomeIngestionRunProgress: Sendable {
     let markHotAlertsCompleted: @Sendable () async -> Void
+    let report: HomeIngestionProgressHandler
 
-    static let none = HomeIngestionRunProgress(markHotAlertsCompleted: {})
+    static let none = HomeIngestionRunProgress(
+        markHotAlertsCompleted: {},
+        report: { _ in }
+    )
 }
 
 @MainActor
@@ -75,37 +92,50 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress = .none) async throws -> HomeSnapshot {
         let startedAt = Date()
         environment.logger.info("Executing home ingestion plan={\(plan.logDescription)}")
+        await progress.report(.started(.location))
         let context = await resolveContext(for: plan.locationRequest, using: environment.locationSession)
+        await progress.report(context == nil ? .skipped(.location) : .completed(.location))
         let now = Date()
         let executionMode = httpExecutionMode(for: plan)
         environment.logger.debug(
             "Home ingestion context resolution finished available=\((context != nil), privacy: .public) mode=\(executionMode.logName, privacy: .public)"
         )
 
-        if shouldSyncHotFeeds(plan: plan, now: now) {
-            environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
-            await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
-            freshness.lastHotFeedSyncAt = now
-            environment.logger.debug("Finished home ingestion hot-alert sync")
-        } else {
-            environment.logger.debug("Skipping home ingestion hot-alert sync reason=freshness")
+        if plan.lanes.contains(.hotAlerts) {
+            if shouldSyncHotFeeds(plan: plan, now: now) {
+                await progress.report(.started(.lane(.hotAlerts)))
+                environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
+                await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
+                freshness.lastHotFeedSyncAt = now
+                await progress.report(.completed(.lane(.hotAlerts)))
+                environment.logger.debug("Finished home ingestion hot-alert sync")
+            } else {
+                await progress.report(.skipped(.lane(.hotAlerts)))
+                environment.logger.debug("Skipping home ingestion hot-alert sync reason=freshness")
+            }
         }
 
         await progress.markHotAlertsCompleted()
 
-        if shouldSyncSlowFeeds(plan: plan, now: now) {
-            environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
-            await syncSlowFeeds(executionMode: executionMode)
-            freshness.lastSlowFeedSyncAt = now
-            environment.logger.debug("Finished home ingestion slow-product sync")
-        } else {
-            environment.logger.debug("Skipping home ingestion slow-product sync reason=freshness")
+        if plan.lanes.contains(.slowProducts) {
+            if shouldSyncSlowFeeds(plan: plan, now: now) {
+                await progress.report(.started(.lane(.slowProducts)))
+                environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
+                await syncSlowFeeds(executionMode: executionMode)
+                freshness.lastSlowFeedSyncAt = now
+                await progress.report(.completed(.lane(.slowProducts)))
+                environment.logger.debug("Finished home ingestion slow-product sync")
+            } else {
+                await progress.report(.skipped(.lane(.slowProducts)))
+                environment.logger.debug("Skipping home ingestion slow-product sync reason=freshness")
+            }
         }
 
         let weather = await refreshWeatherIfNeeded(
             plan: plan,
             context: context,
-            now: now
+            now: now,
+            progress: progress
         )
 
         let snapshot = try await environment.snapshotStore.loadSnapshot(
@@ -232,13 +262,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private func refreshWeatherIfNeeded(
         plan: HomeIngestionPlan,
         context: LocationContext?,
-        now: Date
+        now: Date,
+        progress: HomeIngestionRunProgress
     ) async -> SummaryWeather? {
         guard plan.lanes.contains(.weather) else {
             environment.logger.debug("Skipping home ingestion weather refresh reason=lane-not-requested")
             return nil
         }
         guard let context else {
+            await progress.report(.skipped(.lane(.weather)))
             environment.logger.debug("Skipping home ingestion weather refresh reason=no-location-context")
             return nil
         }
@@ -247,6 +279,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             lastSync: freshness.lastWeatherSyncAt,
             force: plan.forcedLanes.contains(.weather)
         ) else {
+            await progress.report(.skipped(.lane(.weather)))
             environment.logger.debug("Skipping home ingestion weather refresh reason=freshness")
             return nil
         }
@@ -255,6 +288,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             latitude: context.snapshot.coordinates.latitude,
             longitude: context.snapshot.coordinates.longitude
         )
+        await progress.report(.started(.lane(.weather)))
         environment.logger.info("Running home ingestion weather refresh")
         let weather = await environment.weatherClient.currentWeather(for: location)
         if weather != nil {
@@ -263,6 +297,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         } else {
             environment.logger.debug("Finished home ingestion weather refresh result=empty")
         }
+        await progress.report(.completed(.lane(.weather)))
         return weather
     }
 

@@ -136,6 +136,17 @@ struct SummaryResolutionState: Equatable {
         lastCompletedAt = nil
         taskSections.removeAll()
     }
+
+    mutating func finishAll(
+        completedTask: SummaryProviderTask = .finalizing,
+        completedAt: Date = .now
+    ) {
+        activeTasks.removeAll()
+        resolvingSections.removeAll()
+        taskSections.removeAll()
+        lastCompletedTask = completedTask
+        lastCompletedAt = completedAt
+    }
 }
 
 private struct SummaryResolvingModifier: ViewModifier {

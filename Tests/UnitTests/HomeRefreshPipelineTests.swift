@@ -4,7 +4,7 @@ import OSLog
 import Testing
 @testable import SkyAware
 
-@Suite("Home Refresh Pipeline")
+@Suite("Home Refresh Pipeline", .serialized)
 @MainActor
 struct HomeRefreshPipelineTests {
     @Test("scene active submits foreground activate to the unified queue")
@@ -131,6 +131,141 @@ struct HomeRefreshPipelineTests {
 
         #expect(await completion.isFinished())
         #expect(pipeline.resolutionState.isRefreshing == false)
+    }
+
+    @Test("hot alert progress only resolves the alerts section")
+    func hotAlertProgress_resolvesOnlyAlertsSection() async {
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            runGate: gate,
+            progressEvents: [.started(.lane(.hotAlerts))]
+        )
+        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let pipeline = HomeRefreshPipeline()
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
+        }
+
+        let alertsResolving = await waitUntil(timeout: .seconds(5)) {
+            pipeline.resolutionState.isResolving(.alerts)
+        }
+        #expect(alertsResolving)
+        #expect(pipeline.resolutionState.isResolving(.conditions) == false)
+        #expect(pipeline.resolutionState.isResolving(.stormRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.outlook) == false)
+
+        await gate.open()
+        await refreshTask.value
+
+        #expect(pipeline.resolutionState.isRefreshing == false)
+        #expect(pipeline.resolutionState.isResolving(.alerts) == false)
+    }
+
+    @Test("weather and slow product progress resolve their mapped sections")
+    func weatherAndSlowProductProgress_resolveMappedSections() async {
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            runGate: gate,
+            progressEvents: [
+                .started(.lane(.weather)),
+                .started(.lane(.slowProducts)),
+            ]
+        )
+        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let pipeline = HomeRefreshPipeline()
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
+        }
+
+        let mappedSectionsResolving = await waitUntil(timeout: .seconds(5)) {
+            pipeline.resolutionState.isResolving(.conditions) &&
+            pipeline.resolutionState.isResolving(.atmosphere) &&
+            pipeline.resolutionState.isResolving(.stormRisk) &&
+            pipeline.resolutionState.isResolving(.severeRisk) &&
+            pipeline.resolutionState.isResolving(.fireRisk) &&
+            pipeline.resolutionState.isResolving(.outlook)
+        }
+        #expect(mappedSectionsResolving)
+        #expect(pipeline.resolutionState.isResolving(.alerts) == false)
+
+        await gate.open()
+        await refreshTask.value
+
+        #expect(pipeline.resolutionState.isRefreshing == false)
+        for section in SummarySection.resolveForwardSections {
+            #expect(pipeline.resolutionState.isResolving(section) == false)
+        }
+    }
+
+    @Test("completed progress clears mapped sections before refresh completion")
+    func completedProgress_clearsMappedSectionsBeforeRefreshCompletion() async {
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            runGate: gate,
+            progressEvents: [
+                .started(.lane(.hotAlerts)),
+                .completed(.lane(.hotAlerts)),
+            ]
+        )
+        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let pipeline = HomeRefreshPipeline()
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
+        }
+
+        let refreshStillActive = await waitUntil(timeout: .seconds(5)) {
+            pipeline.resolutionState.isRefreshing
+        }
+        #expect(refreshStillActive)
+        #expect(pipeline.resolutionState.isResolving(.alerts) == false)
+
+        await gate.open()
+        await refreshTask.value
+
+        #expect(pipeline.resolutionState.isRefreshing == false)
+    }
+
+    @Test("failed force refresh clears resolving state")
+    func forceRefreshFailure_clearsResolvingState() async {
+        let coordinator = RecordingHomeIngestionCoordinator(
+            results: [.failure(TestFailure.failedRead)]
+        )
+        let locationSession = FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.resolutionState.isRefreshing == false)
+        for section in SummarySection.resolveForwardSections {
+            #expect(pipeline.resolutionState.isResolving(section) == false)
+        }
     }
 
     @Test("timer refresh keeps sync work on the hot-alert lane")
@@ -484,16 +619,19 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let snapshot: HomeSnapshot
     private var results: [Result<HomeSnapshot, Error>]
     private let runGate: AsyncGate?
+    private let progressEvents: [HomeIngestionProgressEvent]
     private var submittedRequests: [HomeIngestionRequest] = []
 
     init(
         snapshot: HomeSnapshot = .empty,
         results: [Result<HomeSnapshot, Error>] = [],
-        runGate: AsyncGate? = nil
+        runGate: AsyncGate? = nil,
+        progressEvents: [HomeIngestionProgressEvent] = []
     ) {
         self.snapshot = snapshot
         self.results = results
         self.runGate = runGate
+        self.progressEvents = progressEvents
     }
 
     func enqueue(
@@ -528,7 +666,17 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: nil)
+    }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?
+    ) async throws -> HomeSnapshot {
         submittedRequests.append(request)
+        for event in progressEvents {
+            await progress?(event)
+        }
         if let runGate {
             await runGate.wait()
         }

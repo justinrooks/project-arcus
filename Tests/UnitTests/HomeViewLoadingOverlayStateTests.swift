@@ -323,14 +323,16 @@ struct SummaryViewLocalAlertsTests {
             SummaryView.localAlertsPresentationState(
                 readinessState: .loadingLocalData,
                 hasActiveAlerts: false,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .empty
         )
         #expect(
             SummaryView.localAlertsPresentationState(
                 readinessState: .ready,
                 hasActiveAlerts: false,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .empty
         )
     }
@@ -341,14 +343,16 @@ struct SummaryViewLocalAlertsTests {
             SummaryView.localAlertsPresentationState(
                 readinessState: .loadingLocation,
                 hasActiveAlerts: false,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .loading
         )
         #expect(
             SummaryView.localAlertsPresentationState(
                 readinessState: .resolvingLocalContext,
                 hasActiveAlerts: false,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .loading
         )
     }
@@ -359,7 +363,8 @@ struct SummaryViewLocalAlertsTests {
             SummaryView.localAlertsPresentationState(
                 readinessState: .ready,
                 hasActiveAlerts: false,
-                isLocationUnavailable: true
+                isLocationUnavailable: true,
+                isAlertsResolving: false
             ) == .unavailable
         )
     }
@@ -370,14 +375,16 @@ struct SummaryViewLocalAlertsTests {
             SummaryView.localAlertsPresentationState(
                 readinessState: .loadingLocation,
                 hasActiveAlerts: true,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .alerts
         )
         #expect(
             SummaryView.localAlertsPresentationState(
                 readinessState: .resolvingLocalContext,
                 hasActiveAlerts: true,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .alerts
         )
     }
@@ -388,8 +395,21 @@ struct SummaryViewLocalAlertsTests {
             SummaryView.localAlertsPresentationState(
                 readinessState: .loadingLocalData,
                 hasActiveAlerts: false,
-                isLocationUnavailable: false
+                isLocationUnavailable: false,
+                isAlertsResolving: false
             ) == .empty
+        )
+    }
+
+    @Test("resolving alerts keeps the local alerts placeholder visible")
+    func localAlertsPresentationState_alertsResolvingShowsLoading() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .ready,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false,
+                isAlertsResolving: true
+            ) == .loading
         )
     }
 }
@@ -534,6 +554,22 @@ struct SummaryResolutionStateTests {
         #expect(state.isRefreshing == false)
         #expect(state.activeMessages.isEmpty)
         #expect(state.isResolving(.conditions) == false)
+    }
+
+    @Test("finish all clears every active task and section")
+    func finishAll_clearsEveryActiveTaskAndSection() {
+        var state = SummaryResolutionState()
+
+        state.begin(task: .weather, sections: [.conditions, .atmosphere])
+        state.begin(task: .alerts, sections: [.alerts])
+        state.finishAll(completedTask: .finalizing)
+
+        #expect(state.isRefreshing == false)
+        #expect(state.activeMessages.isEmpty)
+        for section in SummarySection.resolveForwardSections {
+            #expect(state.isResolving(section) == false)
+        }
+        #expect(state.recentCompletedMessage == "Getting everything ready…")
     }
 }
 
