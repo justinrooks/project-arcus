@@ -67,12 +67,6 @@ struct ActiveAlertSummaryView: View {
         }
     }
 
-    @ViewBuilder
-    private var placeholderAlertsContent: some View {
-        PlaceholderAlertSection(label: "Watches")
-        PlaceholderAlertSection(label: "Mesos")
-    }
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
@@ -218,43 +212,6 @@ struct ActiveAlertSummaryView: View {
         }
         .presentationDetents([.medium, .large], selection: selection)
         .presentationDragIndicator(.visible)
-    }
-}
-
-// MARK: Components
-private struct PlaceholderAlertSection: View {
-    let label: String
-
-    var body: some View {
-        Text(label)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
-
-        ForEach(0..<2, id: \.self) { _ in
-            HStack(alignment: .top, spacing: 15) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Placeholder alert title")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Additional placeholder context")
-                        .font(.caption)
-                }
-
-                Spacer()
-                Text("Until 00:00 pm")
-                    .monospacedDigit()
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
-            }
-            .padding(.vertical, 3)
-        }
     }
 }
 
