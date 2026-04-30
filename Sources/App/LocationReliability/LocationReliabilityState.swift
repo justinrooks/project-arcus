@@ -102,7 +102,7 @@ struct LocationReliabilityState: Equatable {
         case .requestWhenInUse:
             return .requestWhenInUse
         case .requestAlwaysUpgrade:
-            return .requestAlwaysUpgrade
+            return .openSettings
         case .openSettings:
             return .openSettings
         case .none:
@@ -111,7 +111,7 @@ struct LocationReliabilityState: Equatable {
     }
 
     var settingsActionTitle: String? {
-        switch settingsAction {
+        switch nextAction {
         case .requestWhenInUse:
             return "Enable Location"
         case .requestAlwaysUpgrade:

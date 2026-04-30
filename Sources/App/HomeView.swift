@@ -547,17 +547,8 @@ extension HomeView {
 
     private func enableAlwaysFromReliabilitySheet() {
         recordLocationReliabilitySameDaySuppression()
-        let action = Self.locationReliabilityUpgradeAction(
-            requestAlwaysIfNeeded: { locationSession.requestAlwaysAuthorizationUpgradeIfNeeded() },
-            openSettings: { locationSession.openSettings() }
-        )
-        switch action {
-        case .requestedNative:
-            locationReliabilityLogger.notice("Requested the native Always upgrade from the location reliability sheet")
-        case .openedSettings:
-            locationReliabilityLogger.notice("Opened system Settings from the location reliability sheet")
-        }
-
+        locationSession.openSettings()
+        locationReliabilityLogger.notice("Opened system Settings from the location reliability sheet")
         showsLocationReliabilitySheet = false
     }
 
@@ -566,22 +557,6 @@ extension HomeView {
         LocationReliabilityAskLedger.live().recordSameDaySuppression(qualifyingDay: qualifyingDay)
     }
 
-    enum LocationReliabilityUpgradeAction: Equatable {
-        case requestedNative
-        case openedSettings
-    }
-
-    static func locationReliabilityUpgradeAction(
-        requestAlwaysIfNeeded: () -> Bool,
-        openSettings: () -> Void
-    ) -> LocationReliabilityUpgradeAction {
-        if requestAlwaysIfNeeded() {
-            return .requestedNative
-        }
-
-        openSettings()
-        return .openedSettings
-    }
 }
 
 #Preview("Home") {

@@ -331,32 +331,6 @@ struct LocationReliabilityTests {
         #expect(state.shouldRecordImpression == false)
     }
 
-    @Test("home-view reliability upgrade requests native path when available")
-    @MainActor
-    func homeViewReliabilityUpgrade_requestsNativeWhenAvailable() {
-        var didOpenSettings = false
-        let action = HomeView.locationReliabilityUpgradeAction(
-            requestAlwaysIfNeeded: { true },
-            openSettings: { didOpenSettings = true }
-        )
-
-        #expect(action == .requestedNative)
-        #expect(didOpenSettings == false)
-    }
-
-    @Test("home-view reliability upgrade falls back to settings when native path unavailable")
-    @MainActor
-    func homeViewReliabilityUpgrade_fallsBackToSettings() {
-        var didOpenSettings = false
-        let action = HomeView.locationReliabilityUpgradeAction(
-            requestAlwaysIfNeeded: { false },
-            openSettings: { didOpenSettings = true }
-        )
-
-        #expect(action == .openedSettings)
-        #expect(didOpenSettings)
-    }
-
     private func iso(_ value: String) -> Date {
         ISO8601DateFormatter().date(from: value)!
     }

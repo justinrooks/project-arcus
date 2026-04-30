@@ -441,7 +441,7 @@ struct LocationReliabilityStateTests {
         #expect(state.settingsAuthorizationText == "While Using")
         #expect(state.settingsAccuracyText == "Precise")
         #expect(state.settingsReliabilityCopy == "SkyAware can alert while you are using the app. Enable Always for more reliable background alerts.")
-        #expect(state.settingsAction == .requestAlwaysUpgrade)
+        #expect(state.settingsAction == .openSettings)
         #expect(state.settingsActionTitle == "Enable Always")
     }
 
@@ -452,7 +452,7 @@ struct LocationReliabilityStateTests {
         #expect(state.settingsAuthorizationText == "While Using")
         #expect(state.settingsAccuracyText == "Reduced")
         #expect(state.settingsReliabilityCopy == "SkyAware can alert while you are using the app. Enable Always and Precise Location for more reliable alerts.")
-        #expect(state.settingsAction == .requestAlwaysUpgrade)
+        #expect(state.settingsAction == .openSettings)
         #expect(state.settingsActionTitle == "Enable Always")
     }
 

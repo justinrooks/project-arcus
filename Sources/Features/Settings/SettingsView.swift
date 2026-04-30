@@ -294,7 +294,7 @@ extension SettingsView {
         case .requestWhenInUse:
             locationSession.requestInteractiveAuthorization()
         case .requestAlwaysUpgrade:
-            _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
+            locationSession.openSettings()
         case .openSettings:
             locationSession.openSettings()
         case .none:
