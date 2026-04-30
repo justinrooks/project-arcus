@@ -8,6 +8,15 @@
 import SwiftUI
 
 struct ActiveAlertSummaryView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum ContentState: Equatable {
+        case loading
+        case empty
+        case alerts
+        case offline
+    }
+
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let isLoading: Bool
@@ -38,6 +47,19 @@ struct ActiveAlertSummaryView: View {
 
     private var hasRenderableAlerts: Bool {
         sortedMesos.isEmpty == false || sortedWatches.isEmpty == false
+    }
+
+    private var contentState: ContentState {
+        if isOffline {
+            return .offline
+        }
+        if isLoading {
+            return .loading
+        }
+        if hasRenderableAlerts {
+            return .alerts
+        }
+        return .empty
     }
 
     @ViewBuilder
@@ -101,29 +123,8 @@ struct ActiveAlertSummaryView: View {
                 }
             }
 
-            if isOffline {
-                offlineContent
-            } else {
-                if #available(iOS 26, *) {
-                    GlassEffectContainer(spacing: 12) {
-                        if isLoading {
-                            loadingContent
-                        } else if hasRenderableAlerts {
-                            alertsContent
-                        } else {
-                            emptyContent
-                        }
-                    }
-                } else {
-                    if isLoading {
-                        loadingContent
-                    } else if hasRenderableAlerts {
-                        alertsContent
-                    } else {
-                        emptyContent
-                    }
-                }
-            }
+            innerContent
+                .animation(SkyAwareMotion.layerChange(reduceMotion), value: contentState)
         }
         .padding(18)
         .cardBackground(
@@ -147,6 +148,35 @@ struct ActiveAlertSummaryView: View {
                     .padding(.horizontal, 6)
             }
             .accessibilityIdentifier("summary-watch-detail-sheet")
+        }
+    }
+
+    @ViewBuilder
+    private var innerContent: some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer(spacing: 12) {
+                contentStateView
+                    .id(contentState)
+                    .transition(.opacity)
+            }
+        } else {
+            contentStateView
+                .id(contentState)
+                .transition(.opacity)
+        }
+    }
+
+    @ViewBuilder
+    private var contentStateView: some View {
+        switch contentState {
+        case .offline:
+            offlineContent
+        case .loading:
+            loadingContent
+        case .alerts:
+            alertsContent
+        case .empty:
+            emptyContent
         }
     }
 
