@@ -474,6 +474,62 @@ struct SummaryViewLocalAlertsTests {
             ) == .loading
         )
     }
+
+    @Test("loading local alerts do not receive whole-card resolving treatment")
+    func localAlertsResolvingTreatment_suppressesLoadingCardOpacity() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .alerts, sections: [.alerts])
+
+        #expect(
+            SummaryView.appliesLocalAlertsResolving(
+                presentationState: .loading,
+                resolutionState: resolutionState,
+                showsOfflineToken: false
+            ) == false
+        )
+    }
+
+    @Test("active or empty local alerts keep whole-card resolving treatment during refresh")
+    func localAlertsResolvingTreatment_preservesSettledCardOpacity() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .alerts, sections: [.alerts])
+
+        #expect(
+            SummaryView.appliesLocalAlertsResolving(
+                presentationState: .alerts,
+                resolutionState: resolutionState,
+                showsOfflineToken: false
+            )
+        )
+        #expect(
+            SummaryView.appliesLocalAlertsResolving(
+                presentationState: .empty,
+                resolutionState: resolutionState,
+                showsOfflineToken: false
+            )
+        )
+    }
+
+    @Test("local alerts resolving treatment stays off when alerts are not resolving or offline")
+    func localAlertsResolvingTreatment_requiresResolvingOnlineAlerts() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .alerts, sections: [.alerts])
+
+        #expect(
+            SummaryView.appliesLocalAlertsResolving(
+                presentationState: .alerts,
+                resolutionState: SummaryResolutionState(),
+                showsOfflineToken: false
+            ) == false
+        )
+        #expect(
+            SummaryView.appliesLocalAlertsResolving(
+                presentationState: .alerts,
+                resolutionState: resolutionState,
+                showsOfflineToken: true
+            ) == false
+        )
+    }
 }
 
 @Suite("SummaryView Empty Resolving")

@@ -62,6 +62,10 @@ struct ActiveAlertSummaryView: View {
         return .empty
     }
 
+    private var usesFlexibleAlertHeight: Bool {
+        contentState == .alerts
+    }
+
     @ViewBuilder
     private var alertsContent: some View {
         ActiveAlertSection(
@@ -158,11 +162,21 @@ struct ActiveAlertSummaryView: View {
                 contentStateView
                     .id(contentState)
                     .transition(.opacity)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: usesFlexibleAlertHeight ? nil : 72,
+                        alignment: .topLeading
+                    )
             }
         } else {
             contentStateView
                 .id(contentState)
                 .transition(.opacity)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: usesFlexibleAlertHeight ? nil : 72,
+                    alignment: .topLeading
+                )
         }
     }
 

@@ -260,7 +260,11 @@ struct SummaryView: View {
                 onOpenAlertCenter: onOpenAlerts
             )
             .summaryResolving(
-                resolutionState.isResolving(.alerts) && showsOfflineToken == false,
+                Self.appliesLocalAlertsResolving(
+                    presentationState: localAlertsPresentationState,
+                    resolutionState: resolutionState,
+                    showsOfflineToken: showsOfflineToken
+                ),
                 appliesBlur: false
             )
         }
@@ -336,6 +340,23 @@ struct SummaryView: View {
             return .loading
         case .loadingLocalData, .ready, .locationUnavailable:
             return .empty
+        }
+    }
+
+    static func appliesLocalAlertsResolving(
+        presentationState: LocalAlertsPresentationState,
+        resolutionState: SummaryResolutionState,
+        showsOfflineToken: Bool
+    ) -> Bool {
+        guard showsOfflineToken == false, resolutionState.isResolving(.alerts) else {
+            return false
+        }
+
+        switch presentationState {
+        case .alerts, .empty:
+            return true
+        case .loading, .unavailable:
+            return false
         }
     }
 
