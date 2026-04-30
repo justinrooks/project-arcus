@@ -200,89 +200,95 @@ struct SummaryView: View {
         }
         .padding(.top, 8)
     }
-    
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        SummaryStatus(
+            statusText: statusText,
+            weather: weather,
+            resolutionState: resolutionState,
+            showsOfflineToken: showsOfflineToken,
+            condenseProgress: headerCondenseProgress
+        )
+
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
+            if isLocationUnavailable {
+                unavailableCard(
+                    title: "Location Required",
+                    message: "Enable location access to load local risk, alerts, and weather conditions.",
+                    symbol: "location.slash"
+                )
+            } else if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 14) {
+                    riskSnapshotContent
+                }
+            } else {
+                riskSnapshotContent
+            }
+        }
+        .padding(16)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.hero,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3,
+            allowsGlass: false
+        )
+
+        if let locationReliabilityRailState {
+            LocationReliabilitySummaryRailView(
+                onOpen: locationReliabilityRailState.onOpen,
+                onDismiss: locationReliabilityRailState.onDismiss
+            )
+        }
+
+        switch localAlertsPresentationState {
+        case .unavailable:
+            unavailableCard(
+                title: "Location Required",
+                message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                symbol: "location.slash"
+            )
+        case .loading:
+            ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true, isOffline: showsOfflineToken)
+                .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
+        case .alerts:
+            ActiveAlertSummaryView(
+                mesos: mesos,
+                watches: watches,
+                isOffline: showsOfflineToken,
+                onOpenAlertCenter: onOpenAlerts
+            )
+            .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
+        case .empty:
+            ActiveAlertSummaryView(
+                mesos: [],
+                watches: [],
+                isOffline: showsOfflineToken,
+                onOpenAlertCenter: onOpenAlerts
+            )
+            .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
+        }
+
+        OutlookSummaryCard(
+            outlook: outlook,
+            isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+            isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+            onBrowseAllOutlooks: onOpenOutlooks
+        )
+        .summaryResolving(resolutionState.isResolving(.outlook))
+
+        AttributionView()
+    }
+
     var body: some View {
         VStack(spacing: 18) {
             if showsEmptyResolving {
                 LoadingView(message: resolutionState.activeMessages.first ?? readinessState.statusText)
             } else {
-                SummaryStatus(
-                    statusText: statusText,
-                    weather: weather,
-                    resolutionState: resolutionState,
-                    showsOfflineToken: showsOfflineToken,
-                    condenseProgress: headerCondenseProgress
-                )
-
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
-                    if isLocationUnavailable {
-                        unavailableCard(
-                            title: "Location Required",
-                            message: "Enable location access to load local risk, alerts, and weather conditions.",
-                            symbol: "location.slash"
-                        )
-                    } else if #available(iOS 26, *) {
-                        GlassEffectContainer(spacing: 14) {
-                            riskSnapshotContent
-                        }
-                    } else {
-                        riskSnapshotContent
-                    }
-                }
-                .padding(16)
-                .cardBackground(
-                    cornerRadius: SkyAwareRadius.hero,
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    shadowY: 3,
-                    allowsGlass: false
-                )
-
-                if let locationReliabilityRailState {
-                    LocationReliabilitySummaryRailView(
-                        onOpen: locationReliabilityRailState.onOpen,
-                        onDismiss: locationReliabilityRailState.onDismiss
-                    )
-                }
-
-                switch localAlertsPresentationState {
-                case .unavailable:
-                    unavailableCard(
-                        title: "Location Required",
-                        message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                        symbol: "location.slash"
-                    )
-                case .loading:
-                    ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true, isOffline: showsOfflineToken)
-                        .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                case .alerts:
-                    ActiveAlertSummaryView(
-                        mesos: mesos,
-                        watches: watches,
-                        isOffline: showsOfflineToken,
-                        onOpenAlertCenter: onOpenAlerts
-                    )
-                    .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                case .empty:
-                    ActiveAlertSummaryView(
-                        mesos: [],
-                        watches: [],
-                        isOffline: showsOfflineToken,
-                        onOpenAlertCenter: onOpenAlerts
-                    )
-                    .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                }
-
-                OutlookSummaryCard(
-                    outlook: outlook,
-                    isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
-                    isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
-                    onBrowseAllOutlooks: onOpenOutlooks
-                )
-                .summaryResolving(resolutionState.isResolving(.outlook))
-                
-                AttributionView()
+                summaryContent
+                    .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
             }
 
             Spacer(minLength: 14)
@@ -345,6 +351,29 @@ struct SummaryView: View {
         hasMeaningfulContent == false &&
         ((readinessState == .loadingLocation || readinessState == .resolvingLocalContext || readinessState == .loadingLocalData)
             || resolutionState.isRefreshing)
+    }
+}
+
+private struct SummaryContentEntranceModifier: ViewModifier {
+    let blurRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: blurRadius)
+            .opacity(blurRadius == 0 ? 1 : 0)
+    }
+}
+
+private extension AnyTransition {
+    static func summaryContentEntrance(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+
+        return .modifier(
+            active: SummaryContentEntranceModifier(blurRadius: SkyAwareMotion.resolvingBlur),
+            identity: SummaryContentEntranceModifier(blurRadius: 0)
+        )
     }
 }
 
