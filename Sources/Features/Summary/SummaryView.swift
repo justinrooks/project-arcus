@@ -94,7 +94,8 @@ struct SummaryView: View {
         Self.localAlertsPresentationState(
             readinessState: readinessState,
             hasActiveAlerts: hasActiveAlerts,
-            isLocationUnavailable: isLocationUnavailable
+            isLocationUnavailable: isLocationUnavailable,
+            isAlertsResolving: resolutionState.isResolving(.alerts)
         )
     }
 
@@ -250,21 +251,11 @@ struct SummaryView: View {
                 message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
                 symbol: "location.slash"
             )
-        case .loading:
-            ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true, isOffline: showsOfflineToken)
-                .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-        case .alerts:
+        case .loading, .alerts, .empty:
             ActiveAlertSummaryView(
                 mesos: mesos,
                 watches: watches,
-                isOffline: showsOfflineToken,
-                onOpenAlertCenter: onOpenAlerts
-            )
-            .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-        case .empty:
-            ActiveAlertSummaryView(
-                mesos: [],
-                watches: [],
+                isLoading: localAlertsPresentationState == .loading,
                 isOffline: showsOfflineToken,
                 onOpenAlertCenter: onOpenAlerts
             )
@@ -324,13 +315,17 @@ struct SummaryView: View {
     static func localAlertsPresentationState(
         readinessState: SummaryReadinessState,
         hasActiveAlerts: Bool,
-        isLocationUnavailable: Bool
+        isLocationUnavailable: Bool,
+        isAlertsResolving: Bool
     ) -> LocalAlertsPresentationState {
         if isLocationUnavailable {
             return .unavailable
         }
         if hasActiveAlerts {
             return .alerts
+        }
+        if isAlertsResolving {
+            return .loading
         }
 
         switch readinessState {

@@ -86,7 +86,7 @@
          <EnvironmentVariable
             key = "UI_TESTS_FORCE_RELIABILITY_RAIL"
             value = "1"
-            isEnabled = "YES">
+            isEnabled = "NO">
          </EnvironmentVariable>
       </EnvironmentVariables>
       <LocationScenarioReference

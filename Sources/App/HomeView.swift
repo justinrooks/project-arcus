@@ -52,10 +52,7 @@ struct HomeView: View {
     }
 
     private var displayedProjection: HomeProjectionRecord? {
-        Self.selectProjection(
-            from: cachedProjections.map(\.record),
-            currentContext: locationSession.currentContext
-        )
+        Self.selectProjection(from: cachedProjections, currentContext: locationSession.currentContext)?.record
     }
 
     private var isCurrentContextResolvedInPipeline: Bool {
@@ -108,7 +105,7 @@ struct HomeView: View {
     }
 
     private var displayedOutlook: ConvectiveOutlookDTO? {
-        displayedOutlooks.first ?? refreshPipeline.outlook
+        refreshPipeline.outlooks.first ?? cachedOutlooks.first?.dto ?? refreshPipeline.outlook
     }
 
     private var displayedOutlooks: [ConvectiveOutlookDTO] {
@@ -404,6 +401,18 @@ extension HomeView {
         from projections: [HomeProjectionRecord],
         currentContext: LocationContext?
     ) -> HomeProjectionRecord? {
+        if let currentContext {
+            let projectionKey = HomeProjection.projectionKey(for: currentContext)
+            return projections.first(where: { $0.projectionKey == projectionKey })
+        }
+
+        return projections.max(by: { $0.updatedAt < $1.updatedAt })
+    }
+
+    static func selectProjection(
+        from projections: [HomeProjection],
+        currentContext: LocationContext?
+    ) -> HomeProjection? {
         if let currentContext {
             let projectionKey = HomeProjection.projectionKey(for: currentContext)
             return projections.first(where: { $0.projectionKey == projectionKey })

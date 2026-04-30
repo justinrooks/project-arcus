@@ -113,7 +113,8 @@ struct ActiveAlertSummaryView: View {
                 if #available(iOS 26, *) {
                     GlassEffectContainer(spacing: 12) {
                         if isLoading {
-                            placeholderAlertsContent
+                            emptyContent
+                                .placeholder(true)
                         } else if hasRenderableAlerts {
                             alertsContent
                         } else {
@@ -122,7 +123,8 @@ struct ActiveAlertSummaryView: View {
                     }
                 } else {
                     if isLoading {
-                        placeholderAlertsContent
+                        emptyContent
+                            .placeholder(true)
                     } else if hasRenderableAlerts {
                         alertsContent
                     } else {
@@ -139,7 +141,6 @@ struct ActiveAlertSummaryView: View {
             shadowY: 3,
             allowsGlass: false
         )
-        .placeholder(isLoading && isOffline == false)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
