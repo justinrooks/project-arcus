@@ -36,6 +36,10 @@ struct ActiveAlertSummaryView: View {
         self.sortedWatches = watches.sorted { $0.expires < $1.expires }
     }
 
+    private var hasRenderableAlerts: Bool {
+        sortedMesos.isEmpty == false || sortedWatches.isEmpty == false
+    }
+
     @ViewBuilder
     private var alertsContent: some View {
         ActiveAlertSection(
@@ -77,7 +81,7 @@ struct ActiveAlertSummaryView: View {
 
                 Spacer(minLength: 12)
 
-                if let onOpenAlertCenter, isLoading == false {
+                if let onOpenAlertCenter, isLoading == false, (hasRenderableAlerts || isOffline) {
                     Button {
                         onOpenAlertCenter()
                     } label: {
@@ -110,15 +114,19 @@ struct ActiveAlertSummaryView: View {
                     GlassEffectContainer(spacing: 12) {
                         if isLoading {
                             placeholderAlertsContent
-                        } else {
+                        } else if hasRenderableAlerts {
                             alertsContent
+                        } else {
+                            emptyContent
                         }
                     }
                 } else {
                     if isLoading {
                         placeholderAlertsContent
-                    } else {
+                    } else if hasRenderableAlerts {
                         alertsContent
+                    } else {
+                        emptyContent
                     }
                 }
             }
@@ -159,6 +167,19 @@ struct ActiveAlertSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(2)
+    }
+
+    private var emptyContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("No Active Alerts", systemImage: "checkmark.shield")
+                .sectionLabel()
+            Text("Your local area currently has no active watches or mesoscale discussions.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(2)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder

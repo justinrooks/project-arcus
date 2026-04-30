@@ -265,22 +265,13 @@ struct SummaryView: View {
                     )
                     .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
                 case .empty:
-                    if showsOfflineToken {
-                        ActiveAlertSummaryView(
-                            mesos: [],
-                            watches: [],
-                            isOffline: true,
-                            onOpenAlertCenter: onOpenAlerts
-                        )
-                        .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                    } else {
-                        emptySectionCard(
-                            title: "No Active Alerts",
-                            message: "Your local area currently has no active watches or mesoscale discussions.",
-                            symbol: "checkmark.shield"
-                        )
-                        .summaryResolving(resolutionState.isResolving(.alerts))
-                    }
+                    ActiveAlertSummaryView(
+                        mesos: [],
+                        watches: [],
+                        isOffline: showsOfflineToken,
+                        onOpenAlertCenter: onOpenAlerts
+                    )
+                    .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
                 }
 
                 OutlookSummaryCard(
