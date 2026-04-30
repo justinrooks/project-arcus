@@ -207,6 +207,45 @@ struct HomeViewProjectionLaunchTests {
         )
     }
 
+    @Test("bootstrap loading remains visible with no cache during active refresh even when readiness is ready")
+    func bootstrapLoading_noCacheActiveRefresh() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .weather, sections: [.conditions])
+
+        #expect(
+            HomeView.showsBootstrapLoading(
+                readinessState: .ready,
+                resolutionState: resolutionState,
+                hasProjection: false
+            )
+        )
+    }
+
+    @Test("bootstrap loading hides when no cache is present but readiness is ready and refresh is idle")
+    func bootstrapLoading_noCacheReadyIdle() {
+        #expect(
+            HomeView.showsBootstrapLoading(
+                readinessState: .ready,
+                resolutionState: SummaryResolutionState(),
+                hasProjection: false
+            ) == false
+        )
+    }
+
+    @Test("bootstrap loading stays hidden while cached projection is available during active refresh")
+    func bootstrapLoading_cacheActiveRefresh() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .alerts, sections: [.alerts])
+
+        #expect(
+            HomeView.showsBootstrapLoading(
+                readinessState: .loadingLocalData,
+                resolutionState: resolutionState,
+                hasProjection: true
+            ) == false
+        )
+    }
+
     private func makeContext(
         h3Cell: Int64,
         countyCode: String,
@@ -311,6 +350,104 @@ struct SummaryViewLocalAlertsTests {
                 hasActiveAlerts: false,
                 isLocationUnavailable: false
             ) == .loading
+        )
+    }
+
+    @Test("location unavailable always wins local alerts presentation")
+    func localAlertsPresentationState_locationUnavailableWins() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .ready,
+                hasActiveAlerts: false,
+                isLocationUnavailable: true
+            ) == .unavailable
+        )
+    }
+
+    @Test("active alerts are shown even while readiness is loading")
+    func localAlertsPresentationState_activeAlertsWhileLoading() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .loadingLocation,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .alerts
+        )
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .resolvingLocalContext,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .alerts
+        )
+    }
+
+    @Test("empty local alerts state is used after local data loading completes")
+    func localAlertsPresentationState_emptyAfterLocalDataLoad() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .loadingLocalData,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+    }
+}
+
+@Suite("SummaryView Empty Resolving")
+@MainActor
+struct SummaryViewEmptyResolvingTests {
+    @Test("no content with active refresh shows full-screen resolving")
+    func showsEmptyResolving_noContentActiveRefresh() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .stormRisk, sections: [.stormRisk])
+
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .ready,
+                resolutionState: resolutionState,
+                hasMeaningfulContent: false,
+                isLocationUnavailable: false
+            )
+        )
+    }
+
+    @Test("no content while loading local data shows full-screen resolving")
+    func showsEmptyResolving_noContentLoadingLocalData() {
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .loadingLocalData,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: false,
+                isLocationUnavailable: false
+            )
+        )
+    }
+
+    @Test("meaningful content suppresses full-screen resolving even during refresh")
+    func showsEmptyResolving_contentDuringRefresh() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .alerts, sections: [.alerts])
+
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .loadingLocalData,
+                resolutionState: resolutionState,
+                hasMeaningfulContent: true,
+                isLocationUnavailable: false
+            ) == false
+        )
+    }
+
+    @Test("location unavailable suppresses full-screen resolving")
+    func showsEmptyResolving_locationUnavailable() {
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .locationUnavailable,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: false,
+                isLocationUnavailable: true
+            ) == false
         )
     }
 }

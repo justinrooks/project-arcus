@@ -109,9 +109,12 @@ struct SummaryView: View {
     }
 
     private var showsEmptyResolving: Bool {
-        isLocationUnavailable == false &&
-        hasMeaningfulContent == false &&
-        (isSummaryLoading || resolutionState.isRefreshing)
+        Self.showsEmptyResolving(
+            readinessState: readinessState,
+            resolutionState: resolutionState,
+            hasMeaningfulContent: hasMeaningfulContent,
+            isLocationUnavailable: isLocationUnavailable
+        )
     }
 
     private var severeMapLayer: MapLayer {
@@ -353,6 +356,18 @@ struct SummaryView: View {
         case .loadingLocalData, .ready, .locationUnavailable:
             return .empty
         }
+    }
+
+    static func showsEmptyResolving(
+        readinessState: SummaryReadinessState,
+        resolutionState: SummaryResolutionState,
+        hasMeaningfulContent: Bool,
+        isLocationUnavailable: Bool
+    ) -> Bool {
+        isLocationUnavailable == false &&
+        hasMeaningfulContent == false &&
+        ((readinessState == .loadingLocation || readinessState == .resolvingLocalContext || readinessState == .loadingLocalData)
+            || resolutionState.isRefreshing)
     }
 }
 
