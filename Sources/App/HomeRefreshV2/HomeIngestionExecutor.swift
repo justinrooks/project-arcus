@@ -10,7 +10,7 @@ import Foundation
 import OSLog
 
 enum HomeIngestionProgressScope: Sendable, Equatable {
-    case location
+    case location(HomeIngestionLane)
     case lane(HomeIngestionLane)
 }
 
@@ -92,9 +92,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress = .none) async throws -> HomeSnapshot {
         let startedAt = Date()
         environment.logger.info("Executing home ingestion plan={\(plan.logDescription)}")
-        await progress.report(.started(.location))
+        await progress.report(.started(.location(plan.lanes)))
         let context = await resolveContext(for: plan.locationRequest, using: environment.locationSession)
-        await progress.report(context == nil ? .skipped(.location) : .completed(.location))
+        await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
         let now = Date()
         let executionMode = httpExecutionMode(for: plan)
         environment.logger.debug(

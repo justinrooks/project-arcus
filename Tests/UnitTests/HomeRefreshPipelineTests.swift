@@ -168,6 +168,97 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.resolutionState.isResolving(.alerts) == false)
     }
 
+    @Test("real session tick location progress does not broaden resolving sections")
+    func realSessionTickLocationProgress_resolvesOnlyAlertsSection() async {
+        let context = makeContext()
+        let prepareGate = AsyncGate()
+        let locationSession = FakeLocationSession(
+            currentContext: nil,
+            preparedContext: context,
+            prepareGate: prepareGate
+        )
+        let syncGate = AsyncGate()
+        let spc = FakeSpcProvider(syncMesoscaleGate: syncGate)
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(
+            spc: spc,
+            locationSession: locationSession
+        )
+
+        await pipeline.enqueueRefresh(.timer, environment: environment)
+
+        let locationResolutionStarted = await waitUntil(timeout: .seconds(5)) {
+            locationSession.prepareCalls.isEmpty == false
+        }
+        #expect(locationResolutionStarted)
+        #expect(pipeline.resolutionState.isResolving(.alerts))
+        #expect(pipeline.resolutionState.isResolving(.conditions) == false)
+        #expect(pipeline.resolutionState.isResolving(.stormRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.severeRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.fireRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.atmosphere) == false)
+
+        await prepareGate.open()
+
+        let hotAlertSyncStarted = await waitUntil(timeout: .seconds(5)) {
+            await spc.syncMesoscaleDiscussionsCount() == 1
+        }
+        #expect(hotAlertSyncStarted)
+        #expect(pipeline.resolutionState.isResolving(.alerts))
+        #expect(pipeline.resolutionState.isResolving(.conditions) == false)
+        #expect(pipeline.resolutionState.isResolving(.stormRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.severeRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.fireRisk) == false)
+        #expect(pipeline.resolutionState.isResolving(.atmosphere) == false)
+
+        await syncGate.open()
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.resolutionState.isRefreshing == false)
+        for section in SummarySection.resolveForwardSections {
+            #expect(pipeline.resolutionState.isResolving(section) == false)
+        }
+    }
+
+    @Test("real full refresh location progress keeps broad resolving sections")
+    func realFullRefreshLocationProgress_resolvesBroadSections() async {
+        let context = makeContext()
+        let prepareGate = AsyncGate()
+        let locationSession = FakeLocationSession(
+            currentContext: nil,
+            preparedContext: context,
+            prepareGate: prepareGate
+        )
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(locationSession: locationSession)
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: environment
+            )
+        }
+
+        let locationResolutionStarted = await waitUntil(timeout: .seconds(5)) {
+            locationSession.prepareCalls.isEmpty == false
+        }
+        #expect(locationResolutionStarted)
+        #expect(pipeline.resolutionState.isResolving(.conditions))
+        #expect(pipeline.resolutionState.isResolving(.stormRisk))
+        #expect(pipeline.resolutionState.isResolving(.severeRisk))
+        #expect(pipeline.resolutionState.isResolving(.fireRisk))
+        #expect(pipeline.resolutionState.isResolving(.atmosphere))
+        #expect(pipeline.resolutionState.isResolving(.alerts))
+
+        await prepareGate.open()
+        await refreshTask.value
+
+        #expect(pipeline.resolutionState.isRefreshing == false)
+        for section in SummarySection.resolveForwardSections {
+            #expect(pipeline.resolutionState.isResolving(section) == false)
+        }
+    }
+
     @Test("weather and slow product progress resolve their mapped sections")
     func weatherAndSlowProductProgress_resolveMappedSections() async {
         let gate = AsyncGate()

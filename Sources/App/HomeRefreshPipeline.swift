@@ -356,10 +356,10 @@ final class HomeRefreshPipeline {
         }
 
         switch scope {
-        case .location:
+        case .location(let lanes):
             return (
                 .location,
-                [.conditions, .stormRisk, .severeRisk, .fireRisk, .atmosphere, .alerts]
+                summarySections(for: lanes)
             )
         case .lane(.hotAlerts):
             return (.alerts, [.alerts])
@@ -370,6 +370,20 @@ final class HomeRefreshPipeline {
         default:
             return (.finalizing, [])
         }
+    }
+
+    private func summarySections(for lanes: HomeIngestionLane) -> [SummarySection] {
+        var sections: [SummarySection] = []
+        if lanes.contains(.weather) {
+            sections.append(contentsOf: [.conditions, .atmosphere])
+        }
+        if lanes.contains(.slowProducts) {
+            sections.append(contentsOf: [.stormRisk, .severeRisk, .fireRisk])
+        }
+        if lanes.contains(.hotAlerts) {
+            sections.append(.alerts)
+        }
+        return sections
     }
 
     private func makeRequest(
