@@ -191,7 +191,9 @@ struct HomeView: View {
                             geometry.contentOffset.y + geometry.contentInsets.top
                         } action: { _, newValue in
                             let normalizedProgress = min(max((newValue - 6) / 68, 0), 1)
-                            todayHeaderCondenseProgress = normalizedProgress
+                            if abs(todayHeaderCondenseProgress - normalizedProgress) > 0.001 {
+                                todayHeaderCondenseProgress = normalizedProgress
+                            }
                         }
                         .background(Color(.skyAwareBackground).ignoresSafeArea())
                         .refreshable {
