@@ -259,7 +259,10 @@ struct SummaryView: View {
                 isOffline: showsOfflineToken,
                 onOpenAlertCenter: onOpenAlerts
             )
-            .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
+            .summaryResolving(
+                resolutionState.isResolving(.alerts) && showsOfflineToken == false,
+                appliesBlur: false
+            )
         }
 
         OutlookSummaryCard(

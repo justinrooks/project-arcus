@@ -188,10 +188,6 @@ struct ActiveAlertSummaryView: View {
             Text("Bringing in local alerts…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-
-            placeholderAlertsContent
-                .placeholder(true)
-                .accessibilityHidden(true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(2)

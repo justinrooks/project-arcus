@@ -153,17 +153,18 @@ private struct SummaryResolvingModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isResolving: Bool
+    let appliesBlur: Bool
 
     func body(content: Content) -> some View {
         content
-            .blur(radius: isResolving ? SkyAwareMotion.resolvingBlur : 0)
+            .blur(radius: isResolving && appliesBlur ? SkyAwareMotion.resolvingBlur : 0)
             .opacity(isResolving ? SkyAwareMotion.resolvingOpacity : 1)
             .animation(SkyAwareMotion.resolve(reduceMotion), value: isResolving)
     }
 }
 
 extension View {
-    func summaryResolving(_ isResolving: Bool) -> some View {
-        modifier(SummaryResolvingModifier(isResolving: isResolving))
+    func summaryResolving(_ isResolving: Bool, appliesBlur: Bool = true) -> some View {
+        modifier(SummaryResolvingModifier(isResolving: isResolving, appliesBlur: appliesBlur))
     }
 }
