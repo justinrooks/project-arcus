@@ -412,6 +412,68 @@ struct SummaryViewLocalAlertsTests {
             ) == .loading
         )
     }
+
+    @Test("loading local alerts resolve to empty when alerts finish with no watches or mesos")
+    func localAlertsPresentationState_loadingToEmptySequence() {
+        let resolving = SummaryView.localAlertsPresentationState(
+            readinessState: .loadingLocalData,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false,
+            isAlertsResolving: true
+        )
+        let resolved = SummaryView.localAlertsPresentationState(
+            readinessState: .loadingLocalData,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false,
+            isAlertsResolving: false
+        )
+
+        #expect(resolving == .loading)
+        #expect(resolved == .empty)
+    }
+
+    @Test("loading local alerts resolve to alerts when watches or mesos become available")
+    func localAlertsPresentationState_loadingToPopulatedSequence() {
+        let resolving = SummaryView.localAlertsPresentationState(
+            readinessState: .loadingLocalData,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false,
+            isAlertsResolving: true
+        )
+        let resolvedWithAlerts = SummaryView.localAlertsPresentationState(
+            readinessState: .loadingLocalData,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false,
+            isAlertsResolving: false
+        )
+
+        #expect(resolving == .loading)
+        #expect(resolvedWithAlerts == .alerts)
+    }
+
+    @Test("cached active alerts remain in alerts state while alerts are resolving")
+    func localAlertsPresentationState_cachedContentWhileResolvingStaysPopulated() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .ready,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false,
+                isAlertsResolving: true
+            ) == .alerts
+        )
+    }
+
+    @Test("empty cached projection while alerts are resolving remains loading")
+    func localAlertsPresentationState_emptyCachedProjectionWhileResolvingStaysLoading() {
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                readinessState: .ready,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false,
+                isAlertsResolving: true
+            ) == .loading
+        )
+    }
 }
 
 @Suite("SummaryView Empty Resolving")
