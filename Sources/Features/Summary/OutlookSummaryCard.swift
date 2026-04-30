@@ -10,6 +10,7 @@ import SwiftUI
 struct OutlookSummaryCard: View {
     let outlook: ConvectiveOutlookDTO?
     let isLoading: Bool
+    let isPending: Bool
     let onBrowseAllOutlooks: (() -> Void)?
     
     @State private var navigateToFull = false
@@ -17,21 +18,33 @@ struct OutlookSummaryCard: View {
     init(
         outlook: ConvectiveOutlookDTO?,
         isLoading: Bool = false,
+        isPending: Bool = false,
         onBrowseAllOutlooks: (() -> Void)? = nil
     ) {
         self.outlook = outlook
         self.isLoading = isLoading
+        self.isPending = isPending
         self.onBrowseAllOutlooks = onBrowseAllOutlooks
     }
 
+    private var titleText: String {
+        isPending ? "Outlook Pending" : "Outlook Summary"
+    }
+
     private var summaryText: String {
-        outlook?.summary ?? "A convective outlook summary will appear here once syncing is complete."
+        if let summary = outlook?.summary {
+            return summary
+        }
+        if isPending {
+            return "Convective outlook text has not been synced yet."
+        }
+        return "A convective outlook summary will appear here once syncing is complete."
     }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
-                Label("Outlook Summary", systemImage: "sun.max.fill")
+                Label(titleText, systemImage: isPending ? "clock.arrow.circlepath" : "sun.max.fill")
                     .sectionLabel()
 
                 Spacer(minLength: 12)

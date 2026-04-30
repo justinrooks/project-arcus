@@ -283,27 +283,13 @@ struct SummaryView: View {
                     }
                 }
 
-                if let outlook {
-                    OutlookSummaryCard(
-                        outlook: outlook,
-                        onBrowseAllOutlooks: onOpenOutlooks
-                    )
-                        .summaryResolving(resolutionState.isResolving(.outlook))
-                } else if readinessState == .loadingLocation || readinessState == .resolvingLocalContext {
-                    OutlookSummaryCard(
-                        outlook: nil,
-                        isLoading: true,
-                        onBrowseAllOutlooks: onOpenOutlooks
-                    )
-                        .summaryResolving(resolutionState.isResolving(.outlook))
-                } else {
-                    emptySectionCard(
-                        title: "Outlook Pending",
-                        message: "Convective outlook text has not been synced yet.",
-                        symbol: "clock.arrow.circlepath"
-                    )
-                    .summaryResolving(resolutionState.isResolving(.outlook))
-                }
+                OutlookSummaryCard(
+                    outlook: outlook,
+                    isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+                    isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+                    onBrowseAllOutlooks: onOpenOutlooks
+                )
+                .summaryResolving(resolutionState.isResolving(.outlook))
                 
                 AttributionView()
             }
