@@ -23,12 +23,26 @@ protocol HomeIngestionCoordinating: Actor, Sendable {
 
     func enqueue(_ request: HomeIngestionRequest)
     func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?
+    ) async throws -> HomeSnapshot
+}
+
+extension HomeIngestionCoordinating {
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?
+    ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request)
+    }
 }
 
 actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private struct Waiter {
         let id: UUID
         let requestedPlan: HomeIngestionPlan
+        let progress: HomeIngestionProgressHandler?
         let continuation: CheckedContinuation<HomeSnapshot, Error>
     }
 
@@ -77,11 +91,19 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: nil)
+    }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?
+    ) async throws -> HomeSnapshot {
         let requestedPlan = request.plan
         return try await withCheckedThrowingContinuation { continuation in
             let waiter = Waiter(
                 id: UUID(),
                 requestedPlan: requestedPlan,
+                progress: progress,
                 continuation: continuation
             )
             submit(requestedPlan, waiter: waiter)
@@ -135,6 +157,9 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                 progress: HomeIngestionRunProgress(
                     markHotAlertsCompleted: {
                         await self.markHotAlertsCompleted(for: plan)
+                    },
+                    report: { event in
+                        await self.reportProgress(event, for: plan)
                     }
                 )
             )
@@ -207,6 +232,19 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func markHotAlertsCompleted(for plan: HomeIngestionPlan) {
         guard activePlan == plan else { return }
         activeRunCanAbsorbRemoteHotAlert = false
+    }
+
+    private func reportProgress(_ event: HomeIngestionProgressEvent, for plan: HomeIngestionPlan) async {
+        if event == .completed(.lane(.hotAlerts)) {
+            markHotAlertsCompleted(for: plan)
+        }
+
+        let handlers = waiters.values.compactMap { waiter in
+            plan.satisfies(waiter.requestedPlan) ? waiter.progress : nil
+        }
+        for handler in handlers {
+            await handler(event)
+        }
     }
 }
 

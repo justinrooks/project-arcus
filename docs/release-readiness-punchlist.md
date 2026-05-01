@@ -14,10 +14,10 @@ Do not market SkyAware as a guaranteed timely alerting app until the operational
 
 ### 1. Verify server notification control actually works
 
-- [ ] Turn `Server Notifications` off in the app and confirm the backend stops targeting that device within a defined time bound.
-- [ ] Turn `Send Location to Signal` off in the app and confirm no new location presence updates are accepted or used for targeting.
-- [ ] Re-enable both settings and confirm the device resumes targeting correctly without reinstalling the app.
-- [ ] Write down the expected propagation behavior for each toggle.
+- [x] Turn `Server Notifications` off in the app and confirm the backend stops targeting that device within a defined time bound.
+- [x] Turn `Send Location to Signal` off in the app and confirm no new location presence updates are accepted or used for targeting.
+- [x] Re-enable both settings and confirm the device resumes targeting correctly without reinstalling the app.
+- [x] Write down the expected propagation behavior for each toggle.
 
 Pass criteria:
 - A user can predict what each toggle does.
@@ -25,9 +25,9 @@ Pass criteria:
 
 ### 2. Fix partial-failure behavior on the Today screen
 
-- [ ] Change the Today refresh path so successful reads still update the UI even when one provider fails.
-- [ ] Keep the last good value only for the section that failed instead of blocking the full snapshot.
-- [ ] Surface a subtle degraded-freshness state when data is partially stale.
+- [x] Change the Today refresh path so successful reads still update the UI even when one provider fails.
+- [x] Keep the last good value only for the section that failed instead of blocking the full snapshot.
+- [x] Surface a subtle degraded-freshness state when data is partially stale.
 
 Pass criteria:
 - One flaky feed does not leave the whole summary looking unresolved.
@@ -35,28 +35,28 @@ Pass criteria:
 
 ### 3. Make the Map stay in sync with current data
 
-- [ ] Refresh map state when new map products are synced.
-- [ ] Refresh map state when the app becomes active again.
-- [ ] Confirm Today and Map agree after a foreground refresh.
+- [x] Refresh map state when new map products are synced.
+- [x] Refresh map state when the app becomes active again.
+- [x] Confirm Today and Map agree after a foreground refresh.
 
 Pass criteria:
 - The Map never feels obviously older than the Today tab.
 
 ### 4. Remove avoidable notification delay for urgent local notifications
 
-- [ ] Review local notification delivery paths and remove the default 10-second delay where urgency matters.
-- [ ] Keep any intentional delay only where it is product-driven, such as non-urgent summary behavior.
-- [ ] Verify duplicate suppression still works after the timing change.
+- [x] Review local notification delivery paths and remove the default 10-second delay where urgency matters.
+- [x] Keep any intentional delay only where it is product-driven, such as non-urgent summary behavior.
+- [x] Verify duplicate suppression still works after the timing change.
 
 Pass criteria:
 - Local notifications are not artificially slower than they need to be.
 
 ### 5. Add real UI smoke coverage for trust-critical flows
 
-- [ ] Add a UI test for first launch and onboarding progression.
-- [ ] Add a UI test for location denied or restricted state.
-- [ ] Add a UI test for entering the main tab shell and switching across core tabs.
-- [ ] Add a UI test for opening alert detail from the Alerts tab or Today summary.
+- [x] Add a UI test for first launch and onboarding progression.
+- [x] Add a UI test for location denied or restricted state.
+- [x] Add a UI test for entering the main tab shell and switching across core tabs.
+- [x] Add a UI test for opening alert detail from the Alerts tab or Today summary.
 
 Pass criteria:
 - The app has at least one automated smoke path for onboarding, main navigation, and alert drill-in.
@@ -65,9 +65,9 @@ Pass criteria:
 
 ### 6. Clean up settings so the product contract is honest
 
-- [ ] Audit every user-facing setting and classify it as active, experimental, internal-only, or retired.
-- [ ] Remove or hide settings that do not map cleanly to actual runtime behavior.
-- [ ] Add short explanatory copy for settings that affect background delivery or privacy-sensitive behavior.
+- [x] Audit every user-facing setting and classify it as active, experimental, internal-only, or retired.
+- [x] Remove or hide settings that do not map cleanly to actual runtime behavior.
+- [x] Add short explanatory copy for settings that affect background delivery or privacy-sensitive behavior.
 
 Pass criteria:
 - No setting feels misleading.
@@ -75,9 +75,9 @@ Pass criteria:
 
 ### 7. Document the real notification architecture
 
-- [ ] Update `docs/architecture/timely-notifications-strategy.md` so it reflects the current backend reality.
-- [ ] Document the current push path: ingestion, dedupe, H3 targeting, zone targeting, APNs delivery, and freshness constraints.
-- [ ] Document known limitations clearly.
+- [x] Update `docs/architecture/timely-notifications-strategy.md` so it reflects the current backend reality.
+- [x] Document the current push path: ingestion, dedupe, H3 targeting, zone targeting, APNs delivery, and freshness constraints.
+- [x] Document known limitations clearly.
 
 Pass criteria:
 - The docs match the actual system.
@@ -85,9 +85,9 @@ Pass criteria:
 
 ### 8. Tighten freshness ownership
 
-- [ ] Centralize or better coordinate foreground and background freshness bookkeeping.
-- [ ] Avoid marking feeds as freshly synced before the underlying work has actually succeeded.
-- [ ] Define what "fresh enough" means for each feed.
+- [x] Centralize or better coordinate foreground and background freshness bookkeeping.
+- [x] Avoid marking feeds as freshly synced before the underlying work has actually succeeded.
+- [x] Define what "fresh enough" means for each feed.
 
 Pass criteria:
 - Retry behavior is easier to reason about.
@@ -95,9 +95,9 @@ Pass criteria:
 
 ### 9. Improve degraded-state UX
 
-- [ ] Add a lightweight freshness signal for stale but usable data.
-- [ ] Distinguish "no alert" from "unable to confirm alerts right now."
-- [ ] Distinguish "all clear" from "data unavailable."
+- [x] Add a lightweight freshness signal for stale but usable data.
+- [x] Distinguish "no alert" from "unable to confirm alerts right now."
+- [x] Distinguish "all clear" from "data unavailable."
 
 Pass criteria:
 - Calm design is preserved without pretending uncertainty does not exist.

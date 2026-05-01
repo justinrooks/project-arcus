@@ -8,6 +8,11 @@
 import XCTest
 
 final class SkyAwareUITests: XCTestCase {
+    private let sharedDefaultsSuiteName = "com.justinrooks.skyaware"
+    private let reliabilityAskCountKey = "fb016.locationReliability.askCount"
+    private let reliabilityLastImpressionKey = "fb016.locationReliability.lastCountedRailImpressionAt"
+    private let reliabilityLastCountedDayKey = "fb016.locationReliability.lastCountedQualifyingDay"
+    private let reliabilitySuppressedDayKey = "fb016.locationReliability.lastSuppressedQualifyingDay"
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -97,6 +102,39 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow() throws {
+        resetReliabilityLedgerDefaults()
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launch()
+
+        XCTAssertTrue(app.buttons["Get Started"].waitForExistence(timeout: 10), "Expected onboarding welcome screen.")
+        app.buttons["Get Started"].tap()
+
+        XCTAssertTrue(app.buttons["I Understand"].waitForExistence(timeout: 10), "Expected onboarding disclaimer screen.")
+        app.buttons["I Understand"].tap()
+
+        let enableLocationButton = app.buttons["Enable Location"]
+        XCTAssertTrue(enableLocationButton.waitForExistence(timeout: 10), "Expected location permission step.")
+        enableLocationButton.tap()
+
+        let enableAlwaysButton = app.buttons["Enable Always"]
+        XCTAssertTrue(enableAlwaysButton.waitForExistence(timeout: 10), "Expected Always upgrade onboarding page.")
+
+        let notNowButton = app.buttons["Not Now"]
+        XCTAssertTrue(notNowButton.waitForExistence(timeout: 10), "Expected Not Now action on Always upgrade page.")
+        notNowButton.tap()
+
+        let notificationSkipButton = app.buttons["Skip for Now"]
+        XCTAssertTrue(notificationSkipButton.waitForExistence(timeout: 10), "Expected notification permission onboarding step.")
+        notificationSkipButton.tap()
+
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app home tabs after onboarding completion.")
+        assertReliabilityAskCountEquals(0)
+    }
+
+    @MainActor
     func testSummaryShowsTwoLocationRequiredBlocksWhenLocationIsRestricted() throws {
         let app = launchHomeForLocationPermissionScenario(mode: "restricted")
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected Today tab to exist.")
@@ -167,6 +205,33 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_FORCE_RELIABILITY_RAIL"] = "1"
+        app.launch()
+
+        let rail = app.otherElements["summary-reliability-rail"]
+        XCTAssertTrue(rail.waitForExistence(timeout: 10), "Expected reliability rail in Summary.")
+        rail.tap()
+
+        let sheetTitle = app.navigationBars["Enable Always"]
+        XCTAssertTrue(sheetTitle.waitForExistence(timeout: 10), "Expected reliability explanation sheet.")
+
+        let statusRow = app.otherElements["summary-reliability-status-row"]
+        XCTAssertTrue(statusRow.waitForExistence(timeout: 10), "Expected Current/Recommended status row in sheet.")
+
+        let notNowButton = app.buttons["summary-reliability-sheet-not-now"]
+        XCTAssertTrue(notNowButton.waitForExistence(timeout: 10), "Expected Not Now action in reliability sheet.")
+        notNowButton.tap()
+
+        XCTAssertTrue(rail.waitForNonExistence(timeout: 10), "Expected same-day suppression to keep rail hidden after dismissal.")
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app to remain on Summary after dismissal.")
+    }
+
+    @MainActor
     private func completeOnboardingIfNeeded(in app: XCUIApplication) {
         if app.buttons["Get Started"].waitForExistence(timeout: 2) {
             app.buttons["Get Started"].tap()
@@ -203,6 +268,24 @@ final class SkyAwareUITests: XCTestCase {
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = mode
         app.launch()
         return app
+    }
+
+    private func resetReliabilityLedgerDefaults() {
+        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else { return }
+        defaults.removeObject(forKey: reliabilityAskCountKey)
+        defaults.removeObject(forKey: reliabilityLastImpressionKey)
+        defaults.removeObject(forKey: reliabilityLastCountedDayKey)
+        defaults.removeObject(forKey: reliabilitySuppressedDayKey)
+        defaults.synchronize()
+    }
+
+    private func assertReliabilityAskCountEquals(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) {
+        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else {
+            XCTFail("Expected shared defaults suite \(sharedDefaultsSuiteName)", file: file, line: line)
+            return
+        }
+        let value = defaults.integer(forKey: reliabilityAskCountKey)
+        XCTAssertEqual(value, expected, file: file, line: line)
     }
 
 }

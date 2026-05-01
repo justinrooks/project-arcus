@@ -33,6 +33,11 @@ enum SummaryReadinessState: Equatable {
 struct SummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    struct LocationReliabilityRailState {
+        let onOpen: () -> Void
+        let onDismiss: () -> Void
+    }
+
     enum LocalAlertsPresentationState: Equatable {
         case unavailable
         case loading
@@ -52,6 +57,7 @@ struct SummaryView: View {
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
     let headerCondenseProgress: CGFloat
+    let locationReliabilityRailState: LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
@@ -88,7 +94,8 @@ struct SummaryView: View {
         Self.localAlertsPresentationState(
             readinessState: readinessState,
             hasActiveAlerts: hasActiveAlerts,
-            isLocationUnavailable: isLocationUnavailable
+            isLocationUnavailable: isLocationUnavailable,
+            isAlertsResolving: resolutionState.isResolving(.alerts)
         )
     }
 
@@ -103,9 +110,12 @@ struct SummaryView: View {
     }
 
     private var showsEmptyResolving: Bool {
-        isLocationUnavailable == false &&
-        hasMeaningfulContent == false &&
-        (isSummaryLoading || resolutionState.isRefreshing)
+        Self.showsEmptyResolving(
+            readinessState: readinessState,
+            resolutionState: resolutionState,
+            hasMeaningfulContent: hasMeaningfulContent,
+            isLocationUnavailable: isLocationUnavailable
+        )
     }
 
     private var severeMapLayer: MapLayer {
@@ -191,105 +201,92 @@ struct SummaryView: View {
         }
         .padding(.top, 8)
     }
-    
+
+    @ViewBuilder
+    private var summaryContent: some View {
+        SummaryStatus(
+            statusText: statusText,
+            weather: weather,
+            resolutionState: resolutionState,
+            showsOfflineToken: showsOfflineToken,
+            condenseProgress: headerCondenseProgress
+        )
+
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
+            if isLocationUnavailable {
+                unavailableCard(
+                    title: "Location Required",
+                    message: "Enable location access to load local risk, alerts, and weather conditions.",
+                    symbol: "location.slash"
+                )
+            } else if #available(iOS 26, *) {
+                GlassEffectContainer(spacing: 14) {
+                    riskSnapshotContent
+                }
+            } else {
+                riskSnapshotContent
+            }
+        }
+        .padding(16)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.hero,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3,
+            allowsGlass: false
+        )
+
+        if let locationReliabilityRailState {
+            LocationReliabilitySummaryRailView(
+                onOpen: locationReliabilityRailState.onOpen,
+                onDismiss: locationReliabilityRailState.onDismiss
+            )
+        }
+
+        switch localAlertsPresentationState {
+        case .unavailable:
+            unavailableCard(
+                title: "Location Required",
+                message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                symbol: "location.slash"
+            )
+        case .loading, .alerts, .empty:
+            ActiveAlertSummaryView(
+                mesos: mesos,
+                watches: watches,
+                isLoading: localAlertsPresentationState == .loading,
+                isOffline: showsOfflineToken,
+                onOpenAlertCenter: onOpenAlerts
+            )
+            .summaryResolving(
+                Self.appliesLocalAlertsResolving(
+                    presentationState: localAlertsPresentationState,
+                    resolutionState: resolutionState,
+                    showsOfflineToken: showsOfflineToken
+                ),
+                appliesBlur: false
+            )
+        }
+
+        OutlookSummaryCard(
+            outlook: outlook,
+            isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+            isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+            onBrowseAllOutlooks: onOpenOutlooks
+        )
+        .summaryResolving(resolutionState.isResolving(.outlook))
+
+        AttributionView()
+    }
+
     var body: some View {
         VStack(spacing: 18) {
             if showsEmptyResolving {
                 LoadingView(message: resolutionState.activeMessages.first ?? readinessState.statusText)
             } else {
-                SummaryStatus(
-                    statusText: statusText,
-                    weather: weather,
-                    resolutionState: resolutionState,
-                    showsOfflineToken: showsOfflineToken,
-                    condenseProgress: headerCondenseProgress
-                )
-
-                VStack(alignment: .leading, spacing: 12) {
-                    sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
-                    if isLocationUnavailable {
-                        unavailableCard(
-                            title: "Location Required",
-                            message: "Enable location access to load local risk, alerts, and weather conditions.",
-                            symbol: "location.slash"
-                        )
-                    } else if #available(iOS 26, *) {
-                        GlassEffectContainer(spacing: 14) {
-                            riskSnapshotContent
-                        }
-                    } else {
-                        riskSnapshotContent
-                    }
-                }
-                .padding(16)
-                .cardBackground(
-                    cornerRadius: SkyAwareRadius.hero,
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    shadowY: 3,
-                    allowsGlass: false
-                )
-
-                switch localAlertsPresentationState {
-                case .unavailable:
-                    unavailableCard(
-                        title: "Location Required",
-                        message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                        symbol: "location.slash"
-                    )
-                case .loading:
-                    ActiveAlertSummaryView(mesos: [], watches: [], isLoading: true, isOffline: showsOfflineToken)
-                        .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                case .alerts:
-                    ActiveAlertSummaryView(
-                        mesos: mesos,
-                        watches: watches,
-                        isOffline: showsOfflineToken,
-                        onOpenAlertCenter: onOpenAlerts
-                    )
-                    .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                case .empty:
-                    if showsOfflineToken {
-                        ActiveAlertSummaryView(
-                            mesos: [],
-                            watches: [],
-                            isOffline: true,
-                            onOpenAlertCenter: onOpenAlerts
-                        )
-                        .summaryResolving(resolutionState.isResolving(.alerts) && showsOfflineToken == false)
-                    } else {
-                        emptySectionCard(
-                            title: "No Active Alerts",
-                            message: "Your local area currently has no active watches or mesoscale discussions.",
-                            symbol: "checkmark.shield"
-                        )
-                        .summaryResolving(resolutionState.isResolving(.alerts))
-                    }
-                }
-
-                if let outlook {
-                    OutlookSummaryCard(
-                        outlook: outlook,
-                        onBrowseAllOutlooks: onOpenOutlooks
-                    )
-                        .summaryResolving(resolutionState.isResolving(.outlook))
-                } else if readinessState == .loadingLocation || readinessState == .resolvingLocalContext {
-                    OutlookSummaryCard(
-                        outlook: nil,
-                        isLoading: true,
-                        onBrowseAllOutlooks: onOpenOutlooks
-                    )
-                        .summaryResolving(resolutionState.isResolving(.outlook))
-                } else {
-                    emptySectionCard(
-                        title: "Outlook Pending",
-                        message: "Convective outlook text has not been synced yet.",
-                        symbol: "clock.arrow.circlepath"
-                    )
-                    .summaryResolving(resolutionState.isResolving(.outlook))
-                }
-                
-                AttributionView()
+                summaryContent
+                    .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
             }
 
             Spacer(minLength: 14)
@@ -325,13 +322,17 @@ struct SummaryView: View {
     static func localAlertsPresentationState(
         readinessState: SummaryReadinessState,
         hasActiveAlerts: Bool,
-        isLocationUnavailable: Bool
+        isLocationUnavailable: Bool,
+        isAlertsResolving: Bool
     ) -> LocalAlertsPresentationState {
         if isLocationUnavailable {
             return .unavailable
         }
         if hasActiveAlerts {
             return .alerts
+        }
+        if isAlertsResolving {
+            return .loading
         }
 
         switch readinessState {
@@ -340,6 +341,58 @@ struct SummaryView: View {
         case .loadingLocalData, .ready, .locationUnavailable:
             return .empty
         }
+    }
+
+    static func appliesLocalAlertsResolving(
+        presentationState: LocalAlertsPresentationState,
+        resolutionState: SummaryResolutionState,
+        showsOfflineToken: Bool
+    ) -> Bool {
+        guard showsOfflineToken == false, resolutionState.isResolving(.alerts) else {
+            return false
+        }
+
+        switch presentationState {
+        case .alerts, .empty:
+            return true
+        case .loading, .unavailable:
+            return false
+        }
+    }
+
+    static func showsEmptyResolving(
+        readinessState: SummaryReadinessState,
+        resolutionState: SummaryResolutionState,
+        hasMeaningfulContent: Bool,
+        isLocationUnavailable: Bool
+    ) -> Bool {
+        isLocationUnavailable == false &&
+        hasMeaningfulContent == false &&
+        ((readinessState == .loadingLocation || readinessState == .resolvingLocalContext || readinessState == .loadingLocalData)
+            || resolutionState.isRefreshing)
+    }
+}
+
+private struct SummaryContentEntranceModifier: ViewModifier {
+    let blurRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .blur(radius: blurRadius)
+            .opacity(blurRadius == 0 ? 1 : 0)
+    }
+}
+
+private extension AnyTransition {
+    static func summaryContentEntrance(reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+
+        return .modifier(
+            active: SummaryContentEntranceModifier(blurRadius: SkyAwareMotion.resolvingBlur),
+            identity: SummaryContentEntranceModifier(blurRadius: 0)
+        )
     }
 }
 
@@ -364,6 +417,10 @@ struct SummaryView: View {
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
             headerCondenseProgress: 0,
+            locationReliabilityRailState: .init(
+                onOpen: {},
+                onDismiss: {}
+            ),
             onOpenMapLayer: { _ in },
             onOpenAlerts: {},
             onOpenOutlooks: {}
@@ -392,6 +449,7 @@ struct SummaryView: View {
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: true,
             headerCondenseProgress: 0,
+            locationReliabilityRailState: nil,
             onOpenMapLayer: { _ in },
             onOpenAlerts: {},
             onOpenOutlooks: {}

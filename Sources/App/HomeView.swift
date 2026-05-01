@@ -24,14 +24,23 @@ struct HomeView: View {
     private var cachedOutlooks: [ConvectiveOutlook]
 
     private let logger = Logger.appHomeRefresh
+    private let locationReliabilityLogger = Logger.uiLocationReliability
 
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
     @State private var selectedMapLayer: MapLayer = .categorical
     @State private var todayHeaderCondenseProgress: CGFloat = 0
+    @State private var showsLocationReliabilityRail: Bool = false
+    @State private var locationReliabilityRailQualifyingDay: String?
+    @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
+    @State private var showsLocationReliabilitySheet: Bool = false
 
     private var isUITestStaticMode: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
+    }
+
+    private var isUITestForceReliabilityRail: Bool {
+        ProcessInfo.processInfo.environment["UI_TESTS_FORCE_RELIABILITY_RAIL"] == "1"
     }
 
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
@@ -43,10 +52,7 @@ struct HomeView: View {
     }
 
     private var displayedProjection: HomeProjectionRecord? {
-        Self.selectProjection(
-            from: cachedProjections.map(\.record),
-            currentContext: locationSession.currentContext
-        )
+        Self.selectProjection(from: cachedProjections, currentContext: locationSession.currentContext)?.record
     }
 
     private var isCurrentContextResolvedInPipeline: Bool {
@@ -99,7 +105,7 @@ struct HomeView: View {
     }
 
     private var displayedOutlook: ConvectiveOutlookDTO? {
-        displayedOutlooks.first ?? refreshPipeline.outlook
+        refreshPipeline.outlooks.first ?? cachedOutlooks.first?.dto ?? refreshPipeline.outlook
     }
 
     private var displayedOutlooks: [ConvectiveOutlookDTO] {
@@ -174,23 +180,7 @@ struct HomeView: View {
                 Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted", value: .today) {
                     NavigationStack {
                         ScrollView {
-                            SummaryView(
-                                snap: displayedLocationSnapshot,
-                                stormRisk: displayedStormRisk,
-                                severeRisk: displayedSevereRisk,
-                                fireRisk: displayedFireRisk,
-                                mesos: displayedMesos,
-                                watches: displayedWatches,
-                                outlook: displayedOutlook,
-                                weather: displayedWeather,
-                                readinessState: readinessState,
-                                resolutionState: refreshPipeline.resolutionState,
-                                showsOfflineToken: runtimeConnectivityState.isOffline,
-                                headerCondenseProgress: todayHeaderCondenseProgress,
-                                onOpenMapLayer: openMap,
-                                onOpenAlerts: { selectedTab = .alerts },
-                                onOpenOutlooks: { selectedTab = .outlooks }
-                            )
+                            summaryContentView
                             .toolbar(.hidden, for: .navigationBar)
                             .background(.skyAwareBackground)
                         }
@@ -198,7 +188,9 @@ struct HomeView: View {
                             geometry.contentOffset.y + geometry.contentInsets.top
                         } action: { _, newValue in
                             let normalizedProgress = min(max((newValue - 6) / 68, 0), 1)
-                            todayHeaderCondenseProgress = normalizedProgress
+                            if abs(todayHeaderCondenseProgress - normalizedProgress) > 0.001 {
+                                todayHeaderCondenseProgress = normalizedProgress
+                            }
                         }
                         .background(Color(.skyAwareBackground).ignoresSafeArea())
                         .refreshable {
@@ -314,13 +306,87 @@ struct HomeView: View {
             guard newValue != nil else { return }
             selectedTab = .alerts
         }
+        .onChange(of: locationSession.reliabilityState) { _, _ in
+            refreshLocationReliabilityRail()
+        }
+        .onChange(of: displayedStormRisk) { _, _ in
+            refreshLocationReliabilityRail()
+        }
+        .onChange(of: displayedSevereRisk) { _, _ in
+            refreshLocationReliabilityRail()
+        }
+        .sheet(isPresented: $showsLocationReliabilitySheet) {
+            LocationReliabilitySummaryExplanationSheet(
+                reliability: locationSession.reliabilityState,
+                onEnableAlways: enableAlwaysFromReliabilitySheet,
+                onNotNow: dismissLocationReliabilitySheetForToday
+            )
+        }
+        .task(id: locationSession.reliabilityState) {
+            refreshLocationReliabilityRail()
+        }
+        .task(id: displayedStormRisk) {
+            refreshLocationReliabilityRail()
+        }
+        .task(id: displayedSevereRisk) {
+            refreshLocationReliabilityRail()
+        }
     }
 }
 
 extension HomeView {
+    @ViewBuilder
+    private var summaryContentView: some View {
+        let snap = displayedLocationSnapshot
+        let stormRisk = displayedStormRisk
+        let severeRisk = displayedSevereRisk
+        let fireRisk = displayedFireRisk
+        let mesos = displayedMesos
+        let watches = displayedWatches
+        let outlook = displayedOutlook
+        let weather = displayedWeather
+        let readiness = readinessState
+        let resolution = refreshPipeline.resolutionState
+        let isOffline = runtimeConnectivityState.isOffline
+        let condenseProgress = todayHeaderCondenseProgress
+        let railState = showsLocationReliabilityRail
+            ? SummaryView.LocationReliabilityRailState(
+                onOpen: openLocationReliabilityRail,
+                onDismiss: dismissLocationReliabilityRailForToday
+            )
+            : nil
+
+        SummaryView(
+            snap: snap,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            fireRisk: fireRisk,
+            mesos: mesos,
+            watches: watches,
+            outlook: outlook,
+            weather: weather,
+            readinessState: readiness,
+            resolutionState: resolution,
+            showsOfflineToken: isOffline,
+            headerCondenseProgress: condenseProgress,
+            locationReliabilityRailState: railState,
+            onOpenMapLayer: openMap,
+            onOpenAlerts: openAlertsTab,
+            onOpenOutlooks: openOutlooksTab
+        )
+    }
+
     private func openMap(_ layer: MapLayer) {
         selectedMapLayer = layer
         selectedTab = .map
+    }
+
+    private func openAlertsTab() {
+        selectedTab = .alerts
+    }
+
+    private func openOutlooksTab() {
+        selectedTab = .outlooks
     }
 
     enum HomeTab: Hashable {
@@ -343,6 +409,18 @@ extension HomeView {
         return projections.max(by: { $0.updatedAt < $1.updatedAt })
     }
 
+    static func selectProjection(
+        from projections: [HomeProjection],
+        currentContext: LocationContext?
+    ) -> HomeProjection? {
+        if let currentContext {
+            let projectionKey = HomeProjection.projectionKey(for: currentContext)
+            return projections.first(where: { $0.projectionKey == projectionKey })
+        }
+
+        return projections.max(by: { $0.updatedAt < $1.updatedAt })
+    }
+
     static func showsBootstrapLoading(
         readinessState: SummaryReadinessState,
         resolutionState: SummaryResolutionState,
@@ -352,6 +430,144 @@ extension HomeView {
         hasProjection == false &&
         (resolutionState.isRefreshing || readinessState != .ready)
     }
+
+    struct LocationReliabilityRailState: Equatable {
+        let shouldShowRail: Bool
+        let qualifyingDay: String?
+        let shouldRecordImpression: Bool
+    }
+
+    static func locationReliabilityRailState(
+        reliability: LocationReliabilityState,
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        ledger: LocationReliabilityAskLedgerSnapshot,
+        now: Date,
+        timeZone: TimeZone,
+        currentlyShownQualifyingDay: String?
+    ) -> LocationReliabilityRailState {
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            ledger: ledger,
+            now: now,
+            timeZone: timeZone
+        )
+
+        guard decision.isEligible else {
+            return .init(shouldShowRail: false, qualifyingDay: nil, shouldRecordImpression: false)
+        }
+
+        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
+        let shouldRecordImpression = currentlyShownQualifyingDay != qualifyingDay
+        return .init(
+            shouldShowRail: true,
+            qualifyingDay: qualifyingDay,
+            shouldRecordImpression: shouldRecordImpression
+        )
+    }
+
+    private func refreshLocationReliabilityRail() {
+        if isUITestForceReliabilityRail {
+            let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(
+                for: .now,
+                timeZone: .autoupdatingCurrent
+            )
+            if showsLocationReliabilityRail == false {
+                locationReliabilityLogger.debug("Forcing location reliability rail visible for UI test coverage")
+            }
+            showsLocationReliabilityRail = true
+            locationReliabilityRailQualifyingDay = qualifyingDay
+            locationReliabilityRailLastEligibilityReason = .eligible
+            return
+        }
+
+        let now = Date.now
+        let timeZone = TimeZone.autoupdatingCurrent
+        let reliability = locationSession.reliabilityState
+        let ledger = LocationReliabilityAskLedger.live()
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: displayedStormRisk,
+            severeRisk: displayedSevereRisk,
+            ledger: ledger.snapshot(),
+            now: now,
+            timeZone: timeZone
+        )
+
+        guard decision.isEligible else {
+            if locationReliabilityRailLastEligibilityReason != decision.reason {
+                locationReliabilityLogger.debug(
+                    "Location reliability rail not shown reason=\(decision.reason.logName, privacy: .public)"
+                )
+                locationReliabilityRailLastEligibilityReason = decision.reason
+            }
+            showsLocationReliabilityRail = false
+            locationReliabilityRailQualifyingDay = nil
+            return
+        }
+
+        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
+        let shouldRecordImpression = locationReliabilityRailQualifyingDay != qualifyingDay
+
+        if showsLocationReliabilityRail == false {
+            let snapshot = ledger.snapshot()
+            locationReliabilityLogger.notice(
+                "Showing location reliability rail qualifyingDay=\(qualifyingDay, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public) stormRisk=\(String(describing: displayedStormRisk), privacy: .public) severeRisk=\(String(describing: displayedSevereRisk), privacy: .public) askCount=\(snapshot.askCount, privacy: .public)"
+            )
+        }
+
+        showsLocationReliabilityRail = true
+        locationReliabilityRailQualifyingDay = qualifyingDay
+        locationReliabilityRailLastEligibilityReason = .eligible
+
+        if shouldRecordImpression {
+            ledger.recordCountedRailImpression(at: now, qualifyingDay: qualifyingDay)
+            let updatedSnapshot = ledger.snapshot()
+            locationReliabilityLogger.info(
+                "Counted location reliability rail impression qualifyingDay=\(qualifyingDay, privacy: .public) askCount=\(updatedSnapshot.askCount, privacy: .public)"
+            )
+        }
+    }
+
+    private func dismissLocationReliabilityRailForToday() {
+        let now = Date.now
+        let timeZone = TimeZone.autoupdatingCurrent
+        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
+        let ledger = LocationReliabilityAskLedger.live()
+        ledger.recordSameDaySuppression(qualifyingDay: qualifyingDay)
+        locationReliabilityLogger.notice("Dismissed location reliability rail for qualifyingDay=\(qualifyingDay, privacy: .public)")
+        showsLocationReliabilityRail = false
+        locationReliabilityRailQualifyingDay = nil
+    }
+
+    private func openLocationReliabilityRail() {
+        recordLocationReliabilitySameDaySuppression()
+        locationReliabilityLogger.notice("Opened location reliability explanation sheet from the summary rail")
+        showsLocationReliabilitySheet = true
+        showsLocationReliabilityRail = false
+        locationReliabilityRailQualifyingDay = nil
+    }
+
+    private func dismissLocationReliabilitySheetForToday() {
+        recordLocationReliabilitySameDaySuppression()
+        locationReliabilityLogger.info("Deferred the location reliability explanation sheet for today")
+        showsLocationReliabilitySheet = false
+    }
+
+    private func enableAlwaysFromReliabilitySheet() {
+        recordLocationReliabilitySameDaySuppression()
+        locationSession.openSettings()
+        locationReliabilityLogger.notice("Opened system Settings from the location reliability sheet")
+        showsLocationReliabilitySheet = false
+    }
+
+    private func recordLocationReliabilitySameDaySuppression(now: Date = .now, timeZone: TimeZone = .autoupdatingCurrent) {
+        let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(for: now, timeZone: timeZone)
+        LocationReliabilityAskLedger.live().recordSameDaySuppression(qualifyingDay: qualifyingDay)
+    }
+
 }
 
 #Preview("Home") {

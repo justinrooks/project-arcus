@@ -255,10 +255,18 @@ final class HomeRefreshPipeline {
             let snapshot: HomeSnapshot
             if shouldPrimeSummary(for: trigger) {
                 snapshot = try await environment.coordinator.enqueueAndWait(
-                    makePrimeRequest(for: trigger, using: environment.locationSession)
+                    makePrimeRequest(for: trigger, using: environment.locationSession),
+                    progress: { [weak self] event in
+                        await self?.handleIngestionProgress(event)
+                    }
                 )
             } else {
-                snapshot = try await environment.coordinator.enqueueAndWait(request)
+                snapshot = try await environment.coordinator.enqueueAndWait(
+                    request,
+                    progress: { [weak self] event in
+                        await self?.handleIngestionProgress(event)
+                    }
+                )
             }
             apply(snapshot)
             if shouldPrimeSummary(for: trigger) {
@@ -298,7 +306,7 @@ final class HomeRefreshPipeline {
     private func beginForegroundRefresh() {
         activeRefreshCount += 1
         if activeRefreshCount == 1 {
-            resolutionState.begin(task: .finalizing, sections: SummarySection.resolveForwardSections)
+            resolutionState.begin(task: .finalizing, sections: [])
         }
     }
 
@@ -306,7 +314,7 @@ final class HomeRefreshPipeline {
         guard activeRefreshCount > 0 else { return }
         activeRefreshCount -= 1
         if activeRefreshCount == 0 {
-            resolutionState.finish(task: .finalizing, resolvedSections: SummarySection.resolveForwardSections)
+            resolutionState.finishAll(completedTask: .finalizing)
             let deferredContextRefreshKey = self.deferredContextRefreshKey
             self.deferredContextRefreshKey = nil
             guard
@@ -324,6 +332,58 @@ final class HomeRefreshPipeline {
                 await self?.submit(.contextChanged, waitsForCompletion: false)
             }
         }
+    }
+
+    private func handleIngestionProgress(_ event: HomeIngestionProgressEvent) async {
+        let update = summaryResolutionUpdate(for: event)
+        guard update.sections.isEmpty == false else { return }
+
+        switch event {
+        case .started:
+            resolutionState.begin(task: update.task, sections: update.sections)
+        case .completed, .skipped:
+            resolutionState.finish(task: update.task, resolvedSections: update.sections)
+        }
+    }
+
+    private func summaryResolutionUpdate(
+        for event: HomeIngestionProgressEvent
+    ) -> (task: SummaryProviderTask, sections: [SummarySection]) {
+        let scope: HomeIngestionProgressScope
+        switch event {
+        case .started(let eventScope), .completed(let eventScope), .skipped(let eventScope):
+            scope = eventScope
+        }
+
+        switch scope {
+        case .location(let lanes):
+            return (
+                .location,
+                summarySections(for: lanes)
+            )
+        case .lane(.hotAlerts):
+            return (.alerts, [.alerts])
+        case .lane(.slowProducts):
+            return (.stormRisk, [.stormRisk, .severeRisk, .fireRisk, .outlook])
+        case .lane(.weather):
+            return (.weather, [.conditions, .atmosphere])
+        default:
+            return (.finalizing, [])
+        }
+    }
+
+    private func summarySections(for lanes: HomeIngestionLane) -> [SummarySection] {
+        var sections: [SummarySection] = []
+        if lanes.contains(.weather) {
+            sections.append(contentsOf: [.conditions, .atmosphere])
+        }
+        if lanes.contains(.slowProducts) {
+            sections.append(contentsOf: [.stormRisk, .severeRisk, .fireRisk])
+        }
+        if lanes.contains(.hotAlerts) {
+            sections.append(.alerts)
+        }
+        return sections
     }
 
     private func makeRequest(
@@ -365,9 +425,19 @@ final class HomeRefreshPipeline {
         )
         Task { @MainActor [weak self] in
             guard let self else { return }
-            defer { self.followUpRefreshCount -= 1 }
+            defer {
+                self.followUpRefreshCount -= 1
+                if self.activeRefreshCount == 0, self.followUpRefreshCount == 0 {
+                    self.resolutionState.finishAll(completedTask: .finalizing)
+                }
+            }
             do {
-                let snapshot = try await environment.coordinator.enqueueAndWait(request)
+                let snapshot = try await environment.coordinator.enqueueAndWait(
+                    request,
+                    progress: { [weak self] event in
+                        await self?.handleIngestionProgress(event)
+                    }
+                )
                 self.apply(snapshot)
                 environment.logger.debug(
                     "Finished non-blocking follow-up refresh trigger=\(request.trigger.logName, privacy: .public) result=success"

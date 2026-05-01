@@ -8,6 +8,15 @@
 import SwiftUI
 
 struct ActiveAlertSummaryView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private enum ContentState: Equatable {
+        case loading
+        case empty
+        case alerts
+        case offline
+    }
+
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let isLoading: Bool
@@ -34,6 +43,27 @@ struct ActiveAlertSummaryView: View {
         self.onOpenAlertCenter = onOpenAlertCenter
         self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
         self.sortedWatches = watches.sorted { $0.expires < $1.expires }
+    }
+
+    private var hasRenderableAlerts: Bool {
+        sortedMesos.isEmpty == false || sortedWatches.isEmpty == false
+    }
+
+    private var contentState: ContentState {
+        if isOffline {
+            return .offline
+        }
+        if isLoading {
+            return .loading
+        }
+        if hasRenderableAlerts {
+            return .alerts
+        }
+        return .empty
+    }
+
+    private var usesFlexibleAlertHeight: Bool {
+        contentState == .alerts
     }
 
     @ViewBuilder
@@ -63,12 +93,6 @@ struct ActiveAlertSummaryView: View {
         }
     }
 
-    @ViewBuilder
-    private var placeholderAlertsContent: some View {
-        PlaceholderAlertSection(label: "Watches")
-        PlaceholderAlertSection(label: "Mesos")
-    }
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
@@ -77,7 +101,7 @@ struct ActiveAlertSummaryView: View {
 
                 Spacer(minLength: 12)
 
-                if let onOpenAlertCenter, isLoading == false {
+                if let onOpenAlertCenter, isLoading == false, (hasRenderableAlerts || isOffline) {
                     Button {
                         onOpenAlertCenter()
                     } label: {
@@ -103,25 +127,8 @@ struct ActiveAlertSummaryView: View {
                 }
             }
 
-            if isOffline {
-                offlineContent
-            } else {
-                if #available(iOS 26, *) {
-                    GlassEffectContainer(spacing: 12) {
-                        if isLoading {
-                            placeholderAlertsContent
-                        } else {
-                            alertsContent
-                        }
-                    }
-                } else {
-                    if isLoading {
-                        placeholderAlertsContent
-                    } else {
-                        alertsContent
-                    }
-                }
-            }
+            innerContent
+                .animation(SkyAwareMotion.layerChange(reduceMotion), value: contentState)
         }
         .padding(18)
         .cardBackground(
@@ -131,7 +138,6 @@ struct ActiveAlertSummaryView: View {
             shadowY: 3,
             allowsGlass: false
         )
-        .placeholder(isLoading && isOffline == false)
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
@@ -149,6 +155,45 @@ struct ActiveAlertSummaryView: View {
         }
     }
 
+    @ViewBuilder
+    private var innerContent: some View {
+        if #available(iOS 26, *) {
+            GlassEffectContainer(spacing: 12) {
+                contentStateView
+                    .id(contentState)
+                    .transition(.opacity)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: usesFlexibleAlertHeight ? nil : 72,
+                        alignment: .topLeading
+                    )
+            }
+        } else {
+            contentStateView
+                .id(contentState)
+                .transition(.opacity)
+                .frame(
+                    maxWidth: .infinity,
+                    minHeight: usesFlexibleAlertHeight ? nil : 72,
+                    alignment: .topLeading
+                )
+        }
+    }
+
+    @ViewBuilder
+    private var contentStateView: some View {
+        switch contentState {
+        case .offline:
+            offlineContent
+        case .loading:
+            loadingContent
+        case .alerts:
+            alertsContent
+        case .empty:
+            emptyContent
+        }
+    }
+
     private var offlineContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
@@ -159,6 +204,32 @@ struct ActiveAlertSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(2)
+    }
+
+    private var emptyContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("No Active Alerts", systemImage: "checkmark.shield")
+                .sectionLabel()
+            Text("Your local area currently has no active watches or mesoscale discussions.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var loadingContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Checking local alerts", systemImage: "antenna.radiowaves.left.and.right")
+                .sectionLabel()
+            Text("Bringing in local alerts…")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(2)
+        .accessibilityElement(children: .combine)
     }
 
     @ViewBuilder
@@ -185,43 +256,6 @@ struct ActiveAlertSummaryView: View {
         }
         .presentationDetents([.medium, .large], selection: selection)
         .presentationDragIndicator(.visible)
-    }
-}
-
-// MARK: Components
-private struct PlaceholderAlertSection: View {
-    let label: String
-
-    var body: some View {
-        Text(label)
-            .font(.caption2.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
-
-        ForEach(0..<2, id: \.self) { _ in
-            HStack(alignment: .top, spacing: 15) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.secondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Placeholder alert title")
-                        .font(.subheadline.weight(.semibold))
-                    Text("Additional placeholder context")
-                        .font(.caption)
-                }
-
-                Spacer()
-                Text("Until 00:00 pm")
-                    .monospacedDigit()
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
-            }
-            .padding(.vertical, 3)
-        }
     }
 }
 

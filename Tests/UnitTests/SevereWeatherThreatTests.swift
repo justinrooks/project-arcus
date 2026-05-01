@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import SkyAware
 
@@ -59,5 +60,396 @@ struct SevereWeatherThreatTests {
         #expect(SevereWeatherThreat.wind(probability: 0.1).with(probability: 0.9) == .wind(probability: 0.9))
         #expect(SevereWeatherThreat.hail(probability: 0.1).with(probability: 0.9) == .hail(probability: 0.9))
         #expect(SevereWeatherThreat.tornado(probability: 0.1).with(probability: 0.9) == .tornado(probability: 0.9))
+    }
+}
+
+@Suite("LocationReliability")
+struct LocationReliabilityTests {
+    @Test("elevated-risk helper includes marginal enhanced moderate and high")
+    func elevatedRisk_includesStormRiskBand() {
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .marginal, severeRisk: nil))
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .enhanced, severeRisk: nil))
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .moderate, severeRisk: nil))
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .high, severeRisk: nil))
+    }
+
+    @Test("elevated-risk helper includes slight")
+    func elevatedRisk_includesSlight() {
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .slight, severeRisk: nil))
+    }
+
+    @Test("elevated-risk helper includes hail and tornado severe threats")
+    func elevatedRisk_includesHailAndTornado() {
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .allClear, severeRisk: .hail(probability: 0.10)))
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .allClear, severeRisk: .tornado(probability: 0.10)))
+    }
+
+    @Test("elevated-risk helper excludes thunderstorm-only and all-clear states")
+    func elevatedRisk_excludesThunderstormOnlyAndAllClear() {
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .thunderstorm, severeRisk: .allClear) == false)
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .allClear, severeRisk: .allClear) == false)
+    }
+
+    @Test("elevated-risk helper excludes wind-only severe threat")
+    func elevatedRisk_excludesWindOnlySevereThreat() {
+        #expect(LocationReliabilitySummaryRailEligibility.isElevatedRisk(stormRisk: .allClear, severeRisk: .wind(probability: 0.25)) == false)
+    }
+
+    @Test("quiet day does not consume asks")
+    func quietDay_doesNotConsumeAsk() {
+        let suite = "LocationReliabilityTests-quiet-day-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        #expect(ledger.snapshot().askCount == 0)
+
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            ledger: ledger.snapshot(),
+            now: iso("2026-04-29T18:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .notElevatedRisk)
+        #expect(ledger.snapshot().askCount == 0)
+    }
+
+    @Test("ask count increments on counted rail impression and caps at three")
+    func askCount_incrementsAndCaps() {
+        let suite = "LocationReliabilityTests-cap-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        ledger.recordCountedRailImpression(at: iso("2026-04-20T12:00:00Z"), qualifyingDay: "2026-04-20")
+        ledger.recordCountedRailImpression(at: iso("2026-04-21T12:00:00Z"), qualifyingDay: "2026-04-21")
+        ledger.recordCountedRailImpression(at: iso("2026-04-22T12:00:00Z"), qualifyingDay: "2026-04-22")
+        ledger.recordCountedRailImpression(at: iso("2026-04-23T12:00:00Z"), qualifyingDay: "2026-04-23")
+
+        let snapshot = ledger.snapshot()
+        #expect(snapshot.askCount == 3)
+        #expect(snapshot.hasExhaustedCap)
+        #expect(snapshot.lastCountedQualifyingDay == "2026-04-23")
+    }
+
+    @Test("rail impression is sufficient to spend ask without tap")
+    func impression_spendsAskWithoutTap() {
+        let suite = "LocationReliabilityTests-impression-only-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        #expect(ledger.snapshot().askCount == 0)
+        ledger.recordCountedRailImpression(at: iso("2026-04-25T12:00:00Z"), qualifyingDay: "2026-04-25")
+        #expect(ledger.snapshot().askCount == 1)
+    }
+
+    @Test("same-day suppression can occur without spending ask")
+    func sameDaySuppression_withoutSpend() {
+        let suite = "LocationReliabilityTests-suppress-only-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        ledger.recordSameDaySuppression(qualifyingDay: "2026-04-29")
+        let snapshot = ledger.snapshot()
+        #expect(snapshot.askCount == 0)
+        #expect(snapshot.lastSuppressedQualifyingDay == "2026-04-29")
+    }
+
+    @Test("eligibility fails when cap is exhausted")
+    func eligibility_failsWhenCapExhausted() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 3,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: nil,
+            lastCountedQualifyingDay: nil,
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: snapshot,
+            now: iso("2026-04-29T12:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .askCapExhausted)
+    }
+
+    @Test("eligibility fails for non-while-using authorization")
+    func eligibility_failsForNonWhileUsing() {
+        let reliability = LocationReliabilityState(authorization: .always, accuracy: .precise)
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 0,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: nil,
+            lastCountedQualifyingDay: nil,
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            ledger: snapshot,
+            now: iso("2026-04-29T12:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .authorizationNotWhileUsing)
+    }
+
+    @Test("eligibility fails for denied restricted and not-determined authorization")
+    func eligibility_failsForOtherAuthorizationStates() {
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 0,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: nil,
+            lastCountedQualifyingDay: nil,
+            lastSuppressedQualifyingDay: nil
+        )
+        let states: [LocationReliabilityState] = [
+            .init(authorization: .denied, accuracy: .unknown),
+            .init(authorization: .restricted, accuracy: .unknown),
+            .init(authorization: .notDetermined, accuracy: .unknown)
+        ]
+
+        for state in states {
+            let decision = LocationReliabilitySummaryRailEligibility.decision(
+                reliability: state,
+                stormRisk: .high,
+                severeRisk: .tornado(probability: 0.10),
+                ledger: snapshot,
+                now: iso("2026-04-29T12:00:00Z"),
+                timeZone: TimeZone(secondsFromGMT: 0)!
+            )
+
+            #expect(decision.isEligible == false)
+            #expect(decision.reason == .authorizationNotWhileUsing)
+        }
+    }
+
+    @Test("reduced-accuracy alone does not trigger rail eligibility")
+    func reducedAccuracyAlone_doesNotTriggerRail() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .reduced)
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 0,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: nil,
+            lastCountedQualifyingDay: nil,
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .allClear,
+            severeRisk: .wind(probability: 0.10),
+            ledger: snapshot,
+            now: iso("2026-04-29T12:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .notElevatedRisk)
+    }
+
+    @Test("same-day suppression blocks repeat ask")
+    func sameDaySuppression_blocksEligibility() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let snapshot = LocationReliabilityAskLedgerSnapshot(
+            askCount: 1,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: iso("2026-04-29T01:00:00Z"),
+            lastCountedQualifyingDay: "2026-04-29",
+            lastSuppressedQualifyingDay: "2026-04-29"
+        )
+
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .moderate,
+            severeRisk: .allClear,
+            ledger: snapshot,
+            now: iso("2026-04-29T20:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .sameDaySuppressed)
+    }
+
+    @Test("next qualifying day and 24-hour minimum both required")
+    func nextQualifyingDay_requiresLaterDayAnd24Hours() {
+        let reliability = LocationReliabilityState(authorization: .whileUsing, accuracy: .precise)
+        let ledger = LocationReliabilityAskLedgerSnapshot(
+            askCount: 1,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: iso("2026-04-29T12:00:00Z"),
+            lastCountedQualifyingDay: "2026-04-29",
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let sameDayDecision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger,
+            now: iso("2026-04-29T23:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(sameDayDecision.isEligible == false)
+        #expect(sameDayDecision.reason == .waitingForNextQualifyingDay)
+
+        let nextDayTooSoon = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger,
+            now: iso("2026-04-30T10:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(nextDayTooSoon.isEligible == false)
+        #expect(nextDayTooSoon.reason == .waitingForMinimumInterval)
+
+        let eligible = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: reliability,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger,
+            now: iso("2026-04-30T12:30:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(eligible.isEligible)
+        #expect(eligible.reason == .eligible)
+    }
+
+    @Test("not-now suppression blocks same-day repeat without refunding ask")
+    func notNowSuppression_blocksSameDayRepeatWithoutRefund() {
+        let suite = "LocationReliabilityTests-not-now-\(UUID().uuidString)"
+        let store = UserDefaults(suiteName: suite)!
+        let ledger = LocationReliabilityAskLedger(userDefaults: store)
+        defer { store.removePersistentDomain(forName: suite) }
+
+        ledger.recordCountedRailImpression(at: iso("2026-04-29T12:00:00Z"), qualifyingDay: "2026-04-29")
+        #expect(ledger.snapshot().askCount == 1)
+
+        ledger.recordSameDaySuppression(qualifyingDay: "2026-04-29")
+        let decision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: .init(authorization: .whileUsing, accuracy: .precise),
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: ledger.snapshot(),
+            now: iso("2026-04-29T16:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+
+        #expect(decision.isEligible == false)
+        #expect(decision.reason == .sameDaySuppressed)
+        #expect(ledger.snapshot().askCount == 1)
+    }
+
+    @Test("permission churn does not reset lifetime cap")
+    func permissionChurn_doesNotResetCap() {
+        let ledger = LocationReliabilityAskLedgerSnapshot(
+            askCount: 3,
+            maxAsks: 3,
+            lastCountedRailImpressionAt: iso("2026-04-27T12:00:00Z"),
+            lastCountedQualifyingDay: "2026-04-27",
+            lastSuppressedQualifyingDay: nil
+        )
+
+        let whileUsingDecision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: .init(authorization: .whileUsing, accuracy: .precise),
+            stormRisk: .high,
+            severeRisk: .tornado(probability: 0.20),
+            ledger: ledger,
+            now: iso("2026-04-30T18:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(whileUsingDecision.isEligible == false)
+        #expect(whileUsingDecision.reason == .askCapExhausted)
+
+        let alwaysDecision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: .init(authorization: .always, accuracy: .precise),
+            stormRisk: .high,
+            severeRisk: .tornado(probability: 0.20),
+            ledger: ledger,
+            now: iso("2026-04-30T18:05:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(alwaysDecision.isEligible == false)
+        #expect(alwaysDecision.reason == .authorizationNotWhileUsing)
+
+        let downgradedBackDecision = LocationReliabilitySummaryRailEligibility.decision(
+            reliability: .init(authorization: .whileUsing, accuracy: .precise),
+            stormRisk: .high,
+            severeRisk: .tornado(probability: 0.20),
+            ledger: ledger,
+            now: iso("2026-04-30T18:10:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!
+        )
+        #expect(downgradedBackDecision.isEligible == false)
+        #expect(downgradedBackDecision.reason == .askCapExhausted)
+    }
+
+    @Test("home-view rail state records impression intent on first qualifying display")
+    @MainActor
+    func homeViewRailState_recordsImpressionOnFirstDisplay() {
+        let state = HomeView.locationReliabilityRailState(
+            reliability: .init(authorization: .whileUsing, accuracy: .precise),
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: .init(
+                askCount: 0,
+                maxAsks: 3,
+                lastCountedRailImpressionAt: nil,
+                lastCountedQualifyingDay: nil,
+                lastSuppressedQualifyingDay: nil
+            ),
+            now: iso("2026-04-29T12:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!,
+            currentlyShownQualifyingDay: nil
+        )
+
+        #expect(state.shouldShowRail)
+        #expect(state.qualifyingDay == "2026-04-29")
+        #expect(state.shouldRecordImpression)
+    }
+
+    @Test("home-view rail state does not double-record in same qualifying day")
+    @MainActor
+    func homeViewRailState_noDoubleRecordSameDay() {
+        let state = HomeView.locationReliabilityRailState(
+            reliability: .init(authorization: .whileUsing, accuracy: .precise),
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            ledger: .init(
+                askCount: 0,
+                maxAsks: 3,
+                lastCountedRailImpressionAt: nil,
+                lastCountedQualifyingDay: nil,
+                lastSuppressedQualifyingDay: nil
+            ),
+            now: iso("2026-04-29T18:00:00Z"),
+            timeZone: TimeZone(secondsFromGMT: 0)!,
+            currentlyShownQualifyingDay: "2026-04-29"
+        )
+
+        #expect(state.shouldShowRail)
+        #expect(state.shouldRecordImpression == false)
+    }
+
+    private func iso(_ value: String) -> Date {
+        ISO8601DateFormatter().date(from: value)!
     }
 }
