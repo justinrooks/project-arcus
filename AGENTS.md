@@ -65,8 +65,8 @@
 - Do not claim coverage changed unless you measured it.
 
 ## Commit and PR Guidance
-- Commits use a single-line imperative summary prefixed with `- `.
-  - Example: `- Fix bug preventing watches from loading`
+- Commits should target a single-line imperative summary .
+  - Example: `Fix bug preventing watches from loading`
 - PRs should summarize intent, list user-visible changes, and note validation performed.
 - For UI changes, include screenshots when the workflow calls for them.
 - Call out risk areas and rollback considerations when they matter.
