@@ -105,6 +105,7 @@
 				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+				UnitTests/WidgetSnapshotStoreTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -148,6 +149,7 @@
 				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+				UnitTests/WidgetSnapshotStoreTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};

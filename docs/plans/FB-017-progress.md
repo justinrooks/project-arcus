@@ -209,7 +209,7 @@ Related GitHub issues:
 ## Issue #155 - Add app-group widget snapshot store
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Add a small App Group-backed snapshot store.
@@ -226,7 +226,32 @@ Related GitHub issues:
 - GPT-5.3-Codex, medium reasoning
 
 ### Handoff notes
-- Keep this separate from existing `UserDefaults.shared`; the widget needs a real App Group container.
+- Added shared App Group-backed snapshot persistence at `Shared/WidgetSnapshotStore.swift` for use by both app and widget targets.
+- Store behavior is intentionally narrow and independent from SwiftData, network, location, notification, and ingestion APIs:
+  - app-side write via `write(_:)`
+  - widget-side read via `load()`
+- Uses App Group container `group.com.skyaware.app` by default and writes to `widget-snapshot.json`.
+- Added deterministic load outcomes:
+  - `.missing` when no snapshot exists
+  - `.corrupt` when data is unreadable/invalid
+  - `.snapshot(WidgetSnapshot)` when decode succeeds
+- Snapshot writes use atomic file replacement (`Data.write(..., options: [.atomic])`) and preserve existing freshness metadata exactly as stored in `WidgetSnapshot`.
+- Kept widget storage fully separate from `UserDefaults.shared`.
+- Added focused tests at `Tests/UnitTests/WidgetSnapshotStoreTests.swift`:
+  - missing snapshot -> `.missing`
+  - corrupt/unreadable data -> `.corrupt`
+  - write/read round-trip equality
+  - stale freshness metadata preservation
+- Updated `SkyAware.xcodeproj/project.pbxproj` test membership exception lists to include `WidgetSnapshotStoreTests.swift`, matching existing file-system-synced target patterns.
+- Skill gate notes:
+  - `swift-concurrency-expert` evaluated as applicable (cross-target shared value + strict concurrency compile rules); no async actor boundary changes were needed beyond removing unnecessary `Sendable` conformance from the store wrapper.
+  - `build-ios-apps:swiftui-ui-patterns` not applicable for this issue slice (no SwiftUI/widget UI work in #155).
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/WidgetSnapshotStoreTests test` succeeded.
+- Deferred exactly as planned:
+  - snapshot builder and alert priority logic (#156)
+  - ingestion/APNs snapshot write wiring and widget reload requests (#157-#159)
+  - widget UI, timeline presentation, and routing work (#160+)
 
 ---
 
