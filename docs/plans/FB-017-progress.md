@@ -152,7 +152,7 @@ Related GitHub issues:
 ## Issue #154 - Add derived widget snapshot model
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Define Codable, Sendable widget snapshot value types.
@@ -169,7 +169,40 @@ Related GitHub issues:
 - GPT-5.3-Codex, medium reasoning
 
 ### Handoff notes
-- Later issues should treat this as the transport contract between app and widget extension.
+- Added a shared widget snapshot transport contract at `Shared/WidgetSnapshot.swift`, compiled into both the app and widget extension targets.
+- Snapshot types are `Codable`, `Sendable`, and value-only:
+  - `WidgetSnapshot`
+  - `WidgetRiskDisplayState`
+  - `WidgetSelectedAlertRowDisplayState`
+  - `WidgetFreshnessState`
+  - `WidgetAvailabilityState`
+  - `WidgetSummaryDestination`
+- The model now explicitly represents:
+  - storm risk and severe risk display label/severity
+  - Combined selected alert row display fields
+  - hidden alert count
+  - freshness timestamp and explicit freshness state (`fresh`, `stale`, `unavailable`)
+  - unavailable fallback state/copy (`Open SkyAware to update local risk.`)
+  - Summary routing destination at the model level only
+- Privacy guardrails in model shape:
+  - no raw location fields
+  - no APNs token fields
+  - no full alert payload-body fields
+- Added focused tests at `Tests/UnitTests/WidgetSnapshotTests.swift` covering:
+  - deterministic encode/decode round-trip
+  - 30-minute stale threshold behavior
+  - unavailable fallback snapshot state/copy
+  - derived-only payload shape assertions
+- Project membership updates:
+  - added `Shared/` root group to `SkyAware` and `SkyAwareWidgetsExtension` file-system synchronized target membership
+  - added `UnitTests/WidgetSnapshotTests.swift` to file-system membership exceptions for app/tests target handling
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/WidgetSnapshotTests/encodedPayload_isDerivedOnly test` succeeded.
+- Deferred to later issues as planned:
+  - app-group snapshot storage (#155)
+  - snapshot builder/priority logic (#156)
+  - ingestion/APNs writes and WidgetCenter reload wiring (#157-#159)
+  - widget UI/rendering/timeline and Summary routing integration (#160+)
 
 ---
 

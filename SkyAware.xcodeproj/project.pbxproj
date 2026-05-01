@@ -104,6 +104,7 @@
 				UnitTests/WatchRepoPurgeTests.swift,
 				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
+				UnitTests/WidgetSnapshotTests.swift,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -146,6 +147,7 @@
 				UnitTests/WatchRepoPurgeTests.swift,
 				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
+				UnitTests/WidgetSnapshotTests.swift,
 			);
 			target = D095EFB12E16F56A0074F867 /* SkyAwareTests */;
 		};
@@ -225,6 +227,11 @@
 			path = WidgetsExtension;
 			sourceTree = "<group>";
 		};
+		D1B2000131AB000100B20001 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -275,6 +282,7 @@
 				D0AFC5EF2F412BAB001F331A /* AGENTS.md */,
 				D0B22B902F465CD600651125 /* SkyAware.entitlements */,
 				D1A1000131AA000100A10001 /* WidgetsExtension */,
+				D1B2000131AB000100B20001 /* Shared */,
 				D03E60782EB2A55E00611081 /* Sources */,
 				D03E62C92EB2A99900611081 /* Resources */,
 				D03E625B2EB2A7D300611081 /* Config */,
@@ -333,6 +341,7 @@
 				D03E62C92EB2A99900611081 /* Resources */,
 				D048DFB02F2138D80037C3D4 /* TestFlight */,
 				D048DFB42F21395F0037C3D4 /* tools */,
+				D1B2000131AB000100B20001 /* Shared */,
 			);
 			name = SkyAware;
 			packageProductDependencies = (
@@ -392,6 +401,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				D1A1000131AA000100A10001 /* WidgetsExtension */,
+				D1B2000131AB000100B20001 /* Shared */,
 			);
 			name = SkyAwareWidgetsExtension;
 			packageProductDependencies = (
