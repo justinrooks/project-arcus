@@ -76,13 +76,21 @@ struct LocationManagerTests {
     @MainActor
     @Test("requestAlwaysAuthorizationUpgradeIfNeeded skips when current auth is not while in use")
     func requestAlwaysAuthorizationUpgradeIfNeeded_skipsOtherStates() {
-        let manager = StubAuthorizationManager(status: .authorizedAlways)
-        let sut = LocationManager(manager: manager, onUpdate: { _ in })
+        let disallowedStatuses: [CLAuthorizationStatus] = [
+            .authorizedAlways,
+            .denied,
+            .restricted,
+            .notDetermined
+        ]
 
-        let didRequestUpgrade = sut.requestAlwaysAuthorizationUpgradeIfNeeded()
+        for status in disallowedStatuses {
+            let manager = StubAuthorizationManager(status: status)
+            let sut = LocationManager(manager: manager, onUpdate: { _ in })
+            let didRequestUpgrade = sut.requestAlwaysAuthorizationUpgradeIfNeeded()
 
-        #expect(didRequestUpgrade == false)
-        #expect(manager.requestAlwaysCount == 0)
+            #expect(didRequestUpgrade == false)
+            #expect(manager.requestAlwaysCount == 0)
+        }
     }
 }
 
@@ -376,6 +384,29 @@ struct LocationSessionTests {
 
 @Suite("LocationReliabilityState")
 struct LocationReliabilityStateTests {
+    @Test("maps authorization and accuracy combinations used by reliability surfaces")
+    func mapsAuthorizationAndAccuracyMatrix() {
+        let samples: [(CLAuthorizationStatus, CLAccuracyAuthorization?, LocationReliabilityAuthorization, LocationReliabilityAccuracy)] = [
+            (.authorizedAlways, .fullAccuracy, .always, .precise),
+            (.authorizedAlways, .reducedAccuracy, .always, .reduced),
+            (.authorizedWhenInUse, .fullAccuracy, .whileUsing, .precise),
+            (.authorizedWhenInUse, .reducedAccuracy, .whileUsing, .reduced),
+            (.denied, nil, .denied, .unknown),
+            (.restricted, nil, .restricted, .unknown),
+            (.notDetermined, nil, .notDetermined, .unknown)
+        ]
+
+        for sample in samples {
+            let state = LocationReliabilityState(
+                authorizationStatus: sample.0,
+                accuracyAuthorization: sample.1
+            )
+
+            #expect(state.authorization == sample.2)
+            #expect(state.accuracy == sample.3)
+        }
+    }
+
     @Test("maps while-using plus precise accuracy")
     func mapsWhileUsingPrecise() {
         let state = LocationReliabilityState(

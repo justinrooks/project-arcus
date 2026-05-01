@@ -8,6 +8,11 @@
 import XCTest
 
 final class SkyAwareUITests: XCTestCase {
+    private let sharedDefaultsSuiteName = "com.justinrooks.skyaware"
+    private let reliabilityAskCountKey = "fb016.locationReliability.askCount"
+    private let reliabilityLastImpressionKey = "fb016.locationReliability.lastCountedRailImpressionAt"
+    private let reliabilityLastCountedDayKey = "fb016.locationReliability.lastCountedQualifyingDay"
+    private let reliabilitySuppressedDayKey = "fb016.locationReliability.lastSuppressedQualifyingDay"
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -98,6 +103,7 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow() throws {
+        resetReliabilityLedgerDefaults()
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
@@ -125,6 +131,7 @@ final class SkyAwareUITests: XCTestCase {
         notificationSkipButton.tap()
 
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app home tabs after onboarding completion.")
+        assertReliabilityAskCountEquals(0)
     }
 
     @MainActor
@@ -261,6 +268,24 @@ final class SkyAwareUITests: XCTestCase {
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = mode
         app.launch()
         return app
+    }
+
+    private func resetReliabilityLedgerDefaults() {
+        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else { return }
+        defaults.removeObject(forKey: reliabilityAskCountKey)
+        defaults.removeObject(forKey: reliabilityLastImpressionKey)
+        defaults.removeObject(forKey: reliabilityLastCountedDayKey)
+        defaults.removeObject(forKey: reliabilitySuppressedDayKey)
+        defaults.synchronize()
+    }
+
+    private func assertReliabilityAskCountEquals(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) {
+        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else {
+            XCTFail("Expected shared defaults suite \(sharedDefaultsSuiteName)", file: file, line: line)
+            return
+        }
+        let value = defaults.integer(forKey: reliabilityAskCountKey)
+        XCTAssertEqual(value, expected, file: file, line: line)
     }
 
 }

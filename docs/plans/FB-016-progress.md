@@ -465,12 +465,28 @@ Related GitHub issues:
 ## Issue #150 - Add Validation Coverage for Location Reliability Nudges
 
 ### Status
-- Not Started
+- Completed
 
-### Planned scope
-- Add final focused tests and validation coverage across the completed FB-016 slices.
-- Cover reliability state mapping, Summary rail eligibility, ask ledger behavior, onboarding branch behavior, and Settings/Summary gates.
-- Add UI smoke tests only where unit tests cannot prove user-visible behavior cleanly.
+### Scope completed
+- Added final focused validation coverage across FB-016 slices #144 through #149 with deterministic unit tests plus one targeted onboarding smoke assertion.
+- Extended reliability mapping coverage for:
+  - authorization and accuracy matrix combinations used by Settings and Summary surfaces
+  - native Always request gating across non-While-Using authorization states
+- Extended Summary rail eligibility coverage for:
+  - qualifying storm risk states: Marginal, Slight, Enhanced, Moderate, High
+  - qualifying severe risk states: Hail, Tornado
+  - non-qualifying states: thunderstorm-only, all-clear, wind-only severe threat
+  - Reduced Accuracy-only non-trigger state
+  - non-While-Using authorization states: Always, Denied, Restricted, Not Determined
+  - exhausted ask budget behavior
+- Extended ask ledger coverage for:
+  - impression-only ask spend (tap not required)
+  - same-day suppression without refunding ask
+  - quiet-day behavior (no ask spend)
+  - next qualifying day plus minimum 24-hour gap gating
+  - lifetime-per-install cap behavior and no reset under permission churn
+- Extended onboarding behavior coverage by asserting the While Using onboarding branch remains skippable and does not spend post-onboarding ask budget.
+- Preserved existing onboarding first-launch skip and primary tab navigation smoke tests without broadening UI test scope.
 
 ### Relevant feature brief sections
 - `Acceptance Criteria`
@@ -481,10 +497,47 @@ Related GitHub issues:
 ### Model recommendation
 - GPT-5.3-Codex
 
-### Expected verification
-- Focused Swift Testing coverage for deterministic logic.
-- Existing onboarding and tab navigation UI tests remain stable.
-- No tests depend on live network feeds or real device permission prompts.
+### Files changed
+- `Tests/UnitTests/SevereWeatherThreatTests.swift`
+- `Tests/UnitTests/LocationManagerTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+
+### Tests
+- Added/updated unit coverage in `LocationReliabilityTests` for:
+  - storm risk inclusion matrix (`.marginal`, `.slight`, `.enhanced`, `.moderate`, `.high`)
+  - severe risk inclusion (`.hail`, `.tornado`)
+  - thunderstorm-only/all-clear and wind-only non-eligibility
+  - non-While-Using authorization non-eligibility matrix
+  - impression-only ask spend
+  - same-day suppression without ask spend
+  - cap persistence under permission churn
+- Added/updated unit coverage in `LocationReliabilityStateTests` / `LocationManagerTests` for:
+  - authorization + accuracy mapping matrix
+  - native Always request gating across disallowed states
+- Updated UI smoke behavior in `SkyAwareUITests` by extending:
+  - `testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow`
+  - Added assertion that post-onboarding ask ledger count remains zero after the onboarding Always branch.
+
+### Verification
+- Ran:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/LocationManagerTests -only-testing:SkyAwareTests/SevereWeatherThreatTests test`
+- Result:
+  - `TEST SUCCEEDED`
+- Attempted focused UI smoke execution:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareUITests/SkyAwareUITests/testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow -only-testing:SkyAwareUITests/SkyAwareUITests/testFirstLaunchOnboardingCompletesSuccessfully -only-testing:SkyAwareUITests/SkyAwareUITests/testTabNavigationLoadsEachPrimaryView test`
+- Result:
+  - Fails under current scheme/test-plan configuration because `SkyAwareUITests` is not a member of the active test plan.
+
+### Out of scope / intentionally deferred
+- No UI test-plan or scheme membership reconfiguration was done in this issue.
+- No product behavior changes or analytics infrastructure changes were introduced.
+
+### Handoff notes
+- Validation coverage now closes deterministic logic gaps for reliability mapping, rail eligibility, and ask-budget semantics without broad UI rewrites.
+- Once `SkyAwareUITests` is included in the active test plan, rerun the focused onboarding and tab smoke set to complete automated UI stability confirmation.
+- Specialist skills:
+  - `swift-concurrency-expert` not applicable for this run because changes were test-only and did not alter concurrency boundaries.
+  - `build-ios-apps:swiftui-ui-patterns` not applicable because no SwiftUI layout or view-structure changes were made.
 
 ### Handoff notes
 - Do not broaden this into a full UI test rewrite.
