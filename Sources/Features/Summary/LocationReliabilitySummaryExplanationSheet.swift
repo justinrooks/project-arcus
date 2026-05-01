@@ -55,6 +55,7 @@ struct LocationReliabilitySummaryExplanationSheet: View {
             statusPill(title: "Current", value: reliability.settingsAuthorizationText)
             statusPill(title: "Recommended", value: reliability.recommendedAuthorizationText)
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("summary-reliability-status-row")
     }
 
