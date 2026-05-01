@@ -258,7 +258,7 @@ Related GitHub issues:
 ## Issue #156 - Add widget snapshot builder and alert priority
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Build derived widget snapshots from existing app projection/state values.
@@ -279,6 +279,40 @@ Related GitHub issues:
 
 ### Handoff notes
 - This should be the single app-owned place that translates rich app state into widget-safe display state.
+- Added app-owned snapshot translation at `Sources/App/HomeRefreshV2/WidgetSnapshotBuilder.swift`.
+- `WidgetSnapshotBuilder` accepts existing derived app state inputs (risk values, active watches/mesos, freshness timestamp, availability) and produces `WidgetSnapshot` display-only output.
+- Storm and severe risk snapshot fields now reuse existing in-app badge semantics:
+  - storm: `StormRiskLevel.message` + `StormRiskLevel.rawValue`
+  - severe: `SevereWeatherThreat.message` + `SevereWeatherThreat.priority`
+- Combined widget alert selection is deterministic and scoped to the approved v1 order:
+  1. tornado
+  2. severe thunderstorm
+  3. flooding
+  4. mesoscale discussion
+  5. watch
+- Expired alerts are filtered from active widget state using alert `validEnd` before selection/counting.
+- Hidden alerts are represented as `hiddenAlertCount = activeCount - 1` when a selected alert exists.
+- Builder emits explicit unavailable snapshots through the #154 model (`WidgetSnapshot.unavailable(...)`) and uses `WidgetFreshnessState.from(...)` for fresh/stale evaluation at the 30-minute threshold.
+- Added deterministic tests at `Tests/UnitTests/WidgetSnapshotBuilderTests.swift` for:
+  - normal
+  - no-alert
+  - multiple-alert
+  - priority order
+  - hidden count
+  - expired-alert filtering
+  - stale state
+  - unavailable state
+- Updated `SkyAware.xcodeproj/project.pbxproj` file-system synchronized target membership exceptions so `WidgetSnapshotBuilderTests.swift` compiles only in `SkyAwareTests`, matching the existing project pattern.
+- Skill gate notes:
+  - `swift-concurrency-expert` evaluated as applicable (shared Sendable snapshot values across app/widget boundaries); implementation kept the builder value-only and deterministic without introducing actor/model-context changes.
+  - `build-ios-apps:swiftui-ui-patterns` not applicable in #156 because this slice is builder/state logic only (no widget SwiftUI view work).
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/WidgetSnapshotBuilderTests -only-testing:SkyAwareTests/WidgetSnapshotTests test` succeeded.
+- Explicitly deferred per plan:
+  - ingestion snapshot write wiring (#157)
+  - latest projection fallback (#158)
+  - APNs snapshot write/reload wiring (#159)
+  - widget UI/rendering/routing work (#160+)
 
 ---
 
