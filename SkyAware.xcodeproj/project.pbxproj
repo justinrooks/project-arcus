@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		D07F28012FA3A5CA00A7FA31 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = D07F28002FA3A5CA00A7FA31 /* Settings.bundle */; };
 		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
+		D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,7 +27,28 @@
 			remoteGlobalIDString = D095EFA22E16F5690074F867;
 			remoteInfo = SkyAware;
 		};
+		D1A1000C31AA000100A10001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D095EF9B2E16F5690074F867 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D1A1000331AA000100A10001;
+			remoteInfo = SkyAwareWidgetsExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D1A1000B31AA000100A10001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		D07F28002FA3A5CA00A7FA31 /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; name = Settings.bundle; path = Resources/Settings.bundle; sourceTree = "<group>"; };
@@ -37,6 +59,7 @@
 		D0B22B902F465CD600651125 /* SkyAware.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SkyAware.entitlements; sourceTree = "<group>"; };
 		D0F000012F50000100AA1001 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		D0F000062F50000100AA1001 /* Sources/AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Sources/AGENTS.md; sourceTree = "<group>"; };
+		D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SkyAwareWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -197,6 +220,11 @@
 			path = release;
 			sourceTree = "<group>";
 		};
+		D1A1000131AA000100A10001 /* WidgetsExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = WidgetsExtension;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -222,6 +250,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D1A1000531AA000100A10001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -239,6 +274,7 @@
 				D0F000012F50000100AA1001 /* README.md */,
 				D0AFC5EF2F412BAB001F331A /* AGENTS.md */,
 				D0B22B902F465CD600651125 /* SkyAware.entitlements */,
+				D1A1000131AA000100A10001 /* WidgetsExtension */,
 				D03E60782EB2A55E00611081 /* Sources */,
 				D03E62C92EB2A99900611081 /* Resources */,
 				D03E625B2EB2A7D300611081 /* Config */,
@@ -260,6 +296,7 @@
 				D095EFA32E16F5690074F867 /* SkyAware.app */,
 				D095EFB22E16F56A0074F867 /* SkyAwareTests.xctest */,
 				D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */,
+				D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -282,10 +319,12 @@
 				D095EF9F2E16F5690074F867 /* Sources */,
 				D095EFA02E16F5690074F867 /* Frameworks */,
 				D095EFA12E16F5690074F867 /* Resources */,
+				D1A1000B31AA000100A10001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				D1A1000E31AA000100A10001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				D03E60782EB2A55E00611081 /* Sources */,
@@ -339,6 +378,28 @@
 			productReference = D095EFBC2E16F56A0074F867 /* SkyAwareUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		D1A1000331AA000100A10001 /* SkyAwareWidgetsExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D1A1001131AA000100A10001 /* Build configuration list for PBXNativeTarget "SkyAwareWidgetsExtension" */;
+			buildPhases = (
+				D1A1000431AA000100A10001 /* Sources */,
+				D1A1000531AA000100A10001 /* Frameworks */,
+				D1A1000631AA000100A10001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				D1A1000131AA000100A10001 /* WidgetsExtension */,
+			);
+			name = SkyAwareWidgetsExtension;
+			packageProductDependencies = (
+			);
+			productName = SkyAwareWidgetsExtension;
+			productReference = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -359,6 +420,9 @@
 					D095EFBB2E16F56A0074F867 = {
 						CreatedOnToolsVersion = 16.4;
 						TestTargetID = D095EFA22E16F5690074F867;
+					};
+					D1A1000331AA000100A10001 = {
+						CreatedOnToolsVersion = 16.4;
 					};
 				};
 			};
@@ -382,6 +446,7 @@
 				D095EFA22E16F5690074F867 /* SkyAware */,
 				D095EFB12E16F56A0074F867 /* SkyAwareTests */,
 				D095EFBB2E16F56A0074F867 /* SkyAwareUITests */,
+				D1A1000331AA000100A10001 /* SkyAwareWidgetsExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -403,6 +468,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D095EFBA2E16F56A0074F867 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D1A1000631AA000100A10001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -433,6 +505,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D1A1000431AA000100A10001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -445,6 +524,11 @@
 			isa = PBXTargetDependency;
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 			targetProxy = D095EFBD2E16F56A0074F867 /* PBXContainerItemProxy */;
+		};
+		D1A1000E31AA000100A10001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D1A1000331AA000100A10001 /* SkyAwareWidgetsExtension */;
+			targetProxy = D1A1000C31AA000100A10001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -732,6 +816,62 @@
 			};
 			name = Release;
 		};
+		D1A1000F31AA000100A10001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Config/SkyAwareWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Config/WidgetExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skyaware.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		D1A1001031AA000100A10001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = Config/SkyAwareWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = YVC4WFW94T;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "Config/WidgetExtension-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skyaware.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -767,6 +907,15 @@
 			buildConfigurations = (
 				D095EFCD2E16F56A0074F867 /* Debug */,
 				D095EFCE2E16F56A0074F867 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D1A1001131AA000100A10001 /* Build configuration list for PBXNativeTarget "SkyAwareWidgetsExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1A1000F31AA000100A10001 /* Debug */,
+				D1A1001031AA000100A10001 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
