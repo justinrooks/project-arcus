@@ -1,3 +1,12 @@
+SkyAware v0.1.0(47) stabilizes Home/Summary loading transitions, adds clearer location reliability guidance, and repoints the app to the production API host.
+
+Highlights:
+- Home and Summary refresh/resolving transitions are smoother while local data is still loading
+- Summary now includes a location reliability rail with a details sheet and a direct path to system settings for upgrading location access
+- Onboarding now includes a dedicated Always Allow upgrade step after While Using authorization to improve background alert reliability
+- Arcus Signal traffic now targets `https://api.skyaware.app`
+- Accessibility semantics and automated UI coverage were tightened for the location reliability prompt flow
+
 SkyAware v0.1.0(45) adds active warning polygons on the map, improves overlay/rendering stability, and hardens watch-notification reliability.
 
 Highlights:

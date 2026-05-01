@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v0.1.0(47)
+
+### Overview
+This update stabilizes Home/Summary loading transitions, adds clearer location reliability guidance, and repoints the app to the production API host.
+
+### Highlights
+- Home and Summary refresh/resolving transitions are smoother, reducing abrupt UI state changes while local data is still loading.
+- Summary now includes a location reliability rail with a details sheet and a direct path to open system settings for location-access upgrades.
+- Onboarding now includes a dedicated Always Allow upgrade step after While Using authorization to improve background alert reliability.
+- The Arcus Signal server base URL now points to `https://api.skyaware.app`.
+- Accessibility semantics for the location reliability prompt flow were tightened, and automated coverage was expanded for the updated Home/reliability paths.
+
 ## v0.1.0(45)
 
 ### Overview

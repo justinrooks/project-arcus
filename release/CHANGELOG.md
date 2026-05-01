@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## v0.1.0(47)
+
+### Data & Repos
+- Point app server traffic to `https://api.skyaware.app` as the Arcus Signal base URL.
+<!-- evidence: d27f65f -->
+
+### UI / UX
+- Stabilize Home and Summary loading/resolving transitions to reduce abrupt state changes while local data is still syncing.
+<!-- evidence: 27f7904 -->
+- Add a location reliability rail in Summary with an explanation sheet and one-tap path to system settings for upgrading location access.
+<!-- evidence: 27f7904 -->
+- Expand onboarding with a dedicated "Always Allow" upgrade step so users can improve background alert reliability after granting While Using access.
+<!-- evidence: 27f7904 -->
+- Improve accessibility semantics for the location reliability prompt flow so UI automation and assistive tech can target the rail and status row correctly.
+<!-- evidence: 887566d -->
+
+### Tests / QA
+- Update unit and UI coverage around Home refresh transitions and the location reliability rail flow, including forced-rail UI test mode.
+<!-- evidence: 27f7904, 887566d -->
+
 ## v0.1.0(45)
 
 ### Background & Notifications
