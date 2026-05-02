@@ -57,7 +57,7 @@ protocol HomeIngestionExecuting: Sendable {
 }
 
 actor HomeIngestionExecutor: HomeIngestionExecuting {
-    struct Environment {
+    struct Environment: @unchecked Sendable {
         let logger: Logger
         let spcSync: any SpcSyncing
         let arcusAlertSync: any ArcusAlertSyncing
@@ -65,6 +65,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let locationSession: any HomeContextPreparing
         let snapshotStore: any HomeSnapshotReading
         let projectionStore: HomeProjectionStore?
+        let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
     }
 
     private let environment: Environment
@@ -337,6 +338,22 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     loadedAt: loadedAt
                 )
             }
+
+            guard let widgetSnapshotRefresher = environment.widgetSnapshotRefresher else {
+                return
+            }
+            if let scope = homeWidgetRefreshScope(for: plan) {
+                try widgetSnapshotRefresher.refresh(
+                    scope: scope,
+                    input: .init(
+                        generatedAt: loadedAt,
+                        stormRisk: snapshot.stormRisk,
+                        severeRisk: snapshot.severeRisk,
+                        watches: snapshot.watches,
+                        mesos: snapshot.mesos
+                    )
+                )
+            }
         } catch {
             environment.logger.error(
                 "Failed to persist home projection during ingestion: \(error.localizedDescription, privacy: .public)"
@@ -350,4 +367,20 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
         return .foreground
     }
+}
+
+func homeWidgetRefreshScope(for plan: HomeIngestionPlan) -> WidgetSnapshotChangeScope? {
+    if plan.provenance.contains(.remoteHotAlertReceived) || plan.provenance.contains(.remoteHotAlertOpened) {
+        return nil
+    }
+
+    if plan.lanes.contains(.slowProducts) || plan.isLocationBearing {
+        return .riskOrLocationProjection
+    }
+
+    if plan.lanes.contains(.hotAlerts) {
+        return .activeAlertProjection
+    }
+
+    return nil
 }

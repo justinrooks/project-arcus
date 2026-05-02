@@ -315,7 +315,8 @@ private extension BackgroundOrchestratorCadenceTests {
                     weatherClient: FakeWeatherClient(),
                     locationSession: locationSession,
                     snapshotStore: snapshotStore,
-                    projectionStore: nil
+                    projectionStore: nil,
+                    widgetSnapshotRefresher: nil
                 )
             )
         )

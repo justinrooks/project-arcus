@@ -319,7 +319,7 @@ Related GitHub issues:
 ## Issue #157 - Integrate widget snapshot writes into ingestion
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Write updated widget snapshots after app-owned risk or active alert projection changes.
@@ -336,7 +336,35 @@ Related GitHub issues:
 - GPT-5.3-Codex, medium reasoning
 
 ### Handoff notes
-- This is the normal app ingestion/projection path, separate from APNs fallback and APNs-driven refresh wiring.
+- Integrated widget snapshot refresh into the existing app-owned ingestion/projection completion seam in `HomeIngestionExecutor.persistProjection(...)`.
+- Added an app-owned refresh seam at `Sources/App/HomeRefreshV2/WidgetSnapshotRefreshCoordinator.swift` that:
+  - builds derived snapshots via `WidgetSnapshotBuilder` (#156),
+  - writes snapshots through `WidgetSnapshotStore` (#155),
+  - requests targeted `WidgetCenter.shared.reloadTimelines(ofKind:)` reloads.
+- Added widget kind constants at `Shared/SkyAwareWidgetKind.swift` for targeted reload routing:
+  - risk/location projection updates -> Storm Risk + Severe Risk + Combined (+ current placeholder kind),
+  - active-alert-only projection updates -> Combined (+ current placeholder kind).
+- Kept widget extension passive and avoided any widget-initiated ingestion, location, notification, or network work.
+- APNs-specific widget refresh wiring remains deferred to #159:
+  - normal ingestion path explicitly excludes `.remoteHotAlertReceived` / `.remoteHotAlertOpened` provenance from #157 snapshot refresh scope.
+- Wired dependency composition in `Sources/App/Dependencies.swift`:
+  - instantiate `WidgetSnapshotStore` when App Group storage is available,
+  - inject optional widget snapshot refresher into `HomeIngestionExecutor.Environment`,
+  - log and continue safely if the app-group store is unavailable.
+- Added focused tests at `Tests/UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift`:
+  - risk projection writes snapshot + targeted multi-kind reload requests,
+  - active-alert projection writes snapshot + Combined-targeted reload requests,
+  - remote hot-alert plans excluded from normal ingestion widget refresh scope.
+- Updated test fixture wiring for `HomeIngestionExecutor.Environment` additions:
+  - `Tests/UnitTests/HomeRefreshPipelineTests.swift`
+  - `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`
+- Updated `SkyAware.xcodeproj/project.pbxproj` membership exception lists for the new unit test file.
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/WidgetSnapshotRefreshCoordinatorTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests test` succeeded.
+- Explicitly deferred per plan:
+  - latest projection fallback for widget refresh reliability (#158),
+  - APNs-driven widget snapshot write + targeted reload wiring (#159),
+  - widget UI/rendering/routing work (#160+).
 
 ---
 

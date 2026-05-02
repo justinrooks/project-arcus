@@ -455,6 +455,13 @@ final class Dependencies: Sendable {
             spcOutlook: spc,
             arcusAlerts: arcus
         )
+        let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
+        if let widgetSnapshotStore = try? WidgetSnapshotStore() {
+            widgetSnapshotRefresher = WidgetSnapshotRefreshCoordinator(store: widgetSnapshotStore)
+        } else {
+            logger.error("Widget snapshot store unavailable; widget refresh writes are disabled")
+            widgetSnapshotRefresher = nil
+        }
         let homeIngestionExecutor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger.appHomeRefresh,
@@ -463,7 +470,8 @@ final class Dependencies: Sendable {
                 weatherClient: weatherClient,
                 locationSession: locationSession,
                 snapshotStore: homeSnapshotStore,
-                projectionStore: homeProjectionStore
+                projectionStore: homeProjectionStore,
+                widgetSnapshotRefresher: widgetSnapshotRefresher
             )
         )
         let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)
