@@ -371,7 +371,7 @@ Related GitHub issues:
 ## Issue #158 - Add latest projection fallback for widgets
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Add a narrow latest-projection read path suitable for widget snapshot refresh.
@@ -388,7 +388,26 @@ Related GitHub issues:
 - GPT-5.3-Codex, medium reasoning
 
 ### Handoff notes
-- This is the first half of APNs refresh work. Do it before APNs wiring so the handler has a reliable source for widget snapshots.
+- Added a narrow latest-projection fallback read API to `Sources/Repos/HomeProjectionStore.swift`:
+  - `latestProjectionForWidgetSnapshotRefresh()`
+- Kept existing context-specific behavior unchanged:
+  - `projection(for:)` key-based reads remain the same.
+  - existing projection update/write paths remain the same.
+- Latest fallback selection is deterministic and intentionally narrow for widget refresh use:
+  1. `updatedAt` descending
+  2. `createdAt` descending
+  3. `projectionKey` ascending (stable tie-break)
+- Added focused tests in `Tests/UnitTests/HomeProjectionStoreTests.swift`:
+  - deterministic latest selection when timestamps tie
+  - non-regression proving context-specific `projection(for:)` reads are unaffected by fallback support
+- Skill gate notes:
+  - `swift-concurrency-expert` evaluated as applicable (actor-isolated projection store API for background/APNs-adjacent usage); change kept actor boundaries and value semantics intact with no new cross-actor mutable sharing.
+  - `build-ios-apps:swiftui-ui-patterns` not applicable for #158 (no SwiftUI/widget UI layout changes).
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/HomeProjectionStoreTests test` succeeded.
+- Explicitly deferred per plan:
+  - APNs-driven widget snapshot write/reload wiring (#159)
+  - widget UI/rendering/routing work (#160+)
 
 ---
 

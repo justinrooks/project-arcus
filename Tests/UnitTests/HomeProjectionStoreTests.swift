@@ -173,18 +173,121 @@ struct HomeProjectionStoreTests {
         #expect(persisted.activeAlerts.first?.geometry == watch.geometry)
     }
 
+    @Test("latest widget fallback selects deterministically when timestamps tie")
+    func latestProjectionForWidgetSnapshotRefresh_isDeterministicOnTimestampTie() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let tieTimestamp = Date(timeIntervalSince1970: 600)
+        let alphaContext = makeContext(
+            latitude: 39.75,
+            longitude: -104.44,
+            timestamp: 100,
+            placemarkSummary: "Alpha",
+            countyCode: "COC001",
+            forecastZone: "COZ001",
+            fireZone: "COZ101",
+            h3Cell: 1
+        )
+        let zuluContext = makeContext(
+            latitude: 39.70,
+            longitude: -104.10,
+            timestamp: 100,
+            placemarkSummary: "Zulu",
+            countyCode: "COC999",
+            forecastZone: "COZ999",
+            fireZone: "COZ999",
+            h3Cell: 9
+        )
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .enhanced,
+            severeRisk: .wind(probability: 0.30),
+            fireRisk: .critical,
+            for: zuluContext,
+            loadedAt: tieTimestamp
+        )
+        _ = try await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .hail(probability: 0.15),
+            fireRisk: .elevated,
+            for: alphaContext,
+            loadedAt: tieTimestamp
+        )
+
+        let latest = try #require(await store.latestProjectionForWidgetSnapshotRefresh())
+        let expectedProjectionKey = min(
+            HomeProjection.projectionKey(for: alphaContext),
+            HomeProjection.projectionKey(for: zuluContext)
+        )
+        #expect(latest.projectionKey == expectedProjectionKey)
+    }
+
+    @Test("latest widget fallback does not disturb context-specific projection reads")
+    func latestProjectionForWidgetSnapshotRefresh_preservesContextSpecificReads() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+
+        let olderContext = makeContext(
+            latitude: 39.60,
+            longitude: -104.20,
+            timestamp: 100,
+            placemarkSummary: "Older",
+            countyCode: "COC010",
+            forecastZone: "COZ010",
+            fireZone: "COZ210",
+            h3Cell: 10
+        )
+        let currentContext = makeContext(
+            latitude: 39.90,
+            longitude: -104.80,
+            timestamp: 200,
+            placemarkSummary: "Current",
+            countyCode: "COC011",
+            forecastZone: "COZ011",
+            fireZone: "COZ211",
+            h3Cell: 11
+        )
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .wind(probability: 0.10),
+            fireRisk: .elevated,
+            for: olderContext,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+        _ = try await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            for: currentContext,
+            loadedAt: Date(timeIntervalSince1970: 700)
+        )
+
+        let contextProjection = try #require(await store.projection(for: olderContext))
+        #expect(contextProjection.projectionKey == HomeProjection.projectionKey(for: olderContext))
+        #expect(contextProjection.stormRisk == .marginal)
+
+        let latestProjection = try #require(await store.latestProjectionForWidgetSnapshotRefresh())
+        #expect(latestProjection.projectionKey == HomeProjection.projectionKey(for: currentContext))
+        #expect(latestProjection.stormRisk == .slight)
+    }
+
     private func makeContext(
         latitude: Double = 39.75,
         longitude: Double = -104.44,
         timestamp: TimeInterval = 100,
-        placemarkSummary: String = "Bennett, CO"
+        placemarkSummary: String = "Bennett, CO",
+        countyCode: String = "COC005",
+        forecastZone: String = "COZ038",
+        fireZone: String = "COZ214",
+        h3Cell: Int64 = 123_456
     ) -> LocationContext {
         let snapshot = LocationSnapshot(
             coordinates: .init(latitude: latitude, longitude: longitude),
             timestamp: Date(timeIntervalSince1970: timestamp),
             accuracy: 25,
             placemarkSummary: placemarkSummary,
-            h3Cell: 123_456
+            h3Cell: h3Cell
         )
         let grid = GridPointSnapshot(
             nwsId: "BOU/10,20",
@@ -201,13 +304,13 @@ struct HomeProjectionStoreTests {
             state: "CO",
             timeZoneId: "America/Denver",
             radarStationId: nil,
-            forecastZone: "COZ038",
-            countyCode: "COC005",
-            fireZone: "COZ214",
+            forecastZone: forecastZone,
+            countyCode: countyCode,
+            fireZone: fireZone,
             countyLabel: "Arapahoe",
             fireZoneLabel: "Front Range"
         )
-        return LocationContext(snapshot: snapshot, h3Cell: snapshot.h3Cell ?? 123_456, grid: grid)
+        return LocationContext(snapshot: snapshot, h3Cell: snapshot.h3Cell ?? h3Cell, grid: grid)
     }
 
     private func makeWeather(

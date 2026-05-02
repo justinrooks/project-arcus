@@ -14,6 +14,10 @@ actor HomeProjectionStore {
         try fetchProjection(withKey: HomeProjection.projectionKey(for: context))?.record
     }
 
+    func latestProjectionForWidgetSnapshotRefresh() throws -> HomeProjectionRecord? {
+        try fetchLatestProjection()?.record
+    }
+
     func fetchOrCreateProjection(
         for context: LocationContext,
         viewedAt: Date = .now
@@ -91,6 +95,18 @@ actor HomeProjectionStore {
         var descriptor = FetchDescriptor<HomeProjection>(
             predicate: predicate,
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
+    }
+
+    private func fetchLatestProjection() throws -> HomeProjection? {
+        var descriptor = FetchDescriptor<HomeProjection>(
+            sortBy: [
+                SortDescriptor(\.updatedAt, order: .reverse),
+                SortDescriptor(\.createdAt, order: .reverse),
+                SortDescriptor(\.projectionKey, order: .forward)
+            ]
         )
         descriptor.fetchLimit = 1
         return try modelContext.fetch(descriptor).first
