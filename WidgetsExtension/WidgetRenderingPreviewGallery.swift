@@ -91,3 +91,47 @@ struct WidgetRenderingPreviewCard: View {
         .preferredColorScheme(.light)
         .frame(width: 170, height: 170)
 }
+
+#Preview("Severe / Normal", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Stale", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.stale)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Unavailable", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.unavailable)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Placeholder", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.severeRiskPlaceholder)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Gallery", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.noAlert)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Tinted + AX", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
+        .environment(\.widgetRenderingMode, .accented)
+        .environment(\.dynamicTypeSize, .accessibility2)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Clear", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
+        .environment(\.widgetRenderingMode, .vibrant)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Severe / Light", traits: .sizeThatFitsLayout) {
+    WidgetSevereRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
+        .preferredColorScheme(.light)
+        .frame(width: 170, height: 170)
+}

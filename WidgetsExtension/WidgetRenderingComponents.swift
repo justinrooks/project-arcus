@@ -36,6 +36,41 @@ struct WidgetStormRiskSmallView: View {
     }
 }
 
+struct WidgetSevereRiskSmallView: View {
+    let snapshot: WidgetSnapshot
+
+    var body: some View {
+        Group {
+            if case let .unavailable(message) = snapshot.availability {
+                WidgetUnavailableStateView(message: message)
+                    .padding(14)
+            } else {
+                WidgetSevereRiskBadgeCard(state: snapshot.severeRisk, freshness: snapshot.freshness)
+            }
+        }
+        .containerBackground(for: .widget) {
+            backgroundGradient
+        }
+    }
+
+    private var backgroundGradient: LinearGradient {
+        if case .available = snapshot.availability {
+            let style = WidgetRiskVisualStyle.style(for: .severe, severity: snapshot.severeRisk.severity)
+            return LinearGradient(
+                colors: [style.chip.opacity(0.95), style.tint.opacity(0.82)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+
+        return LinearGradient(
+            colors: [Color(red: 0.11, green: 0.14, blue: 0.18), Color(red: 0.08, green: 0.10, blue: 0.13)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}
+
 private struct WidgetStormRiskBadgeCard: View {
     let state: WidgetRiskDisplayState
     let freshness: WidgetFreshnessState
@@ -53,6 +88,59 @@ private struct WidgetStormRiskBadgeCard: View {
         case 4: return "Several severe storms possible"
         case 5: return "Widespread severe storms expected"
         default: return "Severe outbreak likely - stay alert"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .center, spacing: 6) {
+            Spacer(minLength: 0)
+
+            Image(systemName: style.icon)
+                .font(.system(size: 32, weight: .semibold))
+                .frame(height: 34)
+                .foregroundStyle(.primary)
+                .accessibilityHidden(true)
+
+            Text(state.label)
+                .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text(summary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.center)
+
+            Spacer(minLength: 0)
+
+            Text(WidgetFreshnessFormatter.line(for: freshness))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(freshness.state == .stale ? .orange : .secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+    }
+}
+
+private struct WidgetSevereRiskBadgeCard: View {
+    let state: WidgetRiskDisplayState
+    let freshness: WidgetFreshnessState
+
+    private var style: WidgetRiskVisualStyle {
+        WidgetRiskVisualStyle.style(for: .severe, severity: state.severity)
+    }
+
+    private var summary: String {
+        switch state.severity {
+        case 0: return "No severe threats expected"
+        case 1: return "Damaging wind possible"
+        case 2: return "1 in or larger hail possible"
+        default: return "Tornadoes are possible"
         }
     }
 

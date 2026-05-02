@@ -63,6 +63,17 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
+    static let severeRiskPlaceholder = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: .placeholder,
+        severeRisk: .placeholder,
+        selectedAlert: nil,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: nil, state: .unavailable),
+        availability: .available,
+        destination: .summary
+    )
+
     static let multipleAlerts = WidgetSnapshot(
         generatedAt: now,
         stormRisk: WidgetRiskDisplayState(label: "High Risk", severity: 6),
@@ -85,6 +96,7 @@ enum WidgetPreviewFixtures {
         stale,
         unavailable,
         multipleAlerts,
-        stormRiskPlaceholder
+        stormRiskPlaceholder,
+        severeRiskPlaceholder
     ]
 }

@@ -587,7 +587,7 @@ Related GitHub issues:
 ## Issue #162 - Implement small Severe Risk widget
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Implement the small Severe Risk widget using shared snapshot state and rendering components.
@@ -603,6 +603,45 @@ Related GitHub issues:
 
 ### Model recommendation
 - GPT-5.3-Codex, medium reasoning
+
+### Handoff notes
+- Added a real small Severe Risk widget registration in `WidgetsExtension/SkyAwareWidgetsBundle.swift` alongside the existing Storm Risk widget:
+  - widget kind: `SkyAwareWidgetKind.severeRisk`
+  - family support: `.systemSmall` only
+  - gallery copy:
+    - name: `Severe Risk`
+    - description: `See current local severe weather risk.`
+- Added a passive snapshot-driven timeline provider (`SevereRiskProvider`) that mirrors #161 behavior:
+  - reads from App Group snapshot storage via `WidgetSnapshotStore` (#155)
+  - consumes shared snapshot model state from #154
+  - does not initiate ingestion, location, notification, network, or SwiftData workflows
+  - keeps timeline policy passive (`.after(now + 15 minutes)`) so stale-state presentation remains honest over time
+  - falls back to the shared unavailable state/copy when snapshot data is missing or corrupt
+- Added a dedicated severe small-surface rendering adapter in `WidgetsExtension/WidgetRenderingComponents.swift`:
+  - `WidgetSevereRiskSmallView(snapshot:)`
+  - `WidgetSevereRiskBadgeCard`
+  - mirrors in-app Severe badge semantics at widget size using severe icon + label + concise severe summary + freshness
+  - preserves meaning with iconography and text (not color-only)
+  - supports fresh, stale, and unavailable states
+- Extended preview fixtures in `WidgetsExtension/WidgetPreviewFixtures.swift` with `severeRiskPlaceholder`.
+- Expanded preview coverage in `WidgetsExtension/WidgetRenderingPreviewGallery.swift` for Severe Risk small states:
+  - normal
+  - stale
+  - unavailable
+  - placeholder
+  - gallery-style no-alert state
+  - tinted + accessibility dynamic type
+  - vibrant/clear rendering mode
+  - light scheme
+- Skill gate notes:
+  - `build-ios-apps:swiftui-ui-patterns` applied for small-surface hierarchy and state-preview resilience.
+  - `swift-concurrency-expert` evaluated as applicable for the provider/timeline seam; no new actor-boundary changes were required beyond passive value-oriented snapshot reads.
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' build` succeeded.
+- Explicitly deferred per issue scope:
+  - large Combined widget implementation (#163)
+  - Summary tap-routing integration work (#164)
+  - any snapshot model/store/builder/ingestion/APNs/WidgetCenter behavior changes beyond minimal compile-compatible read-only consumption
 
 ---
 
