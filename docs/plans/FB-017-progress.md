@@ -474,7 +474,7 @@ Related GitHub issues:
 ## Issue #160 - Add shared widget rendering components and previews
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Add reusable widget rendering components for risk badges, freshness, unavailable/stale state, and compact alert row display.
@@ -491,6 +491,35 @@ Related GitHub issues:
 
 ### Handoff notes
 - Shared widget components should adapt app badge semantics for WidgetKit without making the small widgets cramped dashboards.
+- Added shared widget rendering primitives in `WidgetsExtension`:
+  - `WidgetRiskBadgeView` for storm/severe badge-like display
+  - `WidgetFreshnessLineView` for concise `Updated ...` freshness copy
+  - `WidgetStaleStateView` for explicit stale presentation
+  - `WidgetUnavailableStateView` for unavailable fallback copy
+  - `WidgetCompactAlertRowView` and `WidgetNoAlertStateView` for large Combined alert/no-alert states
+- Added reusable visual style mapping in `WidgetsExtension/WidgetRenderingStyle.swift`:
+  - risk-severity icon/tint/chip mapping for storm and severe states
+  - compact alert row icon/tint mapping with severity fallback
+  - preserves meaning with iconography + text, not color alone
+- Added realistic preview snapshot fixtures in `WidgetsExtension/WidgetPreviewFixtures.swift`:
+  - `normal`
+  - `noAlert`
+  - `stale`
+  - `unavailable`
+  - `multipleAlerts`
+- Added a preview gallery harness in `WidgetsExtension/WidgetRenderingPreviewGallery.swift` covering:
+  - full-color normal/no-alert/stale/unavailable/multiple-alert states
+  - tinted/accented + accessibility dynamic type
+  - vibrant/clear rendering mode
+  - light-scheme validation
+- Updated placeholder widget rendering in `WidgetsExtension/SkyAwareWidgetsBundle.swift` to use shared rendering components and fixtures only.
+- Added shared freshness copy formatter in `Shared/WidgetFreshnessFormatter.swift` so rendering copy is reusable and deterministic.
+- Intentionally did not implement future issue scope:
+  - no registration/exposure of final Storm/Severe/Combined widgets (#161-#163)
+  - no Summary tap-routing work (#164)
+  - no snapshot pipeline, ingestion, APNs, or WidgetCenter behavior changes
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' build` succeeded (widget extension + app compile).
 
 ---
 

@@ -9,7 +9,7 @@ struct SkyAwareWidgetsBundle: WidgetBundle {
 }
 
 struct SkyAwarePlaceholderWidget: Widget {
-    private let kind = "SkyAwarePlaceholderWidget"
+    private let kind = SkyAwareWidgetKind.placeholder
 
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: Provider()) { entry in
@@ -23,28 +23,28 @@ struct SkyAwarePlaceholderWidget: Widget {
 
 private struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry {
-        Entry(date: .now)
+        Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        completion(Entry(date: .now))
+        completion(Entry(date: .now, snapshot: WidgetPreviewFixtures.normal))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        let timeline = Timeline(entries: [Entry(date: .now)], policy: .never)
+        let timeline = Timeline(entries: [Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)], policy: .never)
         completion(timeline)
     }
 }
 
 private struct Entry: TimelineEntry {
     let date: Date
+    let snapshot: WidgetSnapshot
 }
 
 private struct SkyAwarePlaceholderWidgetView: View {
     let entry: Entry
 
     var body: some View {
-        Text("SkyAware")
-            .font(.headline)
+        WidgetRenderingPreviewCard(snapshot: entry.snapshot)
     }
 }
