@@ -17,7 +17,7 @@ struct SkyAwarePlaceholderWidget: Widget {
         }
         .configurationDisplayName("SkyAware")
         .description("Placeholder widget used to validate target plumbing.")
-        .supportedFamilies([.systemSmall])
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
