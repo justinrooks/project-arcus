@@ -74,6 +74,22 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
+    static let combinedPlaceholder = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: WidgetRiskDisplayState(label: "Storm", severity: 3),
+        severeRisk: WidgetRiskDisplayState(label: "Severe", severity: 1),
+        selectedAlert: WidgetSelectedAlertRowDisplayState(
+            title: "Tornado Warning",
+            typeLabel: "Tornado Warning",
+            severity: 6,
+            issuedAt: now.addingTimeInterval(-300)
+        ),
+        hiddenAlertCount: 2,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-120), state: .fresh),
+        availability: .available,
+        destination: .summary
+    )
+
     static let multipleAlerts = WidgetSnapshot(
         generatedAt: now,
         stormRisk: WidgetRiskDisplayState(label: "High Risk", severity: 6),
@@ -97,6 +113,7 @@ enum WidgetPreviewFixtures {
         unavailable,
         multipleAlerts,
         stormRiskPlaceholder,
-        severeRiskPlaceholder
+        severeRiskPlaceholder,
+        combinedPlaceholder
     ]
 }

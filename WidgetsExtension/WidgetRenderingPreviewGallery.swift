@@ -135,3 +135,57 @@ struct WidgetRenderingPreviewCard: View {
         .preferredColorScheme(.light)
         .frame(width: 170, height: 170)
 }
+
+#Preview("Combined / Normal", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.normal)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Multiple Alerts", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.multipleAlerts)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / No Alerts", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.noAlert)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Stale", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.stale)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Unavailable", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.unavailable)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Placeholder", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.combinedPlaceholder)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Gallery", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.multipleAlerts)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Tinted + AX", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.normal)
+        .environment(\.widgetRenderingMode, .accented)
+        .environment(\.dynamicTypeSize, .accessibility2)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Clear", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.normal)
+        .environment(\.widgetRenderingMode, .vibrant)
+        .frame(width: 360, height: 170)
+}
+
+#Preview("Combined / Light", traits: .sizeThatFitsLayout) {
+    WidgetCombinedLargeView(snapshot: WidgetPreviewFixtures.normal)
+        .preferredColorScheme(.light)
+        .frame(width: 360, height: 170)
+}

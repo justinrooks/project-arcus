@@ -648,7 +648,7 @@ Related GitHub issues:
 ## Issue #163 - Implement large Combined widget
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Implement the large Combined widget.
@@ -665,6 +665,50 @@ Related GitHub issues:
 
 ### Model recommendation
 - GPT-5.3-Codex, medium reasoning
+
+### Handoff notes
+- Added large Combined widget registration in `WidgetsExtension/SkyAwareWidgetsBundle.swift`:
+  - widget kind: `SkyAwareWidgetKind.combined`
+  - family support: `.systemLarge` only
+  - gallery copy:
+    - name: `Combined`
+    - description: `See local risk and the highest-priority active alert.`
+- Added passive snapshot-driven timeline provider (`CombinedProvider`) mirroring the existing small-widget provider behavior:
+  - reads from App Group snapshot storage via `WidgetSnapshotStore` (#155)
+  - consumes shared derived snapshot state from #154/#156
+  - does not initiate ingestion, location, notification, network, or SwiftData workflows
+  - keeps timeline policy passive (`.after(now + 15 minutes)`) and normalizes freshness state from timestamp for stale handling
+  - falls back to shared unavailable state/copy when snapshot data is missing/corrupt
+- Added large-surface Combined rendering adapter in `WidgetsExtension/WidgetRenderingComponents.swift`:
+  - `WidgetCombinedLargeView(snapshot:)`
+  - `WidgetCombinedLargeCard`
+  - shows storm risk and severe risk via shared risk badge components from #160
+  - shows exactly one alert row via `selectedAlert` and `WidgetCompactAlertRowView` (no list rendering)
+  - shows compact `+N more` using `hiddenAlertCount` when lower-priority active alerts are hidden
+  - shows deterministic no-alert, stale, and unavailable states via shared rendering components
+  - preserves meaning with iconography + text, not color-only semantics
+- Extended fixtures/previews for Combined states:
+  - `WidgetsExtension/WidgetPreviewFixtures.swift`: added `combinedPlaceholder`
+  - `WidgetsExtension/WidgetRenderingPreviewGallery.swift`: added Combined previews for:
+    - normal
+    - multiple alerts
+    - no alerts
+    - stale
+    - unavailable
+    - placeholder
+    - gallery-like state
+    - tinted + accessibility dynamic type
+    - clear rendering mode
+    - light scheme
+- Skill gate notes:
+  - `build-ios-apps:swiftui-ui-patterns` applied for large-widget hierarchy and legibility/state coverage.
+  - `swift-concurrency-expert` evaluated as applicable for provider/timeline seam; implementation remained passive and value-oriented with no new actor-boundary changes.
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' build` succeeded.
+- Explicitly deferred per scope:
+  - Summary tap routing work (#164)
+  - final closeout validation coverage and docs (#165)
+  - any snapshot model/store/builder/ingestion/APNs/WidgetCenter behavior changes beyond compile-compatible passive read consumption
 
 ---
 

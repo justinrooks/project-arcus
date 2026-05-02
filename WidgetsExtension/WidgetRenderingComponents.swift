@@ -184,7 +184,9 @@ struct WidgetRiskBadgeView: View {
     let title: String
     let state: WidgetRiskDisplayState
     let kind: WidgetRiskKind
+    var emphasized: Bool = false
     @Environment(\.widgetRenderingMode) private var widgetRenderingMode
+    @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetRiskVisualStyle {
         WidgetRiskVisualStyle.style(for: kind, severity: state.severity)
@@ -215,19 +217,30 @@ struct WidgetRiskBadgeView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 9)
-        .padding(.vertical, 8)
+        .padding(.vertical, emphasized ? 16 : 8)
+        .frame(maxWidth: .infinity, minHeight: emphasized ? 96 : nil, alignment: .center)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(backgroundColor)
+                .fill(backgroundStyle)
         }
     }
 
-    private var backgroundColor: Color {
+    private var backgroundStyle: AnyShapeStyle {
+        if emphasized {
+            return AnyShapeStyle(
+                LinearGradient(
+                    colors: [style.chip.opacity(colorScheme == .dark ? 0.95 : 0.85), style.tint.opacity(colorScheme == .dark ? 0.68 : 0.45)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+
         switch widgetRenderingMode {
         case .accented, .vibrant:
-            return Color.primary.opacity(0.10)
+            return AnyShapeStyle(Color.primary.opacity(0.10))
         default:
-            return Color.black.opacity(0.09)
+            return AnyShapeStyle(Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08))
         }
     }
 }
@@ -287,6 +300,7 @@ struct WidgetStaleStateView: View {
 struct WidgetCompactAlertRowView: View {
     let alert: WidgetSelectedAlertRowDisplayState
     let hiddenAlertCount: Int
+    @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetAlertVisualStyle {
         WidgetAlertVisualStyle.style(for: alert)
@@ -327,12 +341,14 @@ struct WidgetCompactAlertRowView: View {
         .padding(10)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black.opacity(0.10))
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08))
         }
     }
 }
 
 struct WidgetNoAlertStateView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.shield")
@@ -347,7 +363,88 @@ struct WidgetNoAlertStateView: View {
         .padding(10)
         .background {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black.opacity(0.10))
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.16 : 0.08))
         }
+    }
+}
+
+
+struct WidgetCombinedLargeView: View {
+    let snapshot: WidgetSnapshot
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Group {
+            if case let .unavailable(message) = snapshot.availability {
+                WidgetUnavailableStateView(message: message)
+                    .padding(12)
+            } else {
+                WidgetCombinedLargeCard(snapshot: snapshot)
+            }
+        }
+        .containerBackground(for: .widget) {
+            LinearGradient(
+                colors: backgroundGradientColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    private var backgroundGradientColors: [Color] {
+        if colorScheme == .dark {
+            return [Color(red: 0.11, green: 0.14, blue: 0.18), Color(red: 0.08, green: 0.10, blue: 0.13)]
+        }
+
+        return [Color(red: 0.95, green: 0.97, blue: 1.00), Color(red: 0.90, green: 0.94, blue: 0.99)]
+    }
+}
+
+private struct WidgetCombinedLargeCard: View {
+    let snapshot: WidgetSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                WidgetRiskBadgeView(
+                    title: WidgetRiskKind.storm.title,
+                    state: snapshot.stormRisk,
+                    kind: .storm,
+                    emphasized: true
+                )
+
+                WidgetRiskBadgeView(
+                    title: WidgetRiskKind.severe.title,
+                    state: snapshot.severeRisk,
+                    kind: .severe,
+                    emphasized: true
+                )
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Local Alert")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if let selectedAlert = snapshot.selectedAlert {
+                    WidgetCompactAlertRowView(
+                        alert: selectedAlert,
+                        hiddenAlertCount: snapshot.hiddenAlertCount
+                    )
+                } else {
+                    WidgetNoAlertStateView()
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if snapshot.freshness.state == .stale {
+                WidgetStaleStateView(freshness: snapshot.freshness)
+            } else {
+                WidgetFreshnessLineView(freshness: snapshot.freshness)
+            }
+        }
+        .padding(3)
     }
 }
