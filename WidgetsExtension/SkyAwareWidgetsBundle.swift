@@ -18,8 +18,8 @@ struct SkyAwareStormRiskWidget: Widget {
             SkyAwareStormRiskWidgetView(entry: entry)
                 .widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))
         }
-        .configurationDisplayName("Storm Risk")
-        .description("See current local storm risk.")
+        .configurationDisplayName(WidgetGalleryMetadata.stormRiskName)
+        .description(WidgetGalleryMetadata.stormRiskDescription)
         .supportedFamilies([.systemSmall])
     }
 }
@@ -32,8 +32,8 @@ struct SkyAwareSevereRiskWidget: Widget {
             SkyAwareSevereRiskWidgetView(entry: entry)
                 .widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))
         }
-        .configurationDisplayName("Severe Risk")
-        .description("See current local severe weather risk.")
+        .configurationDisplayName(WidgetGalleryMetadata.severeRiskName)
+        .description(WidgetGalleryMetadata.severeRiskDescription)
         .supportedFamilies([.systemSmall])
     }
 }
@@ -46,8 +46,8 @@ struct SkyAwareCombinedWidget: Widget {
             SkyAwareCombinedWidgetView(entry: entry)
                 .widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))
         }
-        .configurationDisplayName("Combined")
-        .description("See local risk and the highest-priority active alert.")
+        .configurationDisplayName(WidgetGalleryMetadata.combinedName)
+        .description(WidgetGalleryMetadata.combinedDescription)
         .supportedFamilies([.systemLarge])
     }
 }

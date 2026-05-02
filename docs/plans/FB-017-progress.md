@@ -770,7 +770,7 @@ Related GitHub issues:
 ## Issue #165 - Add widget state and refresh validation
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Add final validation coverage for major widget states.
@@ -787,4 +787,38 @@ Related GitHub issues:
 - GPT-5.3-Codex, medium reasoning
 
 ### Handoff notes
-- This is the closeout issue. It should verify the whole feature rather than adding new user-facing scope.
+- Closed FB-017 with validation-focused updates only; no new widget scope, no FB-018 routing work, and no snapshot/ingestion architecture changes beyond testability hardening.
+- Added a shared gallery metadata constant source at `Shared/WidgetGalleryMetadata.swift` and wired `WidgetsExtension/SkyAwareWidgetsBundle.swift` to it so widget gallery copy cannot drift from brief-approved values.
+- Added focused tests:
+  - `Tests/UnitTests/WidgetFreshnessFormatterTests.swift` for freshness/stale/unavailable copy shape (`Updated ...`, `Stale since ...`, `Update unavailable`)
+  - `Tests/UnitTests/WidgetGalleryMetadataTests.swift` for exact brief-approved gallery names/descriptions
+- Updated `SkyAware.xcodeproj/project.pbxproj` membership exception lists so new tests are test-target scoped (avoids app-target compilation of test files).
+- Validation matrix coverage for #165:
+  - Widget states:
+    - normal, no-alert, multiple-alert (including hidden count backing `+N more`), stale, unavailable via `WidgetSnapshotBuilderTests`
+    - placeholder/gallery states via preview fixtures in `WidgetRenderingPreviewGallery` and `WidgetPreviewFixtures`
+  - Snapshot/privacy/storage:
+    - derived-only payload shape (`WidgetSnapshotTests`)
+    - App Group snapshot store missing/corrupt/round-trip/stale metadata (`WidgetSnapshotStoreTests`)
+  - Freshness/stale copy:
+    - 30-minute stale threshold (`WidgetSnapshotTests`, `WidgetSnapshotBuilderTests`)
+    - concise freshness copy format (`WidgetFreshnessFormatterTests`)
+  - Refresh paths:
+    - targeted reload requests for risk/combined scopes (`WidgetSnapshotRefreshCoordinatorTests`)
+    - APNs-driven refresh using latest-projection fallback + `.activeAlertProjection` scope (`RemoteHotAlertHandlerTests`)
+  - Routing:
+    - Summary tap URL generation/parsing and Home tab fallback (`WidgetRouteURLTests`)
+  - Gallery metadata:
+    - exact approved copy validation (`WidgetGalleryMetadataTests`)
+- Confirmed app behavior remains safe when widgets are never added:
+  - widget refresh collaborators are optional and fail-open when App Group store is unavailable (`Dependencies.live`, `SkyAwareApp` wiring, and existing tests that run with nil refresh seams).
+- Validation runs:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/WidgetSnapshotBuilderTests -only-testing:SkyAwareTests/WidgetSnapshotTests -only-testing:SkyAwareTests/WidgetSnapshotStoreTests -only-testing:SkyAwareTests/WidgetSnapshotRefreshCoordinatorTests -only-testing:SkyAwareTests/RemoteHotAlertHandlerTests -only-testing:SkyAwareTests/WidgetRouteURLTests -only-testing:SkyAwareTests/WidgetFreshnessFormatterTests -only-testing:SkyAwareTests/WidgetGalleryMetadataTests test` succeeded.
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' build` succeeded.
+- WidgetKit refresh limits and known validation gaps:
+  - `WidgetCenter.reloadTimelines(ofKind:)` is request-based and system-budgeted; immediate render is not guaranteed.
+  - Timeline refresh remains passive (15-minute policy in providers) plus app/APNs-triggered targeted reload requests.
+  - This closeout validates behavior via deterministic unit tests and previews; it does not guarantee real-time delivery cadence in production.
+  - No manual on-device screenshot pass is recorded in this issue; preview/gallery fixtures remain the visual-state validation artifact for this slice.
+- Deferred work:
+  - FB-018 widget deep-link routing (per-alert/per-widget destinations and stale-target fallback routing) remains explicitly out of scope.
