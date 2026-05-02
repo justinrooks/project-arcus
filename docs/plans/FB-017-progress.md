@@ -526,7 +526,7 @@ Related GitHub issues:
 ## Issue #161 - Implement small Storm Risk widget
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Implement the small Storm Risk widget using shared snapshot state and rendering components.
@@ -542,6 +542,45 @@ Related GitHub issues:
 
 ### Model recommendation
 - GPT-5.3-Codex, medium reasoning
+
+### Handoff notes
+- Replaced placeholder-only widget bundle registration with a real small Storm Risk widget in `WidgetsExtension/SkyAwareWidgetsBundle.swift`:
+  - widget kind: `SkyAwareWidgetKind.stormRisk`
+  - family support: `.systemSmall` only
+  - gallery copy:
+    - name: `Storm Risk`
+    - description: `See current local storm risk.`
+- Added a passive snapshot-driven timeline provider (`StormRiskProvider`) that:
+  - reads from the App Group snapshot store (`WidgetSnapshotStore`) added in #155
+  - uses shared snapshot model (`WidgetSnapshot`) from #154
+  - never initiates ingestion, location, notification, network, or SwiftData workflows
+  - refreshes passively on a 15-minute timeline policy to keep stale-state presentation honest over time
+  - falls back to shared unavailable copy/state when snapshot data is missing/corrupt
+- Added a dedicated small widget rendering adapter in `WidgetsExtension/WidgetRenderingComponents.swift`:
+  - `WidgetStormRiskSmallView(snapshot:)`
+  - single-signal Storm Risk-first layout
+  - stale, unavailable, and fresh presentations using shared rendering components from #160
+  - preserves meaning with iconography + text, not color alone
+- Extended preview fixtures in `WidgetsExtension/WidgetPreviewFixtures.swift` with `stormRiskPlaceholder` for placeholder/gallery previews.
+- Updated preview coverage in `WidgetsExtension/WidgetRenderingPreviewGallery.swift` for Storm Risk small states:
+  - normal
+  - stale
+  - unavailable
+  - placeholder
+  - gallery-style no-alert state
+  - tinted + accessibility dynamic type
+  - vibrant/clear rendering mode
+  - light scheme
+- Skill gate notes:
+  - `build-ios-apps:swiftui-ui-patterns` applied for small-surface hierarchy, resilience, and preview/state coverage.
+  - `swift-concurrency-expert` evaluated as applicable for timeline/provider seam; no new async actor-boundary changes were required beyond keeping provider/store use value-oriented and passive.
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' build` succeeded.
+- Explicitly deferred per issue scope:
+  - small Severe Risk widget (#162)
+  - large Combined widget (#163)
+  - Summary tap-routing integration work (#164)
+  - any snapshot model/store/builder/ingestion/APNs/WidgetCenter behavior changes beyond minimal compile-compatible read-only consumption
 
 ---
 

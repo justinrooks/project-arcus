@@ -4,35 +4,76 @@ import WidgetKit
 @main
 struct SkyAwareWidgetsBundle: WidgetBundle {
     var body: some Widget {
-        SkyAwarePlaceholderWidget()
+        SkyAwareStormRiskWidget()
     }
 }
 
-struct SkyAwarePlaceholderWidget: Widget {
-    private let kind = SkyAwareWidgetKind.placeholder
+struct SkyAwareStormRiskWidget: Widget {
+    private let kind = SkyAwareWidgetKind.stormRisk
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: Provider()) { entry in
-            SkyAwarePlaceholderWidgetView(entry: entry)
+        StaticConfiguration(kind: kind, provider: StormRiskProvider()) { entry in
+            SkyAwareStormRiskWidgetView(entry: entry)
         }
-        .configurationDisplayName("SkyAware")
-        .description("Placeholder widget used to validate target plumbing.")
-        .supportedFamilies([.systemSmall, .systemMedium])
+        .configurationDisplayName("Storm Risk")
+        .description("See current local storm risk.")
+        .supportedFamilies([.systemSmall])
     }
 }
 
-private struct Provider: TimelineProvider {
+private struct StormRiskProvider: TimelineProvider {
+    private static let passiveRefreshInterval: TimeInterval = 15 * 60
+
     func placeholder(in context: Context) -> Entry {
-        Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+        Entry(date: .now, snapshot: WidgetPreviewFixtures.stormRiskPlaceholder)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        completion(Entry(date: .now, snapshot: WidgetPreviewFixtures.normal))
+        completion(Entry(date: .now, snapshot: currentSnapshot(now: .now)))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
-        let timeline = Timeline(entries: [Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)], policy: .never)
+        let now = Date.now
+        let snapshot = currentSnapshot(now: now)
+        let entry = Entry(date: now, snapshot: snapshot)
+        let refreshDate = now.addingTimeInterval(Self.passiveRefreshInterval)
+        let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
         completion(timeline)
+    }
+
+    private func currentSnapshot(now: Date) -> WidgetSnapshot {
+        guard
+            let store = try? WidgetSnapshotStore(),
+            case .snapshot(let snapshot) = store.load()
+        else {
+            return WidgetSnapshot.unavailable(generatedAt: now, timestamp: nil, destination: .summary)
+        }
+
+        return normalizeFreshness(snapshot, now: now)
+    }
+
+    private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
+        guard case .available = snapshot.availability else {
+            return snapshot
+        }
+
+        let normalizedFreshness: WidgetFreshnessState
+        if let timestamp = snapshot.freshness.timestamp {
+            normalizedFreshness = .from(timestamp: timestamp, now: now)
+        } else {
+            normalizedFreshness = snapshot.freshness
+        }
+
+        return WidgetSnapshot(
+            generatedAt: snapshot.generatedAt,
+            stormRisk: snapshot.stormRisk,
+            severeRisk: snapshot.severeRisk,
+            selectedAlert: snapshot.selectedAlert,
+            hiddenAlertCount: snapshot.hiddenAlertCount,
+            freshness: normalizedFreshness,
+            availability: snapshot.availability,
+            destination: snapshot.destination
+        )
     }
 }
 
@@ -41,10 +82,10 @@ private struct Entry: TimelineEntry {
     let snapshot: WidgetSnapshot
 }
 
-private struct SkyAwarePlaceholderWidgetView: View {
+private struct SkyAwareStormRiskWidgetView: View {
     let entry: Entry
 
     var body: some View {
-        WidgetRenderingPreviewCard(snapshot: entry.snapshot)
+        WidgetStormRiskSmallView(snapshot: entry.snapshot)
     }
 }

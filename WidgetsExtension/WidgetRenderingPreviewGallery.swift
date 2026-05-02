@@ -49,45 +49,45 @@ struct WidgetRenderingPreviewCard: View {
 }
 
 #Preview("Normal / Full", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.normal)
-        .frame(width: 338, height: 158)
-}
-
-#Preview("No Alert / Full", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.noAlert)
-        .frame(width: 338, height: 158)
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
+        .frame(width: 170, height: 170)
 }
 
 #Preview("Stale / Full", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.stale)
-        .frame(width: 338, height: 158)
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.stale)
+        .frame(width: 170, height: 170)
 }
 
 #Preview("Unavailable / Full", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.unavailable)
-        .frame(width: 338, height: 158)
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.unavailable)
+        .frame(width: 170, height: 170)
 }
 
-#Preview("Multiple Alerts / Full", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.multipleAlerts)
-        .frame(width: 338, height: 158)
+#Preview("Placeholder / Full", traits: .sizeThatFitsLayout) {
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.stormRiskPlaceholder)
+        .frame(width: 170, height: 170)
+}
+
+#Preview("Gallery / Full", traits: .sizeThatFitsLayout) {
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.noAlert)
+        .frame(width: 170, height: 170)
 }
 
 #Preview("Normal / Tinted + AX", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.normal)
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
         .environment(\.widgetRenderingMode, .accented)
         .environment(\.dynamicTypeSize, .accessibility2)
-        .frame(width: 338, height: 158)
+        .frame(width: 170, height: 170)
 }
 
 #Preview("Normal / Clear", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.normal)
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
         .environment(\.widgetRenderingMode, .vibrant)
-        .frame(width: 338, height: 158)
+        .frame(width: 170, height: 170)
 }
 
 #Preview("Normal / Light", traits: .sizeThatFitsLayout) {
-    WidgetRenderingPreviewCard(snapshot: WidgetPreviewFixtures.normal)
+    WidgetStormRiskSmallView(snapshot: WidgetPreviewFixtures.normal)
         .preferredColorScheme(.light)
-        .frame(width: 338, height: 158)
+        .frame(width: 170, height: 170)
 }
