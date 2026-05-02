@@ -26,20 +26,38 @@ struct WidgetStormRiskSmallView: View {
         }
     }
 
-    private var backgroundGradient: LinearGradient {
+    private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity)
-        let baseColors = colorScheme == .dark
-            ? [WidgetSurfacePalette.darkBaseTop, WidgetSurfacePalette.darkBaseBottom]
-            : [WidgetSurfacePalette.lightBaseTop, WidgetSurfacePalette.lightBaseBottom]
-        return LinearGradient(
-            colors: [
-                baseColors[0],
-                baseColors[1],
-                style.tint.opacity(colorScheme == .dark ? 0.16 : 0.08)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        return ZStack {
+            LinearGradient(
+                colors: stormBaseColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            LinearGradient(
+                colors: [
+                    style.tint.opacity(colorScheme == .dark ? 0.16 : 0.04),
+                    style.tint.opacity(colorScheme == .dark ? 0.28 : 0.07)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    private var stormBaseColors: [Color] {
+        if colorScheme == .dark {
+            return [
+                Color(red: 0.07, green: 0.11, blue: 0.17),
+                Color(red: 0.04, green: 0.06, blue: 0.10)
+            ]
+        }
+
+        return [
+            Color(red: 0.97, green: 0.98, blue: 1.00),
+            Color(red: 0.95, green: 0.96, blue: 0.99)
+        ]
     }
 }
 
@@ -61,113 +79,236 @@ struct WidgetSevereRiskSmallView: View {
         }
     }
 
-    private var backgroundGradient: LinearGradient {
+    private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .severe, severity: snapshot.severeRisk.severity)
-        let baseColors = colorScheme == .dark
-            ? [WidgetSurfacePalette.darkBaseTop, WidgetSurfacePalette.darkBaseBottom]
-            : [WidgetSurfacePalette.lightBaseTop, WidgetSurfacePalette.lightBaseBottom]
-        return LinearGradient(
-            colors: [
-                baseColors[0],
-                baseColors[1],
-                style.tint.opacity(colorScheme == .dark ? 0.14 : 0.07)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        return ZStack {
+            LinearGradient(
+                colors: severeBaseColors,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            LinearGradient(
+                colors: [
+                    style.tint.opacity(colorScheme == .dark ? 0.14 : 0.035),
+                    style.tint.opacity(colorScheme == .dark ? 0.24 : 0.065)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    private var severeBaseColors: [Color] {
+        if colorScheme == .dark {
+            return [
+                Color(red: 0.07, green: 0.11, blue: 0.17),
+                Color(red: 0.04, green: 0.06, blue: 0.10)
+            ]
+        }
+
+        return [
+            Color(red: 0.97, green: 0.98, blue: 1.00),
+            Color(red: 0.95, green: 0.96, blue: 0.99)
+        ]
     }
 }
 
 private struct WidgetStormRiskBadgeCard: View {
     let state: WidgetRiskDisplayState
     let freshness: WidgetFreshnessState
+    @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetRiskVisualStyle {
         WidgetRiskVisualStyle.style(for: .storm, severity: state.severity)
     }
 
     var body: some View {
-        VStack(alignment: .center, spacing: 8) {
-            Spacer(minLength: 0)
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                iconGlow
+                    .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.62)
 
-            Image(systemName: style.icon)
-                .font(.system(size: 32, weight: .semibold))
-                .frame(width: 54, height: 54)
-                .background {
-                    Circle()
-                        .fill(style.chip)
+                decorativeIcon
+                    .position(x: proxy.size.width * 0.74, y: proxy.size.height * 0.30)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Storm Risk")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 10)
+
+                    riskValueText
+                        .frame(maxWidth: proxy.size.width * 0.72, alignment: .leading)
+
                 }
-                .foregroundStyle(style.tint)
-                .accessibilityHidden(true)
-
-            Text(state.label)
-                .font(.headline)
-                .lineLimit(2)
-                .minimumScaleFactor(0.7)
-                .multilineTextAlignment(.center)
-
-            Spacer(minLength: 0)
-
-            freshnessFooter
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var decorativeIcon: some View {
+        Image(systemName: style.icon)
+            .font(.system(size: colorScheme == .dark ? 62 : 56, weight: .regular))
+            .foregroundStyle(style.tint.opacity(colorScheme == .dark ? 0.58 : 0.22))
+            .accessibilityHidden(true)
+    }
+
+    private var iconGlow: some View {
+        Circle()
+            .fill(style.tint.opacity(colorScheme == .dark ? 0.34 : 0.12))
+            .frame(width: colorScheme == .dark ? 210 : 190, height: colorScheme == .dark ? 210 : 190)
+            .blur(radius: colorScheme == .dark ? 58 : 50)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
-    private var freshnessFooter: some View {
-        if freshness.state == .stale {
-            WidgetStaleStateView(freshness: freshness, compact: true)
+    private var riskValueText: some View {
+        if let level = splitRiskLevel(from: state.label) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(level)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text("Risk")
+                    .foregroundStyle(style.tint)
+                    .lineLimit(1)
+            }
+            .font(.title2.weight(.bold))
+            .minimumScaleFactor(0.82)
+            .multilineTextAlignment(.leading)
+        } else {
+            Text(state.label)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+                .multilineTextAlignment(.leading)
         }
     }
+
+    private func splitRiskLevel(from label: String) -> String? {
+        guard label.hasSuffix(" Risk") else { return nil }
+        let level = label.dropLast(" Risk".count)
+        let trimmed = level.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private var accessibilitySummary: String {
+        "Storm Risk, \(state.label), \(WidgetFreshnessFormatter.line(for: freshness))"
+    }
+
 }
 
 private struct WidgetSevereRiskBadgeCard: View {
     let state: WidgetRiskDisplayState
     let freshness: WidgetFreshnessState
+    @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetRiskVisualStyle {
         WidgetRiskVisualStyle.style(for: .severe, severity: state.severity)
     }
 
-    private var titleFont: Font {
-        state.severity == 0 ? .subheadline.weight(.semibold) : .headline
+    private var subtitle: String? {
+        guard state.severity > 0 else { return nil }
+        return "Possible"
+    }
+
+    private var primaryLabel: String {
+        guard state.severity == 0 else { return state.label }
+        return "No Active"
+    }
+
+    private var secondaryLabel: String? {
+        guard state.severity == 0 else { return subtitle }
+        return "Threats"
     }
 
     var body: some View {
-        VStack(alignment: .center, spacing: 8) {
-            Spacer(minLength: 0)
+        GeometryReader { proxy in
+            ZStack(alignment: .topLeading) {
+                iconGlow
+                    .position(x: proxy.size.width * 0.78, y: proxy.size.height * 0.62)
 
-            Image(systemName: style.icon)
-                .font(.system(size: 32, weight: .semibold))
-                .frame(width: 54, height: 54)
-                .background {
-                    Circle()
-                        .fill(style.chip)
+                decorativeIcon
+                    .position(x: proxy.size.width * 0.74, y: proxy.size.height * 0.30)
+
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Severe Risk")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 10)
+
+                    severeValueText
+                        .frame(maxWidth: proxy.size.width * 0.72, alignment: .leading)
                 }
-                .foregroundStyle(style.tint)
-                .accessibilityHidden(true)
-            Text(state.label)
-                .font(titleFont)
-                .lineLimit(state.severity == 0 ? 2 : 1)
-                .minimumScaleFactor(state.severity == 0 ? 1.0 : 0.7)
-                .multilineTextAlignment(.center)
-
-            Spacer(minLength: 0)
-
-            freshnessFooter
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+            .clipped()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 16)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var decorativeIcon: some View {
+        Image(systemName: style.icon)
+            .font(.system(size: colorScheme == .dark ? 62 : 56, weight: .regular))
+            .foregroundStyle(style.tint.opacity(colorScheme == .dark ? 0.58 : 0.22))
+            .accessibilityHidden(true)
+    }
+
+    private var iconGlow: some View {
+        Circle()
+            .fill(style.tint.opacity(colorScheme == .dark ? 0.20 : 0.07))
+            .frame(width: colorScheme == .dark ? 230 : 200, height: colorScheme == .dark ? 230 : 200)
+            .blur(radius: colorScheme == .dark ? 72 : 58)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
-    private var freshnessFooter: some View {
-        if freshness.state == .stale {
-            WidgetStaleStateView(freshness: freshness, compact: true)
+    private var severeValueText: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(primaryLabel)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(state.severity == 0 ? 0.72 : 0.78)
+
+            if let secondaryLabel {
+                Text(secondaryLabel)
+                    .foregroundStyle(style.tint)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
         }
+        .font(.title2.weight(.bold))
+        .minimumScaleFactor(0.82)
+        .multilineTextAlignment(.leading)
+    }
+
+    private var accessibilitySummary: String {
+        if state.severity == 0 {
+            return "Severe Risk, no active threats, \(WidgetFreshnessFormatter.line(for: freshness))"
+        }
+
+        if let subtitle {
+            return "Severe Risk, \(state.label), \(subtitle), \(WidgetFreshnessFormatter.line(for: freshness))"
+        }
+
+        return "Severe Risk, \(state.label), \(WidgetFreshnessFormatter.line(for: freshness))"
     }
 }
 

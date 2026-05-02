@@ -21,6 +21,7 @@ struct SkyAwareStormRiskWidget: Widget {
         .configurationDisplayName(WidgetGalleryMetadata.stormRiskName)
         .description(WidgetGalleryMetadata.stormRiskDescription)
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
@@ -35,6 +36,7 @@ struct SkyAwareSevereRiskWidget: Widget {
         .configurationDisplayName(WidgetGalleryMetadata.severeRiskName)
         .description(WidgetGalleryMetadata.severeRiskDescription)
         .supportedFamilies([.systemSmall])
+        .contentMarginsDisabled()
     }
 }
 
