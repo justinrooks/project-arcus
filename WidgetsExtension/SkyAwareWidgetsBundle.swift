@@ -16,6 +16,7 @@ struct SkyAwareStormRiskWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: StormRiskProvider()) { entry in
             SkyAwareStormRiskWidgetView(entry: entry)
+                .widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))
         }
         .configurationDisplayName("Storm Risk")
         .description("See current local storm risk.")
@@ -29,6 +30,7 @@ struct SkyAwareSevereRiskWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: SevereRiskProvider()) { entry in
             SkyAwareSevereRiskWidgetView(entry: entry)
+                .widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))
         }
         .configurationDisplayName("Severe Risk")
         .description("See current local severe weather risk.")
@@ -42,6 +44,7 @@ struct SkyAwareCombinedWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: CombinedProvider()) { entry in
             SkyAwareCombinedWidgetView(entry: entry)
+                .widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))
         }
         .configurationDisplayName("Combined")
         .description("See local risk and the highest-priority active alert.")

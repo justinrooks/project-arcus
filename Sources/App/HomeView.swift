@@ -331,6 +331,13 @@ struct HomeView: View {
         .task(id: displayedSevereRisk) {
             refreshLocationReliabilityRail()
         }
+        .onOpenURL { url in
+            guard let tab = Self.tabSelection(forIncomingURL: url) else {
+                return
+            }
+
+            selectedTab = tab
+        }
     }
 }
 
@@ -395,6 +402,17 @@ extension HomeView {
         case map
         case outlooks
         case settings
+    }
+
+    static func tabSelection(forIncomingURL url: URL) -> HomeTab? {
+        guard let destination = WidgetRouteURL.destination(from: url) else {
+            return nil
+        }
+
+        switch destination {
+        case .summary:
+            return .today
+        }
     }
 
     static func selectProjection(

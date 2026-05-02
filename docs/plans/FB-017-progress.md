@@ -715,7 +715,7 @@ Related GitHub issues:
 ## Issue #164 - Wire Summary tap routing for widgets
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Ensure all widgets open SkyAware to Summary in FB-017.
@@ -733,7 +733,37 @@ Related GitHub issues:
 - GPT-5.3-Codex, medium reasoning
 
 ### Handoff notes
-- Keep route design compatible with future FB-018 deep linking, but do not build those destinations here.
+- Added a minimal shared widget route helper at `Shared/WidgetRouteURL.swift`:
+  - canonical v1 route shape: `skyaware://widget/summary`
+  - destination parsing is intentionally shallow and accepts only Summary in FB-017.
+- Wired widget tap URLs for all three FB-017 widgets in `WidgetsExtension/SkyAwareWidgetsBundle.swift` using WidgetKit-native routing:
+  - Storm Risk
+  - Severe Risk
+  - Combined
+  - each now applies `.widgetURL(WidgetRouteURL.url(for: entry.snapshot.destination))`.
+- Preserved shallow destination shape from snapshot state:
+  - `WidgetSnapshot.destination` remains `WidgetSummaryDestination.summary` in v1.
+  - no per-alert, badge-specific, or widget-specific route branching was introduced.
+- Added Summary fallback routing handling in `Sources/App/HomeView.swift`:
+  - `onOpenURL` parses widget route via `WidgetRouteURL.destination(from:)`.
+  - Summary destination maps to `.today` tab selection (Summary surface) for warm foreground and cold launch paths where HomeView is presented.
+  - unknown/non-widget routes are ignored.
+- Added focused tests in `Tests/UnitTests/WidgetRouteURLTests.swift` covering:
+  - URL generation for Summary route
+  - URL parsing for Summary destination
+  - rejection of non-widget routes
+  - HomeView Summary-tab fallback mapping
+  - no-op behavior for unknown widget paths
+- Skill gate notes:
+  - `build-ios-apps:swiftui-ui-patterns` applied (widget tap affordance and SwiftUI URL event wiring).
+  - `swift-concurrency-expert` evaluated; no new async actor-boundary behavior was introduced in this issue slice.
+- Validation run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/WidgetRouteURLTests test` succeeded.
+- Explicitly deferred to FB-018 per plan:
+  - per-alert deep linking
+  - per-widget destination branching
+  - badge-specific routing
+  - alert-detail validation and fallback logic for stale/missing targets
 
 ---
 
