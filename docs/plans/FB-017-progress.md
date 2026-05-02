@@ -414,7 +414,7 @@ Related GitHub issues:
 ## Issue #159 - Wire APNs-driven widget snapshot refresh
 
 ### Status
-- Not started
+- Completed (2026-05-01)
 
 ### Scope
 - Extend the remote alert/APNs handling path so completed alert refresh work updates the widget snapshot.
@@ -433,6 +433,41 @@ Related GitHub issues:
 
 ### Handoff notes
 - This is the second half of APNs refresh work. It should consume the latest-projection fallback rather than invent another projection path.
+- Wired APNs-driven widget refresh at the existing remote-alert completion seam in:
+  - `Sources/App/RemoteHotAlertHandler.swift`
+- Added a narrow APNs widget-refresh collaborator:
+  - `RemoteAlertWidgetSnapshotRefreshDriver`
+  - `LatestHomeProjectionReading` protocol (implemented by `HomeProjectionStore`)
+- APNs flow behavior now:
+  1. Existing remote alert ingestion completes via `coordinator.enqueueAndWait(...)`.
+  2. Handler attempts widget refresh by reading `latestProjectionForWidgetSnapshotRefresh()` (#158 fallback).
+  3. On success, uses existing #157 coordinator path (`WidgetSnapshotRefreshCoordinator`) with scope `.activeAlertProjection`.
+  4. Scope `.activeAlertProjection` preserves targeted reload behavior (`combined` + `placeholder`) via `reloadTimelines(ofKind:)`.
+- Preserved existing semantics:
+  - no changes to APNs fetch-result mapping (`newData` / `noData` / `failed`)
+  - no changes to notification-open focus behavior
+  - no changes to ingestion lane selection or background handling contracts
+  - widget refresh failures are logged and do not fail APNs ingestion/notification handling
+- App wiring updates:
+  - `Sources/App/SkyAwareApp.swift` now installs `RemoteHotAlertHandler` with a driver that uses:
+    - app `HomeProjectionStore`
+    - `WidgetSnapshotRefreshCoordinator` + `WidgetSnapshotStore` (App Group)
+- Focused tests added/updated in `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`:
+  - APNs receipt triggers widget refresh attempt
+  - notification-open path triggers widget refresh attempt
+  - widget refresh failure does not change APNs receipt behavior
+  - APNs driver uses latest-projection fallback and `.activeAlertProjection` targeted scope
+  - APNs driver no-ops when no latest projection is available
+- Validation runs:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/RemoteHotAlertHandlerTests test` succeeded.
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/WidgetSnapshotRefreshCoordinatorTests test` succeeded.
+- Skill gate notes:
+  - `swift-concurrency-expert` applied (actor/APNs/background-adjacent flow). Implementation keeps actor boundaries explicit and avoids cross-actor mutable sharing.
+  - `build-ios-apps:swiftui-ui-patterns` not applicable for #159 (no SwiftUI widget UI/layout changes in this issue slice).
+- Deferred per plan:
+  - widget UI/rendering work (#160-#163)
+  - Summary tap routing integration (#164)
+  - final closeout validation (#165)
 
 ---
 

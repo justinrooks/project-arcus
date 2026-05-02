@@ -27,20 +27,27 @@ final class RemoteAlertPresentationState {
 }
 
 actor RemoteHotAlertHandler {
+    protocol WidgetSnapshotRefreshDriving: Sendable {
+        func refreshFromLatestProjection(generatedAt: Date) async throws
+    }
+
     private let coordinator: any HomeIngestionCoordinating
     private let arcusAlerts: any ArcusAlertQuerying
     private let presentationState: RemoteAlertPresentationState
+    private let widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)?
     private let logger: Logger
 
     init(
         coordinator: any HomeIngestionCoordinating,
         arcusAlerts: any ArcusAlertQuerying,
         presentationState: RemoteAlertPresentationState,
+        widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)? = nil,
         logger: Logger = .notificationsRemote
     ) {
         self.coordinator = coordinator
         self.arcusAlerts = arcusAlerts
         self.presentationState = presentationState
+        self.widgetSnapshotRefreshDriver = widgetSnapshotRefreshDriver
         self.logger = logger
     }
 
@@ -52,6 +59,7 @@ actor RemoteHotAlertHandler {
                 locationContext: nil,
                 remoteAlertContext: remoteAlertContext
             )
+            await refreshWidgetSnapshotAfterRemoteAlertIngestion()
             let latestWatch = try await arcusAlerts.getWatch(id: remoteAlertContext.alertID)
             return remoteAlertContext.fetchResult(before: previousWatch, after: latestWatch)
         } catch {
@@ -67,6 +75,7 @@ actor RemoteHotAlertHandler {
                 locationContext: nil,
                 remoteAlertContext: remoteAlertContext
             )
+            await refreshWidgetSnapshotAfterRemoteAlertIngestion()
             let watch = try await arcusAlerts.getWatch(id: remoteAlertContext.alertID)
             await MainActor.run {
                 presentationState.present(alertID: remoteAlertContext.alertID, watch: watch)
@@ -77,6 +86,56 @@ actor RemoteHotAlertHandler {
                 presentationState.present(alertID: remoteAlertContext.alertID, watch: nil)
             }
         }
+    }
+
+    private func refreshWidgetSnapshotAfterRemoteAlertIngestion() async {
+        guard let widgetSnapshotRefreshDriver else {
+            return
+        }
+
+        do {
+            try await widgetSnapshotRefreshDriver.refreshFromLatestProjection(generatedAt: Date())
+        } catch {
+            logger.error(
+                "Remote hot-alert widget snapshot refresh failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+    }
+}
+
+protocol LatestHomeProjectionReading: Actor {
+    func latestProjectionForWidgetSnapshotRefresh() throws -> HomeProjectionRecord?
+}
+
+extension HomeProjectionStore: LatestHomeProjectionReading {}
+
+actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapshotRefreshDriving {
+    private let projectionStore: any LatestHomeProjectionReading
+    private let widgetSnapshotRefresher: any WidgetSnapshotRefreshing
+
+    init(
+        projectionStore: any LatestHomeProjectionReading,
+        widgetSnapshotRefresher: any WidgetSnapshotRefreshing
+    ) {
+        self.projectionStore = projectionStore
+        self.widgetSnapshotRefresher = widgetSnapshotRefresher
+    }
+
+    func refreshFromLatestProjection(generatedAt: Date) async throws {
+        guard let latestProjection = try await projectionStore.latestProjectionForWidgetSnapshotRefresh() else {
+            return
+        }
+
+        try widgetSnapshotRefresher.refresh(
+            scope: .activeAlertProjection,
+            input: .init(
+                generatedAt: generatedAt,
+                stormRisk: latestProjection.stormRisk,
+                severeRisk: latestProjection.severeRisk,
+                watches: latestProjection.activeAlerts,
+                mesos: latestProjection.activeMesos
+            )
+        )
     }
 }
 

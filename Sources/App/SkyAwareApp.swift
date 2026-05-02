@@ -63,11 +63,22 @@ struct SkyAwareApp: App {
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
         Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
         _locationSession = State(initialValue: deps.locationSession)
+        let remoteAlertWidgetSnapshotRefreshDriver: RemoteAlertWidgetSnapshotRefreshDriver? = {
+            guard let widgetSnapshotStore = try? WidgetSnapshotStore() else {
+                return nil
+            }
+            let widgetSnapshotRefresher = WidgetSnapshotRefreshCoordinator(store: widgetSnapshotStore)
+            return RemoteAlertWidgetSnapshotRefreshDriver(
+                projectionStore: deps.homeProjectionStore,
+                widgetSnapshotRefresher: widgetSnapshotRefresher
+            )
+        }()
         SkyAwareAppDelegate.install(
             remoteHotAlertHandler: RemoteHotAlertHandler(
                 coordinator: deps.homeIngestionCoordinator,
                 arcusAlerts: deps.arcusProvider,
-                presentationState: remoteAlertPresentationState
+                presentationState: remoteAlertPresentationState,
+                widgetSnapshotRefreshDriver: remoteAlertWidgetSnapshotRefreshDriver
             )
         )
 #if DEBUG
