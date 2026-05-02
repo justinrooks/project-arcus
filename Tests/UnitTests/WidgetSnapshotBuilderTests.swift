@@ -124,6 +124,30 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.hiddenAlertCount == 0)
     }
 
+    @Test("watches outrank mesos when both are active")
+    func watchesOutrankMesos() {
+        let builder = WidgetSnapshotBuilder()
+        let input = WidgetSnapshotBuilder.Input(
+            generatedAt: now,
+            snapshotTimestamp: now,
+            availability: .available,
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.1),
+            watches: [
+                makeWatch(id: "watch", title: "Special Weather Statement", issued: iso("2026-05-01T11:00:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+            ],
+            mesos: [
+                makeMeso(number: 2002, issued: iso("2026-05-01T11:55:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+            ]
+        )
+
+        let snapshot = builder.build(from: input, now: now)
+
+        #expect(snapshot.selectedAlert?.title == "Special Weather Statement")
+        #expect(snapshot.selectedAlert?.typeLabel == "Watch")
+        #expect(snapshot.hiddenAlertCount == 1)
+    }
+
     @Test("expired alerts are filtered from active widget state")
     func expiredAlertsFiltered() {
         let builder = WidgetSnapshotBuilder()

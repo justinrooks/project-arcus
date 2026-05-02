@@ -54,38 +54,38 @@ enum WidgetPreviewFixtures {
 
     static let stormRiskPlaceholder = WidgetSnapshot(
         generatedAt: now,
-        stormRisk: .placeholder,
-        severeRisk: .placeholder,
+        stormRisk: WidgetRiskDisplayState(label: "Slight Risk", severity: 3),
+        severeRisk: WidgetRiskDisplayState(label: "Wind", severity: 1),
         selectedAlert: nil,
         hiddenAlertCount: 0,
-        freshness: WidgetFreshnessState(timestamp: nil, state: .unavailable),
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
         availability: .available,
         destination: .summary
     )
 
     static let severeRiskPlaceholder = WidgetSnapshot(
         generatedAt: now,
-        stormRisk: .placeholder,
-        severeRisk: .placeholder,
+        stormRisk: WidgetRiskDisplayState(label: "Marginal Risk", severity: 2),
+        severeRisk: WidgetRiskDisplayState(label: "Hail", severity: 2),
         selectedAlert: nil,
         hiddenAlertCount: 0,
-        freshness: WidgetFreshnessState(timestamp: nil, state: .unavailable),
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
         availability: .available,
         destination: .summary
     )
 
     static let combinedPlaceholder = WidgetSnapshot(
         generatedAt: now,
-        stormRisk: WidgetRiskDisplayState(label: "Storm", severity: 3),
-        severeRisk: WidgetRiskDisplayState(label: "Severe", severity: 1),
+        stormRisk: WidgetRiskDisplayState(label: "Enhanced Risk", severity: 4),
+        severeRisk: WidgetRiskDisplayState(label: "Tornado", severity: 3),
         selectedAlert: WidgetSelectedAlertRowDisplayState(
-            title: "Tornado Warning",
-            typeLabel: "Tornado Warning",
-            severity: 6,
-            issuedAt: now.addingTimeInterval(-300)
+            title: "Tornado Watch 219",
+            typeLabel: "Tornado Watch",
+            severity: 5,
+            issuedAt: now.addingTimeInterval(-900)
         ),
-        hiddenAlertCount: 2,
-        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-120), state: .fresh),
+        hiddenAlertCount: 1,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-240), state: .fresh),
         availability: .available,
         destination: .summary
     )

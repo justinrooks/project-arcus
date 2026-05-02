@@ -822,3 +822,59 @@ Related GitHub issues:
   - No manual on-device screenshot pass is recorded in this issue; preview/gallery fixtures remain the visual-state validation artifact for this slice.
 - Deferred work:
   - FB-018 widget deep-link routing (per-alert/per-widget destinations and stale-target fallback routing) remains explicitly out of scope.
+
+---
+
+## Post-#165 Styling Polish Pass
+
+### Status
+- Completed (2026-05-01)
+
+### Scope
+- Visual consistency and styling polish only.
+- No new widget behavior, families, routing, snapshot-model changes, storage changes, ingestion changes, APNs changes, or WidgetCenter reload changes.
+- Keep gallery names and descriptions unchanged.
+
+### Relevant feature brief sections
+- `Widget Design Principles`
+- `Target Behavior`
+- `Acceptance Criteria`
+
+### Handoff notes
+- Polished widget rendering to better match the current app badge, alert-row, and surface language while preserving the existing FB-017 architecture and behavior.
+- Updated widget rendering files only:
+  - `WidgetsExtension/WidgetRenderingComponents.swift`
+  - `WidgetsExtension/WidgetRenderingStyle.swift`
+  - `WidgetsExtension/WidgetPreviewFixtures.swift`
+- Small Storm Risk and Severe Risk widgets:
+  - reduced full-surface saturation in favor of calmer SkyAware-like dark/light card backgrounds with restrained semantic tinting
+  - strengthened single-signal hierarchy with icon chip, risk label, concise summary, and quieter freshness treatment
+  - aligned storm-risk supporting copy more closely with the in-app badge summaries
+- Large Combined widget:
+  - changed the section label to `Local Alerts` to match app vocabulary
+  - restyled the alert row to better mirror the in-app active alert row hierarchy:
+    - larger icon chip
+    - stronger title weight
+    - `Issued ... ago` secondary metadata instead of repeating the type label
+    - softer card chrome and corner radius closer to app row treatment
+  - restyled no-alert state to feel intentional rather than like a placeholder utility row
+- State polish:
+  - made unavailable and stale presentations calmer and more deliberate
+  - kept meaning preserved with icons + text rather than color alone
+  - refreshed placeholder/gallery fixtures to use realistic SkyAware-looking representative states rather than skeletal `--` placeholders
+- Explicitly did not change:
+  - widget gallery metadata
+  - fallback unavailable copy
+  - stale threshold
+  - hidden-alert count logic
+  - alert priority
+  - widget kinds/sizes
+  - Summary routing
+  - any snapshot, storage, ingestion, APNs, or reload plumbing
+
+### Validation run
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' build` succeeded.
+
+### Deferred follow-up polish
+- No screenshot-based device review was added in this pass; previews and compile validation remain the visual verification artifact.
+- Deeper alert-row parity would require richer shared snapshot metadata and remains out of scope for this styling-only pass.

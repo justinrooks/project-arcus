@@ -220,12 +220,12 @@ private struct CombinedProvider: TimelineProvider {
     }
 }
 
-private struct Entry: TimelineEntry {
+struct Entry: TimelineEntry {
     let date: Date
     let snapshot: WidgetSnapshot
 }
 
-private struct SkyAwareStormRiskWidgetView: View {
+struct SkyAwareStormRiskWidgetView: View {
     let entry: Entry
 
     var body: some View {
@@ -233,7 +233,7 @@ private struct SkyAwareStormRiskWidgetView: View {
     }
 }
 
-private struct SkyAwareSevereRiskWidgetView: View {
+struct SkyAwareSevereRiskWidgetView: View {
     let entry: Entry
 
     var body: some View {
@@ -241,7 +241,7 @@ private struct SkyAwareSevereRiskWidgetView: View {
     }
 }
 
-private struct SkyAwareCombinedWidgetView: View {
+struct SkyAwareCombinedWidgetView: View {
     let entry: Entry
 
     var body: some View {

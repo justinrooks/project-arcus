@@ -68,8 +68,8 @@ private extension WidgetSnapshotBuilder {
             case .tornado: return 0
             case .severeThunderstorm: return 1
             case .flooding: return 2
-            case .mesoscaleDiscussion: return 3
-            case .watch: return 4
+            case .watch: return 3
+            case .mesoscaleDiscussion: return 4
             }
         }
 
@@ -87,6 +87,7 @@ private extension WidgetSnapshotBuilder {
     struct ActiveAlertCandidate: Sendable {
         let title: String
         let issuedAt: Date
+        let validEnd: Date
         let kind: AlertKind
         let tieBreakerId: String
 
@@ -95,7 +96,8 @@ private extension WidgetSnapshotBuilder {
                 title: title,
                 typeLabel: typeLabel,
                 severity: kind.severity,
-                issuedAt: issuedAt
+                issuedAt: issuedAt,
+                validEnd: validEnd
             )
         }
 
@@ -134,6 +136,7 @@ private extension WidgetSnapshotBuilder {
                 ActiveAlertCandidate(
                     title: watch.title,
                     issuedAt: watch.issued,
+                    validEnd: watch.validEnd,
                     kind: classifyWatch(title: watch.title),
                     tieBreakerId: watch.id
                 )
@@ -145,6 +148,7 @@ private extension WidgetSnapshotBuilder {
                 ActiveAlertCandidate(
                     title: "Meso \(meso.number.formatted(.number.grouping(.never)))",
                     issuedAt: meso.issued,
+                    validEnd: meso.validEnd,
                     kind: .mesoscaleDiscussion,
                     tieBreakerId: "\(meso.number)"
                 )

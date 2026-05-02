@@ -62,6 +62,21 @@ struct WidgetSelectedAlertRowDisplayState: Codable, Sendable, Equatable {
     let typeLabel: String
     let severity: Int
     let issuedAt: Date?
+    let validEnd: Date?
+
+    init(
+        title: String,
+        typeLabel: String,
+        severity: Int,
+        issuedAt: Date?,
+        validEnd: Date? = nil
+    ) {
+        self.title = title
+        self.typeLabel = typeLabel
+        self.severity = severity
+        self.issuedAt = issuedAt
+        self.validEnd = validEnd
+    }
 }
 
 struct WidgetFreshnessState: Codable, Sendable, Equatable {

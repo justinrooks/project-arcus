@@ -72,16 +72,16 @@ struct WidgetAlertVisualStyle {
             return WidgetAlertVisualStyle(icon: "tornado", tint: Color(red: 0.80, green: 0.20, blue: 0.40))
         }
         if type.contains("severe") {
-            return WidgetAlertVisualStyle(icon: "cloud.bolt.rain.fill", tint: Color(red: 0.38, green: 0.48, blue: 0.92))
+            return WidgetAlertVisualStyle(icon: "cloud.bolt.fill", tint: Color(red: 0.38, green: 0.48, blue: 0.92))
         }
         if type.contains("flood") {
-            return WidgetAlertVisualStyle(icon: "drop.triangle.fill", tint: Color(red: 0.19, green: 0.54, blue: 0.92))
+            return WidgetAlertVisualStyle(icon: "flood.fill", tint: Color(red: 0.19, green: 0.54, blue: 0.92))
         }
         if type.contains("mesoscale") {
-            return WidgetAlertVisualStyle(icon: "waveform.path.ecg", tint: Color(red: 0.45, green: 0.35, blue: 0.85))
+            return WidgetAlertVisualStyle(icon: "waveform.path.ecg.magnifyingglass", tint: Color(red: 0.45, green: 0.35, blue: 0.85))
         }
         if type.contains("watch") {
-            return WidgetAlertVisualStyle(icon: "shield.lefthalf.filled", tint: Color(red: 0.96, green: 0.78, blue: 0.18))
+            return WidgetAlertVisualStyle(icon: "exclamationmark.triangle", tint: Color(red: 0.96, green: 0.78, blue: 0.18))
         }
 
         // Severity fallback keeps meaning even when type labels vary.
