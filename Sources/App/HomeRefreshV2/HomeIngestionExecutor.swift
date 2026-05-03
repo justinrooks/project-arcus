@@ -350,7 +350,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                         stormRisk: snapshot.stormRisk,
                         severeRisk: snapshot.severeRisk,
                         watches: snapshot.watches,
-                        mesos: snapshot.mesos
+                        mesos: snapshot.mesos,
+                        locationSummary: snapshot.locationSnapshot?.placemarkSummary
                     )
                 )
             }

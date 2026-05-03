@@ -9,6 +9,7 @@ struct WidgetSnapshotBuilder {
         let severeRisk: SevereWeatherThreat?
         let watches: [WatchRowDTO]
         let mesos: [MdDTO]
+        let locationSummary: String?
 
         init(
             generatedAt: Date,
@@ -17,7 +18,8 @@ struct WidgetSnapshotBuilder {
             stormRisk: StormRiskLevel?,
             severeRisk: SevereWeatherThreat?,
             watches: [WatchRowDTO],
-            mesos: [MdDTO]
+            mesos: [MdDTO],
+            locationSummary: String? = nil
         ) {
             self.generatedAt = generatedAt
             self.snapshotTimestamp = snapshotTimestamp
@@ -26,6 +28,7 @@ struct WidgetSnapshotBuilder {
             self.severeRisk = severeRisk
             self.watches = watches
             self.mesos = mesos
+            self.locationSummary = locationSummary
         }
     }
 
@@ -50,6 +53,7 @@ struct WidgetSnapshotBuilder {
             hiddenAlertCount: max(0, activeAlerts.count - 1),
             freshness: .from(timestamp: timestamp, now: now),
             availability: .available,
+            locationSummary: input.locationSummary,
             destination: .summary
         )
     }

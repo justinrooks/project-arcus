@@ -9,6 +9,7 @@ struct WidgetSnapshotRefreshInput: Sendable {
     let severeRisk: SevereWeatherThreat?
     let watches: [WatchRowDTO]
     let mesos: [MdDTO]
+    let locationSummary: String?
 }
 
 enum WidgetSnapshotChangeScope: Sendable {
@@ -48,7 +49,8 @@ struct WidgetSnapshotRefreshCoordinator: WidgetSnapshotRefreshing {
                 stormRisk: input.stormRisk,
                 severeRisk: input.severeRisk,
                 watches: input.watches,
-                mesos: input.mesos
+                mesos: input.mesos,
+                locationSummary: input.locationSummary
             ),
             now: input.generatedAt
         )

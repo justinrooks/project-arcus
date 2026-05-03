@@ -25,6 +25,12 @@ import WidgetKit
     )
 }
 
+#Preview("Storm / All Clear", as: .systemSmall) {
+    SkyAwareStormRiskWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormAllClear)
+}
+
 #Preview("Storm / Stale", as: .systemSmall) {
     SkyAwareStormRiskWidget()
 } timeline: {
@@ -107,6 +113,12 @@ import WidgetKit
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
+}
+
+#Preview("Combined / All Clear", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedAllClear)
 }
 
 #Preview("Combined / No Alerts", as: .systemLarge) {

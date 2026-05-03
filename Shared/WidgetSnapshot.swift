@@ -10,6 +10,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     let hiddenAlertCount: Int
     let freshness: WidgetFreshnessState
     let availability: WidgetAvailabilityState
+    let locationSummary: String?
     let destination: WidgetSummaryDestination
 
     init(
@@ -20,6 +21,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         hiddenAlertCount: Int,
         freshness: WidgetFreshnessState,
         availability: WidgetAvailabilityState,
+        locationSummary: String? = nil,
         destination: WidgetSummaryDestination = .summary
     ) {
         self.generatedAt = generatedAt
@@ -29,6 +31,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.hiddenAlertCount = max(0, hiddenAlertCount)
         self.freshness = freshness
         self.availability = availability
+        self.locationSummary = locationSummary
         self.destination = destination
     }
 

@@ -133,7 +133,8 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
                 stormRisk: latestProjection.stormRisk,
                 severeRisk: latestProjection.severeRisk,
                 watches: latestProjection.activeAlerts,
-                mesos: latestProjection.activeMesos
+                mesos: latestProjection.activeMesos,
+                locationSummary: latestProjection.placemarkSummary
             )
         )
     }

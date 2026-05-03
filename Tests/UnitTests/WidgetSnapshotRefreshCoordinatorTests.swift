@@ -22,11 +22,13 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 stormRisk: .enhanced,
                 severeRisk: .tornado(probability: 0.1),
                 watches: [],
-                mesos: []
+                mesos: [],
+                locationSummary: "Denver, CO"
             )
         )
 
         #expect(store.load().snapshot?.freshness.timestamp == generatedAt)
+        #expect(store.load().snapshot?.locationSummary == "Denver, CO")
         #expect(reloadedKinds == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
@@ -53,11 +55,13 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 stormRisk: .marginal,
                 severeRisk: .wind(probability: 0.2),
                 watches: [makeWatch(id: "watch-1", title: "Tornado Warning", now: generatedAt)],
-                mesos: []
+                mesos: [],
+                locationSummary: "Norman, OK"
             )
         )
 
         #expect(store.load().snapshot?.selectedAlert?.title == "Tornado Warning")
+        #expect(store.load().snapshot?.locationSummary == "Norman, OK")
         #expect(reloadedKinds == [
             SkyAwareWidgetKind.combined,
             SkyAwareWidgetKind.placeholder

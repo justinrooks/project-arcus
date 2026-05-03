@@ -16,6 +16,7 @@ enum WidgetPreviewFixtures {
         hiddenAlertCount: 0,
         freshness: WidgetFreshnessState(timestamp: now, state: .fresh),
         availability: .available,
+        locationSummary: "Norman, OK",
         destination: .summary
     )
 
@@ -26,6 +27,30 @@ enum WidgetPreviewFixtures {
         selectedAlert: nil,
         hiddenAlertCount: 0,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-420), state: .fresh),
+        availability: .available,
+        locationSummary: "Bennett, CO",
+        destination: .summary
+    )
+
+    static let combinedAllClear = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: WidgetRiskDisplayState(label: "No Risk", severity: 0),
+        severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
+        selectedAlert: nil,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
+        availability: .available,
+        locationSummary: "Boulder, CO",
+        destination: .summary
+    )
+
+    static let stormAllClear = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: WidgetRiskDisplayState(label: "Clear Skies", severity: 0),
+        severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
+        selectedAlert: nil,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
         availability: .available,
         destination: .summary
     )
@@ -87,6 +112,7 @@ enum WidgetPreviewFixtures {
         hiddenAlertCount: 1,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-240), state: .fresh),
         availability: .available,
+        locationSummary: "Oklahoma City, OK",
         destination: .summary
     )
 
@@ -103,12 +129,14 @@ enum WidgetPreviewFixtures {
         hiddenAlertCount: 3,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-180), state: .fresh),
         availability: .available,
+        locationSummary: "Wichita Falls, TX",
         destination: .summary
     )
 
     static let all: [WidgetSnapshot] = [
         normal,
         noAlert,
+        stormAllClear,
         stale,
         unavailable,
         multipleAlerts,

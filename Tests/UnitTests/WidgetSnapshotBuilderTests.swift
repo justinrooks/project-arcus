@@ -16,7 +16,8 @@ struct WidgetSnapshotBuilderTests {
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.35),
             watches: [makeWatch(id: "w1", title: "Tornado Warning", issued: iso("2026-05-01T11:45:00Z"), validEnd: iso("2026-05-01T12:15:00Z"))],
-            mesos: []
+            mesos: [],
+            locationSummary: "Bennett, CO"
         )
 
         let snapshot = builder.build(from: input, now: now)
@@ -27,6 +28,7 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.hiddenAlertCount == 0)
         #expect(snapshot.freshness.state == .fresh)
         #expect(snapshot.availability == .available)
+        #expect(snapshot.locationSummary == "Bennett, CO")
     }
 
     @Test("builds deterministic no-alert state")

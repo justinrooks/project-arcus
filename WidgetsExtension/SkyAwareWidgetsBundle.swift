@@ -51,6 +51,7 @@ struct SkyAwareCombinedWidget: Widget {
         .configurationDisplayName(WidgetGalleryMetadata.combinedName)
         .description(WidgetGalleryMetadata.combinedDescription)
         .supportedFamilies([.systemLarge])
+        .contentMarginsDisabled()
     }
 }
 
@@ -105,6 +106,7 @@ private struct StormRiskProvider: TimelineProvider {
             hiddenAlertCount: snapshot.hiddenAlertCount,
             freshness: normalizedFreshness,
             availability: snapshot.availability,
+            locationSummary: snapshot.locationSummary,
             destination: snapshot.destination
         )
     }
@@ -161,6 +163,7 @@ private struct SevereRiskProvider: TimelineProvider {
             hiddenAlertCount: snapshot.hiddenAlertCount,
             freshness: normalizedFreshness,
             availability: snapshot.availability,
+            locationSummary: snapshot.locationSummary,
             destination: snapshot.destination
         )
     }
@@ -217,6 +220,7 @@ private struct CombinedProvider: TimelineProvider {
             hiddenAlertCount: snapshot.hiddenAlertCount,
             freshness: normalizedFreshness,
             availability: snapshot.availability,
+            locationSummary: snapshot.locationSummary,
             destination: snapshot.destination
         )
     }
