@@ -12,17 +12,17 @@ enum WidgetFreshnessFormatter {
     static func line(for freshness: WidgetFreshnessState) -> String {
         switch freshness.state {
         case .unavailable:
-            return "Update unavailable"
+            return "As of now: unavailable"
         case .fresh:
             guard let timestamp = freshness.timestamp else {
-                return "Updated just now"
+                return "As of just now"
             }
-            return "Updated \(formatter.string(from: timestamp))"
+            return "As of \(formatter.string(from: timestamp))"
         case .stale:
             guard let timestamp = freshness.timestamp else {
-                return "Data may be stale"
+                return "As of earlier"
             }
-            return "Stale since \(formatter.string(from: timestamp))"
+            return "As of \(formatter.string(from: timestamp)) · may be stale"
         }
     }
 }

@@ -21,6 +21,7 @@ struct WidgetStormRiskSmallView: View {
 
     private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity)
+
         return ZStack {
             LinearGradient(
                 colors: stormBaseColors,
@@ -28,12 +29,56 @@ struct WidgetStormRiskSmallView: View {
                 endPoint: .bottomTrailing
             )
 
+            // Full-surface semantic wash. Keeps the whole widget warm without creating an inner panel.
             LinearGradient(
                 colors: [
-                    style.tint.opacity(colorScheme == .dark ? 0.16 : 0.04),
-                    style.tint.opacity(colorScheme == .dark ? 0.28 : 0.07)
+                    style.tint.opacity(colorScheme == .dark ? 0.06 : 0.025),
+                    style.tint.opacity(colorScheme == .dark ? 0.18 : 0.055)
                 ],
                 startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            // Option A-style lower trailing glow behind the decorative icon.
+            RadialGradient(
+                colors: [
+                    style.tint.opacity(colorScheme == .dark ? 0.44 : 0.18),
+                    style.tint.opacity(colorScheme == .dark ? 0.22 : 0.085),
+                    style.tint.opacity(0.0)
+                ],
+                center: UnitPoint(x: 0.86, y: 0.62),
+                startRadius: 4,
+                endRadius: colorScheme == .dark ? 118 : 104
+            )
+
+            // Subtle warm body glow through the middle of the card.
+            RadialGradient(
+                colors: [
+                    style.tint.opacity(colorScheme == .dark ? 0.18 : 0.065),
+                    style.tint.opacity(0.0)
+                ],
+                center: UnitPoint(x: 0.58, y: 0.58),
+                startRadius: 10,
+                endRadius: colorScheme == .dark ? 190 : 150
+            )
+
+            // Soft top highlight to keep the surface Apple-like instead of flat.
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(colorScheme == .dark ? 0.055 : 0.34),
+                    Color.white.opacity(0.0)
+                ],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
+            // Bottom vignette like the selected rendering, but restrained.
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035)
+                ],
+                startPoint: .center,
                 endPoint: .bottomTrailing
             )
         }
@@ -42,14 +87,16 @@ struct WidgetStormRiskSmallView: View {
     private var stormBaseColors: [Color] {
         if colorScheme == .dark {
             return [
-                Color(red: 0.07, green: 0.11, blue: 0.17),
-                Color(red: 0.04, green: 0.06, blue: 0.10)
+                Color(red: 0.065, green: 0.095, blue: 0.135),
+                Color(red: 0.105, green: 0.075, blue: 0.060),
+                Color(red: 0.030, green: 0.045, blue: 0.075)
             ]
         }
 
         return [
-            Color(red: 0.97, green: 0.98, blue: 1.00),
-            Color(red: 0.95, green: 0.96, blue: 0.99)
+            Color(red: 0.985, green: 0.990, blue: 1.000),
+            Color(red: 0.965, green: 0.975, blue: 0.995),
+            Color(red: 0.940, green: 0.955, blue: 0.985)
         ]
     }
 }
@@ -74,6 +121,7 @@ struct WidgetSevereRiskSmallView: View {
 
     private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .severe, severity: snapshot.severeRisk.severity)
+
         return ZStack {
             LinearGradient(
                 colors: severeBaseColors,
@@ -81,12 +129,56 @@ struct WidgetSevereRiskSmallView: View {
                 endPoint: .bottomTrailing
             )
 
+            // Full-surface semantic wash. Keeps the whole widget tinted without creating an inner panel.
             LinearGradient(
                 colors: [
-                    style.tint.opacity(colorScheme == .dark ? 0.14 : 0.035),
-                    style.tint.opacity(colorScheme == .dark ? 0.24 : 0.065)
+                    style.tint.opacity(colorScheme == .dark ? 0.06 : 0.025),
+                    style.tint.opacity(colorScheme == .dark ? 0.18 : 0.055)
                 ],
                 startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            // Lower-trailing glow behind the decorative severe-risk icon.
+            RadialGradient(
+                colors: [
+                    style.tint.opacity(colorScheme == .dark ? 0.40 : 0.16),
+                    style.tint.opacity(colorScheme == .dark ? 0.20 : 0.075),
+                    style.tint.opacity(0.0)
+                ],
+                center: UnitPoint(x: 0.86, y: 0.62),
+                startRadius: 4,
+                endRadius: colorScheme == .dark ? 118 : 104
+            )
+
+            // Subtle body glow through the middle of the card.
+            RadialGradient(
+                colors: [
+                    style.tint.opacity(colorScheme == .dark ? 0.16 : 0.055),
+                    style.tint.opacity(0.0)
+                ],
+                center: UnitPoint(x: 0.58, y: 0.58),
+                startRadius: 10,
+                endRadius: colorScheme == .dark ? 190 : 150
+            )
+
+            // Soft top highlight to keep the surface Apple-like instead of flat.
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(colorScheme == .dark ? 0.055 : 0.34),
+                    Color.white.opacity(0.0)
+                ],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+
+            // Bottom vignette, restrained.
+            LinearGradient(
+                colors: [
+                    Color.clear,
+                    Color.black.opacity(colorScheme == .dark ? 0.22 : 0.035)
+                ],
+                startPoint: .center,
                 endPoint: .bottomTrailing
             )
         }
@@ -95,14 +187,16 @@ struct WidgetSevereRiskSmallView: View {
     private var severeBaseColors: [Color] {
         if colorScheme == .dark {
             return [
-                Color(red: 0.07, green: 0.11, blue: 0.17),
-                Color(red: 0.04, green: 0.06, blue: 0.10)
+                Color(red: 0.065, green: 0.095, blue: 0.135),
+                Color(red: 0.060, green: 0.075, blue: 0.105),
+                Color(red: 0.030, green: 0.045, blue: 0.075)
             ]
         }
 
         return [
-            Color(red: 0.97, green: 0.98, blue: 1.00),
-            Color(red: 0.95, green: 0.96, blue: 0.99)
+            Color(red: 0.985, green: 0.990, blue: 1.000),
+            Color(red: 0.965, green: 0.975, blue: 0.995),
+            Color(red: 0.940, green: 0.955, blue: 0.985)
         ]
     }
 }
@@ -599,23 +693,57 @@ struct WidgetCombinedLargeView: View {
                     endPoint: .bottomTrailing
                 )
 
-                RadialGradient(
-                    colors: [
-                        semanticTint.opacity(colorScheme == .dark ? 0.24 : 0.11),
-                        semanticTint.opacity(0.0)
-                    ],
-                    center: .topLeading,
-                    startRadius: 20,
-                    endRadius: 360
-                )
-
+                // Full-surface semantic wash from the strongest current signal.
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(colorScheme == .dark ? 0.03 : 0.20),
-                        Color.clear
+                        semanticTint.opacity(colorScheme == .dark ? 0.055 : 0.022),
+                        semanticTint.opacity(colorScheme == .dark ? 0.16 : 0.052)
                     ],
-                    startPoint: .top,
-                    endPoint: .bottom
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                // Primary signal glow, biased toward the upper trailing risk group.
+                RadialGradient(
+                    colors: [
+                        semanticTint.opacity(colorScheme == .dark ? 0.34 : 0.14),
+                        semanticTint.opacity(colorScheme == .dark ? 0.17 : 0.065),
+                        semanticTint.opacity(0.0)
+                    ],
+                    center: UnitPoint(x: 0.82, y: 0.22),
+                    startRadius: 12,
+                    endRadius: colorScheme == .dark ? 280 : 230
+                )
+
+                // Storm-side warmth so the left risk group feels integrated.
+                RadialGradient(
+                    colors: [
+                        stormTint.opacity(colorScheme == .dark ? 0.18 : 0.070),
+                        stormTint.opacity(0.0)
+                    ],
+                    center: UnitPoint(x: 0.18, y: 0.18),
+                    startRadius: 10,
+                    endRadius: colorScheme == .dark ? 240 : 190
+                )
+
+                // Soft top highlight for the Apple-like surface depth.
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(colorScheme == .dark ? 0.050 : 0.30),
+                        Color.white.opacity(0.0)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .center
+                )
+
+                // Bottom vignette to anchor the large surface.
+                LinearGradient(
+                    colors: [
+                        Color.clear,
+                        Color.black.opacity(colorScheme == .dark ? 0.24 : 0.040)
+                    ],
+                    startPoint: .center,
+                    endPoint: .bottomTrailing
                 )
             }
         }
@@ -624,14 +752,16 @@ struct WidgetCombinedLargeView: View {
     private var backgroundGradientColors: [Color] {
         if colorScheme == .dark {
             return [
-                Color(red: 0.05, green: 0.09, blue: 0.14),
-                Color(red: 0.03, green: 0.05, blue: 0.09)
+                Color(red: 0.065, green: 0.095, blue: 0.135),
+                Color(red: 0.055, green: 0.060, blue: 0.095),
+                Color(red: 0.030, green: 0.045, blue: 0.075)
             ]
         }
 
         return [
-            Color(red: 0.98, green: 0.99, blue: 1.00),
-            Color(red: 0.93, green: 0.95, blue: 0.98)
+            Color(red: 0.985, green: 0.990, blue: 1.000),
+            Color(red: 0.965, green: 0.975, blue: 0.995),
+            Color(red: 0.940, green: 0.955, blue: 0.985)
         ]
     }
 
@@ -646,6 +776,10 @@ struct WidgetCombinedLargeView: View {
             return WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
         }
         return Color(red: 0.40, green: 0.75, blue: 0.40)
+    }
+
+    private var stormTint: Color {
+        WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
     }
 }
 
@@ -696,7 +830,7 @@ private struct WidgetCombinedLargeCard: View {
                     Spacer(minLength: 0)
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(locationSummaryLine)
+                        Label(locationSummaryLine, systemImage: "mappin.and.ellipse")
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -815,7 +949,7 @@ private struct WidgetCombinedRiskPairRow: View {
     }
 
     private var severeSecondaryLabel: String? {
-        severeState.severity == 0 ? "Threats" : nil
+        nil
     }
 }
 
