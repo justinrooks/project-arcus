@@ -63,9 +63,9 @@ struct WidgetSnapshotRefreshCoordinator: WidgetSnapshotRefreshing {
     private func affectedKinds(for scope: WidgetSnapshotChangeScope) -> [String] {
         switch scope {
         case .riskOrLocationProjection:
-            return SkyAwareWidgetKind.allSnapshotBacked + [SkyAwareWidgetKind.placeholder]
+            return SkyAwareWidgetKind.allSnapshotBacked
         case .activeAlertProjection:
-            return [SkyAwareWidgetKind.combined, SkyAwareWidgetKind.placeholder]
+            return [SkyAwareWidgetKind.combined]
         }
     }
 

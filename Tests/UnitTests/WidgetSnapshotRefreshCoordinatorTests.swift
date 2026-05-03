@@ -32,8 +32,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(reloadedKinds == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
-            SkyAwareWidgetKind.combined,
-            SkyAwareWidgetKind.placeholder
+            SkyAwareWidgetKind.combined
         ])
     }
 
@@ -63,8 +62,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(store.load().snapshot?.selectedAlert?.title == "Tornado Warning")
         #expect(store.load().snapshot?.locationSummary == "Norman, OK")
         #expect(reloadedKinds == [
-            SkyAwareWidgetKind.combined,
-            SkyAwareWidgetKind.placeholder
+            SkyAwareWidgetKind.combined
         ])
     }
 

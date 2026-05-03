@@ -87,28 +87,7 @@ private struct StormRiskProvider: TimelineProvider {
     }
 
     private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
-        guard case .available = snapshot.availability else {
-            return snapshot
-        }
-
-        let normalizedFreshness: WidgetFreshnessState
-        if let timestamp = snapshot.freshness.timestamp {
-            normalizedFreshness = .from(timestamp: timestamp, now: now)
-        } else {
-            normalizedFreshness = snapshot.freshness
-        }
-
-        return WidgetSnapshot(
-            generatedAt: snapshot.generatedAt,
-            stormRisk: snapshot.stormRisk,
-            severeRisk: snapshot.severeRisk,
-            selectedAlert: snapshot.selectedAlert,
-            hiddenAlertCount: snapshot.hiddenAlertCount,
-            freshness: normalizedFreshness,
-            availability: snapshot.availability,
-            locationSummary: snapshot.locationSummary,
-            destination: snapshot.destination
-        )
+        snapshot.normalizedForWidgetPresentation(at: now)
     }
 }
 
@@ -144,28 +123,7 @@ private struct SevereRiskProvider: TimelineProvider {
     }
 
     private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
-        guard case .available = snapshot.availability else {
-            return snapshot
-        }
-
-        let normalizedFreshness: WidgetFreshnessState
-        if let timestamp = snapshot.freshness.timestamp {
-            normalizedFreshness = .from(timestamp: timestamp, now: now)
-        } else {
-            normalizedFreshness = snapshot.freshness
-        }
-
-        return WidgetSnapshot(
-            generatedAt: snapshot.generatedAt,
-            stormRisk: snapshot.stormRisk,
-            severeRisk: snapshot.severeRisk,
-            selectedAlert: snapshot.selectedAlert,
-            hiddenAlertCount: snapshot.hiddenAlertCount,
-            freshness: normalizedFreshness,
-            availability: snapshot.availability,
-            locationSummary: snapshot.locationSummary,
-            destination: snapshot.destination
-        )
+        snapshot.normalizedForWidgetPresentation(at: now)
     }
 }
 
@@ -201,28 +159,7 @@ private struct CombinedProvider: TimelineProvider {
     }
 
     private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
-        guard case .available = snapshot.availability else {
-            return snapshot
-        }
-
-        let normalizedFreshness: WidgetFreshnessState
-        if let timestamp = snapshot.freshness.timestamp {
-            normalizedFreshness = .from(timestamp: timestamp, now: now)
-        } else {
-            normalizedFreshness = snapshot.freshness
-        }
-
-        return WidgetSnapshot(
-            generatedAt: snapshot.generatedAt,
-            stormRisk: snapshot.stormRisk,
-            severeRisk: snapshot.severeRisk,
-            selectedAlert: snapshot.selectedAlert,
-            hiddenAlertCount: snapshot.hiddenAlertCount,
-            freshness: normalizedFreshness,
-            availability: snapshot.availability,
-            locationSummary: snapshot.locationSummary,
-            destination: snapshot.destination
-        )
+        snapshot.normalizedForWidgetPresentation(at: now)
     }
 }
 

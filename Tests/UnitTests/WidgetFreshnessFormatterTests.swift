@@ -4,15 +4,15 @@ import Testing
 
 @Suite("Widget freshness formatter")
 struct WidgetFreshnessFormatterTests {
-    @Test("fresh copy uses concise updated prefix")
-    func freshCopy_usesUpdatedPrefix() {
+    @Test("fresh copy uses concise as-of prefix")
+    func freshCopy_usesAsOfPrefix() {
         let freshness = WidgetFreshnessState.from(
             timestamp: Date(timeIntervalSince1970: 1_714_572_040),
             now: Date(timeIntervalSince1970: 1_714_572_100)
         )
 
         let line = WidgetFreshnessFormatter.line(for: freshness)
-        #expect(line.hasPrefix("Updated "))
+        #expect(line.hasPrefix("As of "))
     }
 
     @Test("stale copy marks staleness explicitly")
@@ -23,12 +23,13 @@ struct WidgetFreshnessFormatterTests {
         )
 
         let line = WidgetFreshnessFormatter.line(for: freshness)
-        #expect(line.hasPrefix("Stale since "))
+        #expect(line.hasPrefix("As of "))
+        #expect(line.hasSuffix("may be stale"))
     }
 
     @Test("unavailable copy remains stable")
     func unavailableCopy_isStable() {
         let line = WidgetFreshnessFormatter.line(for: WidgetFreshnessState(timestamp: nil, state: .unavailable))
-        #expect(line == "Update unavailable")
+        #expect(line == "As of now: unavailable")
     }
 }

@@ -79,6 +79,34 @@ struct WidgetSnapshotTests {
         }
     }
 
+    @Test("normalization marks stale snapshots and suppresses expired selected alerts")
+    func normalizedForWidgetPresentation_suppressesExpiredAlert() {
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T11:20:00Z"),
+            stormRisk: .init(label: "Enhanced Risk", severity: 4),
+            severeRisk: .init(label: "Tornado", severity: 3),
+            selectedAlert: .init(
+                title: "Tornado Warning",
+                typeLabel: "Tornado Warning",
+                severity: 5,
+                issuedAt: iso("2026-05-01T10:55:00Z"),
+                validEnd: iso("2026-05-01T11:50:00Z")
+            ),
+            hiddenAlertCount: 2,
+            freshness: .from(
+                timestamp: iso("2026-05-01T11:20:00Z"),
+                now: iso("2026-05-01T11:25:00Z")
+            ),
+            availability: .available
+        )
+
+        let normalized = snapshot.normalizedForWidgetPresentation(at: iso("2026-05-01T12:00:00Z"))
+
+        #expect(normalized.freshness.state == .stale)
+        #expect(normalized.selectedAlert == nil)
+        #expect(normalized.hiddenAlertCount == 0)
+    }
+
     @Test("encoded payload is derived and privacy-safe")
     func encodedPayload_isDerivedOnly() throws {
         let snapshot = WidgetSnapshot(

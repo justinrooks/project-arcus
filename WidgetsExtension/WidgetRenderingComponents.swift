@@ -1049,11 +1049,11 @@ private struct WidgetCombinedIntegratedAlertRow: View {
             Spacer(minLength: 0)
 
             if hiddenAlertCount > 0 {
-                Text("+\(hiddenAlertCount)")
-                    .font(.title3.weight(.bold))
+                Text("+\(hiddenAlertCount) more")
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.9)
+                    .minimumScaleFactor(0.78)
             }
         }
     }

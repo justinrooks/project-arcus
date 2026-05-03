@@ -44,12 +44,12 @@ Related GitHub issues:
   1. tornado
   2. severe thunderstorm
   3. flooding
-  4. mesoscale discussion
-  5. watch
+  4. watch
+  5. mesoscale discussion
 - Hidden lower-priority active alerts use a compact `+N more` indicator.
 - Widget snapshots older than 30 minutes are stale.
 - Stale snapshots remain visible but must be marked stale.
-- Freshness copy should use concise timestamp language such as `Updated 2:14 PM`.
+- Freshness copy should use concise Apple-friendly timestamp language such as `As of 2:14 PM`.
 - Unavailable current readouts use `Open SkyAware to update local risk.`
 - Widget taps open Summary in FB-017.
 - Widget deep linking is deferred to FB-018.
@@ -69,11 +69,11 @@ Related GitHub issues:
 
 - Epic `#11` has been repurposed from the older severe-threat-only scope to the full FB-017 widget scope.
 - FB-017 runbook and progress documents have been created.
-- Sub-issues `#153` through `#165` have been created.
+- Sub-issues `#153` through `#165` have been created, implemented, validated, and closed.
 - Sub-issues `#153` through `#165` are attached as real GitHub sub-issues under epic `#11`.
 - Epic `#11` and sub-issues `#153` through `#165` have been added to the Project Arcus GitHub Project.
-- Implementation has not started.
-- First issue to implement: `#153`.
+- Final end-to-end review completed on 2026-05-03.
+- FB-017 is ready to close once the final review fixes are reviewed/accepted.
 
 ---
 
@@ -878,3 +878,64 @@ Related GitHub issues:
 ### Deferred follow-up polish
 - No screenshot-based device review was added in this pass; previews and compile validation remain the visual verification artifact.
 - Deeper alert-row parity would require richer shared snapshot metadata and remains out of scope for this styling-only pass.
+
+---
+
+## Final End-to-End Review
+
+### Status
+- Completed (2026-05-03)
+
+### Review scope
+- Reviewed FB-017 against:
+  - `docs/plans/FB-017-issue-runbook.md`
+  - `docs/plans/FB-017-progress.md`
+  - `FB-017 Widgets.md`
+  - `FB-018 Widget Deep Linking.md` for out-of-scope boundary only
+  - `SkyAware North Star Spec.md`
+  - GitHub epic `#11` and closed child issues `#153` through `#165`
+  - widget source, shared snapshot/storage/metadata/routing files, ingestion/APNs refresh seams, entitlements, project target configuration, previews, and focused tests
+
+### Intentional behavior confirmed during final review
+- Watch rows intentionally outrank mesoscale discussions in FB-017's implemented Combined priority when no tornado, severe thunderstorm, or flooding alert is present.
+- Small Storm Risk and Severe Risk widgets intentionally omit visible freshness copy to remain single-signal surfaces.
+- Widget freshness copy intentionally avoids `Updated ...` language and uses Apple-friendlier `As of ...` phrasing.
+
+### Findings fixed during final review
+- Corrected the large Combined hidden-alert count from `+N` to compact `+N more`.
+- Added shared widget presentation normalization so expired persisted `selectedAlert` values are suppressed before rendering.
+- Removed stale targeted reload requests for the old placeholder widget kind; targeted reloads now address only the three real FB-017 widgets.
+
+### Final validation
+- Focused widget test run succeeded:
+  - `WidgetSnapshotBuilderTests`
+  - `WidgetSnapshotTests`
+  - `WidgetSnapshotStoreTests`
+  - `WidgetSnapshotRefreshCoordinatorTests`
+  - `RemoteHotAlertHandlerTests`
+  - `WidgetRouteURLTests`
+  - `WidgetFreshnessFormatterTests`
+  - `WidgetGalleryMetadataTests`
+- Command:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' -only-testing:SkyAwareTests/WidgetSnapshotBuilderTests -only-testing:SkyAwareTests/WidgetSnapshotTests -only-testing:SkyAwareTests/WidgetSnapshotStoreTests -only-testing:SkyAwareTests/WidgetSnapshotRefreshCoordinatorTests -only-testing:SkyAwareTests/RemoteHotAlertHandlerTests -only-testing:SkyAwareTests/WidgetRouteURLTests -only-testing:SkyAwareTests/WidgetFreshnessFormatterTests -only-testing:SkyAwareTests/WidgetGalleryMetadataTests test`
+- App/widget build succeeded:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.2' build`
+- `.xcresult` summary inspected:
+  - `36` passed, `0` failed, `0` skipped.
+  - No coverage statistics were included in the focused test result summary.
+
+### Final handoff notes
+- V1 exposes exactly three widgets:
+  - small Storm Risk
+  - small Severe Risk
+  - large Combined
+- No Lock Screen widgets, StandBy widgets, Live Activities, complications, extra widget families, interactive controls, or FB-018 deep links were introduced.
+- All widget taps still route to Summary through `skyaware://widget/summary`.
+- Widget extension remains passive: it reads App Group snapshots and provides WidgetKit timelines; it does not read SwiftData, location, notification, network, ingestion, or APNs state directly.
+- Snapshot contents remain derived display state only: risk display states, selected alert display row, hidden count, freshness, availability, optional display location summary, and Summary destination.
+- APNs-driven alert updates use the app-owned latest projection fallback and targeted Combined reload path.
+- WidgetKit refresh remains request-based and system-budgeted; the implementation does not claim real-time delivery.
+
+### Deferred follow-ups
+- FB-018 remains the home for per-alert/per-widget deep linking and stale-target route validation.
+- Screenshot-based device review was not added in this final pass; previews plus focused tests/build remain the validation artifacts for visual states.

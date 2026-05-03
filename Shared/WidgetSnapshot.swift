@@ -51,6 +51,41 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             destination: destination
         )
     }
+
+    func normalizedForWidgetPresentation(at now: Date) -> WidgetSnapshot {
+        guard case .available = availability else {
+            return self
+        }
+
+        let normalizedFreshness: WidgetFreshnessState
+        if let timestamp = freshness.timestamp {
+            normalizedFreshness = .from(timestamp: timestamp, now: now)
+        } else {
+            normalizedFreshness = freshness
+        }
+
+        let activeSelectedAlert: WidgetSelectedAlertRowDisplayState?
+        let activeHiddenAlertCount: Int
+        if let selectedAlert, let validEnd = selectedAlert.validEnd, validEnd <= now {
+            activeSelectedAlert = nil
+            activeHiddenAlertCount = 0
+        } else {
+            activeSelectedAlert = selectedAlert
+            activeHiddenAlertCount = hiddenAlertCount
+        }
+
+        return WidgetSnapshot(
+            generatedAt: generatedAt,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            selectedAlert: activeSelectedAlert,
+            hiddenAlertCount: activeHiddenAlertCount,
+            freshness: normalizedFreshness,
+            availability: availability,
+            locationSummary: locationSummary,
+            destination: destination
+        )
+    }
 }
 
 struct WidgetRiskDisplayState: Codable, Sendable, Equatable {
