@@ -120,8 +120,8 @@ Pass criteria:
 
 ### 11. Validate remote push open behavior
 
-- [ ] Send a remote notification to a test device.
-- [ ] Tap it from background state.
+- [x] Send a remote notification to a test device.
+- [x] Tap it from background state.
 - [ ] Tap it from terminated state.
 - [ ] Confirm the app lands in a coherent state and refreshes relevant data.
 
@@ -169,11 +169,11 @@ Pass criteria:
 
 Ship publicly when all of these are true:
 
-- [ ] Settings match backend behavior.
-- [ ] Today handles partial failures gracefully.
-- [ ] Map freshness is trustworthy.
-- [ ] Notification timing is intentional.
-- [ ] Core onboarding and navigation UI smoke tests exist.
+- [x] Settings match backend behavior.
+- [x] Today handles partial failures gracefully.
+- [x] Map freshness is trustworthy.
+- [x] Notification timing is intentional.
+- [x] Core onboarding and navigation UI smoke tests exist.
 - [ ] Real-device push and permission drills have been completed.
 - [ ] App Store positioning remains conservative and accurate.
 
