@@ -6,7 +6,7 @@ import Foundation
 private struct StubArcusClient: ArcusClient {
     let payload: Data
 
-    func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data {
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
         payload
     }
 
@@ -66,12 +66,14 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(json.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
         let hits = try await repo.active(
             countyCode: "COC031",
             fireZone: "COZ245",
+            forecastZone: "COZ245",
             cell: 613725958748241919,
             on: now
         )
@@ -132,6 +134,7 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(json.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -141,6 +144,7 @@ struct WatchRepoRefreshTests {
         let active = try await repo.active(
             countyCode: "COC031",
             fireZone: "COZ245",
+            forecastZone: "COZ245",
             cell: 613725958748241919,
             on: ISO8601DateFormatter().date(from: "2026-03-24T12:30:00Z")!
         )
@@ -156,6 +160,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(json.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )
@@ -178,6 +183,7 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(initial.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -195,6 +201,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(updated.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )
@@ -227,6 +234,7 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(initial.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -242,6 +250,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(updated.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )
@@ -265,6 +274,7 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(initial.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -278,6 +288,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(cancelled.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )
@@ -294,6 +305,7 @@ struct WatchRepoRefreshTests {
         let activeAlerts = try await repo.active(
             countyCode: "COC031",
             fireZone: "COZ245",
+            forecastZone: "COZ245",
             cell: 613725958748241919,
             on: now
         )
@@ -314,6 +326,7 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(initial.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -327,6 +340,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(superseded.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )
@@ -355,6 +369,7 @@ struct WatchRepoRefreshTests {
             using: StubArcusClient(payload: Data(initial.utf8)),
             for: "COC031",
             and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -369,6 +384,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(expired.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )
@@ -397,6 +413,7 @@ struct WatchRepoRefreshTests {
         try await repo.refresh(
             using: StubArcusClient(payload: Data(terminal.utf8)),
             for: "COC031",
+            and: "COZ245",
             and: "COZ245",
             in: 613725958748241919
         )

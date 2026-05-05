@@ -107,7 +107,7 @@ Pass criteria:
 ### 10. Run real-device drills
 
 - [ ] Test with `When In Use` location only.
-- [ ] Test with `Always` location enabled.
+- [x] Test with `Always` location enabled.
 - [ ] Test after denying location permission.
 - [ ] Test after downgrading location permission in Settings.
 - [ ] Test after denying notifications.

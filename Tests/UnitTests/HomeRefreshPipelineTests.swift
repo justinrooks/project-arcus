@@ -624,7 +624,8 @@ struct HomeRefreshPipelineTests {
                 weatherClient: weather,
                 locationSession: locationSession,
                 snapshotStore: snapshotStore,
-                projectionStore: homeProjectionStore
+                projectionStore: homeProjectionStore,
+                widgetSnapshotRefresher: nil
             )
         )
         return HomeIngestionCoordinator(executor: executor)
