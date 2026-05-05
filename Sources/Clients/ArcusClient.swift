@@ -9,7 +9,7 @@ import Foundation
 import OSLog
 
 protocol ArcusClient: Sendable {
-    func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data
     func fetchAlert(id: String, revisionSent: Date?) async throws -> Data
 }
 
@@ -18,7 +18,7 @@ struct ArcusHttpClient: ArcusClient {
     private let baseURL: URL
     private let reachabilityReporter: any ArcusSignalReachabilityReporting
     private let logger = Logger.providersArcusClient
-    // https://skyaware.bennettbunker.com/api/v1/alerts?ugc=COZ245&fire=AKZ326&h3=613725958748241919
+    // https://api.skyaware.app/api/v2/alerts?county=COC001&fire=COZ245&forecast=COZ045&h3=613167714648719359
     
     init(
         baseURL: URL = ArcusSignalConfiguration.defaultBaseURL,
@@ -30,7 +30,7 @@ struct ArcusHttpClient: ArcusClient {
         self.reachabilityReporter = reachabilityReporter
     }
     
-    func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data {
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
         guard let cell else {
             logger.error("Missing required h3 cell address")
             throw ArcusError.missingH3Cell
@@ -38,8 +38,9 @@ struct ArcusHttpClient: ArcusClient {
         let url = try makeUrl(
             path: ArcusSignalConfiguration.alertsPath,
             queryItems: [
-                URLQueryItem(name: "ugc", value: ugc),
+                URLQueryItem(name: "county", value: county),
                 URLQueryItem(name: "fire", value: fire),
+                URLQueryItem(name: "forecast", value: forecast),
                 URLQueryItem(name: "h3", value: "\(cell)")
             ]
         )

@@ -13,7 +13,7 @@ import OSLog
 actor WatchRepo {
     private let logger = Logger.reposWatch
     
-    func active(countyCode: String, fireZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
+    func active(countyCode: String, fireZone: String, forecastZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
         let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
 
         var hits: [Watch] = []
@@ -23,7 +23,7 @@ actor WatchRepo {
             let ugc = watch.ugcZones
             let cells = watch.h3Cells
             let matchesCell = cell.map { cells.contains($0) } ?? false
-            let matchesUGC = ugc.contains(countyCode) || ugc.contains(fireZone)
+            let matchesUGC = ugc.contains(countyCode) || ugc.contains(fireZone) || ugc.contains(forecastZone)
             
             if (matchesCell || matchesUGC) && isRenderableAlertLifecycle(status: watch.status, messageType: watch.messageType) {
                 hits.append(watch)
@@ -78,8 +78,8 @@ actor WatchRepo {
         return try modelContext.fetch(descriptor).first.map(WatchRowDTO.init(from:))
     }
 
-    func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, in cell: Int64?) async throws {
-        let data = try await client.fetchActiveAlerts(for: countyCode, or: fireZone, in: cell)
+    func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, and forecastZone: String, in cell: Int64?) async throws {
+        let data = try await client.fetchActiveAlerts(for: countyCode, and: fireZone, and: forecastZone, in: cell)
 
         guard let decoded = decodePayloads(from: data) else {
             logger.error("Arcus alert payload decode failed; leaving persisted watches unchanged")

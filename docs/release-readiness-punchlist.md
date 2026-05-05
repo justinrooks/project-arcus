@@ -107,7 +107,7 @@ Pass criteria:
 ### 10. Run real-device drills
 
 - [ ] Test with `When In Use` location only.
-- [ ] Test with `Always` location enabled.
+- [x] Test with `Always` location enabled.
 - [ ] Test after denying location permission.
 - [ ] Test after downgrading location permission in Settings.
 - [ ] Test after denying notifications.
@@ -121,7 +121,7 @@ Pass criteria:
 ### 11. Validate remote push open behavior
 
 - [ ] Send a remote notification to a test device.
-- [ ] Tap it from background state.
+- [x] Tap it from background state.
 - [ ] Tap it from terminated state.
 - [ ] Confirm the app lands in a coherent state and refreshes relevant data.
 
