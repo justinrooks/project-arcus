@@ -4,7 +4,7 @@ import SwiftData
 import Foundation
 
 private struct UnavailableArcusClient: ArcusClient {
-    func fetchActiveAlerts(for ugc: String, or fire: String, in cell: Int64?) async throws -> Data {
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
         throw ArcusError.networkError(status: 503)
     }
 
@@ -88,7 +88,13 @@ struct WatchRepoActiveTests {
         ctx.insert(upcoming)
         try ctx.save()
 
-        let hits = try await repo.active(countyCode: "ALC013", fireZone: "COZ245", cell: nil, on: now)
+        let hits = try await repo.active(
+            countyCode: "ALC013",
+            fireZone: "COZ245",
+            forecastZone: "COZ245",
+            cell: nil,
+            on: now
+        )
         let ids = Set(hits.map { $0.id })
 
         #expect(ids.contains("1\(tag)"))
@@ -115,7 +121,13 @@ struct WatchRepoActiveTests {
         ctx.insert(cellOnly)
         try ctx.save()
 
-        let hits = try await repo.active(countyCode: "ZZZ000", fireZone: "ZZZ000", cell: cell, on: now)
+        let hits = try await repo.active(
+            countyCode: "ZZZ000",
+            fireZone: "ZZZ000",
+            forecastZone: "ZZZ000",
+            cell: cell,
+            on: now
+        )
 
         #expect(hits.map(\.id) == ["1\(tag)"])
     }
@@ -155,9 +167,43 @@ struct WatchRepoActiveTests {
         ctx.insert(superseded)
         try ctx.save()
 
-        let hits = try await repo.active(countyCode: "ALC013", fireZone: "COZ245", cell: nil, on: now)
+        let hits = try await repo.active(
+            countyCode: "ALC013",
+            fireZone: "COZ245",
+            forecastZone: "COZ245",
+            cell: nil,
+            on: now
+        )
 
         #expect(hits.map(\.id) == ["active"])
+    }
+
+    @Test("Matches forecast-zone UGCs when county and fire zones do not match")
+    func matchesForecastZoneUGC() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let tag = "-F"
+
+        let forecastOnly = makeWatch(
+            number: "1\(tag)",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            ugcZones: ["COZ245"]
+        )
+
+        ctx.insert(forecastOnly)
+        try ctx.save()
+
+        let hits = try await repo.active(
+            countyCode: "ZZZ000",
+            fireZone: "ZZZ001",
+            forecastZone: "COZ245",
+            cell: nil,
+            on: now
+        )
+
+        #expect(hits.map(\.id) == ["1\(tag)"])
     }
 
     @Test("Active warning geometry includes supported warnings with geometry")

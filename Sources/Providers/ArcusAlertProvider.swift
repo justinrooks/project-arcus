@@ -39,6 +39,7 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
                     using: client,
                     for: context.grid.countyCode ?? "",
                     and: context.grid.fireZone ?? "",
+                    and: context.grid.forecastZone ?? "",
                     in: context.h3Cell
                 )
             } catch {
@@ -68,6 +69,7 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
         try await watchRepo.active(
             countyCode: context.grid.countyCode ?? "",
             fireZone: context.grid.fireZone ?? "",
+            forecastZone: context.grid.forecastZone ?? "",
             cell: context.h3Cell
         )
     }

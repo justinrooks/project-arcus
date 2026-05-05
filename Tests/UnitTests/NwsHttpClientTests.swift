@@ -258,7 +258,8 @@ struct ArcusHttpClientTests {
 
         let data = try await client.fetchActiveAlerts(
             for: "COC001",
-            or: "COZ245",
+            and: "COZ245",
+            and: "COZ245",
             in: 613725958748241919
         )
 
@@ -270,8 +271,9 @@ struct ArcusHttpClientTests {
         #expect(components.scheme == "https")
         #expect(components.host == "arcus.example.com")
         #expect(components.path == ArcusSignalConfiguration.alertsPath)
-        #expect(components.queryItems?.first(where: { $0.name == "ugc" })?.value == "COC001")
+        #expect(components.queryItems?.first(where: { $0.name == "county" })?.value == "COC001")
         #expect(components.queryItems?.first(where: { $0.name == "fire" })?.value == "COZ245")
+        #expect(components.queryItems?.first(where: { $0.name == "forecast" })?.value == "COZ245")
         #expect(components.queryItems?.first(where: { $0.name == "h3" })?.value == "613725958748241919")
         #expect(request.headers["Accept"] == "application/json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)
@@ -288,7 +290,7 @@ struct ArcusHttpClientTests {
             reachabilityReporter: reachability
         )
 
-        _ = try await client.fetchActiveAlerts(for: "COC001", or: "COZ245", in: 613725958748241919)
+        _ = try await client.fetchActiveAlerts(for: "COC001", and: "COZ245", and: "COZ245", in: 613725958748241919)
 
         #expect(await reachability.lastUpdate() == .reachable)
     }
@@ -306,7 +308,7 @@ struct ArcusHttpClientTests {
             reachabilityReporter: reachability
         )
 
-        let data = try await client.fetchActiveAlerts(for: "COC001", or: "COZ245", in: 613725958748241919)
+        let data = try await client.fetchActiveAlerts(for: "COC001", and: "COZ245", and: "COZ245", in: 613725958748241919)
 
         #expect(data == payload)
         #expect(await reachability.lastUpdate() == .unavailable)
@@ -325,7 +327,7 @@ struct ArcusHttpClientTests {
             reachabilityReporter: reachability
         )
 
-        let data = try await client.fetchActiveAlerts(for: "COC001", or: "COZ245", in: 613725958748241919)
+        let data = try await client.fetchActiveAlerts(for: "COC001", and: "COZ245", and: "COZ245", in: 613725958748241919)
 
         #expect(data == payload)
         #expect(await reachability.lastUpdate() == nil)
