@@ -130,6 +130,7 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
             scope: .activeAlertProjection,
             input: .init(
                 generatedAt: generatedAt,
+                snapshotTimestamp: latestProjection.updatedAt,
                 stormRisk: latestProjection.stormRisk,
                 severeRisk: latestProjection.severeRisk,
                 watches: latestProjection.activeAlerts,

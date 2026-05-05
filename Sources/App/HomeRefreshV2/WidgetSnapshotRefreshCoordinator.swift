@@ -5,11 +5,30 @@ import WidgetKit
 
 struct WidgetSnapshotRefreshInput: Sendable {
     let generatedAt: Date
+    let snapshotTimestamp: Date?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let watches: [WatchRowDTO]
     let mesos: [MdDTO]
     let locationSummary: String?
+
+    init(
+        generatedAt: Date,
+        snapshotTimestamp: Date? = nil,
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        watches: [WatchRowDTO],
+        mesos: [MdDTO],
+        locationSummary: String?
+    ) {
+        self.generatedAt = generatedAt
+        self.snapshotTimestamp = snapshotTimestamp
+        self.stormRisk = stormRisk
+        self.severeRisk = severeRisk
+        self.watches = watches
+        self.mesos = mesos
+        self.locationSummary = locationSummary
+    }
 }
 
 enum WidgetSnapshotChangeScope: Sendable {
@@ -44,7 +63,7 @@ struct WidgetSnapshotRefreshCoordinator: WidgetSnapshotRefreshing {
         let snapshot = builder.build(
             from: .init(
                 generatedAt: input.generatedAt,
-                snapshotTimestamp: input.generatedAt,
+                snapshotTimestamp: input.snapshotTimestamp ?? input.generatedAt,
                 availability: .available,
                 stormRisk: input.stormRisk,
                 severeRisk: input.severeRisk,

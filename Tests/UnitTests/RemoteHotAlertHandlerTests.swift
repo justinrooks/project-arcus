@@ -179,6 +179,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         let call = try #require(widgetRefresher.lastCall())
         #expect(call.scope == .activeAlertProjection)
         #expect(call.input.generatedAt == generatedAt)
+        #expect(call.input.snapshotTimestamp == projection.updatedAt)
         #expect(call.input.stormRisk == projection.stormRisk)
         #expect(call.input.severeRisk == projection.severeRisk)
         #expect(call.input.watches == projection.activeAlerts)
