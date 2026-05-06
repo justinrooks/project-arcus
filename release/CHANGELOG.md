@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.1.0(49)
+
+### UI / UX
+- Add Home widgets (small and large) that surface storm and severe-risk snapshots with tap-through routing into the app.
+<!-- evidence: 90a0399 -->
+
+### Background & Notifications
+- Generate and persist widget snapshots during Home refresh, and coordinate widget reloads on refresh and hot-alert events.
+<!-- evidence: 90a0399 -->
+
+### Tests / QA
+- Add unit coverage for widget snapshot modeling/storage, route URL handling, and freshness formatting.
+<!-- evidence: 90a0399 -->
+
 ## v0.1.0(47)
 
 ### Data & Repos

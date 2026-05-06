@@ -1,3 +1,10 @@
+SkyAware v0.1.0(49) adds Home widgets for storm and severe-risk snapshots, backed by refreshed snapshot writes and reload coordination.
+
+Highlights:
+- New Home widgets (small and large) surface storm and severe-risk snapshots
+- Widgets support tap-through routing into the app
+- Widget snapshots refresh and reload on Home refresh and hot-alert events to keep widget info current
+
 SkyAware v0.1.0(47) stabilizes Home/Summary loading transitions, adds clearer location reliability guidance, and repoints the app to the production API host.
 
 Highlights:
