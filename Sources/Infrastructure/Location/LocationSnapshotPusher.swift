@@ -9,6 +9,7 @@ import CoreLocation
 import Foundation
 import OSLog
 import UIKit
+import ArcusCore
 
 protocol LocationContextPushing: Sendable {
     func enqueue(_ context: LocationContext, forceUpload: Bool) async
@@ -22,54 +23,6 @@ extension LocationContextPushing {
 
 enum LocationPushError: Error {
     case invalidResponseStatus(Int)
-}
-
-struct LocationSnapshotPushPayload: Codable, Equatable, Sendable {
-    let capturedAt: Date
-    let locationAgeSeconds: Double
-    let horizontalAccuracyMeters: Double
-    let cellScheme: String
-    let h3Cell: Int64?
-    let h3Resolution: Int?
-    let countyCode: String?
-    let forecastZone: String?
-    let fireZone: String?
-    let apnsDeviceToken: String
-    let installationId: String
-    let source: String
-    let auth: String
-    let appVersion: String
-    let buildNumber: String
-    let platform: String
-    let osVersion: String
-    let apnsEnvironment: String
-    let countyLabel: String?
-    let fireZoneLabel: String?
-    let isSubscribed: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case capturedAt
-        case locationAgeSeconds
-        case horizontalAccuracyMeters
-        case cellScheme
-        case h3Cell
-        case h3Resolution
-        case countyCode = "county"
-        case forecastZone = "zone"
-        case fireZone
-        case apnsDeviceToken
-        case installationId
-        case source
-        case auth
-        case appVersion
-        case buildNumber
-        case platform
-        case osVersion
-        case apnsEnvironment
-        case countyLabel
-        case fireZoneLabel
-        case isSubscribed
-    }
 }
 
 actor LocationSnapshotPusher: LocationContextPushing {
@@ -138,8 +91,8 @@ actor LocationSnapshotPusher: LocationContextPushing {
             cellScheme: "h3",
             h3Cell: context.h3Cell,
             h3Resolution: 8, // TODO: Make this global someday
-            countyCode: context.grid.countyCode,
-            forecastZone: context.grid.forecastZone,
+            county: context.grid.countyCode,
+            zone: context.grid.forecastZone,
             fireZone: context.grid.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: installationId,

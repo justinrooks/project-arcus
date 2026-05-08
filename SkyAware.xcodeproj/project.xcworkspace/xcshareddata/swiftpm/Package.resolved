@@ -1,13 +1,13 @@
 {
-  "originHash" : "fca8cb9d274c8855c870c27a22abdf95be96758cf12a3a5e5b8e8303f8c411c1",
+  "originHash" : "c0331a258997ed135f9993f34911ca87dbeaf96b2c1298c14811c60608f4087d",
   "pins" : [
     {
       "identity" : "arcuscore",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/justinrooks/ArcusCore.git",
       "state" : {
-        "revision" : "ece440c563bb74877c0ef21a707839d3e03917ec",
-        "version" : "0.1.0"
+        "revision" : "99d4f0ccc31ad94656232653fc5e9ee6c688abfc",
+        "version" : "0.2.0"
       }
     },
     {
