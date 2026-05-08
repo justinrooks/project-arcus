@@ -110,9 +110,9 @@ Pass criteria:
 - [x] Test with `Always` location enabled.
 - [x] Test after denying location permission.
 - [x] Test after downgrading location permission in Settings.
-- [ ] Test after denying notifications. - Turn off notifications in settings
+- [x] Test after denying notifications.
 - [x] Test after force-quitting the app.
-- [ ] Test after reinstalling the app.
+- [x] Test after reinstalling the app.
 - [ ] Test with stale location presence and confirm expiry behavior.
 
 Pass criteria:
