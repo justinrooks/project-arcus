@@ -2,6 +2,7 @@ import Testing
 @testable import SkyAware
 import SwiftData
 import Foundation
+import ArcusCore
 
 private struct UnavailableArcusClient: ArcusClient {
     func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {

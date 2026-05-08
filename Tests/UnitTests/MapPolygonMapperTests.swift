@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 import Testing
 import UIKit
 @testable import SkyAware

@@ -1,4 +1,5 @@
 import Foundation
+import ArcusCore
 import SwiftData
 import Testing
 @testable import SkyAware

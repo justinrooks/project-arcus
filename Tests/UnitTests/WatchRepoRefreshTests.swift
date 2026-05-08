@@ -2,6 +2,7 @@ import Testing
 @testable import SkyAware
 import SwiftData
 import Foundation
+import ArcusCore
 
 private struct StubArcusClient: ArcusClient {
     let payload: Data
