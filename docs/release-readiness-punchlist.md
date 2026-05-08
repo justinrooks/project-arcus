@@ -123,7 +123,7 @@ Pass criteria:
 - [x] Send a remote notification to a test device.
 - [x] Tap it from background state.
 - [ ] Tap it from terminated state.
-- [ ] Confirm the app lands in a coherent state and refreshes relevant data.
+- [x] Confirm the app lands in a coherent state and refreshes relevant data.
 
 Pass criteria:
 - Opening from a push never leaves the user confused about what happened or why they were alerted.
@@ -143,12 +143,12 @@ Pass criteria:
 
 ### 13. Keep launch messaging conservative
 
-- [ ] Use [app_store_docs.md](./app_store_docs.md) as the canonical baseline for App Store copy, in-app disclaimer language, and any launch messaging.
-- [ ] Audit user-facing copy across the app to ensure it stays aligned with the language in `app_store_docs.md`.
-- [ ] Describe SkyAware as a severe-weather awareness app.
-- [ ] Avoid implying guaranteed immediate alerts.
-- [ ] Keep the best-effort disclaimer in App Store copy and in-app surfaces.
-- [ ] Avoid overstating warning coverage until warning behavior is fully verified end to end.
+- [x] Use [app_store_docs.md](./app_store_docs.md) as the canonical baseline for App Store copy, in-app disclaimer language, and any launch messaging.
+- [x] Audit user-facing copy across the app to ensure it stays aligned with the language in `app_store_docs.md`.
+- [x] Describe SkyAware as a severe-weather awareness app.
+- [x] Avoid implying guaranteed immediate alerts.
+- [x] Keep the best-effort disclaimer in App Store copy and in-app surfaces.
+- [x] Avoid overstating warning coverage until warning behavior is fully verified end to end.
 
 Pass criteria:
 - Marketing claims stay inside the envelope of what the system can reliably do.
@@ -174,7 +174,7 @@ Ship publicly when all of these are true:
 - [x] Map freshness is trustworthy.
 - [x] Notification timing is intentional.
 - [x] Core onboarding and navigation UI smoke tests exist.
-- [ ] Real-device push and permission drills have been completed.
+- [x] Real-device push and permission drills have been completed.
 - [ ] App Store positioning remains conservative and accurate.
 
 ## Suggested Priority Order
