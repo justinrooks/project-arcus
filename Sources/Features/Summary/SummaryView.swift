@@ -209,6 +209,7 @@ struct SummaryView: View {
             weather: weather,
             resolutionState: resolutionState,
             showsOfflineToken: showsOfflineToken,
+            isLocationUnavailable: isLocationUnavailable,
             condenseProgress: headerCondenseProgress
         )
 

@@ -9,12 +9,14 @@ import SwiftUI
 
 struct SummaryStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @State private var showsOfflineExplanation = false
 
     let statusText: String
     let weather: SummaryWeather?
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
+    let isLocationUnavailable: Bool
     let condenseProgress: CGFloat
 
     private static let temperatureFormatter: MeasurementFormatter = {
@@ -75,7 +77,11 @@ struct SummaryStatus: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8 - (2 * clampedCondenseProgress)) {
             header
-            contentRow
+            if isLocationUnavailable {
+                locationUnavailableCard
+            } else {
+                contentRow
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, verticalPadding)
@@ -86,6 +92,25 @@ struct SummaryStatus: View {
             shadowY: cardShadowY
         )
         .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
+    }
+
+    private var locationUnavailableCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Location Required", systemImage: "location.slash")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text("Enable location access to load local risk, alerts, and weather conditions.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background {
+            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.06))
+        }
     }
 
     private var header: some View {
@@ -392,6 +417,7 @@ private struct SummarySettledConditionLine: View {
             ),
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
+            isLocationUnavailable: false,
             condenseProgress: 0
         )
         SummaryStatus(
@@ -417,6 +443,15 @@ private struct SummarySettledConditionLine: View {
             ),
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: true,
+            isLocationUnavailable: false,
+            condenseProgress: 0.75
+        )
+        SummaryStatus(
+            statusText: "Location not available",
+            weather: nil,
+            resolutionState: SummaryResolutionState(),
+            showsOfflineToken: false,
+            isLocationUnavailable: true,
             condenseProgress: 0.75
         )
     }

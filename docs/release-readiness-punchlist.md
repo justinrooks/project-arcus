@@ -106,12 +106,12 @@ Pass criteria:
 
 ### 10. Run real-device drills
 
-- [ ] Test with `When In Use` location only.
+- [x] Test with `When In Use` location only.
 - [x] Test with `Always` location enabled.
-- [ ] Test after denying location permission.
-- [ ] Test after downgrading location permission in Settings.
-- [ ] Test after denying notifications.
-- [ ] Test after force-quitting the app.
+- [x] Test after denying location permission.
+- [x] Test after downgrading location permission in Settings.
+- [ ] Test after denying notifications. - Turn off notifications in settings
+- [x] Test after force-quitting the app.
 - [ ] Test after reinstalling the app.
 - [ ] Test with stale location presence and confirm expiry behavior.
 
