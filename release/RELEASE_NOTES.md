@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(53)
+## v0.1.0(54)
 
 ### Overview
 This update improves denied-permission handling for location and notifications, and aligns shared alert/location payload models with ArcusCore.

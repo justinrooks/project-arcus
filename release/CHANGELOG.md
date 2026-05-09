@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v0.1.0(53)
+## v0.1.0(54)
 
 ### UI / UX
 - Show a dedicated "Location Required" status in Summary when iOS location access is denied/restricted, with guidance to enable location for local risk, alerts, and weather.
