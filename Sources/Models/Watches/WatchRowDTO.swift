@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 
 extension WatchRowDTO: AlertItem {
     // Alert Item - Derived
@@ -126,7 +127,7 @@ struct WatchRowDTO: Identifiable, Sendable, Hashable, Codable {
     }
 }
 
-struct ActiveWarningGeometry: Identifiable, Sendable, Hashable {
+struct ActiveWarningGeometry: Identifiable, Sendable {
     let id: String
     let messageId: String?
     let currentRevisionSent: Date?

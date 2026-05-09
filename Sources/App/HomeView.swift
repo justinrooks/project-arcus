@@ -116,7 +116,11 @@ struct HomeView: View {
     }
 
     private var readinessState: SummaryReadinessState {
-        Self.readinessState(
+        if locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted {
+            return .locationUnavailable
+        }
+
+        return Self.readinessState(
             startupState: locationSession.startupState,
             hasContext: locationSession.currentContext != nil,
             hasResolvedLocalData: currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey,

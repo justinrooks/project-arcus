@@ -1,6 +1,25 @@
 # Changelog
 
 ## Unreleased
+### UI / UX
+- Show a dedicated "Location Required" status in Summary when iOS location access is denied/restricted, with guidance to enable location for local risk, alerts, and weather.
+<!-- evidence: 85d9ef1 -->
+- Stop location-dependent Home/Summary startup work when location access is unavailable, preventing stalled loading against missing context.
+<!-- evidence: 85d9ef1 -->
+- Disable notification preference toggles in Settings when iOS notification permission is denied, and show guidance to re-enable notifications in system settings.
+<!-- evidence: 62c3ae0 -->
+
+### Background & Notifications
+- Automatically clear local notification preference toggles when iOS notification authorization is denied so in-app settings match system-level permission state.
+<!-- evidence: 62c3ae0 -->
+
+### Tests / QA
+- Update unit tests for location snapshot payload field mapping after ArcusCore payload alignment (`county`/`zone` naming).
+<!-- evidence: db21c16 -->
+
+### Maintenance / Cleanup
+- Consolidate alert and location snapshot transport models onto ArcusCore shared types to reduce duplicate model definitions in app code.
+<!-- evidence: 2d198a0, db21c16 -->
 
 ## v0.1.0(49)
 

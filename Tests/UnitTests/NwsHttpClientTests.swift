@@ -8,6 +8,7 @@
 import Testing
 @testable import SkyAware
 import Foundation
+import ArcusCore
 
 private actor MockHTTPClientState {
     var requests: [(url: URL, headers: [String: String])] = []
@@ -391,8 +392,8 @@ struct HTTPLocationSnapshotUploaderTests {
             cellScheme: "h3",
             h3Cell: 613725958748241919,
             h3Resolution: 8,
-            countyCode: "COC001",
-            forecastZone: "COZ245",
+            county: "COC001",
+            zone: "COZ245",
             fireZone: "COZ245",
             apnsDeviceToken: "abc123",
             installationId: "install-1",

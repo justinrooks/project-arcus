@@ -6,6 +6,7 @@
 //
 
 import MapKit
+import ArcusCore
 
 struct MapPolygonEntry: Sendable {
     let key: String

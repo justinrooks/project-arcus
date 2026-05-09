@@ -1,3 +1,12 @@
+SkyAware Unreleased improves denied-permission handling for location and notifications, and includes internal model alignment work.
+
+Highlights:
+- Summary now shows a dedicated "Location Required" state when location access is denied or restricted, with guidance for restoring local context
+- Home/Summary startup now exits location-dependent loading when location access is unavailable
+- Settings notification toggles are disabled when iOS notification permission is denied, with guidance to re-enable notifications in system settings
+- Notification preference toggles now clear automatically when iOS notification authorization is denied so app settings match system state
+- Internal alert/location payload models were aligned to ArcusCore shared types with related test updates
+
 SkyAware v0.1.0(49) adds Home widgets for storm and severe-risk snapshots, backed by refreshed snapshot writes and reload coordination.
 
 Highlights:

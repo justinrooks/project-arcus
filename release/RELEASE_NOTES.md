@@ -1,6 +1,15 @@
 # Release Notes
 
 ## Unreleased
+### Overview
+This update improves denied-permission handling for location and notifications, and aligns shared alert/location payload models with ArcusCore.
+
+### Highlights
+- Summary now shows a dedicated "Location Required" state when location access is denied or restricted, with guidance for restoring local weather and alert context.
+- Home/Summary startup now exits location-dependent loading when location access is unavailable instead of continuing without required context.
+- Settings notification toggles are now disabled when iOS notification permission is denied, with in-app guidance to re-enable notifications in system settings.
+- Notification preference toggles now clear automatically when iOS notification authorization is denied so app settings stay consistent with system permission state.
+- Internal alert and location snapshot transport models were consolidated onto ArcusCore shared types, with corresponding test updates.
 
 ## v0.1.0(49)
 

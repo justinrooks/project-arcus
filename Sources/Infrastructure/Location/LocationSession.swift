@@ -108,6 +108,13 @@ final class LocationSession {
         placemarkTimeout: Double = 8
     ) async -> LocationContext? {
         syncAuthorizationStatus()
+
+        if authorizationStatus.isLocationAuthorized == false && showsAuthorizationPrompt == false {
+            currentContext = nil
+            startupState = .failed("location-unavailable")
+            return nil
+        }
+
         startupState = showsAuthorizationPrompt && authorizationStatus == .notDetermined
             ? .requestingAuthorization
             : .acquiringLocation

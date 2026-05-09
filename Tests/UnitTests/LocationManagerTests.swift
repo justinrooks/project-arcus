@@ -150,11 +150,10 @@ struct LocationSessionTests {
     @Test("stores a ready context returned by the resolver")
     func storesReadyContextFromResolver() async throws {
         let provider = LocationProvider()
-        let manager = LocationManager(onUpdate: { _ in })
-        manager.locationManagerDidChangeAuthorization(
-            LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
         )
-        try await Task.sleep(for: .milliseconds(20))
 
         let context = LocationContext(
             snapshot: LocationSnapshot(
@@ -208,11 +207,10 @@ struct LocationSessionTests {
     @Test("maps resolver failures into startup state")
     func mapsResolverFailuresIntoStartupState() async throws {
         let provider = LocationProvider()
-        let manager = LocationManager(onUpdate: { _ in })
-        manager.locationManagerDidChangeAuthorization(
-            LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
         )
-        try await Task.sleep(for: .milliseconds(20))
 
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
@@ -234,11 +232,10 @@ struct LocationSessionTests {
     @Test("pushServerNotificationPreferenceUpdate forwards current context for upload")
     func pushServerNotificationPreferenceUpdate_forwardsCurrentContext() async throws {
         let provider = LocationProvider()
-        let manager = LocationManager(onUpdate: { _ in })
-        manager.locationManagerDidChangeAuthorization(
-            LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
         )
-        try await Task.sleep(for: .milliseconds(20))
 
         let context = LocationContext(
             snapshot: LocationSnapshot(
@@ -293,11 +290,10 @@ struct LocationSessionTests {
     @Test("pushServerNotificationPreferenceUpdate resolves missing context and enqueues with force flag")
     func pushServerNotificationPreferenceUpdate_resolvesMissingContext_andEnqueuesWithForceFlag() async throws {
         let provider = LocationProvider()
-        let manager = LocationManager(onUpdate: { _ in })
-        manager.locationManagerDidChangeAuthorization(
-            LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
         )
-        try await Task.sleep(for: .milliseconds(20))
 
         let context = LocationContext(
             snapshot: LocationSnapshot(

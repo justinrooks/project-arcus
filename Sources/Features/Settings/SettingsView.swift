@@ -7,6 +7,7 @@
 
 import SwiftUI
 import OSLog
+import UserNotifications
 
 enum BrevityLevel: Int, CaseIterable, Identifiable, Codable {
     case essential = 0
@@ -40,9 +41,11 @@ enum AudienceLevel: Int, CaseIterable, Identifiable, Codable {
 
 
 struct SettingsView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(LocationSession.self) private var locationSession
     private let logger = Logger.uiSettings
     private let locationReliabilityLogger = Logger.uiLocationReliability
+    @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
     
     // MARK: Notification Settings
     @AppStorage(
@@ -90,6 +93,10 @@ struct SettingsView: View {
             set: { audienceIndex = $0.rawValue }
         )
     }
+
+    private var notificationsAreDenied: Bool {
+        notificationAuthorizationStatus == .denied
+    }
     
     var body: some View {
         ScrollView {
@@ -100,6 +107,7 @@ struct SettingsView: View {
                             .onChange(of: morningSummaryEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Morning Summaries")
                             }
+                            .disabled(notificationsAreDenied)
                         Text("Get a daily morning update with a concise overview of local weather hazards and outlook conditions.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -111,6 +119,7 @@ struct SettingsView: View {
                             .onChange(of: mesoNotificationEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Meso Notifications")
                             }
+                            .disabled(notificationsAreDenied)
                         Text("Receive alerts when new mesoscale discussions are issued for your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -129,7 +138,15 @@ struct SettingsView: View {
                                     await locationSession.pushServerNotificationPreferenceUpdate()
                                 }
                             }
+                            .disabled(notificationsAreDenied)
                         Text("Subscribe this device to server-driven push alerts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    if notificationsAreDenied {
+                        Text("Notifications are disabled for SkyAware in iOS Settings. Enable notifications to edit these preferences.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -241,6 +258,15 @@ struct SettingsView: View {
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .task {
+            await refreshNotificationAuthorizationStatus()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task {
+                await refreshNotificationAuthorizationStatus()
+            }
+        }
     }
 
     private func sectionCard<Content: View>(
@@ -275,6 +301,24 @@ struct SettingsView: View {
 }
 
 extension SettingsView {
+    @MainActor
+    func refreshNotificationAuthorizationStatus() async {
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        notificationAuthorizationStatus = settings.authorizationStatus
+
+        guard notificationAuthorizationStatus == .denied else { return }
+
+        if morningSummaryEnabled {
+            morningSummaryEnabled = false
+        }
+        if mesoNotificationEnabled {
+            mesoNotificationEnabled = false
+        }
+        if serverNotificationEnabled {
+            serverNotificationEnabled = false
+        }
+    }
+
     func handleNotificationToggle(_ enabled: Bool, for notificationType: String) {
         guard enabled else { return }
         

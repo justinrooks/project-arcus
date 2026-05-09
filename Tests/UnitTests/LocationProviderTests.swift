@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import Testing
+import ArcusCore
 @testable import SkyAware
 
 @Suite("LocationProvider")
@@ -293,8 +294,8 @@ struct LocationProviderTests {
         #expect(payload.capturedAt == context.snapshot.timestamp)
         #expect(payload.installationId == "install-abc-123")
         #expect(payload.apnsDeviceToken == "apns-token-123")
-        #expect(payload.countyCode == "OKC109")
-        #expect(payload.forecastZone == "OKZ025")
+        #expect(payload.county == "OKC109")
+        #expect(payload.zone == "OKZ025")
         #expect(payload.fireZone == "OKZ025")
         #expect(payload.h3Cell == sampleH3Cell)
         #expect(payload.isSubscribed == false)

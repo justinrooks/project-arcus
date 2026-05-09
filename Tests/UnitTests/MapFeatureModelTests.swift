@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import ArcusCore
 import MapKit
 import Testing
 @testable import SkyAware

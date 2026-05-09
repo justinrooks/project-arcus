@@ -1,17 +1,18 @@
 import Testing
 @testable import SkyAware
 import Foundation
+import ArcusCore
 
 @Suite("DeviceAlertPayload decoding")
 struct DeviceAlertPayloadTests {
-    @Test("Missing ugc still decodes for cell-based Arcus matches")
-    func missingUgc_decodes() throws {
+    @Test("Empty ugc decodes for cell-based Arcus matches")
+    func emptyUgc_decodes() throws {
         let json = payloadJSON()
 
         let decoded: [DeviceAlertPayload]? = JsonParser.decode(from: Data(json.utf8))
         let payload = try #require(decoded?.first)
 
-        #expect(payload.ugc == nil)
+        #expect(payload.ugc == [])
         #expect(payload.h3Cells == [613725958748241919])
         #expect(payload.geometry == nil)
     }
@@ -130,6 +131,7 @@ private func payloadJSON(geometry: String? = nil) -> String {
         "description": "Test description",
         "instructions": "Test instructions",
         "response": "Monitor",
+        "ugc": [],
         "h3Cells": [613725958748241919]\(geometryField)
       }
     ]

@@ -2,6 +2,9 @@
 
 SkyAware is an iOS app built for hyper-local severe weather awareness. It brings together NWS and SPC data to surface current risk, active alerts, and timely notifications in a clear, glanceable way. This repository contains the app and its supporting development context.
 
+## Public Site
+[skyaware.app](https://www.skyaware.app)
+
 ## Join the Beta
 Try SkyAware on TestFlight and help shape the app.
 

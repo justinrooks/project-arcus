@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 import SwiftData
 import OSLog
 

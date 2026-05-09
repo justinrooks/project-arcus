@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D044E8D32FAE6D130079D369 /* ArcusCore in Frameworks */ = {isa = PBXBuildFile; productRef = D044E8D22FAE6D130079D369 /* ArcusCore */; };
 		D07F28012FA3A5CA00A7FA31 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = D07F28002FA3A5CA00A7FA31 /* Settings.bundle */; };
 		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 		D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -251,6 +252,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D044E8D32FAE6D130079D369 /* ArcusCore in Frameworks */,
 				D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -358,6 +360,7 @@
 			name = SkyAware;
 			packageProductDependencies = (
 				D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */,
+				D044E8D22FAE6D130079D369 /* ArcusCore */,
 			);
 			productName = SkyAware;
 			productReference = D095EFA32E16F5690074F867 /* SkyAware.app */;
@@ -459,6 +462,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */,
+				D044E8D12FAE6D130079D369 /* XCRemoteSwiftPackageReference "ArcusCore" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D095EFA42E16F5690074F867 /* Products */;
@@ -945,6 +949,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		D044E8D12FAE6D130079D369 /* XCRemoteSwiftPackageReference "ArcusCore" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/justinrooks/ArcusCore.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 		D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/pawelmajcher/SwiftyH3.git";
@@ -956,6 +968,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		D044E8D22FAE6D130079D369 /* ArcusCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D044E8D12FAE6D130079D369 /* XCRemoteSwiftPackageReference "ArcusCore" */;
+			productName = ArcusCore;
+		};
 		D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D0C1A4C62F4BF00100AA1001 /* XCRemoteSwiftPackageReference "SwiftyH3" */;
