@@ -1,4 +1,4 @@
-SkyAware Unreleased improves denied-permission handling for location and notifications, and includes internal model alignment work.
+SkyAware v0.1.0(53) improves denied-permission handling for location and notifications, and includes internal model alignment work.
 
 Highlights:
 - Summary now shows a dedicated "Location Required" state when location access is denied or restricted, with guidance for restoring local context
