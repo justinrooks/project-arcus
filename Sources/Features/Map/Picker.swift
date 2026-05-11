@@ -66,9 +66,26 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
 struct LayerTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let layer: MapLayer
     let isSelected: Bool
     let action: () -> Void
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
+
+    private var displayTitle: String {
+        guard dynamicTypeSize == .xxxLarge else { return layer.title }
+        switch layer {
+        case .categorical:
+            return "Severe"
+        case .meso:
+            return "Meso"
+        default:
+            return layer.title
+        }
+    }
 
     private var tint: Color {
         switch layer {
@@ -86,40 +103,63 @@ struct LayerTile: View {
             action()
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }) {
-            VStack(spacing: 10) {
-                RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-                    .fill(layer.gradient(for: scheme))
-                    .overlay(
-                        Image(systemName: layer.symbol).formatBadgeImage()
-                    )
-                    .frame(width: 74, height: 74)
-                    .skyAwareSurface(
-                        cornerRadius: SkyAwareRadius.medium,
-                        tint: tint,
-                        interactive: true,
-                        shadowOpacity: scheme == .dark ? 0.20 : 0.10,
-                        shadowRadius: 5,
-                        shadowY: 2
-                    )
-                    .overlay {
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-                            .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-                    }
-                    .scaleEffect(isSelected ? 1.02 : 1)
+            Group {
+                if adaptiveLayout.usesAccessibilityLayout {
+                    HStack(spacing: 12) {
+                        layerIcon
+                        Text(displayTitle)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.leading)
+                            .lineLimit(3)
 
-                Text(layer.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .frame(minHeight: 34, alignment: .top)
+                        Spacer(minLength: 8)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+                } else {
+                    VStack(spacing: 10) {
+                        layerIcon
+
+                        Text(displayTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .frame(minHeight: 34, alignment: .top)
+                    }
+                    .padding(.vertical, 4)
+                }
             }
             .padding(.vertical, 4)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(layer.title + (isSelected ? ", selected" : ""))
+            .accessibilityLabel(displayTitle + (isSelected ? ", selected" : ""))
         }
         .buttonStyle(.plain)
         .animation(SkyAwareMotion.layerChange(reduceMotion), value: isSelected)
+    }
+
+    private var layerIcon: some View {
+        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
+            .fill(layer.gradient(for: scheme))
+            .overlay(
+                Image(systemName: layer.symbol).formatBadgeImage()
+            )
+            .frame(width: 74, height: 74)
+            .skyAwareSurface(
+                cornerRadius: SkyAwareRadius.medium,
+                tint: tint,
+                interactive: true,
+                shadowOpacity: scheme == .dark ? 0.20 : 0.10,
+                shadowRadius: 5,
+                shadowY: 2
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
+                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+            }
+            .scaleEffect(isSelected ? 1.02 : 1)
     }
 }
 
@@ -134,8 +174,21 @@ struct LayerPickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
     private let columns = [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 14)]
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
+
+    private var isAccessibilityListLayout: Bool {
+        Self.usesAccessibilityListLayoutPolicy(dynamicTypeSize: dynamicTypeSize)
+    }
+
+    private var shouldShowWarningGeometryToggle: Bool {
+        Self.showsWarningGeometryTogglePolicy(dynamicTypeSize: dynamicTypeSize)
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -155,16 +208,29 @@ struct LayerPickerSheet: View {
             .padding()
 
             ScrollView {
-                LazyVGrid(columns: columns, spacing: 16) {
-                    ForEach(MapLayer.allCases) { layer in
-                        LayerTile(layer: layer, isSelected: selection == layer) {
-                            toggle(layer)
+                if isAccessibilityListLayout {
+                    VStack(spacing: 10) {
+                        ForEach(MapLayer.allCases) { layer in
+                            LayerTile(layer: layer, isSelected: selection == layer) {
+                                toggle(layer)
+                            }
                         }
                     }
+                    .padding(.horizontal)
+                    .padding(.top, 2)
+                    .padding(.bottom, 14)
+                } else {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(MapLayer.allCases) { layer in
+                            LayerTile(layer: layer, isSelected: selection == layer) {
+                                toggle(layer)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.top, 2)
+                    .padding(.bottom, 14)
                 }
-                .padding(.horizontal)
-                .padding(.top, 2)
-                .padding(.bottom, 14)
             }
 
             Text("Choose a layer")
@@ -172,16 +238,18 @@ struct LayerPickerSheet: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
-                    .toggleStyle(.switch)
+            if shouldShowWarningGeometryToggle {
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
+                        .toggleStyle(.switch)
 
-                Text("Show active alerts on the map.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    Text("Show active alerts on the map.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 10)
             }
-            .padding(.horizontal)
-            .padding(.bottom, 10)
         }
         .padding(.top, 8)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
@@ -194,6 +262,14 @@ struct LayerPickerSheet: View {
             selection = layer
         }
         dismiss()
+    }
+
+    static func usesAccessibilityListLayoutPolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout
+    }
+
+    static func showsWarningGeometryTogglePolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout == false
     }
 }
 
@@ -266,10 +342,27 @@ struct MapWithLayerPickerDemo: View {
 
 // MARK: - Preview
 
-#Preview("Layer Picker Sheet") {
+#Preview("Layer Picker - Normal Grid") {
     LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
 }
 
-#Preview("In-Map Demo") {
-    MapWithLayerPickerDemo()
+#Preview("Layer Picker - XXXL Grid") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .xxxLarge)
+}
+
+#Preview("Layer Picker - AX1 Vertical List") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .accessibility1)
+}
+
+#Preview("Layer Picker - AX3 Vertical List") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Layer Picker - AX3 Small iPhone") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .accessibility3)
+        .frame(width: 320, height: 568)
 }

@@ -8,51 +8,68 @@
 import SwiftUI
 
 struct OutlookRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let outlook: ConvectiveOutlookDTO
     private static let titleRegex = try? NSRegularExpression(
         pattern: #"^SPC\s+\w+\s+\d{1,2},\s+\d{4}\s+(\d{4}) UTC (.+)$"#
     )
 
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "pencil.and.list.clipboard")
-                .foregroundColor(.skyAwareAccent)
-                .font(.headline.weight(.semibold))
-                .frame(width: 40, height: 40)
-                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
 
-            if let day = simplifyOutlookTitle(outlook.title) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(day)
-                        .font(.headline.weight(.semibold))
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.9)
-                    
-                    if let issued = outlook.issued{
-                        Text("\(issued.shorten()) • \(issued.relativeDate())")
-                            .font(.caption.weight(.medium))
-                            .foregroundColor(.secondary)
-                    }
+    var body: some View {
+        Group {
+            if adaptiveLayout.usesAccessibilityLayout {
+                VStack(alignment: .leading, spacing: 10) {
+                    titleBlock
+                    metadataLine
                 }
             } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(outlook.title)
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "pencil.and.list.clipboard")
+                        .foregroundColor(.skyAwareAccent)
                         .font(.headline.weight(.semibold))
-                        .lineLimit(2)
-                    Text("Published \(outlook.published.relativeDate())")
-                        .font(.caption.weight(.medium))
-                        .foregroundColor(.secondary)
+                        .frame(width: 40, height: 40)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        titleBlock
+                        metadataLine
+                    }
+
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.tertiary)
                 }
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .padding(14)
         .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .contentShape(Rectangle())
+    }
+
+    private var titleBlock: some View {
+        Text(simplifyOutlookTitle(outlook.title) ?? outlook.title)
+            .font(.headline.weight(.semibold))
+            .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 3 : 2)
+            .minimumScaleFactor(adaptiveLayout.usesAccessibilityLayout ? 1 : 0.9)
+    }
+
+    private var metadataLine: some View {
+        Group {
+            if let issued = outlook.issued {
+                Text("\(issued.shorten()) • \(issued.relativeDate())")
+            } else {
+                Text("Published \(outlook.published.relativeDate())")
+            }
+        }
+        .font(.caption.weight(.medium))
+        .foregroundColor(.secondary)
+        .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
     }
 }
 

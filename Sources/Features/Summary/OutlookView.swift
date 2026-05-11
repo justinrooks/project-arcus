@@ -10,14 +10,16 @@ import SwiftUI
 struct OutlookView: View {
     let outlook: ConvectiveOutlookDTO
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                // Valid time
-                Text("Published: \(outlook.published, format: .dateTime)")
-                    .font(.subheadline)
-                    .foregroundColor(.gray)
+                publishedBlock
                 
                 // Full text with preserved formatting
 //                Text(parseOutlookText(outlook.fullText))
@@ -25,6 +27,7 @@ struct OutlookView: View {
                     .font(.body)
                     .foregroundColor(.primary)
                     .lineSpacing(6)
+                    .textSelection(.enabled)
             }
             .padding()
         }
@@ -39,6 +42,25 @@ struct OutlookView: View {
 //                .foregroundColor(.skyAwareAccent)
 //            }
 //        }
+    }
+
+    @ViewBuilder
+    private var publishedBlock: some View {
+        if adaptiveLayout.usesAccessibilityLayout {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Published")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(outlook.published, format: .dateTime)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            Text("Published: \(outlook.published, format: .dateTime)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
     }
     
     // Helper to parse section headers like "...SUMMARY..." and "...20z Update..."

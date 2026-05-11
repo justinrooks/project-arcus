@@ -64,7 +64,7 @@ struct MapLegend: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 144, alignment: .leading)
+        .frame(minWidth: 144, maxWidth: 260, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .cardBackground(
             cornerRadius: SkyAwareRadius.row,
@@ -72,6 +72,40 @@ struct MapLegend: View {
             shadowRadius: 8,
             shadowY: 3
         )
+    }
+}
+
+struct CompactMapLegendTrigger: View {
+    let label: String
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+
+                Image(systemName: "chevron.up")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(minHeight: 40)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .skyAwareSurface(
+            cornerRadius: SkyAwareRadius.section,
+            tint: .skyAwareAccent.opacity(0.12),
+            interactive: true,
+            shadowOpacity: 0.14,
+            shadowRadius: 8,
+            shadowY: 4
+        )
+        .accessibilityLabel("Map legend")
+        .accessibilityHint("Opens the full map legend.")
     }
 }
 

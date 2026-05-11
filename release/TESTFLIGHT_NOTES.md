@@ -1,3 +1,11 @@
+SkyAware v0.1.0(56) improves large-text accessibility across core weather surfaces, with better readability in map controls and summary content.
+
+Highlights:
+- Improved Dynamic Type behavior across Summary, Alerts, Outlooks, and map surfaces for accessibility text sizes
+- Map legend presentation now adapts for larger text sizes with a compact trigger and sheet flow
+- Map layer picker layout is now accessibility-friendly for large text scenarios
+- Added unit tests covering adaptive layout policy and layer picker accessibility layout behavior
+
 SkyAware v0.1.0(54) improves denied-permission handling for location and notifications, and includes internal model alignment work.
 
 Highlights:

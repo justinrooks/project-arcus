@@ -9,6 +9,7 @@ import SwiftUI
 
 struct WatchDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let watch: WatchRowDTO
     let layout: DetailLayout
@@ -44,6 +45,10 @@ struct WatchDetailView: View {
         guard let description = trimmedDescription else { return nil }
         guard let lead = summaryLead else { return description }
         return description.localizedCaseInsensitiveCompare(lead) == .orderedSame ? nil : description
+    }
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
     init(watch: WatchRowDTO, layout: DetailLayout, isExpanded: Bool = true) {
@@ -97,13 +102,23 @@ struct WatchDetailView: View {
     }
 
     private var chips: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                StatusChip(kind: .severity(watch.severity))
-                StatusChip(kind: .certainty(watch.certainty))
-                StatusChip(kind: .urgency(watch.urgency))
+        Group {
+            if adaptiveLayout.usesAccessibilityLayout {
+                VStack(alignment: .leading, spacing: 8) {
+                    StatusChip(kind: .severity(watch.severity))
+                    StatusChip(kind: .certainty(watch.certainty))
+                    StatusChip(kind: .urgency(watch.urgency))
+                }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        StatusChip(kind: .severity(watch.severity))
+                        StatusChip(kind: .certainty(watch.certainty))
+                        StatusChip(kind: .urgency(watch.urgency))
+                    }
+                    .padding(.vertical, 2)
+                }
             }
-            .padding(.vertical, 2)
         }
     }
 

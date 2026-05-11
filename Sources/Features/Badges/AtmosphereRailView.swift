@@ -9,6 +9,7 @@ import SwiftUI
 
 struct AtmosphereRailView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var activeTip: AtmosphereTip?
     let weather: SummaryWeather?
     var isOffline: Bool = false
@@ -112,6 +113,10 @@ struct AtmosphereRailView: View {
         GridItem(.flexible(), spacing: 2, alignment: .leading)
     ]
 
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
+
     private var atmosphereBackground: LinearGradient {
         // Intentionally non-semantic: instrumentation, not risk.
         let colors: [Color] = colorScheme == .dark
@@ -145,7 +150,7 @@ struct AtmosphereRailView: View {
 
                     Text(atmosphereSummary)
                         .formatSummaryText(for: colorScheme)
-                        .lineLimit(1)
+                        .lineLimit(adaptiveLayout.usesVerticalMetricRows ? 2 : 1)
 
                     Divider()
                         .overlay(colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.14))
@@ -175,7 +180,11 @@ struct AtmosphereRailView: View {
 
     @ViewBuilder
     private var metricGrid: some View {
-        metricGridContent
+        if adaptiveLayout.usesVerticalMetricRows {
+            metricRowsContent
+        } else {
+            metricGridContent
+        }
     }
 
     private var metricGridContent: some View {
@@ -183,11 +192,25 @@ struct AtmosphereRailView: View {
             ForEach(metrics) { metric in
                 AtmosphereMetricTile(
                     metric: metric,
-                    activeTip: $activeTip
+                    activeTip: $activeTip,
+                    usesVerticalRowLayout: false
                 )
             }
         }
         .padding(.horizontal, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var metricRowsContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(metrics) { metric in
+                AtmosphereMetricTile(
+                    metric: metric,
+                    activeTip: $activeTip,
+                    usesVerticalRowLayout: true
+                )
+            }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -275,6 +298,7 @@ private struct DewPointTipView: View {
 private struct AtmosphereMetricTile: View {
     let metric: AtmosphereMetric
     @Binding var activeTip: AtmosphereTip?
+    let usesVerticalRowLayout: Bool
     @Environment(\.colorScheme) private var colorScheme
 
     private var isDewPoint: Bool {
@@ -283,39 +307,63 @@ private struct AtmosphereMetricTile: View {
 
     private var tileContent: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Image(systemName: metric.symbol)
-                    .symbolRenderingMode(.monochrome)
-                    .font(.caption.weight(.semibold))
-                    .imageScale(.medium)
-                    .frame(width: 24, height: 18, alignment: .leading)
-                    .padding(.leading, 2)
-                    .layoutPriority(1)
-
+            if usesVerticalRowLayout {
                 Text(metric.title)
-                    .font(.footnote.weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .layoutPriority(0)
-            }
-            .foregroundStyle(.secondary)
-
-            Text(metric.value)
-                .font(.callout.weight(isDewPoint ? .bold : .semibold))
-                .foregroundStyle(
-                    isDewPoint
-                    ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
-                    : .primary
-                )
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            if let detail = metric.detail {
-                Text(detail)
-                    .font(.caption2)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                Text(metric.value)
+                    .font(.body.weight(isDewPoint ? .bold : .semibold))
+                    .foregroundStyle(
+                        isDewPoint
+                        ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
+                        : .primary
+                    )
+                    .monospacedDigit()
+                    .lineLimit(2)
+
+                if let detail = metric.detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: metric.symbol)
+                        .symbolRenderingMode(.monochrome)
+                        .font(.caption.weight(.semibold))
+                        .imageScale(.medium)
+                        .frame(width: 24, height: 18, alignment: .leading)
+                        .padding(.leading, 2)
+                        .layoutPriority(1)
+
+                    Text(metric.title)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .layoutPriority(0)
+                }
+                .foregroundStyle(.secondary)
+
+                Text(metric.value)
+                    .font(.callout.weight(isDewPoint ? .bold : .semibold))
+                    .foregroundStyle(
+                        isDewPoint
+                        ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
+                        : .primary
+                    )
+                    .monospacedDigit()
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                if let detail = metric.detail {
+                    Text(detail)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
         }
     }
@@ -349,48 +397,72 @@ private struct AtmosphereMetricTile: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 6)
                 .padding(.trailing, 4)
-                .padding(.vertical, 6)
+                .padding(.vertical, usesVerticalRowLayout ? 8 : 6)
             } else {
                 tileContent
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 6)
                     .padding(.trailing, 4)
-                    .padding(.vertical, 6)
+                    .padding(.vertical, usesVerticalRowLayout ? 8 : 6)
             }
         }
     }
 }
 
-#Preview {
-    VStack {
-        AtmosphereRailView(weather: .init(
-            temperature: Measurement(value: 37.0, unit: .fahrenheit),
-            symbolName: "sun.max",
-            conditionText: "test",
-            asOf: .now,
-            dewPoint: Measurement(value: 45.0, unit: .fahrenheit),
-            humidity: 0.15,
-            windSpeed: .init(value: 15.0, unit: .milesPerHour),
-            windGust: nil,
-            windDirection: "NNW",
-            pressure: .init(value: 29.95, unit: .inchesOfMercury),
-            pressureTrend: "climbing"
-        ))
+#Preview("Atmosphere - Normal Grid") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+}
 
-        AtmosphereRailView(weather: nil)
+#Preview("Atmosphere - XXXL Grid") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+        .environment(\.dynamicTypeSize, .xxxLarge)
+}
 
-        AtmosphereRailView(weather: .init(
-            temperature: Measurement(value: 48.0, unit: .fahrenheit),
-            symbolName: "cloud.drizzle",
-            conditionText: "Scattered showers",
-            asOf: .now,
-            dewPoint: Measurement(value: 43.0, unit: .fahrenheit),
-            humidity: 0.82,
-            windSpeed: .init(value: 8.0, unit: .milesPerHour),
-            windGust: nil,
-            windDirection: "SE",
-            pressure: .init(value: 29.58, unit: .inchesOfMercury),
-            pressureTrend: "falling"
-        ))
-    }
+#Preview("Atmosphere - AX1 Vertical Rows") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+        .environment(\.dynamicTypeSize, .accessibility1)
+}
+
+#Preview("Atmosphere - AX3 Vertical Rows Small iPhone") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.steady)
+        .environment(\.dynamicTypeSize, .accessibility3)
+        .frame(width: 320)
+}
+
+#Preview("Atmosphere - Dew Point Tip Content") {
+    DewPointTipView(
+        currentValue: "68°F",
+        dewPointF: 68
+    )
+    .padding()
+}
+
+private enum AtmosphereRailPreviewData {
+    static let unstable = SummaryWeather(
+        temperature: Measurement(value: 82.0, unit: .fahrenheit),
+        symbolName: "cloud.bolt.rain.fill",
+        conditionText: "Hot, humid, unstable",
+        asOf: .now,
+        dewPoint: Measurement(value: 68.0, unit: .fahrenheit),
+        humidity: 0.72,
+        windSpeed: Measurement(value: 21.0, unit: .milesPerHour),
+        windGust: Measurement(value: 34.0, unit: .milesPerHour),
+        windDirection: "SSW",
+        pressure: Measurement(value: 29.74, unit: .inchesOfMercury),
+        pressureTrend: "falling"
+    )
+
+    static let steady = SummaryWeather(
+        temperature: Measurement(value: 48.0, unit: .fahrenheit),
+        symbolName: "cloud.sun.fill",
+        conditionText: "Cool and steady",
+        asOf: .now,
+        dewPoint: Measurement(value: 43.0, unit: .fahrenheit),
+        humidity: 0.56,
+        windSpeed: Measurement(value: 8.0, unit: .milesPerHour),
+        windGust: nil,
+        windDirection: "SE",
+        pressure: Measurement(value: 29.95, unit: .inchesOfMercury),
+        pressureTrend: "steady"
+    )
 }
