@@ -32,6 +32,7 @@ enum SummaryReadinessState: Equatable {
 
 struct SummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     struct LocationReliabilityRailState {
         let onOpen: () -> Void
@@ -131,6 +132,10 @@ struct SummaryView: View {
         }
     }
 
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
+
     @ViewBuilder
     private var riskSnapshotContent: some View {
         VStack(spacing: 12) {
@@ -164,42 +169,58 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        HStack {
-            Button {
-                onOpenMapLayer(.categorical)
-            } label: {
-                StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
-                    .placeholder(stormRisk == nil && showsOfflineToken == false)
-                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        Group {
+            if adaptiveLayout.usesStackedHeroTiles {
+                VStack(spacing: 10) {
+                    stormRiskButton
+                    severeRiskButton
+                }
+            } else {
+                HStack(spacing: 10) {
+                    stormRiskButton
+                    severeRiskButton
+                }
             }
-            .buttonStyle(
-                SkyAwarePressableButtonStyle(
-                    cornerRadius: SkyAwareRadius.large,
-                    pressedScale: 0.992,
-                    pressedOverlayOpacity: 0.06
-                )
-            )
-            .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
-            .accessibilityHint("Opens the severe risk map.")
-            Spacer()
-            Button {
-                onOpenMapLayer(severeMapLayer)
-            } label: {
-                SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
-                    .placeholder(severeRisk == nil && showsOfflineToken == false)
-                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
-            }
-            .buttonStyle(
-                SkyAwarePressableButtonStyle(
-                    cornerRadius: SkyAwareRadius.large,
-                    pressedScale: 0.992,
-                    pressedOverlayOpacity: 0.06
-                )
-            )
-            .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
-            .accessibilityHint("Opens the highlighted severe threat map.")
         }
         .padding(.top, 8)
+    }
+
+    private var stormRiskButton: some View {
+        Button {
+            onOpenMapLayer(.categorical)
+        } label: {
+            StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
+                .placeholder(stormRisk == nil && showsOfflineToken == false)
+                .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        }
+        .buttonStyle(
+            SkyAwarePressableButtonStyle(
+                cornerRadius: SkyAwareRadius.large,
+                pressedScale: 0.992,
+                pressedOverlayOpacity: 0.06
+            )
+        )
+        .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
+        .accessibilityHint("Opens the severe risk map.")
+    }
+
+    private var severeRiskButton: some View {
+        Button {
+            onOpenMapLayer(severeMapLayer)
+        } label: {
+            SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
+                .placeholder(severeRisk == nil && showsOfflineToken == false)
+                .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        }
+        .buttonStyle(
+            SkyAwarePressableButtonStyle(
+                cornerRadius: SkyAwareRadius.large,
+                pressedScale: 0.992,
+                pressedOverlayOpacity: 0.06
+            )
+        )
+        .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
+        .accessibilityHint("Opens the highlighted severe threat map.")
     }
 
     @ViewBuilder
@@ -400,38 +421,90 @@ private extension AnyTransition {
 // MARK: Previews
 #Preview("Summary – Slight + 10% Tornado") {
     NavigationStack {
-        SummaryView(
-            snap: .init(
-                coordinates: .init(latitude: 39.75, longitude: -104.44),
-                timestamp: .now,
-                accuracy: 20,
-                placemarkSummary: "Bennett, CO"
-            ),
+        SummaryPreviewContent(
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.10),
-            fireRisk: .extreme,
-            mesos: MD.sampleDiscussionDTOs,
-            watches: Watch.sampleWatchRows,
-            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
-            weather: nil,
-            readinessState: .ready,
-            resolutionState: SummaryResolutionState(),
-            showsOfflineToken: false,
-            headerCondenseProgress: 0,
-            locationReliabilityRailState: .init(
-                onOpen: {},
-                onDismiss: {}
-            ),
-            onOpenMapLayer: { _ in },
-            onOpenAlerts: {},
-            onOpenOutlooks: {}
+            weather: SummaryPreviewData.weather
         )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary Hero Cards – XXXL Horizontal") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .moderate,
+            severeRisk: .hail(probability: 0.30),
+            weather: SummaryPreviewData.weather
+        )
+        .environment(\.dynamicTypeSize, .xxxLarge)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary Hero Cards – AX1 Stacked") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .moderate,
+            severeRisk: .hail(probability: 0.30),
+            weather: SummaryPreviewData.weather
+        )
+        .environment(\.dynamicTypeSize, .accessibility1)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary Hero Cards – AX3 Stacked") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .enhanced,
+            severeRisk: .wind(probability: 0.45),
+            weather: SummaryPreviewData.weather
+        )
+        .environment(\.dynamicTypeSize, .accessibility3)
         .toolbar(.hidden, for: .navigationBar)
     }
 }
 
 #Preview("Summary – Loading") {
     NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: nil,
+            severeRisk: nil,
+            weather: nil,
+            readinessState: .loadingLocalData,
+            showsOfflineToken: true,
+            outlook: nil
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+private struct SummaryPreviewContent: View {
+    let stormRisk: StormRiskLevel?
+    let severeRisk: SevereWeatherThreat?
+    let weather: SummaryWeather?
+    let readinessState: SummaryReadinessState
+    let showsOfflineToken: Bool
+    let outlook: ConvectiveOutlookDTO?
+
+    init(
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        weather: SummaryWeather?,
+        readinessState: SummaryReadinessState = .ready,
+        showsOfflineToken: Bool = false,
+        outlook: ConvectiveOutlookDTO? = ConvectiveOutlook.sampleOutlookDtos.first
+    ) {
+        self.stormRisk = stormRisk
+        self.severeRisk = severeRisk
+        self.weather = weather
+        self.readinessState = readinessState
+        self.showsOfflineToken = showsOfflineToken
+        self.outlook = outlook
+    }
+
+    var body: some View {
         SummaryView(
             snap: .init(
                 coordinates: .init(latitude: 39.75, longitude: -104.44),
@@ -439,22 +512,37 @@ private extension AnyTransition {
                 accuracy: 20,
                 placemarkSummary: "Bennett, CO"
             ),
-            stormRisk: nil,
-            severeRisk: nil,
-            fireRisk: nil,
-            mesos: [],
-            watches: [],
-            outlook: nil,
-            weather: nil,
-            readinessState: .loadingLocalData,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            fireRisk: .extreme,
+            mesos: MD.sampleDiscussionDTOs,
+            watches: Watch.sampleWatchRows,
+            outlook: outlook,
+            weather: weather,
+            readinessState: readinessState,
             resolutionState: SummaryResolutionState(),
-            showsOfflineToken: true,
+            showsOfflineToken: showsOfflineToken,
             headerCondenseProgress: 0,
-            locationReliabilityRailState: nil,
+            locationReliabilityRailState: .init(onOpen: {}, onDismiss: {}),
             onOpenMapLayer: { _ in },
             onOpenAlerts: {},
             onOpenOutlooks: {}
         )
-        .toolbar(.hidden, for: .navigationBar)
     }
+}
+
+private enum SummaryPreviewData {
+    static let weather = SummaryWeather(
+        temperature: Measurement(value: 82.0, unit: .fahrenheit),
+        symbolName: "sun.max.fill",
+        conditionText: "Warm and humid",
+        asOf: .now,
+        dewPoint: Measurement(value: 68.0, unit: .fahrenheit),
+        humidity: 0.66,
+        windSpeed: Measurement(value: 22.0, unit: .milesPerHour),
+        windGust: Measurement(value: 34.0, unit: .milesPerHour),
+        windDirection: "SSW",
+        pressure: Measurement(value: 29.78, unit: .inchesOfMercury),
+        pressureTrend: "falling"
+    )
 }

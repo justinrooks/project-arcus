@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct AlertView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let mesos: [MdDTO]
     let watches: [WatchRowDTO]
     let focusedWatchRequest: RemoteAlertFocusRequest?
@@ -44,6 +46,10 @@ struct AlertView: View {
     
     private var totalAlertCount: Int {
         watches.count + mesos.count
+    }
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
     
     private var activeLocalAlertLabel: String {
@@ -208,16 +214,21 @@ struct AlertView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            if adaptiveLayout.usesAccessibilityLayout {
                 Label(title, systemImage: symbol)
                     .font(.headline.weight(.semibold))
-                Spacer()
-                Text(subtitle)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+            } else {
+                HStack {
+                    Label(title, systemImage: symbol)
+                        .font(.headline.weight(.semibold))
+                    Spacer()
+                    Text(subtitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+                }
             }
             
             content()

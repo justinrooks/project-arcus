@@ -73,6 +73,11 @@ struct SettingsView: View {
         "disclaimerAcceptedVersion",
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
+
+    @AppStorage(
+        "mapWarningGeometryVisible",
+        store: UserDefaults.shared
+    ) private var mapWarningGeometryVisible: Bool = true
     
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
@@ -234,6 +239,16 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                sectionCard(title: "Map", symbol: "map", accent: .orange) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Show Active Alerts on Map", isOn: $mapWarningGeometryVisible)
+                        Text("Controls whether active warning geometry is shown on the map.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
                 

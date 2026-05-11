@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct OutlookSummaryCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let outlook: ConvectiveOutlookDTO?
     let isLoading: Bool
     let isPending: Bool
@@ -40,40 +42,14 @@ struct OutlookSummaryCard: View {
         }
         return "A convective outlook summary will appear here once syncing is complete."
     }
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                Label(titleText, systemImage: isPending ? "clock.arrow.circlepath" : "sun.max.fill")
-                    .sectionLabel()
-
-                Spacer(minLength: 12)
-
-                if let onBrowseAllOutlooks {
-                    Button {
-                        onBrowseAllOutlooks()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("All Outlooks")
-                            Image(systemName: "arrow.right")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
-                    }
-                    .buttonStyle(
-                        SkyAwarePressableButtonStyle(
-                            cornerRadius: SkyAwareRadius.chipCompact,
-                            pressedScale: 0.985,
-                            pressedOverlayOpacity: 0.08
-                        )
-                    )
-                    .accessibilityHint("Opens the full outlook list.")
-                }
-            }
+            headerRow
 
             Text(summaryText)
                 .font(.body)
@@ -102,6 +78,41 @@ struct OutlookSummaryCard: View {
         .navigationDestination(isPresented: $navigateToFull) {
             if let outlook {
                 ConvectiveOutlookDetailView(outlook: outlook)
+            }
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Label(titleText, systemImage: isPending ? "clock.arrow.circlepath" : "sun.max.fill")
+                .sectionLabel()
+
+            Spacer(minLength: 12)
+
+            if adaptiveLayout.usesAccessibilityLayout == false,
+               let onBrowseAllOutlooks {
+                Button {
+                    onBrowseAllOutlooks()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("All Outlooks")
+                        Image(systemName: "arrow.right")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
+                }
+                .buttonStyle(
+                    SkyAwarePressableButtonStyle(
+                        cornerRadius: SkyAwareRadius.chipCompact,
+                        pressedScale: 0.985,
+                        pressedOverlayOpacity: 0.08
+                    )
+                )
+                .accessibilityHint("Opens the full outlook list.")
             }
         }
     }

@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct ConvectiveOutlookView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let dtos: [ConvectiveOutlookDTO]
     let onRefresh: (() async -> Void)?
     
@@ -27,6 +29,10 @@ struct ConvectiveOutlookView: View {
 
     private var latestOutlook: ConvectiveOutlookDTO? {
         sortedOutlooks.first
+    }
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
     private var earlierOutlooks: [ConvectiveOutlookDTO] {
@@ -130,16 +136,21 @@ struct ConvectiveOutlookView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            if adaptiveLayout.usesAccessibilityLayout {
                 Label(title, systemImage: symbol)
                     .font(.headline.weight(.semibold))
-                Spacer()
-                Text(subtitle)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+            } else {
+                HStack {
+                    Label(title, systemImage: symbol)
+                        .font(.headline.weight(.semibold))
+                    Spacer()
+                    Text(subtitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+                }
             }
 
             content()
