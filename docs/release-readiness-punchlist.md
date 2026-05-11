@@ -175,7 +175,7 @@ Ship publicly when all of these are true:
 - [x] Notification timing is intentional.
 - [x] Core onboarding and navigation UI smoke tests exist.
 - [x] Real-device push and permission drills have been completed.
-- [ ] App Store positioning remains conservative and accurate.
+- [x] App Store positioning remains conservative and accurate.
 
 ## Suggested Priority Order
 
