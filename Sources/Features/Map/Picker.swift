@@ -75,6 +75,18 @@ struct LayerTile: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
+    private var displayTitle: String {
+        guard dynamicTypeSize == .xxxLarge else { return layer.title }
+        switch layer {
+        case .categorical:
+            return "Severe"
+        case .meso:
+            return "Meso"
+        default:
+            return layer.title
+        }
+    }
+
     private var tint: Color {
         switch layer {
         case .categorical: return .riskThunderstorm.opacity(0.20)
@@ -95,7 +107,7 @@ struct LayerTile: View {
                 if adaptiveLayout.usesAccessibilityLayout {
                     HStack(spacing: 12) {
                         layerIcon
-                        Text(layer.title)
+                        Text(displayTitle)
                             .font(.headline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
@@ -110,7 +122,7 @@ struct LayerTile: View {
                     VStack(spacing: 10) {
                         layerIcon
 
-                        Text(layer.title)
+                        Text(displayTitle)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.center)
@@ -122,7 +134,7 @@ struct LayerTile: View {
             }
             .padding(.vertical, 4)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(layer.title + (isSelected ? ", selected" : ""))
+            .accessibilityLabel(displayTitle + (isSelected ? ", selected" : ""))
         }
         .buttonStyle(.plain)
         .animation(SkyAwareMotion.layerChange(reduceMotion), value: isSelected)
@@ -170,6 +182,14 @@ struct LayerPickerSheet: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
+    private var isAccessibilityListLayout: Bool {
+        Self.usesAccessibilityListLayoutPolicy(dynamicTypeSize: dynamicTypeSize)
+    }
+
+    private var shouldShowWarningGeometryToggle: Bool {
+        Self.showsWarningGeometryTogglePolicy(dynamicTypeSize: dynamicTypeSize)
+    }
+
     var body: some View {
         VStack(spacing: 14) {
             HStack {
@@ -188,7 +208,7 @@ struct LayerPickerSheet: View {
             .padding()
 
             ScrollView {
-                if adaptiveLayout.usesAccessibilityLayout {
+                if isAccessibilityListLayout {
                     VStack(spacing: 10) {
                         ForEach(MapLayer.allCases) { layer in
                             LayerTile(layer: layer, isSelected: selection == layer) {
@@ -218,7 +238,7 @@ struct LayerPickerSheet: View {
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
-            if adaptiveLayout.usesAccessibilityLayout == false {
+            if shouldShowWarningGeometryToggle {
                 VStack(alignment: .leading, spacing: 8) {
                     Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
                         .toggleStyle(.switch)
@@ -242,6 +262,14 @@ struct LayerPickerSheet: View {
             selection = layer
         }
         dismiss()
+    }
+
+    static func usesAccessibilityListLayoutPolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout
+    }
+
+    static func showsWarningGeometryTogglePolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout == false
     }
 }
 
@@ -314,10 +342,27 @@ struct MapWithLayerPickerDemo: View {
 
 // MARK: - Preview
 
-#Preview("Layer Picker Sheet") {
+#Preview("Layer Picker - Normal Grid") {
     LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
 }
 
-#Preview("In-Map Demo") {
-    MapWithLayerPickerDemo()
+#Preview("Layer Picker - XXXL Grid") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .xxxLarge)
+}
+
+#Preview("Layer Picker - AX1 Vertical List") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .accessibility1)
+}
+
+#Preview("Layer Picker - AX3 Vertical List") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Layer Picker - AX3 Small iPhone") {
+    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+        .environment(\.dynamicTypeSize, .accessibility3)
+        .frame(width: 320, height: 568)
 }
