@@ -77,6 +77,7 @@ struct MapScreenView: View {
 
 private struct MapScreenContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Binding var selected: MapLayer
     @Binding var showLayerPicker: Bool
@@ -84,6 +85,12 @@ private struct MapScreenContent: View {
 
     let scene: MapLayerScene
     let layerNamespace: Namespace.ID
+
+    @State private var showsLegendSheet = false
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
 
     var body: some View {
         ZStack {
@@ -131,22 +138,20 @@ private struct MapScreenContent: View {
             VStack {
                 Spacer()
                 HStack(alignment: .bottom, spacing: 10) {
-                    if showsWarningLegend {
+                    if showsWarningLegend && adaptiveLayout.mapLegendMode == .inline {
                         WarningLegend()
                             .transition(.opacity)
                     }
 
                     Spacer(minLength: 8)
 
-                    MapLegend(state: scene.legendState)
-                        .transition(.opacity)
-                        .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+                    mapLegendControl
                 }
                 .padding(.horizontal, 14)
                 .padding(.bottom, 14)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .allowsHitTesting(scene.legendState.allowsInteraction)
+            .allowsHitTesting(legendAllowsHitTesting)
         }
         .sheet(isPresented: $showLayerPicker) {
             LayerPickerSheet(
@@ -156,10 +161,60 @@ private struct MapScreenContent: View {
                 triggerNamespace: layerNamespace
             )
         }
+        .sheet(isPresented: $showsLegendSheet) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if showsWarningLegend {
+                            WarningLegend()
+                                .fixedSize(horizontal: false, vertical: false)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        MapLegend(state: scene.legendState)
+                            .fixedSize(horizontal: false, vertical: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(16)
+                }
+                .navigationTitle("Legend")
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .presentationDetents([.medium, .large])
+        }
     }
 
     private var showsWarningLegend: Bool {
         scene.canvasState.overlays.contains { $0.key.hasPrefix("warn|") }
+    }
+
+    @ViewBuilder
+    private var mapLegendControl: some View {
+        switch adaptiveLayout.mapLegendMode {
+        case .inline:
+            MapLegend(state: scene.legendState)
+                .transition(.opacity)
+                .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+        case .compactTrigger, .sheetOnly:
+            CompactMapLegendTrigger(label: compactLegendLabel) {
+                showsLegendSheet = true
+            }
+            .transition(.opacity)
+            .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+        }
+    }
+
+    private var compactLegendLabel: String {
+        "Legend · \(scene.legendState.layer.title)"
+    }
+
+    private var legendAllowsHitTesting: Bool {
+        switch adaptiveLayout.mapLegendMode {
+        case .inline:
+            return scene.legendState.allowsInteraction
+        case .compactTrigger, .sheetOnly:
+            return true
+        }
     }
 }
 

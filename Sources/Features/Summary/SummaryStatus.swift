@@ -10,6 +10,7 @@ import SwiftUI
 struct SummaryStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsOfflineExplanation = false
 
     let statusText: String
@@ -72,6 +73,10 @@ struct SummaryStatus: View {
 
     private var settledConditionOpacity: Double {
         1 - (0.55 * clampedCondenseProgress)
+    }
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
     var body: some View {
@@ -145,30 +150,41 @@ struct SummaryStatus: View {
     }
 
     private var contentRow: some View {
-        HStack(alignment: .top, spacing: contentSpacing) {
-            VStack(alignment: .leading, spacing: 4) {
-                Label(statusText, systemImage: "location.fill")
-                    .font(locationFont)
-                    .foregroundStyle(.primary)
-                    .contentTransition(.opacity)
-                    .lineLimit(clampedCondenseProgress > 0.55 ? 1 : 2)
-
-                SummaryStatusSecondaryLine(
-                    resolutionState: resolutionState
-                )
+        Group {
+            if adaptiveLayout.usesStackedHeroTiles {
+                VStack(alignment: .leading, spacing: 8) {
+                    statusContent
+                    weatherContent
+                }
+            } else {
+                HStack(alignment: .top, spacing: contentSpacing) {
+                    statusContent
+                    Spacer(minLength: 8)
+                    weatherContent
+                }
             }
-            .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Spacer(minLength: 8)
-
-            weatherContent
         }
+    }
+
+    private var statusContent: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(statusText, systemImage: "location.fill")
+                .font(locationFont)
+                .foregroundStyle(.primary)
+                .contentTransition(.opacity)
+                .lineLimit(clampedCondenseProgress > 0.55 ? 1 : 2)
+
+            SummaryStatusSecondaryLine(
+                resolutionState: resolutionState
+            )
+        }
+        .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
     private var weatherContent: some View {
-        VStack(alignment: .trailing, spacing: 2) {
+        VStack(alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing, spacing: 2) {
             HStack(spacing: 6) {
                 if let weather, let formattedTemperature {
                     Text(formattedTemperature)
@@ -187,13 +203,16 @@ struct SummaryStatus: View {
             }
             .font(.footnote)
             .opacity(settledConditionOpacity)
-            .multilineTextAlignment(.trailing)
+            .multilineTextAlignment(adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
             .lineLimit(1)
-            .frame(minHeight: 18, alignment: .trailing)
+            .frame(minHeight: 18, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
         }
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.primary)
-        .frame(minWidth: 80 - (8 * clampedCondenseProgress), alignment: .trailing)
+        .frame(
+            minWidth: adaptiveLayout.usesStackedHeroTiles ? 0 : 80 - (8 * clampedCondenseProgress),
+            alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing
+        )
         .contentTransition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: formattedTemperature)
         .animation(SkyAwareMotion.message(reduceMotion), value: weather?.symbolName)

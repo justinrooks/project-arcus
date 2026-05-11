@@ -32,6 +32,7 @@ enum SummaryReadinessState: Equatable {
 
 struct SummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     struct LocationReliabilityRailState {
         let onOpen: () -> Void
@@ -131,6 +132,10 @@ struct SummaryView: View {
         }
     }
 
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
+
     @ViewBuilder
     private var riskSnapshotContent: some View {
         VStack(spacing: 12) {
@@ -164,42 +169,58 @@ struct SummaryView: View {
 
     @ViewBuilder
     private var badgeRow: some View {
-        HStack {
-            Button {
-                onOpenMapLayer(.categorical)
-            } label: {
-                StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
-                    .placeholder(stormRisk == nil && showsOfflineToken == false)
-                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        Group {
+            if adaptiveLayout.usesStackedHeroTiles {
+                VStack(spacing: 10) {
+                    stormRiskButton
+                    severeRiskButton
+                }
+            } else {
+                HStack(spacing: 10) {
+                    stormRiskButton
+                    severeRiskButton
+                }
             }
-            .buttonStyle(
-                SkyAwarePressableButtonStyle(
-                    cornerRadius: SkyAwareRadius.large,
-                    pressedScale: 0.992,
-                    pressedOverlayOpacity: 0.06
-                )
-            )
-            .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
-            .accessibilityHint("Opens the severe risk map.")
-            Spacer()
-            Button {
-                onOpenMapLayer(severeMapLayer)
-            } label: {
-                SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
-                    .placeholder(severeRisk == nil && showsOfflineToken == false)
-                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
-            }
-            .buttonStyle(
-                SkyAwarePressableButtonStyle(
-                    cornerRadius: SkyAwareRadius.large,
-                    pressedScale: 0.992,
-                    pressedOverlayOpacity: 0.06
-                )
-            )
-            .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
-            .accessibilityHint("Opens the highlighted severe threat map.")
         }
         .padding(.top, 8)
+    }
+
+    private var stormRiskButton: some View {
+        Button {
+            onOpenMapLayer(.categorical)
+        } label: {
+            StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
+                .placeholder(stormRisk == nil && showsOfflineToken == false)
+                .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        }
+        .buttonStyle(
+            SkyAwarePressableButtonStyle(
+                cornerRadius: SkyAwareRadius.large,
+                pressedScale: 0.992,
+                pressedOverlayOpacity: 0.06
+            )
+        )
+        .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
+        .accessibilityHint("Opens the severe risk map.")
+    }
+
+    private var severeRiskButton: some View {
+        Button {
+            onOpenMapLayer(severeMapLayer)
+        } label: {
+            SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
+                .placeholder(severeRisk == nil && showsOfflineToken == false)
+                .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        }
+        .buttonStyle(
+            SkyAwarePressableButtonStyle(
+                cornerRadius: SkyAwareRadius.large,
+                pressedScale: 0.992,
+                pressedOverlayOpacity: 0.06
+            )
+        )
+        .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
+        .accessibilityHint("Opens the highlighted severe threat map.")
     }
 
     @ViewBuilder

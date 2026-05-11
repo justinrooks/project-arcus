@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct ConvectiveOutlookDetailView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let outlook: ConvectiveOutlookDTO
     
     private let sectionSpacing: CGFloat = 14
@@ -39,6 +41,10 @@ struct ConvectiveOutlookDetailView: View {
             return clean
         }
         return outlook.fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
     
     var body: some View {
@@ -78,9 +84,9 @@ struct ConvectiveOutlookDetailView: View {
             )
             
             Divider().opacity(0.12)
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
+
+            if adaptiveLayout.usesAccessibilityLayout {
+                VStack(alignment: .leading, spacing: 8) {
                     OutlookMetaChip(title: "Published \(outlook.published.relativeDate())", icon: "clock.arrow.circlepath")
                     if let day = outlook.day {
                         OutlookMetaChip(title: "Day \(day)", icon: "calendar")
@@ -89,7 +95,19 @@ struct ConvectiveOutlookDetailView: View {
                         OutlookMetaChip(title: sentenceCaseRiskLevel(risk), icon: "exclamationmark.triangle")
                     }
                 }
-                .padding(.vertical, 2)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        OutlookMetaChip(title: "Published \(outlook.published.relativeDate())", icon: "clock.arrow.circlepath")
+                        if let day = outlook.day {
+                            OutlookMetaChip(title: "Day \(day)", icon: "calendar")
+                        }
+                        if let risk = outlook.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines), !risk.isEmpty {
+                            OutlookMetaChip(title: sentenceCaseRiskLevel(risk), icon: "exclamationmark.triangle")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
             }
             
             SpcProductFooter(link: outlook.link, validEnd: validUntilDate)
@@ -128,8 +146,14 @@ struct ConvectiveOutlookDetailView: View {
 }
 
 private struct OutlookMetaChip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let title: String
     let icon: String
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
     
     var body: some View {
         HStack(spacing: 6) {
@@ -138,8 +162,9 @@ private struct OutlookMetaChip: View {
                 .foregroundStyle(.secondary)
             Text(title)
                 .font(.caption.weight(.semibold))
-                .lineLimit(1)
+                .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
         }
+        .frame(maxWidth: adaptiveLayout.usesAccessibilityLayout ? .infinity : nil, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .skyAwareChip(cornerRadius: SkyAwareRadius.hero, tint: .white.opacity(0.10), interactive: true)
