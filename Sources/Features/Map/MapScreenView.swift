@@ -162,24 +162,7 @@ private struct MapScreenContent: View {
             )
         }
         .sheet(isPresented: $showsLegendSheet) {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if showsWarningLegend {
-                            WarningLegend()
-                                .fixedSize(horizontal: false, vertical: false)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        MapLegend(state: scene.legendState)
-                            .fixedSize(horizontal: false, vertical: false)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(16)
-                }
-                .navigationTitle("Legend")
-                .navigationBarTitleDisplayMode(.inline)
-            }
+            MapLegendSheet(showWarnings: showsWarningLegend, legendState: scene.legendState)
             .presentationDetents([.medium, .large])
         }
     }
@@ -265,20 +248,121 @@ private struct MapLayerButtonMorph: ViewModifier {
     }
 }
 
-#Preview {
-    MapScreenContentPreview()
+private struct MapLegendSheet: View {
+    let showWarnings: Bool
+    let legendState: MapLegendState
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if showWarnings {
+                        WarningLegend()
+                            .fixedSize(horizontal: false, vertical: false)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    MapLegend(state: legendState)
+                        .fixedSize(horizontal: false, vertical: false)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(16)
+            }
+            .navigationTitle("Legend")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
 }
 
 private struct MapScreenContentPreview: View {
     @Namespace private var layerNamespace
 
+    let legendState: MapLegendState
+    let selectedLayer: MapLayer
+
+    init(
+        legendState: MapLegendState = .empty(for: .categorical),
+        selectedLayer: MapLayer = .categorical
+    ) {
+        self.legendState = legendState
+        self.selectedLayer = selectedLayer
+    }
+
     var body: some View {
         MapScreenContent(
-            selected: .constant(.categorical),
+            selected: .constant(selectedLayer),
             showLayerPicker: .constant(false),
             showsWarningGeometry: .constant(true),
-            scene: MapLayerScene.placeholder(for: .categorical),
+            scene: MapLayerScene(
+                canvasState: MapCanvasState(overlays: [], overlayRevision: 0, initialCenterCoordinate: nil),
+                legendState: legendState
+            ),
             layerNamespace: layerNamespace
         )
     }
+}
+
+private enum MapScreenPreviewLegendState {
+    static let severeWithHatching = MapLegendState(
+        layer: .tornado,
+        severeItems: [
+            SevereLegendItem(id: "5%", probability: .percent(0.05), fillHex: nil, strokeHex: nil),
+            SevereLegendItem(id: "10%", probability: .percent(0.10), fillHex: nil, strokeHex: nil),
+            SevereLegendItem(id: "15%", probability: .percent(0.15), fillHex: nil, strokeHex: nil),
+            SevereLegendItem(id: "Sig 10%", probability: .significant(10), fillHex: nil, strokeHex: nil)
+        ],
+        fireItems: [],
+        showsHatchingExplanation: true
+    )
+
+    static let severeWithoutHatching = MapLegendState(
+        layer: .tornado,
+        severeItems: [
+            SevereLegendItem(id: "5%", probability: .percent(0.05), fillHex: nil, strokeHex: nil),
+            SevereLegendItem(id: "10%", probability: .percent(0.10), fillHex: nil, strokeHex: nil)
+        ],
+        fireItems: [],
+        showsHatchingExplanation: false
+    )
+}
+
+#Preview("Map Legend - Normal Inline") {
+    MapScreenContentPreview()
+        .environment(\.dynamicTypeSize, .large)
+}
+
+#Preview("Map Legend - XXXL Inline") {
+    MapScreenContentPreview()
+        .environment(\.dynamicTypeSize, .xxxLarge)
+}
+
+#Preview("Map Legend - AX1 Compact Trigger") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado
+    )
+    .environment(\.dynamicTypeSize, .accessibility1)
+}
+
+#Preview("Map Legend - AX3 Compact Trigger") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Map Legend Sheet - AX3 Small iPhone") {
+    MapLegendSheet(
+        showWarnings: true,
+        legendState: MapScreenPreviewLegendState.severeWithHatching
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .frame(width: 320, height: 568)
+}
+
+#Preview("Map Legend - No Hatching Rows") {
+    MapLegend(state: MapScreenPreviewLegendState.severeWithoutHatching)
+        .padding()
+        .background(.thinMaterial)
 }

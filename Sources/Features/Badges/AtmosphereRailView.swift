@@ -409,36 +409,60 @@ private struct AtmosphereMetricTile: View {
     }
 }
 
-#Preview {
-    VStack {
-        AtmosphereRailView(weather: .init(
-            temperature: Measurement(value: 37.0, unit: .fahrenheit),
-            symbolName: "sun.max",
-            conditionText: "test",
-            asOf: .now,
-            dewPoint: Measurement(value: 45.0, unit: .fahrenheit),
-            humidity: 0.15,
-            windSpeed: .init(value: 15.0, unit: .milesPerHour),
-            windGust: nil,
-            windDirection: "NNW",
-            pressure: .init(value: 29.95, unit: .inchesOfMercury),
-            pressureTrend: "climbing"
-        ))
+#Preview("Atmosphere - Normal Grid") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+}
 
-        AtmosphereRailView(weather: nil)
+#Preview("Atmosphere - XXXL Grid") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+        .environment(\.dynamicTypeSize, .xxxLarge)
+}
 
-        AtmosphereRailView(weather: .init(
-            temperature: Measurement(value: 48.0, unit: .fahrenheit),
-            symbolName: "cloud.drizzle",
-            conditionText: "Scattered showers",
-            asOf: .now,
-            dewPoint: Measurement(value: 43.0, unit: .fahrenheit),
-            humidity: 0.82,
-            windSpeed: .init(value: 8.0, unit: .milesPerHour),
-            windGust: nil,
-            windDirection: "SE",
-            pressure: .init(value: 29.58, unit: .inchesOfMercury),
-            pressureTrend: "falling"
-        ))
-    }
+#Preview("Atmosphere - AX1 Vertical Rows") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+        .environment(\.dynamicTypeSize, .accessibility1)
+}
+
+#Preview("Atmosphere - AX3 Vertical Rows Small iPhone") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.steady)
+        .environment(\.dynamicTypeSize, .accessibility3)
+        .frame(width: 320)
+}
+
+#Preview("Atmosphere - Dew Point Tip Content") {
+    DewPointTipView(
+        currentValue: "68°F",
+        dewPointF: 68
+    )
+    .padding()
+}
+
+private enum AtmosphereRailPreviewData {
+    static let unstable = SummaryWeather(
+        temperature: Measurement(value: 82.0, unit: .fahrenheit),
+        symbolName: "cloud.bolt.rain.fill",
+        conditionText: "Hot, humid, unstable",
+        asOf: .now,
+        dewPoint: Measurement(value: 68.0, unit: .fahrenheit),
+        humidity: 0.72,
+        windSpeed: Measurement(value: 21.0, unit: .milesPerHour),
+        windGust: Measurement(value: 34.0, unit: .milesPerHour),
+        windDirection: "SSW",
+        pressure: Measurement(value: 29.74, unit: .inchesOfMercury),
+        pressureTrend: "falling"
+    )
+
+    static let steady = SummaryWeather(
+        temperature: Measurement(value: 48.0, unit: .fahrenheit),
+        symbolName: "cloud.sun.fill",
+        conditionText: "Cool and steady",
+        asOf: .now,
+        dewPoint: Measurement(value: 43.0, unit: .fahrenheit),
+        humidity: 0.56,
+        windSpeed: Measurement(value: 8.0, unit: .milesPerHour),
+        windGust: nil,
+        windDirection: "SE",
+        pressure: Measurement(value: 29.95, unit: .inchesOfMercury),
+        pressureTrend: "steady"
+    )
 }
