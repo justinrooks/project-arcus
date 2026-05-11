@@ -789,7 +789,6 @@ struct LocationContextResolverTests {
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in
                 Task {
-                    try? await Task.sleep(for: .milliseconds(20))
                     await authorizationState.set(.authorizedWhenInUse)
                 }
             },
