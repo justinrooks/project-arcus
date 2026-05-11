@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v1.0.0
+
+### Overview
+SkyAware 1.0.0 is the first public release of the severe-weather awareness app, bringing together local risk, active alerts, map context, widgets, background refresh, and server-assisted notification support.
+
+### Highlights
+- Home now provides a local severe-weather summary with current conditions, storm/severe risk, Fire Weather context, Atmosphere details, active alerts, and outlook context.
+- Active watch loading uses the Arcus server alert feed with UGC/H3 matching, while location snapshot uploads use H3/county/fire-zone context instead of raw latitude/longitude.
+- Home widgets show storm and severe-risk snapshots and refresh from the same local snapshot pipeline used by the app.
+- Map layers now include Fire, categorical, severe, and active-warning overlays with legends, warning layering, feed styling, and severe-risk hatching.
+- Home refresh, background refresh, and remote hot-alert handling share a common ingestion path, with cached projections restored while fresh data loads.
+- Permission, onboarding, privacy, and degraded-state experiences were tightened so location, notification, and best-effort alert behavior are clearer.
+
+### Maintenance
+- Privacy and public project documentation now describe WeatherKit usage and derived location data used for server-assisted notification targeting.
+- Alert and location snapshot transport models were consolidated onto ArcusCore shared types.
+
 ## v0.1.0(54)
 
 ### Overview

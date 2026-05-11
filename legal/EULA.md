@@ -1,6 +1,6 @@
 # End-User License Agreement (EULA)
 
-**Last Updated:** _[insert date]_
+**Last Updated:** _5/10/2026_
 
 This End-User License Agreement (“Agreement”) is between you (“User”) and the developer of SkyAware (“Developer”) and governs your use of the SkyAware mobile application (“App”).
 
@@ -112,4 +112,6 @@ If this Agreement conflicts with Apple’s terms, Apple’s terms will control w
 ## 13. Contact
 
 For questions about this Agreement, contact:  
-_[your contact email or website]_
+_support@skyaware.app_
+
+https://www.skyaware.app

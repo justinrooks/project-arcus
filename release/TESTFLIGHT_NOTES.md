@@ -1,3 +1,13 @@
+SkyAware v1.0.0 is the first public release candidate for the severe-weather awareness app.
+
+Highlights:
+- Home provides a local severe-weather summary with current conditions, storm/severe risk, Fire Weather context, active alerts, and outlook context
+- Active watches use the Arcus server alert feed with UGC/H3 matching, while server-assisted notification context uses H3/county/fire-zone data instead of raw latitude/longitude
+- Home widgets show storm and severe-risk snapshots with tap-through routing into the app
+- Map layers include Fire, categorical, severe, and active-warning overlays with legends and warning-specific styling
+- Home, background, and remote hot-alert refreshes share a common ingestion path and restore cached projections while fresh data loads
+- Permission, onboarding, privacy, and degraded-state flows were tightened for clearer best-effort severe-weather awareness behavior
+
 SkyAware v0.1.0(54) improves denied-permission handling for location and notifications, and includes internal model alignment work.
 
 Highlights:

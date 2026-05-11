@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+## v1.0.0
+
+### Features
+- Add Home widgets that surface storm and severe-risk snapshots with tap-through routing into the app.
+<!-- evidence: 90a0399 -->
+- Add WeatherKit-backed current conditions, Fire Weather context, and an Atmosphere rail to the Summary experience.
+<!-- evidence: 4392ead, fd86cd1, 3324c60, 691f147 -->
+- Add Fire, categorical, severe, and active-warning map overlays with legends, feed-provided styling, warning layering, and severe-risk hatching.
+<!-- evidence: 751d110, d217663, 761c5c1, 9cc559f, eb5fa50 -->
+
+### Background & Notifications
+- Route foreground, background, and remote-alert refresh triggers through a shared Home ingestion flow so cached Home data, location-based updates, and alert-driven refreshes stay in sync.
+<!-- evidence: d841412, 55af4bd, e4f7a6d, 245c01b, 49a0ca4, e5e8bdb, a30739b, 59b7c71, 54e542e -->
+- Move active watch loading to the Arcus server alert feed with UGC/H3 matching, so local watch results follow location changes more reliably.
+<!-- evidence: e47120d, b2fbafb -->
+- Add server-assisted location snapshot uploads using installation metadata, H3 cells, county/fire-zone context, labels, and subscription status instead of raw latitude/longitude.
+<!-- evidence: 61332e6, f947263, 3be4303, 6d8e50a, 0872620 -->
+- Improve notification permission handling by disabling notification preference toggles when iOS notification permission is denied and clearing local notification preferences when authorization is unavailable.
+<!-- evidence: 62c3ae0 -->
+
+### Data & Repos
+- Persist location-scoped Home projections in SwiftData and restore cached local weather, risks, alerts, and outlook data while fresh loads complete.
+<!-- evidence: c8461ad, 11d7db5 -->
+- Filter inactive, cancelled, expired, and not-yet-effective watch payloads before they reach local active-alert results.
+<!-- evidence: b9d3c2d, 3f1a46c, d217663 -->
+- Point app server traffic to `https://api.skyaware.app` as the Arcus Signal base URL.
+<!-- evidence: d27f65f -->
+
+### UI / UX
+- Redesign Summary, Alerts, Outlook, Map, Diagnostics, and Settings surfaces with consistent card/row styling, dark-mode background layering, and glass-style treatments.
+<!-- evidence: 70cda47, b3b2d1c, 771da07, d38bfbd, f87b268 -->
+- Improve Home/Summary loading, degraded, offline, and location-unavailable states so the app preserves useful cached data without pretending uncertainty does not exist.
+<!-- evidence: 27f7904, bffc873, 53d0024, 85d9ef1 -->
+- Add a location reliability rail and onboarding Always Allow step to explain background alert reliability and guide users toward stronger location permissions.
+<!-- evidence: 27f7904, 007e00d -->
+- Refresh onboarding, disclaimer, privacy, and permission copy to explain best-effort severe-weather awareness, official-warning guidance, and derived location data used for notification targeting.
+<!-- evidence: 67445d9 -->
+
+### Tests / QA
+- Expand automated coverage for Home ingestion, cached projections, remote hot-alert handling, location readiness, watch filtering, notification permission behavior, widgets, and map rendering.
+<!-- evidence: 21936aa, 1b27db0, 2698085, 36c7811, d841412, 11d7db5, 245c01b, 8361968, 6cee659, 64c3a6d, 3870865, b9d3c2d, 90a0399, d217663, 62c3ae0 -->
+
+### Maintenance / Cleanup
+- Update privacy and public project documentation to describe WeatherKit usage and derived location data used for server-assisted notification targeting.
+<!-- evidence: 67445d9, d921c9d -->
+- Consolidate alert and location snapshot transport models onto ArcusCore shared types to reduce duplicate model definitions in app code.
+<!-- evidence: 2d198a0, db21c16 -->
+
 ## v0.1.0(54)
 
 ### UI / UX

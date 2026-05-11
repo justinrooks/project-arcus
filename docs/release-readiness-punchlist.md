@@ -113,7 +113,7 @@ Pass criteria:
 - [x] Test after denying notifications.
 - [x] Test after force-quitting the app.
 - [x] Test after reinstalling the app.
-- [ ] Test with stale location presence and confirm expiry behavior.
+- [x] Test with stale location presence and confirm expiry behavior.
 
 Pass criteria:
 - You know exactly how SkyAware behaves in the states real users will hit.
@@ -122,7 +122,7 @@ Pass criteria:
 
 - [x] Send a remote notification to a test device.
 - [x] Tap it from background state.
-- [ ] Tap it from terminated state.
+- [x] Tap it from terminated state.
 - [x] Confirm the app lands in a coherent state and refreshes relevant data.
 
 Pass criteria:

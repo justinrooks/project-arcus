@@ -8,7 +8,7 @@ SkyAware (“the app”) is designed to provide clear, hyper-local severe weathe
 
 ## Information We Collect
 
-SkyAware does **not** collect, store, or transmit any personally identifiable information (PII). SkyAware does use limited, derived location information to provide location-based weather awareness and notifications.
+SkyAware does not require an account and does not collect names, email addresses, advertising identifiers, or precise server-side location history. SkyAware uses limited device and derived-location information only to provide location-based weather awareness and notifications.
 
 - No user accounts
 - No analytics
@@ -66,16 +66,28 @@ SkyAware does **not**:
 - Use third-party analytics or advertising SDKs
 - Transmit precise location data to our server for notification targeting
 - Process user data using AI or machine learning services
+- Retain inactive device notification records indefinitely
 
 ---
 
-## Data Storage
+## Data Storage and Retention
 
 SkyAware stores app data on your device.
 
-SkyAware also stores limited, derived location information on our server as needed to support location-based weather notifications.
+To support server-assisted notifications, SkyAware may store limited device and derived-location information on our server, including:
+- An app-generated installation identifier
+- APNs notification token and notification environment
+- Coarse location context, such as H3 cell, county, forecast zone, and fire zone
+- App version, platform, notification subscription status, and location authorization state
+- Notification delivery and missed-notification records used to prevent duplicate sends and diagnose delivery reliability
 
-Uninstalling the app removes locally stored app data from your device. Server-side data retention and deletion practices should be described here once finalized.
+SkyAware does not store precise latitude or longitude on our server for notification targeting.
+
+Server-side device and location-context records are retained only as long as needed to provide and troubleshoot location-based notifications. Devices that have not checked in for more than 30 days may be deleted, including their stored notification token, derived location context, and device-linked notification records.
+
+If you disable server notifications or location sharing in the app, SkyAware stops using your device for server-side notification targeting. Some previously stored operational records may remain temporarily for reliability, abuse prevention, debugging, and audit purposes, but are not sold, shared for advertising, or used to build profiles.
+
+Public weather alert data and aggregate operational metrics may be retained separately because they do not identify a specific user or device.
 
 ---
 
@@ -94,4 +106,6 @@ If future features require changes to data handling, this policy will be updated
 ## Contact
 
 For questions about this Privacy Policy, contact:  
-_justinrooks@me.com_
+_support@skyaware.app_
+
+https://www.skyaware.app

@@ -77,4 +77,6 @@ These Terms are governed by the laws of the United States.
 ## 8. Contact
 
 For questions regarding these Terms, contact:  
-_[your contact email or website]_
+_support@skyaware.app_
+
+https://www.skyaware.app
