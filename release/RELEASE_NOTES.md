@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v0.1.0(56)
+
+### Overview
+This update improves large-text accessibility across key SkyAware screens, especially map controls and summary content.
+
+### Highlights
+- Improved Dynamic Type behavior across Summary, Alerts, Outlooks, and map-related surfaces so accessibility text sizes present more readable stacked/vertical layouts.
+- Map legend behavior now adapts for larger accessibility text sizes with a compact trigger and sheet presentation flow.
+- The map layer picker now uses accessibility-friendly list-style layout behavior for large text scenarios.
+- Added unit coverage for adaptive layout policy behavior and layer picker accessibility layout policy decisions.
+
 ## v0.1.0(54)
 
 ### Overview

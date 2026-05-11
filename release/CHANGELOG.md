@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v0.1.0(56)
+
+### UI / UX
+- Improve Dynamic Type support across Summary, Alerts, Outlooks, and map surfaces so large accessibility text sizes use more readable stacked/vertical layouts.
+<!-- evidence: 66395ee, 599dfba -->
+- Adapt map legend presentation for accessibility text sizes by switching from inline legend rows to a compact legend trigger with sheet presentation.
+<!-- evidence: 66395ee, 599dfba -->
+- Update the map layer picker for large text accessibility with list-style option rows and adjusted control visibility/layout.
+<!-- evidence: f6f91f6, 0d998d1 -->
+
+### Tests / QA
+- Add unit coverage for adaptive layout policy decisions (legend mode and accessibility layout behavior) and layer-picker accessibility layout policy.
+<!-- evidence: 599dfba -->
+
 ## v0.1.0(54)
 
 ### UI / UX
