@@ -100,6 +100,49 @@ struct DeviceAlertPayloadTests {
         #expect(polygons[0][0].first == DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392))
         #expect(polygons[1][0].first == DeviceAlertCoordinate(longitude: -105.1200, latitude: 39.6500))
     }
+
+    @Test("Numeric reference-date timestamps decode to current-era dates")
+    func numericReferenceDateTimestamps_decode() throws {
+        let json = """
+        [
+          {
+            "id": "123e4567-e89b-12d3-a456-426614174111",
+            "event": "Air Quality Alert",
+            "currentRevisionUrn": "urn:alert:test",
+            "currentRevisionSent": 800230200,
+            "messageType": "alert",
+            "state": "active",
+            "created": 800230321.26462,
+            "updated": 800230321.26462,
+            "lastSeenActive": 800230320.132628,
+            "sent": 800230200,
+            "effective": 800230200,
+            "onset": 800230200,
+            "expires": 800316000,
+            "severity": "unknown",
+            "urgency": "unknown",
+            "certainty": "unknown",
+            "areaDesc": "Denver Metro",
+            "senderName": "NWS Test",
+            "headline": "Test headline",
+            "description": "Test description",
+            "instructions": "Test instructions",
+            "response": "Monitor",
+            "ugc": ["COC031"],
+            "h3Cells": []
+          }
+        ]
+        """
+
+        let decoded: [DeviceAlertPayload]? = JsonParser.decode(from: Data(json.utf8))
+        let payload = try #require(decoded?.first)
+        #expect(payload.sent != nil)
+        #expect(payload.effective != nil)
+        #expect(payload.expires != nil)
+
+        let expectedSent = Date(timeIntervalSince1970: 1_778_537_400)
+        #expect(payload.sent == expectedSent)
+    }
 }
 
 private func payloadJSON(geometry: String? = nil) -> String {

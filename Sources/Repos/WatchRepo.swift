@@ -13,6 +13,7 @@ import OSLog
 @ModelActor
 actor WatchRepo {
     private let logger = Logger.reposWatch
+    private static let referenceDateEpochOffset: TimeInterval = 978_307_200 // 2001-01-01T00:00:00Z
     
     func active(countyCode: String, fireZone: String, forecastZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
         let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
@@ -173,16 +174,16 @@ actor WatchRepo {
         }
 
         guard
-            let sent             = item.sent,
-            let effective        = item.effective,
-            let onset            = item.onset,
-            let expires          = item.expires,
-            let ends             = item.ends,
+            let sent             = normalizedAlertDate(item.sent),
+            let effective        = normalizedAlertDate(item.effective),
+            let onset            = normalizedAlertDate(item.onset),
+            let expires          = normalizedAlertDate(item.expires),
             let watchDescription = item.description
         else {
             logger.debug("Required watch property missing, returning null.")
             return nil
         }
+        let ends = normalizedAlertDate(item.ends) ?? expires
 
         return .init(
             nwsId: ArcusAlertIdentifier.canonical(item.id),
@@ -265,22 +266,22 @@ actor WatchRepo {
         }
 
         if let currentRevisionSent = item.currentRevisionSent {
-            existing.currentRevisionSent = currentRevisionSent
+            existing.currentRevisionSent = normalizedAlertDate(currentRevisionSent)
         }
         if let sent = item.sent {
-            existing.sent = sent
+            existing.sent = normalizedAlertDate(sent) ?? sent
         }
         if let effective = item.effective {
-            existing.effective = effective
+            existing.effective = normalizedAlertDate(effective) ?? effective
         }
         if let onset = item.onset {
-            existing.onset = onset
+            existing.onset = normalizedAlertDate(onset) ?? onset
         }
         if let expires = item.expires {
-            existing.expires = expires
+            existing.expires = normalizedAlertDate(expires) ?? expires
         }
         if let ends = item.ends {
-            existing.ends = ends
+            existing.ends = normalizedAlertDate(ends) ?? ends
         }
 
         existing.geometry = nil
@@ -333,6 +334,17 @@ actor WatchRepo {
         default:
             return false
         }
+    }
+
+    private func normalizedAlertDate(_ value: Date?) -> Date? {
+        guard let value else { return nil }
+        // Arcus payloads can arrive as seconds since the 2001 reference date.
+        // If decoded as Unix seconds they land around the 1990s; remap those.
+        let unixEpoch = value.timeIntervalSince1970
+        if unixEpoch > 0, unixEpoch < WatchRepo.referenceDateEpochOffset {
+            return Date(timeIntervalSince1970: unixEpoch + WatchRepo.referenceDateEpochOffset)
+        }
+        return value
     }
     
     // MARK: Upsert

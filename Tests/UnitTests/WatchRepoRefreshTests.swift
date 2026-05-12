@@ -424,6 +424,123 @@ struct WatchRepoRefreshTests {
         let count = try ModelContext(container).fetchCount(Watch.allWatchesDescriptor())
         #expect(count == 0)
     }
+
+    @Test("refresh falls back ends to expires when payload omits ends")
+    func refresh_fallsBackEndsToExpiresWhenMissing() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174010"
+        let json = """
+        [
+          {
+            "id": "\(id)",
+            "event": "Air Quality Alert",
+            "currentRevisionUrn": "urn:alert:aqa",
+            "currentRevisionSent": "2026-05-11T22:10:00Z",
+            "messageType": "alert",
+            "state": "active",
+            "created": "2026-05-11T22:10:00Z",
+            "updated": "2026-05-11T22:10:10Z",
+            "lastSeenActive": "2026-05-11T22:10:20Z",
+            "sent": "2026-05-11T22:10:00Z",
+            "effective": "2026-05-11T22:10:00Z",
+            "onset": "2026-05-11T22:10:00Z",
+            "expires": "2026-05-12T22:00:00Z",
+            "severity": "unknown",
+            "urgency": "unknown",
+            "certainty": "unknown",
+            "areaDesc": "Denver Metro",
+            "senderName": "NWS Denver CO",
+            "headline": "Air Quality Alert issued May 11",
+            "description": "Air quality details",
+            "instructions": "Reduce driving",
+            "response": "Monitor",
+            "ugc": ["COC031"],
+            "h3Cells": []
+          }
+        ]
+        """
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(json.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ045",
+            in: nil
+        )
+
+        let watch = try #require(await repo.watch(id: id))
+        let expectedEnds = ISO8601DateFormatter().date(from: "2026-05-12T22:00:00Z")
+        #expect(watch.ends == expectedEnds)
+        #expect(watch.title == "Air Quality Alert")
+
+        let now = ISO8601DateFormatter().date(from: "2026-05-11T23:00:00Z")!
+        let active = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            forecastZone: "COZ045",
+            cell: nil,
+            on: now
+        )
+        #expect(active.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }))
+    }
+
+    @Test("refresh normalizes numeric reference-date timestamps and keeps alert active")
+    func refresh_normalizesNumericReferenceDateTimestamps() async throws {
+        let id = "81164EEE-EF03-41CC-89B7-17D0169029C3"
+        let json = """
+        [
+          {
+            "id": "\(id)",
+            "event": "Air Quality Alert",
+            "currentRevisionUrn": "urn:oid:test",
+            "currentRevisionSent": 800230200,
+            "messageType": "alert",
+            "state": "active",
+            "created": 800230321.26462,
+            "updated": 800230321.26462,
+            "lastSeenActive": 800230320.132628,
+            "sent": 800230200,
+            "effective": 800230200,
+            "onset": 800230200,
+            "expires": 800316000,
+            "severity": "unknown",
+            "urgency": "unknown",
+            "certainty": "unknown",
+            "areaDesc": "Jefferson, CO",
+            "senderName": "NWS Denver CO",
+            "headline": "Air Quality Alert issued May 11",
+            "description": "Air quality details",
+            "instructions": "Reduce driving",
+            "response": "Monitor",
+            "ugc": ["COC031"],
+            "h3Cells": []
+          }
+        ]
+        """
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(json.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ045",
+            in: nil
+        )
+
+        let watch = try #require(await repo.watch(id: id))
+        let expectedSent = Date(timeIntervalSince1970: 1_778_537_400) // 2026-05-11T22:10:00Z
+        let expectedExpires = Date(timeIntervalSince1970: 1_778_623_200) // 2026-05-12T22:00:00Z
+        #expect(watch.issued == expectedSent)
+        #expect(watch.ends == expectedExpires)
+
+        let now = Date(timeIntervalSince1970: 1_778_541_000) // 2026-05-11T23:10:00Z
+        let active = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            forecastZone: "COZ045",
+            cell: nil,
+            on: now
+        )
+        #expect(active.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }))
+    }
 }
 
 private func alertPayloadArrayJSON(
