@@ -26,6 +26,13 @@ struct SettingsDiagnosticsView: View {
     ) private var apnsDeviceToken: String = ""
 
     @State private var installationId: String = ""
+    private let isDebugBuild: Bool = {
+#if DEBUG
+        true
+#else
+        false
+#endif
+    }()
 
     private var h3CellDisplay: String {
         guard let h3Cell = locationSession.currentSnapshot?.h3Cell else {
@@ -122,7 +129,14 @@ struct SettingsDiagnosticsView: View {
                         UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
                     }
                     .skyAwareGlassButtonStyle()
+
+                    if !isDebugBuild {
+                        Text("Read-only outside Debug builds.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .disabled(!isDebugBuild)
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
