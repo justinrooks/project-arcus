@@ -43,7 +43,7 @@ struct OutlookParser: Sendable {
     
     func extractRiskLevel(_ text: String) -> String? {
         // TODO: Figure out how/if we are going to extract this
-        return "MDT"
+        return nil
     }
     
     func stripHeader(from text: String) -> String {
