@@ -158,33 +158,6 @@ struct SettingsView: View {
                     }
                 }
 
-//                sectionCard(title: "AI Summary Preferences", symbol: "sparkles") {
-//                    Toggle("AI summaries", isOn: $aiSummariesEnabled)
-//                    Toggle("Share location context", isOn: $aiShareLocation)
-//
-//                    VStack(alignment: .leading, spacing: 6) {
-//                        Text("Brevity")
-//                            .font(.subheadline.weight(.semibold))
-//                        Picker("Brevity", selection: brevityBinding) {
-//                            ForEach(BrevityLevel.allCases) { level in
-//                                Text(level.title).tag(level)
-//                            }
-//                        }
-//                        .pickerStyle(.segmented)
-//                    }
-//
-//                    VStack(alignment: .leading, spacing: 6) {
-//                        Text("Audience")
-//                            .font(.subheadline.weight(.semibold))
-//                        Picker("Audience", selection: audienceBinding) {
-//                            ForEach(AudienceLevel.allCases) { level in
-//                                Text(level.title).tag(level)
-//                            }
-//                        }
-//                        .pickerStyle(.segmented)
-//                    }
-//                }
-
                 sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .orange) {
                     VStack() {
                         Toggle("Share Location with Signal", isOn: $sendL8nToSignal)
