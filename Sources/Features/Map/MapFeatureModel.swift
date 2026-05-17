@@ -17,14 +17,6 @@ final class MapFeatureModel {
     private let logger = Logger.uiMap
     private let polygonMapper = MapPolygonMapper()
     private let planner = MapScenePlanner()
-    private let shouldInjectTemporaryWarningSamples: Bool = {
-//#if DEBUG
-//        return NSClassFromString("XCTestCase") == nil
-//#else
-        return false
-//#endif
-    }()
-
     private var renderPlans: [MapLayer: MapLayerRenderPlan] = [:]
     private var cachedScenes: [MapLayer: MapLayerScene] = [:]
     private var warmScenesTask: Task<Void, Never>?
@@ -97,7 +89,7 @@ final class MapFeatureModel {
         let activeWarnings: [ActiveWarningGeometry]
         switch warningResult {
         case .success(let value):
-            activeWarnings = injectTemporaryWarningSamples(into: value)
+            activeWarnings = value
         case .failure(let error):
             if error is CancellationError {
                 return
@@ -259,18 +251,6 @@ final class MapFeatureModel {
         } catch {
             return .failure(error)
         }
-    }
-
-    private func injectTemporaryWarningSamples(
-        into warnings: [ActiveWarningGeometry]
-    ) -> [ActiveWarningGeometry] {
-        guard shouldInjectTemporaryWarningSamples else {
-            return warnings
-        }
-
-        return warnings + Self.temporaryWarningSamples(
-            around: initialCenterCoordinate ?? CLLocationCoordinate2D(latitude: 39.0, longitude: -97.0)
-        )
     }
 
     private static func temporaryWarningSamples(
