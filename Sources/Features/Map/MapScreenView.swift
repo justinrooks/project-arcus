@@ -19,6 +19,7 @@ struct MapScreenView: View {
 
     @Binding private var selected: MapLayer
     @State private var model = MapFeatureModel()
+    @State private var reloadTask: Task<Void, Never>?
     @State private var showLayerPicker = false
     @Namespace private var layerNamespace
 
@@ -39,16 +40,6 @@ struct MapScreenView: View {
             scene: model.activeScene,
             layerNamespace: layerNamespace
         )
-        .onAppear {
-            model.setWarningGeometryVisible(showsWarningGeometry)
-            Task {
-                await model.reload(
-                    using: dependencies.spcMapData,
-                    warningSource: dependencies.arcusProvider,
-                    selectedLayer: selected
-                )
-            }
-        }
         .onChange(of: selected, initial: true) { _, newValue in
             model.selectLayer(newValue)
         }
@@ -58,7 +49,22 @@ struct MapScreenView: View {
         .onChange(of: scenePhase, initial: true) { _, newValue in
             guard newValue == .active else { return }
             model.setWarningGeometryVisible(showsWarningGeometry)
-            Task {
+            scheduleReload()
+        }
+        .onChange(of: viewportCoordinate, initial: true) { _, newValue in
+            model.captureInitialCenterCoordinateIfNeeded(newValue?.coordinate)
+        }
+        .onDisappear {
+            reloadTask?.cancel()
+            reloadTask = nil
+            model.cancelWork()
+        }
+    }
+    
+    @MainActor
+        private func scheduleReload() {
+            reloadTask?.cancel()
+            reloadTask = Task {
                 await model.reload(
                     using: dependencies.spcMapData,
                     warningSource: dependencies.arcusProvider,
@@ -66,13 +72,6 @@ struct MapScreenView: View {
                 )
             }
         }
-        .onChange(of: viewportCoordinate, initial: true) { _, newValue in
-            model.captureInitialCenterCoordinateIfNeeded(newValue?.coordinate)
-        }
-        .onDisappear {
-            model.cancelWork()
-        }
-    }
 }
 
 private struct MapScreenContent: View {
