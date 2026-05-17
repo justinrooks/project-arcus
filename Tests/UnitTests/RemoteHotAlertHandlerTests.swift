@@ -124,8 +124,8 @@ struct RemoteHotAlertHandlerTests {
         #expect(await widgetDriver.refreshCallCount() == 1)
     }
 
-    private func makeWatch(id: String, revisionSent: Date) -> WatchRowDTO {
-        WatchRowDTO(
+    private func makeWatch(id: String, revisionSent: Date) -> AlertDTO {
+        AlertDTO(
             id: id,
             messageId: "urn:\(id)",
             currentRevisionSent: revisionSent,
@@ -203,7 +203,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
     private func makeProjection(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
-        watches: [WatchRowDTO],
+        watches: [AlertDTO],
         mesos: [MdDTO]
     ) -> HomeProjectionRecord {
         HomeProjectionRecord(
@@ -234,8 +234,8 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
     }
 }
 
-private func makeRemoteAlertWatch(id: String, revisionSent: Date) -> WatchRowDTO {
-    WatchRowDTO(
+private func makeRemoteAlertWatch(id: String, revisionSent: Date) -> AlertDTO {
+    AlertDTO(
         id: id,
         messageId: "urn:\(id)",
         currentRevisionSent: revisionSent,
@@ -314,13 +314,13 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 }
 
 private actor StubArcusAlertStore: ArcusAlertQuerying {
-    private var watches: [WatchRowDTO?]
+    private var watches: [AlertDTO?]
 
-    init(watches: [WatchRowDTO?]) {
+    init(watches: [AlertDTO?]) {
         self.watches = watches
     }
 
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+    func getActiveWatches(context: LocationContext) async throws -> [AlertDTO] {
         []
     }
 
@@ -328,7 +328,7 @@ private actor StubArcusAlertStore: ArcusAlertQuerying {
         []
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
+    func getWatch(id: String) async throws -> AlertDTO? {
         guard watches.isEmpty == false else { return nil }
         return watches.removeFirst()
     }

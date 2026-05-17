@@ -18,20 +18,20 @@ struct ActiveAlertSummaryView: View {
     }
 
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
     let isLoading: Bool
     let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
     private let sortedMesos: [MdDTO]
-    private let sortedWatches: [WatchRowDTO]
+    private let sortedWatches: [AlertDTO]
     
     @State private var selectedMeso: MdDTO? = nil
-    @State private var selectedWatch: WatchRowDTO? = nil
+    @State private var selectedWatch: AlertDTO? = nil
     @State private var selectedMesoDetent: PresentationDetent = .medium
     @State private var selectedWatchDetent: PresentationDetent = .medium
     init(
         mesos: [MdDTO],
-        watches: [WatchRowDTO],
+        watches: [AlertDTO],
         isLoading: Bool = false,
         isOffline: Bool = false,
         onOpenAlertCenter: (() -> Void)? = nil
@@ -365,7 +365,7 @@ private struct MesoRowView: View {
 }
 
 private struct WatchRowView: View {
-    let watch: WatchRowDTO
+    let watch: AlertDTO
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "E"
@@ -413,7 +413,7 @@ private struct WatchRowView: View {
         .padding(.vertical, 3)
     }
 
-    private func buildDisplay(watch: WatchRowDTO) -> String {
+    private func buildDisplay(watch: AlertDTO) -> String {
         Self.dayFormatter.string(from: watch.validEnd)
     }
 }

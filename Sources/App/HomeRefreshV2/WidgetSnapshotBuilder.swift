@@ -7,7 +7,7 @@ struct WidgetSnapshotBuilder {
         let availability: WidgetAvailabilityState
         let stormRisk: StormRiskLevel?
         let severeRisk: SevereWeatherThreat?
-        let watches: [WatchRowDTO]
+        let watches: [AlertDTO]
         let mesos: [MdDTO]
         let locationSummary: String?
 
@@ -17,7 +17,7 @@ struct WidgetSnapshotBuilder {
             availability: WidgetAvailabilityState,
             stormRisk: StormRiskLevel?,
             severeRisk: SevereWeatherThreat?,
-            watches: [WatchRowDTO],
+            watches: [AlertDTO],
             mesos: [MdDTO],
             locationSummary: String? = nil
         ) {
@@ -133,7 +133,7 @@ private extension WidgetSnapshotBuilder {
         return WidgetRiskDisplayState(label: threat.message, severity: threat.priority)
     }
 
-    func activeAlerts(watches: [WatchRowDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {
+    func activeAlerts(watches: [AlertDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {
         let activeWatchCandidates = watches
             .filter { $0.validEnd > now }
             .map { watch in

@@ -11,7 +11,7 @@ struct WatchDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    let watch: WatchRowDTO
+    let watch: AlertDTO
     let layout: DetailLayout
     let isExpanded: Bool
     
@@ -51,7 +51,7 @@ struct WatchDetailView: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
-    init(watch: WatchRowDTO, layout: DetailLayout, isExpanded: Bool = true) {
+    init(watch: AlertDTO, layout: DetailLayout, isExpanded: Bool = true) {
         self.watch = watch
         self.layout = layout
         self.isExpanded = isExpanded

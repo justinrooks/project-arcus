@@ -11,18 +11,18 @@ struct AlertView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
     let focusedWatchRequest: RemoteAlertFocusRequest?
     let onRefresh: (() async -> Void)?
     
     @State private var selectedMeso: MdDTO?
-    @State private var selectedWatch: WatchRowDTO?
+    @State private var selectedWatch: AlertDTO?
     
     private var hasNoAlerts: Bool {
         watches.isEmpty && mesos.isEmpty
     }
     
-    private var sortedWatches: [WatchRowDTO] {
+    private var sortedWatches: [AlertDTO] {
         watches.sorted { lhs, rhs in
             if lhs.ends != rhs.ends {
                 return lhs.ends < rhs.ends
@@ -58,7 +58,7 @@ struct AlertView: View {
     
     init(
         mesos: [MdDTO],
-        watches: [WatchRowDTO],
+        watches: [AlertDTO],
         focusedWatchRequest: RemoteAlertFocusRequest? = nil,
         onRefresh: (() async -> Void)? = nil
     ) {

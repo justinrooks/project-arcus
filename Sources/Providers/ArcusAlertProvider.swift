@@ -65,7 +65,7 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
 }
 
 extension ArcusAlertProvider: ArcusAlertQuerying {
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+    func getActiveWatches(context: LocationContext) async throws -> [AlertDTO] {
         try await watchRepo.active(
             countyCode: context.grid.countyCode ?? "",
             fireZone: context.grid.fireZone ?? "",
@@ -78,7 +78,7 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
         try await watchRepo.activeWarningGeometries(on: date)
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
+    func getWatch(id: String) async throws -> AlertDTO? {
         try await watchRepo.watch(id: id)
     }
 }

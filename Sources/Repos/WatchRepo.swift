@@ -15,7 +15,7 @@ actor WatchRepo {
     private let logger = Logger.reposWatch
     private static let referenceDateEpochOffset: TimeInterval = 978_307_200 // 2001-01-01T00:00:00Z
     
-    func active(countyCode: String, fireZone: String, forecastZone: String, cell: Int64?, on date: Date = .now) async throws -> [WatchRowDTO] {
+    func active(countyCode: String, fireZone: String, forecastZone: String, cell: Int64?, on date: Date = .now) async throws -> [AlertDTO] {
         let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
 
         var hits: [Watch] = []
@@ -33,7 +33,7 @@ actor WatchRepo {
         }
         
         // Dedupe before returning since its possible to be in the same cell and county/fire zone.
-        let rows = hits.removingDuplicates(by: \.nwsId).map { WatchRowDTO.init(from: $0) }
+        let rows = hits.removingDuplicates(by: \.nwsId).map { AlertDTO.init(from: $0) }
         logger.debug(
             "Resolved current local watches candidates=\(candidates.count, privacy: .public) matches=\(rows.count, privacy: .public) hasCell=\((cell != nil), privacy: .public)"
         )
@@ -70,14 +70,14 @@ actor WatchRepo {
         }
     }
 
-    func watch(id: String) throws -> WatchRowDTO? {
+    func watch(id: String) throws -> AlertDTO? {
         let canonicalID = ArcusAlertIdentifier.canonical(id)
         let predicate = #Predicate<Watch> { watch in
             watch.nwsId == canonicalID
         }
         var descriptor = FetchDescriptor<Watch>(predicate: predicate)
         descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first.map(WatchRowDTO.init(from:))
+        return try modelContext.fetch(descriptor).first.map(AlertDTO.init(from:))
     }
 
     func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, and forecastZone: String, in cell: Int64?) async throws {

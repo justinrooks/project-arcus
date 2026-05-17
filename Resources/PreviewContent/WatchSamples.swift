@@ -129,8 +129,8 @@ extension Watch {
                 """##
     }
     
-    static let sampleWatchRows: [WatchRowDTO] = [
-        WatchRowDTO(
+    static let sampleWatchRows: [AlertDTO] = [
+        AlertDTO(
             id: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
             messageId: "urn:oid:2.49.0.1.840.0.cfc6c16f6a710f26ac1510695362885161a510a0.002.1",
             title: "Tornado Warning",
@@ -157,7 +157,7 @@ extension Watch {
             flashFloodDetection: "",
             flashFloodDamageThreat: ""
         ),
-        WatchRowDTO(
+        AlertDTO(
             id: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.9b1e1a6b7c0f4f0f3b90c08d8d22e7a4e4d0a123.001.1",
             title: "Severe Thunderstorm Watch",
@@ -185,7 +185,7 @@ extension Watch {
             flashFloodDamageThreat: ""
             
         ),
-        WatchRowDTO(
+        AlertDTO(
             id: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.2f6a9c1c0b5e44d6a9d3a33a9b7d8a0d88aa77bb.001.1",
             title: "Tornado Warning",
@@ -213,7 +213,7 @@ extension Watch {
             flashFloodDamageThreat: ""
             
         ),
-        WatchRowDTO(
+        AlertDTO(
             id: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.6a7e1d3c9c2e4b4ab06e2d5b5e6f7a8b9c0d1e2f.001.1",
             title: "Severe Thunderstorm Warning",
@@ -241,7 +241,7 @@ extension Watch {
             flashFloodDamageThreat: ""
             
         ),
-        WatchRowDTO(
+        AlertDTO(
             id: "urn:oid:2.49.0.1.840.0.0d1c2b3a4e5f60718293a4b5c6d7e8f901234567.001.1",
             messageId: "urn:oid:2.49.0.1.840.0.0d1c2b3a4e5f60718293a4b5c6d7e8f901234567.001.1",
             title: "Tornado Warning",

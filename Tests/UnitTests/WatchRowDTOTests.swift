@@ -2,12 +2,12 @@ import Testing
 @testable import SkyAware
 import Foundation
 
-@Suite("WatchRowDTO")
-struct WatchRowDTOTests {
+@Suite("AlertDTO")
+struct AlertDTOTests {
     @Test("Recognizes update message types case-insensitively")
     func recognizesUpdateMessageType() {
         let now = Date()
-        let sut = WatchRowDTO(
+        let sut = AlertDTO(
             id: "watch-1",
             messageId: "urn:test",
             title: "Tornado Watch",

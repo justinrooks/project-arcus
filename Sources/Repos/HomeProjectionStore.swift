@@ -57,7 +57,7 @@ actor HomeProjectionStore {
     }
 
     func updateHotAlerts(
-        watches: [WatchRowDTO],
+        watches: [AlertDTO],
         mesos: [MdDTO],
         for context: LocationContext,
         loadedAt: Date = .now

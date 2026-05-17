@@ -276,11 +276,11 @@ private extension SkyAwareApp {
         }
     }
 
-    static var uiTestSeedWatches: [WatchRowDTO] {
+    static var uiTestSeedWatches: [AlertDTO] {
         let issued = Date().addingTimeInterval(-1_800)
         let ends = Date().addingTimeInterval(7_200)
         return [
-            WatchRowDTO(
+            AlertDTO(
                 id: "ui-test-watch-001",
                 messageId: "ui-test-watch-message-001",
                 currentRevisionSent: issued,

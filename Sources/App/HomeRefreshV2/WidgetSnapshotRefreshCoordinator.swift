@@ -8,7 +8,7 @@ struct WidgetSnapshotRefreshInput: Sendable {
     let snapshotTimestamp: Date?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
     let mesos: [MdDTO]
     let locationSummary: String?
 
@@ -17,7 +17,7 @@ struct WidgetSnapshotRefreshInput: Sendable {
         snapshotTimestamp: Date? = nil,
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
-        watches: [WatchRowDTO],
+        watches: [AlertDTO],
         mesos: [MdDTO],
         locationSummary: String?
     ) {

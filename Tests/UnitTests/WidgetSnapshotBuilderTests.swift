@@ -215,8 +215,8 @@ struct WidgetSnapshotBuilderTests {
     }
 }
 
-private func makeWatch(id: String, title: String, issued: Date, validEnd: Date) -> WatchRowDTO {
-    WatchRowDTO(
+private func makeWatch(id: String, title: String, issued: Date, validEnd: Date) -> AlertDTO {
+    AlertDTO(
         id: id,
         messageId: nil,
         currentRevisionSent: nil,

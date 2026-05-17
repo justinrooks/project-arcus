@@ -71,7 +71,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
-    let activeAlerts: [WatchRowDTO]
+    let activeAlerts: [AlertDTO]
     let activeMesos: [MdDTO]
     let lastHotAlertsLoadAt: Date?
     let lastSlowProductsLoadAt: Date?
@@ -113,7 +113,7 @@ final class HomeProjection {
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
-    var activeAlerts: [WatchRowDTO]
+    var activeAlerts: [AlertDTO]
     var activeMesos: [MdDTO]
 
     var lastHotAlertsLoadAt: Date?

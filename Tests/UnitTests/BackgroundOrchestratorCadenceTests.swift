@@ -253,7 +253,7 @@ private extension BackgroundOrchestratorCadenceTests {
 
     func makeSystem(
         activeMesos: [MdDTO],
-        activeWatches: [WatchRowDTO],
+        activeWatches: [AlertDTO],
         refreshedLocation: CLLocationCoordinate2D? = nil,
         refreshSucceeds: Bool = false,
         cachedSnapshotTimestamp: Date = Date(),
@@ -351,9 +351,9 @@ private extension BackgroundOrchestratorCadenceTests {
         )
     }
 
-    static func makeWatch() -> WatchRowDTO {
+    static func makeWatch() -> AlertDTO {
         let now = Date()
-        return WatchRowDTO(
+        return AlertDTO(
             id: "watch-1001",
             messageId: "watch-1001",
             title: "Tornado Watch",
@@ -499,9 +499,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 }
 
 private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
-    private let activeWatches: [WatchRowDTO]
+    private let activeWatches: [AlertDTO]
 
-    init(activeWatches: [WatchRowDTO]) {
+    init(activeWatches: [AlertDTO]) {
         self.activeWatches = activeWatches
     }
 
@@ -509,7 +509,7 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
 
     func syncRemoteAlert(id: String, revisionSent: Date?) async {}
 
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+    func getActiveWatches(context: LocationContext) async throws -> [AlertDTO] {
         activeWatches
     }
 
@@ -517,7 +517,7 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         []
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
+    func getWatch(id: String) async throws -> AlertDTO? {
         activeWatches.first(where: { $0.id == id })
     }
 }

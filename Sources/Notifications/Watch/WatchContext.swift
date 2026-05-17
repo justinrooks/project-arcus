@@ -13,5 +13,5 @@ struct WatchContext: Sendable {
     let localTZ: TimeZone
     let location: CLLocationCoordinate2D
     let placeMark: String
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
 }

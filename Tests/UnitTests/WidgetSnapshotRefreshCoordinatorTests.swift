@@ -85,8 +85,8 @@ struct WidgetSnapshotRefreshCoordinatorTests {
     }
 }
 
-private func makeWatch(id: String, title: String, now: Date) -> WatchRowDTO {
-    WatchRowDTO(
+private func makeWatch(id: String, title: String, now: Date) -> AlertDTO {
+    AlertDTO(
         id: id,
         messageId: nil,
         currentRevisionSent: nil,

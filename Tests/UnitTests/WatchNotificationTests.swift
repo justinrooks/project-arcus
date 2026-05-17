@@ -227,8 +227,8 @@ struct WatchNotificationTests {
         ends: Date,
         title: String = "Tornado Watch",
         headline: String = "Severe storms are possible"
-    ) -> WatchRowDTO {
-        WatchRowDTO(
+    ) -> AlertDTO {
+        AlertDTO(
             id: id,
             messageId: id,
             title: title,

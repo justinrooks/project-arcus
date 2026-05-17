@@ -1,5 +1,5 @@
 //
-//  WatchRowDTO.swift
+//  AlertDTO.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 12/31/25.
@@ -8,7 +8,7 @@
 import Foundation
 import ArcusCore
 
-extension WatchRowDTO: AlertItem {
+extension AlertDTO: AlertItem {
     // Alert Item - Derived
     nonisolated var number: Int          {0}
     nonisolated var link: URL { URL(string:"https://api.weather.gov/alerts/\(self.messageId ?? "")")! } // link to full page
@@ -23,7 +23,7 @@ extension WatchRowDTO: AlertItem {
     }
 }
 
-struct WatchRowDTO: Identifiable, Sendable, Hashable, Codable {
+struct AlertDTO: Identifiable, Sendable, Hashable, Codable {
     // Identity
     let id: String              // nwsId
     let messageId: String?
@@ -140,7 +140,7 @@ struct ActiveWarningGeometry: Identifiable, Sendable {
     let geometry: DeviceAlertGeometry
 }
 
-extension WatchRowDTO {
+extension AlertDTO {
     init(from watch: Watch) {
         self.id = watch.nwsId
         self.messageId = watch.messageId

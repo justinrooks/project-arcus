@@ -28,7 +28,7 @@ struct WatchEngine: Sendable {
         self.sender = sender
     }
 
-    func run(ctx: NotificationContext, watches: [WatchRowDTO]) async -> Bool {
+    func run(ctx: NotificationContext, watches: [AlertDTO]) async -> Bool {
         let watchContext = WatchContext(
             now: ctx.now,
             localTZ: ctx.localTZ,

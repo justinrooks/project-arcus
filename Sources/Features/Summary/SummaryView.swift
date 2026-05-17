@@ -51,7 +51,7 @@ struct SummaryView: View {
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
     let readinessState: SummaryReadinessState

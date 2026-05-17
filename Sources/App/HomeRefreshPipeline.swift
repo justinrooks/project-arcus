@@ -39,7 +39,7 @@ struct HomeRiskSnapshot {
 
 struct HomeAlertSnapshot {
     var mesos: [MdDTO] = []
-    var watches: [WatchRowDTO] = []
+    var watches: [AlertDTO] = []
 }
 
 struct HomeOutlookSnapshot {
@@ -79,7 +79,7 @@ final class HomeRefreshPipeline {
     var severeRisk: SevereWeatherThreat? { riskSnapshot.severeRisk }
     var fireRisk: FireRiskLevel? { riskSnapshot.fireRisk }
     var mesos: [MdDTO] { alertSnapshot.mesos }
-    var watches: [WatchRowDTO] { alertSnapshot.watches }
+    var watches: [AlertDTO] { alertSnapshot.watches }
     var outlooks: [ConvectiveOutlookDTO] { outlookSnapshot.outlooks }
     var outlook: ConvectiveOutlookDTO? { outlookSnapshot.outlook }
 
@@ -89,7 +89,7 @@ final class HomeRefreshPipeline {
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
         initialMesos: [MdDTO] = [],
-        initialWatches: [WatchRowDTO] = [],
+        initialWatches: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
         minimumForegroundRefreshInterval: TimeInterval = 3 * 60,

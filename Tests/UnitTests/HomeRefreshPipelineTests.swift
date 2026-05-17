@@ -990,11 +990,11 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 }
 
 private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
-    private let activeWatches: [WatchRowDTO]
+    private let activeWatches: [AlertDTO]
     private var syncCalls = 0
     private var queryCalls = 0
 
-    init(activeWatches: [WatchRowDTO] = [Watch.sampleWatchRows[0]]) {
+    init(activeWatches: [AlertDTO] = [Watch.sampleWatchRows[0]]) {
         self.activeWatches = activeWatches
     }
 
@@ -1006,7 +1006,7 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         syncCalls += 1
     }
 
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+    func getActiveWatches(context: LocationContext) async throws -> [AlertDTO] {
         queryCalls += 1
         return activeWatches
     }
@@ -1015,7 +1015,7 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         []
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
+    func getWatch(id: String) async throws -> AlertDTO? {
         activeWatches.first(where: { $0.id == id })
     }
 

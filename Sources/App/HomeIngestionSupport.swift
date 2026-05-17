@@ -12,12 +12,12 @@ struct LocationScopedDataSnapshot: Sendable {
     let severeRisk: SevereWeatherThreat
     let fireRisk: FireRiskLevel
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
 }
 
 struct HotFeedSnapshot: Sendable {
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let watches: [AlertDTO]
 }
 
 enum IngestionSupport {

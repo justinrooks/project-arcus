@@ -94,7 +94,7 @@ struct HomeView: View {
         return displayedProjection?.activeMesos ?? []
     }
 
-    private var displayedWatches: [WatchRowDTO] {
+    private var displayedWatches: [AlertDTO] {
         if isUITestStaticMode && refreshPipeline.watches.isEmpty == false {
             return refreshPipeline.watches
         }
@@ -148,7 +148,7 @@ struct HomeView: View {
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
         initialMesos: [MdDTO] = [],
-        initialWatches: [WatchRowDTO] = [],
+        initialWatches: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil
     ) {

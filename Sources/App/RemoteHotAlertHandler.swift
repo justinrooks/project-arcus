@@ -13,7 +13,7 @@ import UIKit
 struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
     let id = UUID()
     let alertID: String
-    let watch: WatchRowDTO?
+    let watch: AlertDTO?
 }
 
 @Observable
@@ -21,7 +21,7 @@ struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
 final class RemoteAlertPresentationState {
     var focusRequest: RemoteAlertFocusRequest?
 
-    func present(alertID: String, watch: WatchRowDTO?) {
+    func present(alertID: String, watch: AlertDTO?) {
         focusRequest = RemoteAlertFocusRequest(alertID: alertID, watch: watch)
     }
 }
@@ -154,8 +154,8 @@ extension HomeRemoteAlertContext {
     }
 
     func fetchResult(
-        before previousWatch: WatchRowDTO?,
-        after latestWatch: WatchRowDTO?
+        before previousWatch: AlertDTO?,
+        after latestWatch: AlertDTO?
     ) -> UIBackgroundFetchResult {
         guard let latestWatch, latestWatch.matches(self) else {
             return .failed
@@ -226,7 +226,7 @@ extension HomeRemoteAlertContext {
     }
 }
 
-private extension WatchRowDTO {
+private extension AlertDTO {
     func matches(_ remoteAlertContext: HomeRemoteAlertContext) -> Bool {
         guard ArcusAlertIdentifier.canonical(id) == ArcusAlertIdentifier.canonical(remoteAlertContext.alertID) else {
             return false
@@ -240,7 +240,7 @@ private extension WatchRowDTO {
         return currentRevisionSent >= revisionSent
     }
 
-    func matchesRevision(of other: WatchRowDTO) -> Bool {
+    func matchesRevision(of other: AlertDTO) -> Bool {
         messageId == other.messageId &&
         currentRevisionSent == other.currentRevisionSent
     }
