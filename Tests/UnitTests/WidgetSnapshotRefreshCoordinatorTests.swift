@@ -66,6 +66,47 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         ])
     }
 
+    @Test("risk projection overwrites stale tornado state with all clear")
+    func riskProjection_overwritesStaleTornadoStateWithAllClear() throws {
+        let sandbox = try makeSandboxDirectory()
+        let store = WidgetSnapshotStore(directoryURL: sandbox)
+        var reloadedKinds: [String] = []
+        let coordinator = WidgetSnapshotRefreshCoordinator(
+            store: store,
+            reloadTimeline: { reloadedKinds.append($0) }
+        )
+
+        try coordinator.refresh(
+            scope: .riskOrLocationProjection,
+            input: .init(
+                generatedAt: Date(timeIntervalSince1970: 1_700),
+                stormRisk: .marginal,
+                severeRisk: .tornado(probability: 0.02),
+                watches: [],
+                mesos: [],
+                locationSummary: "Bennett, CO"
+            )
+        )
+        try coordinator.refresh(
+            scope: .riskOrLocationProjection,
+            input: .init(
+                generatedAt: Date(timeIntervalSince1970: 1_760),
+                stormRisk: .marginal,
+                severeRisk: .allClear,
+                watches: [],
+                mesos: [],
+                locationSummary: "Bennett, CO"
+            )
+        )
+
+        #expect(store.load().snapshot?.severeRisk == .init(label: "No Active Threats", severity: 0))
+        #expect(Array(reloadedKinds.suffix(3)) == [
+            SkyAwareWidgetKind.stormRisk,
+            SkyAwareWidgetKind.severeRisk,
+            SkyAwareWidgetKind.combined
+        ])
+    }
+
     @Test("remote APNs plans are excluded from normal ingestion widget refresh scope")
     func homeWidgetRefreshScope_excludesRemoteHotAlertPlans() {
         let remoteReceivedPlan = HomeIngestionPlan(request: .init(trigger: .remoteHotAlertReceived))

@@ -21,6 +21,49 @@ private struct MultiProductMockClient: SpcClient {
 
 @Suite("SevereRiskRepo.active", .serialized)
 struct SevereRiskRepoActiveSelectionTests {
+    @Test("Newer tornado issuance removes stale older polygon from active lookup")
+    func newerTornadoIssuanceRemovesStaleOlderPolygonFromActiveLookup() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        let olderGeometry = makeMultiPolygonGeometry(squareAtLonLat: (-100.0, 40.0), size: 1.0)
+        let newerGeometry = makeMultiPolygonGeometry(squareAtLonLat: (-98.0, 40.0), size: 1.0)
+        let olderProps = makeProperties(
+            label: "0.02",
+            label2: "2% Tornado Risk",
+            issue: "202705011200",
+            valid: "202705011200",
+            expire: "202705012000",
+            dn: 2
+        )
+        let newerProps = makeProperties(
+            label: "0.02",
+            label2: "2% Tornado Risk",
+            issue: "202705011630",
+            valid: "202705011200",
+            expire: "202705012000",
+            dn: 2
+        )
+
+        let tornadoData = try JSONEncoder().encode(
+            makeFeatureCollection(
+                features: [
+                    makeFeature(properties: olderProps, geometry: olderGeometry),
+                    makeFeature(properties: newerProps, geometry: newerGeometry)
+                ]
+            )
+        )
+        let mock = MultiProductMockClient(geoJsonByProduct: [.tornado: tornadoData])
+
+        try await repo.refreshTornadoRisk(using: mock)
+
+        let asOf = makeUTCDate(2027, 5, 1, 17, 0)
+        let point = CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        let active = try await repo.active(asOf: asOf, for: point)
+        #expect(active == .allClear)
+    }
+
     @Test("Overlapping tornado polygons prefer the higher tornado probability")
     func overlappingTornadoPolygonsPreferHigherProbability() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }

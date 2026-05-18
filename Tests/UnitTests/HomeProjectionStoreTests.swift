@@ -80,6 +80,32 @@ struct HomeProjectionStoreTests {
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 500))
     }
 
+    @Test("updating slow products overwrites stale severe risk with all clear")
+    func updateSlowProducts_overwritesStaleSevereRiskWithAllClear() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .tornado(probability: 0.02),
+            fireRisk: .clear,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        let updated = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 560)
+        )
+
+        #expect(updated.severeRisk == .allClear)
+        #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 560))
+    }
+
     @Test("updating weather keeps the existing risk and alert slices intact")
     func updateWeather_preservesExistingRiskAndAlertSlices() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])

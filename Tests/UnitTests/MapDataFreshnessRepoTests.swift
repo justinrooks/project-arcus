@@ -1,12 +1,13 @@
 import Foundation
+import CoreLocation
 import SwiftData
 import Testing
 @testable import SkyAware
 
 @Suite("MapData freshness filtering", .serialized)
 struct MapDataFreshnessRepoTests {
-    @Test("Fire map returns only newest issuance per risk level")
-    func fireMapReturnsNewestIssuancePerRiskLevel() async throws {
+    @Test("Fire map returns only the newest valid issuance")
+    func fireMapReturnsOnlyNewestValidIssuance() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [FireRisk.self]) }
         try await MainActor.run { try TestStore.reset(FireRisk.self, in: container) }
 
@@ -63,11 +64,11 @@ struct MapDataFreshnessRepoTests {
         }
 
         let results = try await repo.getLatestMapData(asOf: asOf)
-        #expect(results.count == 2)
+        #expect(results.count == 1)
 
         let byLevel = Dictionary(uniqueKeysWithValues: results.map { ($0.riskLevel, $0) })
         #expect(byLevel[8]?.issued == newerIssue)
-        #expect(byLevel[5]?.issued == level5Issue)
+        #expect(byLevel[5] == nil)
     }
 
     @Test("Fire map includes products exactly at the expiry boundary")
@@ -101,8 +102,8 @@ struct MapDataFreshnessRepoTests {
         #expect(results.map(\.riskLevel) == [8])
     }
 
-    @Test("Categorical map returns newest issuance per storm level")
-    func stormMapReturnsNewestIssuancePerLevel() async throws {
+    @Test("Categorical map returns only the newest valid issuance")
+    func stormMapReturnsOnlyNewestValidIssuance() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
         try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
 
@@ -153,11 +154,11 @@ struct MapDataFreshnessRepoTests {
         }
 
         let results = try await repo.getLatestMapData(asOf: asOf)
-        #expect(results.count == 2)
+        #expect(results.count == 1)
 
         let byLevel = Dictionary(uniqueKeysWithValues: results.map { ($0.riskLevel, $0) })
         #expect(byLevel[.enhanced]?.issued == newerIssue)
-        #expect(byLevel[.slight]?.issued == slightIssue)
+        #expect(byLevel[.slight] == nil)
     }
 
     @Test("Categorical map includes products exactly at the expiry boundary")
@@ -187,6 +188,48 @@ struct MapDataFreshnessRepoTests {
 
         let results = try await repo.getLatestMapData(asOf: asOf)
         #expect(results.map(\.riskLevel) == [.enhanced])
+    }
+
+    @Test("Categorical active lookup ignores stale polygons from older valid issuances")
+    func stormActiveIgnoresStalePolygonsFromOlderValidIssuances() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
+        try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
+
+        let repo = StormRiskRepo(modelContainer: container)
+        let asOf = makeUTCDate(2026, 3, 1, 17, 0)
+        let valid = makeUTCDate(2026, 3, 1, 12, 0)
+        let expires = makeUTCDate(2026, 3, 1, 20, 0)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                StormRisk(
+                    riskLevel: .marginal,
+                    issued: makeUTCDate(2026, 3, 1, 12, 0),
+                    expires: expires,
+                    valid: valid,
+                    stroke: "#111111",
+                    fill: "#222222",
+                    polygons: [makePolygon(squareAtLonLat: (-100.0, 40.0), size: 1.0)]
+                )
+            )
+            context.insert(
+                StormRisk(
+                    riskLevel: .marginal,
+                    issued: makeUTCDate(2026, 3, 1, 16, 30),
+                    expires: expires,
+                    valid: valid,
+                    stroke: "#333333",
+                    fill: "#444444",
+                    polygons: [makePolygon(squareAtLonLat: (-98.0, 40.0), size: 1.0)]
+                )
+            )
+            try context.save()
+        }
+
+        let point = CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        let active = try await repo.active(asOf: asOf, for: point)
+        #expect(active == .allClear)
     }
 
     @Test("Severe map returns newest issuance per type and probability bucket")
@@ -256,6 +299,7 @@ struct MapDataFreshnessRepoTests {
 
         let percent15 = results.first { $0.type == .tornado && $0.probabilities == .percent(0.15) }
         #expect(percent15?.fill == "#220000")
+        #expect(results.contains { $0.fill == "#110000" } == false)
 
         let significant15 = results.first { $0.type == .tornado && $0.probabilities == .significant(15) }
         #expect(significant15?.fill == "#330000")
@@ -434,4 +478,18 @@ private func makeUTCDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ m
             minute: minute
         )
     )!
+}
+
+private func makePolygon(squareAtLonLat origin: (Double, Double), size: Double) -> GeoPolygonEntity {
+    let (lon, lat) = origin
+    return GeoPolygonEntity(
+        title: "Test Polygon",
+        coordinates: [
+            Coordinate2D(latitude: lat, longitude: lon),
+            Coordinate2D(latitude: lat + size, longitude: lon),
+            Coordinate2D(latitude: lat + size, longitude: lon + size),
+            Coordinate2D(latitude: lat, longitude: lon + size),
+            Coordinate2D(latitude: lat, longitude: lon)
+        ]
+    )
 }

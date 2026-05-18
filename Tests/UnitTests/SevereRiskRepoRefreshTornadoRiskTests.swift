@@ -67,6 +67,41 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         #expect(count == 0)
     }
 
+    @Test("Empty feature collection clears existing active tornado risk")
+    func emptyCollectionClearsExistingActiveTornadoRisk() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                SevereRisk(
+                    type: .tornado,
+                    probability: .percent(0.02),
+                    threatLevel: .tornado(probability: 0.02),
+                    issued: makeUTCDate(2027, 5, 1, 12, 0),
+                    valid: makeUTCDate(2027, 5, 1, 12, 0),
+                    expires: makeUTCDate(2027, 5, 1, 20, 0),
+                    dn: 2,
+                    stroke: "#AA0000",
+                    fill: "#110000",
+                    polygons: [],
+                    label: "0.02"
+                )
+            )
+            try context.save()
+        }
+
+        let emptyFC = makeFeatureCollection(features: [])
+        let data = try JSONEncoder().encode(emptyFC)
+        let mock = MockClient(mode: .success(data))
+
+        try await repo.refreshTornadoRisk(using: mock)
+        let count = try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>())
+        #expect(count == 0)
+    }
+
     @Test("Inserts models for each feature returned")
     func insertsForEachFeature() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
@@ -195,6 +230,22 @@ private func makeMultiPolygonGeometry(squareAtLonLat origin: (Double, Double), s
     return GeoJSONGeometry(type: "MultiPolygon", coordinates: coordinates)
 }
 
+private func makeUTCDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar.date(
+        from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        )
+    )!
+}
+
 @Suite("SpcProvider.syncMapProducts", .serialized)
 struct SpcProviderSyncMapProductsTests {
     @Test("Map sync caps concurrent product fanout at three")
@@ -283,7 +334,7 @@ private actor CountingMapSyncClient: SpcClient {
         if product == failingProduct {
             throw SpcError.missingData
         }
-        return Data("{}".utf8)
+        return try JSONEncoder().encode(GeoJSONFeatureCollection.empty)
     }
 
     func geoJsonCallCount() -> Int {
