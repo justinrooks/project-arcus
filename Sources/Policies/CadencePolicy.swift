@@ -56,7 +56,7 @@ struct CadenceContext: Sendable {
     let categorical: StormRiskLevel
     let recentlyChangedLocation: Bool
     let inMeso: Bool
-    let inWatch: Bool
+    let inAlert: Bool
 }
 
 struct CadencePolicy: Sendable {
@@ -69,8 +69,8 @@ struct CadencePolicy: Sendable {
     func decide(for ctx: CadenceContext) -> CadenceResult {
         logger.debug("Deciding cadence from context")
         // Check in meso or watch return short and short circuit
-        if ctx.inWatch || ctx.inMeso {
-            let sources = [ctx.inWatch ? "watch" : nil, ctx.inMeso ? "meso" : nil].compactMap { $0 }.joined(separator: ",")
+        if ctx.inAlert || ctx.inMeso {
+            let sources = [ctx.inAlert ? "watch" : nil, ctx.inMeso ? "meso" : nil].compactMap { $0 }.joined(separator: ",")
             let r = CadenceResult(cadence: .short(Cadence.defaultShort), reason: "gate=\(sources)")
             logger.notice("cadence=\(r.cadence.label, privacy: .public) reason=\(r.reason, privacy: .public)")
             return r

@@ -53,7 +53,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         async let severeRisk = spcRisk.getSevereRisk(for: coord)
         async let fireRisk = spcRisk.getFireRisk(for: coord)
         async let mesos = spcRisk.getActiveMesos(at: .now, for: coord)
-        async let watches = arcusAlerts.getActiveWatches(context: context)
+        async let alerts = arcusAlerts.getActiveAlerts(context: context)
         async let outlooks = spcOutlook.getConvectiveOutlooks()
 
         let resolvedOutlooks = try await outlooks
@@ -67,7 +67,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
             severeRisk: severeRisk,
             fireRisk: fireRisk,
             mesos: mesos,
-            watches: watches,
+            alerts: alerts,
             outlooks: resolvedOutlooks,
             latestOutlook: latestOutlook,
             freshness: freshness

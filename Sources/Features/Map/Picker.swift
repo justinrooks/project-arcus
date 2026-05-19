@@ -305,41 +305,6 @@ private struct LayerPickerMorph: ViewModifier {
     }
 }
 
-// MARK: - Example integration
-
-struct MapWithLayerPickerDemo: View {
-    @State private var showPicker = true
-    @State private var selected: MapLayer = .categorical // default
-    private let logger = Logger.uiMap
-
-    var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Rectangle().fill(.ultraThinMaterial) // placeholder for your Map
-                .overlay(Text("Your Map Here").font(.title3))
-
-            Button {
-                showPicker = true
-            } label: {
-                Label("Layers", systemImage: "slider.horizontal.3")
-                    .padding(.horizontal, 14).padding(.vertical, 10)
-                    .background(.thinMaterial, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(16)
-        }
-        .sheet(isPresented: $showPicker) {
-            LayerPickerSheet(selection: $selected,
-                             showsWarningGeometry: .constant(true),
-                             title: "Map Layers")
-        }
-        // Use `selected` to drive which overlays you render
-        .onChange(of: selected) { _, newValue in
-            // update overlays via your provider; debounce as needed
-            logger.debug("Selected layer: \(newValue.rawValue, privacy: .public)")
-        }
-    }
-}
-
 // MARK: - Preview
 
 #Preview("Layer Picker - Normal Grid") {

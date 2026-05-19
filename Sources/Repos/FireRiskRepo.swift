@@ -16,7 +16,9 @@ actor FireRiskRepo {
 
     func refreshFireRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .fireRH)
-        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
 
         let dtos = decoded.features.compactMap {
             let props = $0.properties
@@ -34,7 +36,7 @@ actor FireRiskRepo {
             )
         }
 
-        try upsert(dtos)
+        try replaceCurrentAndFutureRows(with: dtos)
         logger.debug(
             "Updated \(dtos.count, privacy: .public) fire risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)"
         )
@@ -42,12 +44,12 @@ actor FireRiskRepo {
 
     /// Returns the strongest fire risk level whose polygon contains the given point, as of `date`.
         func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> FireRiskLevel {
-            // 1) Fetch only risks that are currently valid
             let pred = #Predicate<FireRisk> { date >= $0.valid && date <= $0.expires }
             let risks = try modelContext.fetch(FetchDescriptor<FireRisk>(predicate: pred))
+            let latestRisks = latestIssuanceSlice(from: risks)
     
-            // 2) Sort by descending risk so we can early-exit on first hit
-            let bySeverity = risks.sorted { $0.riskLevel > $1.riskLevel }
+            // Sort by descending risk so we can early-exit on first hit.
+            let bySeverity = latestRisks.sorted { $0.riskLevel > $1.riskLevel }
     
             // 3) For each risk, check polygons with optional bbox prefilter, then precise hit test
             for risk in bySeverity {
@@ -73,26 +75,23 @@ actor FireRiskRepo {
         }
 
     func getLatestMapData(asOf date: Date = .init()) throws -> [FireRiskDTO] {
-        // 1) Fetch only risks that are currently valid
         let pred = #Predicate<FireRisk> {
             $0.valid <= date && date <= $0.expires
         }
         let desc = FetchDescriptor<FireRisk>(predicate: pred)
-        // We'll dedupe by risk level and keep the freshest issuance for each level.
         let risks = try modelContext.fetch(desc)
+        let latestRisks = latestIssuanceSlice(from: risks)
 
-        // 2) For each risk level, keep only the most recent record.
+        // For each risk level, keep only the most recent record within the latest issuance.
         let mostRecentByLevel: [Int: FireRisk] = Dictionary(
-            risks.map { ($0.riskLevel, $0) },
+            latestRisks.map { ($0.riskLevel, $0) },
             uniquingKeysWith: { lhs, rhs in
                 self.isMoreRecent(lhs, than: rhs) ? lhs : rhs
             }
         )
 
-        // 3) Sort by descending risk for stable output.
         let selected = mostRecentByLevel.values.sorted { $0.riskLevel > $1.riskLevel }
 
-        // 4) Map to DTOs.
         return selected.map {
             FireRiskDTO(
                 product: $0.product,
@@ -130,11 +129,26 @@ actor FireRiskRepo {
         logger.info("Purged old fire risk geometry")
     }
 
-    private func upsert(_ items: [FireRisk]) throws {
+    private func replaceCurrentAndFutureRows(with items: [FireRisk], asOf now: Date = .init()) throws {
+        let predicate = #Predicate<FireRisk> { $0.expires >= now }
+        let existing = try modelContext.fetch(FetchDescriptor<FireRisk>(predicate: predicate))
+        for item in existing {
+            modelContext.delete(item)
+        }
+
         for item in items {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func latestIssuanceSlice(from risks: [FireRisk]) -> [FireRisk] {
+        guard let latest = risks.max(by: { lhs, rhs in isMoreRecent(rhs, than: lhs) }) else { return [] }
+        return risks.filter {
+            $0.issued == latest.issued &&
+            $0.valid == latest.valid &&
+            $0.expires == latest.expires
+        }
     }
 
     private func isMoreRecent(_ lhs: FireRisk, than rhs: FireRisk) -> Bool {

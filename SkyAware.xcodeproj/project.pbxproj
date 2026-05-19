@@ -8,9 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		D044E8D32FAE6D130079D369 /* ArcusCore in Frameworks */ = {isa = PBXBuildFile; productRef = D044E8D22FAE6D130079D369 /* ArcusCore */; };
-		D07F28012FA3A5CA00A7FA31 /* Settings.bundle in Resources */ = {isa = PBXBuildFile; fileRef = D07F28002FA3A5CA00A7FA31 /* Settings.bundle */; };
 		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
-		D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -38,15 +37,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		D1A1000B31AA000100A10001 /* Embed App Extensions */ = {
+		D1A1000B31AA000100A10001 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed App Extensions */,
+				D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -69,6 +68,10 @@
 			membershipExceptions = (
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
+				UnitTests/AlertNotificationTests.swift,
+				UnitTests/AlertRepoActiveTests.swift,
+				UnitTests/AlertRepoPurgeTests.swift,
+				UnitTests/AlertRepoRefreshTests.swift,
 				UnitTests/AlertStylingTests.swift,
 				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
@@ -99,11 +102,6 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
-				UnitTests/WatchNotificationTests.swift,
-				UnitTests/WatchParserTests.swift,
-				UnitTests/WatchRepoActiveTests.swift,
-				UnitTests/WatchRepoPurgeTests.swift,
-				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,
@@ -118,6 +116,10 @@
 		D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				UnitTests/AlertNotificationTests.swift,
+				UnitTests/AlertRepoActiveTests.swift,
+				UnitTests/AlertRepoPurgeTests.swift,
+				UnitTests/AlertRepoRefreshTests.swift,
 				UnitTests/AlertStylingTests.swift,
 				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
@@ -148,11 +150,6 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
-				UnitTests/WatchNotificationTests.swift,
-				UnitTests/WatchParserTests.swift,
-				UnitTests/WatchRepoActiveTests.swift,
-				UnitTests/WatchRepoPurgeTests.swift,
-				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,
@@ -341,7 +338,7 @@
 				D095EF9F2E16F5690074F867 /* Sources */,
 				D095EFA02E16F5690074F867 /* Frameworks */,
 				D095EFA12E16F5690074F867 /* Resources */,
-				D1A1000B31AA000100A10001 /* Embed App Extensions */,
+				D1A1000B31AA000100A10001 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -433,7 +430,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1640;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2650;
 				TargetAttributes = {
 					D095EFA22E16F5690074F867 = {
 						CreatedOnToolsVersion = 16.4;
@@ -482,7 +479,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				D07F28012FA3A5CA00A7FA31 /* Settings.bundle in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -202,7 +202,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         switch result {
         case .success(let snapshot):
             logger.info(
-                "Home ingestion run finished plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public) pendingFollowUp=\((self.pendingPlan != nil), privacy: .public)"
+                "Home ingestion run finished plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) alerts=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public) pendingFollowUp=\((self.pendingPlan != nil), privacy: .public)"
             )
         case .failure(let error):
             logger.error(

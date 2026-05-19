@@ -3,10 +3,10 @@ import Testing
 import SwiftData
 import Foundation
 
-@Suite("WatchRepo purge()", .serialized)
-struct WatchRepoPurgeTests {
+@Suite("AlertRepo purge()", .serialized)
+struct AlertRepoPurgeTests {
     // Helper to quickly build a WatchModel
-    private func makeWatch(number: String, issued: Date, validEnd: Date) -> Watch {
+    private func makeAlert(number: String, issued: Date, validEnd: Date) -> Watch {
         let iso = ISO8601DateFormatter()
         return Watch(
             nwsId: number,
@@ -56,14 +56,14 @@ struct WatchRepoPurgeTests {
     func deletesExpiredOnly() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
         try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
-        let repo = WatchRepo(modelContainer: container)
+        let repo = AlertRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let tag = "-D"
 
-        let expired = makeWatch(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(-1)) // < now
-        let boundary = makeWatch(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)                       // == now
-        let future = makeWatch(number: "3\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))  // > now
+        let expired = makeAlert(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(-1)) // < now
+        let boundary = makeAlert(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)                       // == now
+        let future = makeAlert(number: "3\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))  // > now
 
         ctx.insert(expired)
         ctx.insert(boundary)
@@ -83,13 +83,13 @@ struct WatchRepoPurgeTests {
     func deletesMultipleExpired() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
         try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
-        let repo = WatchRepo(modelContainer: container)
+        let repo = AlertRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = Date()
         let tag = "-M"
 
         for i in 1...8 {
-            let model = makeWatch(number: "\(i)\(tag)", issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
+            let model = makeAlert(number: "\(i)\(tag)", issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
             ctx.insert(model)
         }
         try ctx.save()
@@ -104,13 +104,13 @@ struct WatchRepoPurgeTests {
     func noExpired() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
         try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
-        let repo = WatchRepo(modelContainer: container)
+        let repo = AlertRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = Date()
         let tag = "-N"
 
-        let boundary = makeWatch(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)
-        let future = makeWatch(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))
+        let boundary = makeAlert(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)
+        let future = makeAlert(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))
         ctx.insert(boundary)
         ctx.insert(future)
         try ctx.save()
@@ -127,12 +127,12 @@ struct WatchRepoPurgeTests {
     func idempotent() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
         try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
-        let repo = WatchRepo(modelContainer: container)
+        let repo = AlertRepo(modelContainer: container)
         let ctx = ModelContext(container)
         let now = Date()
         let tag = "-I"
 
-        let expired = makeWatch(number: "999\(tag)", issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
+        let expired = makeAlert(number: "999\(tag)", issued: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
         ctx.insert(expired)
         try ctx.save()
 

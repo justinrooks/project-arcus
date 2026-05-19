@@ -12,12 +12,12 @@ struct LocationScopedDataSnapshot: Sendable {
     let severeRisk: SevereWeatherThreat
     let fireRisk: FireRiskLevel
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let alerts: [AlertDTO]
 }
 
 struct HotFeedSnapshot: Sendable {
     let mesos: [MdDTO]
-    let watches: [WatchRowDTO]
+    let alerts: [AlertDTO]
 }
 
 enum IngestionSupport {
@@ -43,14 +43,14 @@ enum IngestionSupport {
         async let severeRisk = spcRisk.getSevereRisk(for: coord)
         async let fireRisk = spcRisk.getFireRisk(for: coord)
         async let mesos = spcRisk.getActiveMesos(at: .now, for: coord)
-        async let watches = arcusQuery.getActiveWatches(context: context)
+        async let alerts = arcusQuery.getActiveAlerts(context: context)
 
         return try await .init(
             stormRisk: stormRisk,
             severeRisk: severeRisk,
             fireRisk: fireRisk,
             mesos: mesos,
-            watches: watches
+            alerts: alerts
         )
     }
 
@@ -61,8 +61,8 @@ enum IngestionSupport {
     ) async throws -> HotFeedSnapshot {
         let coord = context.snapshot.coordinates
         async let mesos = spcRisk.getActiveMesos(at: .now, for: coord)
-        async let watches = arcusQuery.getActiveWatches(context: context)
+        async let alerts = arcusQuery.getActiveAlerts(context: context)
 
-        return try await .init(mesos: mesos, watches: watches)
+        return try await .init(mesos: mesos, alerts: alerts)
     }
 }

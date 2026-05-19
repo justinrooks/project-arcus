@@ -21,7 +21,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: generatedAt,
                 stormRisk: .enhanced,
                 severeRisk: .tornado(probability: 0.1),
-                watches: [],
+                alerts: [],
                 mesos: [],
                 locationSummary: "Denver, CO"
             )
@@ -53,7 +53,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: generatedAt,
                 stormRisk: .marginal,
                 severeRisk: .wind(probability: 0.2),
-                watches: [makeWatch(id: "watch-1", title: "Tornado Warning", now: generatedAt)],
+                alerts: [makeAlert(id: "watch-1", title: "Tornado Warning", now: generatedAt)],
                 mesos: [],
                 locationSummary: "Norman, OK"
             )
@@ -62,6 +62,47 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(store.load().snapshot?.selectedAlert?.title == "Tornado Warning")
         #expect(store.load().snapshot?.locationSummary == "Norman, OK")
         #expect(reloadedKinds == [
+            SkyAwareWidgetKind.combined
+        ])
+    }
+
+    @Test("risk projection overwrites stale tornado state with all clear")
+    func riskProjection_overwritesStaleTornadoStateWithAllClear() throws {
+        let sandbox = try makeSandboxDirectory()
+        let store = WidgetSnapshotStore(directoryURL: sandbox)
+        var reloadedKinds: [String] = []
+        let coordinator = WidgetSnapshotRefreshCoordinator(
+            store: store,
+            reloadTimeline: { reloadedKinds.append($0) }
+        )
+
+        try coordinator.refresh(
+            scope: .riskOrLocationProjection,
+            input: .init(
+                generatedAt: Date(timeIntervalSince1970: 1_700),
+                stormRisk: .marginal,
+                severeRisk: .tornado(probability: 0.02),
+                alerts: [],
+                mesos: [],
+                locationSummary: "Bennett, CO"
+            )
+        )
+        try coordinator.refresh(
+            scope: .riskOrLocationProjection,
+            input: .init(
+                generatedAt: Date(timeIntervalSince1970: 1_760),
+                stormRisk: .marginal,
+                severeRisk: .allClear,
+                alerts: [],
+                mesos: [],
+                locationSummary: "Bennett, CO"
+            )
+        )
+
+        #expect(store.load().snapshot?.severeRisk == .init(label: "No Active Threats", severity: 0))
+        #expect(Array(reloadedKinds.suffix(3)) == [
+            SkyAwareWidgetKind.stormRisk,
+            SkyAwareWidgetKind.severeRisk,
             SkyAwareWidgetKind.combined
         ])
     }
@@ -85,8 +126,8 @@ struct WidgetSnapshotRefreshCoordinatorTests {
     }
 }
 
-private func makeWatch(id: String, title: String, now: Date) -> WatchRowDTO {
-    WatchRowDTO(
+private func makeAlert(id: String, title: String, now: Date) -> AlertDTO {
+    AlertDTO(
         id: id,
         messageId: nil,
         currentRevisionSent: nil,

@@ -14,19 +14,19 @@ private struct UnavailableArcusClient: ArcusClient {
     }
 }
 
-@Suite("WatchRepo active()")
-struct WatchRepoActiveTests {
+@Suite("AlertRepo active()")
+struct AlertRepoActiveTests {
     let container: ModelContainer
-    let repo: WatchRepo
+    let repo: AlertRepo
 
     init() throws {
         let schema = Schema([Watch.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: config)
-        repo = WatchRepo(modelContainer: container)
+        repo = AlertRepo(modelContainer: container)
     }
 
-    private func makeWatch(
+    private func makeAlert(
         number: String,
         issued: Date,
         effective: Date,
@@ -74,15 +74,15 @@ struct WatchRepoActiveTests {
         )
     }
 
-    @Test("Filters out expired and not-yet-effective watches")
+    @Test("Filters out expired and not-yet-effective alerts")
     func filtersByValidityWindow() async throws {
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let tag = "-E"
 
-        let active = makeWatch(number: "1\(tag)", issued: now.addingTimeInterval(-3600), effective: now.addingTimeInterval(-300), validEnd: now.addingTimeInterval(600))
-        let expired = makeWatch(number: "2\(tag)", issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
-        let upcoming = makeWatch(number: "3\(tag)", issued: now.addingTimeInterval(-600), effective: now.addingTimeInterval(600), validEnd: now.addingTimeInterval(3600))
+        let active = makeAlert(number: "1\(tag)", issued: now.addingTimeInterval(-3600), effective: now.addingTimeInterval(-300), validEnd: now.addingTimeInterval(600))
+        let expired = makeAlert(number: "2\(tag)", issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
+        let upcoming = makeAlert(number: "3\(tag)", issued: now.addingTimeInterval(-600), effective: now.addingTimeInterval(600), validEnd: now.addingTimeInterval(3600))
 
         ctx.insert(active)
         ctx.insert(expired)
@@ -104,13 +104,13 @@ struct WatchRepoActiveTests {
     }
 
     @Test("Keeps cell-based matches even when UGC metadata is absent")
-    func matchesCellOnlyWatch() async throws {
+    func matchesCellOnlyAlert() async throws {
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let cell: Int64 = 613725958748241919
         let tag = "-C"
 
-        let cellOnly = makeWatch(
+        let cellOnly = makeAlert(
             number: "1\(tag)",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -138,7 +138,7 @@ struct WatchRepoActiveTests {
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
 
-        let activeWatch = makeWatch(
+        let activeAlert = makeAlert(
             number: "active",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -146,7 +146,7 @@ struct WatchRepoActiveTests {
             status: "Active",
             messageType: "Alert"
         )
-        let cancelled = makeWatch(
+        let cancelled = makeAlert(
             number: "cancelled",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -154,7 +154,7 @@ struct WatchRepoActiveTests {
             status: "Cancelled",
             messageType: "Cancel"
         )
-        let superseded = makeWatch(
+        let superseded = makeAlert(
             number: "superseded",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -163,7 +163,7 @@ struct WatchRepoActiveTests {
             messageType: "Update"
         )
 
-        ctx.insert(activeWatch)
+        ctx.insert(activeAlert)
         ctx.insert(cancelled)
         ctx.insert(superseded)
         try ctx.save()
@@ -185,7 +185,7 @@ struct WatchRepoActiveTests {
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let tag = "-F"
 
-        let forecastOnly = makeWatch(
+        let forecastOnly = makeAlert(
             number: "1\(tag)",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -213,7 +213,7 @@ struct WatchRepoActiveTests {
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let geometry = testPolygonGeometry()
 
-        let tornado = makeWatch(
+        let tornado = makeAlert(
             number: "warning-tor",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -223,7 +223,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
-        let severe = makeWatch(
+        let severe = makeAlert(
             number: "warning-svr",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -233,7 +233,7 @@ struct WatchRepoActiveTests {
             event: "Severe Thunderstorm Warning",
             geometry: geometry
         )
-        let flood = makeWatch(
+        let flood = makeAlert(
             number: "warning-ffw",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -256,13 +256,13 @@ struct WatchRepoActiveTests {
         #expect(geometries.allSatisfy { $0.geometry == geometry })
     }
 
-    @Test("Active warning geometry excludes watches unsupported events and nil geometry")
+    @Test("Active warning geometry excludes alerts unsupported events and nil geometry")
     func activeWarningGeometries_excludesUnsupportedAndNilGeometry() async throws {
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let geometry = testPolygonGeometry()
 
-        let watch = makeWatch(
+        let watch = makeAlert(
             number: "watch",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -272,7 +272,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Watch",
             geometry: geometry
         )
-        let unsupported = makeWatch(
+        let unsupported = makeAlert(
             number: "unsupported",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -282,7 +282,7 @@ struct WatchRepoActiveTests {
             event: "Special Weather Statement",
             geometry: geometry
         )
-        let missingGeometry = makeWatch(
+        let missingGeometry = makeAlert(
             number: "nil-geometry",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -308,7 +308,7 @@ struct WatchRepoActiveTests {
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let geometry = testPolygonGeometry()
 
-        let expired = makeWatch(
+        let expired = makeAlert(
             number: "expired",
             issued: now.addingTimeInterval(-7200),
             effective: now.addingTimeInterval(-7200),
@@ -318,7 +318,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
-        let canceledMessage = makeWatch(
+        let canceledMessage = makeAlert(
             number: "canceled-message",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -328,7 +328,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
-        let cancelledState = makeWatch(
+        let cancelledState = makeAlert(
             number: "cancelled-state",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -338,7 +338,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
-        let nonActiveState = makeWatch(
+        let nonActiveState = makeAlert(
             number: "expired-state",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -348,7 +348,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
-        let futureEffective = makeWatch(
+        let futureEffective = makeAlert(
             number: "future-effective",
             issued: now.addingTimeInterval(-60),
             effective: now.addingTimeInterval(600),
@@ -358,7 +358,7 @@ struct WatchRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
-        let supersededState = makeWatch(
+        let supersededState = makeAlert(
             number: "superseded-state",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -399,7 +399,7 @@ struct WatchRepoActiveTests {
             ]
         )
 
-        let watch = makeWatch(
+        let alert = makeAlert(
             number: "latest-warning",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -410,12 +410,12 @@ struct WatchRepoActiveTests {
             geometry: initialGeometry
         )
 
-        ctx.insert(watch)
+        ctx.insert(alert)
         try ctx.save()
 
-        watch.messageId = "urn:test:latest"
-        watch.currentRevisionSent = now.addingTimeInterval(120)
-        watch.geometry = latestGeometry
+        alert.messageId = "urn:test:latest"
+        alert.currentRevisionSent = now.addingTimeInterval(120)
+        alert.geometry = latestGeometry
         try ctx.save()
 
         let geometries = try await repo.activeWarningGeometries(on: now)
@@ -432,7 +432,7 @@ struct WatchRepoActiveTests {
         let ctx = ModelContext(container)
         let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
         let geometry = testPolygonGeometry()
-        let warning = makeWatch(
+        let warning = makeAlert(
             number: "provider-warning",
             issued: now.addingTimeInterval(-3600),
             effective: now.addingTimeInterval(-300),
@@ -446,7 +446,7 @@ struct WatchRepoActiveTests {
         ctx.insert(warning)
         try ctx.save()
 
-        let provider = ArcusAlertProvider(watchRepo: repo, client: UnavailableArcusClient())
+        let provider = ArcusAlertProvider(alertRepo: repo, client: UnavailableArcusClient())
         let geometries = try await provider.getActiveWarningGeometries(on: now)
 
         #expect(geometries.map(\.id) == ["provider-warning"])

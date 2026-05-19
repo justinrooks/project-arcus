@@ -60,7 +60,7 @@ struct BackgroundOrchestratorCadenceTests {
         let refreshed = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
         let setup = try await makeSystem(
             activeMesos: [],
-            activeWatches: [],
+            activeAlerts: [],
             refreshedLocation: refreshed,
             refreshSucceeds: true,
             settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
@@ -78,7 +78,7 @@ struct BackgroundOrchestratorCadenceTests {
         let cached = CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395)
         let setup = try await makeSystem(
             activeMesos: [],
-            activeWatches: [],
+            activeAlerts: [],
             refreshedLocation: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
             refreshSucceeds: false,
             settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
@@ -95,7 +95,7 @@ struct BackgroundOrchestratorCadenceTests {
     func staleCachedSnapshot_skipsLocationDependentWorkWhenRefreshFails() async throws {
         let setup = try await makeSystem(
             activeMesos: [],
-            activeWatches: [],
+            activeAlerts: [],
             refreshedLocation: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
             refreshSucceeds: false,
             cachedSnapshotTimestamp: Date().addingTimeInterval(-(6 * 60)),
@@ -113,7 +113,7 @@ struct BackgroundOrchestratorCadenceTests {
     func globalSpcSync_runsBeforeLocationContext() async throws {
         let setup = try await makeSystem(
             activeMesos: [],
-            activeWatches: [],
+            activeAlerts: [],
             refreshedLocation: nil,
             refreshSucceeds: false,
             cachedSnapshotTimestamp: Date().addingTimeInterval(-(6 * 60)),
@@ -197,7 +197,7 @@ struct BackgroundOrchestratorCadenceTests {
     func activeMeso_tightensCadenceToShort() async throws {
         let setup = try await makeSystem(
             activeMesos: [Self.makeMeso()],
-            activeWatches: [],
+            activeAlerts: [],
             settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
         _ = await setup.orchestrator.run()
@@ -206,11 +206,11 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(cadence == Cadence.defaultShort)
     }
 
-    @Test("Active watch tightens cadence to short")
-    func activeWatch_tightensCadenceToShort() async throws {
+    @Test("Active alert tightens cadence to short")
+    func activeAlert_tightensCadenceToShort() async throws {
         let setup = try await makeSystem(
             activeMesos: [],
-            activeWatches: [Self.makeWatch()],
+            activeAlerts: [Self.makeAlert()],
             settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
         _ = await setup.orchestrator.run()
@@ -219,11 +219,11 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(cadence == Cadence.defaultShort)
     }
 
-    @Test("No active meso/watch keeps all-clear cadence long")
+    @Test("No active meso/alert keeps all-clear cadence long")
     func noActiveHazards_keepsLongCadenceForAllClear() async throws {
         let setup = try await makeSystem(
             activeMesos: [],
-            activeWatches: [],
+            activeAlerts: [],
             settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
         )
         _ = await setup.orchestrator.run()
@@ -253,7 +253,7 @@ private extension BackgroundOrchestratorCadenceTests {
 
     func makeSystem(
         activeMesos: [MdDTO],
-        activeWatches: [WatchRowDTO],
+        activeAlerts: [AlertDTO],
         refreshedLocation: CLLocationCoordinate2D? = nil,
         refreshSucceeds: Bool = false,
         cachedSnapshotTimestamp: Date = Date(),
@@ -264,7 +264,7 @@ private extension BackgroundOrchestratorCadenceTests {
 
         let healthStore = BgHealthStore(modelContainer: container)
         let spc = FakeSpcProvider(activeMesos: activeMesos)
-        let watchProvider = FakeWatchProvider(activeWatches: activeWatches)
+        let alertProvider = FakeAlertProvider(activeAlerts: activeAlerts)
         let cachedContext = Self.makeContext(
             coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
             timestamp: cachedSnapshotTimestamp,
@@ -304,14 +304,14 @@ private extension BackgroundOrchestratorCadenceTests {
         let snapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
-            arcusAlerts: watchProvider
+            arcusAlerts: alertProvider
         )
         let coordinator = HomeIngestionCoordinator(
             executor: HomeIngestionExecutor(
                 environment: .init(
                     logger: Logger(subsystem: "SkyAwareTests", category: "BackgroundOrchestratorCadenceTests"),
                     spcSync: spc,
-                    arcusAlertSync: watchProvider,
+                    arcusAlertSync: alertProvider,
                     weatherClient: FakeWeatherClient(),
                     locationSession: locationSession,
                     snapshotStore: snapshotStore,
@@ -351,9 +351,9 @@ private extension BackgroundOrchestratorCadenceTests {
         )
     }
 
-    static func makeWatch() -> WatchRowDTO {
+    static func makeAlert() -> AlertDTO {
         let now = Date()
-        return WatchRowDTO(
+        return AlertDTO(
             id: "watch-1001",
             messageId: "watch-1001",
             title: "Tornado Watch",
@@ -498,27 +498,27 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     }
 }
 
-private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
-    private let activeWatches: [WatchRowDTO]
+private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
+    private let activeAlerts: [AlertDTO]
 
-    init(activeWatches: [WatchRowDTO]) {
-        self.activeWatches = activeWatches
+    init(activeAlerts: [AlertDTO]) {
+        self.activeAlerts = activeAlerts
     }
 
     func sync(context: LocationContext) async {}
 
     func syncRemoteAlert(id: String, revisionSent: Date?) async {}
 
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
-        activeWatches
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
+        activeAlerts
     }
 
     func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
         []
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
-        activeWatches.first(where: { $0.id == id })
+    func getAlert(id: String) async throws -> AlertDTO? {
+        activeAlerts.first(where: { $0.id == id })
     }
 }
 

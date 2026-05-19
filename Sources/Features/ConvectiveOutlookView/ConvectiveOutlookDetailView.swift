@@ -52,7 +52,13 @@ struct ConvectiveOutlookDetailView: View {
             VStack(alignment: .leading, spacing: sectionSpacing) {
                 headerCard
                     .padding()
-                    .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.12, shadowRadius: 16, shadowY: 8)
+                    .cardBackground(
+                        cornerRadius: SkyAwareRadius.card,
+                        shadowOpacity: 0.12,
+                        shadowRadius: 16,
+                        shadowY: 8,
+                        allowsGlass: false
+                    )
                 
                 detailSection(title: "Summary", text: outlook.summary)
                 
@@ -125,7 +131,13 @@ struct ConvectiveOutlookDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
-        .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.10, shadowRadius: 12, shadowY: 6)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.content,
+            shadowOpacity: 0.10,
+            shadowRadius: 12,
+            shadowY: 6,
+            allowsGlass: false
+        )
     }
 
     private func sentenceCaseRiskLevel(_ risk: String) -> String {

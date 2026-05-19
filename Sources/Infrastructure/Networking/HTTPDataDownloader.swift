@@ -512,9 +512,18 @@ public final class URLSessionHTTPClient: HTTPClient {
 }
 
 private final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
-    private(set) var metrics: URLSessionTaskMetrics?
+    private let lock = NSLock()
+    private var storedMetrics: URLSessionTaskMetrics?
+
+    var metrics: URLSessionTaskMetrics? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedMetrics
+    }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        self.metrics = metrics
+        lock.lock()
+        storedMetrics = metrics
+        lock.unlock()
     }
 }

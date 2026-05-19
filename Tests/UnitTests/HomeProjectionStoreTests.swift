@@ -46,7 +46,7 @@ struct HomeProjectionStoreTests {
         let container = try TestStore.container(for: [HomeProjection.self])
         let store = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
-        let watch = Watch.sampleWatchRows[0]
+        let alert = Watch.sampleWatchRows[0]
         let meso = MD.sampleDiscussionDTOs[0]
 
         _ = try await store.updateWeather(
@@ -55,7 +55,7 @@ struct HomeProjectionStoreTests {
             loadedAt: Date(timeIntervalSince1970: 300)
         )
         _ = try await store.updateHotAlerts(
-            watches: [watch],
+            alerts: [alert],
             mesos: [meso],
             for: context,
             loadedAt: Date(timeIntervalSince1970: 400)
@@ -70,7 +70,7 @@ struct HomeProjectionStoreTests {
         )
 
         #expect(updated.weather == makeWeather())
-        #expect(updated.activeAlerts == [watch])
+        #expect(updated.activeAlerts == [alert])
         #expect(updated.activeMesos == [meso])
         #expect(updated.stormRisk == .slight)
         #expect(updated.severeRisk == .tornado(probability: 0.10))
@@ -80,12 +80,38 @@ struct HomeProjectionStoreTests {
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 500))
     }
 
+    @Test("updating slow products overwrites stale severe risk with all clear")
+    func updateSlowProducts_overwritesStaleSevereRiskWithAllClear() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .tornado(probability: 0.02),
+            fireRisk: .clear,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        let updated = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 560)
+        )
+
+        #expect(updated.severeRisk == .allClear)
+        #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 560))
+    }
+
     @Test("updating weather keeps the existing risk and alert slices intact")
     func updateWeather_preservesExistingRiskAndAlertSlices() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let store = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
-        let watch = Watch.sampleWatchRows[1]
+        let alert = Watch.sampleWatchRows[1]
         let meso = MD.sampleDiscussionDTOs[1]
 
         _ = try await store.updateSlowProducts(
@@ -96,7 +122,7 @@ struct HomeProjectionStoreTests {
             loadedAt: Date(timeIntervalSince1970: 350)
         )
         _ = try await store.updateHotAlerts(
-            watches: [watch],
+            alerts: [alert],
             mesos: [meso],
             for: context,
             loadedAt: Date(timeIntervalSince1970: 360)
@@ -112,7 +138,7 @@ struct HomeProjectionStoreTests {
         #expect(updated.stormRisk == .enhanced)
         #expect(updated.severeRisk == .wind(probability: 0.30))
         #expect(updated.fireRisk == .elevated)
-        #expect(updated.activeAlerts == [watch])
+        #expect(updated.activeAlerts == [alert])
         #expect(updated.activeMesos == [meso])
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 350))
         #expect(updated.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 360))
@@ -127,7 +153,7 @@ struct HomeProjectionStoreTests {
         let loadedAt = Date(timeIntervalSince1970: 450)
 
         let updated = try await store.updateHotAlerts(
-            watches: [],
+            alerts: [],
             mesos: [],
             for: context,
             loadedAt: loadedAt
@@ -148,8 +174,8 @@ struct HomeProjectionStoreTests {
         let container = try TestStore.container(for: [HomeProjection.self])
         let store = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
-        var watch = Watch.sampleWatchRows[0]
-        watch.geometry = .polygon(
+        var alert = Watch.sampleWatchRows[0]
+        alert.geometry = .polygon(
             rings: [
                 [
                     DeviceAlertCoordinate(longitude: -104.9903, latitude: 39.7392),
@@ -162,16 +188,16 @@ struct HomeProjectionStoreTests {
         )
 
         let updated = try await store.updateHotAlerts(
-            watches: [watch],
+            alerts: [alert],
             mesos: [],
             for: context,
             loadedAt: Date(timeIntervalSince1970: 460)
         )
 
-        #expect(updated.activeAlerts.first?.geometry == watch.geometry)
+        #expect(updated.activeAlerts.first?.geometry == alert.geometry)
 
         let persisted = try #require(await store.projection(for: context))
-        #expect(persisted.activeAlerts.first?.geometry == watch.geometry)
+        #expect(persisted.activeAlerts.first?.geometry == alert.geometry)
     }
 
     @Test("latest widget fallback selects deterministically when timestamps tie")

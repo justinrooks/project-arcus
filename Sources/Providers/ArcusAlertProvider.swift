@@ -11,12 +11,12 @@ import OSLog
 actor ArcusAlertProvider {
     let logger = Logger.providersArcus
     let client: ArcusClient
-    let watchRepo: WatchRepo
+    let alertRepo: AlertRepo
     private var inFlightSyncs: [LocationContext.RefreshKey: Task<Void, Never>] = [:]
     
-    init(watchRepo: WatchRepo, client: ArcusClient) {
+    init(alertRepo: AlertRepo, client: ArcusClient) {
         self.client = client
-        self.watchRepo = watchRepo
+        self.alertRepo = alertRepo
     }
 }
 
@@ -29,13 +29,13 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
             return
         }
 
-        let watchRepo = self.watchRepo
+        let alertRepo = self.alertRepo
         let client = self.client
         let logger = self.logger
         logger.info("Arcus alert sync started scope=location-context")
         let task = Task {
             do {
-                try await watchRepo.refresh(
+                try await alertRepo.refresh(
                     using: client,
                     for: context.grid.countyCode ?? "",
                     and: context.grid.fireZone ?? "",
@@ -56,7 +56,7 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
     func syncRemoteAlert(id: String, revisionSent: Date?) async {
         logger.info("Arcus alert sync started scope=targeted-alert")
         do {
-            try await watchRepo.refreshAlert(using: client, id: id, revisionSent: revisionSent)
+            try await alertRepo.refreshAlert(using: client, id: id, revisionSent: revisionSent)
             logger.info("Arcus alert sync finished scope=targeted-alert")
         } catch {
             logger.error("Error syncing targeted Arcus alert: \(error, privacy: .public)")
@@ -65,8 +65,8 @@ extension ArcusAlertProvider: ArcusAlertSyncing {
 }
 
 extension ArcusAlertProvider: ArcusAlertQuerying {
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
-        try await watchRepo.active(
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
+        try await alertRepo.active(
             countyCode: context.grid.countyCode ?? "",
             fireZone: context.grid.fireZone ?? "",
             forecastZone: context.grid.forecastZone ?? "",
@@ -75,20 +75,20 @@ extension ArcusAlertProvider: ArcusAlertQuerying {
     }
 
     func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
-        try await watchRepo.activeWarningGeometries(on: date)
+        try await alertRepo.activeWarningGeometries(on: date)
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
-        try await watchRepo.watch(id: id)
+    func getAlert(id: String) async throws -> AlertDTO? {
+        try await alertRepo.alert(id: id)
     }
 }
 
 extension ArcusAlertProvider: Cleaning {
     func cleanup(daysToKeep: Int = 3) async {
         do {
-            try await watchRepo.purge()
+            try await alertRepo.purge()
         } catch {
-            logger.error("Error cleaning up Arcus-backed watch data: \(error.localizedDescription, privacy: .public)")
+            logger.error("Error cleaning up Arcus-backed alert data: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

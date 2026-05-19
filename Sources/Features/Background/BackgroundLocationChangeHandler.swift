@@ -52,7 +52,7 @@ actor BackgroundLocationChangeHandler {
                         location: locationSnapshot.coordinates,
                         placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
                     ),
-                    watches: snapshot.watches
+                    alerts: snapshot.alerts
                 )
             } catch {
                 logger.error(

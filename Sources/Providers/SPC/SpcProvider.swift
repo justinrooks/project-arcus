@@ -13,7 +13,7 @@ actor SpcProvider {
     let signposter:OSSignposter
     let outlookRepo: ConvectiveOutlookRepo
     let mesoRepo: MesoRepo
-    let watchRepo: WatchRepo
+    let alertRepo: AlertRepo
     let stormRiskRepo: StormRiskRepo
     let severeRiskRepo: SevereRiskRepo
     let fireRiskRepo: FireRiskRepo
@@ -29,7 +29,7 @@ actor SpcProvider {
     
     init(outlookRepo: ConvectiveOutlookRepo,
          mesoRepo: MesoRepo,
-         watchRepo: WatchRepo,
+         alertRepo: AlertRepo,
          stormRiskRepo: StormRiskRepo,
          severeRiskRepo: SevereRiskRepo,
          fireRiskRepo: FireRiskRepo,
@@ -37,7 +37,7 @@ actor SpcProvider {
         signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
         self.mesoRepo = mesoRepo
-        self.watchRepo = watchRepo
+        self.alertRepo = alertRepo
         self.stormRiskRepo = stormRiskRepo
         self.severeRiskRepo = severeRiskRepo
         self.fireRiskRepo = fireRiskRepo

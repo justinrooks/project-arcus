@@ -39,7 +39,7 @@ struct HomeRiskSnapshot {
 
 struct HomeAlertSnapshot {
     var mesos: [MdDTO] = []
-    var watches: [WatchRowDTO] = []
+    var alerts: [AlertDTO] = []
 }
 
 struct HomeOutlookSnapshot {
@@ -79,7 +79,7 @@ final class HomeRefreshPipeline {
     var severeRisk: SevereWeatherThreat? { riskSnapshot.severeRisk }
     var fireRisk: FireRiskLevel? { riskSnapshot.fireRisk }
     var mesos: [MdDTO] { alertSnapshot.mesos }
-    var watches: [WatchRowDTO] { alertSnapshot.watches }
+    var alerts: [AlertDTO] { alertSnapshot.alerts }
     var outlooks: [ConvectiveOutlookDTO] { outlookSnapshot.outlooks }
     var outlook: ConvectiveOutlookDTO? { outlookSnapshot.outlook }
 
@@ -89,7 +89,7 @@ final class HomeRefreshPipeline {
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
         initialMesos: [MdDTO] = [],
-        initialWatches: [WatchRowDTO] = [],
+        initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
         minimumForegroundRefreshInterval: TimeInterval = 3 * 60,
@@ -108,7 +108,7 @@ final class HomeRefreshPipeline {
         )
         self.alertSnapshot = HomeAlertSnapshot(
             mesos: initialMesos,
-            watches: initialWatches
+            alerts: initialAlerts
         )
         self.outlookSnapshot = HomeOutlookSnapshot(
             outlooks: initialOutlooks,
@@ -274,7 +274,7 @@ final class HomeRefreshPipeline {
             }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.info(
-                "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
+                "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alertss=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
             )
         } catch {
             lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
@@ -461,7 +461,7 @@ final class HomeRefreshPipeline {
             )
             alertSnapshot = HomeAlertSnapshot(
                 mesos: snapshot.mesos,
-                watches: snapshot.watches
+                alerts: snapshot.alerts
             )
         }
 

@@ -94,12 +94,12 @@ struct HomeView: View {
         return displayedProjection?.activeMesos ?? []
     }
 
-    private var displayedWatches: [WatchRowDTO] {
-        if isUITestStaticMode && refreshPipeline.watches.isEmpty == false {
-            return refreshPipeline.watches
+    private var displayedAlerts: [AlertDTO] {
+        if isUITestStaticMode && refreshPipeline.alerts.isEmpty == false {
+            return refreshPipeline.alerts
         }
         if isCurrentContextResolvedInPipeline {
-            return refreshPipeline.watches
+            return refreshPipeline.alerts
         }
         return displayedProjection?.activeAlerts ?? []
     }
@@ -148,7 +148,7 @@ struct HomeView: View {
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
         initialMesos: [MdDTO] = [],
-        initialWatches: [WatchRowDTO] = [],
+        initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil
     ) {
@@ -159,7 +159,7 @@ struct HomeView: View {
                 initialSevereRisk: initialSevereRisk,
                 initialFireRisk: initialFireRisk,
                 initialMesos: initialMesos,
-                initialWatches: initialWatches,
+                initialAlerts: initialAlerts,
                 initialOutlooks: initialOutlooks,
                 initialOutlook: initialOutlook
             )
@@ -211,8 +211,8 @@ struct HomeView: View {
                     NavigationStack {
                         AlertView(
                             mesos: displayedMesos,
-                            watches: displayedWatches,
-                            focusedWatchRequest: remoteAlertPresentationState.focusRequest,
+                            alerts: displayedAlerts,
+                            focusedAlertRequest: remoteAlertPresentationState.focusRequest,
                             onRefresh: {
                                 logger.notice("Manual alerts refresh requested")
                                 refreshPipeline.resetLocationRefreshContext()
@@ -230,7 +230,7 @@ struct HomeView: View {
                     }
                     .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
-                .badge(displayedMesos.count + displayedWatches.count)
+                .badge(displayedMesos.count + displayedAlerts.count)
 
                 Tab("Map", systemImage: "map", value: .map) {
                     MapScreenView(selectedLayer: $selectedMapLayer)
@@ -353,7 +353,7 @@ extension HomeView {
         let severeRisk = displayedSevereRisk
         let fireRisk = displayedFireRisk
         let mesos = displayedMesos
-        let watches = displayedWatches
+        let alerts = displayedAlerts
         let outlook = displayedOutlook
         let weather = displayedWeather
         let readiness = readinessState
@@ -373,7 +373,7 @@ extension HomeView {
             severeRisk: severeRisk,
             fireRisk: fireRisk,
             mesos: mesos,
-            watches: watches,
+            alerts: alerts,
             outlook: outlook,
             weather: weather,
             readinessState: readiness,
@@ -604,7 +604,7 @@ extension HomeView {
         initialSevereRisk: .tornado(probability: 0.10),
         initialFireRisk: .extreme,
         initialMesos: MD.sampleDiscussionDTOs,
-        initialWatches: Watch.sampleWatchRows,
+        initialAlerts: Watch.sampleWatchRows,
         initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,
         initialOutlook: ConvectiveOutlook.sampleOutlookDtos.first
     )

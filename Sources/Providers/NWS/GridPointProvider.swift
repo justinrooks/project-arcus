@@ -60,8 +60,4 @@ actor GridPointProvider {
             return nil
         }
     }
-
-    func currentGridPointMetadata() -> GridPointSnapshot? {
-        lastSnapshot
-    }
 }

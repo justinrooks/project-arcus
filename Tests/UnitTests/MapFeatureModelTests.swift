@@ -652,7 +652,7 @@ private struct StubSpcMapData: SpcMapData {
 private struct StubArcusAlertQuerying: ArcusAlertQuerying {
     let activeWarnings: Result<[ActiveWarningGeometry], Error>
 
-    func getActiveWatches(context: LocationContext) async throws -> [WatchRowDTO] {
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
         []
     }
 
@@ -660,7 +660,7 @@ private struct StubArcusAlertQuerying: ArcusAlertQuerying {
         try activeWarnings.get()
     }
 
-    func getWatch(id: String) async throws -> WatchRowDTO? {
+    func getAlert(id: String) async throws -> AlertDTO? {
         nil
     }
 }

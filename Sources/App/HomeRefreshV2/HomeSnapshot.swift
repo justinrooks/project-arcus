@@ -15,7 +15,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
     var mesos: [MdDTO]
-    var watches: [WatchRowDTO]
+    var alerts: [AlertDTO]
     var outlooks: [ConvectiveOutlookDTO]
     var latestOutlook: ConvectiveOutlookDTO?
     var freshness: HomeFreshnessState
@@ -28,7 +28,7 @@ struct HomeSnapshot: Sendable, Equatable {
         severeRisk: SevereWeatherThreat? = nil,
         fireRisk: FireRiskLevel? = nil,
         mesos: [MdDTO] = [],
-        watches: [WatchRowDTO] = [],
+        alerts: [AlertDTO] = [],
         outlooks: [ConvectiveOutlookDTO] = [],
         latestOutlook: ConvectiveOutlookDTO? = nil,
         freshness: HomeFreshnessState = .init()
@@ -40,7 +40,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
         self.mesos = mesos
-        self.watches = watches
+        self.alerts = alerts
         self.outlooks = outlooks
         self.latestOutlook = latestOutlook
         self.freshness = freshness

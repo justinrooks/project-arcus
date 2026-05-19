@@ -7,7 +7,7 @@ struct WidgetSnapshotBuilder {
         let availability: WidgetAvailabilityState
         let stormRisk: StormRiskLevel?
         let severeRisk: SevereWeatherThreat?
-        let watches: [WatchRowDTO]
+        let alerts: [AlertDTO]
         let mesos: [MdDTO]
         let locationSummary: String?
 
@@ -17,7 +17,7 @@ struct WidgetSnapshotBuilder {
             availability: WidgetAvailabilityState,
             stormRisk: StormRiskLevel?,
             severeRisk: SevereWeatherThreat?,
-            watches: [WatchRowDTO],
+            alerts: [AlertDTO],
             mesos: [MdDTO],
             locationSummary: String? = nil
         ) {
@@ -26,7 +26,7 @@ struct WidgetSnapshotBuilder {
             self.availability = availability
             self.stormRisk = stormRisk
             self.severeRisk = severeRisk
-            self.watches = watches
+            self.alerts = alerts
             self.mesos = mesos
             self.locationSummary = locationSummary
         }
@@ -42,7 +42,7 @@ struct WidgetSnapshotBuilder {
         }
 
         let timestamp = input.snapshotTimestamp ?? input.generatedAt
-        let activeAlerts = activeAlerts(watches: input.watches, mesos: input.mesos, now: now)
+        let activeAlerts = activeAlerts(alerts: input.alerts, mesos: input.mesos, now: now)
         let selectedAlert = selectHighestPriorityAlert(from: activeAlerts)
 
         return WidgetSnapshot(
@@ -133,8 +133,8 @@ private extension WidgetSnapshotBuilder {
         return WidgetRiskDisplayState(label: threat.message, severity: threat.priority)
     }
 
-    func activeAlerts(watches: [WatchRowDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {
-        let activeWatchCandidates = watches
+    func activeAlerts(alerts: [AlertDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {
+        let activeWatchCandidates = alerts
             .filter { $0.validEnd > now }
             .map { watch in
                 ActiveAlertCandidate(

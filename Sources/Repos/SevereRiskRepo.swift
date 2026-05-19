@@ -17,18 +17,15 @@ actor SevereRiskRepo {
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
 
-        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
-
-        if decoded.features.count == 0 {
-            logger.debug("No hail risk features to parse")
-            return
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
         }
 
         let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .hail, with: $0)
         }
 
-        try upsert(dtos)
+        try replaceCurrentAndFutureRows(for: .hail, with: dtos)
         logger.debug(
             "Updated \(dtos.count, privacy: .public) hail risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)"
         )
@@ -37,18 +34,15 @@ actor SevereRiskRepo {
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
 
-        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
-
-        if decoded.features.count == 0 {
-            logger.debug("No wind risk features to parse")
-            return
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
         }
 
         let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .wind, with: $0)
         }
 
-        try upsert(dtos)
+        try replaceCurrentAndFutureRows(for: .wind, with: dtos)
         logger.debug(
             "Updated \(dtos.count, privacy: .public) wind risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)"
         )
@@ -58,18 +52,15 @@ actor SevereRiskRepo {
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
 
-        let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) as GeoJSONFeatureCollection? ?? .empty
-
-        if decoded.features.count == 0 {
-            logger.debug("No tornado risk features to parse")
-            return
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
         }
 
         let dtos = decoded.features.compactMap {
             makeSevereRisk(for: .tornado, with: $0)
         }
 
-        try upsert(dtos)
+        try replaceCurrentAndFutureRows(for: .tornado, with: dtos)
         logger.debug(
             "Updated \(dtos.count, privacy: .public) tornado risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)"
         )
@@ -79,17 +70,17 @@ actor SevereRiskRepo {
     func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D)
         throws -> SevereWeatherThreat
     {
-        // 1) Fetch only risks that are currently valid
         let pred = #Predicate<SevereRisk> {
             date >= $0.valid && date <= $0.expires
         }
         let risks = try modelContext.fetch(
             FetchDescriptor<SevereRisk>(predicate: pred)
         )
+        let latestRisks = latestIssuanceSlicesByThreatType(from: risks)
 
         // 2) Sort by descending severity so we can early-exit on first hit.
         //    Within a threat type, prefer higher probability and then fresher issuances.
-        let bySeverity = risks.sorted { lhs, rhs in
+        let bySeverity = latestRisks.sorted { lhs, rhs in
             if lhs.threatLevel.priority != rhs.threatLevel.priority {
                 return lhs.threatLevel.priority > rhs.threatLevel.priority
             }
@@ -138,7 +129,7 @@ actor SevereRiskRepo {
 
         // Keep only the freshest record per type + probability bucket.
         // CIG overlays are bucketed independently so they are not collapsed into percent(0) buckets.
-        let risks = try modelContext.fetch(desc)
+        let risks = latestIssuanceSlicesByThreatType(from: try modelContext.fetch(desc))
         var mostRecentByBucket: [SevereRiskBucket: SevereRisk] = [:]
 
         for risk in risks {
@@ -260,11 +251,36 @@ actor SevereRiskRepo {
         }
     }
 
-    private func upsert(_ items: [any PersistentModel]) throws {
+    private func replaceCurrentAndFutureRows(
+        for type: ThreatType,
+        with items: [SevereRisk],
+        asOf now: Date = .init()
+    ) throws {
+        let predicate = #Predicate<SevereRisk> {
+            $0.expires >= now
+        }
+        let existing = try modelContext.fetch(FetchDescriptor<SevereRisk>(predicate: predicate))
+        for item in existing where item.type == type {
+            modelContext.delete(item)
+        }
+
         for item in items {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func latestIssuanceSlicesByThreatType(from risks: [SevereRisk]) -> [SevereRisk] {
+        Dictionary(grouping: risks, by: \.type)
+            .values
+            .flatMap { threatRisks -> [SevereRisk] in
+                guard let latest = threatRisks.max(by: { lhs, rhs in isMoreRecent(rhs, than: lhs) }) else { return [] }
+                return threatRisks.filter {
+                    $0.issued == latest.issued &&
+                    $0.valid == latest.valid &&
+                    $0.expires == latest.expires
+                }
+            }
     }
 
     private func isMoreRecent(_ lhs: SevereRisk, than rhs: SevereRisk) -> Bool {

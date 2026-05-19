@@ -3,19 +3,19 @@ import Foundation
 import Testing
 @testable import SkyAware
 
-@Suite("Watch notifications")
-struct WatchNotificationTests {
+@Suite("Alert notifications")
+struct AlertNotificationTests {
     private let centralTime = TimeZone(secondsFromGMT: -6 * 3_600)!
 
-    @Test("rule creates an event for the newest active watch")
-    func ruleCreatesEventForNewestActiveWatch() throws {
+    @Test("rule creates an event for the newest active alert")
+    func ruleCreatesEventForNewestActiveAlert() throws {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
-        let olderWatch = makeWatch(
+        let olderAlert = makeAlert(
             id: "older",
             issued: now.addingTimeInterval(-7_200),
             ends: now.addingTimeInterval(7_200)
         )
-        let newerWatch = makeWatch(
+        let newerAlert = makeAlert(
             id: "newer",
             issued: now.addingTimeInterval(-1_800),
             ends: now.addingTimeInterval(7_200)
@@ -28,7 +28,7 @@ struct WatchNotificationTests {
                     localTZ: centralTime,
                     location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
                     placeMark: "Oklahoma City, OK",
-                    watches: [olderWatch, newerWatch]
+                    alerts: [olderAlert, newerAlert]
                 )
             )
         )
@@ -36,11 +36,11 @@ struct WatchNotificationTests {
         #expect(event.kind == .watchNotification)
         #expect(event.key == "watch:newer")
         #expect(event.payload["watchId"] as? String == "newer")
-        #expect(event.payload["title"] as? String == newerWatch.title)
+        #expect(event.payload["title"] as? String == newerAlert.title)
     }
 
-    @Test("gate blocks duplicate watch notifications")
-    func gateBlocksDuplicateWatchNotifications() async {
+    @Test("gate blocks duplicate alert notifications")
+    func gateBlocksDuplicateAlertNotifications() async {
         let gate = WatchGate(store: InMemoryNotificationStore())
         let event = NotificationEvent(
             kind: .watchNotification,
@@ -55,8 +55,8 @@ struct WatchNotificationTests {
         #expect(secondPass == false)
     }
 
-    @Test("gate remembers more than the most recent watch id")
-    func gateRemembersMoreThanMostRecentWatchID() async {
+    @Test("gate remembers more than the most recent alert id")
+    func gateRemembersMoreThanMostRecentAlertID() async {
         let gate = WatchGate(store: InMemoryNotificationStore())
         let firstEvent = NotificationEvent(
             kind: .watchNotification,
@@ -74,8 +74,8 @@ struct WatchNotificationTests {
         #expect(await gate.allow(firstEvent, now: .now) == false)
     }
 
-    @Test("engine sends a single notification for a new watch")
-    func engineSendsNotificationForNewWatch() async {
+    @Test("engine sends a single notification for a new alert")
+    func engineSendsNotificationForNewAlert() async {
         let sender = RecordingSender()
         let engine = WatchEngine(
             rule: WatchRule(),
@@ -91,7 +91,7 @@ struct WatchNotificationTests {
                 location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
                 placeMark: "Oklahoma City, OK"
             ),
-            watches: [makeWatch(id: "abc123", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+            alerts: [makeAlert(id: "abc123", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
         )
 
         #expect(didSend)
@@ -100,8 +100,8 @@ struct WatchNotificationTests {
         #expect(sent[0].id == "watch:abc123")
     }
 
-    @Test("composer uses server-aligned wording for known watch event types")
-    func composerUsesServerAlignedWordingForWatchType() {
+    @Test("composer uses server-aligned wording for known alert event types")
+    func composerUsesServerAlignedWordingForAlertType() {
         let event = NotificationEvent(
             kind: .watchNotification,
             key: "watch:abc123",
@@ -134,7 +134,7 @@ struct WatchNotificationTests {
         #expect(message.subtitle == "For your area")
     }
 
-    @Test("background location change waits for unified ingestion before sending a watch notification")
+    @Test("background location change waits for unified ingestion before sending a alert notification")
     func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async throws {
         let sender = RecordingSender()
         let watchEngine = WatchEngine(
@@ -149,7 +149,7 @@ struct WatchNotificationTests {
             snapshot: HomeSnapshot(
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
-                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+                alerts: [makeAlert(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
             ),
             runGate: gate
         )
@@ -177,8 +177,8 @@ struct WatchNotificationTests {
         #expect((await sender.sent()).count == 1)
     }
 
-    @Test("duplicate background location changes do not re-notify the same watch")
-    func duplicateBackgroundLocationChangesDoNotRenotifySameWatch() async {
+    @Test("duplicate background location changes do not re-notify the same alert")
+    func duplicateBackgroundLocationChangesDoNotRenotifySameAlert() async {
         let sender = RecordingSender()
         let watchEngine = WatchEngine(
             rule: WatchRule(),
@@ -191,7 +191,7 @@ struct WatchNotificationTests {
             snapshot: HomeSnapshot(
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
-                watches: [makeWatch(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+                alerts: [makeAlert(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
             )
         )
         let handler = BackgroundLocationChangeHandler(
@@ -221,14 +221,14 @@ struct WatchNotificationTests {
         return calendar.date(from: components)!
     }
 
-    private func makeWatch(
+    private func makeAlert(
         id: String,
         issued: Date,
         ends: Date,
         title: String = "Tornado Watch",
         headline: String = "Severe storms are possible"
-    ) -> WatchRowDTO {
-        WatchRowDTO(
+    ) -> AlertDTO {
+        AlertDTO(
             id: id,
             messageId: id,
             title: title,
