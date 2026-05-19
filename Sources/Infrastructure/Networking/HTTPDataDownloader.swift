@@ -331,7 +331,7 @@ public final class URLSessionHTTPClient: HTTPClient {
                 await observer.didReceive(response: http, for: url)
 
                 let responseHeaders = normalizedHeaders(from: http.allHeaderFields)
-                let responseSource = source(for: await metricsCollector.metrics)
+                let responseSource = source(for: metricsCollector.metrics)
                 let liveResponse = HTTPResponse(status: http.statusCode,
                                                 headers: responseHeaders,
                                                 data: data.isEmpty ? nil : data,
@@ -511,24 +511,19 @@ public final class URLSessionHTTPClient: HTTPClient {
     }
 }
 
-private actor URLSessionTaskMetricsStore {
-    private(set) var metrics: URLSessionTaskMetrics?
-
-    func set(_ metrics: URLSessionTaskMetrics) {
-        self.metrics = metrics
-    }
-}
-
 private final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
-    private let store = URLSessionTaskMetricsStore()
+    private let lock = NSLock()
+    private var storedMetrics: URLSessionTaskMetrics?
 
     var metrics: URLSessionTaskMetrics? {
-        get async { await store.metrics }
+        lock.lock()
+        defer { lock.unlock() }
+        return storedMetrics
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        Task {
-            await store.set(metrics)
-        }
+        lock.lock()
+        storedMetrics = metrics
+        lock.unlock()
     }
 }
