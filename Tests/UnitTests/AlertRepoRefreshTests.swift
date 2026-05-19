@@ -16,16 +16,16 @@ private struct StubArcusClient: ArcusClient {
     }
 }
 
-@Suite("WatchRepo refresh()", .serialized)
-struct WatchRepoRefreshTests {
+@Suite("AlertRepo refresh()", .serialized)
+struct AlertRepoRefreshTests {
     let container: ModelContainer
-    let repo: WatchRepo
+    let repo: AlertRepo
 
     init() throws {
         let schema = Schema([Watch.self])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: config)
-        repo = WatchRepo(modelContainer: container)
+        repo = AlertRepo(modelContainer: container)
     }
 
     @Test("Skips cancelled Arcus alerts even if timing fields are still active")
@@ -120,10 +120,10 @@ struct WatchRepoRefreshTests {
             revisionSent: Date(timeIntervalSince1970: 1_711_282_900)
         )
 
-        let watch = try #require(await repo.watch(id: "123e4567-e89b-12d3-a456-426614174001"))
-        #expect(watch.messageId == "urn:alert:targeted")
-        #expect(watch.currentRevisionSent == ISO8601DateFormatter().date(from: "2026-03-24T12:15:00Z"))
-        #expect(watch.geometry == nil)
+        let alert = try #require(await repo.alert(id: "123e4567-e89b-12d3-a456-426614174001"))
+        #expect(alert.messageId == "urn:alert:targeted")
+        #expect(alert.currentRevisionSent == ISO8601DateFormatter().date(from: "2026-03-24T12:15:00Z"))
+        #expect(alert.geometry == nil)
     }
 
     @Test("refresh persists polygon geometry from Arcus payloads")
@@ -139,8 +139,8 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let watch = try #require(await repo.watch(id: id))
-        #expect(watch.geometry == polygonGeometry())
+        let alert = try #require(await repo.alert(id: id))
+        #expect(alert.geometry == polygonGeometry())
 
         let active = try await repo.active(
             countyCode: "COC031",
@@ -166,8 +166,8 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let watch = try #require(await repo.watch(id: id))
-        #expect(watch.geometry == multiPolygonGeometry())
+        let alert = try #require(await repo.alert(id: id))
+        #expect(alert.geometry == multiPolygonGeometry())
     }
 
     @Test("refresh replaces stored geometry for an existing alert")
@@ -188,7 +188,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let stored = try #require(await repo.watch(id: id))
+        let stored = try #require(await repo.alert(id: id))
         #expect(stored.messageId == "urn:alert:initial")
         #expect(stored.geometry == polygonGeometry())
 
@@ -207,15 +207,15 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let reloaded = try #require(await repo.watch(id: id))
+        let reloaded = try #require(await repo.alert(id: id))
         let expectedRevisionSent = ISO8601DateFormatter().date(from: "2026-03-24T12:45:00Z")
         #expect(reloaded.messageId == "urn:alert:updated")
         #expect(reloaded.currentRevisionSent == expectedRevisionSent)
         #expect(reloaded.geometry == multiPolygonGeometry())
 
         let canonicalID = ArcusAlertIdentifier.canonical(id)
-        let predicate = #Predicate<Watch> { watch in
-            watch.nwsId == canonicalID
+        let predicate = #Predicate<Watch> { alert in
+            alert.nwsId == canonicalID
         }
         let storedCount = try ModelContext(container).fetchCount(FetchDescriptor<Watch>(predicate: predicate))
         #expect(storedCount == 1)
@@ -239,7 +239,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let stored = try #require(await repo.watch(id: id))
+        let stored = try #require(await repo.alert(id: id))
         #expect(stored.geometry == polygonGeometry())
 
         let updated = alertPayloadArrayJSON(
@@ -256,7 +256,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let reloaded = try #require(await repo.watch(id: id))
+        let reloaded = try #require(await repo.alert(id: id))
         #expect(reloaded.messageId == "urn:alert:updated")
         #expect(reloaded.geometry == nil)
     }
@@ -294,7 +294,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let reloaded = try #require(await repo.watch(id: id))
+        let reloaded = try #require(await repo.alert(id: id))
         #expect(reloaded.messageId == "urn:alert:cancelled")
         #expect(reloaded.messageType == "Cancel")
         #expect(reloaded.geometry == nil)
@@ -346,7 +346,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let reloaded = try #require(await repo.watch(id: id))
+        let reloaded = try #require(await repo.alert(id: id))
         #expect(reloaded.messageId == "urn:alert:superseded")
         #expect(reloaded.messageType == "Update")
         #expect(reloaded.geometry == nil)
@@ -390,7 +390,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        let reloaded = try #require(await repo.watch(id: id))
+        let reloaded = try #require(await repo.alert(id: id))
         #expect(reloaded.messageId == "urn:alert:expired")
         #expect(reloaded.messageType == "Update")
         #expect(reloaded.geometry == nil)
@@ -419,7 +419,7 @@ struct WatchRepoRefreshTests {
             in: 613725958748241919
         )
 
-        #expect(try await repo.watch(id: id) == nil)
+        #expect(try await repo.alert(id: id) == nil)
 
         let count = try ModelContext(container).fetchCount(Watch.allWatchesDescriptor())
         #expect(count == 0)
@@ -467,10 +467,10 @@ struct WatchRepoRefreshTests {
             in: nil
         )
 
-        let watch = try #require(await repo.watch(id: id))
+        let alert = try #require(await repo.alert(id: id))
         let expectedEnds = ISO8601DateFormatter().date(from: "2026-05-12T22:00:00Z")
-        #expect(watch.ends == expectedEnds)
-        #expect(watch.title == "Air Quality Alert")
+        #expect(alert.ends == expectedEnds)
+        #expect(alert.title == "Air Quality Alert")
 
         let now = ISO8601DateFormatter().date(from: "2026-05-11T23:00:00Z")!
         let active = try await repo.active(
@@ -525,11 +525,11 @@ struct WatchRepoRefreshTests {
             in: nil
         )
 
-        let watch = try #require(await repo.watch(id: id))
+        let alert = try #require(await repo.alert(id: id))
         let expectedSent = Date(timeIntervalSince1970: 1_778_537_400) // 2026-05-11T22:10:00Z
         let expectedExpires = Date(timeIntervalSince1970: 1_778_623_200) // 2026-05-12T22:00:00Z
-        #expect(watch.issued == expectedSent)
-        #expect(watch.ends == expectedExpires)
+        #expect(alert.issued == expectedSent)
+        #expect(alert.ends == expectedExpires)
 
         let now = Date(timeIntervalSince1970: 1_778_541_000) // 2026-05-11T23:10:00Z
         let active = try await repo.active(

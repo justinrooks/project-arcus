@@ -13,7 +13,7 @@ import UIKit
 struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
     let id = UUID()
     let alertID: String
-    let watch: AlertDTO?
+    let alert: AlertDTO?
 }
 
 @Observable
@@ -21,8 +21,8 @@ struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
 final class RemoteAlertPresentationState {
     var focusRequest: RemoteAlertFocusRequest?
 
-    func present(alertID: String, watch: AlertDTO?) {
-        focusRequest = RemoteAlertFocusRequest(alertID: alertID, watch: watch)
+    func present(alertID: String, alert: AlertDTO?) {
+        focusRequest = RemoteAlertFocusRequest(alertID: alertID, alert: alert)
     }
 }
 
@@ -53,15 +53,15 @@ actor RemoteHotAlertHandler {
 
     func handleRemoteNotification(_ remoteAlertContext: HomeRemoteAlertContext) async -> UIBackgroundFetchResult {
         do {
-            let previousWatch = try await arcusAlerts.getWatch(id: remoteAlertContext.alertID)
+            let previousAlert = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
             _ = try await coordinator.enqueueAndWait(
                 .remoteHotAlertReceived,
                 locationContext: nil,
                 remoteAlertContext: remoteAlertContext
             )
             await refreshWidgetSnapshotAfterRemoteAlertIngestion()
-            let latestWatch = try await arcusAlerts.getWatch(id: remoteAlertContext.alertID)
-            return remoteAlertContext.fetchResult(before: previousWatch, after: latestWatch)
+            let latestAlert = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
+            return remoteAlertContext.fetchResult(before: previousAlert, after: latestAlert)
         } catch {
             logger.error("Remote hot-alert receipt failed: \(error.localizedDescription, privacy: .public)")
             return .failed
@@ -76,14 +76,14 @@ actor RemoteHotAlertHandler {
                 remoteAlertContext: remoteAlertContext
             )
             await refreshWidgetSnapshotAfterRemoteAlertIngestion()
-            let watch = try await arcusAlerts.getWatch(id: remoteAlertContext.alertID)
+            let alertDTO = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
             await MainActor.run {
-                presentationState.present(alertID: remoteAlertContext.alertID, watch: watch)
+                presentationState.present(alertID: remoteAlertContext.alertID, alert: alertDTO)
             }
         } catch {
             logger.error("Remote hot-alert open failed: \(error.localizedDescription, privacy: .public)")
             await MainActor.run {
-                presentationState.present(alertID: remoteAlertContext.alertID, watch: nil)
+                presentationState.present(alertID: remoteAlertContext.alertID, alert: nil)
             }
         }
     }
@@ -133,7 +133,7 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
                 snapshotTimestamp: latestProjection.updatedAt,
                 stormRisk: latestProjection.stormRisk,
                 severeRisk: latestProjection.severeRisk,
-                watches: latestProjection.activeAlerts,
+                alerts: latestProjection.activeAlerts,
                 mesos: latestProjection.activeMesos,
                 locationSummary: latestProjection.placemarkSummary
             )
@@ -154,14 +154,14 @@ extension HomeRemoteAlertContext {
     }
 
     func fetchResult(
-        before previousWatch: AlertDTO?,
-        after latestWatch: AlertDTO?
+        before previousAlert: AlertDTO?,
+        after latestAlert: AlertDTO?
     ) -> UIBackgroundFetchResult {
-        guard let latestWatch, latestWatch.matches(self) else {
+        guard let latestAlert, latestAlert.matches(self) else {
             return .failed
         }
 
-        if let previousWatch, previousWatch.matches(self), previousWatch.matchesRevision(of: latestWatch) {
+        if let previousAlert, previousAlert.matches(self), previousAlert.matchesRevision(of: latestAlert) {
             return .noData
         }
 

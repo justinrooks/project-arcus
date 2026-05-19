@@ -11,19 +11,19 @@ struct AlertView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let mesos: [MdDTO]
-    let watches: [AlertDTO]
-    let focusedWatchRequest: RemoteAlertFocusRequest?
+    let alerts: [AlertDTO]
+    let focusedAlertRequest: RemoteAlertFocusRequest?
     let onRefresh: (() async -> Void)?
     
     @State private var selectedMeso: MdDTO?
-    @State private var selectedWatch: AlertDTO?
+    @State private var selectedAlert: AlertDTO?
     
     private var hasNoAlerts: Bool {
-        watches.isEmpty && mesos.isEmpty
+        alerts.isEmpty && mesos.isEmpty
     }
     
-    private var sortedWatches: [AlertDTO] {
-        watches.sorted { lhs, rhs in
+    private var sortedAlerts: [AlertDTO] {
+        alerts.sorted { lhs, rhs in
             if lhs.ends != rhs.ends {
                 return lhs.ends < rhs.ends
             }
@@ -41,11 +41,11 @@ struct AlertView: View {
     }
     
     private var latestIssued: Date? {
-        (watches.map(\.issued) + mesos.map(\.issued)).max()
+        (alerts.map(\.issued) + mesos.map(\.issued)).max()
     }
     
     private var totalAlertCount: Int {
-        watches.count + mesos.count
+        alerts.count + mesos.count
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -58,13 +58,13 @@ struct AlertView: View {
     
     init(
         mesos: [MdDTO],
-        watches: [AlertDTO],
-        focusedWatchRequest: RemoteAlertFocusRequest? = nil,
+        alerts: [AlertDTO],
+        focusedAlertRequest: RemoteAlertFocusRequest? = nil,
         onRefresh: (() async -> Void)? = nil
     ) {
         self.mesos = mesos
-        self.watches = watches
-        self.focusedWatchRequest = focusedWatchRequest
+        self.alerts = alerts
+        self.focusedAlertRequest = focusedAlertRequest
         self.onRefresh = onRefresh
     }
     
@@ -73,17 +73,17 @@ struct AlertView: View {
             LazyVStack(alignment: .leading, spacing: 18) {
                 overviewCard
                 
-                if sortedWatches.isEmpty == false {
+                if sortedAlerts.isEmpty == false {
                     alertSection(
                         title: "Alerts",
-                        subtitle: "\(watches.count) active",
+                        subtitle: "\(alerts.count) active",
                         symbol: "exclamationmark.triangle.fill"
                     ) {
-                        ForEach(sortedWatches) { watch in
+                        ForEach(sortedAlerts) { alert in
                             Button {
-                                selectedWatch = watch
+                                selectedAlert = alert
                             } label: {
-                                AlertRowView(alert: watch)
+                                AlertRowView(alert: alert)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .contentShape(Rectangle())
                             }
@@ -94,7 +94,7 @@ struct AlertView: View {
                                     pressedOverlayOpacity: 0.06
                                 )
                             )
-                            .accessibilityIdentifier("alert-center-watch-row-\(watch.id)")
+                            .accessibilityIdentifier("alert-center-watch-row-\(alert.id)")
                         }
                     }
                 }
@@ -132,15 +132,15 @@ struct AlertView: View {
             guard let onRefresh else { return }
             await onRefresh()
         }
-        .task(id: focusedWatchRequest?.id) {
-            guard let focusedWatch = focusedWatchRequest?.watch else { return }
-            selectedWatch = focusedWatch
+        .task(id: focusedAlertRequest?.id) {
+            guard let focusedAlert = focusedAlertRequest?.alert else { return }
+            selectedAlert = focusedAlert
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .navigationDestination(item: $selectedWatch) { watch in
+        .navigationDestination(item: $selectedAlert) { alert in
             ScrollView {
-                WatchDetailView(watch: watch, layout: .full)
+                AlertDetailView(alert: alert, layout: .full)
                     .padding(.top, 8)
                     .padding(.bottom, 24)
             }
@@ -196,7 +196,7 @@ struct AlertView: View {
             return "SkyAware is monitoring your local area. New alerts and mesoscale discussions will appear here as soon as they are issued."
         }
         
-        if sortedWatches.isEmpty {
+        if sortedAlerts.isEmpty {
             return "Mesoscale discussions are active for your area. Open one to check timing, concern area, and warning potential."
         }
         
@@ -253,7 +253,7 @@ struct AlertView: View {
 
 #Preview {
     NavigationStack {
-        AlertView(mesos: MD.sampleDiscussionDTOs, watches: Watch.sampleWatchRows)
+        AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.visible, for: .navigationBar)

@@ -18,35 +18,35 @@ struct ActiveAlertSummaryView: View {
     }
 
     let mesos: [MdDTO]
-    let watches: [AlertDTO]
+    let alerts: [AlertDTO]
     let isLoading: Bool
     let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
     private let sortedMesos: [MdDTO]
-    private let sortedWatches: [AlertDTO]
+    private let sortedAlerts: [AlertDTO]
     
     @State private var selectedMeso: MdDTO? = nil
-    @State private var selectedWatch: AlertDTO? = nil
+    @State private var selectedAlert: AlertDTO? = nil
     @State private var selectedMesoDetent: PresentationDetent = .medium
-    @State private var selectedWatchDetent: PresentationDetent = .medium
+    @State private var selectedAlertDetent: PresentationDetent = .medium
     init(
         mesos: [MdDTO],
-        watches: [AlertDTO],
+        alerts: [AlertDTO],
         isLoading: Bool = false,
         isOffline: Bool = false,
         onOpenAlertCenter: (() -> Void)? = nil
     ) {
         self.mesos = mesos
-        self.watches = watches
+        self.alerts = alerts
         self.isLoading = isLoading
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
         self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
-        self.sortedWatches = watches.sorted { $0.expires < $1.expires }
+        self.sortedAlerts = alerts.sorted { $0.expires < $1.expires }
     }
 
     private var hasRenderableAlerts: Bool {
-        sortedMesos.isEmpty == false || sortedWatches.isEmpty == false
+        sortedMesos.isEmpty == false || sortedAlerts.isEmpty == false
     }
 
     private var contentState: ContentState {
@@ -69,15 +69,15 @@ struct ActiveAlertSummaryView: View {
     @ViewBuilder
     private var alertsContent: some View {
         ActiveAlertSection(
-            label: "Watches",
-            items: sortedWatches,
+            label: "Watches & Warningso",
+            items: sortedAlerts,
             limit: 2,
             onSelect: {
-                selectedWatchDetent = .medium
-                selectedWatch = $0
+                selectedAlertDetent = .medium
+                selectedAlert = $0
             }
-        ) { watch in
-            WatchRowView(watch: watch)
+        ) { alert in
+            WatchRowView(alert: alert)
         }
 
         ActiveAlertSection(
@@ -145,9 +145,9 @@ struct ActiveAlertSummaryView: View {
                     .padding(.horizontal, 6)
             }
         }
-        .sheet(item: $selectedWatch) { watch in
-            sheetContent(selection: $selectedWatchDetent) { isExpanded in
-                WatchDetailView(watch: watch, layout: .sheet, isExpanded: isExpanded)
+        .sheet(item: $selectedAlert) { alert in
+            sheetContent(selection: $selectedAlertDetent) { isExpanded in
+                AlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
             }
@@ -210,7 +210,7 @@ struct ActiveAlertSummaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("No Active Alerts", systemImage: "checkmark.shield")
                 .sectionLabel()
-            Text("Your local area currently has no active watches or mesoscale discussions.")
+            Text("Your local area currently has no active alerts or mesoscale discussions.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -365,7 +365,7 @@ private struct MesoRowView: View {
 }
 
 private struct WatchRowView: View {
-    let watch: AlertDTO
+    let alert: AlertDTO
     private static let dayFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "E"
@@ -374,7 +374,7 @@ private struct WatchRowView: View {
     
     var body: some View {
         HStack(alignment: .top, spacing: 15) {
-            let (icon, color) = styleForType(.watch, watch.title)
+            let (icon, color) = styleForType(.watch, alert.title)
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(color)
@@ -383,12 +383,12 @@ private struct WatchRowView: View {
 
             VStack(alignment: .leading) {
                 HStack {
-                    Text("\(watch.title)")
+                    Text("\(alert.title)")
                         .font(.subheadline.weight(.semibold))
                     Spacer()
                     VStack(alignment: .trailing) {
-                        let txt = buildDisplay(watch: watch)
-                        Text("Until \(txt) \(watch.validEnd, style: .time)")
+                        let txt = buildDisplay(alert: alert)
+                        Text("Until \(txt) \(alert.validEnd, style: .time)")
                             .monospacedDigit()
                             .font(.caption.weight(.semibold))
                     }
@@ -397,7 +397,7 @@ private struct WatchRowView: View {
                     .padding(.vertical, 6)
 //                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: color.opacity(0.16))
                 }
-                if let sevTags = watch.SevereRiskTags {
+                if let sevTags = alert.SevereRiskTags {
                     HStack {
                         VStack(alignment: .leading) {
                             Text(sevTags)
@@ -413,14 +413,14 @@ private struct WatchRowView: View {
         .padding(.vertical, 3)
     }
 
-    private func buildDisplay(watch: AlertDTO) -> String {
-        Self.dayFormatter.string(from: watch.validEnd)
+    private func buildDisplay(alert: AlertDTO) -> String {
+        Self.dayFormatter.string(from: alert.validEnd)
     }
 }
 
 #Preview {
     NavigationStack {
-        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, watches: Watch.sampleWatchRows)
+        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
             .toolbar(.hidden, for: .navigationBar)
             .background(.skyAwareBackground)
             .environment(\.dependencies, Dependencies.unconfigured)

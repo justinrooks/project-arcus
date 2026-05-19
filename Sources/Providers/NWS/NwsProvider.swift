@@ -12,16 +12,16 @@ import OSLog
 actor NwsProvider {
     let logger = Logger.providersNws
     let client: NwsClient
-    let watchRepo: WatchRepo
+    let alertRepo: AlertRepo
     let metadataRepo: NwsMetadataRepo
     let gridPointProvider: GridPointProvider
     private var inFlightWatchSyncTasks: [GridRefreshKey: Task<Bool, Never>] = [:]
     private var lastWatchSyncAtByLocation: [GridRefreshKey: Date] = [:]
     private let watchSyncCooldownSeconds: TimeInterval = 30
     
-    init(watchRepo: WatchRepo, metadataRepo: NwsMetadataRepo, gridMetadataProvider: GridPointProvider, client: NwsClient) {
+    init(alertRepo: AlertRepo, metadataRepo: NwsMetadataRepo, gridMetadataProvider: GridPointProvider, client: NwsClient) {
         self.client = client
-        self.watchRepo = watchRepo
+        self.alertRepo = alertRepo
         self.metadataRepo = metadataRepo
         self.gridPointProvider = gridMetadataProvider
     }

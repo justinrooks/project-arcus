@@ -349,7 +349,7 @@ private actor CountingMapSyncClient: SpcClient {
 private func makeSpcProviderForMapSyncTests(container: ModelContainer, client: any SpcClient) -> SpcProvider {
     let outlookRepo = ConvectiveOutlookRepo(modelContainer: container)
     let mesoRepo = MesoRepo(modelContainer: container)
-    let watchRepo = WatchRepo(modelContainer: container)
+    let alertRepo = AlertRepo(modelContainer: container)
     let stormRiskRepo = StormRiskRepo(modelContainer: container)
     let severeRiskRepo = SevereRiskRepo(modelContainer: container)
     let fireRiskRepo = FireRiskRepo(modelContainer: container)
@@ -357,7 +357,7 @@ private func makeSpcProviderForMapSyncTests(container: ModelContainer, client: a
     return SpcProvider(
         outlookRepo: outlookRepo,
         mesoRepo: mesoRepo,
-        watchRepo: watchRepo,
+        alertRepo: alertRepo,
         stormRiskRepo: stormRiskRepo,
         severeRiskRepo: severeRiskRepo,
         fireRiskRepo: fireRiskRepo,

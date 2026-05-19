@@ -57,13 +57,13 @@ actor HomeProjectionStore {
     }
 
     func updateHotAlerts(
-        watches: [AlertDTO],
+        alerts: [AlertDTO],
         mesos: [MdDTO],
         for context: LocationContext,
         loadedAt: Date = .now
     ) throws -> HomeProjectionRecord {
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
-        projection.activeAlerts = watches
+        projection.activeAlerts = alerts
         projection.activeMesos = mesos
         projection.lastHotAlertsLoadAt = loadedAt
         projection.updatedAt = loadedAt

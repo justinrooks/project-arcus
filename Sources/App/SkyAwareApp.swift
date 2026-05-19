@@ -88,70 +88,12 @@ struct SkyAwareApp: App {
     
     var body: some Scene {
         WindowGroup {
-            Group {
-                if onboardingComplete {
-                    Group {
-                        if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
-                            HomeView(initialWatches: Self.uiTestSeedWatches)
-                        } else {
-                            HomeView()
-                        }
-                    }
-                        .environment(\.dependencies, deps)
-                        .environment(locationSession)
-                        .appBackground()
-                        .onAppear {
-                            if disclaimerVersion < currentDisclaimerVersion {
-                                showDisclaimerUpdate = true
-                            }
-                            let suppressLocationRestrictedSheet = ProcessInfo.processInfo.environment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] == "1"
-                            if (locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted) &&
-                                suppressLocationRestrictedSheet == false {
-                                showLocationPermissionAlert = true
-                            }
-                        }
-                        .sheet(isPresented: $showDisclaimerUpdate) {
-                            // Just show the disclaimer screen in a sheet
-                            NavigationStack {
-                                DisclaimerView {
-                                    disclaimerVersion = currentDisclaimerVersion
-                                    showDisclaimerUpdate = false
-                                }
-                                .navigationTitle("Updated Disclaimer")
-                                .navigationBarTitleDisplayMode(.inline)
-                            }
-                            .interactiveDismissDisabled() // Can't swipe away
-                        }
-                        .sheet(isPresented: $showLocationPermissionAlert) {
-                            // Just show the location screen in a sheet
-                            NavigationStack {
-                                LocationPermissionView(
-                                    isWorking: false,
-                                    statusMessage: nil,
-                                    onEnable: {
-                                        locationSession.requestInteractiveAuthorization()
-                                        showLocationPermissionAlert = false
-                                    },
-                                    onSkip: {
-                                        showLocationPermissionAlert = false
-                                    }
-                                )
-                                .navigationTitle("Location Restricted")
-                                .navigationBarTitleDisplayMode(.inline)
-                            }
-                            .interactiveDismissDisabled() // Can't swipe away
-                        }
-                } else {
-                    OnboardingView()
-                        .environment(\.dependencies, deps)
-                        .environment(locationSession)
+            rootContent
+                .environment(remoteAlertPresentationState)
+                .environment(runtimeConnectivityState)
+                .onAppear {
+                    locationSession.handleScenePhaseChange(scenePhase)
                 }
-            }
-            .environment(remoteAlertPresentationState)
-            .environment(runtimeConnectivityState)
-            .onAppear {
-                locationSession.handleScenePhaseChange(scenePhase)
-            }
         }
         .modelContainer(deps.modelContainer)
         .backgroundTask(.appRefresh(deps.appRefreshID)) {
@@ -228,6 +170,84 @@ struct SkyAwareApp: App {
 }
 
 private extension SkyAwareApp {
+    @ViewBuilder
+    var rootContent: some View {
+        if onboardingComplete {
+            homeContent
+        } else {
+            onboardingContent
+        }
+    }
+
+    var homeContent: some View {
+        currentHomeView
+            .environment(\.dependencies, deps)
+            .environment(locationSession)
+            .appBackground()
+            .onAppear(perform: handleHomeOnAppear)
+            .sheet(isPresented: $showDisclaimerUpdate, content: disclaimerSheet)
+            .sheet(isPresented: $showLocationPermissionAlert, content: locationPermissionSheet)
+    }
+
+    @ViewBuilder
+    var currentHomeView: some View {
+        if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
+            HomeView(initialAlerts: Self.uiTestSeedWatches)
+        } else {
+            HomeView()
+        }
+    }
+
+    var onboardingContent: some View {
+        OnboardingView()
+            .environment(\.dependencies, deps)
+            .environment(locationSession)
+    }
+
+    func handleHomeOnAppear() {
+        if disclaimerVersion < currentDisclaimerVersion {
+            showDisclaimerUpdate = true
+        }
+
+        let suppressLocationRestrictedSheet =
+            ProcessInfo.processInfo.environment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] == "1"
+        if (locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted) &&
+            suppressLocationRestrictedSheet == false {
+            showLocationPermissionAlert = true
+        }
+    }
+
+    func disclaimerSheet() -> some View {
+        NavigationStack {
+            DisclaimerView {
+                disclaimerVersion = currentDisclaimerVersion
+                showDisclaimerUpdate = false
+            }
+            .navigationTitle("Updated Disclaimer")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .interactiveDismissDisabled()
+    }
+
+    func locationPermissionSheet() -> some View {
+        NavigationStack {
+            LocationPermissionView(
+                isWorking: false,
+                statusMessage: nil,
+                onEnable: {
+                    locationSession.requestInteractiveAuthorization()
+                    showLocationPermissionAlert = false
+                },
+                onSkip: {
+                    showLocationPermissionAlert = false
+                }
+            )
+            .navigationTitle("Location Restricted")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .interactiveDismissDisabled()
+    }
+
     @MainActor
     static func applyUITestDefaultsOverridesIfNeeded() {
         let env = ProcessInfo.processInfo.environment

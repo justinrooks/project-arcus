@@ -364,7 +364,7 @@ struct HomeRefreshPipelineTests {
         let context = makeContext()
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: nil)
         let spc = FakeSpcProvider(outlooks: sampleOutlooks())
-        let watches = FakeWatchProvider()
+        let alerts = FakeAlertProvider()
         let weather = FakeWeatherClient()
         let pipeline = HomeRefreshPipeline()
 
@@ -372,7 +372,7 @@ struct HomeRefreshPipelineTests {
             .timer,
             environment: makeEnvironment(
                 spc: spc,
-                watches: watches,
+                alerts: alerts,
                 weather: weather,
                 locationSession: locationSession
             )
@@ -381,7 +381,7 @@ struct HomeRefreshPipelineTests {
 
         #expect(locationSession.prepareCalls.isEmpty)
         #expect(await spc.syncMesoscaleDiscussionsCount() == 1)
-        #expect(await watches.syncCount() == 1)
+        #expect(await alerts.syncCount() == 1)
         #expect(await spc.syncMapProductsCount() == 0)
         #expect(await spc.syncConvectiveOutlooksCount() == 0)
         #expect(await weather.callCount() == 0)
@@ -394,10 +394,10 @@ struct HomeRefreshPipelineTests {
         let context = makeContext()
         let weatherValue = sampleWeather()
         let meso = MD.sampleDiscussionDTOs[1]
-        let watch = Watch.sampleWatchRows[1]
+        let alert = Watch.sampleWatchRows[1]
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let spc = FakeSpcProvider(activeMesos: [meso], outlooks: sampleOutlooks())
-        let watches = FakeWatchProvider(activeWatches: [watch])
+        let alerts = FakeAlertProvider(activeAlerts: [alert])
         let weather = FakeWeatherClient(weather: weatherValue)
         let pipeline = HomeRefreshPipeline()
 
@@ -405,7 +405,7 @@ struct HomeRefreshPipelineTests {
             .active,
             environment: makeEnvironment(
                 spc: spc,
-                watches: watches,
+                alerts: alerts,
                 weather: weather,
                 locationSession: locationSession,
                 homeProjectionStore: projectionStore
@@ -421,7 +421,7 @@ struct HomeRefreshPipelineTests {
         #expect(stored.severeRisk == .hail(probability: 0.30))
         #expect(stored.fireRisk == .elevated)
         #expect(stored.activeMesos == [meso])
-        #expect(stored.activeAlerts == [watch])
+        #expect(stored.activeAlerts == [alert])
     }
 
     @Test("scene active refresh persists empty alert slices for the resolved context")
@@ -431,7 +431,7 @@ struct HomeRefreshPipelineTests {
         let context = makeContext()
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let spc = FakeSpcProvider(outlooks: sampleOutlooks())
-        let watches = FakeWatchProvider(activeWatches: [])
+        let alerts = FakeAlertProvider(activeAlerts: [])
         let weather = FakeWeatherClient()
         let pipeline = HomeRefreshPipeline()
 
@@ -439,7 +439,7 @@ struct HomeRefreshPipelineTests {
             .active,
             environment: makeEnvironment(
                 spc: spc,
-                watches: watches,
+                alerts: alerts,
                 weather: weather,
                 locationSession: locationSession,
                 homeProjectionStore: projectionStore
@@ -460,7 +460,7 @@ struct HomeRefreshPipelineTests {
         let projectionStore = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
         let weatherValue = sampleWeather()
-        let originalWatch = Watch.sampleWatchRows[0]
+        let originalAlert = Watch.sampleWatchRows[0]
         let originalMeso = MD.sampleDiscussionDTOs[0]
 
         _ = try await projectionStore.updateWeather(
@@ -476,7 +476,7 @@ struct HomeRefreshPipelineTests {
             loadedAt: Date(timeIntervalSince1970: 210)
         )
         _ = try await projectionStore.updateHotAlerts(
-            watches: [originalWatch],
+            alerts: [originalAlert],
             mesos: [originalMeso],
             for: context,
             loadedAt: Date(timeIntervalSince1970: 220)
@@ -487,18 +487,18 @@ struct HomeRefreshPipelineTests {
             initialSevereRisk: .wind(probability: 0.15),
             initialFireRisk: .critical,
             initialMesos: [originalMeso],
-            initialWatches: [originalWatch]
+            initialAlerts: [originalAlert]
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let spc = FakeSpcProvider(outlooks: sampleOutlooks(), locationReadError: TestFailure.failedRead)
-        let watches = FakeWatchProvider(activeWatches: [Watch.sampleWatchRows[1]])
+        let alerts = FakeAlertProvider(activeAlerts: [Watch.sampleWatchRows[1]])
         let weather = FakeWeatherClient()
 
         await pipeline.forceRefreshCurrentContext(
             showsLoading: true,
             environment: makeEnvironment(
                 spc: spc,
-                watches: watches,
+                alerts: alerts,
                 weather: weather,
                 locationSession: locationSession,
                 homeProjectionStore: projectionStore
@@ -512,13 +512,13 @@ struct HomeRefreshPipelineTests {
         #expect(stored.stormRisk == .slight)
         #expect(stored.severeRisk == .wind(probability: 0.15))
         #expect(stored.fireRisk == .critical)
-        #expect(stored.activeAlerts == [originalWatch])
+        #expect(stored.activeAlerts == [originalAlert])
         #expect(stored.activeMesos == [originalMeso])
         #expect(pipeline.stormRisk == .slight)
         #expect(pipeline.severeRisk == .wind(probability: 0.15))
         #expect(pipeline.fireRisk == .critical)
         #expect(pipeline.mesos == [originalMeso])
-        #expect(pipeline.watches == [originalWatch])
+        #expect(pipeline.alerts == [originalAlert])
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
     }
 
@@ -583,7 +583,7 @@ struct HomeRefreshPipelineTests {
 
     private func makeEnvironment(
         spc: FakeSpcProvider = FakeSpcProvider(),
-        watches: FakeWatchProvider = FakeWatchProvider(),
+        alerts: FakeAlertProvider = FakeAlertProvider(),
         weather: FakeWeatherClient = FakeWeatherClient(),
         coordinator: (any HomeIngestionCoordinating)? = nil,
         locationSession: FakeLocationSession,
@@ -595,7 +595,7 @@ struct HomeRefreshPipelineTests {
             outlooks: spc,
             coordinator: coordinator ?? makeCoordinator(
                 spc: spc,
-                watches: watches,
+                alerts: alerts,
                 weather: weather,
                 locationSession: locationSession,
                 homeProjectionStore: homeProjectionStore
@@ -606,7 +606,7 @@ struct HomeRefreshPipelineTests {
 
     private func makeCoordinator(
         spc: FakeSpcProvider,
-        watches: FakeWatchProvider,
+        alerts: FakeAlertProvider,
         weather: FakeWeatherClient,
         locationSession: FakeLocationSession,
         homeProjectionStore: HomeProjectionStore?
@@ -614,13 +614,13 @@ struct HomeRefreshPipelineTests {
         let snapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
-            arcusAlerts: watches
+            arcusAlerts: alerts
         )
         let executor = HomeIngestionExecutor(
             environment: .init(
                 logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
                 spcSync: spc,
-                arcusAlertSync: watches,
+                arcusAlertSync: alerts,
                 weatherClient: weather,
                 locationSession: locationSession,
                 snapshotStore: snapshotStore,
@@ -989,13 +989,13 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     func outlookQueryCount() -> Int { outlookQueries }
 }
 
-private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
-    private let activeWatches: [AlertDTO]
+private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
+    private let activeAlerts: [AlertDTO]
     private var syncCalls = 0
     private var queryCalls = 0
 
-    init(activeWatches: [AlertDTO] = [Watch.sampleWatchRows[0]]) {
-        self.activeWatches = activeWatches
+    init(activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]]) {
+        self.activeAlerts = activeAlerts
     }
 
     func sync(context: LocationContext) async {
@@ -1006,17 +1006,17 @@ private actor FakeWatchProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         syncCalls += 1
     }
 
-    func getActiveWatches(context: LocationContext) async throws -> [AlertDTO] {
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
         queryCalls += 1
-        return activeWatches
+        return activeAlerts
     }
 
     func getActiveWarningGeometries(on date: Date) async throws -> [ActiveWarningGeometry] {
         []
     }
 
-    func getWatch(id: String) async throws -> AlertDTO? {
-        activeWatches.first(where: { $0.id == id })
+    func getAlert(id: String) async throws -> AlertDTO? {
+        activeAlerts.first(where: { $0.id == id })
     }
 
     func syncCount() -> Int { syncCalls }

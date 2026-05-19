@@ -1,5 +1,5 @@
 //
-//  WatchRepo.swift
+//  AlertRepo.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 9/18/25.
@@ -11,8 +11,8 @@ import SwiftData
 import OSLog
 
 @ModelActor
-actor WatchRepo {
-    private let logger = Logger.reposWatch
+actor AlertRepo {
+    private let logger = Logger.reposAlert
     private static let referenceDateEpochOffset: TimeInterval = 978_307_200 // 2001-01-01T00:00:00Z
     
     func active(countyCode: String, fireZone: String, forecastZone: String, cell: Int64?, on date: Date = .now) async throws -> [AlertDTO] {
@@ -21,21 +21,21 @@ actor WatchRepo {
         var hits: [Watch] = []
         hits.reserveCapacity(candidates.count)
         
-        for watch in candidates {
-            let ugc = watch.ugcZones
-            let cells = watch.h3Cells
+        for alert in candidates {
+            let ugc = alert.ugcZones
+            let cells = alert.h3Cells
             let matchesCell = cell.map { cells.contains($0) } ?? false
             let matchesUGC = ugc.contains(countyCode) || ugc.contains(fireZone) || ugc.contains(forecastZone)
             
-            if (matchesCell || matchesUGC) && isRenderableAlertLifecycle(status: watch.status, messageType: watch.messageType) {
-                hits.append(watch)
+            if (matchesCell || matchesUGC) && isRenderableAlertLifecycle(status: alert.status, messageType: alert.messageType) {
+                hits.append(alert)
             }
         }
         
         // Dedupe before returning since its possible to be in the same cell and county/fire zone.
         let rows = hits.removingDuplicates(by: \.nwsId).map { AlertDTO.init(from: $0) }
         logger.debug(
-            "Resolved current local watches candidates=\(candidates.count, privacy: .public) matches=\(rows.count, privacy: .public) hasCell=\((cell != nil), privacy: .public)"
+            "Resolved current local alert candidates=\(candidates.count, privacy: .public) matches=\(rows.count, privacy: .public) hasCell=\((cell != nil), privacy: .public)"
         )
         return rows
     }
@@ -43,23 +43,23 @@ actor WatchRepo {
     func activeWarningGeometries(on date: Date = .now) throws -> [ActiveWarningGeometry] {
         let candidates = try modelContext.fetch(Watch.currentWatchesDescriptor(date: date))
 
-        let rows = candidates.compactMap { watch -> ActiveWarningGeometry? in
-            guard isSupportedWarningGeometryEvent(watch.event),
-                  isRenderableWarningLifecycle(watch, on: date),
-                  let geometry = watch.geometry else {
+        let rows = candidates.compactMap { alert -> ActiveWarningGeometry? in
+            guard isSupportedWarningGeometryEvent(alert.event),
+                  isRenderableWarningLifecycle(alert, on: date),
+                  let geometry = alert.geometry else {
                 return nil
             }
 
             return ActiveWarningGeometry(
-                id: watch.nwsId,
-                messageId: watch.messageId,
-                currentRevisionSent: watch.currentRevisionSent,
-                event: watch.event,
-                issued: watch.sent,
-                effective: watch.effective,
-                expires: watch.expires,
-                ends: watch.ends,
-                messageType: watch.messageType,
+                id: alert.nwsId,
+                messageId: alert.messageId,
+                currentRevisionSent: alert.currentRevisionSent,
+                event: alert.event,
+                issued: alert.sent,
+                effective: alert.effective,
+                expires: alert.expires,
+                ends: alert.ends,
+                messageType: alert.messageType,
                 geometry: geometry
             )
         }
@@ -70,7 +70,7 @@ actor WatchRepo {
         }
     }
 
-    func watch(id: String) throws -> AlertDTO? {
+    func alert(id: String) throws -> AlertDTO? {
         let canonicalID = ArcusAlertIdentifier.canonical(id)
         let predicate = #Predicate<Watch> { watch in
             watch.nwsId == canonicalID
@@ -84,7 +84,7 @@ actor WatchRepo {
         let data = try await client.fetchActiveAlerts(for: countyCode, and: fireZone, and: forecastZone, in: cell)
 
         guard let decoded = decodePayloads(from: data) else {
-            logger.error("Arcus alert payload decode failed; leaving persisted watches unchanged")
+            logger.error("Alert payload decode failed; leaving persisted watches unchanged")
             throw ArcusError.parsingError
         }
         
@@ -109,7 +109,7 @@ actor WatchRepo {
             try upsert(watches)
         }
         logger.debug(
-            "Persisted Arcus watch refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
+            "Persisted alert refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
         )
     }
 
@@ -148,19 +148,19 @@ actor WatchRepo {
 
     /// Removes any expired watches from the database
     func purge(asOf now: Date = .init()) throws {
-        logger.info("Purging expired NWS watches")
+        logger.info("Purging expired alerts")
         
         let expired = try modelContext.fetch(Watch.expiredWatchesDescriptor(asOf: now))
         if expired.isEmpty {
-            logger.debug("No expired watches to purge")
+            logger.debug("No expired alertss to purge")
             return
         }
         
-        logger.debug("Found \(expired.count, privacy: .public) watches to purge")
+        logger.debug("Found \(expired.count, privacy: .public) alertss to purge")
         for obj in expired { modelContext.delete(obj) }
         try modelContext.save()
         
-        logger.info("Expired watches purged")
+        logger.info("Expired alerts purged")
     }
     
     // MARK: Translator
@@ -341,8 +341,8 @@ actor WatchRepo {
         // Arcus payloads can arrive as seconds since the 2001 reference date.
         // If decoded as Unix seconds they land around the 1990s; remap those.
         let unixEpoch = value.timeIntervalSince1970
-        if unixEpoch > 0, unixEpoch < WatchRepo.referenceDateEpochOffset {
-            return Date(timeIntervalSince1970: unixEpoch + WatchRepo.referenceDateEpochOffset)
+        if unixEpoch > 0, unixEpoch < AlertRepo.referenceDateEpochOffset {
+            return Date(timeIntervalSince1970: unixEpoch + AlertRepo.referenceDateEpochOffset)
         }
         return value
     }

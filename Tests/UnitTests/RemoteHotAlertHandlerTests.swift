@@ -9,9 +9,9 @@ struct RemoteHotAlertHandlerTests {
     func backgroundReceipt_returnsNewData() async throws {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
         let alertID = "123e4567-e89b-12d3-a456-426614174001"
-        let watch = makeWatch(id: alertID.uppercased(), revisionSent: revisionSent)
+        let alert = makeAlert(id: alertID.uppercased(), revisionSent: revisionSent)
         let coordinator = RecordingHomeIngestionCoordinator()
-        let alertStore = StubArcusAlertStore(watches: [nil, watch])
+        let alertStore = StubArcusAlertStore(alerts: [nil, alert])
         let widgetDriver = RecordingWidgetSnapshotRefreshDriver()
         let presentationState = await MainActor.run { RemoteAlertPresentationState() }
         let handler = RemoteHotAlertHandler(
@@ -35,9 +35,9 @@ struct RemoteHotAlertHandlerTests {
     @Test("background receipt maps to noData when the local alert already matches the pushed revision")
     func backgroundReceipt_returnsNoData() async {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
-        let watch = makeWatch(id: "alert-123", revisionSent: revisionSent)
+        let alert = makeAlert(id: "alert-123", revisionSent: revisionSent)
         let coordinator = RecordingHomeIngestionCoordinator()
-        let alertStore = StubArcusAlertStore(watches: [watch, watch])
+        let alertStore = StubArcusAlertStore(alerts: [alert, alert])
         let presentationState = await MainActor.run { RemoteAlertPresentationState() }
         let handler = RemoteHotAlertHandler(
             coordinator: coordinator,
@@ -55,7 +55,7 @@ struct RemoteHotAlertHandlerTests {
     @Test("background receipt maps to failed when the targeted alert is still unavailable after ingestion")
     func backgroundReceipt_returnsFailed() async {
         let coordinator = RecordingHomeIngestionCoordinator()
-        let alertStore = StubArcusAlertStore(watches: [nil, nil])
+        let alertStore = StubArcusAlertStore(alerts: [nil, nil])
         let presentationState = await MainActor.run { RemoteAlertPresentationState() }
         let handler = RemoteHotAlertHandler(
             coordinator: coordinator,
@@ -73,12 +73,12 @@ struct RemoteHotAlertHandlerTests {
         #expect(result == .failed)
     }
 
-    @Test("notification open publishes a focus request for the targeted watch after unified ingestion")
+    @Test("notification open publishes a focus request for the targeted alert after unified ingestion")
     func notificationOpen_publishesFocusRequest() async throws {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
-        let watch = makeWatch(id: "alert-open", revisionSent: revisionSent)
+        let alert = makeAlert(id: "alert-open", revisionSent: revisionSent)
         let coordinator = RecordingHomeIngestionCoordinator()
-        let alertStore = StubArcusAlertStore(watches: [watch])
+        let alertStore = StubArcusAlertStore(alerts: [alert])
         let widgetDriver = RecordingWidgetSnapshotRefreshDriver()
         let presentationState = await MainActor.run { RemoteAlertPresentationState() }
         let handler = RemoteHotAlertHandler(
@@ -97,7 +97,7 @@ struct RemoteHotAlertHandlerTests {
 
         await MainActor.run {
             #expect(presentationState.focusRequest?.alertID == "alert-open")
-            #expect(presentationState.focusRequest?.watch == watch)
+            #expect(presentationState.focusRequest?.alert == alert)
         }
         #expect(await widgetDriver.refreshCallCount() == 1)
     }
@@ -106,9 +106,9 @@ struct RemoteHotAlertHandlerTests {
     func backgroundReceipt_refreshFailureDoesNotChangeApnsResult() async {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
         let alertID = "123e4567-e89b-12d3-a456-426614174001"
-        let watch = makeWatch(id: alertID, revisionSent: revisionSent)
+        let alert = makeAlert(id: alertID, revisionSent: revisionSent)
         let coordinator = RecordingHomeIngestionCoordinator()
-        let alertStore = StubArcusAlertStore(watches: [nil, watch])
+        let alertStore = StubArcusAlertStore(alerts: [nil, alert])
         let widgetDriver = RecordingWidgetSnapshotRefreshDriver(error: TestError.refreshFailed)
         let presentationState = await MainActor.run { RemoteAlertPresentationState() }
         let handler = RemoteHotAlertHandler(
@@ -124,7 +124,7 @@ struct RemoteHotAlertHandlerTests {
         #expect(await widgetDriver.refreshCallCount() == 1)
     }
 
-    private func makeWatch(id: String, revisionSent: Date) -> AlertDTO {
+    private func makeAlert(id: String, revisionSent: Date) -> AlertDTO {
         AlertDTO(
             id: id,
             messageId: "urn:\(id)",
@@ -164,7 +164,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         let projection = makeProjection(
             stormRisk: .enhanced,
             severeRisk: .tornado(probability: 0.2),
-            watches: [makeRemoteAlertWatch(id: "alert-1", revisionSent: generatedAt)],
+            alerts: [makeRemoteAlert(id: "alert-1", revisionSent: generatedAt)],
             mesos: []
         )
         let projectionReader = StubLatestProjectionReader(latest: projection)
@@ -182,7 +182,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         #expect(call.input.snapshotTimestamp == projection.updatedAt)
         #expect(call.input.stormRisk == projection.stormRisk)
         #expect(call.input.severeRisk == projection.severeRisk)
-        #expect(call.input.watches == projection.activeAlerts)
+        #expect(call.input.alerts == projection.activeAlerts)
         #expect(call.input.mesos == projection.activeMesos)
     }
 
@@ -203,7 +203,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
     private func makeProjection(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
-        watches: [AlertDTO],
+        alerts: [AlertDTO],
         mesos: [MdDTO]
     ) -> HomeProjectionRecord {
         HomeProjectionRecord(
@@ -225,7 +225,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
             stormRisk: stormRisk,
             severeRisk: severeRisk,
             fireRisk: nil,
-            activeAlerts: watches,
+            activeAlerts: alerts,
             activeMesos: mesos,
             lastHotAlertsLoadAt: Date(timeIntervalSince1970: 2_100),
             lastSlowProductsLoadAt: Date(timeIntervalSince1970: 2_080),
@@ -234,7 +234,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
     }
 }
 
-private func makeRemoteAlertWatch(id: String, revisionSent: Date) -> AlertDTO {
+private func makeRemoteAlert(id: String, revisionSent: Date) -> AlertDTO {
     AlertDTO(
         id: id,
         messageId: "urn:\(id)",
@@ -314,13 +314,13 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 }
 
 private actor StubArcusAlertStore: ArcusAlertQuerying {
-    private var watches: [AlertDTO?]
+    private var alerts: [AlertDTO?]
 
-    init(watches: [AlertDTO?]) {
-        self.watches = watches
+    init(alerts: [AlertDTO?]) {
+        self.alerts = alerts
     }
 
-    func getActiveWatches(context: LocationContext) async throws -> [AlertDTO] {
+    func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
         []
     }
 
@@ -328,9 +328,9 @@ private actor StubArcusAlertStore: ArcusAlertQuerying {
         []
     }
 
-    func getWatch(id: String) async throws -> AlertDTO? {
-        guard watches.isEmpty == false else { return nil }
-        return watches.removeFirst()
+    func getAlert(id: String) async throws -> AlertDTO? {
+        guard alerts.isEmpty == false else { return nil }
+        return alerts.removeFirst()
     }
 }
 

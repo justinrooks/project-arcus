@@ -51,7 +51,7 @@ struct SummaryView: View {
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
     let mesos: [MdDTO]
-    let watches: [AlertDTO]
+    let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
     let readinessState: SummaryReadinessState
@@ -64,7 +64,7 @@ struct SummaryView: View {
     let onOpenOutlooks: () -> Void
 
     private var hasActiveAlerts: Bool {
-        !mesos.isEmpty || !watches.isEmpty
+        !mesos.isEmpty || !alerts.isEmpty
     }
 
     private var isWeatherLoading: Bool {
@@ -276,7 +276,7 @@ struct SummaryView: View {
         case .loading, .alerts, .empty:
             ActiveAlertSummaryView(
                 mesos: mesos,
-                watches: watches,
+                alerts: alerts,
                 isLoading: localAlertsPresentationState == .loading,
                 isOffline: showsOfflineToken,
                 onOpenAlertCenter: onOpenAlerts
@@ -516,7 +516,7 @@ private struct SummaryPreviewContent: View {
             severeRisk: severeRisk,
             fireRisk: .extreme,
             mesos: MD.sampleDiscussionDTOs,
-            watches: Watch.sampleWatchRows,
+            alerts: Watch.sampleWatchRows,
             outlook: outlook,
             weather: weather,
             readinessState: readinessState,

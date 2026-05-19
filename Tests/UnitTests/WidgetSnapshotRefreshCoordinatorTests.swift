@@ -21,7 +21,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: generatedAt,
                 stormRisk: .enhanced,
                 severeRisk: .tornado(probability: 0.1),
-                watches: [],
+                alerts: [],
                 mesos: [],
                 locationSummary: "Denver, CO"
             )
@@ -53,7 +53,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: generatedAt,
                 stormRisk: .marginal,
                 severeRisk: .wind(probability: 0.2),
-                watches: [makeWatch(id: "watch-1", title: "Tornado Warning", now: generatedAt)],
+                alerts: [makeAlert(id: "watch-1", title: "Tornado Warning", now: generatedAt)],
                 mesos: [],
                 locationSummary: "Norman, OK"
             )
@@ -82,7 +82,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: Date(timeIntervalSince1970: 1_700),
                 stormRisk: .marginal,
                 severeRisk: .tornado(probability: 0.02),
-                watches: [],
+                alerts: [],
                 mesos: [],
                 locationSummary: "Bennett, CO"
             )
@@ -93,7 +93,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
                 generatedAt: Date(timeIntervalSince1970: 1_760),
                 stormRisk: .marginal,
                 severeRisk: .allClear,
-                watches: [],
+                alerts: [],
                 mesos: [],
                 locationSummary: "Bennett, CO"
             )
@@ -126,7 +126,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
     }
 }
 
-private func makeWatch(id: String, title: String, now: Date) -> AlertDTO {
+private func makeAlert(id: String, title: String, now: Date) -> AlertDTO {
     AlertDTO(
         id: id,
         messageId: nil,

@@ -15,7 +15,7 @@ struct Preview {
     let stormRiskRepo: StormRiskRepo
     let severeRiskRepo: SevereRiskRepo
     let mesoRepo: MesoRepo
-    let watchRepo: WatchRepo
+    let alertRepo: AlertRepo
     //let provider: SpcService
     
     init(
@@ -30,7 +30,7 @@ struct Preview {
         
         self.outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)
         self.mesoRepo       = MesoRepo(modelContainer: container)
-        self.watchRepo      = WatchRepo(modelContainer: container)
+        self.alertRepo      = AlertRepo(modelContainer: container)
         self.stormRiskRepo  = StormRiskRepo(modelContainer: container)
         self.severeRiskRepo = SevereRiskRepo(modelContainer: container)
         

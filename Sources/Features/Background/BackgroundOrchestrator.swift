@@ -112,15 +112,15 @@ actor BackgroundOrchestrator {
                 if snapshot.mesos.isEmpty == false {
                     feedsChanged.insert(.meso)
                 }
-                if snapshot.watches.isEmpty == false {
+                if snapshot.alerts.isEmpty == false {
                     feedsChanged.insert(.watch)
                 }
 
                 let outlook = snapshot.latestOutlook
                 let activeMesos = snapshot.mesos
-                let activeWatches = snapshot.watches
+                let activeAlerts = snapshot.alerts
                 let inMeso = activeMesos.isEmpty == false
-                let inWatch = activeWatches.isEmpty == false
+                let inAlert = activeAlerts.isEmpty == false
                 
                 // TODO: Create a fireNotification flow
                 // TODO: Put the flow behind an options flag
@@ -165,7 +165,7 @@ actor BackgroundOrchestrator {
                         categorical: stormRisk,
                         recentlyChangedLocation: false,
                         inMeso: inMeso,
-                        inWatch: inWatch
+                        inAlert: inAlert
                     )
                 )
                 

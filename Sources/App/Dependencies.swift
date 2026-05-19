@@ -21,7 +21,7 @@ final class Dependencies: Sendable {
     
     private let _outlookRepo: ConvectiveOutlookRepo?
     private let _mesoRepo: MesoRepo?
-    private let _watchRepo: WatchRepo?
+    private let _alertRepo: AlertRepo?
     private let _stormRiskRepo: StormRiskRepo?
     private let _severeRiskRepo: SevereRiskRepo?
     private let _healthStore: BgHealthStore?
@@ -71,9 +71,9 @@ final class Dependencies: Sendable {
         }
         return value
     }
-    var watchRepo: WatchRepo {
-        guard let value = _watchRepo else {
-            fatalError("Dependencies.watchRepo used while unconfigured")
+    var alertRepo: AlertRepo {
+        guard let value = _alertRepo else {
+            fatalError("Dependencies.alertRepo used while unconfigured")
         }
         return value
     }
@@ -244,7 +244,7 @@ final class Dependencies: Sendable {
         modelContainer: ModelContainer?,
         outlookRepo: ConvectiveOutlookRepo?,
         mesoRepo: MesoRepo?,
-        watchRepo: WatchRepo?,
+        alertRepo: AlertRepo?,
         stormRiskRepo: StormRiskRepo?,
         severeRiskRepo: SevereRiskRepo?,
         healthStore: BgHealthStore?,
@@ -269,7 +269,7 @@ final class Dependencies: Sendable {
         self._modelContainer = modelContainer
         self._outlookRepo = outlookRepo
         self._mesoRepo = mesoRepo
-        self._watchRepo = watchRepo
+        self._alertRepo = alertRepo
         self._stormRiskRepo = stormRiskRepo
         self._severeRiskRepo = severeRiskRepo
         self._healthStore = healthStore
@@ -354,7 +354,7 @@ final class Dependencies: Sendable {
         // Create our data layer repos
         let outlookRepo    = ConvectiveOutlookRepo(modelContainer: container)
         let mesoRepo       = MesoRepo(modelContainer: container)
-        let watchRepo      = WatchRepo(modelContainer: container)
+        let alertRepo      = AlertRepo(modelContainer: container)
         let stormRiskRepo  = StormRiskRepo(modelContainer: container)
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
         let fireRiskRepo   = FireRiskRepo(modelContainer: container)
@@ -366,7 +366,7 @@ final class Dependencies: Sendable {
         // Providers
         let spc = SpcProvider(outlookRepo: outlookRepo,
                               mesoRepo: mesoRepo,
-                              watchRepo: watchRepo,
+                              alertRepo: alertRepo,
                               stormRiskRepo: stormRiskRepo,
                               severeRiskRepo: severeRiskRepo,
                               fireRiskRepo: fireRiskRepo,
@@ -404,7 +404,7 @@ final class Dependencies: Sendable {
         logger.info("Location session initialized")
         
         let nws = NwsProvider(
-            watchRepo: watchRepo,
+            alertRepo: alertRepo,
             metadataRepo: metadataRepo,
             gridMetadataProvider: gridProvider,
             client: nwsClient)
@@ -412,7 +412,7 @@ final class Dependencies: Sendable {
         logger.debug("NWS provider initialized")
         
         let arcus = ArcusAlertProvider(
-            watchRepo: watchRepo,
+            alertRepo: alertRepo,
             client: arcusClient)
         let arcusProvider = arcus
         logger.debug("Arcus provider initialized")
@@ -506,7 +506,7 @@ final class Dependencies: Sendable {
             modelContainer: container,
             outlookRepo: outlookRepo,
             mesoRepo: mesoRepo,
-            watchRepo: watchRepo,
+            alertRepo: alertRepo,
             stormRiskRepo: stormRiskRepo,
             severeRiskRepo: severeRiskRepo,
             healthStore: healthStore,
@@ -533,7 +533,7 @@ final class Dependencies: Sendable {
                                                          modelContainer: nil,
                                                          outlookRepo: nil,
                                                          mesoRepo: nil,
-                                                         watchRepo: nil,
+                                                         alertRepo: nil,
                                                          stormRiskRepo: nil,
                                                          severeRiskRepo: nil,
                                                          healthStore: nil,

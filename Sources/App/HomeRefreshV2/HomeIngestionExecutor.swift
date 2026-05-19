@@ -158,7 +158,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         freshness.lastResolvedRefreshKey = snapshot.refreshKey
         let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
         environment.logger.info(
-            "Completed home ingestion plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) watches=\(snapshot.watches.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
+            "Completed home ingestion plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alerts=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
         )
         return snapshot
     }
@@ -332,7 +332,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
             if plan.lanes.contains(.hotAlerts) {
                 _ = try await projectionStore.updateHotAlerts(
-                    watches: snapshot.watches,
+                    alerts: snapshot.alerts,
                     mesos: snapshot.mesos,
                     for: context,
                     loadedAt: loadedAt
@@ -349,7 +349,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                         generatedAt: loadedAt,
                         stormRisk: snapshot.stormRisk,
                         severeRisk: snapshot.severeRisk,
-                        watches: snapshot.watches,
+                        alerts: snapshot.alerts,
                         mesos: snapshot.mesos,
                         locationSummary: snapshot.locationSnapshot?.placemarkSummary
                     )

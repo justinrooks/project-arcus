@@ -34,7 +34,7 @@ extension Logger {
     // MARK: Repos
     static let reposConvectiveOutlook = Logger(subsystem: subsystem, category: "repos.convectiveOutlook")
     static let reposMeso = Logger(subsystem: subsystem, category: "repos.meso")
-    static let reposWatch = Logger(subsystem: subsystem, category: "repos.watch")
+    static let reposAlert = Logger(subsystem: subsystem, category: "repos.alert")
     static let reposStormRisk = Logger(subsystem: subsystem, category: "repos.stormRisk")
     static let reposSevereRisk = Logger(subsystem: subsystem, category: "repos.severeRisk")
     static let reposRiskProduct = Logger(subsystem: subsystem, category: "repos.riskProduct")

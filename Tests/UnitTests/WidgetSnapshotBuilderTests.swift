@@ -15,7 +15,7 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.35),
-            watches: [makeWatch(id: "w1", title: "Tornado Warning", issued: iso("2026-05-01T11:45:00Z"), validEnd: iso("2026-05-01T12:15:00Z"))],
+            alerts: [makeAlert(id: "w1", title: "Tornado Warning", issued: iso("2026-05-01T11:45:00Z"), validEnd: iso("2026-05-01T12:15:00Z"))],
             mesos: [],
             locationSummary: "Bennett, CO"
         )
@@ -40,7 +40,7 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .allClear,
             severeRisk: .allClear,
-            watches: [],
+            alerts: [],
             mesos: []
         )
 
@@ -61,9 +61,9 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .enhanced,
             severeRisk: .hail(probability: 0.2),
-            watches: [
-                makeWatch(id: "w1", title: "Special Weather Statement", issued: iso("2026-05-01T11:00:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
-                makeWatch(id: "w2", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:05:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+            alerts: [
+                makeAlert(id: "w1", title: "Special Weather Statement", issued: iso("2026-05-01T11:00:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+                makeAlert(id: "w2", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:05:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
             ],
             mesos: [
                 makeMeso(number: 2001, issued: iso("2026-05-01T11:10:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
@@ -85,11 +85,11 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .moderate,
             severeRisk: .wind(probability: 0.1),
-            watches: [
-                makeWatch(id: "watch", title: "Special Weather Statement", issued: iso("2026-05-01T11:55:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
-                makeWatch(id: "flood", title: "Flash Flood Warning", issued: iso("2026-05-01T11:54:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
-                makeWatch(id: "severe", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:53:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
-                makeWatch(id: "tornado", title: "Tornado Warning", issued: iso("2026-05-01T11:52:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+            alerts: [
+                makeAlert(id: "alert", title: "Special Weather Statement", issued: iso("2026-05-01T11:55:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+                makeAlert(id: "flood", title: "Flash Flood Warning", issued: iso("2026-05-01T11:54:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+                makeAlert(id: "severe", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:53:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+                makeAlert(id: "tornado", title: "Tornado Warning", issued: iso("2026-05-01T11:52:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
             ],
             mesos: [
                 makeMeso(number: 1999, issued: iso("2026-05-01T11:59:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
@@ -111,9 +111,9 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .slight,
             severeRisk: .hail(probability: 0.3),
-            watches: [
-                makeWatch(id: "active", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:30:00Z"), validEnd: iso("2026-05-01T12:10:00Z")),
-                makeWatch(id: "expired", title: "Tornado Warning", issued: iso("2026-05-01T10:30:00Z"), validEnd: iso("2026-05-01T11:59:00Z"))
+            alerts: [
+                makeAlert(id: "active", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:30:00Z"), validEnd: iso("2026-05-01T12:10:00Z")),
+                makeAlert(id: "expired", title: "Tornado Warning", issued: iso("2026-05-01T10:30:00Z"), validEnd: iso("2026-05-01T11:59:00Z"))
             ],
             mesos: [
                 makeMeso(number: 2002, issued: iso("2026-05-01T11:20:00Z"), validEnd: iso("2026-05-01T11:55:00Z"))
@@ -126,8 +126,8 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.hiddenAlertCount == 0)
     }
 
-    @Test("watches outrank mesos when both are active")
-    func watchesOutrankMesos() {
+    @Test("alerts outrank mesos when both are active")
+    func alertsOutrankMesos() {
         let builder = WidgetSnapshotBuilder()
         let input = WidgetSnapshotBuilder.Input(
             generatedAt: now,
@@ -135,8 +135,8 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .slight,
             severeRisk: .wind(probability: 0.1),
-            watches: [
-                makeWatch(id: "watch", title: "Special Weather Statement", issued: iso("2026-05-01T11:00:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+            alerts: [
+                makeAlert(id: "alert", title: "Special Weather Statement", issued: iso("2026-05-01T11:00:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
             ],
             mesos: [
                 makeMeso(number: 2002, issued: iso("2026-05-01T11:55:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
@@ -159,8 +159,8 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .slight,
             severeRisk: .wind(probability: 0.1),
-            watches: [
-                makeWatch(id: "expired-watch", title: "Tornado Warning", issued: iso("2026-05-01T09:00:00Z"), validEnd: iso("2026-05-01T11:00:00Z"))
+            alerts: [
+                makeAlert(id: "expired-alert", title: "Tornado Warning", issued: iso("2026-05-01T09:00:00Z"), validEnd: iso("2026-05-01T11:00:00Z"))
             ],
             mesos: [
                 makeMeso(number: 2003, issued: iso("2026-05-01T09:00:00Z"), validEnd: iso("2026-05-01T11:00:00Z"))
@@ -182,7 +182,7 @@ struct WidgetSnapshotBuilderTests {
             availability: .available,
             stormRisk: .marginal,
             severeRisk: .wind(probability: 0.1),
-            watches: [],
+            alerts: [],
             mesos: []
         )
 
@@ -199,7 +199,7 @@ struct WidgetSnapshotBuilderTests {
             availability: .unavailable(message: "ignored"),
             stormRisk: nil,
             severeRisk: nil,
-            watches: [],
+            alerts: [],
             mesos: []
         )
 
@@ -215,7 +215,7 @@ struct WidgetSnapshotBuilderTests {
     }
 }
 
-private func makeWatch(id: String, title: String, issued: Date, validEnd: Date) -> AlertDTO {
+private func makeAlert(id: String, title: String, issued: Date, validEnd: Date) -> AlertDTO {
     AlertDTO(
         id: id,
         messageId: nil,

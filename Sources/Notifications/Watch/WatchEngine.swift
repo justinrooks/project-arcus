@@ -28,13 +28,13 @@ struct WatchEngine: Sendable {
         self.sender = sender
     }
 
-    func run(ctx: NotificationContext, watches: [AlertDTO]) async -> Bool {
+    func run(ctx: NotificationContext, alerts: [AlertDTO]) async -> Bool {
         let watchContext = WatchContext(
             now: ctx.now,
             localTZ: ctx.localTZ,
             location: ctx.location,
             placeMark: ctx.placeMark,
-            watches: watches
+            alerts: alerts
         )
 
         logger.debug("Running watch rules")

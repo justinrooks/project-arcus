@@ -1,5 +1,5 @@
 //
-//  WatchDetailView.swift
+//  AlertDetailView.swift
 //  SkyAware
 //
 //  Created by Justin Rooks on 7/21/25.
@@ -7,11 +7,11 @@
 
 import SwiftUI
 
-struct WatchDetailView: View {
+struct AlertDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    let watch: AlertDTO
+    let alert: AlertDTO
     let layout: DetailLayout
     let isExpanded: Bool
     
@@ -23,17 +23,17 @@ struct WatchDetailView: View {
     private var summaryBodyFont: Font { isExpanded ? .callout : .footnote }
     private var summaryBodyLineSpacing: CGFloat { isExpanded ? 4 : 3 }
     private var trimmedInstruction: String? {
-        let instruction = watch.instruction?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let instruction = alert.instruction?.trimmingCharacters(in: .whitespacesAndNewlines)
         return instruction?.isEmpty == false ? instruction : nil
     }
 
     private var trimmedHeadline: String? {
-        let headline = watch.headline.trimmingCharacters(in: .whitespacesAndNewlines)
+        let headline = alert.headline.trimmingCharacters(in: .whitespacesAndNewlines)
         return headline.isEmpty ? nil : headline
     }
 
     private var trimmedDescription: String? {
-        let description = watch.description.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = alert.description.trimmingCharacters(in: .whitespacesAndNewlines)
         return description.isEmpty ? nil : description
     }
 
@@ -51,8 +51,8 @@ struct WatchDetailView: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
-    init(watch: AlertDTO, layout: DetailLayout, isExpanded: Bool = true) {
-        self.watch = watch
+    init(alert: AlertDTO, layout: DetailLayout, isExpanded: Bool = true) {
+        self.alert = alert
         self.layout = layout
         self.isExpanded = isExpanded
     }
@@ -65,11 +65,11 @@ struct WatchDetailView: View {
                 LazyVStack(alignment: .leading, spacing: sectionSpacing) {
                     headerCard
 
-                    if let severeRiskTags = watch.severeRiskTags {
+                    if let severeRiskTags = alert.severeRiskTags {
                         detailSection(title: "Severe Risk Tags", text: severeRiskTags, areTags: true)
                     }
-                    detailSection(title: "Areas Affected", text: watch.areaSummary)
-                    detailSection(title: "Full Description", text: watch.description)
+                    detailSection(title: "Areas Affected", text: alert.areaSummary)
+                    detailSection(title: "Full Description", text: alert.description)
                 }
                 .padding(.horizontal, 4)
             }
@@ -86,13 +86,13 @@ struct WatchDetailView: View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             SpcProductHeader(
                 layout: layout,
-                title: watch.title,
-                issued: watch.issued,
-                validStart: watch.issued,
-                validEnd: watch.validEnd,
-                subtitle: watch.isUpdateMessage ? "Updated" : nil,
+                title: alert.title,
+                issued: alert.issued,
+                validStart: alert.issued,
+                validEnd: alert.validEnd,
+                subtitle: alert.isUpdateMessage ? "Updated" : nil,
                 inZone: false,
-                sender: watch.sender
+                sender: alert.sender
             )
 
             Divider().opacity(0.12)
@@ -105,16 +105,16 @@ struct WatchDetailView: View {
         Group {
             if adaptiveLayout.usesAccessibilityLayout {
                 VStack(alignment: .leading, spacing: 8) {
-                    StatusChip(kind: .severity(watch.severity))
-                    StatusChip(kind: .certainty(watch.certainty))
-                    StatusChip(kind: .urgency(watch.urgency))
+                    StatusChip(kind: .severity(alert.severity))
+                    StatusChip(kind: .certainty(alert.certainty))
+                    StatusChip(kind: .urgency(alert.urgency))
                 }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        StatusChip(kind: .severity(watch.severity))
-                        StatusChip(kind: .certainty(watch.certainty))
-                        StatusChip(kind: .urgency(watch.urgency))
+                        StatusChip(kind: .severity(alert.severity))
+                        StatusChip(kind: .certainty(alert.certainty))
+                        StatusChip(kind: .urgency(alert.urgency))
                     }
                     .padding(.vertical, 2)
                 }
@@ -135,7 +135,7 @@ struct WatchDetailView: View {
                     .accessibilityLabel("Instructions")
             }
 
-            SpcProductFooter(link: watch.link, validEnd: watch.validEnd)
+            SpcProductFooter(link: alert.link, validEnd: alert.validEnd)
         }
     }
 
@@ -146,7 +146,7 @@ struct WatchDetailView: View {
             summarySection
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            SpcProductFooter(link: watch.link, validEnd: watch.validEnd)
+            SpcProductFooter(link: alert.link, validEnd: alert.validEnd)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding()
@@ -177,8 +177,8 @@ struct WatchDetailView: View {
         bodyLineLimit: Int?
     ) -> some View {
         VStack(alignment: .leading, spacing: summarySpacing) {
-            if !watch.areaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(watch.areaSummary)
+            if !alert.areaSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(alert.areaSummary)
                     .font(summaryAreaFont)
                     .foregroundStyle(.secondary)
                     .lineLimit(areaLineLimit)
@@ -223,7 +223,7 @@ struct WatchDetailView: View {
 #Preview("Tornado Watch") {
     NavigationStack {
         ScrollView {
-            WatchDetailView(watch: Watch.sampleWatchRows.last!, layout: .full)
+            AlertDetailView(alert: Watch.sampleWatchRows.last!, layout: .full)
                 .navigationTitle("Weather Alert")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
@@ -236,7 +236,7 @@ struct WatchDetailView: View {
 #Preview("Severe Thunderstorm Watch") {
     NavigationStack {
         ScrollView {
-            WatchDetailView(watch: Watch.sampleWatchRows[3], layout: .full)
+            AlertDetailView(alert: Watch.sampleWatchRows[3], layout: .full)
                 .navigationTitle("Weather Alert")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)

@@ -68,6 +68,10 @@
 			membershipExceptions = (
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
+				UnitTests/AlertNotificationTests.swift,
+				UnitTests/AlertRepoActiveTests.swift,
+				UnitTests/AlertRepoPurgeTests.swift,
+				UnitTests/AlertRepoRefreshTests.swift,
 				UnitTests/AlertStylingTests.swift,
 				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
@@ -98,10 +102,6 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
-				UnitTests/WatchNotificationTests.swift,
-				UnitTests/WatchRepoActiveTests.swift,
-				UnitTests/WatchRepoPurgeTests.swift,
-				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,
@@ -116,6 +116,10 @@
 		D03E61222EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAwareTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				UnitTests/AlertNotificationTests.swift,
+				UnitTests/AlertRepoActiveTests.swift,
+				UnitTests/AlertRepoPurgeTests.swift,
+				UnitTests/AlertRepoRefreshTests.swift,
 				UnitTests/AlertStylingTests.swift,
 				UnitTests/BackgroundOrchestratorCadenceTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
@@ -146,10 +150,6 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
-				UnitTests/WatchNotificationTests.swift,
-				UnitTests/WatchRepoActiveTests.swift,
-				UnitTests/WatchRepoPurgeTests.swift,
-				UnitTests/WatchRepoRefreshTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,

@@ -14,7 +14,7 @@ struct WatchRule: WatchNotificationRuleEvaluating {
     func evaluate(_ ctx: WatchContext) -> NotificationEvent? {
         logger.debug("Evaluating watch notification rule")
 
-        let activeWatches = ctx.watches
+        let activeWatches = ctx.alerts
             .filter { $0.ends > ctx.now && $0.isUpdateMessage == false }
             .sorted { lhs, rhs in
                 if lhs.issued == rhs.issued {
