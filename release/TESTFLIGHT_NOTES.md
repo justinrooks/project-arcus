@@ -1,4 +1,4 @@
-SkyAware upcoming build focuses on internal cleanup and alert-naming consistency, with tighter map refresh orchestration and refreshed test coverage.
+SkyAware v1.0.1(65) focuses on internal cleanup and alert-naming consistency, with tighter map refresh orchestration and refreshed test coverage.
 
 Highlights:
 - Summary and alert flows now use alert-focused naming and detail routing consistently.
