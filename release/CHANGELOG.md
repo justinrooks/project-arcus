@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.0.1(65)
+
 ### UI / UX
 - Rename watch-centric labels and detail flows to alert-centric naming across Summary and Alert surfaces, including watch detail presentation via the alert detail route.
 <!-- evidence: b5d15fe -->
