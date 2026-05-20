@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## SkyAware v1.0.1(65)
+
 ### Overview
 This update focuses on internal alert-architecture cleanup and naming consistency, with targeted map refresh flow tightening and test coverage updates to reduce stale-state risk while preserving existing user-facing weather and alert behavior.
 
