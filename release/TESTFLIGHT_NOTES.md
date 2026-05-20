@@ -1,3 +1,12 @@
+SkyAware upcoming build focuses on internal cleanup and alert-naming consistency, with tighter map refresh orchestration and refreshed test coverage.
+
+Highlights:
+- Summary and alert flows now use alert-focused naming and detail routing consistently.
+- Map reload orchestration now cancels superseded reload work and refreshes on active scene transitions.
+- Alert repository/DTO naming is now consistent across app and tests (`AlertRepo` / `AlertDTO`).
+- Unit coverage was updated across alert paths, map freshness behavior, home refresh coordination, and widget snapshot refresh flows.
+- No major user-facing feature additions in this build; primary impact is reliability and maintainability.
+
 SkyAware v1.0.0 is the first public release candidate for the severe-weather awareness app.
 
 Highlights:

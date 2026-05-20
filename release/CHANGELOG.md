@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### UI / UX
+- Rename watch-centric labels and detail flows to alert-centric naming across Summary and Alert surfaces, including watch detail presentation via the alert detail route.
+<!-- evidence: b5d15fe -->
+- Refine map screen reload behavior by canceling superseded reload tasks and triggering reload from active scene transitions to reduce stale map-refresh state.
+<!-- evidence: b5d15fe -->
+
+### Data & Repos
+- Rename watch-oriented repository and DTO surfaces to alert-oriented equivalents (`WatchRepo`/`WatchRowDTO` to `AlertRepo`/`AlertDTO`) while preserving existing alert data behavior.
+<!-- evidence: b5d15fe -->
+
+### Tests / QA
+- Update and expand unit coverage around renamed alert repository/notification paths, map freshness logic, home refresh coordination, and widget snapshot refresh flows.
+<!-- evidence: b5d15fe -->
+
+### Maintenance / Cleanup
+- Remove unused diagnostics, parsing, and legacy risk/mesoscale code paths; archive older runbooks/progress docs; and add dead-code audit documentation.
+<!-- evidence: b5d15fe -->
+
 ## v1.0.0
 
 ### Features

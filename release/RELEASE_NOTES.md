@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Overview
+This update focuses on internal alert-architecture cleanup and naming consistency, with targeted map refresh flow tightening and test coverage updates to reduce stale-state risk while preserving existing user-facing weather and alert behavior.
+
+### Highlights
+- Watch-focused naming in key summary/alert flows has been aligned to alert-focused terminology, including alert detail presentation paths.
+- Map refresh flow now cancels superseded reload tasks and relies on active scene transitions for reload orchestration.
+- Alert repository and DTO naming were standardized (`WatchRepo`/`WatchRowDTO` to `AlertRepo`/`AlertDTO`) without changing the intended alert data experience.
+- Unit coverage was refreshed for alert repo/notification paths, map freshness behavior, home refresh coordination, and widget snapshot refresh behavior.
+
+### Maintenance
+- Unused diagnostics/parsing and legacy risk/mesoscale code paths were removed, and dead-code audit documentation was added with older runbooks archived.
+
 ## v1.0.0
 
 ### Overview
