@@ -179,7 +179,7 @@ extension HomeRemoteAlertContext {
     }
 
     private static func identifier(in userInfo: [AnyHashable: Any]) -> String? {
-        for key in ["alertID", "alertId", "seriesID", "seriesId", "eventKey"] {
+        for key in ["arcusAlertId", "alertID", "alertId", "seriesID", "seriesId", "eventKey"] {
             guard let value = userInfo[key] else { continue }
             if let stringValue = normalizedString(from: value) {
                 return stringValue

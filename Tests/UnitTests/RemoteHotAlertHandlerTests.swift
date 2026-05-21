@@ -34,6 +34,19 @@ struct RemoteHotAlertHandlerTests {
         #expect(context?.revisionSent == ISO8601DateFormatter().date(from: "2026-05-20T12:34:56Z"))
     }
 
+    @Test("canonical alert id falls back when shared payload decode fails")
+    func canonicalAlertIDFallsBackWhenSharedPayloadDecodeFails() {
+        let userInfo: [AnyHashable: Any] = [
+            "arcusAlertId": "99999999-8888-7777-6666-555555555555",
+            "revisionSent": "not-an-iso-date"
+        ]
+
+        let context = HomeRemoteAlertContext(userInfo: userInfo)
+
+        #expect(context?.alertID == "99999999-8888-7777-6666-555555555555")
+        #expect(context?.revisionSent == nil)
+    }
+
     @Test("background receipt maps to newData when the targeted alert becomes locally available")
     func backgroundReceipt_returnsNewData() async throws {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
