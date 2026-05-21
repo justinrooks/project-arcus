@@ -179,6 +179,96 @@ struct AlertRepoActiveTests {
         #expect(hits.map(\.id) == ["active"])
     }
 
+    @Test("Geometry-backed alert excludes UGC-only matches when H3 cell does not match")
+    func geometryBackedAlert_excludesUGCOnlyMatch() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let tag = "-G1"
+
+        let alert = makeAlert(
+            number: "1\(tag)",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            ugcZones: ["ALC013"],
+            cells: [613725958748241919],
+            geometry: testPolygonGeometry()
+        )
+
+        ctx.insert(alert)
+        try ctx.save()
+
+        let hits = try await repo.active(
+            countyCode: "ALC013",
+            fireZone: "ZZZ000",
+            forecastZone: "ZZZ001",
+            cell: 613725958748241920,
+            on: now
+        )
+
+        #expect(hits.isEmpty)
+    }
+
+    @Test("Geometry-backed alert includes H3 cell matches even when UGC does not match")
+    func geometryBackedAlert_includesCellMatchWithoutUGCMatch() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let tag = "-G2"
+        let cell: Int64 = 613725958748241919
+
+        let alert = makeAlert(
+            number: "1\(tag)",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            ugcZones: ["ALC013"],
+            cells: [cell],
+            geometry: testPolygonGeometry()
+        )
+
+        ctx.insert(alert)
+        try ctx.save()
+
+        let hits = try await repo.active(
+            countyCode: "ZZZ000",
+            fireZone: "ZZZ001",
+            forecastZone: "ZZZ002",
+            cell: cell,
+            on: now
+        )
+
+        #expect(hits.map(\.id) == ["1\(tag)"])
+    }
+
+    @Test("Geometry-less alert keeps UGC fallback matching")
+    func geometryLessAlert_keepsUGCFallback() async throws {
+        let ctx = ModelContext(container)
+        let now = ISO8601DateFormatter().date(from: "2025-09-20T00:00:00Z")!
+        let tag = "-G3"
+
+        let alert = makeAlert(
+            number: "1\(tag)",
+            issued: now.addingTimeInterval(-3600),
+            effective: now.addingTimeInterval(-300),
+            validEnd: now.addingTimeInterval(600),
+            ugcZones: ["ALC013"],
+            cells: []
+        )
+
+        ctx.insert(alert)
+        try ctx.save()
+
+        let hits = try await repo.active(
+            countyCode: "ALC013",
+            fireZone: "ZZZ000",
+            forecastZone: "ZZZ001",
+            cell: nil,
+            on: now
+        )
+
+        #expect(hits.map(\.id) == ["1\(tag)"])
+    }
+
     @Test("Matches forecast-zone UGCs when county and fire zones do not match")
     func matchesForecastZoneUGC() async throws {
         let ctx = ModelContext(container)

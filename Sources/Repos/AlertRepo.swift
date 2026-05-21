@@ -27,7 +27,14 @@ actor AlertRepo {
             let matchesCell = cell.map { cells.contains($0) } ?? false
             let matchesUGC = ugc.contains(countyCode) || ugc.contains(fireZone) || ugc.contains(forecastZone)
             
-            if (matchesCell || matchesUGC) && isRenderableAlertLifecycle(status: alert.status, messageType: alert.messageType) {
+            let matchesLocation: Bool
+            if alert.geometry != nil {
+                matchesLocation = matchesCell
+            } else {
+                matchesLocation = matchesCell || matchesUGC
+            }
+
+            if matchesLocation && isRenderableAlertLifecycle(status: alert.status, messageType: alert.messageType) {
                 hits.append(alert)
             }
         }
