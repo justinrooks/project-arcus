@@ -9,6 +9,7 @@ import Foundation
 import Observation
 import OSLog
 import UIKit
+import ArcusCore
 
 struct RemoteAlertFocusRequest: Identifiable, Equatable, Sendable {
     let id = UUID()
@@ -143,6 +144,15 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
 
 extension HomeRemoteAlertContext {
     init?(userInfo: [AnyHashable: Any]) {
+        if let payload = Self.sharedPayload(in: userInfo),
+           let alertID = payload.resolvedAlertID {
+            self.init(
+                alertID: alertID,
+                revisionSent: payload.revisionSent
+            )
+            return
+        }
+
         guard let alertID = Self.identifier(in: userInfo) else {
             return nil
         }
@@ -223,6 +233,23 @@ extension HomeRemoteAlertContext {
     private static func normalizedDate(from epoch: TimeInterval) -> Date {
         let seconds = epoch > 10_000_000_000 ? epoch / 1_000 : epoch
         return Date(timeIntervalSince1970: seconds)
+    }
+
+    private static func sharedPayload(in userInfo: [AnyHashable: Any]) -> HotAlertAPNsPayload? {
+        let dictionary = userInfo.reduce(into: [String: Any]()) { result, entry in
+            guard let key = entry.key as? String else { return }
+            result[key] = entry.value
+        }
+
+        guard JSONSerialization.isValidJSONObject(dictionary),
+              let data = try? JSONSerialization.data(withJSONObject: dictionary)
+        else {
+            return nil
+        }
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(HotAlertAPNsPayload.self, from: data)
     }
 }
 
