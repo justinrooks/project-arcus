@@ -150,3 +150,75 @@ import WidgetKit
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)
 }
+
+#Preview("Storm Lock / Circular", as: .accessoryCircular) {
+    SkyAwareStormRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Storm Lock / Rectangular", as: .accessoryRectangular) {
+    SkyAwareStormRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Storm Lock / Inline", as: .accessoryInline) {
+    SkyAwareStormRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Storm Lock / All Clear", as: .accessoryRectangular) {
+    SkyAwareStormRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormAllClear)
+}
+
+#Preview("Storm Lock / Unavailable", as: .accessoryInline) {
+    SkyAwareStormRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)
+}
+
+#Preview("Severe Lock / Circular", as: .accessoryCircular) {
+    SkyAwareSevereRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Severe Lock / Rectangular", as: .accessoryRectangular) {
+    SkyAwareSevereRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Severe Lock / Inline", as: .accessoryInline) {
+    SkyAwareSevereRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Severe Lock / No Active", as: .accessoryRectangular) {
+    SkyAwareSevereRiskLockScreenWidget()
+} timeline: {
+    Entry(
+        date: .now,
+        snapshot: WidgetSnapshot(
+            generatedAt: WidgetPreviewFixtures.now,
+            stormRisk: WidgetRiskDisplayState(label: "Marginal Risk", severity: 2),
+            severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
+            selectedAlert: nil,
+            hiddenAlertCount: 0,
+            freshness: WidgetFreshnessState(timestamp: WidgetPreviewFixtures.now, state: .fresh),
+            availability: .available,
+            destination: .summary
+        )
+    )
+}
+
+#Preview("Severe Lock / Unavailable", as: .accessoryInline) {
+    SkyAwareSevereRiskLockScreenWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)
+}
