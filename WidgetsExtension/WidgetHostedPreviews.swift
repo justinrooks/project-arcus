@@ -103,37 +103,49 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Combined / Normal", as: .systemLarge) {
+#Preview("Combined / Normal", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Combined / Multiple Alerts", as: .systemLarge) {
+#Preview("Combined / Normal (Large)", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
+}
+
+#Preview("Combined / Multiple Alerts", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
 }
 
-#Preview("Combined / All Clear", as: .systemLarge) {
+#Preview("Combined / Multiple Alerts (Large)", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
+}
+
+#Preview("Combined / All Clear", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedAllClear)
 }
 
-#Preview("Combined / No Alerts", as: .systemLarge) {
+#Preview("Combined / No Alerts", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.noAlert)
 }
 
-#Preview("Combined / Stale", as: .systemLarge) {
+#Preview("Combined / Stale", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.stale)
 }
 
-#Preview("Combined / Unavailable", as: .systemLarge) {
+#Preview("Combined / Unavailable", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)

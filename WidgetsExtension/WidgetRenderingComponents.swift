@@ -786,6 +786,7 @@ struct WidgetCombinedLargeView: View {
 private struct WidgetCombinedLargeCard: View {
     let snapshot: WidgetSnapshot
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.widgetFamily) private var widgetFamily
 
     private var stormStyle: WidgetRiskVisualStyle {
         WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity)
@@ -807,12 +808,16 @@ private struct WidgetCombinedLargeCard: View {
         return trimmed
     }
 
+    private var isMediumFamily: Bool {
+        widgetFamily == .systemMedium
+    }
+
     var body: some View {
         GeometryReader { proxy in
             ZStack(alignment: .topLeading) {
                 decorativeGlowLayer(in: proxy.size)
 
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: isMediumFamily ? 10 : 14) {
                     WidgetCombinedRiskPairRow(
                         stormState: snapshot.stormRisk,
                         severeState: snapshot.severeRisk
@@ -827,7 +832,9 @@ private struct WidgetCombinedLargeCard: View {
                         WidgetCombinedIntegratedNoAlertRow(stormSeverity: snapshot.stormRisk.severity)
                     }
 
-                    Spacer(minLength: 0)
+                    if !isMediumFamily {
+                        Spacer(minLength: 0)
+                    }
 
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Label(locationSummaryLine, systemImage: "mappin.and.ellipse")
@@ -843,8 +850,8 @@ private struct WidgetCombinedLargeCard: View {
                             .foregroundStyle(snapshot.freshness.state == .stale ? .orange : .secondary)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.horizontal, isMediumFamily ? 14 : 16)
+                .padding(.vertical, isMediumFamily ? 12 : 16)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)

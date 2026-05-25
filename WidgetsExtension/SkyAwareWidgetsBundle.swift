@@ -50,7 +50,7 @@ struct SkyAwareCombinedWidget: Widget {
         }
         .configurationDisplayName(WidgetGalleryMetadata.combinedName)
         .description(WidgetGalleryMetadata.combinedDescription)
-        .supportedFamilies([.systemLarge])
+        .supportedFamilies([.systemMedium, .systemLarge])
         .contentMarginsDisabled()
     }
 }
