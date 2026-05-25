@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v1.0.1(67)
+
+### Overview
+This update adds new widget surfaces, tightens alert-targeting and remote payload parsing behavior, and fixes duplicate Home loads plus location-context reliability.
+
+### Highlights
+- Added medium and lock screen widgets to expand available widget layouts.
+- Active alert targeting now uses geometry-first matching for geometry-backed alerts, with UGC fallback retained for geometry-less alerts.
+- Remote hot-alert APNs parsing now aligns to shared Arcus payload fields with compatibility fallback for legacy keys.
+- Home now avoids duplicate load triggers that could cause repeated refresh work.
+- Location context handling was fixed to improve refresh-flow reliability.
+
+### Maintenance
+- Weekly bug-scan audit documentation was moved to the correct `docs/audits` location.
+- Widget snapshot refresh coordinator tests were updated for current behavior.
+
 ## v1.0.1(65)
 
 ### Overview

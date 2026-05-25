@@ -1,3 +1,12 @@
+SkyAware v1.0.1(67) adds new widget surfaces and tightens alert-targeting and refresh reliability behavior.
+
+Highlights:
+- Added medium and lock screen widgets.
+- Geometry-backed alerts now require geometry/H3 matches for active targeting; geometry-less alerts retain UGC fallback matching.
+- Remote hot-alert APNs parsing now uses shared Arcus payload fields with legacy-key compatibility fallback.
+- Fixed duplicate Home load triggers to reduce repeated refresh work.
+- Fixed location context handling reliability during refresh flows.
+
 SkyAware v1.0.1(65) focuses on internal cleanup and alert-naming consistency, with tighter map refresh orchestration and refreshed test coverage.
 
 Highlights:

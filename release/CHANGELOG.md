@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## v1.0.1(67)
+
+### Features
+- Add medium and lock screen widgets to expand widget surfaces beyond existing Home widget sizes.
+<!-- evidence: 6bd9fdb, 94db622 -->
+
+### Data & Repos
+- Enforce geometry-first active alert targeting so geometry-backed alerts require H3 cell matches, while geometry-less alerts retain UGC fallback matching.
+<!-- evidence: 9c08b13 -->
+- Align remote hot-alert APNs payload parsing to shared Arcus payload fields with legacy-key fallback for compatibility.
+<!-- evidence: 9c08b13 -->
+
+### UI / UX
+- Fix duplicate Home screen load triggers to reduce repeated refresh work during normal app use.
+<!-- evidence: a0234db -->
+
+### Reliability
+- Fix location context handling in `LocationSession` to prevent incorrect location-context state during refresh flows.
+<!-- evidence: 58272f4 -->
+
+### Tests / QA
+- Update widget snapshot refresh coordinator unit coverage to match current snapshot-refresh behavior.
+<!-- evidence: b45edb6 -->
+
+### Maintenance / Cleanup
+- Correct weekly bug-scan audit document file placement under `docs/audits`.
+<!-- evidence: cc9ae97 -->
+
 ## v1.0.1(65)
 
 ### UI / UX
