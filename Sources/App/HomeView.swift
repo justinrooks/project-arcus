@@ -319,21 +319,15 @@ struct HomeView: View {
         .onChange(of: displayedSevereRisk) { _, _ in
             refreshLocationReliabilityRail()
         }
+        .task {
+            refreshLocationReliabilityRail()
+        }
         .sheet(isPresented: $showsLocationReliabilitySheet) {
             LocationReliabilitySummaryExplanationSheet(
                 reliability: locationSession.reliabilityState,
                 onEnableAlways: enableAlwaysFromReliabilitySheet,
                 onNotNow: dismissLocationReliabilitySheetForToday
             )
-        }
-        .task(id: locationSession.reliabilityState) {
-            refreshLocationReliabilityRail()
-        }
-        .task(id: displayedStormRisk) {
-            refreshLocationReliabilityRail()
-        }
-        .task(id: displayedSevereRisk) {
-            refreshLocationReliabilityRail()
         }
         .onOpenURL { url in
             guard let tab = Self.tabSelection(forIncomingURL: url) else {

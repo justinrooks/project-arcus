@@ -9,6 +9,10 @@
   - Sources/App/HomeView.swift
 - top finding: `LocationSession` clears `currentContext` to `nil` before setting the resolved context, creating avoidable double invalidation of SwiftUI observers per context refresh.
 - second finding: `HomeView` recalculates `refreshLocationReliabilityRail()` through both `.onChange` and `.task(id:)` for the same dependencies (`locationSession.reliabilityState`, `displayedStormRisk`, `displayedSevereRisk`), causing duplicate recomputation and ledger checks per state transition.
+- second finding status: completed on 2026-05-25
+- second finding implementation notes:
+  - Removed duplicate `.task(id:)` rail refresh triggers for reliability/risk dependencies.
+  - Kept `.onChange` triggers and added a single initial `.task` to preserve first-load evaluation.
 - best next fix: replace the `nil -> context` reset pattern with single guarded assignment keyed by refresh identity to avoid duplicate invalidations and downstream refresh triggers.
 - implementation recommended: yes
 - implementation status: completed on 2026-05-25
