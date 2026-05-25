@@ -155,8 +155,7 @@ final class LocationSession {
         }
 
         self.currentSnapshot = resolvedContext.snapshot
-        self.currentContext = nil
-        self.currentContext = resolvedContext
+        applyResolvedContext(resolvedContext)
         await locationContextResolver.enqueueForPush(resolvedContext, forceUpload: forceUpload)
     }
 
@@ -221,9 +220,7 @@ final class LocationSession {
                 if Task.isCancelled { return }
 
                 await MainActor.run {
-                    self.currentSnapshot = context.snapshot
-                    self.currentContext = nil
-                    self.currentContext = context
+                    self.applyResolvedContext(context)
                     self.startupState = .ready
                 }
             } catch is CancellationError {
@@ -235,6 +232,15 @@ final class LocationSession {
                 }
             }
         }
+    }
+
+    private func applyResolvedContext(_ context: LocationContext) {
+        if currentSnapshot != context.snapshot {
+            currentSnapshot = context.snapshot
+        }
+
+        guard currentContext?.refreshKey != context.refreshKey else { return }
+        currentContext = context
     }
 
     private func shouldRefreshContext(for snapshot: LocationSnapshot) -> Bool {
