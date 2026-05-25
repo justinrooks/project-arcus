@@ -32,7 +32,9 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(reloadedKinds == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
-            SkyAwareWidgetKind.combined
+            SkyAwareWidgetKind.combined,
+            SkyAwareWidgetKind.stormRiskLockScreen,
+            SkyAwareWidgetKind.severeRiskLockScreen
         ])
     }
 
@@ -100,10 +102,12 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         )
 
         #expect(store.load().snapshot?.severeRisk == .init(label: "No Active Threats", severity: 0))
-        #expect(Array(reloadedKinds.suffix(3)) == [
+        #expect(Array(reloadedKinds.suffix(5)) == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
-            SkyAwareWidgetKind.combined
+            SkyAwareWidgetKind.combined,
+            SkyAwareWidgetKind.stormRiskLockScreen,
+            SkyAwareWidgetKind.severeRiskLockScreen
         ])
     }
 
