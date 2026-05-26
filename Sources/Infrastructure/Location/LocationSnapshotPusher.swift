@@ -28,6 +28,7 @@ protocol PendingLocationUploadDraining: Sendable {
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
     func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async
+    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async
 }
 
 extension LocationUploadCoordinating {
@@ -36,6 +37,8 @@ extension LocationUploadCoordinating {
     }
 
     func drainPendingUploads() async {}
+
+    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {}
 }
 
 enum LocationPushError: Error {
@@ -184,6 +187,82 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await processQueue()
     }
 
+    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {
+        logger.info(
+            "Preference sync request accepted source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+        )
+        guard forceUpload || locationUploadEnabledProvider() else {
+            logger.notice(
+                "Preference sync request skipped reason=disabled source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+            )
+            return
+        }
+
+        await ensurePersistedPendingLoaded()
+        let installationId = await installationIdProvider()
+        let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        let isSubscribed = subscriptionStatusProvider()
+        let authorizationStatus = authorizationStatusProvider()
+        let now = nowProvider()
+        let persisted = PersistedLocationUploadRequest(
+            context: nil,
+            source: source,
+            forceUpload: forceUpload,
+            installationId: installationId,
+            requestedAt: now,
+            isSubscribed: isSubscribed,
+            authorizationState: Self.authorizationName(for: authorizationStatus),
+            apnsToken: apnsToken
+        )
+
+        guard !apnsToken.isEmpty else {
+            logger.notice(
+                "Preference sync request persisted reason=missingToken source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+            )
+            await upsertPending(persisted)
+            return
+        }
+
+        let dedupeKey = DeduplicationKey(
+            installationId: installationId,
+            apnsToken: apnsToken,
+            h3Cell: nil,
+            county: nil,
+            fireZone: nil,
+            forecastZone: nil,
+            isSubscribed: isSubscribed,
+            authorizationState: Self.authorizationName(for: authorizationStatus),
+            forceUpload: forceUpload
+        )
+        if shouldDedupeRequest(for: dedupeKey, now: now) {
+            logger.notice(
+                "Preference sync request deduped source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+            )
+            return
+        }
+
+        let payload = await makePayload(
+            from: persisted,
+            apnsToken: apnsToken,
+            isSubscribed: isSubscribed,
+            authorizationState: Self.authorizationName(for: authorizationStatus),
+            now: now
+        )
+        let coalescingKey = coalescingKey(for: persisted)
+        if pendingByCoalescingKey[coalescingKey] == nil {
+            logger.debug(
+                "Preference sync request persisted reason=queued source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+            )
+            await upsertPending(persisted)
+        }
+
+        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey))
+        lastUploadBySemanticKey[dedupeKey] = now
+
+        guard !isProcessing else { return }
+        await processQueue()
+    }
+
     func drainPendingUploads() async {
         await ensurePersistedPendingLoaded()
 
@@ -203,10 +282,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             let dedupeKey = DeduplicationKey(
                 installationId: pending.installationId,
                 apnsToken: apnsToken,
-                h3Cell: pending.context.h3Cell,
-                county: pending.context.county,
-                fireZone: pending.context.fireZone,
-                forecastZone: pending.context.forecastZone,
+                h3Cell: pending.context?.h3Cell,
+                county: pending.context?.county,
+                fireZone: pending.context?.fireZone,
+                forecastZone: pending.context?.forecastZone,
                 isSubscribed: pending.isSubscribed,
                 authorizationState: pending.authorizationState,
                 forceUpload: pending.forceUpload
@@ -359,16 +438,20 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         authorizationState: String,
         now: Date
     ) async -> LocationSnapshotPushPayload {
-        LocationSnapshotPushPayload(
-            capturedAt: request.context.capturedAt,
-            locationAgeSeconds: now.timeIntervalSince(request.context.capturedAt),
-            horizontalAccuracyMeters: request.context.horizontalAccuracyMeters,
+        let capturedAt = request.context?.capturedAt ?? request.requestedAt
+        let locationAgeSeconds = request.context.map { now.timeIntervalSince($0.capturedAt) } ?? 0
+        let horizontalAccuracyMeters = request.context?.horizontalAccuracyMeters ?? 0
+
+        return LocationSnapshotPushPayload(
+            capturedAt: capturedAt,
+            locationAgeSeconds: locationAgeSeconds,
+            horizontalAccuracyMeters: horizontalAccuracyMeters,
             cellScheme: "h3",
-            h3Cell: request.context.h3Cell,
-            h3Resolution: 8,
-            county: request.context.county,
-            zone: request.context.forecastZone,
-            fireZone: request.context.fireZone,
+            h3Cell: request.context?.h3Cell,
+            h3Resolution: request.context == nil ? nil : 8,
+            county: request.context?.county,
+            zone: request.context?.forecastZone,
+            fireZone: request.context?.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: request.installationId,
             source: request.source.rawValue,
@@ -384,8 +467,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return "prod"
                 #endif
             }(),
-            countyLabel: request.context.countyLabel,
-            fireZoneLabel: request.context.fireZoneLabel,
+            countyLabel: request.context?.countyLabel,
+            fireZoneLabel: request.context?.fireZoneLabel,
             isSubscribed: isSubscribed
         )
     }
@@ -413,10 +496,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         PendingCoalescingKey(
             installationId: request.installationId,
             apnsToken: request.apnsToken,
-            h3Cell: request.context.h3Cell,
-            county: request.context.county,
-            fireZone: request.context.fireZone,
-            forecastZone: request.context.forecastZone,
+            h3Cell: request.context?.h3Cell,
+            county: request.context?.county,
+            fireZone: request.context?.fireZone,
+            forecastZone: request.context?.forecastZone,
             isSubscribed: request.isSubscribed,
             authorizationState: request.authorizationState,
             forceUpload: request.forceUpload
@@ -447,7 +530,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private struct DeduplicationKey: Hashable {
         let installationId: String
         let apnsToken: String
-        let h3Cell: Int64
+        let h3Cell: Int64?
         let county: String?
         let fireZone: String?
         let forecastZone: String?
@@ -459,7 +542,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private struct PendingCoalescingKey: Hashable, Codable {
         let installationId: String
         let apnsToken: String
-        let h3Cell: Int64
+        let h3Cell: Int64?
         let county: String?
         let fireZone: String?
         let forecastZone: String?
@@ -480,7 +563,7 @@ protocol LocationUploadQueueStoring: Sendable {
 }
 
 struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
-    let context: PersistedLocationContext
+    let context: PersistedLocationContext?
     let source: LocationUploadSource
     let forceUpload: Bool
     let installationId: String
@@ -512,8 +595,8 @@ struct PersistedLocationContext: Sendable, Codable, Equatable {
     }
 
     init(payload: LocationSnapshotPushPayload) {
-        self.capturedAt = payload.capturedAt ?? .now
-        self.horizontalAccuracyMeters = payload.horizontalAccuracyMeters ?? 0
+        self.capturedAt = payload.capturedAt
+        self.horizontalAccuracyMeters = payload.horizontalAccuracyMeters
         self.h3Cell = payload.h3Cell ?? 0
         self.county = payload.county
         self.fireZone = payload.fireZone

@@ -451,6 +451,67 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("opt-out preference sync without location context persists when APNs token is missing")
+    func locationContextPusher_preferenceSyncWithoutContext_missingTokenPersists() async throws {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { false },
+            locationUploadEnabledProvider: { false },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            forceUpload: true,
+            reason: "location-sharing"
+        )
+
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await store.current().count == 1)
+        let persisted = try #require(await store.current().first)
+        #expect(persisted.context == nil)
+        #expect(persisted.isSubscribed == false)
+        #expect(persisted.forceUpload == true)
+    }
+
+    @Test("opt-out preference sync without location context drains when APNs token arrives")
+    func locationContextPusher_preferenceSyncWithoutContext_drainsOnTokenArrival() async throws {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let tokenState = TokenBox("")
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { tokenState.value() },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { false },
+            locationUploadEnabledProvider: { false },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            forceUpload: true,
+            reason: "notification"
+        )
+        #expect(await store.current().count == 1)
+
+        tokenState.set("apns-token-123")
+        await pusher.drainPendingUploads()
+
+        let payload = try #require(await uploader.uploadedPayloads().first)
+        #expect(payload.source == LocationUploadSource.settingsPreference.rawValue)
+        #expect(payload.isSubscribed == false)
+        #expect(payload.h3Cell == nil)
+        #expect(payload.county == nil)
+        #expect(await store.current().isEmpty)
+    }
+
     @Test("onboarding upload survives delayed APNs token and drains deterministically")
     func locationContextPusher_onboardingDelayedToken_drainUsesOnboardingSource() async throws {
         let uploader = MockSnapshotUploader()

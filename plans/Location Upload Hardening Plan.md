@@ -370,3 +370,22 @@ Each sub-issue should include:
 - Acceptance criteria
 - Validation commands
 - Link back to this plan
+
+## Final Validation Follow-Up Findings
+
+The end-to-end validation review found the main architecture materially improved, but identified follow-up issues that
+must be resolved before the hardening effort should be considered complete.
+
+| Issue | Severity | Title | Required Outcome |
+| --- | --- | --- | --- |
+| #187 | P1 | Ensure opt-out preference sync cannot be dropped without location context | Opt-out/unsubscribe preference intent is sent or durably queued even when `currentContext` and `currentSnapshot` are unavailable. |
+| #188 | P1 | Make RemoteNotificationRegistrar token observer test deterministic under full unit runs | Full `SkyAwareTests` passes locally; token observer tests no longer depend on fixed sleep timing. |
+| #189 | P2 | Avoid duplicate Settings location-sharing enable uploads | Settings enable-sharing path emits one intentional server-facing request while the legacy preference adapter is still location-payload backed. |
+| #190 | P2 | Respect cancellation during location upload retry backoff | Cancellation during retry backoff stops further upload attempts and leaves pending work persisted. |
+| #191 | P2 | Add reason attribution to location upload requests | Upload request, persistence, and diagnostics include explicit reason attribution in addition to source and force semantics. |
+| #192 | P3 | Stop logging raw H3 cells on location upload success | Upload diagnostics no longer log raw H3 cells or other sensitive location identifiers. |
+
+Validation evidence from the review:
+- Focused location/upload/ingestion/registrar suites passed locally: 91 passed, 0 failed.
+- Full `SkyAwareTests` failed locally: 426 passed, 1 failed in `RemoteNotificationRegistrarTests/storeDeviceToken_notifiesObserverOncePerStoreEvent`.
+- Xcode Cloud validation remains pending until the full unit target is green.

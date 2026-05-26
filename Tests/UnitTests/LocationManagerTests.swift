@@ -135,12 +135,21 @@ struct LocationSessionTests {
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
         private var lastSource: LocationUploadSource?
+        private var preferenceSyncCount = 0
+        private var lastPreferenceReason: String?
         private var drainCount = 0
 
         func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async {
             enqueueCount += 1
             lastForceUpload = forceUpload
             lastSource = source
+        }
+
+        func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {
+            preferenceSyncCount += 1
+            lastForceUpload = forceUpload
+            lastSource = source
+            lastPreferenceReason = reason
         }
 
         func drainPendingUploads() async {
@@ -150,6 +159,8 @@ struct LocationSessionTests {
         func recordedEnqueueCount() -> Int { enqueueCount }
         func recordedLastForceUpload() -> Bool? { lastForceUpload }
         func recordedLastSource() -> LocationUploadSource? { lastSource }
+        func recordedPreferenceSyncCount() -> Int { preferenceSyncCount }
+        func recordedLastPreferenceReason() -> String? { lastPreferenceReason }
         func recordedDrainCount() -> Int { drainCount }
     }
 
@@ -357,6 +368,66 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
         #expect(session.currentSnapshot == context.snapshot)
+    }
+
+    @MainActor
+    @Test("syncLocationSharingPreference with no context or snapshot queues durable preference sync")
+    func syncLocationSharingPreference_withoutContextOrSnapshot_queuesPreferenceSync() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentContext = nil
+        session.currentSnapshot = nil
+
+        await session.syncLocationSharingPreference(enabled: false)
+
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+    }
+
+    @MainActor
+    @Test("syncNotificationPreference with no context or snapshot queues durable preference sync")
+    func syncNotificationPreference_withoutContextOrSnapshot_queuesPreferenceSync() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentContext = nil
+        session.currentSnapshot = nil
+
+        await session.syncNotificationPreference(enabled: false)
+
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastPreferenceReason() == "notification")
     }
 
     @MainActor

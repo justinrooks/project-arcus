@@ -170,7 +170,12 @@ final class LocationSession {
     // TODO(#184): Replace this adapter once Arcus has a dedicated preference sync endpoint.
     private func syncPreferenceViaLegacyLocationPayload(forceUpload: Bool, reason: String) async {
         guard let context = await resolveCurrentContextIfNeeded() else {
-            logger.notice("Skipping legacy preference sync; missing location context reason=\(reason, privacy: .public)")
+            logger.notice("Queueing preference sync without location context reason=\(reason, privacy: .public)")
+            await locationUploadCoordinator.enqueuePreferenceSync(
+                source: .settingsPreference,
+                forceUpload: forceUpload,
+                reason: reason
+            )
             return
         }
         await locationUploadCoordinator.enqueue(
