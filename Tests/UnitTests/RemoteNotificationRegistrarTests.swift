@@ -109,7 +109,7 @@ struct RemoteNotificationRegistrarTests {
 
     @MainActor
     @Test("storeDeviceToken notifies token observer once per store event")
-    func storeDeviceToken_notifiesObserverOncePerStoreEvent() async throws {
+    func storeDeviceToken_notifiesObserverOncePerStoreEvent() async {
         let suiteName = "RemoteNotificationRegistrarTests.storeDeviceToken_notifiesObserverOncePerStoreEvent"
         let defaults = UserDefaults(suiteName: suiteName)
         defaults?.removePersistentDomain(forName: suiteName)
@@ -120,13 +120,19 @@ struct RemoteNotificationRegistrarTests {
             userDefaults: defaults,
             registerRemoteNotifications: {}
         )
-        sut.setTokenStoredObserver { _ in
-            await counter.increment()
+        let observerCompletion = AsyncStream<Void> { continuation in
+            sut.setTokenStoredObserver { _ in
+                await counter.increment()
+                continuation.yield(())
+                continuation.finish()
+            }
         }
 
+        var observerEvents = observerCompletion.makeAsyncIterator()
         sut.storeDeviceToken(Data([0x01, 0x02, 0x03]))
-        try await Task.sleep(for: .milliseconds(50))
 
+        let observedEvent = await observerEvents.next()
+        #expect(observedEvent != nil)
         #expect(await counter.value() == 1)
     }
 
