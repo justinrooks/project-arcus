@@ -37,6 +37,7 @@ protocol HomeContextPreparing: AnyObject, Sendable {
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
@@ -94,7 +95,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let startedAt = Date()
         environment.logger.info("Executing home ingestion plan={\(plan.logDescription)}")
         await progress.report(.started(.location(plan.lanes)))
-        let context = await resolveContext(for: plan.locationRequest, using: environment.locationSession)
+        let context = await resolveContext(
+            for: plan.locationRequest,
+            uploadSource: uploadSource(for: plan),
+            using: environment.locationSession
+        )
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
         let now = Date()
         let executionMode = httpExecutionMode(for: plan)
@@ -165,6 +170,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private func resolveContext(
         for request: HomeIngestionLocationRequest,
+        uploadSource: LocationUploadSource?,
         using locationSession: any HomeContextPreparing
     ) async -> LocationContext? {
         switch request {
@@ -175,6 +181,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: false,
                 showsAuthorizationPrompt: false,
+                uploadSource: uploadSource,
                 authorizationTimeout: 30,
                 locationTimeout: 12,
                 maximumAcceptedLocationAge: 5 * 60,
@@ -184,6 +191,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: false,
                 showsAuthorizationPrompt: false,
+                uploadSource: uploadSource,
                 authorizationTimeout: 30,
                 locationTimeout: 12,
                 maximumAcceptedLocationAge: 5 * 60,
@@ -193,6 +201,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: requiresFreshLocation,
                 showsAuthorizationPrompt: showsAuthorizationPrompt,
+                uploadSource: uploadSource,
                 authorizationTimeout: 30,
                 locationTimeout: 12,
                 maximumAcceptedLocationAge: 5 * 60,
@@ -200,6 +209,42 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             )
         case .explicit(let context):
             return context
+        }
+    }
+
+    private func uploadSource(for plan: HomeIngestionPlan) -> LocationUploadSource? {
+        if plan.provenance.contains(.background), plan.provenance.contains(.locationChange) {
+            return .backgroundLocationChange
+        }
+        if plan.provenance.contains(.background) {
+            return .backgroundRefresh
+        }
+        if plan.provenance.contains(.manualRefresh) {
+            return .manualRefresh
+        }
+        if plan.provenance.contains(.locationChange) {
+            return .foregroundLocationChange
+        }
+        if plan.provenance.contains(.foregroundActivate), plan.lanes == [.hotAlerts] {
+            return .foregroundPrime
+        }
+        if plan.provenance.contains(.foregroundActivate) {
+            return .foregroundActivate
+        }
+
+        switch plan.locationRequest {
+        case .latestAcceptedSnapshotPrepared:
+            return .backgroundLocationChange
+        case .prepare(let requiresFreshLocation, let showsAuthorizationPrompt):
+            if requiresFreshLocation, showsAuthorizationPrompt {
+                return .foregroundActivate
+            }
+            if requiresFreshLocation {
+                return .manualRefresh
+            }
+            return nil
+        case .currentPrepared, .explicit:
+            return nil
         }
     }
 

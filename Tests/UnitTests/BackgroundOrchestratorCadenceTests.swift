@@ -538,6 +538,7 @@ private final class FakeLocationSession: HomeContextPreparing {
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,

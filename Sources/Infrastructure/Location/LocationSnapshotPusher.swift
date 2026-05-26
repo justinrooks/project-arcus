@@ -11,13 +11,24 @@ import OSLog
 import UIKit
 import ArcusCore
 
-protocol LocationContextPushing: Sendable {
-    func enqueue(_ context: LocationContext, forceUpload: Bool) async
+enum LocationUploadSource: String, Sendable {
+    case foregroundPrime
+    case foregroundActivate
+    case foregroundLocationChange
+    case manualRefresh
+    case backgroundRefresh
+    case backgroundLocationChange
+    case onboarding
+    case settingsPreference
 }
 
-extension LocationContextPushing {
-    func enqueue(_ context: LocationContext) async {
-        await enqueue(context, forceUpload: false)
+protocol LocationUploadCoordinating: Sendable {
+    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async
+}
+
+extension LocationUploadCoordinating {
+    func enqueue(_ context: LocationContext, source: LocationUploadSource) async {
+        await enqueue(context, source: source, forceUpload: false)
     }
 }
 
@@ -25,7 +36,7 @@ enum LocationPushError: Error {
     case invalidResponseStatus(Int)
 }
 
-actor LocationSnapshotPusher: LocationContextPushing {
+actor LocationSnapshotPusher: LocationUploadCoordinating {
     typealias APNsTokenProvider = @Sendable () -> String
     typealias InstallationIDProvider = @Sendable () async -> String
     typealias SubscriptionStatusProvider = @Sendable () -> Bool
@@ -70,7 +81,7 @@ actor LocationSnapshotPusher: LocationContextPushing {
         self.retryDelaysSeconds = retryDelaysSeconds
     }
 
-    func enqueue(_ context: LocationContext, forceUpload: Bool = false) async {
+    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool = false) async {
         guard forceUpload || locationUploadEnabledProvider() else {
             logger.debug("Skipping location snapshot upload; disabled in settings")
             return
@@ -96,7 +107,7 @@ actor LocationSnapshotPusher: LocationContextPushing {
             fireZone: context.grid.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: installationId,
-            source: "unknown",
+            source: source.rawValue,
             auth: {
                 switch CLLocationManager().authorizationStatus {
                 case .authorizedAlways: return "always"

@@ -99,14 +99,10 @@ struct LocationSessionTests {
     private actor StubResolver: LocationContextResolving {
         let context: LocationContext?
         let error: LocationContextError?
-        let enqueueOnResolve: Bool
-        private var enqueueCount = 0
-        private var lastForceUpload: Bool?
 
-        init(context: LocationContext?, error: LocationContextError?, enqueueOnResolve: Bool = false) {
+        init(context: LocationContext?, error: LocationContextError?) {
             self.context = context
             self.error = error
-            self.enqueueOnResolve = enqueueOnResolve
         }
 
         func prepareCurrentContext(
@@ -128,28 +124,27 @@ struct LocationSessionTests {
             maximumAcceptedLocationAge: TimeInterval?,
             placemarkTimeout: Double
         ) async throws -> LocationContext {
-            if enqueueOnResolve {
-                enqueueCount += 1
-                lastForceUpload = false
-            }
             if let context {
                 return context
             }
             throw error ?? LocationContextError.locationTimeout
         }
+    }
 
-        func enqueueForPush(_ context: LocationContext, forceUpload: Bool) async {
+    private actor StubUploadCoordinator: LocationUploadCoordinating {
+        private var enqueueCount = 0
+        private var lastForceUpload: Bool?
+        private var lastSource: LocationUploadSource?
+
+        func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async {
             enqueueCount += 1
             lastForceUpload = forceUpload
+            lastSource = source
         }
 
-        func recordedEnqueueCount() -> Int {
-            enqueueCount
-        }
-
-        func recordedLastForceUpload() -> Bool? {
-            lastForceUpload
-        }
+        func recordedEnqueueCount() -> Int { enqueueCount }
+        func recordedLastForceUpload() -> Bool? { lastForceUpload }
+        func recordedLastSource() -> LocationUploadSource? { lastSource }
     }
 
     @MainActor
@@ -275,10 +270,12 @@ struct LocationSessionTests {
             )
         )
         let resolver = StubResolver(context: context, error: nil)
+        let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: resolver
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
         )
         _ = await session.prepareCurrentLocationContext(
             requiresFreshLocation: false,
@@ -287,8 +284,9 @@ struct LocationSessionTests {
 
         await session.pushServerNotificationPreferenceUpdate()
 
-        #expect(await resolver.recordedEnqueueCount() == 1)
-        #expect(await resolver.recordedLastForceUpload() == false)
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == false)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
     }
 
@@ -333,10 +331,12 @@ struct LocationSessionTests {
             )
         )
         let resolver = StubResolver(context: context, error: nil)
+        let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: resolver
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
         )
 
         // Let initialization tasks settle, then set deterministic test state.
@@ -346,15 +346,16 @@ struct LocationSessionTests {
 
         await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
 
-        #expect(await resolver.recordedEnqueueCount() == 1)
-        #expect(await resolver.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
         #expect(session.currentSnapshot == context.snapshot)
     }
 
     @MainActor
-    @Test("pushServerNotificationPreferenceUpdate can double enqueue when resolveContext also enqueues")
-    func pushServerNotificationPreferenceUpdate_resolvesFromSnapshotAndDoubleEnqueues() async throws {
+    @Test("pushServerNotificationPreferenceUpdate resolves from snapshot and enqueues once")
+    func pushServerNotificationPreferenceUpdate_resolvesFromSnapshotAndEnqueuesOnce() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -392,11 +393,13 @@ struct LocationSessionTests {
                 fireZoneLabel: "East Central Colorado"
             )
         )
-        let resolver = StubResolver(context: context, error: nil, enqueueOnResolve: true)
+        let resolver = StubResolver(context: context, error: nil)
+        let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: resolver
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
         )
 
         try await Task.sleep(for: .milliseconds(20))
@@ -405,8 +408,9 @@ struct LocationSessionTests {
 
         await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
 
-        #expect(await resolver.recordedEnqueueCount() == 2)
-        #expect(await resolver.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
     }
 

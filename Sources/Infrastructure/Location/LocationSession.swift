@@ -26,6 +26,7 @@ final class LocationSession {
     private let locationClient: LocationClient
     private let locationManager: LocationManager
     private let locationContextResolver: any LocationContextResolving
+    private let locationUploadCoordinator: any LocationUploadCoordinating
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
@@ -49,11 +50,13 @@ final class LocationSession {
     init(
         locationClient: LocationClient,
         locationManager: LocationManager,
-        locationContextResolver: any LocationContextResolving
+        locationContextResolver: any LocationContextResolving,
+        locationUploadCoordinator: any LocationUploadCoordinating = NoOpLocationUploadCoordinator()
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
         self.locationContextResolver = locationContextResolver
+        self.locationUploadCoordinator = locationUploadCoordinator
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -102,6 +105,7 @@ final class LocationSession {
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource? = nil,
         authorizationTimeout: Double = 30,
         locationTimeout: Double = 12,
         maximumAcceptedLocationAge: TimeInterval = 5 * 60,
@@ -130,6 +134,9 @@ final class LocationSession {
             )
             currentSnapshot = context.snapshot
             currentContext = context
+            if let uploadSource {
+                await locationUploadCoordinator.enqueue(context, source: uploadSource, forceUpload: false)
+            }
             startupState = .ready
             return context
         } catch {
@@ -141,7 +148,11 @@ final class LocationSession {
 
     func pushServerNotificationPreferenceUpdate(forceUpload: Bool = false) async {
         if let currentContext {
-            await locationContextResolver.enqueueForPush(currentContext, forceUpload: forceUpload)
+            await locationUploadCoordinator.enqueue(
+                currentContext,
+                source: .settingsPreference,
+                forceUpload: forceUpload
+            )
             return
         }
 
@@ -156,7 +167,11 @@ final class LocationSession {
 
         self.currentSnapshot = resolvedContext.snapshot
         applyResolvedContext(resolvedContext)
-        await locationContextResolver.enqueueForPush(resolvedContext, forceUpload: forceUpload)
+        await locationUploadCoordinator.enqueue(
+            resolvedContext,
+            source: .settingsPreference,
+            forceUpload: forceUpload
+        )
     }
 
     private func syncAuthorizationStatus() {
@@ -223,6 +238,11 @@ final class LocationSession {
                     self.applyResolvedContext(context)
                     self.startupState = .ready
                 }
+                await self.locationUploadCoordinator.enqueue(
+                    context,
+                    source: .foregroundLocationChange,
+                    forceUpload: false
+                )
             } catch is CancellationError {
                 return
             } catch {

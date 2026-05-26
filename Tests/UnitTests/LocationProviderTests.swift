@@ -308,7 +308,7 @@ struct LocationProviderTests {
         )
 
         let context = makeContext()
-        await pusher.enqueue(context)
+        await pusher.enqueue(context, source: .manualRefresh)
         
         let payloads = await uploader.uploadedPayloads()
         let payload = try #require(payloads.first)
@@ -332,7 +332,7 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0]
         )
 
-        await pusher.enqueue(makeContext())
+        await pusher.enqueue(makeContext(), source: .manualRefresh)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
@@ -350,13 +350,13 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context)
+        await pusher.enqueue(context, source: .manualRefresh)
         tokenState.set("apns-token-123")
 
         // If the first attempt were persisted, this would now be 1 without a second enqueue.
         #expect(await uploader.uploadedPayloads().isEmpty)
 
-        await pusher.enqueue(context)
+        await pusher.enqueue(context, source: .manualRefresh)
         #expect(await uploader.uploadedPayloads().count == 1)
     }
 
@@ -377,7 +377,7 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
 
-        await pusher.enqueue(context)
+        await pusher.enqueue(context, source: .manualRefresh)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
@@ -401,7 +401,7 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
 
-        await pusher.enqueue(context, forceUpload: true)
+        await pusher.enqueue(context, source: .settingsPreference, forceUpload: true)
 
         let payloads = await uploader.uploadedPayloads()
         let payload = try #require(payloads.first)
@@ -723,18 +723,6 @@ struct LocationContextResolverTests {
         }
     }
 
-    private actor RecordingContextPusher: LocationContextPushing {
-        private var contexts: [LocationContext] = []
-
-        func enqueue(_ context: LocationContext, forceUpload: Bool) async {
-            contexts.append(context)
-        }
-
-        func count() -> Int {
-            contexts.count
-        }
-    }
-
     private actor RefreshRequestTracker {
         private var count = 0
 
@@ -811,7 +799,6 @@ struct LocationContextResolverTests {
     @Test("waits for authorization result before preparing a ready context")
     func waitsForAuthorizationResult() async throws {
         let authorizationState = AuthorizationState(status: .notDetermined)
-        let pusher = RecordingContextPusher()
         let locationProvider = LocationProvider(
             geocoder: TestGeocoder(result: .success("Norman, OK")),
             hasher: TestHasher(h3Cell: sampleH3Cell)
@@ -828,7 +815,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in
                 Task {
@@ -858,13 +844,11 @@ struct LocationContextResolverTests {
         #expect(context.h3Cell == sampleH3Cell)
         #expect(context.grid.countyCode == "OKC109")
         #expect(context.grid.fireZone == "OKZ025")
-        #expect(await pusher.count() == 1)
     }
 
     @Test("uses the current snapshot immediately when one is already available")
     func usesCurrentSnapshotImmediatelyWhenAvailable() async throws {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
-        let pusher = RecordingContextPusher()
         let timestamp = Date()
         let cached = LocationSnapshot(
             coordinates: CLLocationCoordinate2D(latitude: 35.2226, longitude: -97.4395),
@@ -890,7 +874,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in false }
@@ -908,13 +891,11 @@ struct LocationContextResolverTests {
         #expect(context.snapshot.timestamp == timestamp)
         #expect(context.h3Cell == sampleH3Cell)
         #expect(context.grid.countyCode == "OKC109")
-        #expect(await pusher.count() == 1)
     }
 
     @Test("reuses a recent snapshot when fresh location is requested")
     func reusesRecentSnapshotWhenFreshLocationIsRequested() async throws {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
-        let pusher = RecordingContextPusher()
         let refreshTracker = RefreshRequestTracker()
         let timestamp = Date()
         let cached = LocationSnapshot(
@@ -941,7 +922,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in
@@ -962,13 +942,11 @@ struct LocationContextResolverTests {
         #expect(context.snapshot.timestamp == timestamp)
         #expect(context.h3Cell == sampleH3Cell)
         #expect(await refreshTracker.value() == 0)
-        #expect(await pusher.count() == 1)
     }
 
     @Test("requests a fresh location when the available snapshot is older than the startup reuse window")
     func requestsFreshLocationWhenAvailableSnapshotIsOlderThanReuseWindow() async throws {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
-        let pusher = RecordingContextPusher()
         let refreshTracker = RefreshRequestTracker()
         let staleTimestamp = Date().addingTimeInterval(-60)
         let refreshedTimestamp = Date()
@@ -996,7 +974,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in
@@ -1022,13 +999,11 @@ struct LocationContextResolverTests {
 
         #expect(context.snapshot.timestamp == refreshedTimestamp)
         #expect(await refreshTracker.value() == 1)
-        #expect(await pusher.count() == 1)
     }
 
     @Test("waits for a streamed snapshot when none is immediately available")
     func waitsForStreamedSnapshotWhenUnavailable() async throws {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
-        let pusher = RecordingContextPusher()
         let locationProvider = LocationProvider(
             geocoder: TestGeocoder(result: .failure(.geocodeFailed)),
             hasher: TestHasher(h3Cell: sampleH3Cell)
@@ -1045,7 +1020,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in false }
@@ -1074,7 +1048,6 @@ struct LocationContextResolverTests {
         let context = try await contextTask.value
         #expect(context.snapshot.timestamp == timestamp)
         #expect(context.h3Cell == sampleH3Cell)
-        #expect(await pusher.count() == 1)
     }
 
     @Test("times out cleanly while waiting for authorization resolution")
@@ -1119,7 +1092,6 @@ struct LocationContextResolverTests {
     @Test("times out when no accepted snapshot becomes available")
     func locationTimeoutIsReported() async {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
-        let pusher = RecordingContextPusher()
         let locationProvider = LocationProvider(
             geocoder: TestGeocoder(result: .success("Norman, OK")),
             hasher: TestHasher(h3Cell: sampleH3Cell)
@@ -1136,7 +1108,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in false }
@@ -1155,8 +1126,6 @@ struct LocationContextResolverTests {
         } catch {
             #expect((error as? LocationContextError) == .locationTimeout)
         }
-
-        #expect(await pusher.count() == 0)
     }
 
     @Test("does not produce a ready context without h3")
@@ -1256,7 +1225,6 @@ struct LocationContextResolverTests {
     @Test("allows a ready context when placemark resolution fails")
     func missingPlacemarkDoesNotBlockReadyContext() async throws {
         let authorizationState = AuthorizationState(status: .authorizedWhenInUse)
-        let pusher = RecordingContextPusher()
         let locationProvider = LocationProvider(
             geocoder: TestGeocoder(result: .failure(.geocodeFailed)),
             hasher: TestHasher(h3Cell: sampleH3Cell)
@@ -1273,7 +1241,6 @@ struct LocationContextResolverTests {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridPointProvider,
-            contextPusher: pusher,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in },
             refreshCurrentLocation: { _ in
@@ -1297,7 +1264,6 @@ struct LocationContextResolverTests {
         )
 
         #expect(context.snapshot.placemarkSummary == nil)
-        #expect(await pusher.count() == 1)
     }
 
     private func makePointPayload(includeCounty: Bool, includeFireZone: Bool) -> Data {

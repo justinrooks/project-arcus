@@ -54,8 +54,6 @@ protocol LocationContextResolving: Sendable {
         maximumAcceptedLocationAge: TimeInterval?,
         placemarkTimeout: Double
     ) async throws -> LocationContext
-
-    func enqueueForPush(_ context: LocationContext, forceUpload: Bool) async
 }
 
 actor LocationContextResolver: LocationContextResolving {
@@ -68,7 +66,6 @@ actor LocationContextResolver: LocationContextResolving {
     private let locationClient: LocationClient
     private let locationProvider: LocationProvider
     private let gridPointProvider: GridPointProvider
-    private let contextPusher: any LocationContextPushing
     private let authorizationStatusProvider: AuthorizationStatusProvider
     private let authorizationRequester: AuthorizationRequester
     private let refreshCurrentLocation: CurrentLocationRefresher
@@ -78,7 +75,6 @@ actor LocationContextResolver: LocationContextResolving {
         locationClient: LocationClient,
         locationProvider: LocationProvider,
         gridPointProvider: GridPointProvider,
-        contextPusher: any LocationContextPushing = NoOpLocationContextPusher(),
         authorizationStatusProvider: @escaping AuthorizationStatusProvider,
         authorizationRequester: @escaping AuthorizationRequester,
         refreshCurrentLocation: @escaping CurrentLocationRefresher
@@ -86,7 +82,6 @@ actor LocationContextResolver: LocationContextResolving {
         self.locationClient = locationClient
         self.locationProvider = locationProvider
         self.gridPointProvider = gridPointProvider
-        self.contextPusher = contextPusher
         self.authorizationStatusProvider = authorizationStatusProvider
         self.authorizationRequester = authorizationRequester
         self.refreshCurrentLocation = refreshCurrentLocation
@@ -210,15 +205,10 @@ actor LocationContextResolver: LocationContextResolving {
         }
 
         let context = LocationContext(snapshot: enrichedSnapshot, h3Cell: h3Cell, grid: grid)
-        await contextPusher.enqueue(context)
         logger.info(
             "Location context resolved hasPlacemark=\((enrichedSnapshot.placemarkSummary != nil), privacy: .public) hasCounty=\((grid.countyCode?.isEmpty == false), privacy: .public) hasFireZone=\((grid.fireZone?.isEmpty == false), privacy: .public)"
         )
         return context
-    }
-
-    func enqueueForPush(_ context: LocationContext, forceUpload: Bool = false) async {
-        await contextPusher.enqueue(context, forceUpload: forceUpload)
     }
 
     private func waitForAuthorizationResolution(timeout: Double) async throws -> CLAuthorizationStatus {
