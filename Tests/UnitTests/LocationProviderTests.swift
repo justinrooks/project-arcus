@@ -82,6 +82,31 @@ struct LocationProviderTests {
         }
     }
 
+    private actor BackoffCancellingUploader: LocationSnapshotUploading {
+        private var payloads: [LocationSnapshotPushPayload] = []
+        private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
+
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            payloads.append(payload)
+            if payloads.count == 1 {
+                firstAttemptContinuation?.resume()
+                firstAttemptContinuation = nil
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+
+        func waitForFirstAttempt() async {
+            if payloads.isEmpty == false { return }
+            await withCheckedContinuation { continuation in
+                firstAttemptContinuation = continuation
+            }
+        }
+
+        func attemptCount() -> Int {
+            payloads.count
+        }
+    }
+
     private actor InMemoryUploadQueueStore: LocationUploadQueueStoring {
         private var pending: [PersistedLocationUploadRequest]
 
@@ -575,6 +600,29 @@ struct LocationProviderTests {
         )
 
         await pusher.enqueue(makeContext(), source: .manualRefresh)
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("snapshot pusher cancels retry during backoff and preserves pending request")
+    func snapshotPusher_cancellationDuringBackoffStopsRetryAndPersistsPending() async throws {
+        let uploader = BackoffCancellingUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 1],
+            queueStore: store
+        )
+
+        let enqueueTask = Task {
+            await pusher.enqueue(makeContext(), source: .manualRefresh)
+        }
+        await uploader.waitForFirstAttempt()
+        enqueueTask.cancel()
+        await enqueueTask.value
+
+        #expect(await uploader.attemptCount() == 1)
         #expect(await store.current().count == 1)
     }
 

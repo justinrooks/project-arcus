@@ -340,6 +340,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
     private func drainQueue() async {
         while !queue.isEmpty {
+            if Task.isCancelled {
+                logger.notice("Location upload queue drain cancelled")
+                return
+            }
             let workItem = queue.removeFirst()
             let didUpload = await uploadWithRetry(workItem.payload)
             if didUpload {
@@ -352,14 +356,35 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 logger.error(
                     "Location upload failed source=\(workItem.payload.source, privacy: .public)"
                 )
+                if Task.isCancelled {
+                    logger.notice("Location upload queue drain stopped after cancellation")
+                    return
+                }
             }
         }
     }
 
     private func uploadWithRetry(_ payload: LocationSnapshotPushPayload) async -> Bool {
         for (index, delay) in retryDelaysSeconds.enumerated() {
+            do {
+                try Task.checkCancellation()
+            } catch is CancellationError {
+                logger.notice("Location upload cancelled before attempt source=\(payload.source, privacy: .public)")
+                return false
+            } catch {
+                return false
+            }
+
             if delay > 0 {
-                try? await Task.sleep(for: .seconds(Int(delay)))
+                do {
+                    try await Task.sleep(for: .seconds(Int(delay)))
+                    try Task.checkCancellation()
+                } catch is CancellationError {
+                    logger.notice("Location upload cancelled during retry backoff source=\(payload.source, privacy: .public)")
+                    return false
+                } catch {
+                    return false
+                }
             }
             do {
                 try await uploader.upload(payload)
