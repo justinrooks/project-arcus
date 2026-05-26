@@ -135,6 +135,7 @@ struct LocationSessionTests {
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
         private var lastSource: LocationUploadSource?
+        private var drainCount = 0
 
         func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async {
             enqueueCount += 1
@@ -142,9 +143,14 @@ struct LocationSessionTests {
             lastSource = source
         }
 
+        func drainPendingUploads() async {
+            drainCount += 1
+        }
+
         func recordedEnqueueCount() -> Int { enqueueCount }
         func recordedLastForceUpload() -> Bool? { lastForceUpload }
         func recordedLastSource() -> LocationUploadSource? { lastSource }
+        func recordedDrainCount() -> Int { drainCount }
     }
 
     @MainActor
@@ -412,6 +418,28 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastForceUpload() == false)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
+    }
+
+    @MainActor
+    @Test("drainPendingLocationUploads forwards to upload coordinator")
+    func drainPendingLocationUploads_forwardsToCoordinator() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        await session.drainPendingLocationUploads()
+
+        #expect(await uploader.recordedDrainCount() == 1)
     }
 
     @MainActor

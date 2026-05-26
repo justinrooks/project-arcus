@@ -402,6 +402,11 @@ final class Dependencies: Sendable {
             locationUploadCoordinator: locationUploadCoordinator
         )
         logger.info("Location session initialized")
+        Task { @MainActor in
+            RemoteNotificationRegistrar.shared.setTokenStoredObserver { _ in
+                await locationSession.drainPendingLocationUploads()
+            }
+        }
         
         let nws = NwsProvider(
             alertRepo: alertRepo,
@@ -494,7 +499,8 @@ final class Dependencies: Sendable {
             mesoEngine: meso,
             health: healthStore,
             cadence: cadencePolicy,
-            notificationSettingsProvider: notificationSettingsProvider
+            notificationSettingsProvider: notificationSettingsProvider,
+            pendingUploadDrainer: locationUploadCoordinator
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)

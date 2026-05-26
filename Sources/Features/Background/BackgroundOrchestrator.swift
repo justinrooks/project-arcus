@@ -37,6 +37,7 @@ actor BackgroundOrchestrator {
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
     private let notificationSettingsProvider: NotificationSettingsProviding
+    private let pendingUploadDrainer: any PendingLocationUploadDraining
     
     private let clock = ContinuousClock()
     
@@ -47,7 +48,8 @@ actor BackgroundOrchestrator {
         mesoEngine: MesoEngine,
         health: BgHealthStore,
         cadence: CadencePolicy,
-        notificationSettingsProvider: NotificationSettingsProviding
+        notificationSettingsProvider: NotificationSettingsProviding,
+        pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator()
     ) {
         self.coordinator = coordinator
         morningEngine = engine
@@ -56,6 +58,7 @@ actor BackgroundOrchestrator {
         self.cadence = cadence
         self.mesoEngine = mesoEngine
         self.notificationSettingsProvider = notificationSettingsProvider
+        self.pendingUploadDrainer = pendingUploadDrainer
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
     }
@@ -77,6 +80,7 @@ actor BackgroundOrchestrator {
             do {
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
+                await pendingUploadDrainer.drainPendingUploads()
                 let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
                 let snapshot = try await coordinator.enqueueAndWait(
                     .backgroundRefresh,

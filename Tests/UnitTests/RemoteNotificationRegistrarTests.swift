@@ -4,6 +4,18 @@ import Testing
 
 @Suite("RemoteNotificationRegistrar")
 struct RemoteNotificationRegistrarTests {
+    private actor DrainCounter {
+        private var count = 0
+
+        func increment() {
+            count += 1
+        }
+
+        func value() -> Int {
+            count
+        }
+    }
+
     private final class MockInstallationStorage: @unchecked Sendable {
         private let lock = NSLock()
         private var storedValue: String?
@@ -93,6 +105,29 @@ struct RemoteNotificationRegistrarTests {
 
         let token = await tokenTask.value
         #expect(token == "00ab10")
+    }
+
+    @MainActor
+    @Test("storeDeviceToken notifies token observer once per store event")
+    func storeDeviceToken_notifiesObserverOncePerStoreEvent() async throws {
+        let suiteName = "RemoteNotificationRegistrarTests.storeDeviceToken_notifiesObserverOncePerStoreEvent"
+        let defaults = UserDefaults(suiteName: suiteName)
+        defaults?.removePersistentDomain(forName: suiteName)
+        let counter = DrainCounter()
+
+        let sut = RemoteNotificationRegistrar(
+            center: .current(),
+            userDefaults: defaults,
+            registerRemoteNotifications: {}
+        )
+        sut.setTokenStoredObserver { _ in
+            await counter.increment()
+        }
+
+        sut.storeDeviceToken(Data([0x01, 0x02, 0x03]))
+        try await Task.sleep(for: .milliseconds(50))
+
+        #expect(await counter.value() == 1)
     }
 
     @Test("InstallationIdentityStore returns existing ID without writing")

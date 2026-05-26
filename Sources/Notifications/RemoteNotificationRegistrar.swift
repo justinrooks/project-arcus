@@ -21,6 +21,7 @@ final class RemoteNotificationRegistrar {
     private let logger: Logger
     private let registerRemoteNotifications: @MainActor () -> Void
     private var tokenWaiters: [UUID: CheckedContinuation<String?, Never>] = [:]
+    private var tokenStoredObserver: (@MainActor @Sendable (String) async -> Void)?
 
     init(
         center: UNUserNotificationCenter = .current(),
@@ -54,9 +55,18 @@ final class RemoteNotificationRegistrar {
         let waiters = Array(tokenWaiters.values)
         tokenWaiters.removeAll()
         waiters.forEach { $0.resume(returning: token) }
+        if let tokenStoredObserver {
+            Task { @MainActor in
+                await tokenStoredObserver(token)
+            }
+        }
 #if DEBUG
         logger.debug("APNs device token stored for debug run")
 #endif
+    }
+
+    func setTokenStoredObserver(_ observer: (@MainActor @Sendable (String) async -> Void)?) {
+        tokenStoredObserver = observer
     }
 
     func waitForDeviceToken(timeout: Duration = .seconds(10)) async -> String? {

@@ -22,9 +22,12 @@ enum LocationUploadSource: String, Sendable, Codable {
     case settingsPreference
 }
 
-protocol LocationUploadCoordinating: Sendable {
-    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async
+protocol PendingLocationUploadDraining: Sendable {
     func drainPendingUploads() async
+}
+
+protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
+    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async
 }
 
 extension LocationUploadCoordinating {

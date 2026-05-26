@@ -163,6 +163,10 @@ final class LocationSession {
         )
     }
 
+    func drainPendingLocationUploads() async {
+        await locationUploadCoordinator.drainPendingUploads()
+    }
+
     // TODO(#184): Replace this adapter once Arcus has a dedicated preference sync endpoint.
     private func syncPreferenceViaLegacyLocationPayload(forceUpload: Bool, reason: String) async {
         guard let context = await resolveCurrentContextIfNeeded() else {
