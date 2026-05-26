@@ -566,6 +566,23 @@ struct LocationProviderTests {
         #expect(payload.isSubscribed == false)
     }
 
+    @Test("snapshot pusher skips non-forced preference sync when location sharing is disabled")
+    func snapshotPusher_skipsNonForcedPreferenceSyncWhenLocationSharingDisabled() async throws {
+        let uploader = MockSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { false },
+            locationUploadEnabledProvider: { false },
+            retryDelaysSeconds: [0]
+        )
+
+        await pusher.enqueue(makeContext(), source: .settingsPreference, forceUpload: false)
+
+        #expect(await uploader.uploadedPayloads().isEmpty)
+    }
+
     @Test("snapshot pusher dedupes identical non-forced uploads inside the dedupe window")
     func snapshotPusher_dedupesIdenticalNonForcedUploads() async throws {
         let uploader = MockSnapshotUploader()

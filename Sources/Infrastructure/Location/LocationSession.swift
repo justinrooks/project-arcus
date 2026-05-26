@@ -146,32 +146,53 @@ final class LocationSession {
         }
     }
 
-    func pushServerNotificationPreferenceUpdate(forceUpload: Bool = false) async {
-        if let currentContext {
-            await locationUploadCoordinator.enqueue(
-                currentContext,
-                source: .settingsPreference,
-                forceUpload: forceUpload
-            )
+    func syncNotificationPreference(enabled: Bool) async {
+        await syncPreferenceViaLegacyLocationPayload(forceUpload: true, reason: "notification")
+    }
+
+    func syncLocationSharingPreference(enabled: Bool) async {
+        await syncPreferenceViaLegacyLocationPayload(forceUpload: true, reason: "location-sharing")
+    }
+
+    func enqueueCurrentLocationUpload(source: LocationUploadSource) async {
+        guard let context = await resolveCurrentContextIfNeeded() else { return }
+        await locationUploadCoordinator.enqueue(
+            context,
+            source: source,
+            forceUpload: false
+        )
+    }
+
+    // TODO(#184): Replace this adapter once Arcus has a dedicated preference sync endpoint.
+    private func syncPreferenceViaLegacyLocationPayload(forceUpload: Bool, reason: String) async {
+        guard let context = await resolveCurrentContextIfNeeded() else {
+            logger.notice("Skipping legacy preference sync; missing location context reason=\(reason, privacy: .public)")
             return
         }
+        await locationUploadCoordinator.enqueue(
+            context,
+            source: .settingsPreference,
+            forceUpload: forceUpload
+        )
+    }
 
-        guard let currentSnapshot else { return }
+    private func resolveCurrentContextIfNeeded() async -> LocationContext? {
+        if let currentContext {
+            return currentContext
+        }
+
+        guard let currentSnapshot else { return nil }
         guard let resolvedContext = try? await locationContextResolver.resolveContext(
             from: currentSnapshot,
             maximumAcceptedLocationAge: nil,
             placemarkTimeout: 8
         ) else {
-            return
+            return nil
         }
 
         self.currentSnapshot = resolvedContext.snapshot
         applyResolvedContext(resolvedContext)
-        await locationUploadCoordinator.enqueue(
-            resolvedContext,
-            source: .settingsPreference,
-            forceUpload: forceUpload
-        )
+        return resolvedContext
     }
 
     private func syncAuthorizationStatus() {

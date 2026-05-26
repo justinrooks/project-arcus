@@ -172,10 +172,12 @@ struct OnboardingView: View {
             let context = await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: true,
                 showsAuthorizationPrompt: false,
-                uploadSource: .onboarding
+                uploadSource: nil
             )
             if context == nil {
                 logger.notice("Continuing onboarding without an uploaded location context; none became available")
+            } else {
+                await locationSession.enqueueCurrentLocationUpload(source: .onboarding)
             }
         }
 

@@ -230,8 +230,8 @@ struct LocationSessionTests {
     }
 
     @MainActor
-    @Test("pushServerNotificationPreferenceUpdate forwards current context for upload")
-    func pushServerNotificationPreferenceUpdate_forwardsCurrentContext() async throws {
+    @Test("syncNotificationPreference forwards current context as forced preference sync")
+    func syncNotificationPreference_forwardsCurrentContextAsForcedSync() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -282,17 +282,17 @@ struct LocationSessionTests {
             showsAuthorizationPrompt: false
         )
 
-        await session.pushServerNotificationPreferenceUpdate()
+        await session.syncNotificationPreference(enabled: true)
 
         #expect(await uploader.recordedEnqueueCount() == 1)
-        #expect(await uploader.recordedLastForceUpload() == false)
+        #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
     }
 
     @MainActor
-    @Test("pushServerNotificationPreferenceUpdate resolves missing context and enqueues with force flag")
-    func pushServerNotificationPreferenceUpdate_resolvesMissingContext_andEnqueuesWithForceFlag() async throws {
+    @Test("syncLocationSharingPreference resolves missing context and enqueues forced sync")
+    func syncLocationSharingPreference_resolvesMissingContext_andEnqueuesForcedSync() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -344,7 +344,7 @@ struct LocationSessionTests {
         session.currentSnapshot = context.snapshot
         session.currentContext = nil
 
-        await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
+        await session.syncLocationSharingPreference(enabled: false)
 
         #expect(await uploader.recordedEnqueueCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
@@ -354,8 +354,8 @@ struct LocationSessionTests {
     }
 
     @MainActor
-    @Test("pushServerNotificationPreferenceUpdate resolves from snapshot and enqueues once")
-    func pushServerNotificationPreferenceUpdate_resolvesFromSnapshotAndEnqueuesOnce() async throws {
+    @Test("enqueueCurrentLocationUpload resolves from snapshot and enqueues non-forced upload once")
+    func enqueueCurrentLocationUpload_resolvesFromSnapshotAndEnqueuesOnce() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -406,10 +406,10 @@ struct LocationSessionTests {
         session.currentSnapshot = context.snapshot
         session.currentContext = nil
 
-        await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
+        await session.enqueueCurrentLocationUpload(source: .settingsPreference)
 
         #expect(await uploader.recordedEnqueueCount() == 1)
-        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastForceUpload() == false)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(session.currentContext == context)
     }
