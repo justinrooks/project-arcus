@@ -99,12 +99,14 @@ struct LocationSessionTests {
     private actor StubResolver: LocationContextResolving {
         let context: LocationContext?
         let error: LocationContextError?
+        let enqueueOnResolve: Bool
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
 
-        init(context: LocationContext?, error: LocationContextError?) {
+        init(context: LocationContext?, error: LocationContextError?, enqueueOnResolve: Bool = false) {
             self.context = context
             self.error = error
+            self.enqueueOnResolve = enqueueOnResolve
         }
 
         func prepareCurrentContext(
@@ -126,6 +128,10 @@ struct LocationSessionTests {
             maximumAcceptedLocationAge: TimeInterval?,
             placemarkTimeout: Double
         ) async throws -> LocationContext {
+            if enqueueOnResolve {
+                enqueueCount += 1
+                lastForceUpload = false
+            }
             if let context {
                 return context
             }
@@ -344,6 +350,64 @@ struct LocationSessionTests {
         #expect(await resolver.recordedLastForceUpload() == true)
         #expect(session.currentContext == context)
         #expect(session.currentSnapshot == context.snapshot)
+    }
+
+    @MainActor
+    @Test("pushServerNotificationPreferenceUpdate can double enqueue when resolveContext also enqueues")
+    func pushServerNotificationPreferenceUpdate_resolvesFromSnapshotAndDoubleEnqueues() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+
+        let context = LocationContext(
+            snapshot: LocationSnapshot(
+                coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+                timestamp: Date(timeIntervalSince1970: 1_234_567),
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: GridPointSnapshot(
+                nwsId: "https://api.weather.gov/points/39.7392,-104.9903",
+                latitude: 39.7392,
+                longitude: -104.9903,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Denver",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC031",
+                fireZone: "COZ246",
+                countyLabel: "Denver County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        )
+        let resolver = StubResolver(context: context, error: nil, enqueueOnResolve: true)
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentSnapshot = context.snapshot
+        session.currentContext = nil
+
+        await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
+
+        #expect(await resolver.recordedEnqueueCount() == 2)
+        #expect(await resolver.recordedLastForceUpload() == true)
+        #expect(session.currentContext == context)
     }
 
     @MainActor

@@ -78,6 +78,27 @@ struct LocationProviderTests {
         }
     }
 
+    private final class TokenBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var token: String
+
+        init(_ token: String) {
+            self.token = token
+        }
+
+        func value() -> String {
+            lock.lock()
+            defer { lock.unlock() }
+            return token
+        }
+
+        func set(_ newValue: String) {
+            lock.lock()
+            token = newValue
+            lock.unlock()
+        }
+    }
+
     private actor RacingGeocoder: LocationGeocoding {
         private var callCount = 0
         private var firstContinuation: CheckedContinuation<String, Never>?
@@ -315,6 +336,28 @@ struct LocationProviderTests {
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
+    }
+
+    @Test("missing APNs token drops the attempted upload instead of replaying later")
+    func locationContextPusher_missingTokenDropsAttempt() async throws {
+        let uploader = MockSnapshotUploader()
+        let tokenState = TokenBox("")
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { tokenState.value() },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0]
+        )
+        let context = makeContext()
+
+        await pusher.enqueue(context)
+        tokenState.set("apns-token-123")
+
+        // If the first attempt were persisted, this would now be 1 without a second enqueue.
+        #expect(await uploader.uploadedPayloads().isEmpty)
+
+        await pusher.enqueue(context)
+        #expect(await uploader.uploadedPayloads().count == 1)
     }
 
     @Test("snapshot pusher skips upload when location-to-signal is disabled")

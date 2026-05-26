@@ -581,6 +581,95 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
     }
 
+    @Test("background location change plan reuses currentPrepared context and skips fresh prepare")
+    func backgroundLocationChange_reusesCurrentPreparedContext() async throws {
+        let oldSnapshot = LocationSnapshot(
+            coordinates: .init(latitude: 39.75, longitude: -104.44),
+            timestamp: Date(timeIntervalSince1970: 100),
+            accuracy: 25,
+            placemarkSummary: "Bennett, CO",
+            h3Cell: 111_111
+        )
+        let oldGrid = GridPointSnapshot(
+            nwsId: "BOU/10,20",
+            latitude: oldSnapshot.coordinates.latitude,
+            longitude: oldSnapshot.coordinates.longitude,
+            gridId: "BOU",
+            gridX: 10,
+            gridY: 20,
+            forecastURL: nil,
+            forecastHourlyURL: nil,
+            forecastGridDataURL: nil,
+            observationStationsURL: nil,
+            city: "Bennett",
+            state: "CO",
+            timeZoneId: "America/Denver",
+            radarStationId: nil,
+            forecastZone: "COZ038",
+            countyCode: "COC005",
+            fireZone: "COZ214",
+            countyLabel: "Arapahoe",
+            fireZoneLabel: "Front Range"
+        )
+        let oldContext = LocationContext(snapshot: oldSnapshot, h3Cell: 111_111, grid: oldGrid)
+
+        let freshSnapshot = LocationSnapshot(
+            coordinates: .init(latitude: 40.01, longitude: -104.10),
+            timestamp: Date(timeIntervalSince1970: 200),
+            accuracy: 20,
+            placemarkSummary: "Weld County, CO",
+            h3Cell: 222_222
+        )
+        let freshGrid = GridPointSnapshot(
+            nwsId: "BOU/22,30",
+            latitude: freshSnapshot.coordinates.latitude,
+            longitude: freshSnapshot.coordinates.longitude,
+            gridId: "BOU",
+            gridX: 22,
+            gridY: 30,
+            forecastURL: nil,
+            forecastHourlyURL: nil,
+            forecastGridDataURL: nil,
+            observationStationsURL: nil,
+            city: "Brighton",
+            state: "CO",
+            timeZoneId: "America/Denver",
+            radarStationId: nil,
+            forecastZone: "COZ040",
+            countyCode: "COC123",
+            fireZone: "COZ250",
+            countyLabel: "Weld",
+            fireZoneLabel: "Northeast Plains"
+        )
+        let freshContext = LocationContext(snapshot: freshSnapshot, h3Cell: 222_222, grid: freshGrid)
+
+        let locationSession = FakeLocationSession(currentContext: oldContext, preparedContext: freshContext)
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundLocationChange))
+        )
+
+        #expect(locationSession.prepareCalls.isEmpty)
+        #expect(snapshot.locationSnapshot == oldContext.snapshot)
+        #expect(snapshot.refreshKey == oldContext.refreshKey)
+    }
+
     private func makeEnvironment(
         spc: FakeSpcProvider = FakeSpcProvider(),
         alerts: FakeAlertProvider = FakeAlertProvider(),
