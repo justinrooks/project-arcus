@@ -11,17 +11,6 @@ import OSLog
 import UIKit
 import ArcusCore
 
-enum LocationUploadSource: String, Sendable, Codable {
-    case foregroundPrime
-    case foregroundActivate
-    case foregroundLocationChange
-    case manualRefresh
-    case backgroundRefresh
-    case backgroundLocationChange
-    case onboarding
-    case settingsPreference
-}
-
 enum LocationUploadReason: String, Sendable, Codable, Equatable {
     case locationResolved
     case locationChanged

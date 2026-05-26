@@ -6,10 +6,9 @@ enum WidgetSnapshotStoreLoadResult: Equatable, Sendable {
     case corrupt
 }
 
-struct WidgetSnapshotStore {
+struct WidgetSnapshotStore: Sendable {
     static let defaultAppGroupIdentifier = "group.com.skyaware.app"
 
-    private let fileManager: FileManager
     private let directoryURL: URL
     private let fileName: String
 
@@ -22,7 +21,6 @@ struct WidgetSnapshotStore {
             throw StoreError.containerUnavailable(appGroupIdentifier)
         }
 
-        self.fileManager = fileManager
         self.directoryURL = containerURL
         self.fileName = fileName
     }
@@ -32,19 +30,19 @@ struct WidgetSnapshotStore {
         directoryURL: URL,
         fileName: String = "widget-snapshot.json"
     ) {
-        self.fileManager = fileManager
+        _ = fileManager
         self.directoryURL = directoryURL
         self.fileName = fileName
     }
 
     func write(_ snapshot: WidgetSnapshot) throws {
-        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(snapshot)
         try data.write(to: snapshotURL, options: [.atomic])
     }
 
     func load() -> WidgetSnapshotStoreLoadResult {
-        guard fileManager.fileExists(atPath: snapshotURL.path) else {
+        guard FileManager.default.fileExists(atPath: snapshotURL.path) else {
             return .missing
         }
 

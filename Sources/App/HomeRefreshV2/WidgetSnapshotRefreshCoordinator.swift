@@ -36,12 +36,12 @@ enum WidgetSnapshotChangeScope: Sendable {
     case activeAlertProjection
 }
 
-protocol WidgetSnapshotRefreshing {
+protocol WidgetSnapshotRefreshing: Sendable {
     func refresh(scope: WidgetSnapshotChangeScope, input: WidgetSnapshotRefreshInput) throws
 }
 
 struct WidgetSnapshotRefreshCoordinator: WidgetSnapshotRefreshing {
-    typealias ReloadTimeline = (String) -> Void
+    typealias ReloadTimeline = @Sendable (String) -> Void
 
     private let builder: WidgetSnapshotBuilder
     private let store: WidgetSnapshotStore

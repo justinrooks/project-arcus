@@ -9,6 +9,7 @@ import CoreLocation
 import Observation
 import OSLog
 import SwiftUI
+import ArcusCore
 
 protocol HomeWeatherQuerying: Sendable {
     func currentWeather(for location: CLLocation) async -> SummaryWeather?

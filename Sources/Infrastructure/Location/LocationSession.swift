@@ -9,6 +9,7 @@ import CoreLocation
 import Observation
 import OSLog
 import SwiftUI
+import ArcusCore
 
 enum LocationStartupState: Equatable {
     case idle

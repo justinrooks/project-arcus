@@ -9,7 +9,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         let sandbox = try makeSandboxDirectory()
         let store = WidgetSnapshotStore(directoryURL: sandbox)
         let generatedAt = Date(timeIntervalSince1970: 1_700)
-        var reloadedKinds: [String] = []
+        let reloadedKinds = ReloadedKindsRecorder()
         let coordinator = WidgetSnapshotRefreshCoordinator(
             store: store,
             reloadTimeline: { reloadedKinds.append($0) }
@@ -29,7 +29,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
 
         #expect(store.load().snapshot?.freshness.timestamp == generatedAt)
         #expect(store.load().snapshot?.locationSummary == "Denver, CO")
-        #expect(reloadedKinds == [
+        #expect(reloadedKinds.values() == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
             SkyAwareWidgetKind.combined,
@@ -43,7 +43,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         let sandbox = try makeSandboxDirectory()
         let store = WidgetSnapshotStore(directoryURL: sandbox)
         let generatedAt = Date(timeIntervalSince1970: 1_710)
-        var reloadedKinds: [String] = []
+        let reloadedKinds = ReloadedKindsRecorder()
         let coordinator = WidgetSnapshotRefreshCoordinator(
             store: store,
             reloadTimeline: { reloadedKinds.append($0) }
@@ -63,7 +63,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
 
         #expect(store.load().snapshot?.selectedAlert?.title == "Tornado Warning")
         #expect(store.load().snapshot?.locationSummary == "Norman, OK")
-        #expect(reloadedKinds == [
+        #expect(reloadedKinds.values() == [
             SkyAwareWidgetKind.combined
         ])
     }
@@ -72,7 +72,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
     func riskProjection_overwritesStaleTornadoStateWithAllClear() throws {
         let sandbox = try makeSandboxDirectory()
         let store = WidgetSnapshotStore(directoryURL: sandbox)
-        var reloadedKinds: [String] = []
+        let reloadedKinds = ReloadedKindsRecorder()
         let coordinator = WidgetSnapshotRefreshCoordinator(
             store: store,
             reloadTimeline: { reloadedKinds.append($0) }
@@ -102,7 +102,7 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         )
 
         #expect(store.load().snapshot?.severeRisk == .init(label: "No Active Threats", severity: 0))
-        #expect(Array(reloadedKinds.suffix(5)) == [
+        #expect(Array(reloadedKinds.values().suffix(5)) == [
             SkyAwareWidgetKind.stormRisk,
             SkyAwareWidgetKind.severeRisk,
             SkyAwareWidgetKind.combined,
@@ -127,6 +127,23 @@ struct WidgetSnapshotRefreshCoordinatorTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
+    }
+}
+
+private final class ReloadedKindsRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [String] = []
+
+    func append(_ kind: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage.append(kind)
+    }
+
+    func values() -> [String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
     }
 }
 

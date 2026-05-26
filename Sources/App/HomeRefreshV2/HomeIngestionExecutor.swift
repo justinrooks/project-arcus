@@ -8,6 +8,7 @@
 import CoreLocation
 import Foundation
 import OSLog
+import ArcusCore
 
 enum HomeIngestionProgressScope: Sendable, Equatable {
     case location(HomeIngestionLane)
@@ -59,7 +60,7 @@ protocol HomeIngestionExecuting: Sendable {
 }
 
 actor HomeIngestionExecutor: HomeIngestionExecuting {
-    struct Environment: @unchecked Sendable {
+    struct Environment: Sendable {
         let logger: Logger
         let spcSync: any SpcSyncing
         let arcusAlertSync: any ArcusAlertSyncing
