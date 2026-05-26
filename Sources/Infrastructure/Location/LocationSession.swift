@@ -154,6 +154,13 @@ final class LocationSession {
         await syncPreferenceViaLegacyLocationPayload(forceUpload: true, reason: "location-sharing")
     }
 
+    func updateLocationSharingPreference(enabled: Bool) async {
+        if enabled {
+            _ = requestAlwaysAuthorizationUpgradeIfNeeded()
+        }
+        await syncLocationSharingPreference(enabled: enabled)
+    }
+
     func enqueueCurrentLocationUpload(source: LocationUploadSource) async {
         guard let context = await resolveCurrentContextIfNeeded() else { return }
         await locationUploadCoordinator.enqueue(

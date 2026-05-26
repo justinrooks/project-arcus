@@ -371,6 +371,93 @@ struct LocationSessionTests {
     }
 
     @MainActor
+    @Test("updateLocationSharingPreference when enabling requests always upgrade and emits one forced settings sync")
+    func updateLocationSharingPreference_whenEnabling_requestsAlwaysUpgradeAndEmitsSingleForcedSettingsSync() async throws {
+        let provider = LocationProvider()
+        let authManager = LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(manager: authManager, onUpdate: { _ in })
+        let context = LocationContext(
+            snapshot: LocationSnapshot(
+                coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+                timestamp: Date(timeIntervalSince1970: 1_234_567),
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: GridPointSnapshot(
+                nwsId: "https://api.weather.gov/points/39.7392,-104.9903",
+                latitude: 39.7392,
+                longitude: -104.9903,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Denver",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC031",
+                fireZone: "COZ246",
+                countyLabel: "Denver County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        )
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: StubResolver(context: context, error: nil),
+            locationUploadCoordinator: uploader
+        )
+        _ = await session.prepareCurrentLocationContext(
+            requiresFreshLocation: false,
+            showsAuthorizationPrompt: false
+        )
+
+        await session.updateLocationSharingPreference(enabled: true)
+
+        #expect(authManager.requestAlwaysCount == 1)
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedPreferenceSyncCount() == 0)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+    }
+
+    @MainActor
+    @Test("updateLocationSharingPreference when disabling syncs preference without requesting always upgrade")
+    func updateLocationSharingPreference_whenDisabling_syncsPreferenceWithoutRequestingAlwaysUpgrade() async throws {
+        let provider = LocationProvider()
+        let authManager = LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways)
+        let manager = LocationManager(manager: authManager, onUpdate: { _ in })
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentContext = nil
+        session.currentSnapshot = nil
+
+        await session.updateLocationSharingPreference(enabled: false)
+
+        #expect(authManager.requestAlwaysCount == 0)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+    }
+
+    @MainActor
     @Test("syncLocationSharingPreference with no context or snapshot queues durable preference sync")
     func syncLocationSharingPreference_withoutContextOrSnapshot_queuesPreferenceSync() async throws {
         let provider = LocationProvider()

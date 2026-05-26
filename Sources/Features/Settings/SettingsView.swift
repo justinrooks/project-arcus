@@ -169,17 +169,15 @@ struct SettingsView: View {
                             .onChange(of: sendL8nToSignal) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Send Location to Signal")
                                 if newValue {
-                                    _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
                                     Task {
-                                        await locationSession.syncLocationSharingPreference(enabled: true)
-                                        await locationSession.enqueueCurrentLocationUpload(source: .settingsPreference)
+                                        await locationSession.updateLocationSharingPreference(enabled: true)
                                     }
                                 } else {
                                     let wasSubscribed = serverNotificationEnabled
                                     suppressNextServerNotificationSync = wasSubscribed
                                     serverNotificationEnabled = false
                                     Task {
-                                        await locationSession.syncLocationSharingPreference(enabled: false)
+                                        await locationSession.updateLocationSharingPreference(enabled: false)
                                         if wasSubscribed {
                                             await locationSession.syncNotificationPreference(enabled: false)
                                         }
