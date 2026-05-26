@@ -83,6 +83,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private var isProcessing = false
     private var lastUploadBySemanticKey: [DeduplicationKey: Date] = [:]
     private var pendingByCoalescingKey: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
+    private var queuedOrActiveCoalescingKeys: Set<PendingCoalescingKey> = []
     private var hasLoadedPersistedPending = false
 
     init(
@@ -235,16 +236,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             )
             await upsertPending(persisted)
         }
-
-        queue.append(
+        guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
                 operation: .locationSnapshot(payload),
                 coalescingKey: coalescingKey,
+                semanticDedupeKey: dedupeKey,
                 reason: reason,
                 source: source.rawValue
             )
-        )
-        lastUploadBySemanticKey[dedupeKey] = now
+        ) else { return }
 
         guard !isProcessing else { return }
         await processQueue()
@@ -320,16 +320,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             )
             await upsertPending(persisted)
         }
-
-        queue.append(
+        guard enqueueIfNotQueuedOrActive(
             QueuedUpload(
                 operation: .preferenceSync(payload),
                 coalescingKey: coalescingKey,
+                semanticDedupeKey: dedupeKey,
                 reason: requestReason,
                 source: source.rawValue
             )
-        )
-        lastUploadBySemanticKey[dedupeKey] = now
+        ) else { return }
 
         guard !isProcessing else { return }
         await processQueue()
@@ -374,14 +373,17 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     authorizationState: pending.authorizationState,
                     now: now
                 )
-                queue.append(
+                if enqueueIfNotQueuedOrActive(
                     QueuedUpload(
                         operation: .locationSnapshot(payload),
                         coalescingKey: coalescingKey(for: pending),
+                        semanticDedupeKey: dedupeKey,
                         reason: pending.reason,
                         source: pending.source.rawValue
                     )
-                )
+                ) == false {
+                    continue
+                }
             case .preferenceSync:
                 let payload = await makePreferencePayload(
                     from: pending,
@@ -389,17 +391,19 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     isSubscribed: pending.isSubscribed,
                     authorizationState: pending.authorizationState
                 )
-                queue.append(
+                if enqueueIfNotQueuedOrActive(
                     QueuedUpload(
                         operation: .preferenceSync(payload),
                         coalescingKey: coalescingKey(for: pending),
+                        semanticDedupeKey: dedupeKey,
                         reason: pending.reason,
                         source: pending.source.rawValue
                     )
-                )
+                ) == false {
+                    continue
+                }
             }
             enqueuedCount += 1
-            lastUploadBySemanticKey[dedupeKey] = now
         }
         logger.info(
             "Location upload drain completed enqueued=\(enqueuedCount, privacy: .public) deduped=\(dedupedCount, privacy: .public) remainingPending=\(self.pendingByCoalescingKey.count, privacy: .public)"
@@ -439,11 +443,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return
             }
             let workItem = queue.removeFirst()
+            defer { queuedOrActiveCoalescingKeys.remove(workItem.coalescingKey) }
             let didUpload = await uploadWithRetry(workItem)
             if didUpload {
                 logger.notice(
                     "Location upload succeeded source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
+                if let semanticDedupeKey = workItem.semanticDedupeKey {
+                    lastUploadBySemanticKey[semanticDedupeKey] = nowProvider()
+                }
                 pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
                 await persistPendingState()
             } else {
@@ -456,6 +464,13 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 }
             }
         }
+    }
+
+    private func enqueueIfNotQueuedOrActive(_ workItem: QueuedUpload) -> Bool {
+        let inserted = queuedOrActiveCoalescingKeys.insert(workItem.coalescingKey).inserted
+        guard inserted else { return false }
+        queue.append(workItem)
+        return true
     }
 
     private func uploadWithRetry(_ workItem: QueuedUpload) async -> Bool {
@@ -701,6 +716,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private struct QueuedUpload {
         let operation: QueuedOperation
         let coalescingKey: PendingCoalescingKey
+        let semanticDedupeKey: DeduplicationKey?
         let reason: LocationUploadReason
         let source: String
     }

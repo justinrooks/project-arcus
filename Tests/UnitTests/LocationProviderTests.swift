@@ -72,6 +72,48 @@ struct LocationProviderTests {
         }
     }
 
+    private actor FailFirstThenSucceedSnapshotUploader: LocationSnapshotUploading {
+        private var payloads: [LocationSnapshotPushPayload] = []
+        private var shouldFailNext: Bool
+
+        init(shouldFailFirst: Bool = true) {
+            self.shouldFailNext = shouldFailFirst
+        }
+
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            payloads.append(payload)
+            if shouldFailNext {
+                shouldFailNext = false
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+
+        func uploadedPayloads() -> [LocationSnapshotPushPayload] {
+            payloads
+        }
+    }
+
+    private actor FailFirstThenSucceedPreferenceUploader: DevicePreferenceSyncUploading {
+        private var payloads: [DevicePreferenceSyncPayload] = []
+        private var shouldFailNext: Bool
+
+        init(shouldFailFirst: Bool = true) {
+            self.shouldFailNext = shouldFailFirst
+        }
+
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+            payloads.append(payload)
+            if shouldFailNext {
+                shouldFailNext = false
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+
+        func uploadedPayloads() -> [DevicePreferenceSyncPayload] {
+            payloads
+        }
+    }
+
     private actor CompatibilitySnapshotUploader: LocationSnapshotUploading {
         private var payloads: [LocationSnapshotPushPayload] = []
         private let failingStatus: Int
@@ -112,6 +154,80 @@ struct LocationProviderTests {
             await withCheckedContinuation { continuation in
                 firstAttemptContinuation = continuation
             }
+        }
+
+        func attemptCount() -> Int {
+            payloads.count
+        }
+    }
+
+    private actor GateableSnapshotUploader: LocationSnapshotUploading {
+        private var payloads: [LocationSnapshotPushPayload] = []
+        private var isBlocked = true
+        private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
+        private var unblockContinuation: CheckedContinuation<Void, Never>?
+
+        func upload(_ payload: LocationSnapshotPushPayload) async throws {
+            payloads.append(payload)
+            if payloads.count == 1 {
+                firstAttemptContinuation?.resume()
+                firstAttemptContinuation = nil
+            }
+            while isBlocked {
+                await withCheckedContinuation { continuation in
+                    unblockContinuation = continuation
+                }
+            }
+        }
+
+        func waitForFirstAttempt() async {
+            if payloads.isEmpty == false { return }
+            await withCheckedContinuation { continuation in
+                firstAttemptContinuation = continuation
+            }
+        }
+
+        func unblock() {
+            isBlocked = false
+            unblockContinuation?.resume()
+            unblockContinuation = nil
+        }
+
+        func attemptCount() -> Int {
+            payloads.count
+        }
+    }
+
+    private actor GateablePreferenceUploader: DevicePreferenceSyncUploading {
+        private var payloads: [DevicePreferenceSyncPayload] = []
+        private var isBlocked = true
+        private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
+        private var unblockContinuation: CheckedContinuation<Void, Never>?
+
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+            payloads.append(payload)
+            if payloads.count == 1 {
+                firstAttemptContinuation?.resume()
+                firstAttemptContinuation = nil
+            }
+            while isBlocked {
+                await withCheckedContinuation { continuation in
+                    unblockContinuation = continuation
+                }
+            }
+        }
+
+        func waitForFirstAttempt() async {
+            if payloads.isEmpty == false { return }
+            await withCheckedContinuation { continuation in
+                firstAttemptContinuation = continuation
+            }
+        }
+
+        func unblock() {
+            isBlocked = false
+            unblockContinuation?.resume()
+            unblockContinuation = nil
         }
 
         func attemptCount() -> Int {
@@ -677,6 +793,118 @@ struct LocationProviderTests {
         #expect(await store.current().count == 1)
     }
 
+    @Test("preference sync failed upload remains pending across immediate drain inside dedupe window")
+    func preferenceSync_failedUploadImmediateDrain_doesNotDropPending() async throws {
+        struct AlwaysFailingPreferenceUploader: DevicePreferenceSyncUploading {
+            func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+
+        let clock = ClockBox(Date(timeIntervalSince1970: 20_000))
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: AlwaysFailingPreferenceUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            nowProvider: { clock.now() },
+            retryDelaysSeconds: [0],
+            dedupeWindowSeconds: 15,
+            queueStore: store
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+        #expect(await store.current().count == 1)
+
+        await pusher.drainPendingUploads()
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("snapshot failed upload remains pending across immediate drain inside dedupe window")
+    func snapshotPusher_failedUploadImmediateDrain_doesNotDropPending() async throws {
+        struct AlwaysFailingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+
+        let clock = ClockBox(Date(timeIntervalSince1970: 21_000))
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: AlwaysFailingUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            nowProvider: { clock.now() },
+            retryDelaysSeconds: [0],
+            dedupeWindowSeconds: 15,
+            queueStore: store
+        )
+
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        #expect(await store.current().count == 1)
+
+        await pusher.drainPendingUploads()
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("preference sync failed upload retries on immediate drain and clears pending only after success")
+    func preferenceSync_failOnceThenDrainSuccess_clearsPendingAfterSuccess() async throws {
+        let uploader = FailFirstThenSucceedPreferenceUploader()
+        let clock = ClockBox(Date(timeIntervalSince1970: 22_000))
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            nowProvider: { clock.now() },
+            retryDelaysSeconds: [0],
+            dedupeWindowSeconds: 15,
+            queueStore: store
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+        #expect(await store.current().count == 1)
+
+        await pusher.drainPendingUploads()
+        #expect(await store.current().isEmpty)
+        #expect(await uploader.uploadedPayloads().count == 2)
+    }
+
+    @Test("snapshot failed upload retries on immediate drain and clears pending only after success")
+    func snapshotPusher_failOnceThenDrainSuccess_clearsPendingAfterSuccess() async throws {
+        let uploader = FailFirstThenSucceedSnapshotUploader()
+        let clock = ClockBox(Date(timeIntervalSince1970: 23_000))
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            nowProvider: { clock.now() },
+            retryDelaysSeconds: [0],
+            dedupeWindowSeconds: 15,
+            queueStore: store
+        )
+
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        #expect(await store.current().count == 1)
+
+        await pusher.drainPendingUploads()
+        #expect(await store.current().isEmpty)
+        #expect(await uploader.uploadedPayloads().count == 2)
+    }
+
     @Test("preference sync drain removes persisted request on success")
     func preferenceSync_drainRemovesPersistedRequestOnSuccess() async throws {
         let uploader = MockPreferenceUploader()
@@ -856,6 +1084,28 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("snapshot pusher coalesces identical upload while first matching upload is in flight")
+    func snapshotPusher_coalescesInFlightIdenticalUpload() async throws {
+        let uploader = GateableSnapshotUploader()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0]
+        )
+        let context = makeContext()
+
+        let firstTask = Task {
+            await pusher.enqueue(context, source: .foregroundPrime, reason: .locationResolved)
+        }
+        await uploader.waitForFirstAttempt()
+        await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
+        await uploader.unblock()
+        await firstTask.value
+
+        #expect(await uploader.attemptCount() == 1)
+    }
+
     @Test("pending queue coalesces duplicate semantic keys deterministically")
     func snapshotPusher_pendingQueueCoalescesDuplicates() async throws {
         let uploader = MockSnapshotUploader()
@@ -977,6 +1227,40 @@ struct LocationProviderTests {
         #expect(payloads.map(\.isSubscribed) == [true, false])
     }
 
+    @Test("preference sync coalesces identical upload while first matching upload is in flight")
+    func preferenceSync_coalescesInFlightIdenticalUpload() async throws {
+        let uploader = GateablePreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            authorizationStatusProvider: { .authorizedWhenInUse },
+            retryDelaysSeconds: [0]
+        )
+
+        let firstTask = Task {
+            await pusher.enqueuePreferenceSync(
+                source: .settingsPreference,
+                requestReason: .preferenceChanged,
+                forceUpload: true,
+                detail: "notification"
+            )
+        }
+        await uploader.waitForFirstAttempt()
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+        await uploader.unblock()
+        await firstTask.value
+
+        #expect(await uploader.attemptCount() == 1)
+    }
+
     @Test("snapshot pusher dedupes identical forced uploads inside the dedupe window")
     func snapshotPusher_dedupesIdenticalForcedUploads() async throws {
         let uploader = MockSnapshotUploader()
@@ -998,6 +1282,38 @@ struct LocationProviderTests {
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 1)
+    }
+
+    @Test("preference sync dedupes identical successful uploads inside the dedupe window")
+    func preferenceSync_dedupesIdenticalSuccessfulUploads() async throws {
+        let uploader = MockPreferenceUploader()
+        let clock = ClockBox(Date(timeIntervalSince1970: 24_000))
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            authorizationStatusProvider: { .authorizedWhenInUse },
+            nowProvider: { clock.now() },
+            retryDelaysSeconds: [0],
+            dedupeWindowSeconds: 15
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+
+        #expect(await uploader.uploadedPayloads().count == 1)
     }
 
     @Test("snapshot pusher allows identical upload after dedupe window elapses")
