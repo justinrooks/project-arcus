@@ -55,7 +55,7 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
         guard (200...299).contains(response.status) else {
             throw LocationPushError.invalidResponseStatus(response.status)
         }
-        logger.info("Location snapshot uploaded cell=\(String(payload.h3Cell ?? 0), privacy: .public)")
+        logger.info("Location snapshot uploaded")
     }
 
     private var requestHeaders: [String: String] {
