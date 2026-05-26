@@ -41,7 +41,6 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
         let body = try encoder.encode(payload)
         let response = try await http.post(endpoint, headers: requestHeaders, body: body)
         guard (200...299).contains(response.status) else {
-            logger.error("Location snapshot upload failed status=\(response.status, privacy: .public)")
             throw LocationPushError.invalidResponseStatus(response.status)
         }
         logger.info("Location snapshot uploaded cell=\(String(payload.h3Cell ?? 0), privacy: .public)")
