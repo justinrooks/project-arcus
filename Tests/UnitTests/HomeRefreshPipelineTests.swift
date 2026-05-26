@@ -581,8 +581,8 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
     }
 
-    @Test("background location change plan reuses currentPrepared context and skips fresh prepare")
-    func backgroundLocationChange_reusesCurrentPreparedContext() async throws {
+    @Test("background location change resolves from latest accepted snapshot instead of stale current context")
+    func backgroundLocationChange_resolvesLatestAcceptedSnapshot() async throws {
         let oldSnapshot = LocationSnapshot(
             coordinates: .init(latitude: 39.75, longitude: -104.44),
             timestamp: Date(timeIntervalSince1970: 100),
@@ -665,9 +665,41 @@ struct HomeRefreshPipelineTests {
             plan: HomeIngestionPlan(request: .init(trigger: .backgroundLocationChange))
         )
 
+        #expect(locationSession.prepareCalls.count == 1)
+        #expect(locationSession.prepareCalls[0] == .init(requiresFreshLocation: false, showsAuthorizationPrompt: false))
+        #expect(snapshot.locationSnapshot == freshContext.snapshot)
+        #expect(snapshot.refreshKey == freshContext.refreshKey)
+    }
+
+    @Test("session tick continues reusing current prepared context")
+    func sessionTick_reusesCurrentPreparedContext() async throws {
+        let currentContext = makeContext(timestamp: 100)
+        let newerPreparedContext = makeContext(timestamp: 200)
+        let locationSession = FakeLocationSession(currentContext: currentContext, preparedContext: newerPreparedContext)
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+
         #expect(locationSession.prepareCalls.isEmpty)
-        #expect(snapshot.locationSnapshot == oldContext.snapshot)
-        #expect(snapshot.refreshKey == oldContext.refreshKey)
+        #expect(snapshot.locationSnapshot == currentContext.snapshot)
+        #expect(snapshot.refreshKey == currentContext.refreshKey)
     }
 
     private func makeEnvironment(

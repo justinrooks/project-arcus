@@ -46,7 +46,7 @@ struct HomeIngestionCoordinatorTests {
         )
         #expect(backgroundLocationPlan.lanes == .all)
         #expect(backgroundLocationPlan.forcedLanes == [.hotAlerts, .weather])
-        #expect(backgroundLocationPlan.locationRequest == .currentPrepared)
+        #expect(backgroundLocationPlan.locationRequest == .latestAcceptedSnapshotPrepared)
     }
 
     @Test("runs one ingestion plan at a time")

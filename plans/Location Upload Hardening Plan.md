@@ -340,6 +340,7 @@ Acceptance Criteria:
 - Prefer protocol seams and fakes over live system services.
 - Keep each issue small and reviewable.
 - Run the smallest relevant tests before finishing.
+- Unit tests must also be validated in Xcode Cloud before considering implementation work fully done. Local focused tests are necessary for fast iteration, but Xcode Cloud is the source-of-truth validation environment for this hardening effort.
 - Do not claim a build or test passed unless it was actually run.
 - Treat `LocationContextResolver` and `LocationSnapshotPusher` as high-risk seams; avoid unrelated refactors.
 - For any SwiftUI/lifecycle-facing change, follow the SwiftUI Expert and SwiftUI UI Patterns guidance:

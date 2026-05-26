@@ -180,6 +180,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 maximumAcceptedLocationAge: 5 * 60,
                 placemarkTimeout: 8
             )
+        case .latestAcceptedSnapshotPrepared:
+            return await locationSession.prepareCurrentLocationContext(
+                requiresFreshLocation: false,
+                showsAuthorizationPrompt: false,
+                authorizationTimeout: 30,
+                locationTimeout: 12,
+                maximumAcceptedLocationAge: 5 * 60,
+                placemarkTimeout: 8
+            )
         case .prepare(let requiresFreshLocation, let showsAuthorizationPrompt):
             return await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: requiresFreshLocation,

@@ -71,6 +71,7 @@ struct HomeIngestionProvenance: OptionSet, Sendable {
 
 enum HomeIngestionLocationRequest: Sendable, Equatable {
     case currentPrepared
+    case latestAcceptedSnapshotPrepared
     case prepare(requiresFreshLocation: Bool, showsAuthorizationPrompt: Bool)
     case explicit(LocationContext)
 
@@ -86,6 +87,14 @@ enum HomeIngestionLocationRequest: Sendable, Equatable {
         case (.explicit(let lhs), .explicit(let rhs)):
             return lhs == rhs
         case (.explicit, .currentPrepared), (.explicit, .prepare):
+            return true
+        case (.explicit, .latestAcceptedSnapshotPrepared):
+            return true
+        case (.prepare, .latestAcceptedSnapshotPrepared):
+            return true
+        case (.latestAcceptedSnapshotPrepared, .latestAcceptedSnapshotPrepared):
+            return true
+        case (.latestAcceptedSnapshotPrepared, .currentPrepared):
             return true
         case (.prepare(let lhsFresh, let lhsPrompt), .prepare(let rhsFresh, let rhsPrompt)):
             let satisfiesFresh = lhsFresh || !rhsFresh
@@ -104,16 +113,18 @@ enum HomeIngestionLocationRequest: Sendable, Equatable {
         switch self {
         case .currentPrepared:
             return 0
-        case .prepare(false, false):
+        case .latestAcceptedSnapshotPrepared:
             return 1
-        case .prepare(true, false):
+        case .prepare(false, false):
             return 2
-        case .prepare(false, true):
+        case .prepare(true, false):
             return 3
-        case .prepare(true, true):
+        case .prepare(false, true):
             return 4
-        case .explicit:
+        case .prepare(true, true):
             return 5
+        case .explicit:
+            return 6
         }
     }
 }
@@ -173,7 +184,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
         case .backgroundLocationChange:
             lanes = .all
             forcedLanes = [.hotAlerts, .weather]
-            locationRequest = .currentPrepared
+            locationRequest = .latestAcceptedSnapshotPrepared
             provenance = [.background, .locationChange]
             isLocationBearing = true
         case .remoteHotAlertReceived:
@@ -300,6 +311,8 @@ extension HomeIngestionLocationRequest {
         switch self {
         case .currentPrepared:
             return "currentPrepared"
+        case .latestAcceptedSnapshotPrepared:
+            return "latestAcceptedSnapshotPrepared"
         case .prepare(let requiresFreshLocation, let showsAuthorizationPrompt):
             return "prepare(fresh=\(requiresFreshLocation),prompt=\(showsAuthorizationPrompt))"
         case .explicit:
