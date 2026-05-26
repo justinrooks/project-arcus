@@ -15,6 +15,7 @@ protocol LocationSnapshotUploading: Sendable {
 
 struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
     func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async {}
+    func drainPendingUploads() async {}
 }
 
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {

@@ -81,6 +81,26 @@ struct LocationProviderTests {
             payloads
         }
     }
+
+    private actor InMemoryUploadQueueStore: LocationUploadQueueStoring {
+        private var pending: [PersistedLocationUploadRequest]
+
+        init(seed: [PersistedLocationUploadRequest] = []) {
+            self.pending = seed
+        }
+
+        func loadPendingRequests() async -> [PersistedLocationUploadRequest] {
+            pending
+        }
+
+        func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async {
+            pending = requests
+        }
+
+        func current() async -> [PersistedLocationUploadRequest] {
+            pending
+        }
+    }
     
     private final class MockSnapshotCache: @unchecked Sendable, LocationSnapshotCaching {
         private(set) var storedSnapshot: LocationSnapshot?
@@ -392,39 +412,110 @@ struct LocationProviderTests {
     @Test("location context pusher skips upload when APNs token is missing")
     func locationContextPusher_skipsUploadWithoutApnsToken() async {
         let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
             uploader: uploader,
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: store
         )
 
         await pusher.enqueue(makeContext(), source: .manualRefresh)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
+        #expect(await store.current().count == 1)
     }
 
-    @Test("missing APNs token drops the attempted upload instead of replaying later")
-    func locationContextPusher_missingTokenDropsAttempt() async throws {
+    @Test("missing APNs token persists and later drains after token arrives")
+    func locationContextPusher_missingTokenPersistsAndDrainsOnRetry() async throws {
         let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
         let tokenState = TokenBox("")
         let pusher = LocationSnapshotPusher(
             uploader: uploader,
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
-            retryDelaysSeconds: [0]
+            retryDelaysSeconds: [0],
+            queueStore: store
         )
         let context = makeContext()
 
         await pusher.enqueue(context, source: .manualRefresh)
+        #expect(await store.current().count == 1)
         tokenState.set("apns-token-123")
+        await pusher.drainPendingUploads()
 
-        // If the first attempt were persisted, this would now be 1 without a second enqueue.
-        #expect(await uploader.uploadedPayloads().isEmpty)
-
-        await pusher.enqueue(context, source: .manualRefresh)
         #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("snapshot pusher persists pending request when upload fails after retry budget")
+    func snapshotPusher_persistsOnRetryExhaustion() async throws {
+        struct AlwaysFailingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: AlwaysFailingUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueue(makeContext(), source: .manualRefresh)
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("snapshot pusher persists pending request when upload is cancelled")
+    func snapshotPusher_persistsOnCancellation() async throws {
+        struct CancellingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw CancellationError()
+            }
+        }
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: CancellingUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueue(makeContext(), source: .manualRefresh)
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("drain removes persisted request on successful upload")
+    func snapshotPusher_drainRemovesPersistedRequestOnSuccess() async throws {
+        let uploader = MockSnapshotUploader()
+        let persisted = PersistedLocationUploadRequest(
+            context: PersistedLocationContext(makeContext()),
+            source: .manualRefresh,
+            forceUpload: false,
+            installationId: "install-abc-123",
+            requestedAt: Date(timeIntervalSince1970: 10_000),
+            isSubscribed: true,
+            authorizationState: "always",
+            apnsToken: ""
+        )
+        let store = InMemoryUploadQueueStore(seed: [persisted])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
     }
 
     @Test("snapshot pusher skips upload when location-to-signal is disabled")
@@ -478,6 +569,7 @@ struct LocationProviderTests {
     @Test("snapshot pusher dedupes identical non-forced uploads inside the dedupe window")
     func snapshotPusher_dedupesIdenticalNonForcedUploads() async throws {
         let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
         let clock = ClockBox(Date(timeIntervalSince1970: 10_000))
         let pusher = LocationSnapshotPusher(
             uploader: uploader,
@@ -487,7 +579,8 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedWhenInUse },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
-            dedupeWindowSeconds: 15
+            dedupeWindowSeconds: 15,
+            queueStore: store
         )
         let context = makeContext()
 
@@ -496,11 +589,58 @@ struct LocationProviderTests {
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 1)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("pending queue coalesces duplicate semantic keys deterministically")
+    func snapshotPusher_pendingQueueCoalescesDuplicates() async throws {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        let context = makeContext()
+
+        await pusher.enqueue(context, source: .manualRefresh)
+        await pusher.enqueue(context, source: .manualRefresh)
+
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("pending queue preserves distinct semantic keys")
+    func snapshotPusher_pendingQueuePreservesDistinctKeys() async throws {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        let first = makeContext(
+            h3Cell: sampleH3Cell,
+            grid: makeGridSnapshot(countyCode: "OKC109", fireZone: "OKZ025")
+        )
+        let second = makeContext(
+            h3Cell: sampleH3Cell + 1,
+            grid: makeGridSnapshot(countyCode: "OKC017", fireZone: "OKZ030")
+        )
+
+        await pusher.enqueue(first, source: .manualRefresh)
+        await pusher.enqueue(second, source: .manualRefresh)
+
+        #expect(await store.current().count == 2)
     }
 
     @Test("snapshot pusher does not dedupe when location scope changes")
     func snapshotPusher_doesNotDedupeScopeChanges() async throws {
         let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
         let clock = ClockBox(Date(timeIntervalSince1970: 12_000))
         let pusher = LocationSnapshotPusher(
             uploader: uploader,
@@ -510,7 +650,8 @@ struct LocationProviderTests {
             authorizationStatusProvider: { .authorizedWhenInUse },
             nowProvider: { clock.now() },
             retryDelaysSeconds: [0],
-            dedupeWindowSeconds: 15
+            dedupeWindowSeconds: 15,
+            queueStore: store
         )
 
         let first = makeContext(
@@ -533,6 +674,7 @@ struct LocationProviderTests {
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 2)
+        #expect(await store.current().isEmpty)
     }
 
     @Test("snapshot pusher does not dedupe preference state changes")
