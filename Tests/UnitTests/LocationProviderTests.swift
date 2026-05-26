@@ -418,7 +418,7 @@ struct LocationProviderTests {
         )
 
         let context = makeContext()
-        await pusher.enqueue(context, source: .manualRefresh)
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
         
         let payloads = await uploader.uploadedPayloads()
         let payload = try #require(payloads.first)
@@ -446,7 +446,7 @@ struct LocationProviderTests {
             queueStore: store
         )
 
-        await pusher.enqueue(makeContext(), source: .manualRefresh)
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
@@ -467,7 +467,7 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context, source: .manualRefresh)
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
         #expect(await store.current().count == 1)
         tokenState.set("apns-token-123")
         await pusher.drainPendingUploads()
@@ -492,14 +492,16 @@ struct LocationProviderTests {
 
         await pusher.enqueuePreferenceSync(
             source: .settingsPreference,
+            requestReason: .preferenceChanged,
             forceUpload: true,
-            reason: "location-sharing"
+            detail: "location-sharing"
         )
 
         #expect(await uploader.uploadedPayloads().isEmpty)
         #expect(await store.current().count == 1)
         let persisted = try #require(await store.current().first)
         #expect(persisted.context == nil)
+        #expect(persisted.reason == .preferenceChanged)
         #expect(persisted.isSubscribed == false)
         #expect(persisted.forceUpload == true)
     }
@@ -521,8 +523,9 @@ struct LocationProviderTests {
 
         await pusher.enqueuePreferenceSync(
             source: .settingsPreference,
+            requestReason: .preferenceChanged,
             forceUpload: true,
-            reason: "notification"
+            detail: "notification"
         )
         #expect(await store.current().count == 1)
 
@@ -551,7 +554,7 @@ struct LocationProviderTests {
             queueStore: store
         )
 
-        await pusher.enqueue(makeContext(), source: .onboarding)
+        await pusher.enqueue(makeContext(), source: .onboarding, reason: .locationResolved)
         #expect(await store.current().count == 1)
 
         tokenState.set("apns-token-123")
@@ -579,7 +582,7 @@ struct LocationProviderTests {
             queueStore: store
         )
 
-        await pusher.enqueue(makeContext(), source: .manualRefresh)
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
         #expect(await store.current().count == 1)
     }
 
@@ -599,7 +602,7 @@ struct LocationProviderTests {
             queueStore: store
         )
 
-        await pusher.enqueue(makeContext(), source: .manualRefresh)
+        await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
         #expect(await store.current().count == 1)
     }
 
@@ -616,7 +619,7 @@ struct LocationProviderTests {
         )
 
         let enqueueTask = Task {
-            await pusher.enqueue(makeContext(), source: .manualRefresh)
+            await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
         }
         await uploader.waitForFirstAttempt()
         enqueueTask.cancel()
@@ -632,6 +635,7 @@ struct LocationProviderTests {
         let persisted = PersistedLocationUploadRequest(
             context: PersistedLocationContext(makeContext()),
             source: .manualRefresh,
+            reason: .locationResolved,
             forceUpload: false,
             installationId: "install-abc-123",
             requestedAt: Date(timeIntervalSince1970: 10_000),
@@ -670,7 +674,7 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
 
-        await pusher.enqueue(context, source: .manualRefresh)
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.isEmpty)
@@ -694,7 +698,7 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
 
-        await pusher.enqueue(context, source: .settingsPreference, forceUpload: true)
+        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
 
         let payloads = await uploader.uploadedPayloads()
         let payload = try #require(payloads.first)
@@ -713,7 +717,7 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0]
         )
 
-        await pusher.enqueue(makeContext(), source: .settingsPreference, forceUpload: false)
+        await pusher.enqueue(makeContext(), source: .settingsPreference, reason: .preferenceChanged, forceUpload: false)
 
         #expect(await uploader.uploadedPayloads().isEmpty)
     }
@@ -736,8 +740,8 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context, source: .foregroundPrime)
-        await pusher.enqueue(context, source: .foregroundLocationChange)
+        await pusher.enqueue(context, source: .foregroundPrime, reason: .locationResolved)
+        await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 1)
@@ -757,8 +761,8 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context, source: .manualRefresh)
-        await pusher.enqueue(context, source: .manualRefresh)
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
 
         #expect(await store.current().count == 1)
     }
@@ -783,8 +787,8 @@ struct LocationProviderTests {
             grid: makeGridSnapshot(countyCode: "OKC017", fireZone: "OKZ030")
         )
 
-        await pusher.enqueue(first, source: .manualRefresh)
-        await pusher.enqueue(second, source: .manualRefresh)
+        await pusher.enqueue(first, source: .manualRefresh, reason: .locationResolved)
+        await pusher.enqueue(second, source: .manualRefresh, reason: .locationResolved)
 
         #expect(await store.current().count == 2)
     }
@@ -821,8 +825,8 @@ struct LocationProviderTests {
             )
         )
 
-        await pusher.enqueue(first, source: .foregroundPrime)
-        await pusher.enqueue(second, source: .foregroundLocationChange)
+        await pusher.enqueue(first, source: .foregroundPrime, reason: .locationResolved)
+        await pusher.enqueue(second, source: .foregroundLocationChange, reason: .locationChanged)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 2)
@@ -846,9 +850,9 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context, source: .settingsPreference, forceUpload: true)
+        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
         subscribed.set(false)
-        await pusher.enqueue(context, source: .settingsPreference, forceUpload: true)
+        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 2)
@@ -871,8 +875,8 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context, source: .settingsPreference, forceUpload: true)
-        await pusher.enqueue(context, source: .settingsPreference, forceUpload: true)
+        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
+        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 1)
@@ -894,9 +898,9 @@ struct LocationProviderTests {
         )
         let context = makeContext()
 
-        await pusher.enqueue(context, source: .foregroundPrime)
+        await pusher.enqueue(context, source: .foregroundPrime, reason: .locationResolved)
         clock.advance(by: 16)
-        await pusher.enqueue(context, source: .foregroundLocationChange)
+        await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 2)
@@ -914,7 +918,7 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0]
         )
 
-        await pusher.enqueue(makeContext(), source: .foregroundPrime)
+        await pusher.enqueue(makeContext(), source: .foregroundPrime, reason: .locationResolved)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 2)
@@ -933,7 +937,7 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0]
         )
 
-        await pusher.enqueue(makeContext(), source: .foregroundPrime)
+        await pusher.enqueue(makeContext(), source: .foregroundPrime, reason: .locationResolved)
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 1)

@@ -106,6 +106,7 @@ final class LocationSession {
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
         uploadSource: LocationUploadSource? = nil,
+        uploadReason: LocationUploadReason? = nil,
         authorizationTimeout: Double = 30,
         locationTimeout: Double = 12,
         maximumAcceptedLocationAge: TimeInterval = 5 * 60,
@@ -135,7 +136,12 @@ final class LocationSession {
             currentSnapshot = context.snapshot
             currentContext = context
             if let uploadSource {
-                await locationUploadCoordinator.enqueue(context, source: uploadSource, forceUpload: false)
+                await locationUploadCoordinator.enqueue(
+                    context,
+                    source: uploadSource,
+                    reason: uploadReason ?? .locationResolved,
+                    forceUpload: false
+                )
             }
             startupState = .ready
             return context
@@ -161,11 +167,12 @@ final class LocationSession {
         await syncLocationSharingPreference(enabled: enabled)
     }
 
-    func enqueueCurrentLocationUpload(source: LocationUploadSource) async {
+    func enqueueCurrentLocationUpload(source: LocationUploadSource, reason: LocationUploadReason) async {
         guard let context = await resolveCurrentContextIfNeeded() else { return }
         await locationUploadCoordinator.enqueue(
             context,
             source: source,
+            reason: reason,
             forceUpload: false
         )
     }
@@ -180,14 +187,16 @@ final class LocationSession {
             logger.notice("Queueing preference sync without location context reason=\(reason, privacy: .public)")
             await locationUploadCoordinator.enqueuePreferenceSync(
                 source: .settingsPreference,
+                requestReason: .preferenceChanged,
                 forceUpload: forceUpload,
-                reason: reason
+                detail: reason
             )
             return
         }
         await locationUploadCoordinator.enqueue(
             context,
             source: .settingsPreference,
+            reason: .preferenceChanged,
             forceUpload: forceUpload
         )
     }
@@ -278,6 +287,7 @@ final class LocationSession {
                 await self.locationUploadCoordinator.enqueue(
                     context,
                     source: .foregroundLocationChange,
+                    reason: .locationChanged,
                     forceUpload: false
                 )
             } catch is CancellationError {

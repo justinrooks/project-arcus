@@ -38,6 +38,7 @@ protocol HomeContextPreparing: AnyObject, Sendable {
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
         uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
@@ -98,6 +99,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let context = await resolveContext(
             for: plan.locationRequest,
             uploadSource: uploadSource(for: plan),
+            uploadReason: uploadReason(for: plan),
             using: environment.locationSession
         )
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
@@ -171,6 +173,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private func resolveContext(
         for request: HomeIngestionLocationRequest,
         uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         using locationSession: any HomeContextPreparing
     ) async -> LocationContext? {
         switch request {
@@ -182,6 +185,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 requiresFreshLocation: false,
                 showsAuthorizationPrompt: false,
                 uploadSource: uploadSource,
+                uploadReason: uploadReason,
                 authorizationTimeout: 30,
                 locationTimeout: 12,
                 maximumAcceptedLocationAge: 5 * 60,
@@ -192,6 +196,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 requiresFreshLocation: false,
                 showsAuthorizationPrompt: false,
                 uploadSource: uploadSource,
+                uploadReason: uploadReason,
                 authorizationTimeout: 30,
                 locationTimeout: 12,
                 maximumAcceptedLocationAge: 5 * 60,
@@ -202,6 +207,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 requiresFreshLocation: requiresFreshLocation,
                 showsAuthorizationPrompt: showsAuthorizationPrompt,
                 uploadSource: uploadSource,
+                uploadReason: uploadReason,
                 authorizationTimeout: 30,
                 locationTimeout: 12,
                 maximumAcceptedLocationAge: 5 * 60,
@@ -246,6 +252,14 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         case .currentPrepared, .explicit:
             return nil
         }
+    }
+
+    private func uploadReason(for plan: HomeIngestionPlan) -> LocationUploadReason? {
+        guard uploadSource(for: plan) != nil else { return nil }
+        if plan.provenance.contains(.locationChange) {
+            return .locationChanged
+        }
+        return .locationResolved
     }
 
     private func shouldSyncHotFeeds(plan: HomeIngestionPlan, now: Date) -> Bool {

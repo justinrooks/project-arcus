@@ -670,21 +670,22 @@ struct HomeRefreshPipelineTests {
             locationSession.prepareCalls[0] == .init(
                 requiresFreshLocation: false,
                 showsAuthorizationPrompt: false,
-                uploadSource: .backgroundLocationChange
+                uploadSource: .backgroundLocationChange,
+                uploadReason: .locationChanged
             )
         )
         #expect(snapshot.locationSnapshot == freshContext.snapshot)
         #expect(snapshot.refreshKey == freshContext.refreshKey)
     }
 
-    @Test("ingestion trigger location preparation carries deterministic upload sources")
-    func ingestionTrigger_locationPreparationCarriesExpectedUploadSource() async throws {
-        let cases: [(HomeRefreshTrigger, LocationUploadSource)] = [
-            (.foregroundActivate, .foregroundActivate),
-            (.manualRefresh, .manualRefresh),
-            (.foregroundLocationChange, .foregroundLocationChange),
-            (.backgroundRefresh, .backgroundRefresh),
-            (.backgroundLocationChange, .backgroundLocationChange)
+    @Test("ingestion trigger location preparation carries deterministic upload source and reason")
+    func ingestionTrigger_locationPreparationCarriesExpectedUploadSourceAndReason() async throws {
+        let cases: [(HomeRefreshTrigger, LocationUploadSource, LocationUploadReason)] = [
+            (.foregroundActivate, .foregroundActivate, .locationResolved),
+            (.manualRefresh, .manualRefresh, .locationResolved),
+            (.foregroundLocationChange, .foregroundLocationChange, .locationChanged),
+            (.backgroundRefresh, .backgroundRefresh, .locationResolved),
+            (.backgroundLocationChange, .backgroundLocationChange, .locationChanged)
         ]
 
         for testCase in cases {
@@ -712,6 +713,7 @@ struct HomeRefreshPipelineTests {
 
             let prepareCall = try #require(locationSession.prepareCalls.first)
             #expect(prepareCall.uploadSource == testCase.1)
+            #expect(prepareCall.uploadReason == testCase.2)
         }
     }
 
@@ -996,6 +998,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
         let requiresFreshLocation: Bool
         let showsAuthorizationPrompt: Bool
         let uploadSource: LocationUploadSource?
+        let uploadReason: LocationUploadReason?
     }
 
     var currentContext: LocationContext?
@@ -1018,6 +1021,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
         uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
@@ -1027,7 +1031,8 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
             .init(
                 requiresFreshLocation: requiresFreshLocation,
                 showsAuthorizationPrompt: showsAuthorizationPrompt,
-                uploadSource: uploadSource
+                uploadSource: uploadSource,
+                uploadReason: uploadReason
             )
         )
         if let prepareGate {

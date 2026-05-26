@@ -22,23 +22,42 @@ enum LocationUploadSource: String, Sendable, Codable {
     case settingsPreference
 }
 
+enum LocationUploadReason: String, Sendable, Codable, Equatable {
+    case locationResolved
+    case locationChanged
+    case preferenceChanged
+    case tokenBecameAvailable
+    case retry
+}
+
 protocol PendingLocationUploadDraining: Sendable {
     func drainPendingUploads() async
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
-    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async
-    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async
+    func enqueue(
+        _ context: LocationContext,
+        source: LocationUploadSource,
+        reason: LocationUploadReason,
+        forceUpload: Bool
+    ) async
+    func enqueuePreferenceSync(
+        source: LocationUploadSource,
+        requestReason: LocationUploadReason,
+        forceUpload: Bool,
+        detail: String
+    ) async
 }
 
 extension LocationUploadCoordinating {
-    func enqueue(_ context: LocationContext, source: LocationUploadSource) async {
-        await enqueue(context, source: source, forceUpload: false)
-    }
-
     func drainPendingUploads() async {}
 
-    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {}
+    func enqueuePreferenceSync(
+        source: LocationUploadSource,
+        requestReason: LocationUploadReason,
+        forceUpload: Bool,
+        detail: String
+    ) async {}
 }
 
 enum LocationPushError: Error {
@@ -113,13 +132,18 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         )
     }
 
-    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool = false) async {
+    func enqueue(
+        _ context: LocationContext,
+        source: LocationUploadSource,
+        reason: LocationUploadReason,
+        forceUpload: Bool = false
+    ) async {
         logger.info(
-            "Location upload request accepted source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+            "Location upload request accepted source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
         )
         guard forceUpload || locationUploadEnabledProvider() else {
             logger.notice(
-                "Location upload request skipped reason=disabled source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+                "Location upload request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
             return
         }
@@ -133,6 +157,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let persisted = PersistedLocationUploadRequest(
             context: PersistedLocationContext(context),
             source: source,
+            reason: reason,
             forceUpload: forceUpload,
             installationId: installationId,
             requestedAt: now,
@@ -143,7 +168,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
         guard !apnsToken.isEmpty else {
             logger.notice(
-                "Location upload request persisted reason=missingToken source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+                "Location upload request persisted persistReason=missingToken source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
             await upsertPending(persisted)
             return
@@ -161,7 +186,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         )
         if shouldDedupeRequest(for: dedupeKey, now: now) {
             logger.notice(
-                "Location upload request deduped source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+                "Location upload request deduped source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
             return
         }
@@ -175,25 +200,30 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let coalescingKey = coalescingKey(for: persisted)
         if pendingByCoalescingKey[coalescingKey] == nil {
             logger.debug(
-                "Location upload request persisted reason=queued source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+                "Location upload request persisted persistReason=queued source=\(source.rawValue, privacy: .public) reason=\(reason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
             )
             await upsertPending(persisted)
         }
 
-        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey))
+        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey, reason: reason))
         lastUploadBySemanticKey[dedupeKey] = now
 
         guard !isProcessing else { return }
         await processQueue()
     }
 
-    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {
+    func enqueuePreferenceSync(
+        source: LocationUploadSource,
+        requestReason: LocationUploadReason,
+        forceUpload: Bool,
+        detail: String
+    ) async {
         logger.info(
-            "Preference sync request accepted source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+            "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
         )
         guard forceUpload || locationUploadEnabledProvider() else {
             logger.notice(
-                "Preference sync request skipped reason=disabled source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+                "Preference sync request skipped skipReason=disabled source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
             )
             return
         }
@@ -207,6 +237,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let persisted = PersistedLocationUploadRequest(
             context: nil,
             source: source,
+            reason: requestReason,
             forceUpload: forceUpload,
             installationId: installationId,
             requestedAt: now,
@@ -217,7 +248,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
         guard !apnsToken.isEmpty else {
             logger.notice(
-                "Preference sync request persisted reason=missingToken source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+                "Preference sync request persisted persistReason=missingToken source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
             )
             await upsertPending(persisted)
             return
@@ -236,7 +267,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         )
         if shouldDedupeRequest(for: dedupeKey, now: now) {
             logger.notice(
-                "Preference sync request deduped source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+                "Preference sync request deduped source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
             )
             return
         }
@@ -251,12 +282,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let coalescingKey = coalescingKey(for: persisted)
         if pendingByCoalescingKey[coalescingKey] == nil {
             logger.debug(
-                "Preference sync request persisted reason=queued source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) reason=\(reason, privacy: .public)"
+                "Preference sync request persisted persistReason=queued source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
             )
             await upsertPending(persisted)
         }
 
-        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey))
+        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey, reason: requestReason))
         lastUploadBySemanticKey[dedupeKey] = now
 
         guard !isProcessing else { return }
@@ -303,7 +334,13 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 authorizationState: pending.authorizationState,
                 now: now
             )
-            queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey(for: pending)))
+            queue.append(
+                QueuedUpload(
+                    payload: payload,
+                    coalescingKey: coalescingKey(for: pending),
+                    reason: pending.reason
+                )
+            )
             enqueuedCount += 1
             lastUploadBySemanticKey[dedupeKey] = now
         }
@@ -345,16 +382,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return
             }
             let workItem = queue.removeFirst()
-            let didUpload = await uploadWithRetry(workItem.payload)
+            let didUpload = await uploadWithRetry(workItem.payload, reason: workItem.reason)
             if didUpload {
                 logger.notice(
-                    "Location upload succeeded source=\(workItem.payload.source, privacy: .public)"
+                    "Location upload succeeded source=\(workItem.payload.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
                 pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
                 await persistPendingState()
             } else {
                 logger.error(
-                    "Location upload failed source=\(workItem.payload.source, privacy: .public)"
+                    "Location upload failed source=\(workItem.payload.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
                 if Task.isCancelled {
                     logger.notice("Location upload queue drain stopped after cancellation")
@@ -364,12 +401,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         }
     }
 
-    private func uploadWithRetry(_ payload: LocationSnapshotPushPayload) async -> Bool {
+    private func uploadWithRetry(_ payload: LocationSnapshotPushPayload, reason: LocationUploadReason) async -> Bool {
         for (index, delay) in retryDelaysSeconds.enumerated() {
             do {
                 try Task.checkCancellation()
             } catch is CancellationError {
-                logger.notice("Location upload cancelled before attempt source=\(payload.source, privacy: .public)")
+                logger.notice("Location upload cancelled before attempt source=\(payload.source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
                 return false
             } catch {
                 return false
@@ -380,7 +417,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     try await Task.sleep(for: .seconds(Int(delay)))
                     try Task.checkCancellation()
                 } catch is CancellationError {
-                    logger.notice("Location upload cancelled during retry backoff source=\(payload.source, privacy: .public)")
+                    logger.notice("Location upload cancelled during retry backoff source=\(payload.source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
                     return false
                 } catch {
                     return false
@@ -400,7 +437,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     logger.warning("Location snapshot upload attempt failed; retrying")
                 }
             } catch is CancellationError {
-                logger.notice("Location upload cancelled source=\(payload.source, privacy: .public)")
+                logger.notice("Location upload cancelled source=\(payload.source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
                 return false
             } catch {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
@@ -579,6 +616,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private struct QueuedUpload {
         let payload: LocationSnapshotPushPayload
         let coalescingKey: PendingCoalescingKey
+        let reason: LocationUploadReason
     }
 }
 
@@ -590,6 +628,7 @@ protocol LocationUploadQueueStoring: Sendable {
 struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
     let context: PersistedLocationContext?
     let source: LocationUploadSource
+    let reason: LocationUploadReason
     let forceUpload: Bool
     let installationId: String
     let requestedAt: Date

@@ -22,6 +22,7 @@ protocol HomeLocationContextPreparing: AnyObject {
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
         uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,

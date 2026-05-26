@@ -135,21 +135,34 @@ struct LocationSessionTests {
         private var enqueueCount = 0
         private var lastForceUpload: Bool?
         private var lastSource: LocationUploadSource?
+        private var lastReason: LocationUploadReason?
         private var preferenceSyncCount = 0
         private var lastPreferenceReason: String?
         private var drainCount = 0
 
-        func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async {
+        func enqueue(
+            _ context: LocationContext,
+            source: LocationUploadSource,
+            reason: LocationUploadReason,
+            forceUpload: Bool
+        ) async {
             enqueueCount += 1
             lastForceUpload = forceUpload
             lastSource = source
+            lastReason = reason
         }
 
-        func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {
+        func enqueuePreferenceSync(
+            source: LocationUploadSource,
+            requestReason: LocationUploadReason,
+            forceUpload: Bool,
+            detail: String
+        ) async {
             preferenceSyncCount += 1
             lastForceUpload = forceUpload
             lastSource = source
-            lastPreferenceReason = reason
+            lastReason = requestReason
+            lastPreferenceReason = detail
         }
 
         func drainPendingUploads() async {
@@ -159,6 +172,7 @@ struct LocationSessionTests {
         func recordedEnqueueCount() -> Int { enqueueCount }
         func recordedLastForceUpload() -> Bool? { lastForceUpload }
         func recordedLastSource() -> LocationUploadSource? { lastSource }
+        func recordedLastReason() -> LocationUploadReason? { lastReason }
         func recordedPreferenceSyncCount() -> Int { preferenceSyncCount }
         func recordedLastPreferenceReason() -> String? { lastPreferenceReason }
         func recordedDrainCount() -> Int { drainCount }
@@ -304,6 +318,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedEnqueueCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(session.currentContext == context)
     }
 
@@ -366,6 +381,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedEnqueueCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(session.currentContext == context)
         #expect(session.currentSnapshot == context.snapshot)
     }
@@ -426,6 +442,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedPreferenceSyncCount() == 0)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
     }
 
     @MainActor
@@ -454,6 +471,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedPreferenceSyncCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
     }
 
@@ -484,6 +502,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedPreferenceSyncCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
     }
 
@@ -514,6 +533,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedPreferenceSyncCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "notification")
     }
 
@@ -570,11 +590,12 @@ struct LocationSessionTests {
         session.currentSnapshot = context.snapshot
         session.currentContext = nil
 
-        await session.enqueueCurrentLocationUpload(source: .settingsPreference)
+        await session.enqueueCurrentLocationUpload(source: .settingsPreference, reason: .preferenceChanged)
 
         #expect(await uploader.recordedEnqueueCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == false)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(session.currentContext == context)
     }
 

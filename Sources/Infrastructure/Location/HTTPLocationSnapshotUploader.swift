@@ -14,8 +14,18 @@ protocol LocationSnapshotUploading: Sendable {
 }
 
 struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
-    func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool) async {}
-    func enqueuePreferenceSync(source: LocationUploadSource, forceUpload: Bool, reason: String) async {}
+    func enqueue(
+        _ context: LocationContext,
+        source: LocationUploadSource,
+        reason: LocationUploadReason,
+        forceUpload: Bool
+    ) async {}
+    func enqueuePreferenceSync(
+        source: LocationUploadSource,
+        requestReason: LocationUploadReason,
+        forceUpload: Bool,
+        detail: String
+    ) async {}
     func drainPendingUploads() async {}
 }
 
