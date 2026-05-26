@@ -111,8 +111,13 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     }
 
     func enqueue(_ context: LocationContext, source: LocationUploadSource, forceUpload: Bool = false) async {
+        logger.info(
+            "Location upload request accepted source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+        )
         guard forceUpload || locationUploadEnabledProvider() else {
-            logger.debug("Skipping location snapshot upload; disabled in settings")
+            logger.notice(
+                "Location upload request skipped reason=disabled source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+            )
             return
         }
 
@@ -134,7 +139,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         )
 
         guard !apnsToken.isEmpty else {
-            logger.debug("Skipping location snapshot upload; APNs token unavailable")
+            logger.notice(
+                "Location upload request persisted reason=missingToken source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+            )
             await upsertPending(persisted)
             return
         }
@@ -150,7 +157,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             forceUpload: forceUpload
         )
         if shouldDedupeRequest(for: dedupeKey, now: now) {
-            logger.debug("Deduplicating location snapshot upload request")
+            logger.notice(
+                "Location upload request deduped source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+            )
             return
         }
         let payload = await makePayload(
@@ -162,6 +171,9 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         )
         let coalescingKey = coalescingKey(for: persisted)
         if pendingByCoalescingKey[coalescingKey] == nil {
+            logger.debug(
+                "Location upload request persisted reason=queued source=\(source.rawValue, privacy: .public) force=\(forceUpload, privacy: .public)"
+            )
             await upsertPending(persisted)
         }
 
@@ -176,13 +188,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await ensurePersistedPendingLoaded()
 
         guard !pendingByCoalescingKey.isEmpty else { return }
+        logger.info("Location upload drain started pendingCount=\(self.pendingByCoalescingKey.count, privacy: .public)")
 
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !apnsToken.isEmpty else {
-            logger.debug("Skipping pending location upload drain; APNs token unavailable")
+            logger.notice("Location upload drain skipped reason=missingToken")
             return
         }
 
+        var enqueuedCount = 0
+        var dedupedCount = 0
         for pending in pendingByCoalescingKey.values.sorted(by: { $0.requestedAt < $1.requestedAt }) {
             let now = nowProvider()
             let dedupeKey = DeduplicationKey(
@@ -197,6 +212,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 forceUpload: pending.forceUpload
             )
             if shouldDedupeRequest(for: dedupeKey, now: now) {
+                dedupedCount += 1
                 pendingByCoalescingKey.removeValue(forKey: coalescingKey(for: pending))
                 await persistPendingState()
                 continue
@@ -209,8 +225,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 now: now
             )
             queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey(for: pending)))
+            enqueuedCount += 1
             lastUploadBySemanticKey[dedupeKey] = now
         }
+        logger.info(
+            "Location upload drain completed enqueued=\(enqueuedCount, privacy: .public) deduped=\(dedupedCount, privacy: .public) remainingPending=\(self.pendingByCoalescingKey.count, privacy: .public)"
+        )
 
         guard !isProcessing else { return }
         await processQueue()
@@ -244,8 +264,15 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             let workItem = queue.removeFirst()
             let didUpload = await uploadWithRetry(workItem.payload)
             if didUpload {
+                logger.notice(
+                    "Location upload succeeded source=\(workItem.payload.source, privacy: .public)"
+                )
                 pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
                 await persistPendingState()
+            } else {
+                logger.error(
+                    "Location upload failed source=\(workItem.payload.source, privacy: .public)"
+                )
             }
         }
     }
@@ -269,7 +296,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     logger.warning("Location snapshot upload attempt failed; retrying")
                 }
             } catch is CancellationError {
-                logger.debug("Location snapshot upload cancelled")
+                logger.notice("Location upload cancelled source=\(payload.source, privacy: .public)")
                 return false
             } catch {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1

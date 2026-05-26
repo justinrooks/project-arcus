@@ -451,6 +451,32 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("onboarding upload survives delayed APNs token and drains deterministically")
+    func locationContextPusher_onboardingDelayedToken_drainUsesOnboardingSource() async throws {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore()
+        let tokenState = TokenBox("")
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { tokenState.value() },
+            installationIdProvider: { "install-abc-123" },
+            authorizationStatusProvider: { .authorizedWhenInUse },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueue(makeContext(), source: .onboarding)
+        #expect(await store.current().count == 1)
+
+        tokenState.set("apns-token-123")
+        await pusher.drainPendingUploads()
+
+        let payload = try #require(await uploader.uploadedPayloads().first)
+        #expect(payload.source == LocationUploadSource.onboarding.rawValue)
+        #expect(payload.auth == "whenInUse")
+        #expect(await store.current().isEmpty)
+    }
+
     @Test("snapshot pusher persists pending request when upload fails after retry budget")
     func snapshotPusher_persistsOnRetryExhaustion() async throws {
         struct AlwaysFailingUploader: LocationSnapshotUploading {

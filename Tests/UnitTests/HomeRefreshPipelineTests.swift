@@ -666,9 +666,53 @@ struct HomeRefreshPipelineTests {
         )
 
         #expect(locationSession.prepareCalls.count == 1)
-        #expect(locationSession.prepareCalls[0] == .init(requiresFreshLocation: false, showsAuthorizationPrompt: false))
+        #expect(
+            locationSession.prepareCalls[0] == .init(
+                requiresFreshLocation: false,
+                showsAuthorizationPrompt: false,
+                uploadSource: .backgroundLocationChange
+            )
+        )
         #expect(snapshot.locationSnapshot == freshContext.snapshot)
         #expect(snapshot.refreshKey == freshContext.refreshKey)
+    }
+
+    @Test("ingestion trigger location preparation carries deterministic upload sources")
+    func ingestionTrigger_locationPreparationCarriesExpectedUploadSource() async throws {
+        let cases: [(HomeRefreshTrigger, LocationUploadSource)] = [
+            (.foregroundActivate, .foregroundActivate),
+            (.manualRefresh, .manualRefresh),
+            (.foregroundLocationChange, .foregroundLocationChange),
+            (.backgroundRefresh, .backgroundRefresh),
+            (.backgroundLocationChange, .backgroundLocationChange)
+        ]
+
+        for testCase in cases {
+            let locationSession = FakeLocationSession(currentContext: nil, preparedContext: makeContext())
+            let spc = FakeSpcProvider()
+            let alerts = FakeAlertProvider()
+            let weather = FakeWeatherClient()
+            let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: spc,
+                    arcusAlertSync: alerts,
+                    weatherClient: weather,
+                    locationSession: locationSession,
+                    snapshotStore: snapshotStore,
+                    projectionStore: nil,
+                    widgetSnapshotRefresher: nil
+                )
+            )
+
+            _ = try await executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: testCase.0))
+            )
+
+            let prepareCall = try #require(locationSession.prepareCalls.first)
+            #expect(prepareCall.uploadSource == testCase.1)
+        }
     }
 
     @Test("session tick continues reusing current prepared context")
@@ -951,6 +995,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     struct PrepareCall: Equatable {
         let requiresFreshLocation: Bool
         let showsAuthorizationPrompt: Bool
+        let uploadSource: LocationUploadSource?
     }
 
     var currentContext: LocationContext?
@@ -981,7 +1026,8 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
         prepareCalls.append(
             .init(
                 requiresFreshLocation: requiresFreshLocation,
-                showsAuthorizationPrompt: showsAuthorizationPrompt
+                showsAuthorizationPrompt: showsAuthorizationPrompt,
+                uploadSource: uploadSource
             )
         )
         if let prepareGate {
