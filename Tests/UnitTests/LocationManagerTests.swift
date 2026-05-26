@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import Testing
+import ArcusCore
 @testable import SkyAware
 
 @Suite("LocationManager")
@@ -261,8 +262,8 @@ struct LocationSessionTests {
     }
 
     @MainActor
-    @Test("syncNotificationPreference forwards current context as forced preference sync")
-    func syncNotificationPreference_forwardsCurrentContextAsForcedSync() async throws {
+    @Test("syncNotificationPreference enqueues forced preference sync")
+    func syncNotificationPreference_enqueuesForcedPreferenceSync() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -315,7 +316,8 @@ struct LocationSessionTests {
 
         await session.syncNotificationPreference(enabled: true)
 
-        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
@@ -323,8 +325,8 @@ struct LocationSessionTests {
     }
 
     @MainActor
-    @Test("syncLocationSharingPreference resolves missing context and enqueues forced sync")
-    func syncLocationSharingPreference_resolvesMissingContext_andEnqueuesForcedSync() async throws {
+    @Test("syncLocationSharingPreference enqueues forced preference sync without resolving context")
+    func syncLocationSharingPreference_enqueuesForcedPreferenceSyncWithoutResolvingContext() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -378,11 +380,13 @@ struct LocationSessionTests {
 
         await session.syncLocationSharingPreference(enabled: false)
 
-        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
-        #expect(session.currentContext == context)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+        #expect(session.currentContext == nil)
         #expect(session.currentSnapshot == context.snapshot)
     }
 
@@ -438,11 +442,12 @@ struct LocationSessionTests {
         await session.updateLocationSharingPreference(enabled: true)
 
         #expect(authManager.requestAlwaysCount == 1)
-        #expect(await uploader.recordedEnqueueCount() == 1)
-        #expect(await uploader.recordedPreferenceSyncCount() == 0)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
         #expect(await uploader.recordedLastForceUpload() == true)
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
     }
 
     @MainActor

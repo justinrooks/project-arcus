@@ -422,3 +422,59 @@ struct HTTPLocationSnapshotUploaderTests {
         #expect(request.body?.isEmpty == false)
     }
 }
+
+@Suite("HTTPDevicePreferenceSyncUploader")
+struct HTTPDevicePreferenceSyncUploaderTests {
+    private func makePreferencePayload(isSubscribed: Bool, token: String) -> DevicePreferenceSyncPayload {
+        DevicePreferenceSyncPayload(
+            installationId: "install-1",
+            apnsDeviceToken: token,
+            apnsEnvironment: "sandbox",
+            platform: "iOS",
+            osVersion: "18.0",
+            appVersion: "1.0",
+            buildNumber: "1",
+            auth: "always",
+            isSubscribed: isSubscribed,
+            source: "settingsPreference",
+            reason: "preferenceChanged"
+        )
+    }
+
+    @Test("upload builds preferences endpoint from Arcus signal base URL")
+    func upload_buildsPreferencesURL() async throws {
+        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 202, headers: [:], data: nil))
+        let uploader = HTTPDevicePreferenceSyncUploader(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: http
+        )
+
+        let payload = makePreferencePayload(isSubscribed: true, token: "abc123")
+
+        try await uploader.upload(payload)
+
+        let request = try #require(await http.firstRequest())
+        #expect(request.method == "POST")
+        #expect(request.url.scheme == "https")
+        #expect(request.url.host == "arcus.example.com")
+        #expect(request.url.path == ArcusSignalConfiguration.devicePreferencesPath)
+        #expect(request.headers["Accept"] == "application/json")
+        #expect(request.headers["Content-Type"] == "application/json")
+        #expect(request.headers["User-Agent"]?.isEmpty == false)
+        #expect(request.body?.isEmpty == false)
+    }
+
+    @Test("non-2xx response throws status without embedding APNs token")
+    func upload_errorDoesNotExposeToken() async throws {
+        let http = ArcusMockHTTPClient(response: HTTPResponse(status: 500, headers: [:], data: nil))
+        let uploader = HTTPDevicePreferenceSyncUploader(
+            baseURL: URL(string: "https://arcus.example.com")!,
+            http: http
+        )
+        let payload = makePreferencePayload(isSubscribed: false, token: "super-secret-token")
+
+        await #expect(throws: LocationPushError.self) {
+            try await uploader.upload(payload)
+        }
+    }
+}

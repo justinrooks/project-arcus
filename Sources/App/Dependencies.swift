@@ -337,8 +337,12 @@ final class Dependencies: Sendable {
 
         let locationUploadCoordinator: any LocationUploadCoordinating
         if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
-            let uploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
-            locationUploadCoordinator = LocationSnapshotPusher(uploader: uploader)
+            let snapshotUploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
+            let preferenceUploader = HTTPDevicePreferenceSyncUploader(baseURL: arcusSignalBaseURL, http: httpClient)
+            locationUploadCoordinator = LocationSnapshotPusher(
+                locationUploader: snapshotUploader,
+                preferenceUploader: preferenceUploader
+            )
             logger.info("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
         } else {
             locationUploadCoordinator = NoOpLocationUploadCoordinator()

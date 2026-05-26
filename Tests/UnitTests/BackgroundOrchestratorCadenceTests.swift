@@ -3,6 +3,7 @@ import Testing
 import SwiftData
 import CoreLocation
 import OSLog
+import ArcusCore
 @testable import SkyAware
 
 @Suite("BackgroundScheduler replacement policy", .serialized)

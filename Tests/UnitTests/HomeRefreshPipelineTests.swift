@@ -2,6 +2,7 @@ import CoreLocation
 import Foundation
 import OSLog
 import Testing
+import ArcusCore
 @testable import SkyAware
 
 @Suite("Home Refresh Pipeline", .serialized)

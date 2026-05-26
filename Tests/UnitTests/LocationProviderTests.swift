@@ -60,6 +60,18 @@ struct LocationProviderTests {
         }
     }
 
+    private actor MockPreferenceUploader: DevicePreferenceSyncUploading {
+        private var payloads: [DevicePreferenceSyncPayload] = []
+
+        func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+            payloads.append(payload)
+        }
+
+        func uploadedPayloads() -> [DevicePreferenceSyncPayload] {
+            payloads
+        }
+    }
+
     private actor CompatibilitySnapshotUploader: LocationSnapshotUploading {
         private var payloads: [LocationSnapshotPushPayload] = []
         private let failingStatus: Int
@@ -478,10 +490,12 @@ struct LocationProviderTests {
 
     @Test("opt-out preference sync without location context persists when APNs token is missing")
     func locationContextPusher_preferenceSyncWithoutContext_missingTokenPersists() async throws {
-        let uploader = MockSnapshotUploader()
+        let locationUploader = MockSnapshotUploader()
+        let preferenceUploader = MockPreferenceUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: locationUploader,
+            preferenceUploader: preferenceUploader,
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -497,10 +511,11 @@ struct LocationProviderTests {
             detail: "location-sharing"
         )
 
-        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await locationUploader.uploadedPayloads().isEmpty)
+        #expect(await preferenceUploader.uploadedPayloads().isEmpty)
         #expect(await store.current().count == 1)
         let persisted = try #require(await store.current().first)
-        #expect(persisted.context == nil)
+        #expect(persisted.operation == .preferenceSync)
         #expect(persisted.reason == .preferenceChanged)
         #expect(persisted.isSubscribed == false)
         #expect(persisted.forceUpload == true)
@@ -508,11 +523,13 @@ struct LocationProviderTests {
 
     @Test("opt-out preference sync without location context drains when APNs token arrives")
     func locationContextPusher_preferenceSyncWithoutContext_drainsOnTokenArrival() async throws {
-        let uploader = MockSnapshotUploader()
+        let locationUploader = MockSnapshotUploader()
+        let preferenceUploader = MockPreferenceUploader()
         let store = InMemoryUploadQueueStore()
         let tokenState = TokenBox("")
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: locationUploader,
+            preferenceUploader: preferenceUploader,
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -532,11 +549,11 @@ struct LocationProviderTests {
         tokenState.set("apns-token-123")
         await pusher.drainPendingUploads()
 
-        let payload = try #require(await uploader.uploadedPayloads().first)
+        #expect(await locationUploader.uploadedPayloads().isEmpty)
+        let payload = try #require(await preferenceUploader.uploadedPayloads().first)
         #expect(payload.source == LocationUploadSource.settingsPreference.rawValue)
         #expect(payload.isSubscribed == false)
-        #expect(payload.h3Cell == nil)
-        #expect(payload.county == nil)
+        #expect(payload.reason == LocationUploadReason.preferenceChanged.rawValue)
         #expect(await store.current().isEmpty)
     }
 
@@ -606,6 +623,89 @@ struct LocationProviderTests {
         #expect(await store.current().count == 1)
     }
 
+    @Test("preference sync persists pending request when upload fails after retry budget")
+    func preferenceSync_persistsOnRetryExhaustion() async throws {
+        struct AlwaysFailingPreferenceUploader: DevicePreferenceSyncUploading {
+            func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: AlwaysFailingPreferenceUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("preference sync persists pending request when upload is cancelled")
+    func preferenceSync_persistsOnCancellation() async throws {
+        struct CancellingPreferenceUploader: DevicePreferenceSyncUploading {
+            func upload(_ payload: DevicePreferenceSyncPayload) async throws {
+                throw CancellationError()
+            }
+        }
+
+        let store = InMemoryUploadQueueStore()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: CancellingPreferenceUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+        #expect(await store.current().count == 1)
+    }
+
+    @Test("preference sync drain removes persisted request on success")
+    func preferenceSync_drainRemovesPersistedRequestOnSuccess() async throws {
+        let uploader = MockPreferenceUploader()
+        let persisted = PersistedLocationUploadRequest(
+            source: .settingsPreference,
+            reason: .preferenceChanged,
+            forceUpload: true,
+            installationId: "install-abc-123",
+            requestedAt: Date(timeIntervalSince1970: 10_000),
+            isSubscribed: false,
+            authorizationState: "always",
+            apnsToken: "",
+            operation: .preferenceSync
+        )
+        let store = InMemoryUploadQueueStore(seed: [persisted])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.drainPendingUploads()
+        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
+    }
+
     @Test("snapshot pusher cancels retry during backoff and preserves pending request")
     func snapshotPusher_cancellationDuringBackoffStopsRetryAndPersistsPending() async throws {
         let uploader = BackoffCancellingUploader()
@@ -633,7 +733,6 @@ struct LocationProviderTests {
     func snapshotPusher_drainRemovesPersistedRequestOnSuccess() async throws {
         let uploader = MockSnapshotUploader()
         let persisted = PersistedLocationUploadRequest(
-            context: PersistedLocationContext(makeContext()),
             source: .manualRefresh,
             reason: .locationResolved,
             forceUpload: false,
@@ -641,7 +740,8 @@ struct LocationProviderTests {
             requestedAt: Date(timeIntervalSince1970: 10_000),
             isSubscribed: true,
             authorizationState: "always",
-            apnsToken: ""
+            apnsToken: "",
+            operation: .locationSnapshot(context: PersistedLocationContext(makeContext()))
         )
         let store = InMemoryUploadQueueStore(seed: [persisted])
         let pusher = LocationSnapshotPusher(
@@ -707,9 +807,11 @@ struct LocationProviderTests {
 
     @Test("snapshot pusher skips non-forced preference sync when location sharing is disabled")
     func snapshotPusher_skipsNonForcedPreferenceSyncWhenLocationSharingDisabled() async throws {
-        let uploader = MockSnapshotUploader()
+        let locationUploader = MockSnapshotUploader()
+        let preferenceUploader = MockPreferenceUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: locationUploader,
+            preferenceUploader: preferenceUploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -717,9 +819,15 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0]
         )
 
-        await pusher.enqueue(makeContext(), source: .settingsPreference, reason: .preferenceChanged, forceUpload: false)
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: false,
+            detail: "notification"
+        )
 
-        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await locationUploader.uploadedPayloads().isEmpty)
+        #expect(await preferenceUploader.uploadedPayloads().isEmpty)
     }
 
     @Test("snapshot pusher dedupes identical non-forced uploads inside the dedupe window")
@@ -835,11 +943,12 @@ struct LocationProviderTests {
 
     @Test("snapshot pusher does not dedupe preference state changes")
     func snapshotPusher_doesNotDedupePreferenceStateChanges() async throws {
-        let uploader = MockSnapshotUploader()
+        let uploader = MockPreferenceUploader()
         let clock = ClockBox(Date(timeIntervalSince1970: 13_000))
         let subscribed = BoolBox(true)
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: MockSnapshotUploader(),
+            preferenceUploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { subscribed.value() },
@@ -848,11 +957,20 @@ struct LocationProviderTests {
             retryDelaysSeconds: [0],
             dedupeWindowSeconds: 15
         )
-        let context = makeContext()
 
-        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
         subscribed.set(false)
-        await pusher.enqueue(context, source: .settingsPreference, reason: .preferenceChanged, forceUpload: true)
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
 
         let payloads = await uploader.uploadedPayloads()
         #expect(payloads.count == 2)

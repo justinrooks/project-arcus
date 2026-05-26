@@ -66,7 +66,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     nonisolated private static let locationUploadEnabledKey = "sendL8ntoSignal"
     nonisolated private static let pendingRequestsKey = "pendingLocationUploadRequests"
 
-    private let uploader: any LocationSnapshotUploading
+    private let locationUploader: any LocationSnapshotUploading
+    private let preferenceUploader: any DevicePreferenceSyncUploading
     private let apnsTokenProvider: APNsTokenProvider
     private let installationIdProvider: InstallationIDProvider
     private let subscriptionStatusProvider: SubscriptionStatusProvider
@@ -83,6 +84,45 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private var lastUploadBySemanticKey: [DeduplicationKey: Date] = [:]
     private var pendingByCoalescingKey: [PendingCoalescingKey: PersistedLocationUploadRequest] = [:]
     private var hasLoadedPersistedPending = false
+
+    init(
+        locationUploader: any LocationSnapshotUploading,
+        preferenceUploader: any DevicePreferenceSyncUploading = NoOpDevicePreferenceSyncUploader(),
+        apnsTokenProvider: @escaping APNsTokenProvider = {
+            LocationSnapshotPusher.readApnsTokenFromDefaults()
+        },
+        installationIdProvider: @escaping InstallationIDProvider = {
+            InstallationIdentityStore.shared.installationId()
+        },
+        subscriptionStatusProvider: @escaping SubscriptionStatusProvider = {
+            LocationSnapshotPusher.readSubscriptionStatusFromDefaults()
+        },
+        locationUploadEnabledProvider: @escaping LocationUploadEnabledProvider = {
+            LocationSnapshotPusher.readLocationUploadEnabledFromDefaults()
+        },
+        authorizationStatusProvider: @escaping AuthorizationStatusProvider = {
+            CLLocationManager().authorizationStatus
+        },
+        nowProvider: @escaping NowProvider = { Date() },
+        retryDelaysSeconds: [UInt64] = [0, 5, 15],
+        dedupeWindowSeconds: TimeInterval = 15,
+        queueStore: (any LocationUploadQueueStoring)? = nil
+    ) {
+        self.locationUploader = locationUploader
+        self.preferenceUploader = preferenceUploader
+        self.apnsTokenProvider = apnsTokenProvider
+        self.installationIdProvider = installationIdProvider
+        self.subscriptionStatusProvider = subscriptionStatusProvider
+        self.locationUploadEnabledProvider = locationUploadEnabledProvider
+        self.authorizationStatusProvider = authorizationStatusProvider
+        self.nowProvider = nowProvider
+        self.retryDelaysSeconds = retryDelaysSeconds
+        self.dedupeWindowSeconds = dedupeWindowSeconds
+        self.queueStore = queueStore ?? UserDefaultsLocationUploadQueueStore(
+            suiteName: Self.userDefaultsSuiteName,
+            key: Self.pendingRequestsKey
+        )
+    }
 
     init(
         uploader: any LocationSnapshotUploading,
@@ -106,18 +146,18 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         dedupeWindowSeconds: TimeInterval = 15,
         queueStore: (any LocationUploadQueueStoring)? = nil
     ) {
-        self.uploader = uploader
-        self.apnsTokenProvider = apnsTokenProvider
-        self.installationIdProvider = installationIdProvider
-        self.subscriptionStatusProvider = subscriptionStatusProvider
-        self.locationUploadEnabledProvider = locationUploadEnabledProvider
-        self.authorizationStatusProvider = authorizationStatusProvider
-        self.nowProvider = nowProvider
-        self.retryDelaysSeconds = retryDelaysSeconds
-        self.dedupeWindowSeconds = dedupeWindowSeconds
-        self.queueStore = queueStore ?? UserDefaultsLocationUploadQueueStore(
-            suiteName: Self.userDefaultsSuiteName,
-            key: Self.pendingRequestsKey
+        self.init(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: apnsTokenProvider,
+            installationIdProvider: installationIdProvider,
+            subscriptionStatusProvider: subscriptionStatusProvider,
+            locationUploadEnabledProvider: locationUploadEnabledProvider,
+            authorizationStatusProvider: authorizationStatusProvider,
+            nowProvider: nowProvider,
+            retryDelaysSeconds: retryDelaysSeconds,
+            dedupeWindowSeconds: dedupeWindowSeconds,
+            queueStore: queueStore
         )
     }
 
@@ -144,7 +184,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let authorizationStatus = authorizationStatusProvider()
         let now = nowProvider()
         let persisted = PersistedLocationUploadRequest(
-            context: PersistedLocationContext(context),
             source: source,
             reason: reason,
             forceUpload: forceUpload,
@@ -152,7 +191,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             requestedAt: now,
             isSubscribed: isSubscribed,
             authorizationState: Self.authorizationName(for: authorizationStatus),
-            apnsToken: apnsToken
+            apnsToken: apnsToken,
+            operation: .locationSnapshot(context: PersistedLocationContext(context))
         )
 
         guard !apnsToken.isEmpty else {
@@ -165,10 +205,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let dedupeKey = DeduplicationKey(
             installationId: installationId,
             apnsToken: apnsToken,
-            h3Cell: context.h3Cell,
-            county: context.grid.countyCode,
-            fireZone: context.grid.fireZone,
-            forecastZone: context.grid.forecastZone,
+            operation: .locationSnapshot(
+                h3Cell: context.h3Cell,
+                county: context.grid.countyCode,
+                fireZone: context.grid.fireZone,
+                forecastZone: context.grid.forecastZone
+            ),
             isSubscribed: isSubscribed,
             authorizationState: Self.authorizationName(for: authorizationStatus),
             forceUpload: forceUpload
@@ -179,7 +221,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             )
             return
         }
-        let payload = await makePayload(
+        let payload = await makeLocationPayload(
             from: persisted,
             apnsToken: apnsToken,
             isSubscribed: isSubscribed,
@@ -194,7 +236,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             await upsertPending(persisted)
         }
 
-        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey, reason: reason))
+        queue.append(
+            QueuedUpload(
+                operation: .locationSnapshot(payload),
+                coalescingKey: coalescingKey,
+                reason: reason,
+                source: source.rawValue
+            )
+        )
         lastUploadBySemanticKey[dedupeKey] = now
 
         guard !isProcessing else { return }
@@ -224,7 +273,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let authorizationStatus = authorizationStatusProvider()
         let now = nowProvider()
         let persisted = PersistedLocationUploadRequest(
-            context: nil,
             source: source,
             reason: requestReason,
             forceUpload: forceUpload,
@@ -232,7 +280,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             requestedAt: now,
             isSubscribed: isSubscribed,
             authorizationState: Self.authorizationName(for: authorizationStatus),
-            apnsToken: apnsToken
+            apnsToken: apnsToken,
+            operation: .preferenceSync
         )
 
         guard !apnsToken.isEmpty else {
@@ -246,10 +295,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         let dedupeKey = DeduplicationKey(
             installationId: installationId,
             apnsToken: apnsToken,
-            h3Cell: nil,
-            county: nil,
-            fireZone: nil,
-            forecastZone: nil,
+            operation: .preferenceSync,
             isSubscribed: isSubscribed,
             authorizationState: Self.authorizationName(for: authorizationStatus),
             forceUpload: forceUpload
@@ -261,12 +307,11 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             return
         }
 
-        let payload = await makePayload(
+        let payload = await makePreferencePayload(
             from: persisted,
             apnsToken: apnsToken,
             isSubscribed: isSubscribed,
-            authorizationState: Self.authorizationName(for: authorizationStatus),
-            now: now
+            authorizationState: Self.authorizationName(for: authorizationStatus)
         )
         let coalescingKey = coalescingKey(for: persisted)
         if pendingByCoalescingKey[coalescingKey] == nil {
@@ -276,7 +321,14 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             await upsertPending(persisted)
         }
 
-        queue.append(QueuedUpload(payload: payload, coalescingKey: coalescingKey, reason: requestReason))
+        queue.append(
+            QueuedUpload(
+                operation: .preferenceSync(payload),
+                coalescingKey: coalescingKey,
+                reason: requestReason,
+                source: source.rawValue
+            )
+        )
         lastUploadBySemanticKey[dedupeKey] = now
 
         guard !isProcessing else { return }
@@ -302,10 +354,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
             let dedupeKey = DeduplicationKey(
                 installationId: pending.installationId,
                 apnsToken: apnsToken,
-                h3Cell: pending.context?.h3Cell,
-                county: pending.context?.county,
-                fireZone: pending.context?.fireZone,
-                forecastZone: pending.context?.forecastZone,
+                operation: pending.operation.deduplicationOperation,
                 isSubscribed: pending.isSubscribed,
                 authorizationState: pending.authorizationState,
                 forceUpload: pending.forceUpload
@@ -316,20 +365,39 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 await persistPendingState()
                 continue
             }
-            let payload = await makePayload(
-                from: pending,
-                apnsToken: apnsToken,
-                isSubscribed: pending.isSubscribed,
-                authorizationState: pending.authorizationState,
-                now: now
-            )
-            queue.append(
-                QueuedUpload(
-                    payload: payload,
-                    coalescingKey: coalescingKey(for: pending),
-                    reason: pending.reason
+            switch pending.operation {
+            case .locationSnapshot:
+                let payload = await makeLocationPayload(
+                    from: pending,
+                    apnsToken: apnsToken,
+                    isSubscribed: pending.isSubscribed,
+                    authorizationState: pending.authorizationState,
+                    now: now
                 )
-            )
+                queue.append(
+                    QueuedUpload(
+                        operation: .locationSnapshot(payload),
+                        coalescingKey: coalescingKey(for: pending),
+                        reason: pending.reason,
+                        source: pending.source.rawValue
+                    )
+                )
+            case .preferenceSync:
+                let payload = await makePreferencePayload(
+                    from: pending,
+                    apnsToken: apnsToken,
+                    isSubscribed: pending.isSubscribed,
+                    authorizationState: pending.authorizationState
+                )
+                queue.append(
+                    QueuedUpload(
+                        operation: .preferenceSync(payload),
+                        coalescingKey: coalescingKey(for: pending),
+                        reason: pending.reason,
+                        source: pending.source.rawValue
+                    )
+                )
+            }
             enqueuedCount += 1
             lastUploadBySemanticKey[dedupeKey] = now
         }
@@ -371,16 +439,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return
             }
             let workItem = queue.removeFirst()
-            let didUpload = await uploadWithRetry(workItem.payload, reason: workItem.reason)
+            let didUpload = await uploadWithRetry(workItem)
             if didUpload {
                 logger.notice(
-                    "Location upload succeeded source=\(workItem.payload.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
+                    "Location upload succeeded source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
                 pendingByCoalescingKey.removeValue(forKey: workItem.coalescingKey)
                 await persistPendingState()
             } else {
                 logger.error(
-                    "Location upload failed source=\(workItem.payload.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
+                    "Location upload failed source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)"
                 )
                 if Task.isCancelled {
                     logger.notice("Location upload queue drain stopped after cancellation")
@@ -390,12 +458,12 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         }
     }
 
-    private func uploadWithRetry(_ payload: LocationSnapshotPushPayload, reason: LocationUploadReason) async -> Bool {
+    private func uploadWithRetry(_ workItem: QueuedUpload) async -> Bool {
         for (index, delay) in retryDelaysSeconds.enumerated() {
             do {
                 try Task.checkCancellation()
             } catch is CancellationError {
-                logger.notice("Location upload cancelled before attempt source=\(payload.source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
+                logger.notice("Location upload cancelled before attempt source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
                 return false
             } catch {
                 return false
@@ -406,34 +474,41 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                     try await Task.sleep(for: .seconds(Int(delay)))
                     try Task.checkCancellation()
                 } catch is CancellationError {
-                    logger.notice("Location upload cancelled during retry backoff source=\(payload.source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
+                    logger.notice("Location upload cancelled during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
                     return false
                 } catch {
                     return false
                 }
             }
             do {
-                try await uploader.upload(payload)
+                switch workItem.operation {
+                case .locationSnapshot(let payload):
+                    try await locationUploader.upload(payload)
+                case .preferenceSync(let payload):
+                    try await preferenceUploader.upload(payload)
+                }
                 return true
             } catch let error as LocationPushError {
-                if await uploadWithLegacySourceFallbackIfNeeded(for: payload, error: error) {
-                    return true
+                if case .locationSnapshot(let payload) = workItem.operation {
+                    if await uploadWithLegacySourceFallbackIfNeeded(for: payload, error: error) {
+                        return true
+                    }
                 }
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
-                    logger.error("Location snapshot upload failed after retries: \(error.localizedDescription, privacy: .public)")
+                    logger.error("Upload failed after retries: \(error.localizedDescription, privacy: .public)")
                 } else {
-                    logger.warning("Location snapshot upload attempt failed; retrying")
+                    logger.warning("Upload attempt failed; retrying")
                 }
             } catch is CancellationError {
-                logger.notice("Location upload cancelled source=\(payload.source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
+                logger.notice("Location upload cancelled source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
                 return false
             } catch {
                 let isFinalAttempt = index == retryDelaysSeconds.count - 1
                 if isFinalAttempt {
-                    logger.error("Location snapshot upload failed after retries: \(error.localizedDescription, privacy: .public)")
+                    logger.error("Upload failed after retries: \(error.localizedDescription, privacy: .public)")
                 } else {
-                    logger.warning("Location snapshot upload attempt failed; retrying")
+                    logger.warning("Upload attempt failed; retrying")
                 }
             }
         }
@@ -474,7 +549,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         )
 
         do {
-            try await uploader.upload(fallbackPayload)
+            try await locationUploader.upload(fallbackPayload)
             logger.notice("Location snapshot upload succeeded with legacy source fallback")
             return true
         } catch {
@@ -482,27 +557,30 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         }
     }
 
-    private func makePayload(
+    private func makeLocationPayload(
         from request: PersistedLocationUploadRequest,
         apnsToken: String,
         isSubscribed: Bool,
         authorizationState: String,
         now: Date
     ) async -> LocationSnapshotPushPayload {
-        let capturedAt = request.context?.capturedAt ?? request.requestedAt
-        let locationAgeSeconds = request.context.map { now.timeIntervalSince($0.capturedAt) } ?? 0
-        let horizontalAccuracyMeters = request.context?.horizontalAccuracyMeters ?? 0
+        guard case .locationSnapshot(let context) = request.operation else {
+            preconditionFailure("Location payload requested for non-location operation")
+        }
+        let capturedAt = context.capturedAt
+        let locationAgeSeconds = now.timeIntervalSince(context.capturedAt)
+        let horizontalAccuracyMeters = context.horizontalAccuracyMeters
 
         return LocationSnapshotPushPayload(
             capturedAt: capturedAt,
             locationAgeSeconds: locationAgeSeconds,
             horizontalAccuracyMeters: horizontalAccuracyMeters,
             cellScheme: "h3",
-            h3Cell: request.context?.h3Cell,
-            h3Resolution: request.context == nil ? nil : 8,
-            county: request.context?.county,
-            zone: request.context?.forecastZone,
-            fireZone: request.context?.fireZone,
+            h3Cell: context.h3Cell,
+            h3Resolution: 8,
+            county: context.county,
+            zone: context.forecastZone,
+            fireZone: context.fireZone,
             apnsDeviceToken: apnsToken,
             installationId: request.installationId,
             source: request.source.rawValue,
@@ -518,9 +596,36 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return "prod"
                 #endif
             }(),
-            countyLabel: request.context?.countyLabel,
-            fireZoneLabel: request.context?.fireZoneLabel,
+            countyLabel: context.countyLabel,
+            fireZoneLabel: context.fireZoneLabel,
             isSubscribed: isSubscribed
+        )
+    }
+
+    private func makePreferencePayload(
+        from request: PersistedLocationUploadRequest,
+        apnsToken: String,
+        isSubscribed: Bool,
+        authorizationState: String
+    ) async -> DevicePreferenceSyncPayload {
+        DevicePreferenceSyncPayload(
+            installationId: request.installationId,
+            apnsDeviceToken: apnsToken,
+            apnsEnvironment: {
+                #if DEBUG
+                return "sandbox"
+                #else
+                return "prod"
+                #endif
+            }(),
+            platform: "iOS",
+            osVersion: await UIDevice.current.systemVersion,
+            appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            buildNumber: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "",
+            auth: authorizationState,
+            isSubscribed: isSubscribed,
+            source: request.source.rawValue,
+            reason: request.reason.rawValue
         )
     }
 
@@ -547,10 +652,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         PendingCoalescingKey(
             installationId: request.installationId,
             apnsToken: request.apnsToken,
-            h3Cell: request.context?.h3Cell,
-            county: request.context?.county,
-            fireZone: request.context?.fireZone,
-            forecastZone: request.context?.forecastZone,
+            operation: request.operation.deduplicationOperation,
             isSubscribed: request.isSubscribed,
             authorizationState: request.authorizationState,
             forceUpload: request.forceUpload
@@ -581,10 +683,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private struct DeduplicationKey: Hashable {
         let installationId: String
         let apnsToken: String
-        let h3Cell: Int64?
-        let county: String?
-        let fireZone: String?
-        let forecastZone: String?
+        let operation: PendingDeduplicationOperation
         let isSubscribed: Bool
         let authorizationState: String
         let forceUpload: Bool
@@ -593,19 +692,17 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private struct PendingCoalescingKey: Hashable, Codable {
         let installationId: String
         let apnsToken: String
-        let h3Cell: Int64?
-        let county: String?
-        let fireZone: String?
-        let forecastZone: String?
+        let operation: PendingDeduplicationOperation
         let isSubscribed: Bool
         let authorizationState: String
         let forceUpload: Bool
     }
 
     private struct QueuedUpload {
-        let payload: LocationSnapshotPushPayload
+        let operation: QueuedOperation
         let coalescingKey: PendingCoalescingKey
         let reason: LocationUploadReason
+        let source: String
     }
 }
 
@@ -615,7 +712,6 @@ protocol LocationUploadQueueStoring: Sendable {
 }
 
 struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
-    let context: PersistedLocationContext?
     let source: LocationUploadSource
     let reason: LocationUploadReason
     let forceUpload: Bool
@@ -624,6 +720,137 @@ struct PersistedLocationUploadRequest: Sendable, Codable, Equatable {
     let isSubscribed: Bool
     let authorizationState: String
     let apnsToken: String
+    let operation: PersistedUploadOperation
+
+    enum CodingKeys: String, CodingKey {
+        case source
+        case reason
+        case forceUpload
+        case installationId
+        case requestedAt
+        case isSubscribed
+        case authorizationState
+        case apnsToken
+        case operation
+        case context
+    }
+
+    init(
+        source: LocationUploadSource,
+        reason: LocationUploadReason,
+        forceUpload: Bool,
+        installationId: String,
+        requestedAt: Date,
+        isSubscribed: Bool,
+        authorizationState: String,
+        apnsToken: String,
+        operation: PersistedUploadOperation
+    ) {
+        self.source = source
+        self.reason = reason
+        self.forceUpload = forceUpload
+        self.installationId = installationId
+        self.requestedAt = requestedAt
+        self.isSubscribed = isSubscribed
+        self.authorizationState = authorizationState
+        self.apnsToken = apnsToken
+        self.operation = operation
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        source = try container.decode(LocationUploadSource.self, forKey: .source)
+        reason = try container.decode(LocationUploadReason.self, forKey: .reason)
+        forceUpload = try container.decode(Bool.self, forKey: .forceUpload)
+        installationId = try container.decode(String.self, forKey: .installationId)
+        requestedAt = try container.decode(Date.self, forKey: .requestedAt)
+        isSubscribed = try container.decode(Bool.self, forKey: .isSubscribed)
+        authorizationState = try container.decode(String.self, forKey: .authorizationState)
+        apnsToken = try container.decode(String.self, forKey: .apnsToken)
+
+        if let operation = try container.decodeIfPresent(PersistedUploadOperation.self, forKey: .operation) {
+            self.operation = operation
+        } else if let context = try container.decodeIfPresent(PersistedLocationContext.self, forKey: .context) {
+            self.operation = .locationSnapshot(context: context)
+        } else {
+            self.operation = .preferenceSync
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(source, forKey: .source)
+        try container.encode(reason, forKey: .reason)
+        try container.encode(forceUpload, forKey: .forceUpload)
+        try container.encode(installationId, forKey: .installationId)
+        try container.encode(requestedAt, forKey: .requestedAt)
+        try container.encode(isSubscribed, forKey: .isSubscribed)
+        try container.encode(authorizationState, forKey: .authorizationState)
+        try container.encode(apnsToken, forKey: .apnsToken)
+        try container.encode(operation, forKey: .operation)
+    }
+}
+
+enum PersistedUploadOperation: Sendable, Codable, Equatable {
+    case locationSnapshot(context: PersistedLocationContext)
+    case preferenceSync
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case context
+    }
+
+    enum Kind: String, Codable {
+        case locationSnapshot
+        case preferenceSync
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let kind = try container.decode(Kind.self, forKey: .kind)
+        switch kind {
+        case .locationSnapshot:
+            let context = try container.decode(PersistedLocationContext.self, forKey: .context)
+            self = .locationSnapshot(context: context)
+        case .preferenceSync:
+            self = .preferenceSync
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .locationSnapshot(let context):
+            try container.encode(Kind.locationSnapshot, forKey: .kind)
+            try container.encode(context, forKey: .context)
+        case .preferenceSync:
+            try container.encode(Kind.preferenceSync, forKey: .kind)
+        }
+    }
+
+    var deduplicationOperation: PendingDeduplicationOperation {
+        switch self {
+        case .locationSnapshot(let context):
+            return .locationSnapshot(
+                h3Cell: context.h3Cell,
+                county: context.county,
+                fireZone: context.fireZone,
+                forecastZone: context.forecastZone
+            )
+        case .preferenceSync:
+            return .preferenceSync
+        }
+    }
+}
+
+enum PendingDeduplicationOperation: Sendable, Codable, Hashable {
+    case locationSnapshot(h3Cell: Int64, county: String?, fireZone: String?, forecastZone: String?)
+    case preferenceSync
+}
+
+enum QueuedOperation: Sendable {
+    case locationSnapshot(LocationSnapshotPushPayload)
+    case preferenceSync(DevicePreferenceSyncPayload)
 }
 
 struct PersistedLocationContext: Sendable, Codable, Equatable {

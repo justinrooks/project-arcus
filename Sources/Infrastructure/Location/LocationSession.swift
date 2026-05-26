@@ -154,11 +154,11 @@ final class LocationSession {
     }
 
     func syncNotificationPreference(enabled: Bool) async {
-        await syncPreferenceViaLegacyLocationPayload(forceUpload: true, reason: "notification")
+        await syncPreference(forceUpload: true, reason: "notification")
     }
 
     func syncLocationSharingPreference(enabled: Bool) async {
-        await syncPreferenceViaLegacyLocationPayload(forceUpload: true, reason: "location-sharing")
+        await syncPreference(forceUpload: true, reason: "location-sharing")
     }
 
     func updateLocationSharingPreference(enabled: Bool) async {
@@ -182,23 +182,13 @@ final class LocationSession {
         await locationUploadCoordinator.drainPendingUploads()
     }
 
-    // TODO(#184): Replace this adapter once Arcus has a dedicated preference sync endpoint.
-    private func syncPreferenceViaLegacyLocationPayload(forceUpload: Bool, reason: String) async {
-        guard let context = await resolveCurrentContextIfNeeded() else {
-            logger.notice("Queueing preference sync without location context reason=\(reason, privacy: .public)")
-            await locationUploadCoordinator.enqueuePreferenceSync(
-                source: .settingsPreference,
-                requestReason: .preferenceChanged,
-                forceUpload: forceUpload,
-                detail: reason
-            )
-            return
-        }
-        await locationUploadCoordinator.enqueue(
-            context,
+    private func syncPreference(forceUpload: Bool, reason: String) async {
+        logger.notice("Queueing preference sync reason=\(reason, privacy: .public)")
+        await locationUploadCoordinator.enqueuePreferenceSync(
             source: .settingsPreference,
-            reason: .preferenceChanged,
-            forceUpload: forceUpload
+            requestReason: .preferenceChanged,
+            forceUpload: forceUpload,
+            detail: reason
         )
     }
 
