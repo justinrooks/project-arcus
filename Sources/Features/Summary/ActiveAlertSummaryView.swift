@@ -69,7 +69,7 @@ struct ActiveAlertSummaryView: View {
     @ViewBuilder
     private var alertsContent: some View {
         ActiveAlertSection(
-            label: "Watches & Warningso",
+            label: "Watches & Warnings",
             items: sortedAlerts,
             limit: 2,
             onSelect: {
@@ -159,25 +159,24 @@ struct ActiveAlertSummaryView: View {
     private var innerContent: some View {
         if #available(iOS 26, *) {
             GlassEffectContainer(spacing: 12) {
-                contentStateView
-                    .id(contentState)
-                    .transition(.opacity)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: usesFlexibleAlertHeight ? nil : 72,
-                        alignment: .topLeading
-                    )
+                contentStateContainer
             }
         } else {
+            contentStateContainer
+        }
+    }
+
+    private var contentStateContainer: some View {
+        ZStack(alignment: .topLeading) {
             contentStateView
                 .id(contentState)
                 .transition(.opacity)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: usesFlexibleAlertHeight ? nil : 72,
-                    alignment: .topLeading
-                )
         }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: usesFlexibleAlertHeight ? nil : 72,
+            alignment: .topLeading
+        )
     }
 
     @ViewBuilder
@@ -204,6 +203,7 @@ struct ActiveAlertSummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(2)
+        .accessibilityElement(children: .combine)
     }
 
     private var emptyContent: some View {

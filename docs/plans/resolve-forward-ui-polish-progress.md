@@ -11,7 +11,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 1 | [#195](https://github.com/justinrooks/project-arcus/issues/195) | Standardize Summary resolving header language | Complete | Secondary status line stabilized to one calm global message with reduced churn. |
 | 2 | [#196](https://github.com/justinrooks/project-arcus/issues/196) | Add consistent Summary resolve-forward transition primitives | Complete | Added small shared resolve-forward style primitive and normalized Summary section resolve transitions. |
 | 3 | [#197](https://github.com/justinrooks/project-arcus/issues/197) | Polish risk badge resolve-forward transitions | Complete | Added badge-local resolve placeholders and calm content crossfades while keeping risk semantics unchanged. |
-| 4 | [#198](https://github.com/justinrooks/project-arcus/issues/198) | Stabilize Local Alerts resolving and empty states | Not started | Prefer after #196. Read `docs/LifecycleInvestigationNotes.md`. |
+| 4 | [#198](https://github.com/justinrooks/project-arcus/issues/198) | Stabilize Local Alerts resolving and empty states | Complete | Local Alerts keeps a stable container with inner-state crossfade, clearer copy, and cleaner offline VoiceOver grouping. |
 | 5 | [#199](https://github.com/justinrooks/project-arcus/issues/199) | Smooth Current Conditions resolve-forward updates | Not started | Best after #195. |
 | 6 | [#200](https://github.com/justinrooks/project-arcus/issues/200) | Normalize secondary Summary resolving states | Not started | Prefer after #196. |
 | 7 | [#201](https://github.com/justinrooks/project-arcus/issues/201) | Align cold-start resolving screen with SkyAware visual direction | Not started | Independent and intentionally last. |
@@ -241,6 +241,63 @@ Date: 2026-05-27
   - Keep using `SummaryResolveForwardStyle.subtle` as the default when content is already present and refining.
   - Prefer section-local resolving placeholders over fallback semantic content + heavy redaction when unresolved state could imply a false calm.
   - If additional resolve-forward placeholders are added elsewhere, match this badge pattern: neutral surface, stable dimensions, concise progressive language, and restrained transitions.
+
+## Issue #198 - Stabilize Local Alerts resolving and empty states
+
+Status: Complete
+Date: 2026-05-27
+
+### Scope Completed
+
+- Kept `ActiveAlertSummaryView` as the single Local Alerts presentation container and preserved its existing explicit content states (`loading`, `empty`, `alerts`, `offline`).
+- Stabilized inner-state transition rendering by routing state swaps through a dedicated `contentStateContainer` `ZStack` so only the content region crossfades while the card container stays visually stable.
+- Preserved and clarified resolve-forward tone with distinct checking vs no-alert states:
+  - checking: `Checking local alerts` + `Bringing in local alerts…`
+  - empty: `No Active Alerts` + calm explanatory copy
+- Fixed user-facing copy defect in alert section label: `Watches & Warningso` -> `Watches & Warnings`.
+- Improved VoiceOver grouping for offline state by combining label + message into a single accessibility element, matching the loading/empty treatment.
+
+### Files Changed
+
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `docs/plans/resolve-forward-ui-polish-progress.md`
+
+### Behavior Preserved
+
+- Alert ingestion unchanged.
+- Arcus/SPC/NWS orchestration unchanged.
+- Alert sorting/filtering unchanged.
+- Refresh timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Notification behavior unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Existing alert row interactions, detail sheets, and Alert Center navigation behavior unchanged.
+- Offline-vs-cached alert behavior unchanged.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5" -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests test`
+- Result: Success (`** TEST SUCCEEDED **`).
+- xcresult: `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.27_11-33-05--0600.xcresult`
+
+### Validation Not Run
+
+- Manual simulator visual matrix for all requested Local Alerts states (checking, no-alert, watches-only, mesos-only, mixed, offline, location unavailable, cached refresh), Reduce Motion, larger Dynamic Type, and VoiceOver playback was not run in this pass.
+
+### Deferred Work
+
+- Perform a manual visual QA pass across the Local Alerts state matrix to confirm transition feel under real runtime state changes (especially empty -> populated with multiple rows and dynamic type edge sizes).
+
+### Handoff Notes
+
+- For #200, reuse the same section pattern used here:
+  - keep a stable outer card/container;
+  - transition only inner state content;
+  - avoid additional whole-card dimming when a section already has an explicit resolving state.
 
 ## Next Recommended Issue
 
