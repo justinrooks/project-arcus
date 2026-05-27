@@ -9,9 +9,11 @@ import SwiftUI
 
 struct SpcProductFooter: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.openURL) private var openURL
 
     let link: URL
     let validEnd: Date
+    @State private var webRoute: WebContentRoute?
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -38,11 +40,27 @@ struct SpcProductFooter: View {
     }
 
     private var openInBrowserLink: some View {
-        Link(destination: link) {
+        Button {
+            switch WebContentPolicy.decision(for: link) {
+            case .inApp:
+                webRoute = WebContentRoute(
+                    url: link,
+                    title: "SPC Product",
+                    sourceName: "Storm Prediction Center"
+                )
+            case .external:
+                openURL(link)
+            case .unsupported:
+                break
+            }
+        } label: {
             Label("Open in browser", systemImage: "arrow.up.right.square")
                 .font(.footnote.weight(.semibold))
         }
         .skyAwareGlassButtonStyle()
+        .sheet(item: $webRoute) { route in
+            WebContentView(route: route)
+        }
     }
 }
 
