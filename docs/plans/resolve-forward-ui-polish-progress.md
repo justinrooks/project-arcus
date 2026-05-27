@@ -720,17 +720,20 @@ Date: 2026-05-27
 
 ### Scope Completed
 
-- Reworked `ActiveAlertSummaryView` Local Alerts height-hold logic to remove timing fragility from `onChange`-only activation.
-- Added previous-state-based transition tracking with private state:
-  - `lastStableContentState`
-  - `isLeavingAlertsHeightHoldActive`
+- Reworked `ActiveAlertSummaryView` Local Alerts height-hold logic around an explicit private `HeightPhase` model:
+  - `.uninitialized`
+  - `.stable(ContentState)`
+  - `.leavingAlerts`
+- Removed the separate hold flag that made the first leaving-alerts render depend on `.onChange` running first.
 - Kept the existing Task-based hold expiry window, cancellation on superseding transitions, and cancellation on disappear.
 - Added a focused helper used by min-height logic:
   - `usesFlexibleAlertHeight(currentState:isLeavingAlerts:)`
 
 ### Why This Closes The First-Render Hole
 
-- The first render after `.alerts -> .loading/.empty/.offline` now still sees `lastStableContentState == .alerts`, so the container stays flexible immediately.
+- The first render after `.alerts -> .loading/.empty/.offline` now still sees `heightPhase == .stable(.alerts)`, so `isLeavingAlertsTransition` is true before `.onChange` runs.
+- After `.onChange` runs, `heightPhase` becomes `.leavingAlerts` and stays flexible until the Task-based hold expires.
+- When the hold expires, `heightPhase` advances to `.stable(contentState)`, allowing compact states to settle back to the 72pt minimum.
 - This means the card does not briefly fall back to the compact 72pt minimum before the fade finishes.
 
 ### Behavior Preserved
@@ -747,10 +750,10 @@ Date: 2026-05-27
 
 - Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests test`
 - Result: Success (`** TEST SUCCEEDED **`).
-- xcresult inspected via: `xcrun xcresulttool get object --legacy --format json --path ...`
-- Non-zero test count confirmed: `testsCount = 462`.
+- xcresult inspected via: `xcrun xcresulttool get test-results summary --path ...`
+- Non-zero test count confirmed: `totalTestCount = 462`.
 - xcresult path:
-  - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.27_14-34-54--0600.xcresult`
+  - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.27_14-45-51--0600.xcresult`
 
 ### Manual Visual Inspection
 
