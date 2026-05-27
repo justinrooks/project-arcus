@@ -43,10 +43,10 @@ struct FireWeatherRailView: View {
 
     private var resolvingBackground: LinearGradient {
         let colors: [Color] = colorScheme == .dark
-        ? [Color(red: 0.22, green: 0.22, blue: 0.24).opacity(0.92),
-           Color(red: 0.13, green: 0.13, blue: 0.15).opacity(0.92)]
-        : [Color(red: 0.94, green: 0.93, blue: 0.91),
-           Color(red: 0.90, green: 0.89, blue: 0.87)]
+        ? [Color(red: 0.17, green: 0.22, blue: 0.30).opacity(0.93),
+           Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.93)]
+        : [Color(red: 0.87, green: 0.91, blue: 0.96),
+           Color(red: 0.82, green: 0.87, blue: 0.93)]
 
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
@@ -58,7 +58,7 @@ struct FireWeatherRailView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Fire Risk")
                     .formatMessageText()
-                Text("Resolving local fire-weather conditions.")
+                Text("Getting fire risk…")
                     .formatSummaryText(for: colorScheme)
             }
         }
@@ -69,7 +69,7 @@ struct FireWeatherRailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
                 .sectionLabel()
-            Text("Fire risk is unavailable while the server is offline.")
+            Text("SkyAware is showing saved local data. Fire risk will update when your connection returns.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

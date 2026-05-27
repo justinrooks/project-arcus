@@ -638,3 +638,53 @@ Date: YYYY-MM-DD
 
 - ...
 ```
+
+## Final Taste-Polish Handoff - Resolve-Forward Summary + Cold Start
+
+Status: Complete
+Date: 2026-05-27
+
+### Notes Addressed
+
+- Reduced cold-start `LoadingView` visual mass by lowering the fixed minimum height (`560` -> `500`) while preserving full-surface presentation and existing appearance gating.
+- Removed the cold-start material mini-card treatment and shifted to typography-led integrated messaging over the atmospheric surface to avoid card-on-card feel.
+- Updated remaining user-facing resolve-forward copy on Summary/risk/secondary surfaces to the canonical family:
+  - `Getting storm risk…`
+  - `Getting severe risk…`
+  - `Getting fire risk…`
+  - `Getting outlook details…`
+  - `Getting atmospheric details…`
+- Replaced user-facing `server is offline` strings on Summary-adjacent surfaces with connection-return language centered on saved local data.
+- Tuned unresolved risk placeholder backgrounds (Storm/Severe/Fire) from neutral gray-white into restrained atmospheric blue/slate gradients to feel integrated without implying resolved risk semantics.
+- Restored limited specificity for recent completion status (`Updated conditions`, `Got storm risk`, `Checked local alerts`) while preserving prior churn controls and timing window.
+- Kept the hidden `00°` weather-width placeholder and explicitly marked both hidden placeholder elements as `accessibilityHidden(true)` to prevent leakage.
+- Renamed the `LoadingView` Reduce Motion preview to avoid claiming behavior that cannot be forced via a writable environment key in this toolchain (`Reduce Motion (Name Only)`).
+
+### Notes Intentionally Left Unchanged
+
+- `LoadingView` still uses a minimum height floor (now lower) instead of fully dynamic geometry math to keep launch layout stable and avoid introducing additional complexity/risk in this polish-only pass.
+
+### Files Changed
+
+- `Sources/Features/Loading/LoadingView.swift`
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Sources/Features/Summary/SummaryResolving.swift`
+- `Sources/Features/Summary/OutlookSummaryCard.swift`
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Sources/Features/Badges/StormRiskBadgeView.swift`
+- `Sources/Features/Badges/SevereWeatherBadgeView.swift`
+- `Sources/Features/Badges/FireWeatherRailView.swift`
+- `Sources/Features/Badges/AtmosphereRailView.swift`
+- `docs/plans/resolve-forward-ui-polish-progress.md`
+
+### Validation Run
+
+- Ran string-level inspection for targeted copy regressions:
+  - no remaining user-facing `server is offline` strings in Summary/loading/risk/secondary surfaces
+  - no remaining user-facing `Resolving`/`Refining` language in those surfaces
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+
+### Remaining Risks
+
+- Visual tone and spacing for the lighter-weight cold-start message region still needs final simulator eyes-on across smallest iPhone heights, dark mode, and large Dynamic Type to confirm perceived balance after lowering minimum height.

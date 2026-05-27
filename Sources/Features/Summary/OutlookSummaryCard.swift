@@ -38,9 +38,9 @@ struct OutlookSummaryCard: View {
             return summary
         }
         if isPending {
-            return "Outlook details are still resolving for your area."
+            return "Getting outlook details…"
         }
-        return "Outlook details will appear here as your summary resolves."
+        return "Getting outlook details…"
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {

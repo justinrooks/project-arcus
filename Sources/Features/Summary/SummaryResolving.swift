@@ -88,11 +88,14 @@ struct SummaryResolutionState: Equatable {
             return nil
         }
 
-        guard lastCompletedTask != .finalizing else {
-            return nil
+        switch lastCompletedTask {
+        case .location, .weather, .finalizing:
+            return "Updated conditions"
+        case .stormRisk:
+            return "Got storm risk"
+        case .alerts:
+            return "Checked local alerts"
         }
-
-        return "Updating your conditions…"
     }
 
     func isResolving(_ section: SummarySection) -> Bool {

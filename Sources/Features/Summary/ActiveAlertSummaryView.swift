@@ -211,7 +211,7 @@ struct ActiveAlertSummaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
                 .sectionLabel()
-            Text("Local alert details are unavailable while the server is offline.")
+            Text("SkyAware is showing saved local data. Local alerts will update when your connection returns.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

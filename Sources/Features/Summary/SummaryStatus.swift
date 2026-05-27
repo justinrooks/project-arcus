@@ -230,8 +230,10 @@ struct SummaryStatus: View {
                     Text("00°")
                         .monospacedDigit()
                         .hidden()
+                        .accessibilityHidden(true)
                     Image(systemName: "sun.max.fill")
                         .hidden()
+                        .accessibilityHidden(true)
                 }
             }
             .frame(minHeight: 20, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)

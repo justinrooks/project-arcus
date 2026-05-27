@@ -52,17 +52,20 @@ struct StormRiskBadgeView: View {
                 .opacity(0.92)
             Text("Storm Risk")
                 .formatMessageText()
-            Text(isResolving ? "Refining local risk…" : "Resolving local risk…")
+            Text("Getting storm risk…")
                 .formatSummaryText(for: colorScheme)
         }
         .badgeStyle(background: resolvingBackground)
         .transition(.opacity)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: isResolving)
     }
 
     private var resolvingBackground: LinearGradient {
-        let top = colorScheme == .dark ? Color.white.opacity(0.18) : Color.white.opacity(0.52)
-        let bottom = colorScheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.30)
+        let top = colorScheme == .dark
+            ? Color(red: 0.17, green: 0.22, blue: 0.30).opacity(0.93)
+            : Color(red: 0.87, green: 0.91, blue: 0.96)
+        let bottom = colorScheme == .dark
+            ? Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.93)
+            : Color(red: 0.82, green: 0.87, blue: 0.93)
         return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
@@ -70,7 +73,7 @@ struct StormRiskBadgeView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
                 .sectionLabel()
-            Text("Storm risk is unavailable while the server is offline.")
+            Text("SkyAware is showing saved local data. Storm risk will update when your connection returns.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

@@ -35,18 +35,11 @@ struct LoadingView: View {
                     .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 26)
-            .background {
-                RoundedRectangle(cornerRadius: SkyAwareRadius.content, style: .continuous)
-                    .fill(.ultraThinMaterial.opacity(colorScheme == .dark ? 0.30 : 0.78))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.content, style: .continuous)
-                            .strokeBorder(.white.opacity(colorScheme == .dark ? 0.12 : 0.24), lineWidth: 0.9)
-                    }
-            }
+            .padding(.vertical, 20)
             .padding(.horizontal, 18)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 6, x: 0, y: 3)
         }
-        .frame(maxWidth: .infinity, minHeight: 560)
+        .frame(maxWidth: .infinity, minHeight: 500)
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)
         .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.hero, style: .continuous))
@@ -178,7 +171,7 @@ struct LoadingView: View {
         .preferredColorScheme(.dark)
 }
 
-#Preview("Reduce Motion") {
+#Preview("Reduce Motion (Name Only)") {
     LoadingView(message: "Bringing in local conditions…")
         .padding(.horizontal, 16)
         .background(.skyAwareBackground)
