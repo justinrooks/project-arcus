@@ -713,7 +713,7 @@ struct SummaryResolutionStateTests {
         #expect(state.isRefreshing == false)
         #expect(state.isResolving(.conditions) == false)
         #expect(state.isResolving(.atmosphere) == false)
-        #expect(state.recentCompletedMessage == "Updating your conditions…")
+        #expect(state.recentCompletedMessage == "Updated conditions")
     }
 
     @Test("reset clears active tasks and sections")
@@ -743,7 +743,7 @@ struct SummaryResolutionStateTests {
         for section in SummarySection.resolveForwardSections {
             #expect(state.isResolving(section) == false)
         }
-        #expect(state.recentCompletedMessage == nil)
+        #expect(state.recentCompletedMessage == "Updated conditions")
     }
 
     @Test("primary active message prefers location readiness over other active tasks")
@@ -859,6 +859,59 @@ struct SummaryStatusWeatherRetentionTests {
         #expect(resolved.locationIdentity == nil)
     }
 
+    @Test("clears displayed weather when refresh is inactive even if identity matches")
+    func clearsDisplayedWeather_sameIdentityNotRefreshing() {
+        let weather = makeWeather()
+        let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: false,
+            displayedWeatherLocationIdentity: identity,
+            weatherLocationIdentity: identity
+        )
+
+        #expect(resolved.weather == nil)
+        #expect(resolved.locationIdentity == nil)
+    }
+
+    @Test("prefers live weather and current location identity")
+    func prefersLiveWeatherAndCurrentIdentity() {
+        let liveWeather = makeWeather(temperatureF: 64)
+        let previousWeather = makeWeather(temperatureF: 72)
+        let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+        let currentIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: liveWeather,
+            displayedWeather: previousWeather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: previousIdentity,
+            weatherLocationIdentity: currentIdentity
+        )
+
+        #expect(resolved.weather == liveWeather)
+        #expect(resolved.locationIdentity == currentIdentity)
+    }
+
+    @Test("rendered weather clears immediately when location identity changes during refresh")
+    func renderedWeather_clearsImmediatelyOnIdentityChange() {
+        let retainedWeather = makeWeather()
+        let oldIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+        let newIdentity = makeIdentity(latitude: 47.6062, longitude: -122.3321, placemark: "Seattle, WA")
+
+        let rendered = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: retainedWeather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: oldIdentity,
+            weatherLocationIdentity: newIdentity
+        )
+
+        #expect(rendered.weather == nil)
+    }
+
     private func makeIdentity(latitude: Double, longitude: Double, placemark: String) -> SummaryWeatherLocationIdentity {
         SummaryWeatherLocationIdentity(
             snapshot: .init(
@@ -871,9 +924,9 @@ struct SummaryStatusWeatherRetentionTests {
         )
     }
 
-    private func makeWeather() -> SummaryWeather {
+    private func makeWeather(temperatureF: Double = 72) -> SummaryWeather {
         SummaryWeather(
-            temperature: Measurement(value: 72, unit: .fahrenheit),
+            temperature: Measurement(value: temperatureF, unit: .fahrenheit),
             symbolName: "sun.max.fill",
             conditionText: "Clear",
             asOf: .now,

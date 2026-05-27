@@ -51,13 +51,19 @@ struct SummaryStatus: View {
         return formatter
     }()
 
-    private var effectiveWeather: SummaryWeather? {
-        weather ?? displayedWeather
+    private var visibleWeather: SummaryWeather? {
+        Self.resolveDisplayedWeather(
+            liveWeather: weather,
+            displayedWeather: displayedWeather,
+            isRefreshing: resolutionState.isRefreshing,
+            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
+            weatherLocationIdentity: weatherLocationIdentity
+        ).weather
     }
 
     private var formattedTemperature: String? {
-        guard let effectiveWeather else { return nil }
-        return formatTemperature(effectiveWeather.temperature)
+        guard let visibleWeather else { return nil }
+        return formatTemperature(visibleWeather.temperature)
     }
 
     private var clampedCondenseProgress: CGFloat {
@@ -219,11 +225,11 @@ struct SummaryStatus: View {
     private var weatherContent: some View {
         VStack(alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing, spacing: 2) {
             HStack(spacing: 6) {
-                if let effectiveWeather, let formattedTemperature {
+                if let visibleWeather, let formattedTemperature {
                     Text(formattedTemperature)
                         .monospacedDigit()
-                        .contentTransition(.numericText(value: effectiveWeather.temperature.value))
-                    Image(systemName: effectiveWeather.symbolName)
+                        .contentTransition(.numericText(value: visibleWeather.temperature.value))
+                    Image(systemName: visibleWeather.symbolName)
                         .symbolVariant(.fill)
                         .contentTransition(.opacity)
                 } else {
@@ -240,7 +246,7 @@ struct SummaryStatus: View {
 
             Group {
                 SummarySettledConditionLine(
-                    conditionText: effectiveWeather?.conditionText,
+                    conditionText: visibleWeather?.conditionText,
                     isRefreshing: resolutionState.isRefreshing
                 )
             }
@@ -258,8 +264,8 @@ struct SummaryStatus: View {
         )
         .contentTransition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: formattedTemperature)
-        .animation(SkyAwareMotion.message(reduceMotion), value: effectiveWeather?.symbolName)
-        .animation(SkyAwareMotion.message(reduceMotion), value: effectiveWeather?.conditionText)
+        .animation(SkyAwareMotion.message(reduceMotion), value: visibleWeather?.symbolName)
+        .animation(SkyAwareMotion.message(reduceMotion), value: visibleWeather?.conditionText)
     }
 
     private var weatherTaskState: WeatherTaskState {

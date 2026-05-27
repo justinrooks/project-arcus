@@ -598,6 +598,30 @@ Date: 2026-05-27
 
 - Identity uses quantized coordinates + placemark summary from `LocationSnapshot`; if future requirements decouple displayed placemark from snapshot identity, this guard may need to align with a different canonical context key.
 
+### Follow-up - one-render stale pairing hole
+
+Status: Complete
+Date: 2026-05-27
+
+- What changed:
+  - `SummaryStatus` now computes one body-visible weather value (`visibleWeather`) through `SummaryStatus.resolveDisplayedWeather(...)` instead of `weather ?? displayedWeather`.
+  - All rendered weather surfaces (temperature text, symbol, condition line, and weather-linked animations/transitions) now use that identity-gated value.
+  - Expanded `SummaryStatusWeatherRetentionTests` in `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift` to cover:
+    - same identity + refreshing + live nil => retained weather
+    - different identity + refreshing + live nil => nil
+    - same identity + not refreshing + live nil => nil
+    - live weather present => live weather + current identity
+    - regression assertion for immediate clear on identity change during refresh
+- Why this closes the hole:
+  - The render path is now identity-gated during body evaluation, so SwiftUI cannot render old-location retained weather for the interim pass before `.task` retention state updates.
+- Tests run:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests test`
+  - xcresult summary checked with `xcrun xcresulttool get test-results summary ...` and `totalTestCount` is non-zero.
+- xcresult path:
+  - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.27_14-31-30--0600.xcresult`
+- Remaining visual/manual validation not performed:
+  - Manual simulator visual pass for the specific location-switch transition state was not run in this pass.
+
 ## Handoff Template
 
 Copy this section when completing an issue.
