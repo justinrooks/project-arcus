@@ -91,6 +91,11 @@ struct SummaryView: View {
         readinessState == .locationUnavailable
     }
 
+    private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
+        guard let snap else { return nil }
+        return SummaryWeatherLocationIdentity(snapshot: snap)
+    }
+
     private var localAlertsPresentationState: LocalAlertsPresentationState {
         Self.localAlertsPresentationState(
             readinessState: readinessState,
@@ -255,6 +260,7 @@ struct SummaryView: View {
         SummaryStatus(
             statusText: statusText,
             weather: weather,
+            weatherLocationIdentity: weatherLocationIdentity,
             resolutionState: resolutionState,
             showsOfflineToken: showsOfflineToken,
             isLocationUnavailable: isLocationUnavailable,

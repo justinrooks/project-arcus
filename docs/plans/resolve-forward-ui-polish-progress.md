@@ -482,6 +482,45 @@ Date: 2026-05-27
 - Summary resolving language, transition primitives, hero badges, local alerts, current conditions, secondary sections, and cold-start empty-state visuals now present a calmer, more coherent, typography-led system.
 - No issue in this sequence changed providers, orchestration, timing, persistence, or business logic.
 
+## Review Fix - P1 stale cross-location weather during resolve-forward
+
+Status: Complete
+Date: 2026-05-27
+
+### Finding Fixed
+
+- Prevented stale cached weather from being shown when Summary location context changes while weather is temporarily unresolved during an active refresh.
+
+### Files Changed
+
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/SummaryStatusWeatherRetentionTests.swift`
+- `docs/plans/resolve-forward-ui-polish-progress.md`
+
+### Behavior Preserved
+
+- Same-location resolve-forward smoothing remains: cached Current Conditions can remain visible while fresh weather resolves.
+- WeatherKit fetching unchanged.
+- Location resolution unchanged.
+- Provider behavior unchanged.
+- Refresh orchestration unchanged.
+- Refresh timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+
+### Validation
+
+- Ran focused tests for the new deterministic retention helper.
+- Ran required build:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+### Remaining Risks
+
+- Identity uses quantized coordinates + placemark summary from `LocationSnapshot`; if future requirements decouple displayed placemark from snapshot identity, this guard may need to align with a different canonical context key.
+
 ## Handoff Template
 
 Copy this section when completing an issue.

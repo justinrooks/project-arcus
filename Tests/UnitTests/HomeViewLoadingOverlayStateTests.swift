@@ -769,3 +769,69 @@ struct WeatherKitRefreshPolicyTests {
         #expect(policy.shouldSync(now: now, lastSync: recent, force: true))
     }
 }
+
+@Suite("SummaryStatus Weather Retention")
+struct SummaryStatusWeatherRetentionTests {
+    @Test("keeps displayed weather during refresh when location identity is unchanged")
+    func keepsDisplayedWeather_sameIdentityRefreshing() {
+        let weather = makeWeather()
+        let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: identity,
+            weatherLocationIdentity: identity
+        )
+
+        #expect(resolved.weather == weather)
+        #expect(resolved.locationIdentity == identity)
+    }
+
+    @Test("clears displayed weather during refresh when location identity changes")
+    func clearsDisplayedWeather_changedIdentityRefreshing() {
+        let weather = makeWeather()
+        let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+        let newIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: previousIdentity,
+            weatherLocationIdentity: newIdentity
+        )
+
+        #expect(resolved.weather == nil)
+        #expect(resolved.locationIdentity == nil)
+    }
+
+    private func makeIdentity(latitude: Double, longitude: Double, placemark: String) -> SummaryWeatherLocationIdentity {
+        SummaryWeatherLocationIdentity(
+            snapshot: .init(
+                coordinates: .init(latitude: latitude, longitude: longitude),
+                timestamp: .now,
+                accuracy: 20,
+                placemarkSummary: placemark,
+                h3Cell: nil
+            )
+        )
+    }
+
+    private func makeWeather() -> SummaryWeather {
+        SummaryWeather(
+            temperature: Measurement(value: 72, unit: .fahrenheit),
+            symbolName: "sun.max.fill",
+            conditionText: "Clear",
+            asOf: .now,
+            dewPoint: Measurement(value: 50, unit: .fahrenheit),
+            humidity: 0.35,
+            windSpeed: Measurement(value: 8, unit: .milesPerHour),
+            windGust: nil,
+            windDirection: "NW",
+            pressure: Measurement(value: 29.92, unit: .inchesOfMercury),
+            pressureTrend: "steady"
+        )
+    }
+}
