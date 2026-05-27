@@ -10,7 +10,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 |---|---:|---|---|---|
 | 1 | [#195](https://github.com/justinrooks/project-arcus/issues/195) | Standardize Summary resolving header language | Complete | Secondary status line stabilized to one calm global message with reduced churn. |
 | 2 | [#196](https://github.com/justinrooks/project-arcus/issues/196) | Add consistent Summary resolve-forward transition primitives | Complete | Added small shared resolve-forward style primitive and normalized Summary section resolve transitions. |
-| 3 | [#197](https://github.com/justinrooks/project-arcus/issues/197) | Polish risk badge resolve-forward transitions | Not started | Prefer after #196. |
+| 3 | [#197](https://github.com/justinrooks/project-arcus/issues/197) | Polish risk badge resolve-forward transitions | Complete | Added badge-local resolve placeholders and calm content crossfades while keeping risk semantics unchanged. |
 | 4 | [#198](https://github.com/justinrooks/project-arcus/issues/198) | Stabilize Local Alerts resolving and empty states | Not started | Prefer after #196. Read `docs/LifecycleInvestigationNotes.md`. |
 | 5 | [#199](https://github.com/justinrooks/project-arcus/issues/199) | Smooth Current Conditions resolve-forward updates | Not started | Best after #195. |
 | 6 | [#200](https://github.com/justinrooks/project-arcus/issues/200) | Normalize secondary Summary resolving states | Not started | Prefer after #196. |
@@ -166,6 +166,81 @@ Date: 2026-05-27
 - For #200 (secondary Summary states):
   - Default secondary sections to `style: .subtle` unless a section has clear readability justification for `blurLift`.
   - Reuse animated placeholders where skeleton text is already present to minimize layout jumps.
+
+## Issue #197 - Polish risk badge resolve-forward transitions
+
+Status: Complete
+Date: 2026-05-27
+
+### Scope Completed
+
+- Replaced risk-badge unresolved placeholder redaction with explicit in-badge resolve-forward placeholder content so unresolved state no longer reads like confirmed `All Clear`.
+- Kept Storm Risk and Severe Risk structurally parallel with the same state model:
+  - `offline` (existing offline card, unchanged),
+  - `resolving placeholder` (neutral badge surface + resolving copy),
+  - `resolved` (semantic risk colors + normal risk copy).
+- Added calm, non-dramatic content crossfades for icon/message/summary updates in both badges to smooth cached → freshly resolved changes.
+- Updated Summary risk badge host behavior to:
+  - pass explicit resolving/placeholder flags into both badges,
+  - use `.summaryResolving(..., style: .subtle)` for already-resolved badge refreshes,
+  - avoid extra whole-badge dim/blur during unresolved placeholder phase.
+- Added preview rows in both badge files to exercise resolving placeholder and resolving-with-data states.
+
+### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Badges/StormRiskBadgeView.swift`
+- `Sources/Features/Badges/SevereWeatherBadgeView.swift`
+
+### How Badge Resolving Works Now
+
+- Missing risk data while online shows a neutral, stable badge with resolving language (`Resolving/Refining ...`) instead of fallback semantic risk values.
+- Once data is present, badges transition into semantic risk content with gentle content opacity transitions.
+- While fresh data continues to resolve on already-populated badges, Summary applies the #196 resolve-forward primitive in `.subtle` mode so badges feel active, not disabled.
+
+### Behavior Preserved
+
+- Risk scoring unchanged.
+- Risk mapping unchanged.
+- Map layer selection unchanged.
+- Provider behavior unchanged.
+- Refresh orchestration unchanged.
+- Refresh timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Existing badge tap behavior and accessibility hints unchanged.
+- Semantic risk colors unchanged for resolved states.
+- Offline badge state remains distinct from resolving state.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+- Previews updated for resolving paths in both badge components.
+
+### Validation Not Run
+
+- Focused tests not run because no scoring, mapping, provider, orchestration, or deterministic helper logic changed.
+- Manual simulator visual matrix not run in this pass:
+  - unresolved → resolved
+  - cached → refreshed
+  - offline cards
+  - light/dark
+  - Reduce Motion
+  - larger Dynamic Type stacked hero tiles
+
+### Deferred Work
+
+- Manual before/after screenshot capture for Summary hero area across the full visual matrix listed above.
+
+### Handoff Notes
+
+- For #198 and #200:
+  - Keep using `SummaryResolveForwardStyle.subtle` as the default when content is already present and refining.
+  - Prefer section-local resolving placeholders over fallback semantic content + heavy redaction when unresolved state could imply a false calm.
+  - If additional resolve-forward placeholders are added elsewhere, match this badge pattern: neutral surface, stable dimensions, concise progressive language, and restrained transitions.
 
 ## Next Recommended Issue
 

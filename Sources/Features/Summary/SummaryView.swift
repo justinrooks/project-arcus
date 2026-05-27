@@ -189,11 +189,17 @@ struct SummaryView: View {
     }
 
     private var stormRiskButton: some View {
-        Button {
+        let stormRiskIsUnresolved = stormRisk == nil && showsOfflineToken == false
+
+        return Button {
             onOpenMapLayer(.categorical)
         } label: {
-            StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
-                .placeholder(stormRisk == nil && showsOfflineToken == false, animated: true)
+            StormRiskBadgeView(
+                level: stormRisk ?? .allClear,
+                isOffline: showsOfflineToken,
+                isResolving: resolutionState.isResolving(.stormRisk),
+                showsResolvingPlaceholder: stormRiskIsUnresolved
+            )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -203,16 +209,25 @@ struct SummaryView: View {
                 pressedOverlayOpacity: 0.06
             )
         )
-        .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
+        .summaryResolving(
+            resolutionState.isResolving(.stormRisk) && stormRiskIsUnresolved == false && showsOfflineToken == false,
+            style: .subtle
+        )
         .accessibilityHint("Opens the severe risk map.")
     }
 
     private var severeRiskButton: some View {
-        Button {
+        let severeRiskIsUnresolved = severeRisk == nil && showsOfflineToken == false
+
+        return Button {
             onOpenMapLayer(severeMapLayer)
         } label: {
-            SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
-                .placeholder(severeRisk == nil && showsOfflineToken == false, animated: true)
+            SevereWeatherBadgeView(
+                threat: severeRisk ?? .allClear,
+                isOffline: showsOfflineToken,
+                isResolving: resolutionState.isResolving(.severeRisk),
+                showsResolvingPlaceholder: severeRiskIsUnresolved
+            )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -222,7 +237,10 @@ struct SummaryView: View {
                 pressedOverlayOpacity: 0.06
             )
         )
-        .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
+        .summaryResolving(
+            resolutionState.isResolving(.severeRisk) && severeRiskIsUnresolved == false && showsOfflineToken == false,
+            style: .subtle
+        )
         .accessibilityHint("Opens the highlighted severe threat map.")
     }
 

@@ -10,25 +10,61 @@ import SwiftUI
 struct SevereWeatherBadgeView: View {
     let threat: SevereWeatherThreat
     var isOffline: Bool = false
+    var isResolving: Bool = false
+    var showsResolvingPlaceholder: Bool = false
+
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         Group {
             if isOffline {
                 offlineContent
+            } else if showsResolvingPlaceholder {
+                resolvingContent
             } else {
-                VStack(spacing: 4) {
-                    Image(systemName: threat.iconName)
-                        .formatBadgeImage()
-                    Text(threat.message)
-                        .formatMessageText()
-                    Text(threat.dynamicSummary != "" ? threat.dynamicSummary : threat.summary)
-                        .formatSummaryText(for: colorScheme)
-                        .monospacedDigit()
-                }
-                .badgeStyle(background: threat.iconColor(for: colorScheme))
+                resolvedContent
             }
         }
+    }
+
+    private var resolvedContent: some View {
+        VStack(spacing: 4) {
+            Image(systemName: threat.iconName)
+                .formatBadgeImage()
+                .contentTransition(.opacity)
+            Text(threat.message)
+                .formatMessageText()
+                .contentTransition(.opacity)
+            Text(threat.dynamicSummary != "" ? threat.dynamicSummary : threat.summary)
+                .formatSummaryText(for: colorScheme)
+                .monospacedDigit()
+                .contentTransition(.opacity)
+        }
+        .badgeStyle(background: threat.iconColor(for: colorScheme))
+        .animation(SkyAwareMotion.settle(reduceMotion), value: threat.message)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: threat.dynamicSummary)
+    }
+
+    private var resolvingContent: some View {
+        VStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.badge.clock")
+                .formatBadgeImage()
+                .opacity(0.92)
+            Text("Severe Risk")
+                .formatMessageText()
+            Text(isResolving ? "Refining severe threat…" : "Resolving severe threat…")
+                .formatSummaryText(for: colorScheme)
+        }
+        .badgeStyle(background: resolvingBackground)
+        .transition(.opacity)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: isResolving)
+    }
+
+    private var resolvingBackground: LinearGradient {
+        let top = colorScheme == .dark ? Color.white.opacity(0.18) : Color.white.opacity(0.52)
+        let bottom = colorScheme == .dark ? Color.white.opacity(0.10) : Color.white.opacity(0.30)
+        return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     private var offlineContent: some View {
@@ -57,6 +93,10 @@ struct SevereWeatherBadgeView: View {
             SevereWeatherBadgeView(threat: .hail(probability: 0.02))
             SevereWeatherBadgeView(threat: .tornado(probability: 0.05))
                 .preferredColorScheme(.dark)
+        }
+        HStack {
+            SevereWeatherBadgeView(threat: .allClear, isResolving: true, showsResolvingPlaceholder: true)
+            SevereWeatherBadgeView(threat: .wind(probability: 0.15), isResolving: true)
         }
     }
     .background(.skyAwareBackground)
