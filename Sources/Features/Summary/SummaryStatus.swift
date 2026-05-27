@@ -331,23 +331,8 @@ private struct SummaryStatusSecondaryLine: View {
 
     @MainActor
     private func updateDisplayedMessage() async {
-        let activeMessages = resolutionState.activeMessages
-        if activeMessages.isEmpty == false {
-            if activeMessages.count == 1 {
-                setDisplayedMessage(activeMessages[0])
-                return
-            }
-
-            var index = 0
-            setDisplayedMessage(activeMessages[index])
-
-            while Task.isCancelled == false {
-                try? await Task.sleep(for: .seconds(3))
-                if Task.isCancelled { return }
-                index = (index + 1) % activeMessages.count
-                setDisplayedMessage(activeMessages[index])
-            }
-
+        if let primaryActiveMessage = resolutionState.primaryActiveMessage {
+            setDisplayedMessage(primaryActiveMessage)
             return
         }
 
@@ -407,7 +392,7 @@ private struct SummarySettledConditionLine: View {
     }
 
     private var shouldShowCondition: Bool {
-        resolutionState.isRefreshing == false && resolutionState.recentCompletedMessage == nil
+        resolutionState.isRefreshing == false
     }
 }
 

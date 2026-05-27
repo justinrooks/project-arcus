@@ -305,7 +305,7 @@ struct SummaryView: View {
     var body: some View {
         VStack(spacing: 18) {
             if showsEmptyResolving {
-                LoadingView(message: resolutionState.activeMessages.first ?? readinessState.statusText)
+                LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
             } else {
                 summaryContent
                     .transition(.summaryContentEntrance(reduceMotion: reduceMotion))

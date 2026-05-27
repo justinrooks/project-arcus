@@ -633,6 +633,7 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing)
         #expect(state.activeMessages == ["Bringing in local alerts…"])
+        #expect(state.primaryActiveMessage == "Bringing in local alerts…")
         #expect(state.isResolving(.alerts))
     }
 
@@ -645,6 +646,7 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing)
         #expect(state.activeMessages == ["Getting storm risk…"])
+        #expect(state.primaryActiveMessage == "Getting storm risk…")
         #expect(state.isResolving(.stormRisk) == false)
         #expect(state.isResolving(.severeRisk))
     }
@@ -671,6 +673,7 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing == false)
         #expect(state.activeMessages.isEmpty)
+        #expect(state.primaryActiveMessage == nil)
         #expect(state.isResolving(.conditions) == false)
     }
 
@@ -684,10 +687,22 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing == false)
         #expect(state.activeMessages.isEmpty)
+        #expect(state.primaryActiveMessage == nil)
         for section in SummarySection.resolveForwardSections {
             #expect(state.isResolving(section) == false)
         }
-        #expect(state.recentCompletedMessage == "Getting everything ready…")
+        #expect(state.recentCompletedMessage == nil)
+    }
+
+    @Test("primary active message prefers location readiness over other active tasks")
+    func primaryActiveMessage_prioritizesLocationTask() {
+        var state = SummaryResolutionState()
+
+        state.begin(task: .alerts, sections: [.alerts])
+        state.begin(task: .weather, sections: [.conditions])
+        state.begin(task: .location, sections: [.conditions])
+
+        #expect(state.primaryActiveMessage == "Getting your conditions ready…")
     }
 }
 

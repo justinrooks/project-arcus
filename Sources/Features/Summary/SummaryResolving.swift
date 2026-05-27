@@ -40,7 +40,7 @@ enum SummaryProviderTask: Hashable {
     var statusMessage: String {
         switch self {
         case .location:
-            "Getting your location…"
+            "Getting your conditions ready…"
         case .weather:
             "Updating your conditions…"
         case .stormRisk:
@@ -48,7 +48,7 @@ enum SummaryProviderTask: Hashable {
         case .alerts:
             "Bringing in local alerts…"
         case .finalizing:
-            "Getting everything ready…"
+            "Updating your conditions…"
         }
     }
 }
@@ -62,6 +62,12 @@ struct SummaryResolutionState: Equatable {
 
     var isRefreshing: Bool {
         activeTasks.isEmpty == false
+    }
+
+    var primaryActiveMessage: String? {
+        activeTasks
+            .min(by: { $0.priority < $1.priority })?
+            .statusMessage
     }
 
     var activeMessages: [String] {
@@ -82,7 +88,11 @@ struct SummaryResolutionState: Equatable {
             return nil
         }
 
-        return lastCompletedTask.statusMessage
+        guard lastCompletedTask != .finalizing else {
+            return nil
+        }
+
+        return "Updating your conditions…"
     }
 
     func isResolving(_ section: SummarySection) -> Bool {
@@ -146,6 +156,23 @@ struct SummaryResolutionState: Equatable {
         taskSections.removeAll()
         lastCompletedTask = completedTask
         lastCompletedAt = completedAt
+    }
+}
+
+private extension SummaryProviderTask {
+    var priority: Int {
+        switch self {
+        case .location:
+            0
+        case .weather:
+            1
+        case .stormRisk:
+            2
+        case .alerts:
+            3
+        case .finalizing:
+            4
+        }
     }
 }
 
