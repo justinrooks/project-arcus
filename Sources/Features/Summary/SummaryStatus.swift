@@ -12,6 +12,7 @@ struct SummaryStatus: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsOfflineExplanation = false
+    @State private var displayedWeather: SummaryWeather?
 
     let statusText: String
     let weather: SummaryWeather?
@@ -26,9 +27,13 @@ struct SummaryStatus: View {
         return formatter
     }()
 
+    private var effectiveWeather: SummaryWeather? {
+        weather ?? displayedWeather
+    }
+
     private var formattedTemperature: String? {
-        guard let weather else { return nil }
-        return formatTemperature(weather.temperature)
+        guard let effectiveWeather else { return nil }
+        return formatTemperature(effectiveWeather.temperature)
     }
 
     private var clampedCondenseProgress: CGFloat {
@@ -97,6 +102,9 @@ struct SummaryStatus: View {
             shadowY: cardShadowY
         )
         .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
+        .task(id: weatherTaskState) {
+            updateDisplayedWeather()
+        }
     }
 
     private var locationUnavailableCard: some View {
@@ -172,7 +180,8 @@ struct SummaryStatus: View {
                 .font(locationFont)
                 .foregroundStyle(.primary)
                 .contentTransition(.opacity)
-                .lineLimit(clampedCondenseProgress > 0.55 ? 1 : 2)
+                .lineLimit(adaptiveLayout.usesStackedHeroTiles ? 2 : 1)
+                .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(
                 resolutionState: resolutionState
@@ -186,19 +195,27 @@ struct SummaryStatus: View {
     private var weatherContent: some View {
         VStack(alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing, spacing: 2) {
             HStack(spacing: 6) {
-                if let weather, let formattedTemperature {
+                if let effectiveWeather, let formattedTemperature {
                     Text(formattedTemperature)
                         .monospacedDigit()
-                    Image(systemName: weather.symbolName)
+                        .contentTransition(.numericText(value: effectiveWeather.temperature.value))
+                    Image(systemName: effectiveWeather.symbolName)
                         .symbolVariant(.fill)
+                        .contentTransition(.opacity)
+                } else {
+                    Text("00°")
+                        .monospacedDigit()
+                        .hidden()
+                    Image(systemName: "sun.max.fill")
+                        .hidden()
                 }
             }
-            .frame(minHeight: 20, alignment: .trailing)
+            .frame(minHeight: 20, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
 
             Group {
                 SummarySettledConditionLine(
-                    conditionText: weather?.conditionText,
-                    resolutionState: resolutionState
+                    conditionText: effectiveWeather?.conditionText,
+                    isRefreshing: resolutionState.isRefreshing
                 )
             }
             .font(.footnote)
@@ -215,7 +232,28 @@ struct SummaryStatus: View {
         )
         .contentTransition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: formattedTemperature)
-        .animation(SkyAwareMotion.message(reduceMotion), value: weather?.symbolName)
+        .animation(SkyAwareMotion.message(reduceMotion), value: effectiveWeather?.symbolName)
+        .animation(SkyAwareMotion.message(reduceMotion), value: effectiveWeather?.conditionText)
+    }
+
+    private var weatherTaskState: WeatherTaskState {
+        WeatherTaskState(
+            liveWeather: weather,
+            isRefreshing: resolutionState.isRefreshing
+        )
+    }
+
+    private func updateDisplayedWeather() {
+        if let weather {
+            displayedWeather = weather
+            return
+        }
+
+        if resolutionState.isRefreshing {
+            return
+        }
+
+        displayedWeather = nil
     }
 
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
@@ -374,11 +412,11 @@ private struct SummarySettledConditionLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let conditionText: String?
-    let resolutionState: SummaryResolutionState
+    let isRefreshing: Bool
 
     var body: some View {
         Group {
-            if shouldShowCondition, let conditionText {
+            if let conditionText {
                 Text(conditionText)
                     .foregroundStyle(.secondary)
             } else {
@@ -387,13 +425,16 @@ private struct SummarySettledConditionLine: View {
                     .accessibilityHidden(true)
             }
         }
+        .opacity(isRefreshing ? 0.86 : 1)
         .contentTransition(.opacity)
-        .animation(SkyAwareMotion.message(reduceMotion), value: shouldShowCondition)
+        .animation(SkyAwareMotion.message(reduceMotion), value: conditionText)
+        .animation(SkyAwareMotion.message(reduceMotion), value: isRefreshing)
     }
+}
 
-    private var shouldShowCondition: Bool {
-        resolutionState.isRefreshing == false
-    }
+private struct WeatherTaskState: Equatable {
+    let liveWeather: SummaryWeather?
+    let isRefreshing: Bool
 }
 
 #Preview {

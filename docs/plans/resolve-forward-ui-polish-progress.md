@@ -12,7 +12,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 2 | [#196](https://github.com/justinrooks/project-arcus/issues/196) | Add consistent Summary resolve-forward transition primitives | Complete | Added small shared resolve-forward style primitive and normalized Summary section resolve transitions. |
 | 3 | [#197](https://github.com/justinrooks/project-arcus/issues/197) | Polish risk badge resolve-forward transitions | Complete | Added badge-local resolve placeholders and calm content crossfades while keeping risk semantics unchanged. |
 | 4 | [#198](https://github.com/justinrooks/project-arcus/issues/198) | Stabilize Local Alerts resolving and empty states | Complete | Local Alerts keeps a stable container with inner-state crossfade, clearer copy, and cleaner offline VoiceOver grouping. |
-| 5 | [#199](https://github.com/justinrooks/project-arcus/issues/199) | Smooth Current Conditions resolve-forward updates | Not started | Best after #195. |
+| 5 | [#199](https://github.com/justinrooks/project-arcus/issues/199) | Smooth Current Conditions resolve-forward updates | Complete | Current Conditions now keeps cached weather identity stable while resolve-forward updates settle in place. |
 | 6 | [#200](https://github.com/justinrooks/project-arcus/issues/200) | Normalize secondary Summary resolving states | Not started | Prefer after #196. |
 | 7 | [#201](https://github.com/justinrooks/project-arcus/issues/201) | Align cold-start resolving screen with SkyAware visual direction | Not started | Independent and intentionally last. |
 
@@ -299,9 +299,60 @@ Date: 2026-05-27
   - transition only inner state content;
   - avoid additional whole-card dimming when a section already has an explicit resolving state.
 
+## Issue #199 - Smooth Current Conditions resolve-forward updates
+
+Status: Complete
+Date: 2026-05-27
+
+### Scope Completed
+
+- Kept Current Conditions anchored on location while weather refines by caching the last resolved weather payload for visual continuity during active resolve-forward refreshes.
+- Stabilized temperature/icon rendering when weather is temporarily missing by reserving a constant footprint and using calm value/icon transitions instead of abrupt disappear/reappear behavior.
+- Prevented settled condition-line flicker/collapse during active refresh by continuing to display the last known condition text with subtle de-emphasis while resolving.
+- Tightened long placemark behavior in compact/condensed layouts by forcing one-line truncation for non-stacked hero layout and preserving two-line support only in stacked Dynamic Type layouts.
+- Preserved existing offline token UI, popover behavior, and header condense motion.
+
+### Files Changed
+
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `docs/plans/resolve-forward-ui-polish-progress.md`
+
+### Behavior Preserved
+
+- WeatherKit fetching unchanged.
+- Location resolution unchanged.
+- Provider behavior unchanged.
+- Refresh orchestration unchanged.
+- Refresh timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Offline token interaction and copy unchanged.
+- Condensing header behavior unchanged.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+
+### Validation Not Run
+
+- Focused tests not run because no deterministic helper/business logic changed.
+- Manual Simulator/previews matrix not run in this pass (ready, missing weather -> resolved, cached refresh, offline token, location unavailable, long placemark, light/dark, Reduce Motion, larger Dynamic Type).
+
+### Deferred Work
+
+- Manual visual QA pass across the full Current Conditions state matrix, especially compact-width long placemark + offline token and large Dynamic Type stacked layouts.
+
+### Handoff Notes
+
+- #200 can reuse the same approach used here for secondary/status surfaces: keep stable container geometry, avoid hiding settled text just because background resolve is active, and prefer gentle de-emphasis over collapse.
+- If secondary sections need freshness copy later, keep it neutral and scoped (for example using existing per-section timestamps only) rather than broad cross-section `Updated` language.
+
 ## Next Recommended Issue
 
-Start with [#197](https://github.com/justinrooks/project-arcus/issues/197), then [#198](https://github.com/justinrooks/project-arcus/issues/198), then [#200](https://github.com/justinrooks/project-arcus/issues/200).
+Start with [#200](https://github.com/justinrooks/project-arcus/issues/200), then [#201](https://github.com/justinrooks/project-arcus/issues/201).
 
 ## Handoff Template
 
