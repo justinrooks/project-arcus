@@ -299,6 +299,47 @@ Date: 2026-05-27
   - transition only inner state content;
   - avoid additional whole-card dimming when a section already has an explicit resolving state.
 
+## Review Fix - [P2] Local Alerts collapses before fade completes
+
+Status: Complete
+Date: 2026-05-27
+
+### Finding Fixed
+
+- Fixed Local Alerts content-height snapping when transitioning away from populated alerts so outgoing rows can complete the intended fade without abrupt clipping/cropping.
+
+### Files Changed
+
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `docs/plans/resolve-forward-ui-polish-progress.md`
+
+### Behavior Preserved
+
+- Alert ingestion unchanged.
+- Arcus/SPC/NWS orchestration unchanged.
+- Alert sorting/filtering unchanged.
+- Refresh/loading timing unchanged.
+- What loads when unchanged.
+- Notification behavior unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Existing loading/empty/alerts/offline state semantics unchanged.
+- Alert Center button behavior unchanged.
+- VoiceOver grouping unchanged.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+
+### Visual Validation
+
+- Manual simulator visual validation: Not run in this pass.
+
+### Remaining Risks
+
+- The transition-height hold duration tracks the current Local Alerts layer-change timing (`0.32s`, `0.01s` with Reduce Motion). If motion timing changes later, this duration should be updated to stay aligned.
+
 ## Issue #199 - Smooth Current Conditions resolve-forward updates
 
 Status: Complete

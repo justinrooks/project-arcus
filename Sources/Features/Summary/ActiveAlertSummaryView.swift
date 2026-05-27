@@ -29,6 +29,8 @@ struct ActiveAlertSummaryView: View {
     @State private var selectedAlert: AlertDTO? = nil
     @State private var selectedMesoDetent: PresentationDetent = .medium
     @State private var selectedAlertDetent: PresentationDetent = .medium
+    @State private var keepsFlexibleHeightDuringTransition = false
+    @State private var flexibleHeightResetTask: Task<Void, Never>? = nil
     init(
         mesos: [MdDTO],
         alerts: [AlertDTO],
@@ -63,7 +65,12 @@ struct ActiveAlertSummaryView: View {
     }
 
     private var usesFlexibleAlertHeight: Bool {
-        contentState == .alerts
+        contentState == .alerts || keepsFlexibleHeightDuringTransition
+    }
+
+    private var transitionHoldDurationNanoseconds: UInt64 {
+        let seconds = reduceMotion ? 0.01 : 0.32
+        return UInt64(seconds * 1_000_000_000)
     }
 
     @ViewBuilder
@@ -152,6 +159,13 @@ struct ActiveAlertSummaryView: View {
                     .padding(.horizontal, 6)
             }
             .accessibilityIdentifier("summary-watch-detail-sheet")
+        }
+        .onChange(of: contentState) { oldValue, newValue in
+            handleContentStateTransition(from: oldValue, to: newValue)
+        }
+        .onDisappear {
+            flexibleHeightResetTask?.cancel()
+            flexibleHeightResetTask = nil
         }
     }
 
@@ -256,6 +270,25 @@ struct ActiveAlertSummaryView: View {
         }
         .presentationDetents([.medium, .large], selection: selection)
         .presentationDragIndicator(.visible)
+    }
+
+    private func handleContentStateTransition(from oldState: ContentState, to newState: ContentState) {
+        if newState == .alerts {
+            flexibleHeightResetTask?.cancel()
+            keepsFlexibleHeightDuringTransition = false
+            return
+        }
+
+        guard oldState == .alerts else { return }
+
+        flexibleHeightResetTask?.cancel()
+        keepsFlexibleHeightDuringTransition = true
+        flexibleHeightResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .nanoseconds(transitionHoldDurationNanoseconds))
+            guard Task.isCancelled == false else { return }
+            keepsFlexibleHeightDuringTransition = false
+            flexibleHeightResetTask = nil
+        }
     }
 }
 
