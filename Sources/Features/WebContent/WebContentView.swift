@@ -32,6 +32,7 @@ struct WebContentView: View {
                 } else {
                     SkyAwareWebView(
                         url: route.url,
+                        onExternalURL: { url in openURL(url) },
                         webView: $webView,
                         isLoading: $isLoading,
                         estimatedProgress: $estimatedProgress,
@@ -132,6 +133,7 @@ struct WebContentView: View {
 
 private struct SkyAwareWebView: UIViewRepresentable {
     let url: URL
+    let onExternalURL: (URL) -> Void
 
     @Binding var webView: WKWebView?
     @Binding var isLoading: Bool
@@ -234,6 +236,27 @@ private struct SkyAwareWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             Task { @MainActor in
                 parent.hasLoadError = true
+            }
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
+        ) {
+            guard let requestURL = navigationAction.request.url else {
+                decisionHandler(.cancel)
+                return
+            }
+
+            switch WebContentPolicy.decision(for: requestURL) {
+            case .inApp:
+                decisionHandler(.allow)
+            case .external:
+                parent.onExternalURL(requestURL)
+                decisionHandler(.cancel)
+            case .unsupported:
+                decisionHandler(.cancel)
             }
         }
     }
