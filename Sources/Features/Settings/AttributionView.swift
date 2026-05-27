@@ -12,6 +12,7 @@ import OSLog
 struct AttributionView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dependencies) private var dependencies
+    @Environment(\.openURL) private var openURL
     
     private let logger = Logger.uiHome
     
@@ -19,6 +20,7 @@ struct AttributionView: View {
     private var weatherClient: WeatherClient { dependencies.weatherClient }
     
     @State private var attribution: WeatherAttribution?
+    @State private var webRoute: WebContentRoute?
     
     var body: some View {
         VStack {
@@ -31,12 +33,26 @@ struct AttributionView: View {
                     } placeholder: {
                         ProgressView()
                     }
-                Text(.init("[\(attribution.serviceName)](\(attribution.legalPageURL))"))
-                    .font(.caption2)
-//                      .fontWeight(.semibold)
-//                      .textCase(.uppercase)
-                      .foregroundStyle(.secondary)
+                Button(attribution.serviceName) {
+                    switch WebContentPolicy.decision(for: attribution.legalPageURL) {
+                    case .inApp:
+                        webRoute = WebContentRoute(
+                            url: attribution.legalPageURL,
+                            title: "Attribution",
+                            sourceName: attribution.serviceName
+                        )
+                    case .external:
+                        openURL(attribution.legalPageURL)
+                    case .unsupported:
+                        break
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
             }
+        }
+        .sheet(item: $webRoute) { route in
+            WebContentView(route: route)
         }
         .task {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }

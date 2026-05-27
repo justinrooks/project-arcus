@@ -39,3 +39,53 @@ struct WidgetRouteURLTests {
         #expect(HomeView.tabSelection(forIncomingURL: url) == nil)
     }
 }
+
+@Suite("Web content policy")
+struct WebContentPolicyTests {
+    @Test("allows https URLs in-app")
+    func allowsHTTPSInApp() throws {
+        let url = try #require(URL(string: "https://www.spc.noaa.gov/products/outlook/day1otlk.html"))
+
+        #expect(WebContentPolicy.decision(for: url) == .inApp)
+        #expect(WebContentPolicy.canOpenInApp(url))
+    }
+
+    @Test("allows http URLs in-app")
+    func allowsHTTPInApp() throws {
+        let url = try #require(URL(string: "http://example.com/reference"))
+
+        #expect(WebContentPolicy.decision(for: url) == .inApp)
+        #expect(WebContentPolicy.canOpenInApp(url))
+    }
+
+    @Test("rejects malformed web URL")
+    func rejectsMalformedWebURL() throws {
+        let url = try #require(URL(string: "https:///missing-host"))
+
+        #expect(WebContentPolicy.decision(for: url) == .unsupported)
+        #expect(WebContentPolicy.canOpenInApp(url) == false)
+    }
+
+    @Test("routes non-web schemes externally")
+    func routesNonWebSchemesExternally() throws {
+        let mail = try #require(URL(string: "mailto:help@skyaware.app"))
+        let phone = try #require(URL(string: "tel:+13035551234"))
+
+        #expect(WebContentPolicy.decision(for: mail) == .external)
+        #expect(WebContentPolicy.decision(for: phone) == .external)
+        #expect(WebContentPolicy.canOpenInApp(mail) == false)
+        #expect(WebContentPolicy.canOpenInApp(phone) == false)
+    }
+
+    @Test("supports deterministic route values")
+    func routeSupportsDeterministicValues() throws {
+        let url = try #require(URL(string: "https://www.weather.gov"))
+        let id = UUID(uuidString: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE")!
+        let route = WebContentRoute(id: id, url: url, title: "NWS", sourceName: "National Weather Service")
+
+        #expect(route.id == id)
+        #expect(route.url == url)
+        #expect(route.title == "NWS")
+        #expect(route.sourceName == "National Weather Service")
+    }
+}
