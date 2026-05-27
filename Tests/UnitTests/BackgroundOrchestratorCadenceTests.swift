@@ -3,6 +3,7 @@ import Testing
 import SwiftData
 import CoreLocation
 import OSLog
+import ArcusCore
 @testable import SkyAware
 
 @Suite("BackgroundScheduler replacement policy", .serialized)
@@ -149,6 +150,7 @@ struct BackgroundOrchestratorCadenceTests {
             ),
             runGate: gate
         )
+        let uploadDrainer = RecordingPendingUploadDrainer()
         let orchestrator = BackgroundOrchestrator(
             coordinator: coordinator,
             policy: RefreshPolicy(),
@@ -169,7 +171,8 @@ struct BackgroundOrchestratorCadenceTests {
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(
                 settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
-            )
+            ),
+            pendingUploadDrainer: uploadDrainer
         )
         let completion = CompletionFlag()
 
@@ -186,6 +189,7 @@ struct BackgroundOrchestratorCadenceTests {
 
         let request = try #require(await coordinator.requests().first)
         #expect(request.trigger == .backgroundRefresh)
+        #expect(await uploadDrainer.drainCount() == 1)
 
         await gate.open()
         await runTask.value
@@ -257,7 +261,8 @@ private extension BackgroundOrchestratorCadenceTests {
         refreshedLocation: CLLocationCoordinate2D? = nil,
         refreshSucceeds: Bool = false,
         cachedSnapshotTimestamp: Date = Date(),
-        settings: NotificationSettings
+        settings: NotificationSettings,
+        pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator()
     ) async throws -> SystemUnderTest {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
@@ -328,7 +333,8 @@ private extension BackgroundOrchestratorCadenceTests {
             mesoEngine: mesoEngine,
             health: healthStore,
             cadence: CadencePolicy(),
-            notificationSettingsProvider: StaticSettingsProvider(settings: settings)
+            notificationSettingsProvider: StaticSettingsProvider(settings: settings),
+            pendingUploadDrainer: pendingUploadDrainer
         )
 
         return .init(orchestrator: orchestrator, modelContainer: container, spc: spc)
@@ -538,6 +544,8 @@ private final class FakeLocationSession: HomeContextPreparing {
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
@@ -648,6 +656,18 @@ private actor CompletionFlag {
 
     func isFinished() -> Bool {
         finished
+    }
+}
+
+private actor RecordingPendingUploadDrainer: PendingLocationUploadDraining {
+    private var count = 0
+
+    func drainPendingUploads() async {
+        count += 1
+    }
+
+    func drainCount() -> Int {
+        count
     }
 }
 

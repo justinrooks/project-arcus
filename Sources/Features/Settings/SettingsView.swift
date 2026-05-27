@@ -46,6 +46,7 @@ struct SettingsView: View {
     private let logger = Logger.uiSettings
     private let locationReliabilityLogger = Logger.uiLocationReliability
     @State private var notificationAuthorizationStatus: UNAuthorizationStatus = .notDetermined
+    @State private var suppressNextServerNotificationSync = false
     
     // MARK: Notification Settings
     @AppStorage(
@@ -135,12 +136,16 @@ struct SettingsView: View {
                         Toggle("Subscribe to Server Notifications", isOn: $serverNotificationEnabled)
                             .onChange(of: serverNotificationEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Server Notifications")
+                                if suppressNextServerNotificationSync {
+                                    suppressNextServerNotificationSync = false
+                                    return
+                                }
                                 if newValue, sendL8nToSignal == false {
                                     sendL8nToSignal = true
                                     return
                                 }
                                 Task {
-                                    await locationSession.pushServerNotificationPreferenceUpdate()
+                                    await locationSession.syncNotificationPreference(enabled: newValue)
                                 }
                             }
                             .disabled(notificationsAreDenied)
@@ -164,14 +169,18 @@ struct SettingsView: View {
                             .onChange(of: sendL8nToSignal) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Send Location to Signal")
                                 if newValue {
-                                    _ = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
                                     Task {
-                                        await locationSession.pushServerNotificationPreferenceUpdate()
+                                        await locationSession.updateLocationSharingPreference(enabled: true)
                                     }
                                 } else {
+                                    let wasSubscribed = serverNotificationEnabled
+                                    suppressNextServerNotificationSync = wasSubscribed
                                     serverNotificationEnabled = false
                                     Task {
-                                        await locationSession.pushServerNotificationPreferenceUpdate(forceUpload: true)
+                                        await locationSession.updateLocationSharingPreference(enabled: false)
+                                        if wasSubscribed {
+                                            await locationSession.syncNotificationPreference(enabled: false)
+                                        }
                                     }
                                 }
                             }

@@ -2,6 +2,7 @@ import CoreLocation
 import Foundation
 import OSLog
 import Testing
+import ArcusCore
 @testable import SkyAware
 
 @Suite("Home Refresh Pipeline", .serialized)
@@ -581,6 +582,173 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
     }
 
+    @Test("background location change resolves from latest accepted snapshot instead of stale current context")
+    func backgroundLocationChange_resolvesLatestAcceptedSnapshot() async throws {
+        let oldSnapshot = LocationSnapshot(
+            coordinates: .init(latitude: 39.75, longitude: -104.44),
+            timestamp: Date(timeIntervalSince1970: 100),
+            accuracy: 25,
+            placemarkSummary: "Bennett, CO",
+            h3Cell: 111_111
+        )
+        let oldGrid = GridPointSnapshot(
+            nwsId: "BOU/10,20",
+            latitude: oldSnapshot.coordinates.latitude,
+            longitude: oldSnapshot.coordinates.longitude,
+            gridId: "BOU",
+            gridX: 10,
+            gridY: 20,
+            forecastURL: nil,
+            forecastHourlyURL: nil,
+            forecastGridDataURL: nil,
+            observationStationsURL: nil,
+            city: "Bennett",
+            state: "CO",
+            timeZoneId: "America/Denver",
+            radarStationId: nil,
+            forecastZone: "COZ038",
+            countyCode: "COC005",
+            fireZone: "COZ214",
+            countyLabel: "Arapahoe",
+            fireZoneLabel: "Front Range"
+        )
+        let oldContext = LocationContext(snapshot: oldSnapshot, h3Cell: 111_111, grid: oldGrid)
+
+        let freshSnapshot = LocationSnapshot(
+            coordinates: .init(latitude: 40.01, longitude: -104.10),
+            timestamp: Date(timeIntervalSince1970: 200),
+            accuracy: 20,
+            placemarkSummary: "Weld County, CO",
+            h3Cell: 222_222
+        )
+        let freshGrid = GridPointSnapshot(
+            nwsId: "BOU/22,30",
+            latitude: freshSnapshot.coordinates.latitude,
+            longitude: freshSnapshot.coordinates.longitude,
+            gridId: "BOU",
+            gridX: 22,
+            gridY: 30,
+            forecastURL: nil,
+            forecastHourlyURL: nil,
+            forecastGridDataURL: nil,
+            observationStationsURL: nil,
+            city: "Brighton",
+            state: "CO",
+            timeZoneId: "America/Denver",
+            radarStationId: nil,
+            forecastZone: "COZ040",
+            countyCode: "COC123",
+            fireZone: "COZ250",
+            countyLabel: "Weld",
+            fireZoneLabel: "Northeast Plains"
+        )
+        let freshContext = LocationContext(snapshot: freshSnapshot, h3Cell: 222_222, grid: freshGrid)
+
+        let locationSession = FakeLocationSession(currentContext: oldContext, preparedContext: freshContext)
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundLocationChange))
+        )
+
+        #expect(locationSession.prepareCalls.count == 1)
+        #expect(
+            locationSession.prepareCalls[0] == .init(
+                requiresFreshLocation: false,
+                showsAuthorizationPrompt: false,
+                uploadSource: .backgroundLocationChange,
+                uploadReason: .locationChanged
+            )
+        )
+        #expect(snapshot.locationSnapshot == freshContext.snapshot)
+        #expect(snapshot.refreshKey == freshContext.refreshKey)
+    }
+
+    @Test("ingestion trigger location preparation carries deterministic upload source and reason")
+    func ingestionTrigger_locationPreparationCarriesExpectedUploadSourceAndReason() async throws {
+        let cases: [(HomeRefreshTrigger, LocationUploadSource, LocationUploadReason)] = [
+            (.foregroundActivate, .foregroundActivate, .locationResolved),
+            (.manualRefresh, .manualRefresh, .locationResolved),
+            (.foregroundLocationChange, .foregroundLocationChange, .locationChanged),
+            (.backgroundRefresh, .backgroundRefresh, .locationResolved),
+            (.backgroundLocationChange, .backgroundLocationChange, .locationChanged)
+        ]
+
+        for testCase in cases {
+            let locationSession = FakeLocationSession(currentContext: nil, preparedContext: makeContext())
+            let spc = FakeSpcProvider()
+            let alerts = FakeAlertProvider()
+            let weather = FakeWeatherClient()
+            let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: spc,
+                    arcusAlertSync: alerts,
+                    weatherClient: weather,
+                    locationSession: locationSession,
+                    snapshotStore: snapshotStore,
+                    projectionStore: nil,
+                    widgetSnapshotRefresher: nil
+                )
+            )
+
+            _ = try await executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: testCase.0))
+            )
+
+            let prepareCall = try #require(locationSession.prepareCalls.first)
+            #expect(prepareCall.uploadSource == testCase.1)
+            #expect(prepareCall.uploadReason == testCase.2)
+        }
+    }
+
+    @Test("session tick continues reusing current prepared context")
+    func sessionTick_reusesCurrentPreparedContext() async throws {
+        let currentContext = makeContext(timestamp: 100)
+        let newerPreparedContext = makeContext(timestamp: 200)
+        let locationSession = FakeLocationSession(currentContext: currentContext, preparedContext: newerPreparedContext)
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+
+        #expect(locationSession.prepareCalls.isEmpty)
+        #expect(snapshot.locationSnapshot == currentContext.snapshot)
+        #expect(snapshot.refreshKey == currentContext.refreshKey)
+    }
+
     private func makeEnvironment(
         spc: FakeSpcProvider = FakeSpcProvider(),
         alerts: FakeAlertProvider = FakeAlertProvider(),
@@ -830,6 +998,8 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     struct PrepareCall: Equatable {
         let requiresFreshLocation: Bool
         let showsAuthorizationPrompt: Bool
+        let uploadSource: LocationUploadSource?
+        let uploadReason: LocationUploadReason?
     }
 
     var currentContext: LocationContext?
@@ -851,6 +1021,8 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,
@@ -859,7 +1031,9 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
         prepareCalls.append(
             .init(
                 requiresFreshLocation: requiresFreshLocation,
-                showsAuthorizationPrompt: showsAuthorizationPrompt
+                showsAuthorizationPrompt: showsAuthorizationPrompt,
+                uploadSource: uploadSource,
+                uploadReason: uploadReason
             )
         )
         if let prepareGate {

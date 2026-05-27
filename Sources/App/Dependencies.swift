@@ -335,13 +335,17 @@ final class Dependencies: Sendable {
         )
         let metadataRepo = NwsMetadataRepo()
 
-        let contextPusher: any LocationContextPushing
+        let locationUploadCoordinator: any LocationUploadCoordinating
         if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
-            let uploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
-            contextPusher = LocationSnapshotPusher(uploader: uploader)
+            let snapshotUploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
+            let preferenceUploader = HTTPDevicePreferenceSyncUploader(baseURL: arcusSignalBaseURL, http: httpClient)
+            locationUploadCoordinator = LocationSnapshotPusher(
+                locationUploader: snapshotUploader,
+                preferenceUploader: preferenceUploader
+            )
             logger.info("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
         } else {
-            contextPusher = NoOpLocationContextPusher()
+            locationUploadCoordinator = NoOpLocationUploadCoordinator()
             logger.info("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
         }
         
@@ -381,7 +385,6 @@ final class Dependencies: Sendable {
             locationClient: makeLocationClient(provider: locationProvider),
             locationProvider: locationProvider,
             gridPointProvider: gridProvider,
-            contextPusher: contextPusher,
             authorizationStatusProvider: {
                 await MainActor.run { locationManager.authStatus }
             },
@@ -399,9 +402,15 @@ final class Dependencies: Sendable {
         let locationSession = LocationSession(
             locationClient: makeLocationClient(provider: locationProvider),
             locationManager: locationManager,
-            locationContextResolver: locationContextResolver
+            locationContextResolver: locationContextResolver,
+            locationUploadCoordinator: locationUploadCoordinator
         )
         logger.info("Location session initialized")
+        Task { @MainActor in
+            RemoteNotificationRegistrar.shared.setTokenStoredObserver { _ in
+                await locationSession.drainPendingLocationUploads()
+            }
+        }
         
         let nws = NwsProvider(
             alertRepo: alertRepo,
@@ -494,7 +503,8 @@ final class Dependencies: Sendable {
             mesoEngine: meso,
             health: healthStore,
             cadence: cadencePolicy,
-            notificationSettingsProvider: notificationSettingsProvider
+            notificationSettingsProvider: notificationSettingsProvider,
+            pendingUploadDrainer: locationUploadCoordinator
         )
         
         let scheduler = BackgroundScheduler(refreshId: appRefreshID)

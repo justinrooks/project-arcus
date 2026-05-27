@@ -9,6 +9,7 @@ import CoreLocation
 import Observation
 import OSLog
 import SwiftUI
+import ArcusCore
 
 enum LocationStartupState: Equatable {
     case idle
@@ -26,6 +27,7 @@ final class LocationSession {
     private let locationClient: LocationClient
     private let locationManager: LocationManager
     private let locationContextResolver: any LocationContextResolving
+    private let locationUploadCoordinator: any LocationUploadCoordinating
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
@@ -49,11 +51,13 @@ final class LocationSession {
     init(
         locationClient: LocationClient,
         locationManager: LocationManager,
-        locationContextResolver: any LocationContextResolving
+        locationContextResolver: any LocationContextResolving,
+        locationUploadCoordinator: any LocationUploadCoordinating = NoOpLocationUploadCoordinator()
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
         self.locationContextResolver = locationContextResolver
+        self.locationUploadCoordinator = locationUploadCoordinator
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -102,6 +106,8 @@ final class LocationSession {
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource? = nil,
+        uploadReason: LocationUploadReason? = nil,
         authorizationTimeout: Double = 30,
         locationTimeout: Double = 12,
         maximumAcceptedLocationAge: TimeInterval = 5 * 60,
@@ -130,6 +136,14 @@ final class LocationSession {
             )
             currentSnapshot = context.snapshot
             currentContext = context
+            if let uploadSource {
+                await locationUploadCoordinator.enqueue(
+                    context,
+                    source: uploadSource,
+                    reason: uploadReason ?? .locationResolved,
+                    forceUpload: false
+                )
+            }
             startupState = .ready
             return context
         } catch {
@@ -139,24 +153,62 @@ final class LocationSession {
         }
     }
 
-    func pushServerNotificationPreferenceUpdate(forceUpload: Bool = false) async {
+    func syncNotificationPreference(enabled: Bool) async {
+        await syncPreference(forceUpload: true, reason: "notification")
+    }
+
+    func syncLocationSharingPreference(enabled: Bool) async {
+        await syncPreference(forceUpload: true, reason: "location-sharing")
+    }
+
+    func updateLocationSharingPreference(enabled: Bool) async {
+        if enabled {
+            _ = requestAlwaysAuthorizationUpgradeIfNeeded()
+        }
+        await syncLocationSharingPreference(enabled: enabled)
+    }
+
+    func enqueueCurrentLocationUpload(source: LocationUploadSource, reason: LocationUploadReason) async {
+        guard let context = await resolveCurrentContextIfNeeded() else { return }
+        await locationUploadCoordinator.enqueue(
+            context,
+            source: source,
+            reason: reason,
+            forceUpload: false
+        )
+    }
+
+    func drainPendingLocationUploads() async {
+        await locationUploadCoordinator.drainPendingUploads()
+    }
+
+    private func syncPreference(forceUpload: Bool, reason: String) async {
+        logger.notice("Queueing preference sync reason=\(reason, privacy: .public)")
+        await locationUploadCoordinator.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: forceUpload,
+            detail: reason
+        )
+    }
+
+    private func resolveCurrentContextIfNeeded() async -> LocationContext? {
         if let currentContext {
-            await locationContextResolver.enqueueForPush(currentContext, forceUpload: forceUpload)
-            return
+            return currentContext
         }
 
-        guard let currentSnapshot else { return }
+        guard let currentSnapshot else { return nil }
         guard let resolvedContext = try? await locationContextResolver.resolveContext(
             from: currentSnapshot,
             maximumAcceptedLocationAge: nil,
             placemarkTimeout: 8
         ) else {
-            return
+            return nil
         }
 
         self.currentSnapshot = resolvedContext.snapshot
         applyResolvedContext(resolvedContext)
-        await locationContextResolver.enqueueForPush(resolvedContext, forceUpload: forceUpload)
+        return resolvedContext
     }
 
     private func syncAuthorizationStatus() {
@@ -223,6 +275,12 @@ final class LocationSession {
                     self.applyResolvedContext(context)
                     self.startupState = .ready
                 }
+                await self.locationUploadCoordinator.enqueue(
+                    context,
+                    source: .foregroundLocationChange,
+                    reason: .locationChanged,
+                    forceUpload: false
+                )
             } catch is CancellationError {
                 return
             } catch {

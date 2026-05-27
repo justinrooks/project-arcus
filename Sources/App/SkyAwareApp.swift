@@ -124,6 +124,7 @@ struct SkyAwareApp: App {
                     let installationId = await InstallationIdentityStore.shared.installationId()
                     logger.debug("Installation ID ready with \(installationId.count, privacy: .public) chars")
                     await RemoteNotificationRegistrar.shared.registerForRemoteNotificationsIfAuthorized(context: "scene-active")
+                    await locationSession.drainPendingLocationUploads()
                 }
                 
                 // If its our first run, spin off a task to set up a background task

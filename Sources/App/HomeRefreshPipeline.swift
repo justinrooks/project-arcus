@@ -9,6 +9,7 @@ import CoreLocation
 import Observation
 import OSLog
 import SwiftUI
+import ArcusCore
 
 protocol HomeWeatherQuerying: Sendable {
     func currentWeather(for location: CLLocation) async -> SummaryWeather?
@@ -21,6 +22,8 @@ protocol HomeLocationContextPreparing: AnyObject {
     func prepareCurrentLocationContext(
         requiresFreshLocation: Bool,
         showsAuthorizationPrompt: Bool,
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
         authorizationTimeout: Double,
         locationTimeout: Double,
         maximumAcceptedLocationAge: TimeInterval,

@@ -11,6 +11,7 @@ enum ArcusSignalConfiguration {
     static let defaultBaseURL = URL(string: "https://skyaware.bennettbunker.com")!
     static let alertsPath = "/api/v2/alerts"
     static let locationSnapshotsPath = "/api/v1/devices/location-snapshots"
+    static let devicePreferencesPath = "/api/v1/devices/preferences"
 
     private static let infoDictionaryKey = "ArcusSignalURL"
 

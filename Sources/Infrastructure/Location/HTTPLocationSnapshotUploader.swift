@@ -13,8 +13,20 @@ protocol LocationSnapshotUploading: Sendable {
     func upload(_ payload: LocationSnapshotPushPayload) async throws
 }
 
-struct NoOpLocationContextPusher: LocationContextPushing {
-    func enqueue(_ context: LocationContext, forceUpload: Bool) async {}
+struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
+    func enqueue(
+        _ context: LocationContext,
+        source: LocationUploadSource,
+        reason: LocationUploadReason,
+        forceUpload: Bool
+    ) async {}
+    func enqueuePreferenceSync(
+        source: LocationUploadSource,
+        requestReason: LocationUploadReason,
+        forceUpload: Bool,
+        detail: String
+    ) async {}
+    func drainPendingUploads() async {}
 }
 
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
@@ -41,10 +53,9 @@ actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {
         let body = try encoder.encode(payload)
         let response = try await http.post(endpoint, headers: requestHeaders, body: body)
         guard (200...299).contains(response.status) else {
-            logger.error("Location snapshot upload failed status=\(response.status, privacy: .public)")
             throw LocationPushError.invalidResponseStatus(response.status)
         }
-        logger.info("Location snapshot uploaded cell=\(String(payload.h3Cell ?? 0), privacy: .public)")
+        logger.info("Location snapshot uploaded")
     }
 
     private var requestHeaders: [String: String] {

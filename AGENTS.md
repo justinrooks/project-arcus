@@ -53,7 +53,7 @@
 - Stub or fake providers and network boundaries.
 - When adding UI, include a smoke UI test for the main navigation or happy path when practical.
 - Keep accessibility identifiers stable when they are used for UI testing.
-- Prefer iPhone 17 or iPhone 17 Pro on iOS 26.4 for local simulator runs when available.
+- Prefer iPhone 17 or iPhone 17 Pro on iOS 26.5 for local simulator runs when available.
 - If test execution produces an `.xcresult`, inspect it and report failures and coverage impact when available.
 - Mirror production namespaces when adding tests.
 

@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import Testing
+import ArcusCore
 @testable import SkyAware
 
 @Suite("LocationManager")
@@ -99,8 +100,6 @@ struct LocationSessionTests {
     private actor StubResolver: LocationContextResolving {
         let context: LocationContext?
         let error: LocationContextError?
-        private var enqueueCount = 0
-        private var lastForceUpload: Bool?
 
         init(context: LocationContext?, error: LocationContextError?) {
             self.context = context
@@ -131,19 +130,53 @@ struct LocationSessionTests {
             }
             throw error ?? LocationContextError.locationTimeout
         }
+    }
 
-        func enqueueForPush(_ context: LocationContext, forceUpload: Bool) async {
+    private actor StubUploadCoordinator: LocationUploadCoordinating {
+        private var enqueueCount = 0
+        private var lastForceUpload: Bool?
+        private var lastSource: LocationUploadSource?
+        private var lastReason: LocationUploadReason?
+        private var preferenceSyncCount = 0
+        private var lastPreferenceReason: String?
+        private var drainCount = 0
+
+        func enqueue(
+            _ context: LocationContext,
+            source: LocationUploadSource,
+            reason: LocationUploadReason,
+            forceUpload: Bool
+        ) async {
             enqueueCount += 1
             lastForceUpload = forceUpload
+            lastSource = source
+            lastReason = reason
         }
 
-        func recordedEnqueueCount() -> Int {
-            enqueueCount
+        func enqueuePreferenceSync(
+            source: LocationUploadSource,
+            requestReason: LocationUploadReason,
+            forceUpload: Bool,
+            detail: String
+        ) async {
+            preferenceSyncCount += 1
+            lastForceUpload = forceUpload
+            lastSource = source
+            lastReason = requestReason
+            lastPreferenceReason = detail
         }
 
-        func recordedLastForceUpload() -> Bool? {
-            lastForceUpload
+        func drainPendingUploads() async {
+            drainCount += 1
         }
+
+        func recordedEnqueueCount() -> Int { enqueueCount }
+        func recordedLastForceUpload() -> Bool? { lastForceUpload }
+        func recordedLastSource() -> LocationUploadSource? { lastSource }
+        func recordedLastReason() -> LocationUploadReason? { lastReason }
+        func recordedPreferenceSyncCount() -> Int { preferenceSyncCount }
+        func recordedLastPreferenceReason() -> String? { lastPreferenceReason }
+        func recordedDrainCount() -> Int { drainCount }
     }
 
     @MainActor
@@ -229,8 +262,8 @@ struct LocationSessionTests {
     }
 
     @MainActor
-    @Test("pushServerNotificationPreferenceUpdate forwards current context for upload")
-    func pushServerNotificationPreferenceUpdate_forwardsCurrentContext() async throws {
+    @Test("syncNotificationPreference enqueues forced preference sync")
+    func syncNotificationPreference_enqueuesForcedPreferenceSync() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -269,26 +302,31 @@ struct LocationSessionTests {
             )
         )
         let resolver = StubResolver(context: context, error: nil)
+        let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: resolver
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
         )
         _ = await session.prepareCurrentLocationContext(
             requiresFreshLocation: false,
             showsAuthorizationPrompt: false
         )
 
-        await session.pushServerNotificationPreferenceUpdate()
+        await session.syncNotificationPreference(enabled: true)
 
-        #expect(await resolver.recordedEnqueueCount() == 1)
-        #expect(await resolver.recordedLastForceUpload() == false)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(session.currentContext == context)
     }
 
     @MainActor
-    @Test("pushServerNotificationPreferenceUpdate resolves missing context and enqueues with force flag")
-    func pushServerNotificationPreferenceUpdate_resolvesMissingContext_andEnqueuesWithForceFlag() async throws {
+    @Test("syncLocationSharingPreference enqueues forced preference sync without resolving context")
+    func syncLocationSharingPreference_enqueuesForcedPreferenceSyncWithoutResolvingContext() async throws {
         let provider = LocationProvider()
         let manager = LocationManager(
             manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
@@ -327,10 +365,12 @@ struct LocationSessionTests {
             )
         )
         let resolver = StubResolver(context: context, error: nil)
+        let uploader = StubUploadCoordinator()
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: resolver
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
         )
 
         // Let initialization tasks settle, then set deterministic test state.
@@ -338,12 +378,252 @@ struct LocationSessionTests {
         session.currentSnapshot = context.snapshot
         session.currentContext = nil
 
-        await session.pushServerNotificationPreferenceUpdate(forceUpload: true)
+        await session.syncLocationSharingPreference(enabled: false)
 
-        #expect(await resolver.recordedEnqueueCount() == 1)
-        #expect(await resolver.recordedLastForceUpload() == true)
-        #expect(session.currentContext == context)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+        #expect(session.currentContext == nil)
         #expect(session.currentSnapshot == context.snapshot)
+    }
+
+    @MainActor
+    @Test("updateLocationSharingPreference when enabling requests always upgrade and emits one forced settings sync")
+    func updateLocationSharingPreference_whenEnabling_requestsAlwaysUpgradeAndEmitsSingleForcedSettingsSync() async throws {
+        let provider = LocationProvider()
+        let authManager = LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse)
+        let manager = LocationManager(manager: authManager, onUpdate: { _ in })
+        let context = LocationContext(
+            snapshot: LocationSnapshot(
+                coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+                timestamp: Date(timeIntervalSince1970: 1_234_567),
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: GridPointSnapshot(
+                nwsId: "https://api.weather.gov/points/39.7392,-104.9903",
+                latitude: 39.7392,
+                longitude: -104.9903,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Denver",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC031",
+                fireZone: "COZ246",
+                countyLabel: "Denver County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        )
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: StubResolver(context: context, error: nil),
+            locationUploadCoordinator: uploader
+        )
+        _ = await session.prepareCurrentLocationContext(
+            requiresFreshLocation: false,
+            showsAuthorizationPrompt: false
+        )
+
+        await session.updateLocationSharingPreference(enabled: true)
+
+        #expect(authManager.requestAlwaysCount == 1)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+    }
+
+    @MainActor
+    @Test("updateLocationSharingPreference when disabling syncs preference without requesting always upgrade")
+    func updateLocationSharingPreference_whenDisabling_syncsPreferenceWithoutRequestingAlwaysUpgrade() async throws {
+        let provider = LocationProvider()
+        let authManager = LocationManagerTests.StubAuthorizationManager(status: .authorizedAlways)
+        let manager = LocationManager(manager: authManager, onUpdate: { _ in })
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentContext = nil
+        session.currentSnapshot = nil
+
+        await session.updateLocationSharingPreference(enabled: false)
+
+        #expect(authManager.requestAlwaysCount == 0)
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+    }
+
+    @MainActor
+    @Test("syncLocationSharingPreference with no context or snapshot queues durable preference sync")
+    func syncLocationSharingPreference_withoutContextOrSnapshot_queuesPreferenceSync() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentContext = nil
+        session.currentSnapshot = nil
+
+        await session.syncLocationSharingPreference(enabled: false)
+
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
+    }
+
+    @MainActor
+    @Test("syncNotificationPreference with no context or snapshot queues durable preference sync")
+    func syncNotificationPreference_withoutContextOrSnapshot_queuesPreferenceSync() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentContext = nil
+        session.currentSnapshot = nil
+
+        await session.syncNotificationPreference(enabled: false)
+
+        #expect(await uploader.recordedEnqueueCount() == 0)
+        #expect(await uploader.recordedPreferenceSyncCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == true)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(await uploader.recordedLastPreferenceReason() == "notification")
+    }
+
+    @MainActor
+    @Test("enqueueCurrentLocationUpload resolves from snapshot and enqueues non-forced upload once")
+    func enqueueCurrentLocationUpload_resolvesFromSnapshotAndEnqueuesOnce() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+
+        let context = LocationContext(
+            snapshot: LocationSnapshot(
+                coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+                timestamp: Date(timeIntervalSince1970: 1_234_567),
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: GridPointSnapshot(
+                nwsId: "https://api.weather.gov/points/39.7392,-104.9903",
+                latitude: 39.7392,
+                longitude: -104.9903,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Denver",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC031",
+                fireZone: "COZ246",
+                countyLabel: "Denver County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        )
+        let resolver = StubResolver(context: context, error: nil)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        try await Task.sleep(for: .milliseconds(20))
+        session.currentSnapshot = context.snapshot
+        session.currentContext = nil
+
+        await session.enqueueCurrentLocationUpload(source: .settingsPreference, reason: .preferenceChanged)
+
+        #expect(await uploader.recordedEnqueueCount() == 1)
+        #expect(await uploader.recordedLastForceUpload() == false)
+        #expect(await uploader.recordedLastSource() == .settingsPreference)
+        #expect(await uploader.recordedLastReason() == .preferenceChanged)
+        #expect(session.currentContext == context)
+    }
+
+    @MainActor
+    @Test("drainPendingLocationUploads forwards to upload coordinator")
+    func drainPendingLocationUploads_forwardsToCoordinator() async throws {
+        let provider = LocationProvider()
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let uploader = StubUploadCoordinator()
+        let session = LocationSession(
+            locationClient: makeLocationClient(provider: provider),
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: uploader
+        )
+
+        await session.drainPendingLocationUploads()
+
+        #expect(await uploader.recordedDrainCount() == 1)
     }
 
     @MainActor

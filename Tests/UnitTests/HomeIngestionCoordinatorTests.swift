@@ -11,36 +11,42 @@ struct HomeIngestionCoordinatorTests {
         )
         #expect(activatePlan.lanes == .all)
         #expect(activatePlan.forcedLanes.isEmpty)
+        #expect(activatePlan.locationRequest == .prepare(requiresFreshLocation: true, showsAuthorizationPrompt: true))
 
         let manualPlan = HomeIngestionPlan(
             request: .init(trigger: .manualRefresh)
         )
         #expect(manualPlan.lanes == .all)
         #expect(manualPlan.forcedLanes == .all)
+        #expect(manualPlan.locationRequest == .prepare(requiresFreshLocation: true, showsAuthorizationPrompt: false))
 
         let tickPlan = HomeIngestionPlan(
             request: .init(trigger: .sessionTick)
         )
         #expect(tickPlan.lanes == [.hotAlerts])
         #expect(tickPlan.forcedLanes.isEmpty)
+        #expect(tickPlan.locationRequest == .currentPrepared)
 
         let locationPlan = HomeIngestionPlan(
             request: .init(trigger: .foregroundLocationChange)
         )
         #expect(locationPlan.lanes == .all)
         #expect(locationPlan.forcedLanes == [.hotAlerts, .weather])
+        #expect(locationPlan.locationRequest == .currentPrepared)
 
         let backgroundRefreshPlan = HomeIngestionPlan(
             request: .init(trigger: .backgroundRefresh)
         )
         #expect(backgroundRefreshPlan.lanes == .all)
         #expect(backgroundRefreshPlan.forcedLanes == [.hotAlerts])
+        #expect(backgroundRefreshPlan.locationRequest == .prepare(requiresFreshLocation: true, showsAuthorizationPrompt: false))
 
         let backgroundLocationPlan = HomeIngestionPlan(
             request: .init(trigger: .backgroundLocationChange)
         )
         #expect(backgroundLocationPlan.lanes == .all)
         #expect(backgroundLocationPlan.forcedLanes == [.hotAlerts, .weather])
+        #expect(backgroundLocationPlan.locationRequest == .latestAcceptedSnapshotPrepared)
     }
 
     @Test("runs one ingestion plan at a time")
