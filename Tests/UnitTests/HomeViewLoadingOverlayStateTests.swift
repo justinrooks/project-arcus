@@ -590,6 +590,58 @@ struct SummaryViewEmptyResolvingTests {
     }
 }
 
+@Suite("SummaryView Risk Placeholder Presentation")
+@MainActor
+struct SummaryViewRiskPlaceholderPresentationTests {
+    @Test("nil risk shows resolving placeholder while section is actively resolving")
+    func riskPlaceholder_nilRiskWhileSectionResolving() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .ready,
+                isSectionResolving: true,
+                showsOfflineToken: false
+            )
+        )
+    }
+
+    @Test("nil risk allows resolving placeholder during local data loading")
+    func riskPlaceholder_nilRiskDuringLoadingLocalData() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .loadingLocalData,
+                isSectionResolving: false,
+                showsOfflineToken: false
+            )
+        )
+    }
+
+    @Test("nil risk does not show resolving placeholder after completed local data attempt")
+    func riskPlaceholder_nilRiskWhenReadyAfterCompletedAttempt() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .ready,
+                isSectionResolving: false,
+                showsOfflineToken: false
+            ) == false
+        )
+    }
+
+    @Test("offline bypasses resolving placeholder behavior")
+    func riskPlaceholder_offlineBypassesResolvingPlaceholder() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .loadingLocalData,
+                isSectionResolving: true,
+                showsOfflineToken: true
+            ) == false
+        )
+    }
+}
+
 @Suite("Foreground Refresh Policies")
 struct ForegroundRefreshPolicyTests {
     private let alertPolicy = AlertRefreshPolicy(minimumSyncInterval: 120)
@@ -633,6 +685,7 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing)
         #expect(state.activeMessages == ["Bringing in local alerts…"])
+        #expect(state.primaryActiveMessage == "Bringing in local alerts…")
         #expect(state.isResolving(.alerts))
     }
 
@@ -645,6 +698,7 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing)
         #expect(state.activeMessages == ["Getting storm risk…"])
+        #expect(state.primaryActiveMessage == "Getting storm risk…")
         #expect(state.isResolving(.stormRisk) == false)
         #expect(state.isResolving(.severeRisk))
     }
@@ -659,7 +713,7 @@ struct SummaryResolutionStateTests {
         #expect(state.isRefreshing == false)
         #expect(state.isResolving(.conditions) == false)
         #expect(state.isResolving(.atmosphere) == false)
-        #expect(state.recentCompletedMessage == "Updating your conditions…")
+        #expect(state.recentCompletedMessage == "Updated conditions")
     }
 
     @Test("reset clears active tasks and sections")
@@ -671,6 +725,7 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing == false)
         #expect(state.activeMessages.isEmpty)
+        #expect(state.primaryActiveMessage == nil)
         #expect(state.isResolving(.conditions) == false)
     }
 
@@ -684,10 +739,22 @@ struct SummaryResolutionStateTests {
 
         #expect(state.isRefreshing == false)
         #expect(state.activeMessages.isEmpty)
+        #expect(state.primaryActiveMessage == nil)
         for section in SummarySection.resolveForwardSections {
             #expect(state.isResolving(section) == false)
         }
-        #expect(state.recentCompletedMessage == "Getting everything ready…")
+        #expect(state.recentCompletedMessage == "Updated conditions")
+    }
+
+    @Test("primary active message prefers location readiness over other active tasks")
+    func primaryActiveMessage_prioritizesLocationTask() {
+        var state = SummaryResolutionState()
+
+        state.begin(task: .alerts, sections: [.alerts])
+        state.begin(task: .weather, sections: [.conditions])
+        state.begin(task: .location, sections: [.conditions])
+
+        #expect(state.primaryActiveMessage == "Getting your conditions ready…")
     }
 }
 
@@ -752,5 +819,124 @@ struct WeatherKitRefreshPolicyTests {
         let now = Date(timeIntervalSince1970: 10_000)
         let recent = now.addingTimeInterval(-5)
         #expect(policy.shouldSync(now: now, lastSync: recent, force: true))
+    }
+}
+
+@Suite("SummaryStatus Weather Retention")
+struct SummaryStatusWeatherRetentionTests {
+    @Test("keeps displayed weather during refresh when location identity is unchanged")
+    func keepsDisplayedWeather_sameIdentityRefreshing() {
+        let weather = makeWeather()
+        let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: identity,
+            weatherLocationIdentity: identity
+        )
+
+        #expect(resolved.weather == weather)
+        #expect(resolved.locationIdentity == identity)
+    }
+
+    @Test("clears displayed weather during refresh when location identity changes")
+    func clearsDisplayedWeather_changedIdentityRefreshing() {
+        let weather = makeWeather()
+        let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+        let newIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: previousIdentity,
+            weatherLocationIdentity: newIdentity
+        )
+
+        #expect(resolved.weather == nil)
+        #expect(resolved.locationIdentity == nil)
+    }
+
+    @Test("clears displayed weather when refresh is inactive even if identity matches")
+    func clearsDisplayedWeather_sameIdentityNotRefreshing() {
+        let weather = makeWeather()
+        let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: false,
+            displayedWeatherLocationIdentity: identity,
+            weatherLocationIdentity: identity
+        )
+
+        #expect(resolved.weather == nil)
+        #expect(resolved.locationIdentity == nil)
+    }
+
+    @Test("prefers live weather and current location identity")
+    func prefersLiveWeatherAndCurrentIdentity() {
+        let liveWeather = makeWeather(temperatureF: 64)
+        let previousWeather = makeWeather(temperatureF: 72)
+        let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+        let currentIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
+
+        let resolved = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: liveWeather,
+            displayedWeather: previousWeather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: previousIdentity,
+            weatherLocationIdentity: currentIdentity
+        )
+
+        #expect(resolved.weather == liveWeather)
+        #expect(resolved.locationIdentity == currentIdentity)
+    }
+
+    @Test("rendered weather clears immediately when location identity changes during refresh")
+    func renderedWeather_clearsImmediatelyOnIdentityChange() {
+        let retainedWeather = makeWeather()
+        let oldIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
+        let newIdentity = makeIdentity(latitude: 47.6062, longitude: -122.3321, placemark: "Seattle, WA")
+
+        let rendered = SummaryStatus.resolveDisplayedWeather(
+            liveWeather: nil,
+            displayedWeather: retainedWeather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: oldIdentity,
+            weatherLocationIdentity: newIdentity
+        )
+
+        #expect(rendered.weather == nil)
+    }
+
+    private func makeIdentity(latitude: Double, longitude: Double, placemark: String) -> SummaryWeatherLocationIdentity {
+        SummaryWeatherLocationIdentity(
+            snapshot: .init(
+                coordinates: .init(latitude: latitude, longitude: longitude),
+                timestamp: .now,
+                accuracy: 20,
+                placemarkSummary: placemark,
+                h3Cell: nil
+            )
+        )
+    }
+
+    private func makeWeather(temperatureF: Double = 72) -> SummaryWeather {
+        SummaryWeather(
+            temperature: Measurement(value: temperatureF, unit: .fahrenheit),
+            symbolName: "sun.max.fill",
+            conditionText: "Clear",
+            asOf: .now,
+            dewPoint: Measurement(value: 50, unit: .fahrenheit),
+            humidity: 0.35,
+            windSpeed: Measurement(value: 8, unit: .milesPerHour),
+            windGust: nil,
+            windDirection: "NW",
+            pressure: Measurement(value: 29.92, unit: .inchesOfMercury),
+            pressureTrend: "steady"
+        )
     }
 }

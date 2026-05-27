@@ -91,6 +91,11 @@ struct SummaryView: View {
         readinessState == .locationUnavailable
     }
 
+    private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
+        guard let snap else { return nil }
+        return SummaryWeatherLocationIdentity(snapshot: snap)
+    }
+
     private var localAlertsPresentationState: LocalAlertsPresentationState {
         Self.localAlertsPresentationState(
             readinessState: readinessState,
@@ -147,8 +152,16 @@ struct SummaryView: View {
             Button {
                 onOpenMapLayer(.fire)
             } label: {
-                FireWeatherRailView(level: fireRisk ?? .clear, isOffline: showsOfflineToken)
-                    .placeholder(fireRisk == nil && showsOfflineToken == false)
+                FireWeatherRailView(
+                    level: fireRisk ?? .clear,
+                    isOffline: showsOfflineToken,
+                    showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
+                        hasRiskValue: fireRisk != nil,
+                        readinessState: readinessState,
+                        isSectionResolving: resolutionState.isResolving(.fireRisk),
+                        showsOfflineToken: showsOfflineToken
+                    )
+                )
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
             .buttonStyle(
@@ -158,12 +171,18 @@ struct SummaryView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .summaryResolving(resolutionState.isResolving(.fireRisk) && showsOfflineToken == false)
+            .summaryResolving(
+                resolutionState.isResolving(.fireRisk) && fireRisk != nil && showsOfflineToken == false,
+                style: .subtle
+            )
             .accessibilityHint("Opens the fire risk map.")
             AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
                 .allowsHitTesting(!isWeatherLoading)
-                .placeholder(isWeatherLoading && showsOfflineToken == false)
-                .summaryResolving(resolutionState.isResolving(.atmosphere) && showsOfflineToken == false)
+                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                .summaryResolving(
+                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                    style: .subtle
+                )
         }
     }
 
@@ -186,11 +205,22 @@ struct SummaryView: View {
     }
 
     private var stormRiskButton: some View {
-        Button {
+        let stormRiskShowsResolvingPlaceholder = Self.showsRiskResolvingPlaceholder(
+            hasRiskValue: stormRisk != nil,
+            readinessState: readinessState,
+            isSectionResolving: resolutionState.isResolving(.stormRisk),
+            showsOfflineToken: showsOfflineToken
+        )
+
+        return Button {
             onOpenMapLayer(.categorical)
         } label: {
-            StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
-                .placeholder(stormRisk == nil && showsOfflineToken == false)
+            StormRiskBadgeView(
+                level: stormRisk ?? .allClear,
+                isOffline: showsOfflineToken,
+                isResolving: resolutionState.isResolving(.stormRisk),
+                showsResolvingPlaceholder: stormRiskShowsResolvingPlaceholder
+            )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -200,16 +230,30 @@ struct SummaryView: View {
                 pressedOverlayOpacity: 0.06
             )
         )
-        .summaryResolving(resolutionState.isResolving(.stormRisk) && showsOfflineToken == false)
+        .summaryResolving(
+            resolutionState.isResolving(.stormRisk) && stormRiskShowsResolvingPlaceholder == false && showsOfflineToken == false,
+            style: .subtle
+        )
         .accessibilityHint("Opens the severe risk map.")
     }
 
     private var severeRiskButton: some View {
-        Button {
+        let severeRiskShowsResolvingPlaceholder = Self.showsRiskResolvingPlaceholder(
+            hasRiskValue: severeRisk != nil,
+            readinessState: readinessState,
+            isSectionResolving: resolutionState.isResolving(.severeRisk),
+            showsOfflineToken: showsOfflineToken
+        )
+
+        return Button {
             onOpenMapLayer(severeMapLayer)
         } label: {
-            SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
-                .placeholder(severeRisk == nil && showsOfflineToken == false)
+            SevereWeatherBadgeView(
+                threat: severeRisk ?? .allClear,
+                isOffline: showsOfflineToken,
+                isResolving: resolutionState.isResolving(.severeRisk),
+                showsResolvingPlaceholder: severeRiskShowsResolvingPlaceholder
+            )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -219,7 +263,10 @@ struct SummaryView: View {
                 pressedOverlayOpacity: 0.06
             )
         )
-        .summaryResolving(resolutionState.isResolving(.severeRisk) && showsOfflineToken == false)
+        .summaryResolving(
+            resolutionState.isResolving(.severeRisk) && severeRiskShowsResolvingPlaceholder == false && showsOfflineToken == false,
+            style: .subtle
+        )
         .accessibilityHint("Opens the highlighted severe threat map.")
     }
 
@@ -228,6 +275,7 @@ struct SummaryView: View {
         SummaryStatus(
             statusText: statusText,
             weather: weather,
+            weatherLocationIdentity: weatherLocationIdentity,
             resolutionState: resolutionState,
             showsOfflineToken: showsOfflineToken,
             isLocationUnavailable: isLocationUnavailable,
@@ -287,7 +335,7 @@ struct SummaryView: View {
                     resolutionState: resolutionState,
                     showsOfflineToken: showsOfflineToken
                 ),
-                appliesBlur: false
+                style: .subtle
             )
         }
 
@@ -297,7 +345,7 @@ struct SummaryView: View {
             isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
             onBrowseAllOutlooks: onOpenOutlooks
         )
-        .summaryResolving(resolutionState.isResolving(.outlook))
+        .summaryResolving(resolutionState.isResolving(.outlook), style: .subtle)
 
         AttributionView()
     }
@@ -305,7 +353,7 @@ struct SummaryView: View {
     var body: some View {
         VStack(spacing: 18) {
             if showsEmptyResolving {
-                LoadingView(message: resolutionState.activeMessages.first ?? readinessState.statusText)
+                LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
             } else {
                 summaryContent
                     .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
@@ -392,6 +440,28 @@ struct SummaryView: View {
         hasMeaningfulContent == false &&
         ((readinessState == .loadingLocation || readinessState == .resolvingLocalContext || readinessState == .loadingLocalData)
             || resolutionState.isRefreshing)
+    }
+
+    static func showsRiskResolvingPlaceholder(
+        hasRiskValue: Bool,
+        readinessState: SummaryReadinessState,
+        isSectionResolving: Bool,
+        showsOfflineToken: Bool
+    ) -> Bool {
+        guard showsOfflineToken == false, hasRiskValue == false else {
+            return false
+        }
+
+        if isSectionResolving {
+            return true
+        }
+
+        switch readinessState {
+        case .loadingLocation, .resolvingLocalContext, .loadingLocalData:
+            return true
+        case .ready, .locationUnavailable:
+            return false
+        }
     }
 }
 

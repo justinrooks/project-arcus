@@ -7,14 +7,39 @@
 
 import SwiftUI
 
+struct SummaryWeatherLocationIdentity: Equatable, Sendable {
+    let latitudeE4: Int
+    let longitudeE4: Int
+    let placemarkSummary: String?
+
+    init(snapshot: LocationSnapshot?) {
+        if let snapshot {
+            latitudeE4 = Self.quantize(snapshot.coordinates.latitude)
+            longitudeE4 = Self.quantize(snapshot.coordinates.longitude)
+            placemarkSummary = snapshot.placemarkSummary
+        } else {
+            latitudeE4 = 0
+            longitudeE4 = 0
+            placemarkSummary = nil
+        }
+    }
+
+    private static func quantize(_ value: Double) -> Int {
+        Int((value * 10_000).rounded(.towardZero))
+    }
+}
+
 struct SummaryStatus: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsOfflineExplanation = false
+    @State private var displayedWeather: SummaryWeather?
+    @State private var displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity?
 
     let statusText: String
     let weather: SummaryWeather?
+    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
@@ -26,9 +51,19 @@ struct SummaryStatus: View {
         return formatter
     }()
 
+    private var visibleWeather: SummaryWeather? {
+        Self.resolveDisplayedWeather(
+            liveWeather: weather,
+            displayedWeather: displayedWeather,
+            isRefreshing: resolutionState.isRefreshing,
+            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
+            weatherLocationIdentity: weatherLocationIdentity
+        ).weather
+    }
+
     private var formattedTemperature: String? {
-        guard let weather else { return nil }
-        return formatTemperature(weather.temperature)
+        guard let visibleWeather else { return nil }
+        return formatTemperature(visibleWeather.temperature)
     }
 
     private var clampedCondenseProgress: CGFloat {
@@ -97,6 +132,9 @@ struct SummaryStatus: View {
             shadowY: cardShadowY
         )
         .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
+        .task(id: weatherTaskState) {
+            updateDisplayedWeather()
+        }
     }
 
     private var locationUnavailableCard: some View {
@@ -172,7 +210,8 @@ struct SummaryStatus: View {
                 .font(locationFont)
                 .foregroundStyle(.primary)
                 .contentTransition(.opacity)
-                .lineLimit(clampedCondenseProgress > 0.55 ? 1 : 2)
+                .lineLimit(adaptiveLayout.usesStackedHeroTiles ? 2 : 1)
+                .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(
                 resolutionState: resolutionState
@@ -186,19 +225,29 @@ struct SummaryStatus: View {
     private var weatherContent: some View {
         VStack(alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing, spacing: 2) {
             HStack(spacing: 6) {
-                if let weather, let formattedTemperature {
+                if let visibleWeather, let formattedTemperature {
                     Text(formattedTemperature)
                         .monospacedDigit()
-                    Image(systemName: weather.symbolName)
+                        .contentTransition(.numericText(value: visibleWeather.temperature.value))
+                    Image(systemName: visibleWeather.symbolName)
                         .symbolVariant(.fill)
+                        .contentTransition(.opacity)
+                } else {
+                    Text("00°")
+                        .monospacedDigit()
+                        .hidden()
+                        .accessibilityHidden(true)
+                    Image(systemName: "sun.max.fill")
+                        .hidden()
+                        .accessibilityHidden(true)
                 }
             }
-            .frame(minHeight: 20, alignment: .trailing)
+            .frame(minHeight: 20, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
 
             Group {
                 SummarySettledConditionLine(
-                    conditionText: weather?.conditionText,
-                    resolutionState: resolutionState
+                    conditionText: visibleWeather?.conditionText,
+                    isRefreshing: resolutionState.isRefreshing
                 )
             }
             .font(.footnote)
@@ -215,11 +264,54 @@ struct SummaryStatus: View {
         )
         .contentTransition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: formattedTemperature)
-        .animation(SkyAwareMotion.message(reduceMotion), value: weather?.symbolName)
+        .animation(SkyAwareMotion.message(reduceMotion), value: visibleWeather?.symbolName)
+        .animation(SkyAwareMotion.message(reduceMotion), value: visibleWeather?.conditionText)
+    }
+
+    private var weatherTaskState: WeatherTaskState {
+        WeatherTaskState(
+            liveWeather: weather,
+            isRefreshing: resolutionState.isRefreshing,
+            weatherLocationIdentity: weatherLocationIdentity
+        )
+    }
+
+    private func updateDisplayedWeather() {
+        let updatedWeather = Self.resolveDisplayedWeather(
+            liveWeather: weather,
+            displayedWeather: displayedWeather,
+            isRefreshing: resolutionState.isRefreshing,
+            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
+            weatherLocationIdentity: weatherLocationIdentity
+        )
+        displayedWeather = updatedWeather.weather
+        displayedWeatherLocationIdentity = updatedWeather.locationIdentity
     }
 
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
         Self.temperatureFormatter.string(from: temperature)
+    }
+}
+
+extension SummaryStatus {
+    static func resolveDisplayedWeather(
+        liveWeather: SummaryWeather?,
+        displayedWeather: SummaryWeather?,
+        isRefreshing: Bool,
+        displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity?,
+        weatherLocationIdentity: SummaryWeatherLocationIdentity?
+    ) -> (weather: SummaryWeather?, locationIdentity: SummaryWeatherLocationIdentity?) {
+        if let liveWeather {
+            return (liveWeather, weatherLocationIdentity)
+        }
+
+        guard isRefreshing,
+              displayedWeather != nil,
+              displayedWeatherLocationIdentity == weatherLocationIdentity else {
+            return (nil, nil)
+        }
+
+        return (displayedWeather, displayedWeatherLocationIdentity)
     }
 }
 
@@ -331,23 +423,8 @@ private struct SummaryStatusSecondaryLine: View {
 
     @MainActor
     private func updateDisplayedMessage() async {
-        let activeMessages = resolutionState.activeMessages
-        if activeMessages.isEmpty == false {
-            if activeMessages.count == 1 {
-                setDisplayedMessage(activeMessages[0])
-                return
-            }
-
-            var index = 0
-            setDisplayedMessage(activeMessages[index])
-
-            while Task.isCancelled == false {
-                try? await Task.sleep(for: .seconds(3))
-                if Task.isCancelled { return }
-                index = (index + 1) % activeMessages.count
-                setDisplayedMessage(activeMessages[index])
-            }
-
+        if let primaryActiveMessage = resolutionState.primaryActiveMessage {
+            setDisplayedMessage(primaryActiveMessage)
             return
         }
 
@@ -389,11 +466,11 @@ private struct SummarySettledConditionLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let conditionText: String?
-    let resolutionState: SummaryResolutionState
+    let isRefreshing: Bool
 
     var body: some View {
         Group {
-            if shouldShowCondition, let conditionText {
+            if let conditionText {
                 Text(conditionText)
                     .foregroundStyle(.secondary)
             } else {
@@ -402,13 +479,17 @@ private struct SummarySettledConditionLine: View {
                     .accessibilityHidden(true)
             }
         }
+        .opacity(isRefreshing ? 0.86 : 1)
         .contentTransition(.opacity)
-        .animation(SkyAwareMotion.message(reduceMotion), value: shouldShowCondition)
+        .animation(SkyAwareMotion.message(reduceMotion), value: conditionText)
+        .animation(SkyAwareMotion.message(reduceMotion), value: isRefreshing)
     }
+}
 
-    private var shouldShowCondition: Bool {
-        resolutionState.isRefreshing == false && resolutionState.recentCompletedMessage == nil
-    }
+private struct WeatherTaskState: Equatable {
+    let liveWeather: SummaryWeather?
+    let isRefreshing: Bool
+    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
 }
 
 #Preview {
@@ -433,6 +514,15 @@ private struct SummarySettledConditionLine: View {
                 windDirection: "NNW",
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "climbing"
+            ),
+            weatherLocationIdentity: .init(
+                snapshot: .init(
+                    coordinates: .init(latitude: 39.7392, longitude: -104.9903),
+                    timestamp: .now,
+                    accuracy: 20,
+                    placemarkSummary: "Denver, CO",
+                    h3Cell: nil
+                )
             ),
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
@@ -460,6 +550,15 @@ private struct SummarySettledConditionLine: View {
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "falling"
             ),
+            weatherLocationIdentity: .init(
+                snapshot: .init(
+                    coordinates: .init(latitude: 39.0473, longitude: -95.6752),
+                    timestamp: .now,
+                    accuracy: 20,
+                    placemarkSummary: "Topeka, KS",
+                    h3Cell: nil
+                )
+            ),
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: true,
             isLocationUnavailable: false,
@@ -468,6 +567,7 @@ private struct SummarySettledConditionLine: View {
         SummaryStatus(
             statusText: "Location not available",
             weather: nil,
+            weatherLocationIdentity: nil,
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
             isLocationUnavailable: true,

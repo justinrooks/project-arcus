@@ -11,6 +11,7 @@ struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
     let level: FireRiskLevel
     var isOffline: Bool = false
+    var showsResolvingPlaceholder: Bool = false
     var label: String {
         switch level {
         case .clear: return "No"
@@ -22,6 +23,8 @@ struct FireWeatherRailView: View {
         Group {
             if isOffline {
                 offlineContent
+            } else if showsResolvingPlaceholder {
+                resolvingContent
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: level.symbol)
@@ -38,11 +41,35 @@ struct FireWeatherRailView: View {
         }
     }
 
+    private var resolvingBackground: LinearGradient {
+        let colors: [Color] = colorScheme == .dark
+        ? [Color(red: 0.17, green: 0.22, blue: 0.30).opacity(0.93),
+           Color(red: 0.10, green: 0.14, blue: 0.20).opacity(0.93)]
+        : [Color(red: 0.87, green: 0.91, blue: 0.96),
+           Color(red: 0.82, green: 0.87, blue: 0.93)]
+
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    private var resolvingContent: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "flame")
+                .formatBadgeImage()
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Fire Risk")
+                    .formatMessageText()
+                Text("Getting fire risk…")
+                    .formatSummaryText(for: colorScheme)
+            }
+        }
+        .railStyle(background: resolvingBackground)
+    }
+
     private var offlineContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
                 .sectionLabel()
-            Text("Fire risk is unavailable while the server is offline.")
+            Text("SkyAware is showing saved local data. Fire risk will update when your connection returns.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -56,6 +83,7 @@ struct FireWeatherRailView: View {
 #Preview {
     VStack {
         FireWeatherRailView(level: .clear)
+        FireWeatherRailView(level: .clear, showsResolvingPlaceholder: true)
         FireWeatherRailView(level: .elevated)
         FireWeatherRailView(level: .critical)
         FireWeatherRailView(level: .extreme)

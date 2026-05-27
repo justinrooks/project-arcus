@@ -22,7 +22,7 @@ struct AtmosphereRailView: View {
 
     private var atmosphereSummary: String {
         guard let weather else {
-            return "Loading atmospheric metrics…"
+            return "Getting atmospheric details…"
         }
 
         let condition = weather.conditionText.isEmpty ? "Atmospheric conditions" : weather.conditionText
@@ -168,7 +168,7 @@ struct AtmosphereRailView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
                 .sectionLabel()
-            Text("Atmospheric conditions are unavailable while the server is offline.")
+            Text("SkyAware is showing saved local data. Atmospheric details will update when your connection returns.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }

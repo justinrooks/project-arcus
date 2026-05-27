@@ -30,7 +30,7 @@ struct OutlookSummaryCard: View {
     }
 
     private var titleText: String {
-        isPending ? "Outlook Pending" : "Outlook Summary"
+        "Outlook Summary"
     }
 
     private var summaryText: String {
@@ -38,9 +38,9 @@ struct OutlookSummaryCard: View {
             return summary
         }
         if isPending {
-            return "Convective outlook text has not been synced yet."
+            return "Getting outlook details…"
         }
-        return "A convective outlook summary will appear here once syncing is complete."
+        return "Getting outlook details…"
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -74,7 +74,7 @@ struct OutlookSummaryCard: View {
         }
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-        .placeholder(isLoading)
+        .placeholder(isLoading, animated: true)
         .navigationDestination(isPresented: $navigateToFull) {
             if let outlook {
                 ConvectiveOutlookDetailView(outlook: outlook)
@@ -84,7 +84,7 @@ struct OutlookSummaryCard: View {
 
     private var headerRow: some View {
         HStack(alignment: .center, spacing: 12) {
-            Label(titleText, systemImage: isPending ? "clock.arrow.circlepath" : "sun.max.fill")
+            Label(titleText, systemImage: isPending ? "sun.horizon.fill" : "sun.max.fill")
                 .sectionLabel()
 
             Spacer(minLength: 12)
@@ -133,5 +133,19 @@ struct OutlookSummaryCard: View {
     
     return NavigationStack {
         OutlookSummaryCard(outlook: dto)
+    }
+}
+
+#Preview("Outlook Summary - Resolving") {
+    NavigationStack {
+        OutlookSummaryCard(outlook: nil, isPending: true)
+            .padding()
+    }
+}
+
+#Preview("Outlook Summary - Initial Resolve") {
+    NavigationStack {
+        OutlookSummaryCard(outlook: nil, isLoading: true)
+            .padding()
     }
 }

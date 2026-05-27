@@ -9,80 +9,49 @@ import SwiftUI
 
 struct LoadingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
 
-    var message: String = "Checking current conditions..."
+    var message: String = "Bringing in your conditions…"
 
     @State private var glowDrift = CGSize.zero
-    @State private var glowOpacity: Double = 0.18
-    @State private var glowPulseOpacity: Double = 0.72
-    @State private var glowPulseScale: CGFloat = 0.98
-    @State private var ghostOpacity: Double = 0.32
+    @State private var glowOpacity: Double = 0.24
+    @State private var glowPulseOpacity: Double = 0.74
+    @State private var glowPulseScale: CGFloat = 1.0
+    @State private var ghostOpacity: Double = 0.58
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
+            atmosphericBackground
             summaryGhost
 
-            VStack(spacing: 14) {
-                ZStack {
-                    UnevenRoundedRectangle(
-                        cornerRadii: .init(
-                            topLeading: 38,
-                            bottomLeading: 30,
-                            bottomTrailing: 42,
-                            topTrailing: 34
-                        ),
-                        style: .continuous
-                    )
-                        .fill(Color.skyAwareAccent.opacity(glowOpacity))
-                        .frame(width: 112, height: 96)
-                        .blur(radius: 34)
-                        .scaleEffect(glowPulseScale)
-                        .opacity(glowPulseOpacity)
-                        .offset(x: -6 + glowDrift.width, y: 4 + glowDrift.height)
-                        .rotationEffect(.degrees(-8))
-
-                    Ellipse()
-                        .fill(Color.skyAwareAccent.opacity(glowOpacity * 0.55))
-                        .frame(width: 84, height: 66)
-                        .blur(radius: 30)
-                        .scaleEffect(glowPulseScale * 1.01)
-                        .opacity(glowPulseOpacity)
-                        .offset(x: 10 - (glowDrift.width * 0.7), y: -6 - (glowDrift.height * 0.7))
-                        .rotationEffect(.degrees(12))
-
-                    Circle()
-                        .fill(Color.white.opacity(0.05))
-                        .frame(width: 50, height: 50)
-
-                    Image(systemName: "cloud.sun.fill")
-                        .font(.title2.weight(.semibold))
-                        .foregroundStyle(.skyAwareAccent)
-                }
-
-                VStack(spacing: 6) {
-                    Text("Getting your conditions ready")
-                        .font(.headline.weight(.medium))
-                        .foregroundStyle(.primary.opacity(0.9))
-
-                    Text(message)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+            VStack(spacing: 10) {
+                Text("Getting your conditions ready")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.96))
+                    .multilineTextAlignment(.center)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary.opacity(0.95))
+                    .multilineTextAlignment(.center)
             }
-            .padding(.top, 36)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .padding(.horizontal, 18)
+            .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 6, x: 0, y: 3)
         }
+        .frame(maxWidth: .infinity, minHeight: 500)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
+        .padding(.vertical, 14)
+        .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.hero, style: .continuous))
         .transition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: message)
         .task(id: reduceMotion) {
             guard reduceMotion == false else {
                 glowDrift = .zero
-                glowOpacity = 0.18
-                glowPulseOpacity = 0.72
+                glowOpacity = 0.24
+                glowPulseOpacity = 0.74
                 glowPulseScale = 1
-                ghostOpacity = 0.32
+                ghostOpacity = 0.58
                 return
             }
 
@@ -90,9 +59,9 @@ struct LoadingView: View {
                 .easeInOut(duration: SkyAwareMotion.ambientDriftDuration)
                     .repeatForever(autoreverses: true)
             ) {
-                glowDrift = CGSize(width: 4, height: -3)
-                glowOpacity = 0.22
-                ghostOpacity = 0.37
+                glowDrift = CGSize(width: 6, height: -5)
+                glowOpacity = 0.30
+                ghostOpacity = 0.62
             }
 
             withAnimation(
@@ -100,47 +69,89 @@ struct LoadingView: View {
                     .repeatForever(autoreverses: true)
             ) {
                 glowPulseOpacity = 0.88
-                glowPulseScale = 1.03
+                glowPulseScale = 1.07
             }
         }
     }
 
+    private var atmosphericBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: colorScheme == .dark
+                    ? [
+                        Color(red: 0.045, green: 0.074, blue: 0.118),
+                        Color(red: 0.060, green: 0.091, blue: 0.142),
+                        Color(red: 0.032, green: 0.050, blue: 0.082)
+                    ]
+                    : [
+                        Color(red: 0.955, green: 0.972, blue: 0.995),
+                        Color(red: 0.930, green: 0.955, blue: 0.990),
+                        Color(red: 0.905, green: 0.934, blue: 0.978)
+                    ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            RadialGradient(
+                colors: [
+                    Color.skyAwareAccent.opacity(glowOpacity * (colorScheme == .dark ? 1.05 : 0.54)),
+                    Color.skyAwareAccent.opacity(glowOpacity * (colorScheme == .dark ? 0.44 : 0.24)),
+                    .clear
+                ],
+                center: UnitPoint(x: 0.80 + glowDrift.width / 120, y: 0.24 + glowDrift.height / 120),
+                startRadius: 8,
+                endRadius: colorScheme == .dark ? 260 : 220
+            )
+            .opacity(glowPulseOpacity)
+            .scaleEffect(glowPulseScale)
+
+            LinearGradient(
+                colors: [
+                    .white.opacity(colorScheme == .dark ? 0.07 : 0.30),
+                    .clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .center
+            )
+        }
+        .overlay {
+            LinearGradient(
+                colors: [
+                    .clear,
+                    .black.opacity(colorScheme == .dark ? 0.16 : 0.04)
+                ],
+                startPoint: .center,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
     private var summaryGhost: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             RoundedRectangle(cornerRadius: SkyAwareRadius.section, style: .continuous)
-                .fill(Color.white.opacity(0.06))
-                .frame(height: 78)
+                .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.22))
+                .frame(height: 72)
 
-            RoundedRectangle(cornerRadius: SkyAwareRadius.hero, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .frame(height: 332)
-                .overlay(alignment: .top) {
-                    VStack(spacing: 16) {
-                        HStack(spacing: 14) {
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                                .fill(Color.white.opacity(0.07))
-                                .frame(height: 160)
-                            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                                .fill(Color.white.opacity(0.07))
-                                .frame(height: 160)
-                        }
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                    .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.21))
+                    .frame(height: 126)
+                RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                    .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.18))
+                    .frame(height: 126)
+            }
 
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous)
-                            .fill(Color.white.opacity(0.06))
-                            .frame(height: 76)
-
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                            .fill(Color.white.opacity(0.05))
-                            .frame(height: 150)
-                    }
-                    .padding(18)
-                }
+            RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous)
+                .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.19))
+                .frame(height: 70)
 
             RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-                .frame(height: 128)
+                .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.17))
+                .frame(height: 110)
         }
-        .blur(radius: 8)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 28)
+        .blur(radius: colorScheme == .dark ? 14 : 10)
         .opacity(ghostOpacity)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -148,7 +159,20 @@ struct LoadingView: View {
 }
 
 #Preview {
-    LoadingView(message: "Checking current conditions...")
+    LoadingView(message: "Bringing in local conditions…")
+        .padding(.horizontal, 16)
+        .background(.skyAwareBackground)
+}
+
+#Preview("Dark") {
+    LoadingView(message: "Bringing in local conditions…")
+        .padding(.horizontal, 16)
+        .background(.skyAwareBackground)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Reduce Motion (Name Only)") {
+    LoadingView(message: "Bringing in local conditions…")
         .padding(.horizontal, 16)
         .background(.skyAwareBackground)
 }

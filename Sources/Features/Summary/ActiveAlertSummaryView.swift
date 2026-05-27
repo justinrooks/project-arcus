@@ -17,6 +17,12 @@ struct ActiveAlertSummaryView: View {
         case offline
     }
 
+    private enum HeightPhase: Equatable {
+        case uninitialized
+        case stable(ContentState)
+        case leavingAlerts
+    }
+
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
     let isLoading: Bool
@@ -29,6 +35,8 @@ struct ActiveAlertSummaryView: View {
     @State private var selectedAlert: AlertDTO? = nil
     @State private var selectedMesoDetent: PresentationDetent = .medium
     @State private var selectedAlertDetent: PresentationDetent = .medium
+    @State private var heightPhase: HeightPhase = .uninitialized
+    @State private var flexibleHeightResetTask: Task<Void, Never>? = nil
     init(
         mesos: [MdDTO],
         alerts: [AlertDTO],
@@ -62,14 +70,28 @@ struct ActiveAlertSummaryView: View {
         return .empty
     }
 
+    private var isLeavingAlertsTransition: Bool {
+        switch heightPhase {
+        case .stable(.alerts), .leavingAlerts:
+            return contentState != .alerts
+        case .stable, .uninitialized:
+            return false
+        }
+    }
+
     private var usesFlexibleAlertHeight: Bool {
-        contentState == .alerts
+        Self.usesFlexibleAlertHeight(currentState: contentState, isLeavingAlerts: isLeavingAlertsTransition)
+    }
+
+    private var transitionHoldDurationNanoseconds: UInt64 {
+        let seconds = reduceMotion ? 0.01 : 0.32
+        return UInt64(seconds * 1_000_000_000)
     }
 
     @ViewBuilder
     private var alertsContent: some View {
         ActiveAlertSection(
-            label: "Watches & Warningso",
+            label: "Watches & Warnings",
             items: sortedAlerts,
             limit: 2,
             onSelect: {
@@ -153,31 +175,42 @@ struct ActiveAlertSummaryView: View {
             }
             .accessibilityIdentifier("summary-watch-detail-sheet")
         }
+        .onChange(of: contentState) { oldValue, newValue in
+            handleContentStateTransition(from: oldValue, to: newValue)
+        }
+        .onAppear {
+            if heightPhase == .uninitialized {
+                heightPhase = .stable(contentState)
+            }
+        }
+        .onDisappear {
+            flexibleHeightResetTask?.cancel()
+            flexibleHeightResetTask = nil
+        }
     }
 
     @ViewBuilder
     private var innerContent: some View {
         if #available(iOS 26, *) {
             GlassEffectContainer(spacing: 12) {
-                contentStateView
-                    .id(contentState)
-                    .transition(.opacity)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: usesFlexibleAlertHeight ? nil : 72,
-                        alignment: .topLeading
-                    )
+                contentStateContainer
             }
         } else {
+            contentStateContainer
+        }
+    }
+
+    private var contentStateContainer: some View {
+        ZStack(alignment: .topLeading) {
             contentStateView
                 .id(contentState)
                 .transition(.opacity)
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: usesFlexibleAlertHeight ? nil : 72,
-                    alignment: .topLeading
-                )
         }
+        .frame(
+            maxWidth: .infinity,
+            minHeight: usesFlexibleAlertHeight ? nil : 72,
+            alignment: .topLeading
+        )
     }
 
     @ViewBuilder
@@ -198,12 +231,13 @@ struct ActiveAlertSummaryView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Offline", systemImage: "wifi.slash")
                 .sectionLabel()
-            Text("Local alert details are unavailable while the server is offline.")
+            Text("SkyAware is showing saved local data. Local alerts will update when your connection returns.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(2)
+        .accessibilityElement(children: .combine)
     }
 
     private var emptyContent: some View {
@@ -256,6 +290,33 @@ struct ActiveAlertSummaryView: View {
         }
         .presentationDetents([.medium, .large], selection: selection)
         .presentationDragIndicator(.visible)
+    }
+
+    private func handleContentStateTransition(from oldState: ContentState, to newState: ContentState) {
+        if newState == .alerts {
+            flexibleHeightResetTask?.cancel()
+            heightPhase = .stable(.alerts)
+            return
+        }
+
+        guard oldState == .alerts, newState != .alerts else {
+            flexibleHeightResetTask?.cancel()
+            heightPhase = .stable(newState)
+            return
+        }
+
+        flexibleHeightResetTask?.cancel()
+        heightPhase = .leavingAlerts
+        flexibleHeightResetTask = Task { @MainActor in
+            try? await Task.sleep(for: .nanoseconds(transitionHoldDurationNanoseconds))
+            guard Task.isCancelled == false else { return }
+            heightPhase = .stable(contentState)
+            flexibleHeightResetTask = nil
+        }
+    }
+
+    private static func usesFlexibleAlertHeight(currentState: ContentState, isLeavingAlerts: Bool) -> Bool {
+        currentState == .alerts || isLeavingAlerts
     }
 }
 

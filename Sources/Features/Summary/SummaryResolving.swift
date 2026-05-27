@@ -40,7 +40,7 @@ enum SummaryProviderTask: Hashable {
     var statusMessage: String {
         switch self {
         case .location:
-            "Getting your location…"
+            "Getting your conditions ready…"
         case .weather:
             "Updating your conditions…"
         case .stormRisk:
@@ -48,7 +48,7 @@ enum SummaryProviderTask: Hashable {
         case .alerts:
             "Bringing in local alerts…"
         case .finalizing:
-            "Getting everything ready…"
+            "Updating your conditions…"
         }
     }
 }
@@ -62,6 +62,12 @@ struct SummaryResolutionState: Equatable {
 
     var isRefreshing: Bool {
         activeTasks.isEmpty == false
+    }
+
+    var primaryActiveMessage: String? {
+        activeTasks
+            .min(by: { $0.priority < $1.priority })?
+            .statusMessage
     }
 
     var activeMessages: [String] {
@@ -82,7 +88,14 @@ struct SummaryResolutionState: Equatable {
             return nil
         }
 
-        return lastCompletedTask.statusMessage
+        switch lastCompletedTask {
+        case .location, .weather, .finalizing:
+            return "Updated conditions"
+        case .stormRisk:
+            return "Got storm risk"
+        case .alerts:
+            return "Checked local alerts"
+        }
     }
 
     func isResolving(_ section: SummarySection) -> Bool {
@@ -149,22 +162,65 @@ struct SummaryResolutionState: Equatable {
     }
 }
 
+private extension SummaryProviderTask {
+    var priority: Int {
+        switch self {
+        case .location:
+            0
+        case .weather:
+            1
+        case .stormRisk:
+            2
+        case .alerts:
+            3
+        case .finalizing:
+            4
+        }
+    }
+}
+
+enum SummaryResolveForwardStyle {
+    case subtle
+    case blurLift
+
+    var opacity: Double {
+        switch self {
+        case .subtle:
+            SkyAwareMotion.resolvingSubtleOpacity
+        case .blurLift:
+            SkyAwareMotion.resolvingOpacity
+        }
+    }
+
+    var blur: CGFloat {
+        switch self {
+        case .subtle:
+            0
+        case .blurLift:
+            SkyAwareMotion.resolvingBlur
+        }
+    }
+}
+
 private struct SummaryResolvingModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isResolving: Bool
-    let appliesBlur: Bool
+    let style: SummaryResolveForwardStyle
 
     func body(content: Content) -> some View {
         content
-            .blur(radius: isResolving && appliesBlur ? SkyAwareMotion.resolvingBlur : 0)
-            .opacity(isResolving ? SkyAwareMotion.resolvingOpacity : 1)
+            .blur(radius: isResolving && reduceMotion == false ? style.blur : 0)
+            .opacity(isResolving ? style.opacity : 1)
             .animation(SkyAwareMotion.resolve(reduceMotion), value: isResolving)
     }
 }
 
 extension View {
-    func summaryResolving(_ isResolving: Bool, appliesBlur: Bool = true) -> some View {
-        modifier(SummaryResolvingModifier(isResolving: isResolving, appliesBlur: appliesBlur))
+    func summaryResolving(
+        _ isResolving: Bool,
+        style: SummaryResolveForwardStyle = .blurLift
+    ) -> some View {
+        modifier(SummaryResolvingModifier(isResolving: isResolving, style: style))
     }
 }
