@@ -418,6 +418,42 @@ Date: 2026-05-27
   - cached refresh behavior
   - light/dark, Reduce Motion, larger Dynamic Type
 
+## Review Fix - [P1] Missing risk data after completed local-data attempt appears indefinitely resolving
+
+Status: Complete
+Date: 2026-05-27
+
+### Finding Fixed
+
+- Resolved the risk-placeholder gating bug where `stormRisk`, `severeRisk`, or `fireRisk` being `nil` always showed resolving copy, even after local-data completion and Summary readiness.
+
+### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+
+### Behavior Preserved
+
+- Risk scoring unchanged.
+- Risk mapping unchanged.
+- Provider behavior unchanged.
+- Refresh orchestration/timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Offline behavior preserved.
+- Map tap behavior preserved.
+
+### Validation Run
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5" -only-testing:SkyAwareTests/SummaryViewRiskPlaceholderPresentationTests test`
+
+### Remaining Risks
+
+- Visual nuance for ready-with-missing-risk fallback relies on existing safe fallback values (`.allClear` / `.clear`) without an explicit "data unavailable" affordance; this preserves current product semantics but should be reviewed in UI QA for trust/readability.
+
 ### Handoff Notes
 
 - For #201 cold-start resolving:

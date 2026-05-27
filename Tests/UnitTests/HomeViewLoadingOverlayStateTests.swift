@@ -590,6 +590,58 @@ struct SummaryViewEmptyResolvingTests {
     }
 }
 
+@Suite("SummaryView Risk Placeholder Presentation")
+@MainActor
+struct SummaryViewRiskPlaceholderPresentationTests {
+    @Test("nil risk shows resolving placeholder while section is actively resolving")
+    func riskPlaceholder_nilRiskWhileSectionResolving() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .ready,
+                isSectionResolving: true,
+                showsOfflineToken: false
+            )
+        )
+    }
+
+    @Test("nil risk allows resolving placeholder during local data loading")
+    func riskPlaceholder_nilRiskDuringLoadingLocalData() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .loadingLocalData,
+                isSectionResolving: false,
+                showsOfflineToken: false
+            )
+        )
+    }
+
+    @Test("nil risk does not show resolving placeholder after completed local data attempt")
+    func riskPlaceholder_nilRiskWhenReadyAfterCompletedAttempt() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .ready,
+                isSectionResolving: false,
+                showsOfflineToken: false
+            ) == false
+        )
+    }
+
+    @Test("offline bypasses resolving placeholder behavior")
+    func riskPlaceholder_offlineBypassesResolvingPlaceholder() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .loadingLocalData,
+                isSectionResolving: true,
+                showsOfflineToken: true
+            ) == false
+        )
+    }
+}
+
 @Suite("Foreground Refresh Policies")
 struct ForegroundRefreshPolicyTests {
     private let alertPolicy = AlertRefreshPolicy(minimumSyncInterval: 120)

@@ -48,7 +48,7 @@ struct SevereWeatherBadgeView: View {
 
     private var resolvingContent: some View {
         VStack(spacing: 4) {
-            Image(systemName: "exclamationmark.triangle.badge.clock")
+            Image(systemName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90")
                 .formatBadgeImage()
                 .opacity(0.92)
             Text("Severe Risk")

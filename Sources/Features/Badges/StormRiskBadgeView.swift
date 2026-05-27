@@ -47,7 +47,7 @@ struct StormRiskBadgeView: View {
 
     private var resolvingContent: some View {
         VStack(spacing: 4) {
-            Image(systemName: "bolt.badge.clock")
+            Image(systemName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90")
                 .formatBadgeImage()
                 .opacity(0.92)
             Text("Storm Risk")

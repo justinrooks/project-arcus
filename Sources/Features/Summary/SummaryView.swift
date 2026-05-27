@@ -155,7 +155,12 @@ struct SummaryView: View {
                 FireWeatherRailView(
                     level: fireRisk ?? .clear,
                     isOffline: showsOfflineToken,
-                    showsResolvingPlaceholder: fireRisk == nil && showsOfflineToken == false
+                    showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
+                        hasRiskValue: fireRisk != nil,
+                        readinessState: readinessState,
+                        isSectionResolving: resolutionState.isResolving(.fireRisk),
+                        showsOfflineToken: showsOfflineToken
+                    )
                 )
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
@@ -200,7 +205,12 @@ struct SummaryView: View {
     }
 
     private var stormRiskButton: some View {
-        let stormRiskIsUnresolved = stormRisk == nil && showsOfflineToken == false
+        let stormRiskShowsResolvingPlaceholder = Self.showsRiskResolvingPlaceholder(
+            hasRiskValue: stormRisk != nil,
+            readinessState: readinessState,
+            isSectionResolving: resolutionState.isResolving(.stormRisk),
+            showsOfflineToken: showsOfflineToken
+        )
 
         return Button {
             onOpenMapLayer(.categorical)
@@ -209,7 +219,7 @@ struct SummaryView: View {
                 level: stormRisk ?? .allClear,
                 isOffline: showsOfflineToken,
                 isResolving: resolutionState.isResolving(.stormRisk),
-                showsResolvingPlaceholder: stormRiskIsUnresolved
+                showsResolvingPlaceholder: stormRiskShowsResolvingPlaceholder
             )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
@@ -221,14 +231,19 @@ struct SummaryView: View {
             )
         )
         .summaryResolving(
-            resolutionState.isResolving(.stormRisk) && stormRiskIsUnresolved == false && showsOfflineToken == false,
+            resolutionState.isResolving(.stormRisk) && stormRiskShowsResolvingPlaceholder == false && showsOfflineToken == false,
             style: .subtle
         )
         .accessibilityHint("Opens the severe risk map.")
     }
 
     private var severeRiskButton: some View {
-        let severeRiskIsUnresolved = severeRisk == nil && showsOfflineToken == false
+        let severeRiskShowsResolvingPlaceholder = Self.showsRiskResolvingPlaceholder(
+            hasRiskValue: severeRisk != nil,
+            readinessState: readinessState,
+            isSectionResolving: resolutionState.isResolving(.severeRisk),
+            showsOfflineToken: showsOfflineToken
+        )
 
         return Button {
             onOpenMapLayer(severeMapLayer)
@@ -237,7 +252,7 @@ struct SummaryView: View {
                 threat: severeRisk ?? .allClear,
                 isOffline: showsOfflineToken,
                 isResolving: resolutionState.isResolving(.severeRisk),
-                showsResolvingPlaceholder: severeRiskIsUnresolved
+                showsResolvingPlaceholder: severeRiskShowsResolvingPlaceholder
             )
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
@@ -249,7 +264,7 @@ struct SummaryView: View {
             )
         )
         .summaryResolving(
-            resolutionState.isResolving(.severeRisk) && severeRiskIsUnresolved == false && showsOfflineToken == false,
+            resolutionState.isResolving(.severeRisk) && severeRiskShowsResolvingPlaceholder == false && showsOfflineToken == false,
             style: .subtle
         )
         .accessibilityHint("Opens the highlighted severe threat map.")
@@ -425,6 +440,28 @@ struct SummaryView: View {
         hasMeaningfulContent == false &&
         ((readinessState == .loadingLocation || readinessState == .resolvingLocalContext || readinessState == .loadingLocalData)
             || resolutionState.isRefreshing)
+    }
+
+    static func showsRiskResolvingPlaceholder(
+        hasRiskValue: Bool,
+        readinessState: SummaryReadinessState,
+        isSectionResolving: Bool,
+        showsOfflineToken: Bool
+    ) -> Bool {
+        guard showsOfflineToken == false, hasRiskValue == false else {
+            return false
+        }
+
+        if isSectionResolving {
+            return true
+        }
+
+        switch readinessState {
+        case .loadingLocation, .resolvingLocalContext, .loadingLocalData:
+            return true
+        case .ready, .locationUnavailable:
+            return false
+        }
     }
 }
 
