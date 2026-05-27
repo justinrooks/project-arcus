@@ -29,7 +29,8 @@ struct ActiveAlertSummaryView: View {
     @State private var selectedAlert: AlertDTO? = nil
     @State private var selectedMesoDetent: PresentationDetent = .medium
     @State private var selectedAlertDetent: PresentationDetent = .medium
-    @State private var keepsFlexibleHeightDuringTransition = false
+    @State private var lastStableContentState: ContentState? = nil
+    @State private var isLeavingAlertsHeightHoldActive = false
     @State private var flexibleHeightResetTask: Task<Void, Never>? = nil
     init(
         mesos: [MdDTO],
@@ -64,8 +65,13 @@ struct ActiveAlertSummaryView: View {
         return .empty
     }
 
+    private var isLeavingAlertsTransition: Bool {
+        guard let lastStableContentState else { return false }
+        return lastStableContentState == .alerts && contentState != .alerts && isLeavingAlertsHeightHoldActive
+    }
+
     private var usesFlexibleAlertHeight: Bool {
-        contentState == .alerts || keepsFlexibleHeightDuringTransition
+        Self.usesFlexibleAlertHeight(currentState: contentState, isLeavingAlerts: isLeavingAlertsTransition)
     }
 
     private var transitionHoldDurationNanoseconds: UInt64 {
@@ -162,6 +168,11 @@ struct ActiveAlertSummaryView: View {
         }
         .onChange(of: contentState) { oldValue, newValue in
             handleContentStateTransition(from: oldValue, to: newValue)
+        }
+        .onAppear {
+            if lastStableContentState == nil {
+                lastStableContentState = contentState
+            }
         }
         .onDisappear {
             flexibleHeightResetTask?.cancel()
@@ -275,20 +286,32 @@ struct ActiveAlertSummaryView: View {
     private func handleContentStateTransition(from oldState: ContentState, to newState: ContentState) {
         if newState == .alerts {
             flexibleHeightResetTask?.cancel()
-            keepsFlexibleHeightDuringTransition = false
+            isLeavingAlertsHeightHoldActive = false
+            lastStableContentState = .alerts
             return
         }
 
-        guard oldState == .alerts else { return }
+        guard oldState == .alerts, newState != .alerts else {
+            flexibleHeightResetTask?.cancel()
+            isLeavingAlertsHeightHoldActive = false
+            lastStableContentState = newState
+            return
+        }
 
         flexibleHeightResetTask?.cancel()
-        keepsFlexibleHeightDuringTransition = true
+        isLeavingAlertsHeightHoldActive = true
+        lastStableContentState = .alerts
         flexibleHeightResetTask = Task { @MainActor in
             try? await Task.sleep(for: .nanoseconds(transitionHoldDurationNanoseconds))
             guard Task.isCancelled == false else { return }
-            keepsFlexibleHeightDuringTransition = false
+            isLeavingAlertsHeightHoldActive = false
+            lastStableContentState = contentState
             flexibleHeightResetTask = nil
         }
+    }
+
+    private static func usesFlexibleAlertHeight(currentState: ContentState, isLeavingAlerts: Bool) -> Bool {
+        currentState == .alerts || isLeavingAlerts
     }
 }
 

@@ -712,3 +712,46 @@ Date: 2026-05-27
 ### Remaining Risks
 
 - Visual tone and spacing for the lighter-weight cold-start message region still needs final simulator eyes-on across smallest iPhone heights, dark mode, and large Dynamic Type to confirm perceived balance after lowering minimum height.
+
+## Follow-up - Issue #198 Local Alerts first-render collapse fix
+
+Status: Complete
+Date: 2026-05-27
+
+### Scope Completed
+
+- Reworked `ActiveAlertSummaryView` Local Alerts height-hold logic to remove timing fragility from `onChange`-only activation.
+- Added previous-state-based transition tracking with private state:
+  - `lastStableContentState`
+  - `isLeavingAlertsHeightHoldActive`
+- Kept the existing Task-based hold expiry window, cancellation on superseding transitions, and cancellation on disappear.
+- Added a focused helper used by min-height logic:
+  - `usesFlexibleAlertHeight(currentState:isLeavingAlerts:)`
+
+### Why This Closes The First-Render Hole
+
+- The first render after `.alerts -> .loading/.empty/.offline` now still sees `lastStableContentState == .alerts`, so the container stays flexible immediately.
+- This means the card does not briefly fall back to the compact 72pt minimum before the fade finishes.
+
+### Behavior Preserved
+
+- Alert data flow unchanged.
+- Alert provider behavior unchanged.
+- Refresh orchestration unchanged.
+- Loading timing unchanged.
+- Alert state selection/order unchanged.
+- Navigation and sheet behavior unchanged.
+- Row sorting, limits, and expansion behavior unchanged.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests test`
+- Result: Success (`** TEST SUCCEEDED **`).
+- xcresult inspected via: `xcrun xcresulttool get object --legacy --format json --path ...`
+- Non-zero test count confirmed: `testsCount = 462`.
+- xcresult path:
+  - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.27_14-34-54--0600.xcresult`
+
+### Manual Visual Inspection
+
+- Not run in this pass.
