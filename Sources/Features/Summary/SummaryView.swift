@@ -147,8 +147,11 @@ struct SummaryView: View {
             Button {
                 onOpenMapLayer(.fire)
             } label: {
-                FireWeatherRailView(level: fireRisk ?? .clear, isOffline: showsOfflineToken)
-                    .placeholder(fireRisk == nil && showsOfflineToken == false, animated: true)
+                FireWeatherRailView(
+                    level: fireRisk ?? .clear,
+                    isOffline: showsOfflineToken,
+                    showsResolvingPlaceholder: fireRisk == nil && showsOfflineToken == false
+                )
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
             .buttonStyle(
@@ -158,7 +161,10 @@ struct SummaryView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .summaryResolving(resolutionState.isResolving(.fireRisk) && showsOfflineToken == false)
+            .summaryResolving(
+                resolutionState.isResolving(.fireRisk) && fireRisk != nil && showsOfflineToken == false,
+                style: .subtle
+            )
             .accessibilityHint("Opens the fire risk map.")
             AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
                 .allowsHitTesting(!isWeatherLoading)

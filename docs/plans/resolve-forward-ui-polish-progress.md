@@ -13,7 +13,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 3 | [#197](https://github.com/justinrooks/project-arcus/issues/197) | Polish risk badge resolve-forward transitions | Complete | Added badge-local resolve placeholders and calm content crossfades while keeping risk semantics unchanged. |
 | 4 | [#198](https://github.com/justinrooks/project-arcus/issues/198) | Stabilize Local Alerts resolving and empty states | Complete | Local Alerts keeps a stable container with inner-state crossfade, clearer copy, and cleaner offline VoiceOver grouping. |
 | 5 | [#199](https://github.com/justinrooks/project-arcus/issues/199) | Smooth Current Conditions resolve-forward updates | Complete | Current Conditions now keeps cached weather identity stable while resolve-forward updates settle in place. |
-| 6 | [#200](https://github.com/justinrooks/project-arcus/issues/200) | Normalize secondary Summary resolving states | Not started | Prefer after #196. |
+| 6 | [#200](https://github.com/justinrooks/project-arcus/issues/200) | Normalize secondary Summary resolving states | Complete | Fire/Atmosphere/Outlook now use calmer shared resolve-forward language and stable unresolved placeholders. |
 | 7 | [#201](https://github.com/justinrooks/project-arcus/issues/201) | Align cold-start resolving screen with SkyAware visual direction | Not started | Independent and intentionally last. |
 
 ## Global Constraints
@@ -349,6 +349,80 @@ Date: 2026-05-27
 
 - #200 can reuse the same approach used here for secondary/status surfaces: keep stable container geometry, avoid hiding settled text just because background resolve is active, and prefer gentle de-emphasis over collapse.
 - If secondary sections need freshness copy later, keep it neutral and scoped (for example using existing per-section timestamps only) rather than broad cross-section `Updated` language.
+
+## Issue #200 - Normalize secondary Summary resolving states
+
+Status: Complete
+Date: 2026-05-27
+
+### Scope Completed
+
+- Normalized Fire Risk unresolved behavior to use an explicit, calm resolve-forward placeholder rail instead of redacting a semantic `No Fire Risk` fallback.
+- Kept Fire Risk offline treatment distinct and preserved fire semantic colors for resolved states.
+- Updated Atmospheric Conditions unresolved copy to calm resolve-forward language and removed generic loading phrasing.
+- Updated Outlook Summary unresolved/pending language to user-facing resolve-forward phrasing and removed sync-mechanic wording.
+- Kept Outlook header stable as `Outlook Summary` across pending/resolved states to reduce visual churn.
+- Added focused Outlook and Fire previews for unresolved states to support visual verification paths.
+- Aligned secondary section transitions with existing #196 pattern by keeping Fire resolve-forward host treatment subtle when data already exists.
+
+### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Badges/FireWeatherRailView.swift`
+- `Sources/Features/Badges/AtmosphereRailView.swift`
+- `Sources/Features/Summary/OutlookSummaryCard.swift`
+
+### How Secondary Resolving States Work Now
+
+- Fire Risk:
+  - offline: existing offline card remains unchanged and distinct;
+  - unresolved online: neutral resolving rail with stable height/copy;
+  - resolved: existing semantic fire-risk rail.
+- Atmospheric Conditions:
+  - unresolved online: same rail layout and metric footprint with calm resolve-forward copy;
+  - offline: existing offline card unchanged and distinct.
+- Outlook Summary:
+  - unresolved initial/pending states now describe local resolve-forward progress without provider/sync language;
+  - title remains stable while body text resolves into live summary when available.
+
+### Behavior Preserved
+
+- Fire risk logic unchanged.
+- WeatherKit fetching unchanged.
+- Outlook sync behavior unchanged.
+- Provider behavior unchanged.
+- Refresh orchestration unchanged.
+- Refresh timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Existing tap/navigation behavior unchanged.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+
+### Validation Not Run
+
+- Focused tests were not run because no deterministic helper/business logic changed.
+- Manual Simulator/previews matrix across light/dark, Reduce Motion, and larger Dynamic Type states was not run in this pass.
+
+### Deferred Work
+
+- Manual visual QA for the full requested matrix:
+  - Fire unresolved/resolved/offline
+  - Atmosphere unresolved/resolved/offline
+  - Outlook missing/loading/pending/resolved
+  - cached refresh behavior
+  - light/dark, Reduce Motion, larger Dynamic Type
+
+### Handoff Notes
+
+- For #201 cold-start resolving:
+  - Reuse this issue’s calm secondary language conventions (resolve-forward, user-facing, no sync/system phrasing).
+  - Preserve stable titles/surfaces during resolving where possible so the cold-start view feels like the same visual system, not a separate loading mode.
 
 ## Next Recommended Issue
 

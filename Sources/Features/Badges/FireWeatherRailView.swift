@@ -11,6 +11,7 @@ struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
     let level: FireRiskLevel
     var isOffline: Bool = false
+    var showsResolvingPlaceholder: Bool = false
     var label: String {
         switch level {
         case .clear: return "No"
@@ -22,6 +23,8 @@ struct FireWeatherRailView: View {
         Group {
             if isOffline {
                 offlineContent
+            } else if showsResolvingPlaceholder {
+                resolvingContent
             } else {
                 HStack(spacing: 12) {
                     Image(systemName: level.symbol)
@@ -36,6 +39,30 @@ struct FireWeatherRailView: View {
                 .railStyle(background: level.iconColor(for: colorScheme))
             }
         }
+    }
+
+    private var resolvingBackground: LinearGradient {
+        let colors: [Color] = colorScheme == .dark
+        ? [Color(red: 0.22, green: 0.22, blue: 0.24).opacity(0.92),
+           Color(red: 0.13, green: 0.13, blue: 0.15).opacity(0.92)]
+        : [Color(red: 0.94, green: 0.93, blue: 0.91),
+           Color(red: 0.90, green: 0.89, blue: 0.87)]
+
+        return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    private var resolvingContent: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "flame")
+                .formatBadgeImage()
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Fire Risk")
+                    .formatMessageText()
+                Text("Resolving local fire-weather conditions.")
+                    .formatSummaryText(for: colorScheme)
+            }
+        }
+        .railStyle(background: resolvingBackground)
     }
 
     private var offlineContent: some View {
@@ -56,6 +83,7 @@ struct FireWeatherRailView: View {
 #Preview {
     VStack {
         FireWeatherRailView(level: .clear)
+        FireWeatherRailView(level: .clear, showsResolvingPlaceholder: true)
         FireWeatherRailView(level: .elevated)
         FireWeatherRailView(level: .critical)
         FireWeatherRailView(level: .extreme)

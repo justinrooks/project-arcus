@@ -22,7 +22,7 @@ struct AtmosphereRailView: View {
 
     private var atmosphereSummary: String {
         guard let weather else {
-            return "Loading atmospheric metrics…"
+            return "Atmospheric details are still resolving."
         }
 
         let condition = weather.conditionText.isEmpty ? "Atmospheric conditions" : weather.conditionText
