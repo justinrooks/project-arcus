@@ -1125,6 +1125,37 @@ struct LocationProviderTests {
         #expect(await store.current().count == 1)
     }
 
+    @Test("persisted empty-token request coalesces with same semantic request after APNs token becomes available")
+    func snapshotPusher_coalescesPersistedRequestAcrossApnsTokenTransition() async throws {
+        let uploader = MockSnapshotUploader()
+        let context = makeContext()
+        let persisted = PersistedLocationUploadRequest(
+            source: .manualRefresh,
+            reason: .locationResolved,
+            forceUpload: false,
+            installationId: "install-abc-123",
+            requestedAt: Date(timeIntervalSince1970: 10_000),
+            isSubscribed: true,
+            authorizationState: "always",
+            apnsToken: "",
+            operation: .locationSnapshot(context: PersistedLocationContext(context))
+        )
+        let store = InMemoryUploadQueueStore(seed: [persisted])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        await pusher.enqueue(context, source: .manualRefresh, reason: .locationResolved)
+        await pusher.drainPendingUploads()
+
+        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
+    }
+
     @Test("pending queue preserves distinct semantic keys")
     func snapshotPusher_pendingQueuePreservesDistinctKeys() async throws {
         let uploader = MockSnapshotUploader()

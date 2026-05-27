@@ -666,7 +666,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
     private func coalescingKey(for request: PersistedLocationUploadRequest) -> PendingCoalescingKey {
         PendingCoalescingKey(
             installationId: request.installationId,
-            apnsToken: request.apnsToken,
             operation: request.operation.deduplicationOperation,
             isSubscribed: request.isSubscribed,
             authorizationState: request.authorizationState,
@@ -706,7 +705,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
     private struct PendingCoalescingKey: Hashable, Codable {
         let installationId: String
-        let apnsToken: String
         let operation: PendingDeduplicationOperation
         let isSubscribed: Bool
         let authorizationState: String
