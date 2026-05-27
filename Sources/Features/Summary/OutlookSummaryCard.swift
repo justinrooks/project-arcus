@@ -74,7 +74,7 @@ struct OutlookSummaryCard: View {
         }
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-        .placeholder(isLoading)
+        .placeholder(isLoading, animated: true)
         .navigationDestination(isPresented: $navigateToFull) {
             if let outlook {
                 ConvectiveOutlookDetailView(outlook: outlook)

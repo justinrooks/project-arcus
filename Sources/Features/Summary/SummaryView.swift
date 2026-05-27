@@ -148,7 +148,7 @@ struct SummaryView: View {
                 onOpenMapLayer(.fire)
             } label: {
                 FireWeatherRailView(level: fireRisk ?? .clear, isOffline: showsOfflineToken)
-                    .placeholder(fireRisk == nil && showsOfflineToken == false)
+                    .placeholder(fireRisk == nil && showsOfflineToken == false, animated: true)
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
             }
             .buttonStyle(
@@ -162,8 +162,11 @@ struct SummaryView: View {
             .accessibilityHint("Opens the fire risk map.")
             AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
                 .allowsHitTesting(!isWeatherLoading)
-                .placeholder(isWeatherLoading && showsOfflineToken == false)
-                .summaryResolving(resolutionState.isResolving(.atmosphere) && showsOfflineToken == false)
+                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                .summaryResolving(
+                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                    style: .subtle
+                )
         }
     }
 
@@ -190,7 +193,7 @@ struct SummaryView: View {
             onOpenMapLayer(.categorical)
         } label: {
             StormRiskBadgeView(level: stormRisk ?? .allClear, isOffline: showsOfflineToken)
-                .placeholder(stormRisk == nil && showsOfflineToken == false)
+                .placeholder(stormRisk == nil && showsOfflineToken == false, animated: true)
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -209,7 +212,7 @@ struct SummaryView: View {
             onOpenMapLayer(severeMapLayer)
         } label: {
             SevereWeatherBadgeView(threat: severeRisk ?? .allClear, isOffline: showsOfflineToken)
-                .placeholder(severeRisk == nil && showsOfflineToken == false)
+                .placeholder(severeRisk == nil && showsOfflineToken == false, animated: true)
                 .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -287,7 +290,7 @@ struct SummaryView: View {
                     resolutionState: resolutionState,
                     showsOfflineToken: showsOfflineToken
                 ),
-                appliesBlur: false
+                style: .subtle
             )
         }
 
@@ -297,7 +300,7 @@ struct SummaryView: View {
             isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
             onBrowseAllOutlooks: onOpenOutlooks
         )
-        .summaryResolving(resolutionState.isResolving(.outlook))
+        .summaryResolving(resolutionState.isResolving(.outlook), style: .subtle)
 
         AttributionView()
     }

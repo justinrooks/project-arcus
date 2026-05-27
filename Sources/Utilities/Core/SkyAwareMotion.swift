@@ -8,9 +8,10 @@
 import SwiftUI
 
 enum SkyAwareMotion {
-    static let resolvingBlur: CGFloat = 2.5
-    static let resolvingOpacity: Double = 0.86
-    static let placeholderOpacity: Double = 0.84
+    static let resolvingBlur: CGFloat = 1.8
+    static let resolvingOpacity: Double = 0.90
+    static let resolvingSubtleOpacity: Double = 0.94
+    static let placeholderOpacity: Double = 0.90
 
     static let ambientPulseDuration: Double = 3.0
     static let ambientDriftDuration: Double = 10.0

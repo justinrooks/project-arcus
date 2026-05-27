@@ -176,22 +176,48 @@ private extension SummaryProviderTask {
     }
 }
 
+enum SummaryResolveForwardStyle {
+    case subtle
+    case blurLift
+
+    var opacity: Double {
+        switch self {
+        case .subtle:
+            SkyAwareMotion.resolvingSubtleOpacity
+        case .blurLift:
+            SkyAwareMotion.resolvingOpacity
+        }
+    }
+
+    var blur: CGFloat {
+        switch self {
+        case .subtle:
+            0
+        case .blurLift:
+            SkyAwareMotion.resolvingBlur
+        }
+    }
+}
+
 private struct SummaryResolvingModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isResolving: Bool
-    let appliesBlur: Bool
+    let style: SummaryResolveForwardStyle
 
     func body(content: Content) -> some View {
         content
-            .blur(radius: isResolving && appliesBlur ? SkyAwareMotion.resolvingBlur : 0)
-            .opacity(isResolving ? SkyAwareMotion.resolvingOpacity : 1)
+            .blur(radius: isResolving && reduceMotion == false ? style.blur : 0)
+            .opacity(isResolving ? style.opacity : 1)
             .animation(SkyAwareMotion.resolve(reduceMotion), value: isResolving)
     }
 }
 
 extension View {
-    func summaryResolving(_ isResolving: Bool, appliesBlur: Bool = true) -> some View {
-        modifier(SummaryResolvingModifier(isResolving: isResolving, appliesBlur: appliesBlur))
+    func summaryResolving(
+        _ isResolving: Bool,
+        style: SummaryResolveForwardStyle = .blurLift
+    ) -> some View {
+        modifier(SummaryResolvingModifier(isResolving: isResolving, style: style))
     }
 }
