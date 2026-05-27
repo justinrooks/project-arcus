@@ -14,7 +14,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 4 | [#198](https://github.com/justinrooks/project-arcus/issues/198) | Stabilize Local Alerts resolving and empty states | Complete | Local Alerts keeps a stable container with inner-state crossfade, clearer copy, and cleaner offline VoiceOver grouping. |
 | 5 | [#199](https://github.com/justinrooks/project-arcus/issues/199) | Smooth Current Conditions resolve-forward updates | Complete | Current Conditions now keeps cached weather identity stable while resolve-forward updates settle in place. |
 | 6 | [#200](https://github.com/justinrooks/project-arcus/issues/200) | Normalize secondary Summary resolving states | Complete | Fire/Atmosphere/Outlook now use calmer shared resolve-forward language and stable unresolved placeholders. |
-| 7 | [#201](https://github.com/justinrooks/project-arcus/issues/201) | Align cold-start resolving screen with SkyAware visual direction | Not started | Independent and intentionally last. |
+| 7 | [#201](https://github.com/justinrooks/project-arcus/issues/201) | Align cold-start resolving screen with SkyAware visual direction | Complete | Cold-start `LoadingView` now uses full-surface atmospheric treatment, calmer hierarchy, and abstract ghost structure without behavior changes. |
 
 ## Global Constraints
 
@@ -424,9 +424,63 @@ Date: 2026-05-27
   - Reuse this issue’s calm secondary language conventions (resolve-forward, user-facing, no sync/system phrasing).
   - Preserve stable titles/surfaces during resolving where possible so the cold-start view feels like the same visual system, not a separate loading mode.
 
-## Next Recommended Issue
+## Issue #201 - Align cold-start resolving screen with SkyAware visual direction
 
-Start with [#200](https://github.com/justinrooks/project-arcus/issues/200), then [#201](https://github.com/justinrooks/project-arcus/issues/201).
+Status: Complete
+Date: 2026-05-27
+
+### Scope Completed
+
+- Reworked cold-start `LoadingView` visual treatment to a full-surface atmospheric blue base that matches the newer Summary/widget-era SkyAware visual direction.
+- Shifted loading hierarchy to typography-first messaging with calm, user-facing resolve-forward copy and no generic loading/system language.
+- Replaced the old icon-centric ghost stack with a more abstract structural ghost composition so unresolved context reads as atmospheric structure, not fake loaded data.
+- Kept motion low-frequency and atmospheric (subtle glow drift + pulse) with explicit Reduce Motion static fallback.
+- Added focused `LoadingView` previews for dark mode and Reduce Motion inspection.
+
+### Files Changed
+
+- `Sources/Features/Loading/LoadingView.swift`
+- `docs/plans/resolve-forward-ui-polish-progress.md`
+
+### Behavior Preserved
+
+- `LoadingView` appearance gating unchanged (still true empty/no-cache startup only).
+- Cached-first Summary bypass behavior unchanged.
+- Data flow unchanged.
+- Provider behavior unchanged.
+- Refresh orchestration unchanged.
+- Refresh timing unchanged.
+- Loading timing unchanged.
+- What loads when unchanged.
+- Persistence unchanged.
+- Business logic unchanged.
+- Widget code unchanged.
+
+### Validation
+
+- Ran: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Result: Success (`** BUILD SUCCEEDED **`).
+- Previews updated/available for:
+  - light mode
+  - dark mode
+  - Reduce Motion
+
+### Validation Not Run
+
+- Manual true no-cache and cached-launch simulator walkthrough was not run in this pass.
+- Manual transition walkthrough from cold-start resolving into Summary was not run in this pass.
+- Manual larger Dynamic Type simulator pass was not run in this pass.
+
+### Remaining Visual Risks / Final Polish Notes
+
+- The atmospheric ghost abstraction is intentionally less data-like; final tuning may still benefit from screenshot review on-device to ensure the blur level is neither too soft in dark mode nor too bright in light mode.
+- If future polish wants further consistency with Summary surfaces, adjust only visual constants inside `LoadingView`; do not expand full-screen loading to cached starts.
+
+### Final Handoff Summary (#195-#201)
+
+- The complete #195-#201 sequence is now implemented as scoped visual polish while preserving cached-first, resolve-forward architecture and behavior.
+- Summary resolving language, transition primitives, hero badges, local alerts, current conditions, secondary sections, and cold-start empty-state visuals now present a calmer, more coherent, typography-led system.
+- No issue in this sequence changed providers, orchestration, timing, persistence, or business logic.
 
 ## Handoff Template
 
