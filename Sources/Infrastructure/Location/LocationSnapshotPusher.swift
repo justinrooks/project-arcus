@@ -34,7 +34,8 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
         forceUpload: Bool,
-        detail: String
+        detail: String,
+        isSubscribedOverride: Bool?
     ) async
 }
 
@@ -45,7 +46,8 @@ extension LocationUploadCoordinating {
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
         forceUpload: Bool,
-        detail: String
+        detail: String,
+        isSubscribedOverride: Bool? = nil
     ) async {}
 }
 
@@ -254,7 +256,8 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
         forceUpload: Bool,
-        detail: String
+        detail: String,
+        isSubscribedOverride: Bool? = nil
     ) async {
         logger.info(
             "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"
@@ -269,7 +272,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await ensurePersistedPendingLoaded()
         let installationId = await installationIdProvider()
         let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        let isSubscribed = subscriptionStatusProvider()
+        let isSubscribed = isSubscribedOverride ?? subscriptionStatusProvider()
         let authorizationStatus = authorizationStatusProvider()
         let now = nowProvider()
         let persisted = PersistedLocationUploadRequest(

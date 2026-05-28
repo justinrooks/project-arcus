@@ -24,7 +24,8 @@ struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
         forceUpload: Bool,
-        detail: String
+        detail: String,
+        isSubscribedOverride: Bool?
     ) async {}
     func drainPendingUploads() async {}
 }
