@@ -16,36 +16,27 @@ actor FireRiskRepo {
 
     func refreshFireRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .fireRH)
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = try decoded.features.map {
-            let props = $0.properties
-            guard
-                let issued = props.ISSUE.asUTCDate(),
-                let expires = props.EXPIRE.asUTCDate(),
-                let valid = props.VALID.asUTCDate()
-            else {
-                throw SpcError.parsingError
-            }
-
-            return FireRisk(
-                product: "WindRH",
-                issued: issued,
-                expires: expires,
-                valid: valid,
-                riskLevel: props.DN,
-                label: props.LABEL2,
-                stroke: props.stroke,
-                fill: props.fill,
-                polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
-            )
-        }
+        let dtos = try parseFireRisks(from: data)
 
         try replaceCurrentAndFutureRows(with: dtos)
         logger.debug(
             "Updated \(dtos.count, privacy: .public) fire risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)"
+        )
+    }
+
+    func commitAcceptedFireBatch(
+        using client: any SpcClient,
+        anchorIssued: Date,
+        anchorValid: Date,
+        anchorExpires: Date
+    ) async throws {
+        let data = try await client.fetchGeoJsonData(for: .fireRH)
+        let dtos = try parseFireRisks(from: data)
+        try replaceRows(
+            inWindowIssued: anchorIssued,
+            valid: anchorValid,
+            expires: anchorExpires,
+            with: dtos
         )
     }
 
@@ -147,6 +138,57 @@ actor FireRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func replaceRows(
+        inWindowIssued issued: Date,
+        valid: Date,
+        expires: Date,
+        with items: [FireRisk]
+    ) throws {
+        let predicate = #Predicate<FireRisk> {
+            $0.issued == issued &&
+            $0.valid == valid &&
+            $0.expires == expires
+        }
+        let existing = try modelContext.fetch(FetchDescriptor<FireRisk>(predicate: predicate))
+        for item in existing {
+            modelContext.delete(item)
+        }
+
+        for item in items where item.issued == issued && item.valid == valid && item.expires == expires {
+            modelContext.insert(item)
+        }
+        try modelContext.save()
+    }
+
+    private func parseFireRisks(from data: Data) throws -> [FireRisk] {
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
+
+        return try decoded.features.map {
+            let props = $0.properties
+            guard
+                let issued = props.ISSUE.asUTCDate(),
+                let expires = props.EXPIRE.asUTCDate(),
+                let valid = props.VALID.asUTCDate()
+            else {
+                throw SpcError.parsingError
+            }
+
+            return FireRisk(
+                product: "WindRH",
+                issued: issued,
+                expires: expires,
+                valid: valid,
+                riskLevel: props.DN,
+                label: props.LABEL2,
+                stroke: props.stroke,
+                fill: props.fill,
+                polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
+            )
+        }
     }
 
     private func latestIssuanceSlice(from risks: [FireRisk]) -> [FireRisk] {

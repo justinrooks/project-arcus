@@ -16,14 +16,7 @@ actor SevereRiskRepo {
 
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
-
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = try decoded.features.map {
-            try makeSevereRisk(for: .hail, with: $0)
-        }
+        let dtos = try parseSevereRisks(from: data, threat: .hail)
 
         try replaceCurrentAndFutureRows(for: .hail, with: dtos)
         logger.debug(
@@ -33,14 +26,7 @@ actor SevereRiskRepo {
 
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
-
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = try decoded.features.map {
-            try makeSevereRisk(for: .wind, with: $0)
-        }
+        let dtos = try parseSevereRisks(from: data, threat: .wind)
 
         try replaceCurrentAndFutureRows(for: .wind, with: dtos)
         logger.debug(
@@ -51,18 +37,37 @@ actor SevereRiskRepo {
     /// Testable overload that allows injecting a client
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
-
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = try decoded.features.map {
-            try makeSevereRisk(for: .tornado, with: $0)
-        }
+        let dtos = try parseSevereRisks(from: data, threat: .tornado)
 
         try replaceCurrentAndFutureRows(for: .tornado, with: dtos)
         logger.debug(
             "Updated \(dtos.count, privacy: .public) tornado risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)"
+        )
+    }
+
+    func commitAcceptedSevereBatch(
+        for threat: ThreatType,
+        using client: any SpcClient,
+        anchorIssued: Date,
+        anchorValid: Date,
+        anchorExpires: Date
+    ) async throws {
+        let product: GeoJSONProduct
+        switch threat {
+        case .hail: product = .hail
+        case .wind: product = .wind
+        case .tornado: product = .tornado
+        case .unknown: return
+        }
+
+        let data = try await client.fetchGeoJsonData(for: product)
+        let dtos = try parseSevereRisks(from: data, threat: threat)
+        try replaceRows(
+            for: threat,
+            inWindowIssued: anchorIssued,
+            valid: anchorValid,
+            expires: anchorExpires,
+            with: dtos
         )
     }
 
@@ -275,6 +280,40 @@ actor SevereRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func replaceRows(
+        for type: ThreatType,
+        inWindowIssued issued: Date,
+        valid: Date,
+        expires: Date,
+        with items: [SevereRisk]
+    ) throws {
+        let predicate = #Predicate<SevereRisk> {
+            $0.type == type &&
+            $0.issued == issued &&
+            $0.valid == valid &&
+            $0.expires == expires
+        }
+        let existing = try modelContext.fetch(FetchDescriptor<SevereRisk>(predicate: predicate))
+        for item in existing {
+            modelContext.delete(item)
+        }
+
+        for item in items where item.type == type && item.issued == issued && item.valid == valid && item.expires == expires {
+            modelContext.insert(item)
+        }
+        try modelContext.save()
+    }
+
+    private func parseSevereRisks(from data: Data, threat: ThreatType) throws -> [SevereRisk] {
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
+
+        return try decoded.features.map {
+            try makeSevereRisk(for: threat, with: $0)
+        }
     }
 
     private func latestIssuanceSlicesByThreatType(from risks: [SevereRisk]) -> [SevereRisk] {

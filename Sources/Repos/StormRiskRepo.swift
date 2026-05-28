@@ -16,34 +16,26 @@ actor StormRiskRepo {
     
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
-        
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-        
-        let dtos = try decoded.features.map {
-            let props = $0.properties
-
-            guard
-                let issued = props.ISSUE.asUTCDate(),
-                let expires = props.EXPIRE.asUTCDate(),
-                let valid = props.VALID.asUTCDate()
-            else {
-                throw SpcError.parsingError
-            }
-
-            return StormRisk(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
-                             issued: issued,
-                             expires: expires,
-                             valid: valid,
-                             stroke: props.stroke,
-                             fill: props.fill,
-                             polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
-            )
-        }
+        let dtos = try parseStormRiskRows(from: data)
         
         try replaceCurrentAndFutureRows(with: dtos)
         logger.debug("Updated \(dtos.count, privacy: .public) categorical storm risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
+    }
+
+    func commitAcceptedCategoricalBatch(
+        using client: any SpcClient,
+        anchorIssued: Date,
+        anchorValid: Date,
+        anchorExpires: Date
+    ) async throws {
+        let data = try await client.fetchGeoJsonData(for: .categorical)
+        let dtos = try parseStormRiskRows(from: data)
+        try replaceRows(
+            inWindowIssued: anchorIssued,
+            valid: anchorValid,
+            expires: anchorExpires,
+            with: dtos
+        )
     }
     
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
@@ -132,6 +124,55 @@ actor StormRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func replaceRows(
+        inWindowIssued issued: Date,
+        valid: Date,
+        expires: Date,
+        with items: [StormRisk]
+    ) throws {
+        let predicate = #Predicate<StormRisk> {
+            $0.issued == issued &&
+            $0.valid == valid &&
+            $0.expires == expires
+        }
+        let existing = try modelContext.fetch(FetchDescriptor<StormRisk>(predicate: predicate))
+        for item in existing {
+            modelContext.delete(item)
+        }
+
+        for item in items where item.issued == issued && item.valid == valid && item.expires == expires {
+            modelContext.insert(item)
+        }
+        try modelContext.save()
+    }
+
+    private func parseStormRiskRows(from data: Data) throws -> [StormRisk] {
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
+
+        return try decoded.features.map {
+            let props = $0.properties
+
+            guard
+                let issued = props.ISSUE.asUTCDate(),
+                let expires = props.EXPIRE.asUTCDate(),
+                let valid = props.VALID.asUTCDate()
+            else {
+                throw SpcError.parsingError
+            }
+
+            return StormRisk(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
+                             issued: issued,
+                             expires: expires,
+                             valid: valid,
+                             stroke: props.stroke,
+                             fill: props.fill,
+                             polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
+            )
+        }
     }
 
     private func latestIssuanceSlice(from risks: [StormRisk]) -> [StormRisk] {

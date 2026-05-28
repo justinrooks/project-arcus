@@ -205,8 +205,9 @@ extension SpcProvider: SpcSyncing {
     }
 
     private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> Bool {
-        guard case .accepted = batch.validation else {
-            return false
+        guard case .accepted(let anchorIssued, let anchorValid, let anchorExpires) = batch.validation else {
+            // Rejected batches intentionally skip persistence but are not transport failures.
+            return true
         }
 
         let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
@@ -216,45 +217,79 @@ extension SpcProvider: SpcSyncing {
         let logger = self.logger
 
         let products: [(name: String, operation: @Sendable () async throws -> Void)] = [
-            ("categorical", { try await stormRiskRepo.refreshStormRisk(using: stagedClient) }),
-            ("hail", { try await severeRiskRepo.refreshHailRisk(using: stagedClient) }),
-            ("wind", { try await severeRiskRepo.refreshWindRisk(using: stagedClient) }),
-            ("tornado", { try await severeRiskRepo.refreshTornadoRisk(using: stagedClient) }),
-            ("fire", { try await fireRiskRepo.refreshFireRisk(using: stagedClient) })
+            (
+                "categorical",
+                {
+                    try await stormRiskRepo.commitAcceptedCategoricalBatch(
+                        using: stagedClient,
+                        anchorIssued: anchorIssued,
+                        anchorValid: anchorValid,
+                        anchorExpires: anchorExpires
+                    )
+                }
+            ),
+            (
+                "hail",
+                {
+                    try await severeRiskRepo.commitAcceptedSevereBatch(
+                        for: .hail,
+                        using: stagedClient,
+                        anchorIssued: anchorIssued,
+                        anchorValid: anchorValid,
+                        anchorExpires: anchorExpires
+                    )
+                }
+            ),
+            (
+                "wind",
+                {
+                    try await severeRiskRepo.commitAcceptedSevereBatch(
+                        for: .wind,
+                        using: stagedClient,
+                        anchorIssued: anchorIssued,
+                        anchorValid: anchorValid,
+                        anchorExpires: anchorExpires
+                    )
+                }
+            ),
+            (
+                "tornado",
+                {
+                    try await severeRiskRepo.commitAcceptedSevereBatch(
+                        for: .tornado,
+                        using: stagedClient,
+                        anchorIssued: anchorIssued,
+                        anchorValid: anchorValid,
+                        anchorExpires: anchorExpires
+                    )
+                }
+            ),
+            (
+                "fire",
+                {
+                    try await fireRiskRepo.commitAcceptedFireBatch(
+                        using: stagedClient,
+                        anchorIssued: anchorIssued,
+                        anchorValid: anchorValid,
+                        anchorExpires: anchorExpires
+                    )
+                }
+            )
         ]
 
-        return await withTaskGroup(of: Bool.self, returning: Bool.self) { group in
-            var pending = products[...]
-            var active = 0
-            var succeeded = true
-
-            func enqueueNext() {
-                guard let next = pending.popFirst() else { return }
-                active += 1
-                group.addTask {
-                    await Self.runMapProductSync(named: next.name, logger: logger, operation: next.operation)
-                }
+        var succeeded = true
+        for product in products {
+            if Task.isCancelled {
+                return false
             }
-
-            for _ in 0..<min(Self.mapSyncMaxConcurrentProducts, products.count) {
-                enqueueNext()
-            }
-
-            while active > 0 {
-                guard let completed = await group.next() else { break }
-                active -= 1
-                succeeded = succeeded && completed
-
-                if Task.isCancelled {
-                    group.cancelAll()
-                    return false
-                }
-
-                enqueueNext()
-            }
-
-            return succeeded
+            let completed = await Self.runMapProductSync(
+                named: product.name,
+                logger: logger,
+                operation: product.operation
+            )
+            succeeded = succeeded && completed
         }
+        return succeeded
     }
 
     private static func fetchStagedMapProduct(

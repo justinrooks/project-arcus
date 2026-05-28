@@ -550,11 +550,11 @@ struct SpcProviderSyncMapProductsTests {
         await provider.syncMapProducts()
 
         let activeStorm = try await stormRepo.active(
-            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            asOf: Date(),
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         let activeTornado = try await severeRepo.active(
-            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            asOf: Date(),
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         #expect(activeStorm == .marginal)
@@ -581,7 +581,7 @@ struct SpcProviderSyncMapProductsTests {
         await provider.syncMapProducts()
 
         let active = try await stormRepo.active(
-            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            asOf: Date(),
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         #expect(active == .marginal)
@@ -608,6 +608,77 @@ struct SpcProviderSyncMapProductsTests {
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         #expect(active == .allClear)
+    }
+
+    @Test("Accepted coherent batch replaces only rows in its validity window")
+    func acceptedBatchReplacesOnlyAcceptedWindowRows() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let futureIssue = spcTimestamp(now.addingTimeInterval(12 * 3600))
+        let futureValid = spcTimestamp(now.addingTimeInterval(12 * 3600))
+        let futureExpire = spcTimestamp(now.addingTimeInterval(20 * 3600))
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    label: "MRGL",
+                    label2: "Marginal Risk",
+                    dn: 2,
+                    issue: acceptedIssue,
+                    valid: acceptedValid,
+                    expire: acceptedExpire
+                )
+            )
+        )
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    label: "SLGT",
+                    label2: "Slight Risk",
+                    dn: 3,
+                    issue: futureIssue,
+                    valid: futureValid,
+                    expire: futureExpire
+                )
+            )
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder().decode(
+                        GeoJSONFeatureCollection.self,
+                        from: makeCategoricalData(
+                            label: "ENH",
+                            label2: "Enhanced Risk",
+                            dn: 4,
+                            issue: acceptedIssue,
+                            valid: acceptedValid,
+                            expire: acceptedExpire
+                        )
+                    ).features
+                )
+            )
+        )
+
+        await provider.syncMapProducts()
+
+        let acceptedActive = try await stormRepo.active(
+            asOf: now.addingTimeInterval(30 * 60),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        let futureActive = try await stormRepo.active(
+            asOf: now.addingTimeInterval(13 * 3600),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+
+        #expect(acceptedActive == .enhanced)
+        #expect(futureActive == .slight)
     }
 
     @Test("Malformed fire metadata in staged batch does not clear active fire risk")
@@ -753,6 +824,9 @@ private func emptyGeoJSONData() -> Data {
 }
 
 private func makeCategoricalData(
+    label: String = "MRGL",
+    label2: String = "Marginal Risk",
+    dn: Int = 2,
     issue: String? = nil,
     valid: String? = nil,
     expire: String? = nil
@@ -764,12 +838,12 @@ private func makeCategoricalData(
 
     let feature = makeFeature(
         properties: makeProperties(
-            label: "MRGL",
-            label2: "Marginal Risk",
+            label: label,
+            label2: label2,
             issue: issueTimestamp,
             valid: validTimestamp,
             expire: expireTimestamp,
-            dn: 2
+            dn: dn
         ),
         geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
     )

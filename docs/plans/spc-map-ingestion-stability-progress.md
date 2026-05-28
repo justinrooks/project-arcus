@@ -12,7 +12,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 1 | [#205](https://github.com/justinrooks/project-arcus/issues/205) | Add regression coverage for transient map-product clears | In Progress | Regression tests added; expected failures document missing guardrails pending #206-#209 production fixes. |
 | 2 | [#206](https://github.com/justinrooks/project-arcus/issues/206) | Introduce staged SPC map-product batch validation | In Progress | Staged candidate model and categorical-anchored validation wired in provider sync; transactional commit still deferred to #208. |
 | 3 | [#207](https://github.com/justinrooks/project-arcus/issues/207) | Remove permissive SPC GeoJSON date fallbacks | In Progress | GeoJSON repo mapping now fails closed on malformed `ISSUE`/`VALID`/`EXPIRE`; transactional preservation still deferred to #208. |
-| 4 | [#208](https://github.com/justinrooks/project-arcus/issues/208) | Commit SPC map products transactionally by validity window | Planned | Accepted batches mutate rows; rejected batches preserve existing state. |
+| 4 | [#208](https://github.com/justinrooks/project-arcus/issues/208) | Commit SPC map products transactionally by validity window | In Progress | Provider now commits accepted map batches by accepted anchor window and preserves rows on rejected candidates. |
 | 5 | [#209](https://github.com/justinrooks/project-arcus/issues/209) | Preserve projections and widgets when map sync is rejected | Planned | Prevent rejected syncs from becoming all-clear app/widget projections. |
 | 6 | [#210](https://github.com/justinrooks/project-arcus/issues/210) | Add observability for accepted and rejected SPC batches | Planned | Add low-noise diagnostics without sensitive location data. |
 
@@ -184,3 +184,40 @@ Important files:
     - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
 - Handoff notes for #208:
   - Remaining failing regression cases still require transactional commit-by-window behavior to preserve existing active rows when candidate batches are rejected at provider stage.
+
+### Issue #208 — Commit SPC Map Products Transactionally by Validity Window
+
+- Status: In progress (core transactional window-scoped commit path implemented; one existing cooldown regression test remains failing, and projection/widget preservation remains #209 scope).
+- Files changed:
+  - `Sources/Providers/SPC/SpcProvider+Syncing.swift`
+  - `Sources/Repos/StormRiskRepo.swift`
+  - `Sources/Repos/SevereRiskRepo.swift`
+  - `Sources/Repos/FireRiskRepo.swift`
+  - `Tests/UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift`
+  - `docs/plans/spc-map-ingestion-stability-progress.md`
+- Transactional commit behavior implemented:
+  - Provider map sync now stages and validates first, then commits accepted map products via explicit repo batch commit methods anchored to accepted categorical `ISSUE/VALID/EXPIRE`.
+  - Rejected candidate batches now skip persistence mutation entirely and preserve existing active rows.
+  - Accepted severe products can be empty and now clear only that threat within the accepted anchor window (legitimate threat removal/all-clear), not all current/future rows.
+  - Repo writes for accepted batches are scoped to anchor window equality (`issued`, `valid`, `expires`) and do not delete unrelated future windows.
+  - Existing `refresh*` methods were retained for existing callers/tests and still route through legacy replacement behavior outside the accepted-batch path.
+- Tests added/updated:
+  - `SpcProviderSyncMapProductsTests.acceptedBatchReplacesOnlyAcceptedWindowRows` added to prove accepted-window replacement does not clear unrelated future windows.
+  - Existing staged regression tests updated to use active-time-aligned timestamps for current-date execution.
+- Behavior intentionally preserved:
+  - Staged validation anchor and rejection semantics from #206/#207 remain intact.
+  - Empty severe products remain allowed in accepted coherent batches.
+  - UI/widget projection behavior was not changed in this issue (deferred to #209).
+- Validation run:
+  - Ran:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests -only-testing:SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests/malformedTornadoDatesFailClosed`
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  - Focused test result:
+    - `SpcProviderSyncMapProductsTests` now passes all transactional/rejection/accepted-window cases except `backToBackCallsAreThrottled`.
+    - `SevereRiskRepoActiveSelectionTests` passed.
+    - `.xcresult` (latest focused): `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.28_14-22-35--0600.xcresult`
+  - Build result: passed.
+- Remaining handoff notes for #209:
+  - `HomeRefreshPipelineTests.slowProductRefresh_unavailableMapSyncDoesNotOverwriteProjectionWithAllClear` still fails and remains the projection/widget-preservation follow-on.
+  - Ensure rejected/unknown slow-product sync outcome is surfaced to projection persistence so rejected map sync cannot advance all-clear app/widget snapshots.
