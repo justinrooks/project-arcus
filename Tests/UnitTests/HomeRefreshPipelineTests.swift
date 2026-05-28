@@ -523,6 +523,58 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
     }
 
+    @Test("slow-product refresh must not overwrite known-good projection as all-clear when map sync is unavailable")
+    func slowProductRefresh_unavailableMapSyncDoesNotOverwriteProjectionWithAllClear() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let previousTimestamp = Date(timeIntervalSince1970: 200)
+        let widgetRecorder = RecordingWidgetSnapshotRefresher()
+
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: previousTimestamp
+        )
+
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: widgetRecorder
+            )
+        )
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(projection.stormRisk == .slight)
+        #expect(projection.severeRisk == .tornado(probability: 0.15))
+        #expect(projection.fireRisk == .critical)
+        #expect(projection.lastSlowProductsLoadAt == previousTimestamp)
+        #expect(widgetRecorder.refreshCallCount() == 0)
+    }
+
     @Test("refresh failures preserve the previously resolved location scope key")
     func refreshFailure_preservesPreviousResolvedLocationScopeKey() async {
         let originalContext = makeContext(timestamp: 100)
@@ -1070,6 +1122,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let outlookValues: [ConvectiveOutlookDTO]
     private let locationReadError: Error?
     private let syncMesoscaleGate: AsyncGate?
+    private let stormRiskValue: StormRiskLevel
+    private let severeRiskValue: SevereWeatherThreat
+    private let fireRiskValue: FireRiskLevel
 
     private var syncMapProductsCalls = 0
     private var syncConvectiveOutlooksCalls = 0
@@ -1084,12 +1139,18 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         activeMesos: [MdDTO] = [MD.sampleDiscussionDTOs[0]],
         outlooks: [ConvectiveOutlookDTO] = [],
         locationReadError: Error? = nil,
-        syncMesoscaleGate: AsyncGate? = nil
+        syncMesoscaleGate: AsyncGate? = nil,
+        stormRiskValue: StormRiskLevel = .enhanced,
+        severeRiskValue: SevereWeatherThreat = .hail(probability: 0.30),
+        fireRiskValue: FireRiskLevel = .elevated
     ) {
         self.activeMesos = activeMesos
         self.outlookValues = outlooks
         self.locationReadError = locationReadError
         self.syncMesoscaleGate = syncMesoscaleGate
+        self.stormRiskValue = stormRiskValue
+        self.severeRiskValue = severeRiskValue
+        self.fireRiskValue = fireRiskValue
     }
 
     func sync() async {}
@@ -1116,7 +1177,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         if let locationReadError {
             throw locationReadError
         }
-        return .enhanced
+        return stormRiskValue
     }
 
     func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat {
@@ -1124,7 +1185,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         if let locationReadError {
             throw locationReadError
         }
-        return .hail(probability: 0.30)
+        return severeRiskValue
     }
 
     func getActiveMesos(at time: Date, for point: CLLocationCoordinate2D) async throws -> [MdDTO] {
@@ -1140,7 +1201,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         if let locationReadError {
             throw locationReadError
         }
-        return .elevated
+        return fireRiskValue
     }
 
     func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
@@ -1161,6 +1222,23 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     func fireRiskQueryCount() -> Int { fireRiskQueries }
     func activeMesosQueryCount() -> Int { activeMesosQueries }
     func outlookQueryCount() -> Int { outlookQueries }
+}
+
+private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, WidgetSnapshotRefreshing {
+    private let lock = NSLock()
+    private var calls = 0
+
+    func refresh(scope: WidgetSnapshotChangeScope, input: WidgetSnapshotRefreshInput) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        calls += 1
+    }
+
+    func refreshCallCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
 }
 
 private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {

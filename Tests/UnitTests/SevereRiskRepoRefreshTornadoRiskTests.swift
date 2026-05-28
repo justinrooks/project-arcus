@@ -2,6 +2,7 @@ import Testing
 @testable import SkyAware
 import SwiftData
 import Foundation
+import CoreLocation
 
 private struct MockClient: SpcClient {
     enum Mode {
@@ -67,8 +68,8 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         #expect(count == 0)
     }
 
-    @Test("Empty feature collection clears existing active tornado risk")
-    func emptyCollectionClearsExistingActiveTornadoRisk() async throws {
+    @Test("Transient empty feature collection must not clear existing active tornado risk")
+    func transientEmptyCollectionDoesNotClearExistingActiveTornadoRisk() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
         try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
         let repo = SevereRiskRepo(modelContainer: container)
@@ -98,8 +99,41 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         let mock = MockClient(mode: .success(data))
 
         try await repo.refreshTornadoRisk(using: mock)
-        let count = try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>())
-        #expect(count == 0)
+        let active = try await repo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .tornado(probability: 0.02))
+    }
+
+    @Test("Coherent newer tornado all-clear transition is still allowed")
+    func coherentNewerTornadoAllClearTransitionIsAllowed() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        let priorPolygon = makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+        let priorProps = makeProperties(
+            label: "0.02",
+            label2: "2% Tornado Risk",
+            issue: "202705011200",
+            valid: "202705011200",
+            expire: "202705011500",
+            dn: 2
+        )
+        let priorData = try JSONEncoder().encode(
+            makeFeatureCollection(features: [makeFeature(properties: priorProps, geometry: priorPolygon)])
+        )
+        try await repo.refreshTornadoRisk(using: MockClient(mode: .success(priorData)))
+
+        let coherentClearData = try JSONEncoder().encode(makeFeatureCollection(features: []))
+        try await repo.refreshTornadoRisk(using: MockClient(mode: .success(coherentClearData)))
+
+        let active = try await repo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 30),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .allClear)
     }
 
     @Test("Inserts models for each feature returned")
@@ -187,6 +221,87 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         #expect(shapes.count == 1)
         #expect(shapes.first?.label == "CIG1")
         #expect(shapes.first?.intensityLevel == 1)
+    }
+}
+
+private struct CategoricalMockClient: SpcClient {
+    let categoricalData: Data
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        throw SpcError.missingRssData
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        guard product == .categorical else {
+            throw SpcError.missingGeoJsonData
+        }
+        return categoricalData
+    }
+}
+
+@Suite("StormRiskRepo.refreshStormRisk", .serialized)
+struct StormRiskRepoRefreshCategoricalRiskTests {
+    @Test("Transient empty categorical must not clear an existing active categorical risk")
+    func transientEmptyCategoricalDoesNotClearExistingActiveRisk() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
+        try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
+        let repo = StormRiskRepo(modelContainer: container)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                StormRisk(
+                    riskLevel: .marginal,
+                    issued: makeUTCDate(2027, 5, 1, 12, 0),
+                    expires: makeUTCDate(2027, 5, 1, 20, 0),
+                    valid: makeUTCDate(2027, 5, 1, 12, 0),
+                    stroke: "#AA0000",
+                    fill: "#110000",
+                    polygons: []
+                )
+            )
+            try context.save()
+        }
+
+        let emptyBatch = makeFeatureCollection(features: [])
+        let data = try JSONEncoder().encode(emptyBatch)
+        try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: data))
+
+        let active = try await repo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("Coherent newer categorical all-clear transition is still allowed")
+    func coherentNewerCategoricalAllClearTransitionIsAllowed() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
+        try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
+        let repo = StormRiskRepo(modelContainer: container)
+
+        let priorFeature = makeFeature(
+            properties: makeProperties(
+                label: "MRGL",
+                label2: "Marginal Risk",
+                issue: "202705011200",
+                valid: "202705011200",
+                expire: "202705011500",
+                dn: 2
+            ),
+            geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+        )
+        let priorData = try JSONEncoder().encode(makeFeatureCollection(features: [priorFeature]))
+        try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: priorData))
+
+        let coherentClearData = try JSONEncoder().encode(makeFeatureCollection(features: []))
+        try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: coherentClearData))
+
+        let active = try await repo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 30),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .allClear)
     }
 }
 
