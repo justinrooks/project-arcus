@@ -14,7 +14,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 3 | [#207](https://github.com/justinrooks/project-arcus/issues/207) | Remove permissive SPC GeoJSON date fallbacks | In Progress | GeoJSON repo mapping now fails closed on malformed `ISSUE`/`VALID`/`EXPIRE`; transactional preservation still deferred to #208. |
 | 4 | [#208](https://github.com/justinrooks/project-arcus/issues/208) | Commit SPC map products transactionally by validity window | In Progress | Provider now commits accepted map batches by accepted anchor window and preserves rows on rejected candidates. |
 | 5 | [#209](https://github.com/justinrooks/project-arcus/issues/209) | Preserve projections and widgets when map sync is rejected | In Progress | Ingestion now gates slow-product projection/widget writes on explicit map sync acceptance outcome. |
-| 6 | [#210](https://github.com/justinrooks/project-arcus/issues/210) | Add observability for accepted and rejected SPC batches | Planned | Add low-noise diagnostics without sensitive location data. |
+| 6 | [#210](https://github.com/justinrooks/project-arcus/issues/210) | Add observability for accepted and rejected SPC batches | In Progress | Batch-level and product-level SPC map-sync decision logs added with projection/widget preservation outcomes and privacy-safe fields. |
 
 ## Global Constraints
 
@@ -265,3 +265,41 @@ Important files:
 - Handoff notes for #210 observability:
   - Emit low-noise diagnostics for map sync outcomes consumed by home ingestion (`accepted`/`rejected`/`skipped`/`failed`) and whether projection/widget risk writes were skipped.
   - Include rejection reason and accepted window metadata from staged batch validation without logging location-sensitive payloads.
+
+### Issue #210 — Add Observability for Accepted and Rejected SPC Batches
+
+- Status: In progress (observability implemented with no ingestion-behavior changes).
+- Files changed:
+  - `Sources/Providers/SPC/SpcProvider+Syncing.swift`
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`
+  - `docs/plans/spc-map-ingestion-stability-progress.md`
+- Logs/diagnostics added:
+  - Product-level staged diagnostics in SPC map sync:
+    - `spc_map_product_stage`
+    - Fields: `product`, `result` (`accepted`/`rejected`/`missing`), `reason`, `featureCount`, `issue`, `valid`, `expire`.
+  - Batch validation summary:
+    - `spc_map_batch_validation`
+    - Fields: `result` (`accepted`/`rejected`), `reason`, `productCount`, and accepted anchor window fields (`anchorIssued`, `anchorValid`, `anchorExpires`) when accepted.
+  - Persistence decision summary:
+    - `spc_map_batch_persistence`
+    - Fields: `result` (`skipped`/`committed`/`partial_failure`), `reason` (for skipped/rejected), `committed`, and accepted anchor window fields when applicable.
+  - Projection/widget preservation/update decision in home ingestion:
+    - `spc_map_persistence_projection_decision`
+    - Fields: `mapSyncOutcome` (`accepted`/`rejected`/`skipped`/`failed`/`none`), `reason`, `projection` (`updated`/`preserved`), `widgets` (`updated`/`preserved`).
+- Behavior intentionally preserved:
+  - Staged validation acceptance/rejection semantics unchanged.
+  - Transactional persistence semantics unchanged.
+  - Projection/widget gating semantics from #209 unchanged; only explicit decision logging added.
+  - No diagnostics UI expansion.
+- Privacy guardrails preserved:
+  - No user coordinates, placemark summaries, alert payloads, or location/alert sensitive fields added to logs.
+  - Logged fields are product metadata, validity windows, feature counts, and rejection/decision reasons only.
+- Validation run:
+  - Tests passed:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeRefreshPipelineTests -only-testing:SkyAwareTests/BackgroundOrchestratorCadenceTests -only-testing:SkyAwareTests/HomeProjectionStoreTests -only-testing:SkyAwareTests/WidgetSnapshotRefreshCoordinatorTests -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests -only-testing:SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`
+  - Result bundle:
+    - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.28_14-55-13--0600.xcresult`
+  - Build passed:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Remaining risks / follow-up recommendations:
+  - Logs are intentionally compact and string-based for Console grepability; if future triage requires stronger machine parsing, consider adding a narrow typed diagnostics sink without changing ingestion flow.

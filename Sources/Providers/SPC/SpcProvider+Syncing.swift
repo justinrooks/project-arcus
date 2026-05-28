@@ -205,17 +205,27 @@ extension SpcProvider: SpcSyncing {
         }
 
         let validation = validateStagedMapBatch(stagedProducts, now: now)
+        logStagedMapBatchProducts(stagedProducts)
         switch validation {
-        case .accepted:
-            logger.debug("SPC map candidate batch accepted")
+        case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
+            logger.info(
+                "spc_map_batch_validation result=accepted reason=none productCount=\(stagedProducts.count, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
+            )
         case .rejected(let reason):
-            logger.warning("SPC map candidate batch rejected reason=\(reason, privacy: .public)")
+            logger.warning(
+                "spc_map_batch_validation result=rejected reason=\(reason, privacy: .public) productCount=\(stagedProducts.count, privacy: .public)"
+            )
         }
         return StagedSpcMapProductBatch(products: stagedProducts, validation: validation)
     }
 
     private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> Bool {
         guard case .accepted(let anchorIssued, let anchorValid, let anchorExpires) = batch.validation else {
+            if case let .rejected(reason) = batch.validation {
+                logger.info(
+                    "spc_map_batch_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
+                )
+            }
             // Rejected batches intentionally skip persistence but are not transport failures.
             return true
         }
@@ -299,6 +309,9 @@ extension SpcProvider: SpcSyncing {
             )
             succeeded = succeeded && completed
         }
+        logger.info(
+            "spc_map_batch_persistence result=\(succeeded ? "committed" : "partial_failure", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
+        )
         return succeeded
     }
 
@@ -423,6 +436,30 @@ extension SpcProvider: SpcSyncing {
         }
 
         return .accepted
+    }
+
+    private func logStagedMapBatchProducts(_ stagedProducts: [GeoJSONProduct: StagedSpcMapProduct]) {
+        for product in Self.mapProducts {
+            guard let staged = stagedProducts[product] else {
+                logger.warning("spc_map_product_stage product=\(product.rawValue, privacy: .public) result=missing")
+                continue
+            }
+            switch staged.status {
+            case .accepted:
+                logger.info(
+                    "spc_map_product_stage product=\(product.rawValue, privacy: .public) result=accepted reason=none featureCount=\(staged.featureCount, privacy: .public) issue=\(Self.isoTimestamp(staged.issued), privacy: .public) valid=\(Self.isoTimestamp(staged.valid), privacy: .public) expire=\(Self.isoTimestamp(staged.expires), privacy: .public)"
+                )
+            case .rejected(let reason):
+                logger.warning(
+                    "spc_map_product_stage product=\(product.rawValue, privacy: .public) result=rejected reason=\(reason, privacy: .public) featureCount=\(staged.featureCount, privacy: .public) issue=\(Self.isoTimestamp(staged.issued), privacy: .public) valid=\(Self.isoTimestamp(staged.valid), privacy: .public) expire=\(Self.isoTimestamp(staged.expires), privacy: .public)"
+                )
+            }
+        }
+    }
+
+    private static func isoTimestamp(_ date: Date?) -> String {
+        guard let date else { return "none" }
+        return date.ISO8601Format()
     }
 }
 

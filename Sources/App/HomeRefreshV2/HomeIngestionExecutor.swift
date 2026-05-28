@@ -461,22 +461,83 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     ) -> SlowProductPersistenceDecision {
         let shouldUpdateSlowProjection = plan.lanes.contains(.slowProducts) || plan.isLocationBearing
         guard shouldUpdateSlowProjection else {
-            return .init(shouldUpdateProjection: false, shouldRefreshRiskWidgets: true)
+            let decision = SlowProductPersistenceDecision(
+                shouldUpdateProjection: false,
+                shouldRefreshRiskWidgets: true
+            )
+            logSlowProductPersistenceDecision(
+                mapSyncOutcome: mapSyncOutcome,
+                decision: decision,
+                reason: "lane_not_requested"
+            )
+            return decision
         }
 
         guard plan.lanes.contains(.slowProducts) else {
-            return .init(shouldUpdateProjection: true, shouldRefreshRiskWidgets: true)
+            let decision = SlowProductPersistenceDecision(
+                shouldUpdateProjection: true,
+                shouldRefreshRiskWidgets: true
+            )
+            logSlowProductPersistenceDecision(
+                mapSyncOutcome: mapSyncOutcome,
+                decision: decision,
+                reason: "location_only_refresh"
+            )
+            return decision
         }
 
         guard let mapSyncOutcome else {
-            return .init(shouldUpdateProjection: true, shouldRefreshRiskWidgets: true)
+            let decision = SlowProductPersistenceDecision(
+                shouldUpdateProjection: true,
+                shouldRefreshRiskWidgets: true
+            )
+            logSlowProductPersistenceDecision(
+                mapSyncOutcome: nil,
+                decision: decision,
+                reason: "sync_outcome_unavailable"
+            )
+            return decision
         }
 
+        let decision: SlowProductPersistenceDecision
+        let reason: String
         switch mapSyncOutcome {
         case .accepted, .skipped:
-            return .init(shouldUpdateProjection: true, shouldRefreshRiskWidgets: true)
+            decision = .init(shouldUpdateProjection: true, shouldRefreshRiskWidgets: true)
+            reason = mapSyncOutcome == .accepted ? "map_sync_accepted" : "map_sync_skipped"
         case .rejected, .failed:
-            return .init(shouldUpdateProjection: false, shouldRefreshRiskWidgets: false)
+            decision = .init(shouldUpdateProjection: false, shouldRefreshRiskWidgets: false)
+            reason = mapSyncOutcome == .rejected ? "map_sync_rejected" : "map_sync_failed"
+        }
+        logSlowProductPersistenceDecision(
+            mapSyncOutcome: mapSyncOutcome,
+            decision: decision,
+            reason: reason
+        )
+        return decision
+    }
+
+    private func logSlowProductPersistenceDecision(
+        mapSyncOutcome: SpcMapSyncOutcome?,
+        decision: SlowProductPersistenceDecision,
+        reason: String
+    ) {
+        let outcome = mapSyncOutcome.map(Self.logName(for:)) ?? "none"
+        environment.logger.info(
+            "spc_map_persistence_projection_decision mapSyncOutcome=\(outcome, privacy: .public) reason=\(reason, privacy: .public) projection=\(decision.shouldUpdateProjection ? "updated" : "preserved", privacy: .public) widgets=\(decision.shouldRefreshRiskWidgets ? "updated" : "preserved", privacy: .public)"
+        )
+    }
+
+    private static func logName(for outcome: SpcMapSyncOutcome) -> String {
+        switch outcome {
+        case .accepted:
+            return "accepted"
+        case .rejected:
+            return "rejected"
+        case .skipped:
+            return "skipped"
+        case .failed:
+            return "failed"
         }
     }
 }
