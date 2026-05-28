@@ -543,6 +543,7 @@ struct HomeRefreshPipelineTests {
         let spc = FakeSpcProvider(
             activeMesos: [],
             outlooks: sampleOutlooks(),
+            mapSyncOutcome: .rejected,
             stormRiskValue: .allClear,
             severeRiskValue: .allClear,
             fireRiskValue: .clear
@@ -573,6 +574,59 @@ struct HomeRefreshPipelineTests {
         #expect(projection.fireRisk == .critical)
         #expect(projection.lastSlowProductsLoadAt == previousTimestamp)
         #expect(widgetRecorder.refreshCallCount() == 0)
+    }
+
+    @Test("accepted slow-product all-clear updates projection and refreshes widgets")
+    func slowProductRefresh_acceptedAllClearUpdatesProjectionAndWidgets() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let previousTimestamp = Date(timeIntervalSince1970: 200)
+        let widgetRecorder = RecordingWidgetSnapshotRefresher()
+
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: previousTimestamp
+        )
+
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: .accepted,
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: widgetRecorder
+            )
+        )
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(projection.stormRisk == .allClear)
+        #expect(projection.severeRisk == .allClear)
+        #expect(projection.fireRisk == .clear)
+        #expect(projection.lastSlowProductsLoadAt != previousTimestamp)
+        #expect(widgetRecorder.refreshCallCount() == 1)
     }
 
     @Test("refresh failures preserve the previously resolved location scope key")
@@ -1122,6 +1176,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let outlookValues: [ConvectiveOutlookDTO]
     private let locationReadError: Error?
     private let syncMesoscaleGate: AsyncGate?
+    private let mapSyncOutcome: SpcMapSyncOutcome
     private let stormRiskValue: StormRiskLevel
     private let severeRiskValue: SevereWeatherThreat
     private let fireRiskValue: FireRiskLevel
@@ -1140,6 +1195,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         outlooks: [ConvectiveOutlookDTO] = [],
         locationReadError: Error? = nil,
         syncMesoscaleGate: AsyncGate? = nil,
+        mapSyncOutcome: SpcMapSyncOutcome = .accepted,
         stormRiskValue: StormRiskLevel = .enhanced,
         severeRiskValue: SevereWeatherThreat = .hail(probability: 0.30),
         fireRiskValue: FireRiskLevel = .elevated
@@ -1148,6 +1204,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.outlookValues = outlooks
         self.locationReadError = locationReadError
         self.syncMesoscaleGate = syncMesoscaleGate
+        self.mapSyncOutcome = mapSyncOutcome
         self.stormRiskValue = stormRiskValue
         self.severeRiskValue = severeRiskValue
         self.fireRiskValue = fireRiskValue
@@ -1157,6 +1214,11 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func syncMapProducts() async {
         syncMapProductsCalls += 1
+    }
+
+    func syncMapProductsOutcome() async -> SpcMapSyncOutcome {
+        syncMapProductsCalls += 1
+        return mapSyncOutcome
     }
 
     func syncTextProducts() async {}

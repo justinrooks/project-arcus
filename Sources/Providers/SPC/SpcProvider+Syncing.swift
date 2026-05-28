@@ -24,15 +24,18 @@ extension SpcProvider: SpcSyncing {
     }
     
     func syncMapProducts() async {
+        _ = await syncMapProductsOutcome()
+    }
+
+    func syncMapProductsOutcome() async -> SpcMapSyncOutcome {
         if let inFlight = mapSyncTask {
             logger.debug("SPC map sync already in-flight; joining existing task")
-            await inFlight.value
-            return
+            return await inFlight.value
         }
 
         if shouldSkipMapSync() {
             logger.debug("Skipping SPC map sync because a recent run already completed")
-            return
+            return .skipped
         }
 
         logger.info("SPC map sync started")
@@ -40,16 +43,17 @@ extension SpcProvider: SpcSyncing {
             await runMapProductsSync()
         }
         mapSyncTask = task
-        await task.value
+        return await task.value
     }
 
-    private func runMapProductsSync() async {
+    private func runMapProductsSync() async -> SpcMapSyncOutcome {
         let runInterval = signposter.beginInterval("Spc Sync Map Products")
         var completedWithoutFailures = true
+        var mapSyncOutcome: SpcMapSyncOutcome = .failed
         defer {
             signposter.endInterval("Background Run", runInterval)
             mapSyncTask = nil
-            if !Task.isCancelled && completedWithoutFailures {
+            if !Task.isCancelled && mapSyncOutcome != .failed {
                 lastMapSyncFinishedAt = Date()
             }
             logger.info(
@@ -57,12 +61,18 @@ extension SpcProvider: SpcSyncing {
             )
         }
 
-        if Task.isCancelled { return }
+        if Task.isCancelled { return .failed }
 
         let stagedBatch = await stageMapProducts(now: Date())
         let allSucceeded = await persistStagedMapProducts(stagedBatch)
 
         completedWithoutFailures = allSucceeded && completedWithoutFailures
+        if case .rejected = stagedBatch.validation {
+            mapSyncOutcome = .rejected
+        } else {
+            mapSyncOutcome = allSucceeded ? .accepted : .failed
+        }
+        return mapSyncOutcome
     }
     
     func syncTextProducts() async {

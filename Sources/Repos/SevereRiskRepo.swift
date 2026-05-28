@@ -17,6 +17,10 @@ actor SevereRiskRepo {
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
         let dtos = try parseSevereRisks(from: data, threat: .hail)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping hail risk replacement because parsed feature collection is empty")
+            return
+        }
 
         try replaceCurrentAndFutureRows(for: .hail, with: dtos)
         logger.debug(
@@ -27,6 +31,10 @@ actor SevereRiskRepo {
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
         let dtos = try parseSevereRisks(from: data, threat: .wind)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping wind risk replacement because parsed feature collection is empty")
+            return
+        }
 
         try replaceCurrentAndFutureRows(for: .wind, with: dtos)
         logger.debug(
@@ -38,6 +46,10 @@ actor SevereRiskRepo {
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
         let dtos = try parseSevereRisks(from: data, threat: .tornado)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping tornado risk replacement because parsed feature collection is empty")
+            return
+        }
 
         try replaceCurrentAndFutureRows(for: .tornado, with: dtos)
         logger.debug(

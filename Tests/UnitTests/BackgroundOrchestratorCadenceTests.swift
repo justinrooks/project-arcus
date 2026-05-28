@@ -451,6 +451,11 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         syncMapProductsCalls += 1
         syncExecutionModeValues.append(HTTPExecutionMode.current)
     }
+    func syncMapProductsOutcome() async -> SpcMapSyncOutcome {
+        syncMapProductsCalls += 1
+        syncExecutionModeValues.append(HTTPExecutionMode.current)
+        return .accepted
+    }
     func syncTextProducts() async {}
     func syncConvectiveOutlooks() async {
         syncConvectiveOutlooksCalls += 1
