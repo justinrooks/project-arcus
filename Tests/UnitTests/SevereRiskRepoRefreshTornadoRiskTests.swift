@@ -416,6 +416,82 @@ struct SpcProviderSyncMapProductsTests {
         let calls = await client.geoJsonCallCount()
         #expect(calls == 10)
     }
+
+    @Test("Rejected empty categorical candidate preserves existing persisted risks")
+    func rejectedEmptyCategoricalPreservesExistingPersistedRisks() async throws {
+        let container = try await makeMapSyncContainer()
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: makeCoherentBatch(categoricalFeatures: []))
+        )
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let severeRepo = SevereRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+        try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+
+        await provider.syncMapProducts()
+
+        let activeStorm = try await stormRepo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        let activeTornado = try await severeRepo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(activeStorm == .marginal)
+        #expect(activeTornado == .tornado(probability: 0.02))
+    }
+
+    @Test("Future-only categorical candidate does not replace active projection window")
+    func futureOnlyCategoricalDoesNotReplaceActiveProjectionWindow() async throws {
+        let container = try await makeMapSyncContainer()
+        let futureCategoricalData = makeCategoricalData(issue: "209905011200", valid: "209905011200", expire: "209905012000")
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder()
+                        .decode(GeoJSONFeatureCollection.self, from: futureCategoricalData).features
+                )
+            )
+        )
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+
+        await provider.syncMapProducts()
+
+        let active = try await stormRepo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("Coherent categorical candidate allows empty severe product to clear active severe threat")
+    func coherentCategoricalAllowsEmptySevereClear() async throws {
+        let container = try await makeMapSyncContainer()
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(categoricalFeatures: try JSONDecoder()
+                    .decode(GeoJSONFeatureCollection.self, from: makeCategoricalData()).features, tornadoData: emptyGeoJSONData())
+            )
+        )
+
+        let severeRepo = SevereRiskRepo(modelContainer: container)
+        try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+
+        await provider.syncMapProducts()
+
+        let active = try await severeRepo.active(
+            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .allClear)
+    }
 }
 
 private actor CountingMapSyncClient: SpcClient {
@@ -449,7 +525,10 @@ private actor CountingMapSyncClient: SpcClient {
         if product == failingProduct {
             throw SpcError.missingData
         }
-        return try JSONEncoder().encode(GeoJSONFeatureCollection.empty)
+        if product == .categorical {
+            return makeCategoricalData()
+        }
+        return emptyGeoJSONData()
     }
 
     func geoJsonCallCount() -> Int {
@@ -458,6 +537,21 @@ private actor CountingMapSyncClient: SpcClient {
 
     func maxConcurrentGeoJsonCalls() -> Int {
         maxConcurrentGeoJsonCallsValue
+    }
+}
+
+private struct ScriptedMapSyncClient: SpcClient {
+    let geoJsonByProduct: [GeoJSONProduct: Data]
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        Data()
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        guard let data = geoJsonByProduct[product] else {
+            throw SpcError.missingGeoJsonData
+        }
+        return data
     }
 }
 
@@ -493,4 +587,68 @@ private func makeMapSyncContainer() async throws -> ModelContainer {
         try TestStore.reset(FireRisk.self, in: container)
         return container
     }
+}
+
+private func makeCoherentBatch(
+    categoricalFeatures: [GeoJSONFeature],
+    tornadoData: Data? = nil
+) -> [GeoJSONProduct: Data] {
+    [
+        .categorical: (try? JSONEncoder().encode(makeFeatureCollection(features: categoricalFeatures))) ?? emptyGeoJSONData(),
+        .hail: emptyGeoJSONData(),
+        .wind: emptyGeoJSONData(),
+        .tornado: tornadoData ?? emptyGeoJSONData(),
+        .fireRH: emptyGeoJSONData()
+    ]
+}
+
+private func emptyGeoJSONData() -> Data {
+    (try? JSONEncoder().encode(GeoJSONFeatureCollection.empty)) ?? Data()
+}
+
+private func makeCategoricalData(
+    issue: String? = nil,
+    valid: String? = nil,
+    expire: String? = nil
+) -> Data {
+    let now = Date()
+    let issueTimestamp = issue ?? spcTimestamp(now.addingTimeInterval(-3600))
+    let validTimestamp = valid ?? spcTimestamp(now.addingTimeInterval(-3600))
+    let expireTimestamp = expire ?? spcTimestamp(now.addingTimeInterval(6 * 3600))
+
+    let feature = makeFeature(
+        properties: makeProperties(
+            label: "MRGL",
+            label2: "Marginal Risk",
+            issue: issueTimestamp,
+            valid: validTimestamp,
+            expire: expireTimestamp,
+            dn: 2
+        ),
+        geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+    )
+    return (try? JSONEncoder().encode(makeFeatureCollection(features: [feature]))) ?? emptyGeoJSONData()
+}
+
+private func makeTornadoData() -> Data {
+    let now = Date()
+    let feature = makeFeature(
+        properties: makeProperties(
+            label: "0.02",
+            label2: "2% Tornado Risk",
+            issue: spcTimestamp(now.addingTimeInterval(-3600)),
+            valid: spcTimestamp(now.addingTimeInterval(-3600)),
+            expire: spcTimestamp(now.addingTimeInterval(6 * 3600)),
+            dn: 2
+        ),
+        geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+    )
+    return (try? JSONEncoder().encode(makeFeatureCollection(features: [feature]))) ?? emptyGeoJSONData()
+}
+
+private func spcTimestamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMddHHmm"
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    return formatter.string(from: date)
 }

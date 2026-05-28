@@ -10,7 +10,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 |---|---:|---|---|---|
 | 0 | [#204](https://github.com/justinrooks/project-arcus/issues/204) | Stabilize SPC map ingestion risk persistence | Planned | Parent tracking issue. |
 | 1 | [#205](https://github.com/justinrooks/project-arcus/issues/205) | Add regression coverage for transient map-product clears | In Progress | Regression tests added; expected failures document missing guardrails pending #206-#209 production fixes. |
-| 2 | [#206](https://github.com/justinrooks/project-arcus/issues/206) | Introduce staged SPC map-product batch validation | Planned | Build the narrow candidate/validation model. |
+| 2 | [#206](https://github.com/justinrooks/project-arcus/issues/206) | Introduce staged SPC map-product batch validation | In Progress | Staged candidate model and categorical-anchored validation wired in provider sync; transactional commit still deferred to #208. |
 | 3 | [#207](https://github.com/justinrooks/project-arcus/issues/207) | Remove permissive SPC GeoJSON date fallbacks | Planned | Malformed dates should reject candidate data, not become `Date()`. |
 | 4 | [#208](https://github.com/justinrooks/project-arcus/issues/208) | Commit SPC map products transactionally by validity window | Planned | Accepted batches mutate rows; rejected batches preserve existing state. |
 | 5 | [#209](https://github.com/justinrooks/project-arcus/issues/209) | Preserve projections and widgets when map sync is rejected | Planned | Prevent rejected syncs from becoming all-clear app/widget projections. |
@@ -107,3 +107,43 @@ Important files:
 - Start with issue 1 tests. Without regression tests, this bug is too easy to “fix” in the wrong layer.
 - Expect the smallest durable production fix to require changes in repo/provider ingestion, not widget rendering.
 - If a proposed fix lives primarily in `WidgetSnapshotBuilder`, it is probably treating the rash while ignoring the infection.
+
+### Issue #206 — Staged SPC Map-Product Batch Validation
+
+- Status: In progress (staged validation plumbing added; transactional persistence rewrite intentionally deferred to #208).
+- Files changed:
+  - `Sources/Providers/SPC/SpcProvider+Syncing.swift`
+  - `Sources/Infrastructure/Parsing/GeoJSON/GeoJSONModels.swift`
+  - `Tests/UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift`
+  - `docs/plans/spc-map-ingestion-stability-progress.md`
+- Validation model added:
+  - Internal staged candidate representation per map product with:
+    - product type
+    - decoded `GeoJSONFeatureCollection`
+    - feature count
+    - parsed `ISSUE`, `VALID`, `EXPIRE`
+    - per-product validation status/rejection reason
+  - Batch-level staged validation with categorical as anchor.
+- Validation rules implemented:
+  - Empty categorical is rejected (`categorical_empty`).
+  - Missing/malformed categorical metadata is rejected (`categorical_metadata_invalid`).
+  - Expired categorical is rejected (`categorical_expired`).
+  - Future-only categorical is rejected (`categorical_future_only`).
+  - Empty severe products are allowed when categorical anchor is coherent.
+  - No repo mutation runs unless batch validation is accepted.
+- Behavior intentionally preserved:
+  - No refresh cadence changes.
+  - No widget/projection workaround in this issue.
+  - No transactional row-window rewrite here; current repo replacement behavior remains for accepted batches.
+- Validation run:
+  - Ran focused tests:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests`
+  - Observed failure details from result bundle:
+    - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.28_12-20-18--0600.xcresult`
+    - Failures were fixture/cooldown expectation mismatches and were patched.
+  - Re-run currently blocked by long-running/incomplete `xcodebuild` result-bundle finalization in this environment; latest bundle path observed:
+    - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.28_12-23-53--0600.xcresult`
+- Handoff notes for #207:
+  - Replace fallback date usage in map-product-to-model conversion with strict parsing/rejection so malformed metadata cannot flow into persisted rows.
+- Handoff notes for #208:
+  - Move accepted-batch persistence from repo-local "delete current/future by type" to issuance/validity-window transactional commit semantics.
