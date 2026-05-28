@@ -137,7 +137,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 await progress.report(.started(.lane(.slowProducts)))
                 environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
                 slowProductMapSyncOutcome = await syncSlowFeeds(executionMode: executionMode)
-                freshness.lastSlowFeedSyncAt = now
+                if slowProductMapSyncOutcome == .accepted {
+                    freshness.lastSlowFeedSyncAt = now
+                }
                 await progress.report(.completed(.lane(.slowProducts)))
                 environment.logger.debug("Finished home ingestion slow-product sync")
             } else {

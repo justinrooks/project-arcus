@@ -147,9 +147,8 @@ actor FireRiskRepo {
         with items: [FireRisk]
     ) throws {
         let predicate = #Predicate<FireRisk> {
-            $0.issued == issued &&
-            $0.valid == valid &&
-            $0.expires == expires
+            $0.valid <= expires &&
+            $0.expires >= valid
         }
         let existing = try modelContext.fetch(FetchDescriptor<FireRisk>(predicate: predicate))
         for item in existing {
@@ -189,6 +188,10 @@ actor FireRiskRepo {
                 polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
             )
         }
+    }
+
+    func validateFirePayload(_ data: Data) async throws {
+        _ = try parseFireRisks(from: data)
     }
 
     private func latestIssuanceSlice(from risks: [FireRisk]) -> [FireRisk] {

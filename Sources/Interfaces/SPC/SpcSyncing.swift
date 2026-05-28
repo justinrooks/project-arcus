@@ -22,10 +22,3 @@ protocol SpcSyncing: Sendable {//where Self: Actor {
     func syncConvectiveOutlooks() async -> Void
     func syncMesoscaleDiscussions() async -> Void
 }
-
-extension SpcSyncing {
-    func syncMapProductsOutcome() async -> SpcMapSyncOutcome {
-        await syncMapProducts()
-        return .accepted
-    }
-}

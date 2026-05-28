@@ -302,13 +302,11 @@ actor SevereRiskRepo {
         with items: [SevereRisk]
     ) throws {
         let predicate = #Predicate<SevereRisk> {
-            $0.type == type &&
-            $0.issued == issued &&
-            $0.valid == valid &&
-            $0.expires == expires
+            $0.valid <= expires &&
+            $0.expires >= valid
         }
         let existing = try modelContext.fetch(FetchDescriptor<SevereRisk>(predicate: predicate))
-        for item in existing {
+        for item in existing where item.type == type {
             modelContext.delete(item)
         }
 
@@ -326,6 +324,10 @@ actor SevereRiskRepo {
         return try decoded.features.map {
             try makeSevereRisk(for: threat, with: $0)
         }
+    }
+
+    func validateSeverePayload(_ data: Data, threat: ThreatType) async throws {
+        _ = try parseSevereRisks(from: data, threat: threat)
     }
 
     private func latestIssuanceSlicesByThreatType(from risks: [SevereRisk]) -> [SevereRisk] {

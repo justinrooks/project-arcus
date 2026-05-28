@@ -53,6 +53,7 @@ extension MockSpcService: SpcSyncing {
     func sync() async {}
     func syncTextProducts() async {}
     func syncMapProducts() async {}
+    func syncMapProductsOutcome() async -> SpcMapSyncOutcome { .accepted }
     func syncConvectiveOutlooks() async {}
     func syncMesoscaleDiscussions() async {}
 }

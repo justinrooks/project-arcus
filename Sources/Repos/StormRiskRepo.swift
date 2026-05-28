@@ -17,6 +17,10 @@ actor StormRiskRepo {
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
         let dtos = try parseStormRiskRows(from: data)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping categorical risk replacement because parsed feature collection is empty")
+            return
+        }
         
         try replaceCurrentAndFutureRows(with: dtos)
         logger.debug("Updated \(dtos.count, privacy: .public) categorical storm risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
@@ -173,6 +177,10 @@ actor StormRiskRepo {
                              polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
             )
         }
+    }
+
+    func validateCategoricalPayload(_ data: Data) async throws {
+        _ = try parseStormRiskRows(from: data)
     }
 
     private func latestIssuanceSlice(from risks: [StormRisk]) -> [StormRisk] {

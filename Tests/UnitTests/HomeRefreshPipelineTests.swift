@@ -523,8 +523,8 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
     }
 
-    @Test("slow-product refresh must not overwrite known-good projection as all-clear when map sync is unavailable")
-    func slowProductRefresh_unavailableMapSyncDoesNotOverwriteProjectionWithAllClear() async throws {
+    @Test("rejected slow-product sync preserves projection, widgets, and retry cadence")
+    func slowProductRefresh_rejectedSyncPreservesProjectionWidgetsAndRetryCadence() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
@@ -567,6 +567,10 @@ struct HomeRefreshPipelineTests {
             plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
             progress: .none
         )
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
 
         let projection = try #require(await projectionStore.projection(for: context))
         #expect(projection.stormRisk == .slight)
@@ -574,6 +578,65 @@ struct HomeRefreshPipelineTests {
         #expect(projection.fireRisk == .critical)
         #expect(projection.lastSlowProductsLoadAt == previousTimestamp)
         #expect(widgetRecorder.refreshCallCount() == 0)
+        #expect(await spc.syncMapProductsCount() == 2)
+    }
+
+    @Test("failed slow-product sync preserves projection, widgets, and retry cadence")
+    func slowProductRefresh_failedSyncPreservesProjectionWidgetsAndRetryCadence() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let previousTimestamp = Date(timeIntervalSince1970: 200)
+        let widgetRecorder = RecordingWidgetSnapshotRefresher()
+
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: previousTimestamp
+        )
+
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: .failed,
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let weather = FakeWeatherClient()
+        let snapshotStore = HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: weather,
+                locationSession: locationSession,
+                snapshotStore: snapshotStore,
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: widgetRecorder
+            )
+        )
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(projection.stormRisk == .slight)
+        #expect(projection.severeRisk == .tornado(probability: 0.15))
+        #expect(projection.fireRisk == .critical)
+        #expect(projection.lastSlowProductsLoadAt == previousTimestamp)
+        #expect(widgetRecorder.refreshCallCount() == 0)
+        #expect(await spc.syncMapProductsCount() == 2)
     }
 
     @Test("accepted slow-product all-clear updates projection and refreshes widgets")

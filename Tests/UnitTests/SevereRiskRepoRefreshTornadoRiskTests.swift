@@ -345,15 +345,14 @@ struct StormRiskRepoRefreshCategoricalRiskTests {
         let data = try JSONEncoder().encode(emptyBatch)
         try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: data))
 
-        let active = try await repo.active(
-            asOf: makeUTCDate(2027, 5, 1, 13, 0),
-            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
-        )
-        #expect(active == .marginal)
+        let persisted = try ModelContext(container).fetch(FetchDescriptor<StormRisk>())
+        #expect(persisted.count == 1)
+        #expect(persisted.first?.riskLevel == .marginal)
+        #expect(persisted.first?.issued == makeUTCDate(2027, 5, 1, 12, 0))
     }
 
-    @Test("Coherent newer categorical all-clear transition is still allowed")
-    func coherentNewerCategoricalAllClearTransitionIsAllowed() async throws {
+    @Test("Coherent newer non-empty all-clear categorical transition is still allowed")
+    func coherentNewerCategoricalAllClearFeatureTransitionIsAllowed() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
         try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
         let repo = StormRiskRepo(modelContainer: container)
@@ -372,7 +371,18 @@ struct StormRiskRepoRefreshCategoricalRiskTests {
         let priorData = try JSONEncoder().encode(makeFeatureCollection(features: [priorFeature]))
         try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: priorData))
 
-        let coherentClearData = try JSONEncoder().encode(makeFeatureCollection(features: []))
+        let coherentAllClearFeature = makeFeature(
+            properties: makeProperties(
+                label: "CLR",
+                label2: "Clear",
+                issue: "202705011230",
+                valid: "202705011230",
+                expire: "202705011800",
+                dn: 0
+            ),
+            geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+        )
+        let coherentClearData = try JSONEncoder().encode(makeFeatureCollection(features: [coherentAllClearFeature]))
         try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: coherentClearData))
 
         let active = try await repo.active(
@@ -600,24 +610,77 @@ struct SpcProviderSyncMapProductsTests {
     @Test("Coherent categorical candidate allows empty severe product to clear active severe threat")
     func coherentCategoricalAllowsEmptySevereClear() async throws {
         let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
         let provider = makeSpcProviderForMapSyncTests(
             container: container,
             client: ScriptedMapSyncClient(
-                geoJsonByProduct: makeCoherentBatch(categoricalFeatures: try JSONDecoder()
-                    .decode(GeoJSONFeatureCollection.self, from: makeCategoricalData()).features, tornadoData: emptyGeoJSONData())
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder().decode(
+                        GeoJSONFeatureCollection.self,
+                        from: makeCategoricalData(issue: acceptedIssue, valid: acceptedValid, expire: acceptedExpire)
+                    ).features,
+                    tornadoData: emptyGeoJSONData()
+                )
             )
         )
 
         let severeRepo = SevereRiskRepo(modelContainer: container)
-        try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+        try await severeRepo.refreshTornadoRisk(
+            using: MockClient(
+                mode: .success(makeTornadoData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+            )
+        )
 
         await provider.syncMapProducts()
 
         let active = try await severeRepo.active(
-            asOf: makeUTCDate(2027, 5, 1, 13, 0),
+            asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         #expect(active == .allClear)
+    }
+
+    @Test("Coherent categorical candidate allows empty fire product to clear active fire risk")
+    func coherentCategoricalAllowsEmptyFireClear() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder().decode(
+                        GeoJSONFeatureCollection.self,
+                        from: makeCategoricalData(issue: acceptedIssue, valid: acceptedValid, expire: acceptedExpire)
+                    ).features,
+                    fireData: emptyGeoJSONData()
+                )
+            )
+        )
+
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await fireRepo.refreshFireRisk(
+            using: FireMockClient(fireData: makeFireData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+        )
+
+        await provider.syncMapProducts()
+
+        let active = try await fireRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .clear)
     }
 
     @Test("Accepted coherent batch replaces only rows in its validity window")
@@ -718,6 +781,213 @@ struct SpcProviderSyncMapProductsTests {
         )
         #expect(active == .critical)
     }
+
+    @Test("Malformed non-categorical staged product rejects batch and cannot partially commit categorical")
+    func malformedNonCategoricalRejectsBatchWithoutPartialCategoricalCommit() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorCategorical = makeCategoricalData(
+            label: "MRGL",
+            label2: "Marginal Risk",
+            dn: 2,
+            issue: spcTimestamp(now.addingTimeInterval(-3600)),
+            valid: spcTimestamp(now.addingTimeInterval(-3600)),
+            expire: spcTimestamp(now.addingTimeInterval(6 * 3600))
+        )
+        let incomingCategorical = makeCategoricalData(
+            label: "ENH",
+            label2: "Enhanced Risk",
+            dn: 4,
+            issue: spcTimestamp(now.addingTimeInterval(-3500)),
+            valid: spcTimestamp(now.addingTimeInterval(-3500)),
+            expire: spcTimestamp(now.addingTimeInterval(6 * 3600))
+        )
+        let malformedHail = makeTornadoData(issue: "bad")
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: incomingCategorical,
+                    .hail: malformedHail,
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: emptyGeoJSONData()
+                ]
+            )
+        )
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: priorCategorical))
+
+        await provider.syncMapProducts()
+
+        let active = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("Mixed-window staged products are rejected")
+    func mixedWindowStagedProductsAreRejected() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let anchorIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let anchorValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let anchorExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let mismatchedIssue = spcTimestamp(now.addingTimeInterval(-1800))
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeCategoricalData(
+                        label: "ENH",
+                        label2: "Enhanced Risk",
+                        dn: 4,
+                        issue: anchorIssue,
+                        valid: anchorValid,
+                        expire: anchorExpire
+                    ),
+                    .hail: makeTornadoData(issue: mismatchedIssue, valid: anchorValid, expire: anchorExpire),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: emptyGeoJSONData()
+                ]
+            )
+        )
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    label: "MRGL",
+                    label2: "Marginal Risk",
+                    dn: 2,
+                    issue: anchorIssue,
+                    valid: anchorValid,
+                    expire: anchorExpire
+                )
+            )
+        )
+
+        await provider.syncMapProducts()
+
+        let active = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("Persistence failure after categorical mutation rolls back entire accepted batch")
+    func acceptedBatchFailureAfterCategoricalMutationRollsBackAllRows() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let incomingIssue = spcTimestamp(now.addingTimeInterval(-3500))
+        let incomingValid = spcTimestamp(now.addingTimeInterval(-3500))
+        let incomingExpire = spcTimestamp(now.addingTimeInterval(7 * 3600))
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    label: "MRGL",
+                    label2: "Marginal Risk",
+                    dn: 2,
+                    issue: priorIssue,
+                    valid: priorValid,
+                    expire: priorExpire
+                )
+            )
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeCategoricalData(
+                        label: "ENH",
+                        label2: "Enhanced Risk",
+                        dn: 4,
+                        issue: incomingIssue,
+                        valid: incomingValid,
+                        expire: incomingExpire
+                    ),
+                    .hail: makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire),
+                    .wind: makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire),
+                    .tornado: makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire),
+                    .fireRH: makeFireData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire)
+                ]
+            ),
+            persistenceFailureInjection: .afterCategoricalMutation
+        )
+
+        await provider.syncMapProducts()
+
+        let active = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("Cancellation between accepted products does not partially persist staged rows")
+    func acceptedBatchCancellationBetweenProductsRollsBackAllRows() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let incomingIssue = spcTimestamp(now.addingTimeInterval(-3500))
+        let incomingValid = spcTimestamp(now.addingTimeInterval(-3500))
+        let incomingExpire = spcTimestamp(now.addingTimeInterval(7 * 3600))
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    label: "MRGL",
+                    label2: "Marginal Risk",
+                    dn: 2,
+                    issue: priorIssue,
+                    valid: priorValid,
+                    expire: priorExpire
+                )
+            )
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeCategoricalData(
+                        label: "ENH",
+                        label2: "Enhanced Risk",
+                        dn: 4,
+                        issue: incomingIssue,
+                        valid: incomingValid,
+                        expire: incomingExpire
+                    ),
+                    .hail: makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire),
+                    .wind: makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire),
+                    .tornado: makeTornadoData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire),
+                    .fireRH: makeFireData(issue: incomingIssue, valid: incomingValid, expire: incomingExpire)
+                ]
+            ),
+            persistenceFailureInjection: .afterHailMutation
+        )
+
+        await provider.syncMapProducts()
+
+        let active = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
 }
 
 private actor CountingMapSyncClient: SpcClient {
@@ -784,13 +1054,18 @@ private struct ScriptedMapSyncClient: SpcClient {
     }
 }
 
-private func makeSpcProviderForMapSyncTests(container: ModelContainer, client: any SpcClient) -> SpcProvider {
+private func makeSpcProviderForMapSyncTests(
+    container: ModelContainer,
+    client: any SpcClient,
+    persistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none
+) -> SpcProvider {
     let outlookRepo = ConvectiveOutlookRepo(modelContainer: container)
     let mesoRepo = MesoRepo(modelContainer: container)
     let alertRepo = AlertRepo(modelContainer: container)
     let stormRiskRepo = StormRiskRepo(modelContainer: container)
     let severeRiskRepo = SevereRiskRepo(modelContainer: container)
     let fireRiskRepo = FireRiskRepo(modelContainer: container)
+    let spcMapBatchPersistenceRepo = SpcMapBatchPersistenceRepo(modelContainer: container)
 
     return SpcProvider(
         outlookRepo: outlookRepo,
@@ -799,6 +1074,8 @@ private func makeSpcProviderForMapSyncTests(container: ModelContainer, client: a
         stormRiskRepo: stormRiskRepo,
         severeRiskRepo: severeRiskRepo,
         fireRiskRepo: fireRiskRepo,
+        spcMapBatchPersistenceRepo: spcMapBatchPersistenceRepo,
+        mapBatchPersistenceFailureInjection: persistenceFailureInjection,
         client: client
     )
 }
@@ -864,14 +1141,18 @@ private func makeCategoricalData(
 }
 
 private func makeTornadoData() -> Data {
+    makeTornadoData(issue: nil, valid: nil, expire: nil)
+}
+
+private func makeTornadoData(issue: String?, valid: String? = nil, expire: String? = nil) -> Data {
     let now = Date()
     let feature = makeFeature(
         properties: makeProperties(
             label: "0.02",
             label2: "2% Tornado Risk",
-            issue: spcTimestamp(now.addingTimeInterval(-3600)),
-            valid: spcTimestamp(now.addingTimeInterval(-3600)),
-            expire: spcTimestamp(now.addingTimeInterval(6 * 3600)),
+            issue: issue ?? spcTimestamp(now.addingTimeInterval(-3600)),
+            valid: valid ?? spcTimestamp(now.addingTimeInterval(-3600)),
+            expire: expire ?? spcTimestamp(now.addingTimeInterval(6 * 3600)),
             dn: 2
         ),
         geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
