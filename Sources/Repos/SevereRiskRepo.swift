@@ -21,8 +21,8 @@ actor SevereRiskRepo {
             throw SpcError.parsingError
         }
 
-        let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .hail, with: $0)
+        let dtos = try decoded.features.map {
+            try makeSevereRisk(for: .hail, with: $0)
         }
 
         try replaceCurrentAndFutureRows(for: .hail, with: dtos)
@@ -38,8 +38,8 @@ actor SevereRiskRepo {
             throw SpcError.parsingError
         }
 
-        let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .wind, with: $0)
+        let dtos = try decoded.features.map {
+            try makeSevereRisk(for: .wind, with: $0)
         }
 
         try replaceCurrentAndFutureRows(for: .wind, with: dtos)
@@ -56,8 +56,8 @@ actor SevereRiskRepo {
             throw SpcError.parsingError
         }
 
-        let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .tornado, with: $0)
+        let dtos = try decoded.features.map {
+            try makeSevereRisk(for: .tornado, with: $0)
         }
 
         try replaceCurrentAndFutureRows(for: .tornado, with: dtos)
@@ -190,9 +190,16 @@ actor SevereRiskRepo {
     private func makeSevereRisk(
         for threat: ThreatType,
         with feature: GeoJSONFeature
-    ) -> SevereRisk {
+    ) throws -> SevereRisk {
         let props = feature.properties
         let parsedProbability = getProbability(from: props)
+        guard
+            let issued = props.ISSUE.asUTCDate(),
+            let valid = props.VALID.asUTCDate(),
+            let expires = props.EXPIRE.asUTCDate()
+        else {
+            throw SpcError.parsingError
+        }
 
         return SevereRisk(
             type: threat,
@@ -201,9 +208,9 @@ actor SevereRiskRepo {
                 from: threat,
                 probability: parsedProbability.decimalValue
             ),
-            issued: props.ISSUE.asUTCDate() ?? Date(),
-            valid: props.VALID.asUTCDate() ?? Date(),
-            expires: props.EXPIRE.asUTCDate() ?? Date(),
+            issued: issued,
+            valid: valid,
+            expires: expires,
             dn: props.DN,
             stroke: props.stroke,
             fill: props.fill,

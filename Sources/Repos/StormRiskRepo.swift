@@ -21,13 +21,21 @@ actor StormRiskRepo {
             throw SpcError.parsingError
         }
         
-        let dtos = decoded.features.compactMap {
+        let dtos = try decoded.features.map {
             let props = $0.properties
-            
+
+            guard
+                let issued = props.ISSUE.asUTCDate(),
+                let expires = props.EXPIRE.asUTCDate(),
+                let valid = props.VALID.asUTCDate()
+            else {
+                throw SpcError.parsingError
+            }
+
             return StormRisk(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
-                             issued: props.ISSUE.asUTCDate() ?? Date(),
-                             expires: props.EXPIRE.asUTCDate() ?? Date(),
-                             valid: props.VALID.asUTCDate() ?? Date(),
+                             issued: issued,
+                             expires: expires,
+                             valid: valid,
                              stroke: props.stroke,
                              fill: props.fill,
                              polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)

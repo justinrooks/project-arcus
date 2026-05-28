@@ -11,7 +11,7 @@ Update this file after each issue is implemented. Keep entries factual: what cha
 | 0 | [#204](https://github.com/justinrooks/project-arcus/issues/204) | Stabilize SPC map ingestion risk persistence | Planned | Parent tracking issue. |
 | 1 | [#205](https://github.com/justinrooks/project-arcus/issues/205) | Add regression coverage for transient map-product clears | In Progress | Regression tests added; expected failures document missing guardrails pending #206-#209 production fixes. |
 | 2 | [#206](https://github.com/justinrooks/project-arcus/issues/206) | Introduce staged SPC map-product batch validation | In Progress | Staged candidate model and categorical-anchored validation wired in provider sync; transactional commit still deferred to #208. |
-| 3 | [#207](https://github.com/justinrooks/project-arcus/issues/207) | Remove permissive SPC GeoJSON date fallbacks | Planned | Malformed dates should reject candidate data, not become `Date()`. |
+| 3 | [#207](https://github.com/justinrooks/project-arcus/issues/207) | Remove permissive SPC GeoJSON date fallbacks | In Progress | GeoJSON repo mapping now fails closed on malformed `ISSUE`/`VALID`/`EXPIRE`; transactional preservation still deferred to #208. |
 | 4 | [#208](https://github.com/justinrooks/project-arcus/issues/208) | Commit SPC map products transactionally by validity window | Planned | Accepted batches mutate rows; rejected batches preserve existing state. |
 | 5 | [#209](https://github.com/justinrooks/project-arcus/issues/209) | Preserve projections and widgets when map sync is rejected | Planned | Prevent rejected syncs from becoming all-clear app/widget projections. |
 | 6 | [#210](https://github.com/justinrooks/project-arcus/issues/210) | Add observability for accepted and rejected SPC batches | Planned | Add low-noise diagnostics without sensitive location data. |
@@ -147,3 +147,40 @@ Important files:
   - Replace fallback date usage in map-product-to-model conversion with strict parsing/rejection so malformed metadata cannot flow into persisted rows.
 - Handoff notes for #208:
   - Move accepted-batch persistence from repo-local "delete current/future by type" to issuance/validity-window transactional commit semantics.
+
+### Issue #207 — Remove Permissive SPC GeoJSON Date Fallbacks
+
+- Status: In progress (strict map-product date parsing implemented; transactional windowed commit remains deferred to #208).
+- Files changed:
+  - `Sources/Repos/StormRiskRepo.swift`
+  - `Sources/Repos/SevereRiskRepo.swift`
+  - `Sources/Repos/FireRiskRepo.swift`
+  - `Tests/UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift`
+  - `docs/plans/spc-map-ingestion-stability-progress.md`
+- Date fallback paths removed:
+  - Removed all `props.ISSUE.asUTCDate() ?? Date()` / `props.VALID.asUTCDate() ?? Date()` / `props.EXPIRE.asUTCDate() ?? Date()` usage from SPC GeoJSON risk model construction.
+  - `StormRiskRepo.refreshStormRisk`: now throws `SpcError.parsingError` if any feature has malformed `ISSUE`/`VALID`/`EXPIRE` before persistence mutation.
+  - `SevereRiskRepo.refresh*Risk`: `makeSevereRisk` now throws on malformed dates; callers map with `try` so mutation is skipped on failure.
+  - `FireRiskRepo.refreshFireRisk`: now throws `SpcError.parsingError` if any feature has malformed `ISSUE`/`VALID`/`EXPIRE` before persistence mutation.
+- Tests added/updated:
+  - `SevereRiskRepoRefreshTornadoRiskTests.malformedTornadoDatesFailClosed` now verifies malformed severe metadata throws and preserves existing persisted rows/dates.
+  - `StormRiskRepoRefreshCategoricalRiskTests.malformedCategoricalDatesFailClosed` added to verify malformed categorical metadata throws and preserves existing persisted rows/dates.
+  - `SpcProviderSyncMapProductsTests.malformedFireMetadataDoesNotClearActiveFireRisk` added to verify malformed fire metadata in staged sync does not clear existing active fire risk.
+- Behavior intentionally preserved:
+  - UTC `yyyyMMddHHmm` parsing behavior in `String.asUTCDate()` unchanged.
+  - RSS/convective outlook parsing untouched.
+  - Existing non-transactional accepted-batch persistence semantics unchanged (still a #208 concern).
+- Validation run:
+  - Passed focused malformed-date/staged tests:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests/malformedTornadoDatesFailClosed -only-testing:SkyAwareTests/StormRiskRepoRefreshCategoricalRiskTests/malformedCategoricalDatesFailClosed -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests/malformedFireMetadataDoesNotClearActiveFireRisk -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests/rejectedEmptyCategoricalPreservesExistingPersistedRisks -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests/futureOnlyCategoricalDoesNotReplaceActiveProjectionWindow`
+  - Ran broader #205/#206 regression coverage and observed expected/deferred failures:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests -only-testing:SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests -only-testing:SkyAwareTests/SevereRiskRepoActiveSelectionTests`
+    - Failing tests:
+      - `SpcProviderSyncMapProductsTests.rejectedEmptyCategoricalPreservesExistingPersistedRisks()`
+      - `SpcProviderSyncMapProductsTests.futureOnlyCategoricalDoesNotReplaceActiveProjectionWindow()`
+      - `SevereRiskRepoRefreshTornadoRiskTests.transientEmptyCollectionDoesNotClearExistingActiveTornadoRisk()`
+    - `.xcresult`: `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.28_12-37-25--0600.xcresult`
+  - Build passed:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Handoff notes for #208:
+  - Remaining failing regression cases still require transactional commit-by-window behavior to preserve existing active rows when candidate batches are rejected at provider stage.

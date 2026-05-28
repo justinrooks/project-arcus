@@ -136,6 +136,59 @@ struct SevereRiskRepoRefreshTornadoRiskTests {
         #expect(active == .allClear)
     }
 
+    @Test("Malformed severe dates fail closed and preserve active tornado risk")
+    func malformedTornadoDatesFailClosed() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        try await MainActor.run { try TestStore.reset(SevereRisk.self, in: container) }
+        let repo = SevereRiskRepo(modelContainer: container)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                SevereRisk(
+                    type: .tornado,
+                    probability: .percent(0.02),
+                    threatLevel: .tornado(probability: 0.02),
+                    issued: makeUTCDate(2027, 5, 1, 12, 0),
+                    valid: makeUTCDate(2027, 5, 1, 12, 0),
+                    expires: makeUTCDate(2027, 5, 1, 20, 0),
+                    dn: 2,
+                    stroke: "#AA0000",
+                    fill: "#110000",
+                    polygons: [],
+                    label: "0.02"
+                )
+            )
+            try context.save()
+        }
+
+        let malformedFeature = makeFeature(
+            properties: makeProperties(
+                label: "0.02",
+                label2: "2% Tornado Risk",
+                issue: "202705011200",
+                valid: "not-a-date",
+                expire: "202705011500",
+                dn: 2
+            ),
+            geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+        )
+
+        do {
+            let data = try JSONEncoder().encode(makeFeatureCollection(features: [malformedFeature]))
+            try await repo.refreshTornadoRisk(using: MockClient(mode: .success(data)))
+            #expect(Bool(false), "Expected malformed severe metadata to throw")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        let persisted = try ModelContext(container).fetch(FetchDescriptor<SevereRisk>())
+        #expect(persisted.count == 1)
+        #expect(persisted.first?.issued == makeUTCDate(2027, 5, 1, 12, 0))
+        #expect(persisted.first?.valid == makeUTCDate(2027, 5, 1, 12, 0))
+        #expect(persisted.first?.expires == makeUTCDate(2027, 5, 1, 20, 0))
+    }
+
     @Test("Inserts models for each feature returned")
     func insertsForEachFeature() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
@@ -239,6 +292,21 @@ private struct CategoricalMockClient: SpcClient {
     }
 }
 
+private struct FireMockClient: SpcClient {
+    let fireData: Data
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        throw SpcError.missingRssData
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        guard product == .fireRH else {
+            throw SpcError.missingGeoJsonData
+        }
+        return fireData
+    }
+}
+
 @Suite("StormRiskRepo.refreshStormRisk", .serialized)
 struct StormRiskRepoRefreshCategoricalRiskTests {
     @Test("Transient empty categorical must not clear an existing active categorical risk")
@@ -302,6 +370,55 @@ struct StormRiskRepoRefreshCategoricalRiskTests {
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         #expect(active == .allClear)
+    }
+
+    @Test("Malformed categorical dates fail closed and preserve active risk")
+    func malformedCategoricalDatesFailClosed() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
+        try await MainActor.run { try TestStore.reset(StormRisk.self, in: container) }
+        let repo = StormRiskRepo(modelContainer: container)
+
+        try await MainActor.run {
+            let context = ModelContext(container)
+            context.insert(
+                StormRisk(
+                    riskLevel: .marginal,
+                    issued: makeUTCDate(2027, 5, 1, 12, 0),
+                    expires: makeUTCDate(2027, 5, 1, 20, 0),
+                    valid: makeUTCDate(2027, 5, 1, 12, 0),
+                    stroke: "#AA0000",
+                    fill: "#110000",
+                    polygons: []
+                )
+            )
+            try context.save()
+        }
+
+        let malformedFeature = makeFeature(
+            properties: makeProperties(
+                label: "MRGL",
+                label2: "Marginal Risk",
+                issue: "bad",
+                valid: "202705011200",
+                expire: "202705011500",
+                dn: 2
+            ),
+            geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+        )
+
+        do {
+            let data = try JSONEncoder().encode(makeFeatureCollection(features: [malformedFeature]))
+            try await repo.refreshStormRisk(using: CategoricalMockClient(categoricalData: data))
+            #expect(Bool(false), "Expected malformed categorical metadata to throw")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        let persisted = try ModelContext(container).fetch(FetchDescriptor<StormRisk>())
+        #expect(persisted.count == 1)
+        #expect(persisted.first?.issued == makeUTCDate(2027, 5, 1, 12, 0))
+        #expect(persisted.first?.valid == makeUTCDate(2027, 5, 1, 12, 0))
+        #expect(persisted.first?.expires == makeUTCDate(2027, 5, 1, 20, 0))
     }
 }
 
@@ -492,6 +609,34 @@ struct SpcProviderSyncMapProductsTests {
         )
         #expect(active == .allClear)
     }
+
+    @Test("Malformed fire metadata in staged batch does not clear active fire risk")
+    func malformedFireMetadataDoesNotClearActiveFireRisk() async throws {
+        let container = try await makeMapSyncContainer()
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder().decode(
+                        GeoJSONFeatureCollection.self,
+                        from: makeCategoricalData()
+                    ).features,
+                    fireData: makeFireData(issue: "bad")
+                )
+            )
+        )
+
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await fireRepo.refreshFireRisk(using: FireMockClient(fireData: makeFireData()))
+
+        await provider.syncMapProducts()
+
+        let active = try await fireRepo.active(
+            asOf: Date(),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .critical)
+    }
 }
 
 private actor CountingMapSyncClient: SpcClient {
@@ -591,14 +736,15 @@ private func makeMapSyncContainer() async throws -> ModelContainer {
 
 private func makeCoherentBatch(
     categoricalFeatures: [GeoJSONFeature],
-    tornadoData: Data? = nil
+    tornadoData: Data? = nil,
+    fireData: Data? = nil
 ) -> [GeoJSONProduct: Data] {
     [
         .categorical: (try? JSONEncoder().encode(makeFeatureCollection(features: categoricalFeatures))) ?? emptyGeoJSONData(),
         .hail: emptyGeoJSONData(),
         .wind: emptyGeoJSONData(),
         .tornado: tornadoData ?? emptyGeoJSONData(),
-        .fireRH: emptyGeoJSONData()
+        .fireRH: fireData ?? emptyGeoJSONData()
     ]
 }
 
@@ -640,6 +786,22 @@ private func makeTornadoData() -> Data {
             valid: spcTimestamp(now.addingTimeInterval(-3600)),
             expire: spcTimestamp(now.addingTimeInterval(6 * 3600)),
             dn: 2
+        ),
+        geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+    )
+    return (try? JSONEncoder().encode(makeFeatureCollection(features: [feature]))) ?? emptyGeoJSONData()
+}
+
+private func makeFireData(issue: String? = nil, valid: String? = nil, expire: String? = nil) -> Data {
+    let now = Date()
+    let feature = makeFeature(
+        properties: makeProperties(
+            label: "CRIT",
+            label2: "Critical",
+            issue: issue ?? spcTimestamp(now.addingTimeInterval(-3600)),
+            valid: valid ?? spcTimestamp(now.addingTimeInterval(-3600)),
+            expire: expire ?? spcTimestamp(now.addingTimeInterval(6 * 3600)),
+            dn: 8
         ),
         geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
     )
