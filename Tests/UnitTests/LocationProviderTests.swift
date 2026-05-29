@@ -673,6 +673,32 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("preference sync uses explicit subscription override instead of provider value")
+    func preferenceSync_usesExplicitSubscriptionOverride() async throws {
+        let locationUploader = MockSnapshotUploader()
+        let preferenceUploader = MockPreferenceUploader()
+        let pusher = LocationSnapshotPusher(
+            locationUploader: locationUploader,
+            preferenceUploader: preferenceUploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            retryDelaysSeconds: [0]
+        )
+
+        await pusher.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification",
+            isSubscribedOverride: false
+        )
+
+        let payload = try #require(await preferenceUploader.uploadedPayloads().first)
+        #expect(payload.isSubscribed == false)
+        #expect(await locationUploader.uploadedPayloads().isEmpty)
+    }
+
     @Test("onboarding upload survives delayed APNs token and drains deterministically")
     func locationContextPusher_onboardingDelayedToken_drainUsesOnboardingSource() async throws {
         let uploader = MockSnapshotUploader()

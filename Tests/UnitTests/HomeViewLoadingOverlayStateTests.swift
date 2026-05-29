@@ -246,6 +246,36 @@ struct HomeViewProjectionLaunchTests {
         )
     }
 
+    @Test("summary prefers pipeline risk values once current context resolves in pipeline")
+    func summaryValue_prefersPipelineWhenContextResolved() {
+        let selected = HomeView.preferredSummaryValue(
+            projectionValue: StormRiskLevel.slight,
+            pipelineValue: StormRiskLevel.enhanced,
+            prefersPipelineValue: true
+        )
+        #expect(selected == .enhanced)
+    }
+
+    @Test("summary falls back to projection values when pipeline has no value")
+    func summaryValue_fallsBackToProjectionWhenPipelineMissing() {
+        let selected = HomeView.preferredSummaryValue(
+            projectionValue: SevereWeatherThreat.tornado(probability: 0.10),
+            pipelineValue: nil,
+            prefersPipelineValue: true
+        )
+        #expect(selected == .tornado(probability: 0.10))
+    }
+
+    @Test("summary prefers projection values when pipeline is not authoritative")
+    func summaryValue_prefersProjectionWhenPipelineNotAuthoritative() {
+        let selected = HomeView.preferredSummaryValue(
+            projectionValue: FireRiskLevel.critical,
+            pipelineValue: FireRiskLevel.clear,
+            prefersPipelineValue: false
+        )
+        #expect(selected == .critical)
+    }
+
     private func makeContext(
         h3Cell: Int64,
         countyCode: String,

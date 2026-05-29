@@ -154,10 +154,10 @@ final class LocationSession {
     }
 
     func syncNotificationPreference(enabled: Bool) async {
-        await syncPreference(forceUpload: true, reason: "notification")
+        await syncPreference(forceUpload: true, reason: "notification", isSubscribedOverride: enabled)
     }
 
-    func syncLocationSharingPreference(enabled: Bool) async {
+    func syncLocationSharingPreference(enabled _: Bool) async {
         await syncPreference(forceUpload: true, reason: "location-sharing")
     }
 
@@ -182,13 +182,18 @@ final class LocationSession {
         await locationUploadCoordinator.drainPendingUploads()
     }
 
-    private func syncPreference(forceUpload: Bool, reason: String) async {
+    private func syncPreference(
+        forceUpload: Bool,
+        reason: String,
+        isSubscribedOverride: Bool? = nil
+    ) async {
         logger.notice("Queueing preference sync reason=\(reason, privacy: .public)")
         await locationUploadCoordinator.enqueuePreferenceSync(
             source: .settingsPreference,
             requestReason: .preferenceChanged,
             forceUpload: forceUpload,
-            detail: reason
+            detail: reason,
+            isSubscribedOverride: isSubscribedOverride
         )
     }
 

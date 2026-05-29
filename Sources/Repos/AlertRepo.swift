@@ -163,7 +163,7 @@ actor AlertRepo {
             return
         }
         
-        logger.debug("Found \(expired.count, privacy: .public) alertss to purge")
+        logger.debug("Found \(expired.count, privacy: .public) alerts to purge")
         for obj in expired { modelContext.delete(obj) }
         try modelContext.save()
         

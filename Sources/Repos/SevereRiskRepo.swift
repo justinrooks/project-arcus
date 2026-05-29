@@ -16,13 +16,10 @@ actor SevereRiskRepo {
 
     func refreshHailRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .hail)
-
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .hail, with: $0)
+        let dtos = try parseSevereRisks(from: data, threat: .hail)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping hail risk replacement because parsed feature collection is empty")
+            return
         }
 
         try replaceCurrentAndFutureRows(for: .hail, with: dtos)
@@ -33,13 +30,10 @@ actor SevereRiskRepo {
 
     func refreshWindRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .wind)
-
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .wind, with: $0)
+        let dtos = try parseSevereRisks(from: data, threat: .wind)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping wind risk replacement because parsed feature collection is empty")
+            return
         }
 
         try replaceCurrentAndFutureRows(for: .wind, with: dtos)
@@ -51,13 +45,10 @@ actor SevereRiskRepo {
     /// Testable overload that allows injecting a client
     func refreshTornadoRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .tornado)
-
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = decoded.features.compactMap {
-            makeSevereRisk(for: .tornado, with: $0)
+        let dtos = try parseSevereRisks(from: data, threat: .tornado)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping tornado risk replacement because parsed feature collection is empty")
+            return
         }
 
         try replaceCurrentAndFutureRows(for: .tornado, with: dtos)
@@ -190,9 +181,16 @@ actor SevereRiskRepo {
     private func makeSevereRisk(
         for threat: ThreatType,
         with feature: GeoJSONFeature
-    ) -> SevereRisk {
+    ) throws -> SevereRisk {
         let props = feature.properties
         let parsedProbability = getProbability(from: props)
+        guard
+            let issued = props.ISSUE.asUTCDate(),
+            let valid = props.VALID.asUTCDate(),
+            let expires = props.EXPIRE.asUTCDate()
+        else {
+            throw SpcError.parsingError
+        }
 
         return SevereRisk(
             type: threat,
@@ -201,9 +199,9 @@ actor SevereRiskRepo {
                 from: threat,
                 probability: parsedProbability.decimalValue
             ),
-            issued: props.ISSUE.asUTCDate() ?? Date(),
-            valid: props.VALID.asUTCDate() ?? Date(),
-            expires: props.EXPIRE.asUTCDate() ?? Date(),
+            issued: issued,
+            valid: valid,
+            expires: expires,
             dn: props.DN,
             stroke: props.stroke,
             fill: props.fill,
@@ -268,6 +266,20 @@ actor SevereRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func parseSevereRisks(from data: Data, threat: ThreatType) throws -> [SevereRisk] {
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
+
+        return try decoded.features.map {
+            try makeSevereRisk(for: threat, with: $0)
+        }
+    }
+
+    func validateSeverePayload(_ data: Data, threat: ThreatType) async throws {
+        _ = try parseSevereRisks(from: data, threat: threat)
     }
 
     private func latestIssuanceSlicesByThreatType(from risks: [SevereRisk]) -> [SevereRisk] {

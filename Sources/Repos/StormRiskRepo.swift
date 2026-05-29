@@ -16,28 +16,16 @@ actor StormRiskRepo {
     
     func refreshStormRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .categorical)
-        
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-        
-        let dtos = decoded.features.compactMap {
-            let props = $0.properties
-            
-            return StormRisk(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
-                             issued: props.ISSUE.asUTCDate() ?? Date(),
-                             expires: props.EXPIRE.asUTCDate() ?? Date(),
-                             valid: props.VALID.asUTCDate() ?? Date(),
-                             stroke: props.stroke,
-                             fill: props.fill,
-                             polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
-            )
+        let dtos = try parseStormRiskRows(from: data)
+        guard dtos.isEmpty == false else {
+            logger.debug("Skipping categorical risk replacement because parsed feature collection is empty")
+            return
         }
         
         try replaceCurrentAndFutureRows(with: dtos)
         logger.debug("Updated \(dtos.count, privacy: .public) categorical storm risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
     }
-    
+
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
     func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> StormRiskLevel {
         let pred = #Predicate<StormRisk> { date >= $0.valid && date <= $0.expires }
@@ -124,6 +112,37 @@ actor StormRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func parseStormRiskRows(from data: Data) throws -> [StormRisk] {
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
+
+        return try decoded.features.map {
+            let props = $0.properties
+
+            guard
+                let issued = props.ISSUE.asUTCDate(),
+                let expires = props.EXPIRE.asUTCDate(),
+                let valid = props.VALID.asUTCDate()
+            else {
+                throw SpcError.parsingError
+            }
+
+            return StormRisk(riskLevel: StormRiskLevel(abbreviation: props.LABEL),
+                             issued: issued,
+                             expires: expires,
+                             valid: valid,
+                             stroke: props.stroke,
+                             fill: props.fill,
+                             polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
+            )
+        }
+    }
+
+    func validateCategoricalPayload(_ data: Data) async throws {
+        _ = try parseStormRiskRows(from: data)
     }
 
     private func latestIssuanceSlice(from risks: [StormRisk]) -> [StormRisk] {

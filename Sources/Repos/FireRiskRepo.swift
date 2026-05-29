@@ -16,25 +16,7 @@ actor FireRiskRepo {
 
     func refreshFireRisk(using client: any SpcClient) async throws {
         let data = try await client.fetchGeoJsonData(for: .fireRH)
-        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
-            throw SpcError.parsingError
-        }
-
-        let dtos = decoded.features.compactMap {
-            let props = $0.properties
-
-            return FireRisk(
-                product: "WindRH",
-                issued: props.ISSUE.asUTCDate() ?? Date(),
-                expires: props.EXPIRE.asUTCDate() ?? Date(),
-                valid: props.VALID.asUTCDate() ?? Date(),
-                riskLevel: props.DN,
-                label: props.LABEL2,
-                stroke: props.stroke,
-                fill: props.fill,
-                polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
-            )
-        }
+        let dtos = try parseFireRisks(from: data)
 
         try replaceCurrentAndFutureRows(with: dtos)
         logger.debug(
@@ -140,6 +122,39 @@ actor FireRiskRepo {
             modelContext.insert(item)
         }
         try modelContext.save()
+    }
+
+    private func parseFireRisks(from data: Data) throws -> [FireRisk] {
+        guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
+            throw SpcError.parsingError
+        }
+
+        return try decoded.features.map {
+            let props = $0.properties
+            guard
+                let issued = props.ISSUE.asUTCDate(),
+                let expires = props.EXPIRE.asUTCDate(),
+                let valid = props.VALID.asUTCDate()
+            else {
+                throw SpcError.parsingError
+            }
+
+            return FireRisk(
+                product: "WindRH",
+                issued: issued,
+                expires: expires,
+                valid: valid,
+                riskLevel: props.DN,
+                label: props.LABEL2,
+                stroke: props.stroke,
+                fill: props.fill,
+                polygons: $0.createPolygonEntities(polyTitle: props.LABEL2)
+            )
+        }
+    }
+
+    func validateFirePayload(_ data: Data) async throws {
+        _ = try parseFireRisks(from: data)
     }
 
     private func latestIssuanceSlice(from risks: [FireRisk]) -> [FireRisk] {

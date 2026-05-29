@@ -17,12 +17,14 @@ actor SpcProvider {
     let stormRiskRepo: StormRiskRepo
     let severeRiskRepo: SevereRiskRepo
     let fireRiskRepo: FireRiskRepo
+    let spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo
+    let mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection
     let client: SpcClient
     
     // Convective freshness Stream
     var latestConvective: Date?
     var convectiveContinuations: [UUID: AsyncStream<Date>.Continuation] = [:]
-    var mapSyncTask: Task<Void, Never>?
+    var mapSyncTask: Task<SpcMapSyncOutcome, Never>?
     var mesoSyncTask: Task<Void, Never>?
     var lastMapSyncFinishedAt: Date?
     private let mapSyncCooldownSeconds: TimeInterval = 20
@@ -33,6 +35,8 @@ actor SpcProvider {
          stormRiskRepo: StormRiskRepo,
          severeRiskRepo: SevereRiskRepo,
          fireRiskRepo: FireRiskRepo,
+         spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo,
+         mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none,
          client: SpcClient) {
         signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
@@ -41,6 +45,8 @@ actor SpcProvider {
         self.stormRiskRepo = stormRiskRepo
         self.severeRiskRepo = severeRiskRepo
         self.fireRiskRepo = fireRiskRepo
+        self.spcMapBatchPersistenceRepo = spcMapBatchPersistenceRepo
+        self.mapBatchPersistenceFailureInjection = mapBatchPersistenceFailureInjection
         self.client = client
     }
 

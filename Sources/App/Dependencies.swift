@@ -362,6 +362,7 @@ final class Dependencies: Sendable {
         let stormRiskRepo  = StormRiskRepo(modelContainer: container)
         let severeRiskRepo = SevereRiskRepo(modelContainer: container)
         let fireRiskRepo   = FireRiskRepo(modelContainer: container)
+        let spcMapBatchPersistenceRepo = SpcMapBatchPersistenceRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
         let homeProjectionStore = HomeProjectionStore(modelContainer: container)
         
@@ -374,6 +375,7 @@ final class Dependencies: Sendable {
                               stormRiskRepo: stormRiskRepo,
                               severeRiskRepo: severeRiskRepo,
                               fireRiskRepo: fireRiskRepo,
+                              spcMapBatchPersistenceRepo: spcMapBatchPersistenceRepo,
                               client: spcClient)
         let spcProvider = spc
         logger.debug("SPC provider initialized")
