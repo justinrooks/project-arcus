@@ -391,7 +391,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
-        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == false)
+        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == nil)
         #expect(session.currentContext == nil)
         #expect(session.currentSnapshot == context.snapshot)
     }
@@ -454,7 +454,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
-        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == true)
+        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == nil)
     }
 
     @MainActor
@@ -485,7 +485,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
-        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == false)
+        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == nil)
     }
 
     @MainActor
@@ -517,7 +517,7 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastSource() == .settingsPreference)
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
-        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == false)
+        #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == nil)
     }
 
     @MainActor

@@ -157,8 +157,8 @@ final class LocationSession {
         await syncPreference(forceUpload: true, reason: "notification", isSubscribedOverride: enabled)
     }
 
-    func syncLocationSharingPreference(enabled: Bool) async {
-        await syncPreference(forceUpload: true, reason: "location-sharing", isSubscribedOverride: enabled)
+    func syncLocationSharingPreference(enabled _: Bool) async {
+        await syncPreference(forceUpload: true, reason: "location-sharing")
     }
 
     func updateLocationSharingPreference(enabled: Bool) async {

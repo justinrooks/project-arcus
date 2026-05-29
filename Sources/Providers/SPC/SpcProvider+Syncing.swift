@@ -48,16 +48,15 @@ extension SpcProvider: SpcSyncing {
 
     private func runMapProductsSync() async -> SpcMapSyncOutcome {
         let runInterval = signposter.beginInterval("Spc Sync Map Products")
-        var completedWithoutFailures = true
         var mapSyncOutcome: SpcMapSyncOutcome = .failed
         defer {
-            signposter.endInterval("Background Run", runInterval)
+            signposter.endInterval("Spc Sync Map Products", runInterval)
             mapSyncTask = nil
             if !Task.isCancelled && mapSyncOutcome == .accepted {
                 lastMapSyncFinishedAt = Date()
             }
             logger.info(
-                "SPC map sync finished result=\(completedWithoutFailures ? "success" : "partial-failure", privacy: .public)"
+                "SPC map sync finished outcome=\(Self.mapSyncOutcomeLogName(mapSyncOutcome), privacy: .public)"
             )
         }
 
@@ -66,7 +65,6 @@ extension SpcProvider: SpcSyncing {
         let stagedBatch = await stageMapProducts(now: Date())
         let allSucceeded = await persistStagedMapProducts(stagedBatch)
 
-        completedWithoutFailures = allSucceeded && completedWithoutFailures
         if case .rejected = stagedBatch.validation {
             mapSyncOutcome = .rejected
         } else {
@@ -160,6 +158,19 @@ extension SpcProvider: SpcSyncing {
         } catch {
             logger.error("Error loading SPC map feed product=\(name, privacy: .public): \(error.localizedDescription, privacy: .public)")
             return false
+        }
+    }
+
+    private static func mapSyncOutcomeLogName(_ outcome: SpcMapSyncOutcome) -> String {
+        switch outcome {
+        case .accepted:
+            return "accepted"
+        case .rejected:
+            return "rejected"
+        case .skipped:
+            return "skipped"
+        case .failed:
+            return "failed"
         }
     }
 
@@ -368,10 +379,11 @@ extension SpcProvider: SpcSyncing {
             return .rejected(reason: "categorical_rejected")
         }
 
+        // TODO: Figure out how/if we need to validate the fire content the same way...
+        // fireRH is explicitly excluded for now.
         let excludedProducts: Set<GeoJSONProduct> = [.categorical, .fireRH]
 
         for product in Self.mapProducts where !excludedProducts.contains(product) {
-//        for product in Self.mapProducts where product != .categorical {
             guard let staged = stagedProducts[product] else {
                 return .rejected(reason: "\(product.rawValue)_missing")
             }
@@ -390,8 +402,7 @@ extension SpcProvider: SpcSyncing {
                 return .rejected(reason: "\(product.rawValue)_mixed_window")
             }
         }
-        // TODO: Figure out how/if we need to validate the fire content the same way...
-//
+        
 //        guard let fireRH = stagedProducts[.fireRH] else {
 //            return .rejected(reason: "fireRH_missing")
 //        }
