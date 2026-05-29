@@ -24,22 +24,6 @@ actor FireRiskRepo {
         )
     }
 
-    func commitAcceptedFireBatch(
-        using client: any SpcClient,
-        anchorIssued: Date,
-        anchorValid: Date,
-        anchorExpires: Date
-    ) async throws {
-        let data = try await client.fetchGeoJsonData(for: .fireRH)
-        let dtos = try parseFireRisks(from: data)
-        try replaceRows(
-            inWindowIssued: anchorIssued,
-            valid: anchorValid,
-            expires: anchorExpires,
-            with: dtos
-        )
-    }
-
     /// Returns the strongest fire risk level whose polygon contains the given point, as of `date`.
         func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> FireRiskLevel {
             let pred = #Predicate<FireRisk> { date >= $0.valid && date <= $0.expires }
@@ -135,27 +119,6 @@ actor FireRiskRepo {
         }
 
         for item in items {
-            modelContext.insert(item)
-        }
-        try modelContext.save()
-    }
-
-    private func replaceRows(
-        inWindowIssued issued: Date,
-        valid: Date,
-        expires: Date,
-        with items: [FireRisk]
-    ) throws {
-        let predicate = #Predicate<FireRisk> {
-            $0.valid <= expires &&
-            $0.expires >= valid
-        }
-        let existing = try modelContext.fetch(FetchDescriptor<FireRisk>(predicate: predicate))
-        for item in existing {
-            modelContext.delete(item)
-        }
-
-        for item in items where item.issued == issued && item.valid == valid && item.expires == expires {
             modelContext.insert(item)
         }
         try modelContext.save()

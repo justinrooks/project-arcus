@@ -65,23 +65,43 @@ struct HomeView: View {
     }
 
     private var displayedLocationSnapshot: LocationSnapshot? {
-        displayedProjection?.locationSnapshot ?? (usesPipelineSummaryFallback ? refreshPipeline.snap : nil)
+        Self.preferredSummaryValue(
+            projectionValue: displayedProjection?.locationSnapshot,
+            pipelineValue: refreshPipeline.snap,
+            prefersPipelineValue: isCurrentContextResolvedInPipeline
+        )
     }
 
     private var displayedStormRisk: StormRiskLevel? {
-        displayedProjection?.stormRisk ?? (usesPipelineSummaryFallback ? refreshPipeline.stormRisk : nil)
+        Self.preferredSummaryValue(
+            projectionValue: displayedProjection?.stormRisk,
+            pipelineValue: refreshPipeline.stormRisk,
+            prefersPipelineValue: isCurrentContextResolvedInPipeline
+        )
     }
 
     private var displayedSevereRisk: SevereWeatherThreat? {
-        displayedProjection?.severeRisk ?? (usesPipelineSummaryFallback ? refreshPipeline.severeRisk : nil)
+        Self.preferredSummaryValue(
+            projectionValue: displayedProjection?.severeRisk,
+            pipelineValue: refreshPipeline.severeRisk,
+            prefersPipelineValue: isCurrentContextResolvedInPipeline
+        )
     }
 
     private var displayedFireRisk: FireRiskLevel? {
-        displayedProjection?.fireRisk ?? (usesPipelineSummaryFallback ? refreshPipeline.fireRisk : nil)
+        Self.preferredSummaryValue(
+            projectionValue: displayedProjection?.fireRisk,
+            pipelineValue: refreshPipeline.fireRisk,
+            prefersPipelineValue: isCurrentContextResolvedInPipeline
+        )
     }
 
     private var displayedWeather: SummaryWeather? {
-        displayedProjection?.weather ?? (usesPipelineSummaryFallback ? refreshPipeline.summaryWeather : nil)
+        Self.preferredSummaryValue(
+            projectionValue: displayedProjection?.weather,
+            pipelineValue: refreshPipeline.summaryWeather,
+            prefersPipelineValue: isCurrentContextResolvedInPipeline
+        )
     }
 
     private var displayedMesos: [MdDTO] {
@@ -445,6 +465,17 @@ extension HomeView {
         readinessState != .locationUnavailable &&
         hasProjection == false &&
         (resolutionState.isRefreshing || readinessState != .ready)
+    }
+
+    static func preferredSummaryValue<T>(
+        projectionValue: T?,
+        pipelineValue: T?,
+        prefersPipelineValue: Bool
+    ) -> T? {
+        if prefersPipelineValue {
+            return pipelineValue ?? projectionValue
+        }
+        return projectionValue ?? pipelineValue
     }
 
     struct LocationReliabilityRailState: Equatable {

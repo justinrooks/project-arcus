@@ -368,7 +368,10 @@ extension SpcProvider: SpcSyncing {
             return .rejected(reason: "categorical_rejected")
         }
 
-        for product in Self.mapProducts where product != .categorical {
+        let excludedProducts: Set<GeoJSONProduct> = [.categorical, .fireRH]
+
+        for product in Self.mapProducts where !excludedProducts.contains(product) {
+//        for product in Self.mapProducts where product != .categorical {
             guard let staged = stagedProducts[product] else {
                 return .rejected(reason: "\(product.rawValue)_missing")
             }
@@ -387,6 +390,34 @@ extension SpcProvider: SpcSyncing {
                 return .rejected(reason: "\(product.rawValue)_mixed_window")
             }
         }
+        // TODO: Figure out how/if we need to validate the fire content the same way...
+//
+//        guard let fireRH = stagedProducts[.fireRH] else {
+//            return .rejected(reason: "fireRH_missing")
+//        }
+//
+//        if fireRH.featureCount == 0 {
+//            return .rejected(reason: "fireRH_empty")
+//        }
+//
+//        guard let fireRhWindow = fireRH.windowMetadata else {
+//            return .rejected(reason: "fireRH_metadata_invalid")
+//        }
+//        let fireIssued = fireRhWindow.issued
+//        let fireValid = fireRhWindow.valid
+//        let fireExpires = fireRhWindow.expires
+//
+//        if fireExpires <= now {
+//            return .rejected(reason: "fireRH_expired")
+//        }
+//
+//        if fireValid > now {
+//            return .rejected(reason: "fireRH_future_only")
+//        }
+//
+//        guard case .accepted = fireRH.status else {
+//            return .rejected(reason: "fireRH_rejected")
+//        }
 
         return .accepted(anchorIssued: issued, anchorValid: valid, anchorExpires: expires)
     }

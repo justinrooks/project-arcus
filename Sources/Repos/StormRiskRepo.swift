@@ -26,22 +26,6 @@ actor StormRiskRepo {
         logger.debug("Updated \(dtos.count, privacy: .public) categorical storm risk feature\(dtos.count > 1 ? "s" : "", privacy: .public)")
     }
 
-    func commitAcceptedCategoricalBatch(
-        using client: any SpcClient,
-        anchorIssued: Date,
-        anchorValid: Date,
-        anchorExpires: Date
-    ) async throws {
-        let data = try await client.fetchGeoJsonData(for: .categorical)
-        let dtos = try parseStormRiskRows(from: data)
-        try replaceRows(
-            inWindowIssued: anchorIssued,
-            valid: anchorValid,
-            expires: anchorExpires,
-            with: dtos
-        )
-    }
-    
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
     func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D) throws -> StormRiskLevel {
         let pred = #Predicate<StormRisk> { date >= $0.valid && date <= $0.expires }
@@ -125,28 +109,6 @@ actor StormRiskRepo {
         }
 
         for item in items {
-            modelContext.insert(item)
-        }
-        try modelContext.save()
-    }
-
-    private func replaceRows(
-        inWindowIssued issued: Date,
-        valid: Date,
-        expires: Date,
-        with items: [StormRisk]
-    ) throws {
-        let predicate = #Predicate<StormRisk> {
-            $0.issued == issued &&
-            $0.valid == valid &&
-            $0.expires == expires
-        }
-        let existing = try modelContext.fetch(FetchDescriptor<StormRisk>(predicate: predicate))
-        for item in existing {
-            modelContext.delete(item)
-        }
-
-        for item in items where item.issued == issued && item.valid == valid && item.expires == expires {
             modelContext.insert(item)
         }
         try modelContext.save()

@@ -57,32 +57,6 @@ actor SevereRiskRepo {
         )
     }
 
-    func commitAcceptedSevereBatch(
-        for threat: ThreatType,
-        using client: any SpcClient,
-        anchorIssued: Date,
-        anchorValid: Date,
-        anchorExpires: Date
-    ) async throws {
-        let product: GeoJSONProduct
-        switch threat {
-        case .hail: product = .hail
-        case .wind: product = .wind
-        case .tornado: product = .tornado
-        case .unknown: return
-        }
-
-        let data = try await client.fetchGeoJsonData(for: product)
-        let dtos = try parseSevereRisks(from: data, threat: threat)
-        try replaceRows(
-            for: threat,
-            inWindowIssued: anchorIssued,
-            valid: anchorValid,
-            expires: anchorExpires,
-            with: dtos
-        )
-    }
-
     /// Returns the strongest storm risk level whose polygon contains the given point, as of `date`.
     func active(asOf date: Date = .init(), for point: CLLocationCoordinate2D)
         throws -> SevereWeatherThreat
@@ -289,28 +263,6 @@ actor SevereRiskRepo {
         }
 
         for item in items {
-            modelContext.insert(item)
-        }
-        try modelContext.save()
-    }
-
-    private func replaceRows(
-        for type: ThreatType,
-        inWindowIssued issued: Date,
-        valid: Date,
-        expires: Date,
-        with items: [SevereRisk]
-    ) throws {
-        let predicate = #Predicate<SevereRisk> {
-            $0.valid <= expires &&
-            $0.expires >= valid
-        }
-        let existing = try modelContext.fetch(FetchDescriptor<SevereRisk>(predicate: predicate))
-        for item in existing where item.type == type {
-            modelContext.delete(item)
-        }
-
-        for item in items where item.type == type && item.issued == issued && item.valid == valid && item.expires == expires {
             modelContext.insert(item)
         }
         try modelContext.save()
