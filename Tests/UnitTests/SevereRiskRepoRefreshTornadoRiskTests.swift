@@ -593,6 +593,53 @@ struct SpcProviderSyncMapProductsTests {
         #expect(activeFire == .clear)
     }
 
+    @Test("No-area categorical GeometryCollection is treated as all-clear and clears active convective risks")
+    func noAreaCategoricalGeometryCollectionClearsActiveConvectiveRisks() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let issue = spcTimestamp(now.addingTimeInterval(-3600))
+        let valid = spcTimestamp(now.addingTimeInterval(-3600))
+        let expire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeNoAreaData(
+                        label: "No Areas",
+                        label2: "No Areas",
+                        dn: 0,
+                        issue: issue,
+                        valid: valid,
+                        expire: expire
+                    ),
+                    .hail: emptyGeoJSONData(),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: emptyGeoJSONData()
+                ]
+            )
+        )
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let severeRepo = SevereRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+        try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+
+        let activeStorm = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        let activeTornado = try await severeRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(activeStorm == .allClear)
+        #expect(activeTornado == .allClear)
+    }
+
     @Test("Future-only categorical candidate does not replace active projection window")
     func futureOnlyCategoricalDoesNotReplaceActiveProjectionWindow() async throws {
         let container = try await makeMapSyncContainer()

@@ -467,10 +467,10 @@ extension SpcProvider: SpcSyncing {
             }
         }
 
-        let allProductsEmpty = products.allSatisfy { product in
-            stagedProducts[product]?.featureCount == 0
+        let allProductsMateriallyEmpty = products.allSatisfy { product in
+            stagedProducts[product]?.materialPolygonCount == 0
         }
-        if allProductsEmpty {
+        if allProductsMateriallyEmpty {
             return .acceptedAllClear(syncTime: now)
         }
 
@@ -478,7 +478,7 @@ extension SpcProvider: SpcSyncing {
             return .rejected(reason: "categorical_missing")
         }
 
-        guard categorical.featureCount > 0 else {
+        guard categorical.materialPolygonCount > 0 else {
             return .rejected(reason: "categorical_empty_with_non_empty_non_categorical")
         }
 
@@ -491,7 +491,7 @@ extension SpcProvider: SpcSyncing {
                 return .rejected(reason: "\(product.rawValue)_missing")
             }
 
-            let requiresWindowMatch = staged.featureCount > 0
+            let requiresWindowMatch = staged.materialPolygonCount > 0
             guard requiresWindowMatch else { continue }
             guard let window = staged.windowMetadata else {
                 return .rejected(reason: "\(product.rawValue)_metadata_invalid")
