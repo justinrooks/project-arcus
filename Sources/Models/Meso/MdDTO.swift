@@ -23,7 +23,8 @@ struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
     let summary: String         // description / CDATA
     let concerning: String?     // e.g. "Severe potential... Watch unlikely"
     var severeRiskTags: String? { nil }
-    let watchProbability: Double
+    let watchProbability: Double?
+    let watchProbabilityText: String
     let threats: MDThreats?
     let coordinates: [Coordinate2D]
     
@@ -37,7 +38,9 @@ struct MdDTO: Sendable, Identifiable, Hashable, Codable, AlertItem {
         self.areasAffected = areasAffected
         self.summary = summary
         self.concerning = concerning
-        self.watchProbability = Double(watchProbability) ?? 0
+        let normalizedWatchProbability = watchProbability.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.watchProbabilityText = normalizedWatchProbability.isEmpty ? "Unknown" : normalizedWatchProbability
+        self.watchProbability = Double(normalizedWatchProbability)
         self.threats = threats
         self.coordinates = coordinates
     }

@@ -218,6 +218,37 @@ Important files:
     - `SevereRiskRepoActiveSelectionTests` passed.
     - `.xcresult` (latest focused): `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.28_14-22-35--0600.xcresult`
   - Build result: passed.
+
+### 2026-05-31 Follow-up — No-Area SPC GeoJSON and Split-Domain Persistence
+
+- Status: In progress (no-area GeometryCollection support and split convective/fire acceptance added; projection gating behavior remains unchanged because mixed-domain persistence now preserves rejected-domain rows in-repo).
+- Files changed:
+  - `Sources/Infrastructure/Parsing/GeoJSON/GeoJSONModels.swift`
+  - `Sources/Providers/SPC/SpcProvider+Syncing.swift`
+  - `Sources/Repos/SpcMapBatchPersistenceRepo.swift`
+  - `Tests/UnitTests/GeoJsonParserTests.swift`
+  - `Tests/UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift`
+  - `docs/plans/spc-map-ingestion-stability-progress.md`
+- Behavior changed:
+  - GeoJSON decoding now accepts SPC `GeometryCollection` no-area features with empty `geometries` while preserving existing `MultiPolygon` decoding.
+  - Staged SPC validation now distinguishes raw `featureCount` from `materialPolygonCount`; no-area products are accepted as empty geometry instead of rejected decode failures.
+  - No-area products are canonicalized to an empty `FeatureCollection` for persistence so accepted clears delete rows for the accepted domain/window instead of storing fake all-clear polygons.
+  - Convective validation remains categorical-anchored across `categorical`, `hail`, `wind`, and `tornado`.
+  - Fire RH now validates and persists against its own `ISSUE`/`VALID`/`EXPIRE` window instead of being forced onto the categorical convective window.
+  - Missing/HTML/malformed map bodies no longer masquerade as accepted empty products; they reject their domain and preserve prior rows.
+  - Accepted-domain persistence is split between convective and fire and now restores prior rows on failure injection, preserving per-domain transactional behavior.
+- Behavior intentionally preserved:
+  - Decoded empty `FeatureCollection` inputs still support accepted all-clear behavior.
+  - Projection/widget preservation logic in `HomeIngestionExecutor` remains binary at the sync outcome layer; mixed-domain updates stay safe because rejected domains now preserve their prior repo state while accepted domains commit.
+  - No UI, cadence, networking, or widget rendering changes were made.
+- Validation run:
+  - Passed:
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/GeoJsonParserTests -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests`
+    - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  - Result bundle:
+    - `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.05.31_09-59-30--0600.xcresult`
+- Remaining risk:
+  - The focused tests cover staged sync and projection gating, but there is still no dedicated `HomeRefreshPipelineTests` case proving a mixed-domain accepted outcome propagates preserved rejected-domain values into projection/widgets end-to-end.
 - Remaining handoff notes for #209:
   - `HomeRefreshPipelineTests.slowProductRefresh_unavailableMapSyncDoesNotOverwriteProjectionWithAllClear` still fails and remains the projection/widget-preservation follow-on.
   - Ensure rejected/unknown slow-product sync outcome is surfaced to projection persistence so rejected map sync cannot advance all-clear app/widget snapshots.

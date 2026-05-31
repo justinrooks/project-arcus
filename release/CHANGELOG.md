@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+## v1.0.1(71)
+
+### Features
+- Add a lightweight in-app web content viewer for trusted source links.
+<!-- evidence: 8f1f272 -->
+
+### Data & Repos
+- Harden SPC map sync acceptance so coherent batches persist atomically and no-area categorical GeometryCollection updates clear active convective risk state correctly.
+<!-- evidence: 2c7ffc7, 7f9daa9 -->
+- Improve GeoJSON ingest stability for SPC map products to better handle sparse/no-area payload transitions.
+<!-- evidence: 37f6ed0 -->
+
+### UI / UX
+- Polish Summary and Local Alerts resolve-forward/loading transitions to reduce abrupt state changes while local context is resolving.
+<!-- evidence: 9739122 -->
+- Fix local alert summary row stacking behavior and mesoscale watch-probability presentation in user-facing surfaces.
+<!-- evidence: 48ddf85, c7d521b, 2c4aab8 -->
+- Update mesoscale notification copy to calmer, user-facing wording with concise threat summaries and improved fallback text.
+<!-- evidence: 5291e27, 2c4aab8 -->
+
+### Reliability
+- Harden location snapshot and preference-sync upload behavior, including queueing/coalescing around APNs token availability and preference-triggered sync paths.
+<!-- evidence: 9927882 -->
+
+### Tests / QA
+- Expand and tune unit coverage for SPC map ingestion edge cases, mesoscale notification composition, and location upload/preference CI flake scenarios.
+<!-- evidence: 2c7ffc7, 37f6ed0, 5291e27, 2c4aab8, 896678e, 7d1d1ea -->
+
+### Maintenance / Cleanup
+- Add weekly test-gap audit documentation and move location-upload hardening docs under `docs/plans`.
+<!-- evidence: 88504dc, 1948ca9 -->
+
 ## v1.0.1(67)
 
 ### Features

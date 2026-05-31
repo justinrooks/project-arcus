@@ -46,6 +46,31 @@ struct GeoJsonParserTests {
         """
     }()
 
+    private let noAreaGeoJson: String = """
+    {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "geometry": {
+            "type": "GeometryCollection",
+            "geometries": []
+          },
+          "properties": {
+            "DN": 0,
+            "VALID": "202605311200",
+            "EXPIRE": "202605311800",
+            "ISSUE": "202605311155",
+            "LABEL": "No Areas",
+            "LABEL2": "No Areas",
+            "stroke": "#000000",
+            "fill": "#111111"
+          }
+        }
+      ]
+    }
+    """
+
     @Test("decode parses a valid GeoJSON FeatureCollection")
     func decode_validGeoJson() throws {
         let data = try #require(validGeoJson.data(using: .utf8))
@@ -118,5 +143,21 @@ struct GeoJsonParserTests {
 
         let entities = feature.createPolygonEntities(polyTitle: "Test Risk")
         #expect(entities.isEmpty)
+    }
+
+    @Test("decode parses SPC no-area GeometryCollection feature")
+    func decode_noAreaGeometryCollection() throws {
+        let data = try #require(noAreaGeoJson.data(using: .utf8))
+        let decoded: GeoJSONFeatureCollection = try #require(
+            JsonParser.decode(from: data) as GeoJSONFeatureCollection?
+        )
+
+        let feature = try #require(decoded.features.first)
+        #expect(feature.geometry.type == "GeometryCollection")
+        #expect(feature.geometry.coordinates.isEmpty)
+        #expect(feature.geometry.geometries.isEmpty)
+        #expect(feature.materialPolygonCount == 0)
+        #expect(feature.createPolygonEntities(polyTitle: "No Areas").isEmpty)
+        #expect(feature.properties.LABEL == "No Areas")
     }
 }

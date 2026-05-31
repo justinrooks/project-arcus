@@ -1171,6 +1171,9 @@ struct LocationProviderTests {
             uploader: uploader,
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )

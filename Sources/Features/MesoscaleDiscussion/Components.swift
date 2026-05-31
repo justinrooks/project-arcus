@@ -37,20 +37,39 @@ struct InZonePill: View {
 }
 
 struct WatchProbabilityBar: View {
-    let progress: Double // 0...100
+    let progress: Double
+    var color: Color = .skyAwareAccent
+
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.secondary.opacity(0.15))
                 Capsule()
-                    .fill(LinearGradient(
-                        colors: [Color.accentColor.opacity(0.65), Color.accentColor],
-                        startPoint: .leading, endPoint: .trailing
-                    ))
-                    .frame(width: max(8, geo.size.width * (progress/100)))
+                    .fill(Color.secondary.opacity(0.15))
+
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                color.opacity(0.65),
+                                color
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth(in: geo.size.width))
             }
         }
         .frame(height: 8)
+    }
+
+    private var clampedProgress: Double {
+        min(max(progress, 0), 100)
+    }
+
+    private func fillWidth(in totalWidth: CGFloat) -> CGFloat {
+        guard clampedProgress > 0 else { return 0 }
+        return max(8, totalWidth * (clampedProgress / 100))
     }
 }
 

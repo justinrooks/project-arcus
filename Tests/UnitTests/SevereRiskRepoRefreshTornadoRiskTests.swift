@@ -482,6 +482,10 @@ private func makeMultiPolygonGeometry(squareAtLonLat origin: (Double, Double), s
     return GeoJSONGeometry(type: "MultiPolygon", coordinates: coordinates)
 }
 
+private func makeNoAreaGeometryCollection() -> GeoJSONGeometry {
+    GeoJSONGeometry(type: "GeometryCollection", geometries: [])
+}
+
 private func makeUTCDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) -> Date {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -541,8 +545,8 @@ struct SpcProviderSyncMapProductsTests {
         #expect(calls == 5 || calls == 10)
     }
 
-    @Test("Failed map product run does not trigger cooldown")
-    func failedRunDoesNotTriggerCooldown() async throws {
+    @Test("Partially accepted map product run still triggers cooldown")
+    func partiallyAcceptedRunTriggersCooldown() async throws {
         let container = try await makeMapSyncContainer()
         let client = CountingMapSyncClient(failingProduct: .hail)
         let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
@@ -551,11 +555,11 @@ struct SpcProviderSyncMapProductsTests {
         await provider.syncMapProducts()
 
         let calls = await client.geoJsonCallCount()
-        #expect(calls == 10)
+        #expect(calls == 5)
     }
 
-    @Test("Rejected empty categorical candidate preserves existing persisted risks")
-    func rejectedEmptyCategoricalPreservesExistingPersistedRisks() async throws {
+    @Test("All-empty valid map batch is accepted and clears active persisted risks")
+    func allEmptyBatchAcceptedAndClearsActivePersistedRisks() async throws {
         let container = try await makeMapSyncContainer()
         let provider = makeSpcProviderForMapSyncTests(
             container: container,
@@ -564,10 +568,13 @@ struct SpcProviderSyncMapProductsTests {
 
         let stormRepo = StormRiskRepo(modelContainer: container)
         let severeRepo = SevereRiskRepo(modelContainer: container)
+        let fireRepo = FireRiskRepo(modelContainer: container)
         try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
         try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+        try await fireRepo.refreshFireRisk(using: FireMockClient(fireData: makeFireData()))
 
-        await provider.syncMapProducts()
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
 
         let activeStorm = try await stormRepo.active(
             asOf: Date(),
@@ -577,8 +584,60 @@ struct SpcProviderSyncMapProductsTests {
             asOf: Date(),
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
-        #expect(activeStorm == .marginal)
-        #expect(activeTornado == .tornado(probability: 0.02))
+        let activeFire = try await fireRepo.active(
+            asOf: Date(),
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(activeStorm == .allClear)
+        #expect(activeTornado == .allClear)
+        #expect(activeFire == .clear)
+    }
+
+    @Test("No-area categorical GeometryCollection is treated as all-clear and clears active convective risks")
+    func noAreaCategoricalGeometryCollectionClearsActiveConvectiveRisks() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let issue = spcTimestamp(now.addingTimeInterval(-3600))
+        let valid = spcTimestamp(now.addingTimeInterval(-3600))
+        let expire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeNoAreaData(
+                        label: "No Areas",
+                        label2: "No Areas",
+                        dn: 0,
+                        issue: issue,
+                        valid: valid,
+                        expire: expire
+                    ),
+                    .hail: emptyGeoJSONData(),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: emptyGeoJSONData()
+                ]
+            )
+        )
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let severeRepo = SevereRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+        try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+
+        let activeStorm = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        let activeTornado = try await severeRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(activeStorm == .allClear)
+        #expect(activeTornado == .allClear)
     }
 
     @Test("Future-only categorical candidate does not replace active projection window")
@@ -646,25 +705,35 @@ struct SpcProviderSyncMapProductsTests {
         #expect(active == .allClear)
     }
 
-    @Test("Coherent categorical candidate allows empty fire product to clear active fire risk")
-    func coherentCategoricalAllowsEmptyFireClear() async throws {
+    @Test("No-area fire product clears active fire risk using its own fire window")
+    func noAreaFireProductClearsActiveFireRiskUsingOwnWindow() async throws {
         let container = try await makeMapSyncContainer()
         let now = Date()
         let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
         let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
         let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
-        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
-        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
-        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let convectiveIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let convectiveValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let convectiveExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let fireIssue = spcTimestamp(now.addingTimeInterval(-90 * 60))
+        let fireValid = spcTimestamp(now.addingTimeInterval(-90 * 60))
+        let fireExpire = spcTimestamp(now.addingTimeInterval(5 * 3600))
         let provider = makeSpcProviderForMapSyncTests(
             container: container,
             client: ScriptedMapSyncClient(
                 geoJsonByProduct: makeCoherentBatch(
                     categoricalFeatures: try JSONDecoder().decode(
                         GeoJSONFeatureCollection.self,
-                        from: makeCategoricalData(issue: acceptedIssue, valid: acceptedValid, expire: acceptedExpire)
+                        from: makeCategoricalData(issue: convectiveIssue, valid: convectiveValid, expire: convectiveExpire)
                     ).features,
-                    fireData: emptyGeoJSONData()
+                    fireData: makeNoAreaData(
+                        label: "No Areas",
+                        label2: "No Areas",
+                        dn: 0,
+                        issue: fireIssue,
+                        valid: fireValid,
+                        expire: fireExpire
+                    )
                 )
             )
         )
@@ -681,6 +750,54 @@ struct SpcProviderSyncMapProductsTests {
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
         )
         #expect(active == .clear)
+    }
+
+    @Test("No-area tornado product clears active severe risk when convective batch is coherent")
+    func noAreaTornadoProductClearsActiveSevereRisk() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder().decode(
+                        GeoJSONFeatureCollection.self,
+                        from: makeCategoricalData(issue: acceptedIssue, valid: acceptedValid, expire: acceptedExpire)
+                    ).features,
+                    tornadoData: makeNoAreaData(
+                        label: "No Areas",
+                        label2: "No Areas",
+                        dn: 0,
+                        issue: acceptedIssue,
+                        valid: acceptedValid,
+                        expire: acceptedExpire
+                    )
+                )
+            )
+        )
+
+        let severeRepo = SevereRiskRepo(modelContainer: container)
+        try await severeRepo.refreshTornadoRisk(
+            using: MockClient(
+                mode: .success(makeTornadoData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+
+        let active = try await severeRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .allClear)
     }
 
     @Test("Accepted coherent batch replaces only rows in its validity window")
@@ -821,6 +938,281 @@ struct SpcProviderSyncMapProductsTests {
 
         await provider.syncMapProducts()
 
+        let active = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("Missing fire product rejects fire domain and preserves existing state")
+    func missingFireProductRejectsFireDomainAndPreservesExistingState() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(
+                    issue: priorIssue,
+                    valid: priorValid,
+                    expire: priorExpire
+                )
+            )
+        )
+        try await fireRepo.refreshFireRisk(
+            using: FireMockClient(fireData: makeFireData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeCategoricalData(
+                        issue: acceptedIssue,
+                        valid: acceptedValid,
+                        expire: acceptedExpire
+                    ),
+                    .hail: emptyGeoJSONData(),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData()
+                ]
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+        let activeStorm = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        let activeFire = try await fireRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(activeStorm == .marginal)
+        #expect(activeFire == .critical)
+    }
+
+    @Test("Decode-failed product rejects batch and preserves existing risk state")
+    func decodeFailedProductRejectsBatchAndPreservesState() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeCategoricalData(),
+                    .hail: Data("not-geojson".utf8),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: emptyGeoJSONData()
+                ]
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+        let active = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(active == .marginal)
+    }
+
+    @Test("HTML fire product body rejects fire domain and preserves existing state")
+    func htmlFireProductBodyRejectsFireDomainAndPreservesExistingState() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(issue: priorIssue, valid: priorValid, expire: priorExpire)
+            )
+        )
+        try await fireRepo.refreshFireRisk(
+            using: FireMockClient(fireData: makeFireData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: makeCategoricalData(
+                        issue: acceptedIssue,
+                        valid: acceptedValid,
+                        expire: acceptedExpire
+                    ),
+                    .hail: emptyGeoJSONData(),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: Data("<html><body>Not Found</body></html>".utf8)
+                ]
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+        let activeStorm = try await stormRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        let activeFire = try await fireRepo.active(
+            asOf: now,
+            for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+        )
+        #expect(activeStorm == .marginal)
+        #expect(activeFire == .critical)
+    }
+
+    @Test("Rejected convective domain with accepted fire domain preserves storm and updates fire only")
+    func rejectedConvectiveAcceptedFireUpdatesOnlyFire() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let fireIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let fireValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let fireExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(issue: priorIssue, valid: priorValid, expire: priorExpire)
+            )
+        )
+        try await fireRepo.refreshFireRisk(
+            using: FireMockClient(fireData: makeFireData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: Data("not-geojson".utf8),
+                    .hail: emptyGeoJSONData(),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: makeNoAreaData(
+                        label: "No Areas",
+                        label2: "No Areas",
+                        dn: 0,
+                        issue: fireIssue,
+                        valid: fireValid,
+                        expire: fireExpire
+                    )
+                ]
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+        #expect(
+            try await stormRepo.active(
+                asOf: now,
+                for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+            ) == .marginal
+        )
+        #expect(
+            try await fireRepo.active(
+                asOf: now,
+                for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+            ) == .clear
+        )
+    }
+
+    @Test("Accepted convective domain with rejected fire domain updates storm and preserves fire")
+    func acceptedConvectiveRejectedFirePreservesFire() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let priorIssue = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorValid = spcTimestamp(now.addingTimeInterval(-2 * 3600))
+        let priorExpire = spcTimestamp(now.addingTimeInterval(4 * 3600))
+        let acceptedIssue = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedValid = spcTimestamp(now.addingTimeInterval(-3600))
+        let acceptedExpire = spcTimestamp(now.addingTimeInterval(6 * 3600))
+
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        let fireRepo = FireRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(
+            using: CategoricalMockClient(
+                categoricalData: makeCategoricalData(issue: priorIssue, valid: priorValid, expire: priorExpire)
+            )
+        )
+        try await fireRepo.refreshFireRisk(
+            using: FireMockClient(fireData: makeFireData(issue: priorIssue, valid: priorValid, expire: priorExpire))
+        )
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(
+                    categoricalFeatures: try JSONDecoder().decode(
+                        GeoJSONFeatureCollection.self,
+                        from: makeCategoricalData(
+                            label: "ENH",
+                            label2: "Enhanced Risk",
+                            dn: 4,
+                            issue: acceptedIssue,
+                            valid: acceptedValid,
+                            expire: acceptedExpire
+                        )
+                    ).features,
+                    fireData: Data("<html><body>Not Found</body></html>".utf8)
+                )
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
+        #expect(
+            try await stormRepo.active(
+                asOf: now,
+                for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+            ) == .enhanced
+        )
+        #expect(
+            try await fireRepo.active(
+                asOf: now,
+                for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
+            ) == .critical
+        )
+    }
+
+    @Test("Empty categorical with non-empty severe product is rejected")
+    func emptyCategoricalWithNonEmptySevereIsRejected() async throws {
+        let container = try await makeMapSyncContainer()
+        let now = Date()
+        let stormRepo = StormRiskRepo(modelContainer: container)
+        try await stormRepo.refreshStormRisk(using: CategoricalMockClient(categoricalData: makeCategoricalData()))
+
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: makeCoherentBatch(categoricalFeatures: [], tornadoData: makeTornadoData())
+            )
+        )
+
+        let outcome = await provider.syncMapProductsOutcome()
+        #expect(outcome == .accepted)
         let active = try await stormRepo.active(
             asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
@@ -1019,7 +1411,7 @@ private actor CountingMapSyncClient: SpcClient {
             try await Task.sleep(nanoseconds: delayNanoseconds)
         }
         if product == failingProduct {
-            throw SpcError.missingData
+            throw SpcError.networkError(status: 500)
         }
         if product == .categorical {
             return makeCategoricalData()
@@ -1172,6 +1564,28 @@ private func makeFireData(issue: String? = nil, valid: String? = nil, expire: St
             dn: 8
         ),
         geometry: makeMultiPolygonGeometry(squareAtLonLat: (-105.0, 39.0), size: 1.5)
+    )
+    return (try? JSONEncoder().encode(makeFeatureCollection(features: [feature]))) ?? emptyGeoJSONData()
+}
+
+private func makeNoAreaData(
+    label: String = "No Areas",
+    label2: String = "No Areas",
+    dn: Int = 0,
+    issue: String,
+    valid: String,
+    expire: String
+) -> Data {
+    let feature = makeFeature(
+        properties: makeProperties(
+            label: label,
+            label2: label2,
+            issue: issue,
+            valid: valid,
+            expire: expire,
+            dn: dn
+        ),
+        geometry: makeNoAreaGeometryCollection()
     )
     return (try? JSONEncoder().encode(makeFeatureCollection(features: [feature]))) ?? emptyGeoJSONData()
 }

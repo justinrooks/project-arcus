@@ -90,29 +90,32 @@ struct ActiveAlertSummaryView: View {
 
     @ViewBuilder
     private var alertsContent: some View {
-        ActiveAlertSection(
-            label: "Watches & Warnings",
-            items: sortedAlerts,
-            limit: 2,
-            onSelect: {
-                selectedAlertDetent = .medium
-                selectedAlert = $0
+        VStack(alignment: .leading, spacing: 12) {
+            ActiveAlertSection(
+                label: "Watches & Warnings",
+                items: sortedAlerts,
+                limit: 2,
+                onSelect: {
+                    selectedAlertDetent = .medium
+                    selectedAlert = $0
+                }
+            ) { alert in
+                WatchRowView(alert: alert)
             }
-        ) { alert in
-            WatchRowView(alert: alert)
-        }
 
-        ActiveAlertSection(
-            label: "Mesos",
-            items: sortedMesos,
-            limit: 2,
-            onSelect: {
-                selectedMesoDetent = .medium
-                selectedMeso = $0
+            ActiveAlertSection(
+                label: "Mesos",
+                items: sortedMesos,
+                limit: 2,
+                onSelect: {
+                    selectedMesoDetent = .medium
+                    selectedMeso = $0
+                }
+            ) { meso in
+                MesoRowView(meso: meso)
             }
-        ) { meso in
-            MesoRowView(meso: meso)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     var body: some View {
@@ -328,21 +331,27 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     let limit: Int
     let onSelect: (Item) -> Void
     @ViewBuilder let row: (Item) -> Row
+
     @State private var isExpanded = false
-    
+
     var body: some View {
         if !items.isEmpty {
             let visibleItems = isExpanded ? items : Array(items.prefix(limit))
-            
-            Text(label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-//                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.09))
-            
-            ForEach(visibleItems) { item in
-                Button { onSelect(item) } label: { row(item) }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+
+                ForEach(visibleItems) { item in
+                    Button {
+                        onSelect(item)
+                    } label: {
+                        row(item)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
                             cornerRadius: SkyAwareRadius.row,
@@ -351,31 +360,33 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                         )
                     )
                     .accessibilityIdentifier("\(label.lowercased())-row-\(String(describing: item.id))")
-            }
-            
-            if items.count > limit {
-                Button {
-                    withAnimation(SkyAwareMotion.disclosure(reduceMotion)) {
-                        isExpanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(isExpanded ? "Show less" : "See all (\(items.count - visibleItems.count) more)")
-                        Image(systemName: isExpanded ? "arrow.up" : "arrow.right")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 6)
                 }
-                .buttonStyle(
-                    SkyAwarePressableButtonStyle(
-                        cornerRadius: SkyAwareRadius.chipCompact,
-                        pressedScale: 0.985,
-                        pressedOverlayOpacity: 0.08
+
+                if items.count > limit {
+                    Button {
+                        withAnimation(SkyAwareMotion.disclosure(reduceMotion)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(isExpanded ? "Show less" : "See all (\(items.count - visibleItems.count) more)")
+                            Image(systemName: isExpanded ? "arrow.up" : "arrow.right")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(
+                        SkyAwarePressableButtonStyle(
+                            cornerRadius: SkyAwareRadius.chipCompact,
+                            pressedScale: 0.985,
+                            pressedOverlayOpacity: 0.08
+                        )
                     )
-                )
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -407,10 +418,10 @@ private struct MesoRowView: View {
                     .padding(.vertical, 6)
                 }
                 
-                if meso.watchProbability >= 20 {
+                if let watchProbability = meso.watchProbability, watchProbability >= 20 {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("Watch \(Int(meso.watchProbability))%")
+                            Text("Watch \(Int(watchProbability))%")
                                 .monospacedDigit()
                                 .font(.caption.weight(.semibold))
                         }

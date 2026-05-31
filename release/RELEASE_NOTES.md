@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v1.0.1(71)
+
+### Overview
+This update adds an in-app trusted-link viewer, stabilizes SPC map ingest/persistence behavior, refines mesoscale and summary/local-alert presentation, and hardens location upload/preference sync reliability.
+
+### Highlights
+- Added a lightweight in-app web content viewer for trusted source links.
+- SPC map sync now uses stronger accepted-batch persistence and no-area categorical handling so convective all-clear transitions clean up active risk state correctly.
+- GeoJSON ingestion handling was tightened for sparse/no-area SPC map payload transitions.
+- Summary and Local Alerts resolve-forward/loading transitions were polished, and local alert row stacking plus mesoscale watch-probability presentation were refined.
+- Mesoscale notification copy now uses calmer, user-facing wording with concise threat summaries and improved fallback text.
+- Location snapshot/preference upload coordination was hardened around APNs token availability and preference-triggered sync paths.
+
+### Maintenance
+- Added a weekly test-gap audit document and moved location-upload hardening docs under `docs/plans`.
+- Unit coverage was expanded/tuned for SPC ingest edge cases, mesoscale notification composition, and location upload/preference CI flake scenarios.
+
 ## v1.0.1(67)
 
 ### Overview
