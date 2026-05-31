@@ -1,3 +1,13 @@
+SkyAware v1.0.1(71) build focuses on SPC map ingest reliability, mesoscale notification clarity, and location upload sync hardening.
+
+Highlights:
+- Added an in-app trusted-link web viewer.
+- Hardened SPC accepted-batch map persistence and no-area categorical all-clear handling.
+- Improved SPC GeoJSON ingest behavior for sparse/no-area payload transitions.
+- Polished Summary/Local Alerts resolve-forward/loading transitions and fixed local alert row stacking.
+- Updated mesoscale watch-probability and push-notification wording to calmer user-facing copy.
+- Improved location snapshot/preference upload coalescing around APNs token and preference-sync transitions.
+
 SkyAware v1.0.1(67) adds new widget surfaces and tightens alert-targeting and refresh reliability behavior.
 
 Highlights:
