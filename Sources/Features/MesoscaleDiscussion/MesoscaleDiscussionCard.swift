@@ -134,7 +134,7 @@ struct MesoscaleDiscussionContent: View {
                     .font(.subheadline)
                 Spacer()
                 
-                let watchInt = Int(meso.watchProbability)
+                let watchInt = Int((meso.watchProbability ?? 0).rounded())
                 if watchInt > 0 {
                     Text("\(watchInt)%")
                         .font(.subheadline.weight(.semibold))
@@ -145,7 +145,7 @@ struct MesoscaleDiscussionContent: View {
                 }
             }
             
-            WatchProbabilityBar(progress: (meso.watchProbability / 1))
+            WatchProbabilityBar(progress: ((meso.watchProbability ?? 0) / 1))
                 .frame(height: 8)
                 .clipShape(Capsule())
         }

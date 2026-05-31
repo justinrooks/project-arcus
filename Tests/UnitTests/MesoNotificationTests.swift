@@ -108,6 +108,41 @@ struct MesoNotificationTests {
         #expect(firstPass == true)
         #expect(secondPass == false)
     }
+
+    @Test
+    func composerShowsPercentWhenProbabilityIsNumeric() {
+        let composer = MesoComposer()
+        let event = NotificationEvent(
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
+            payload: [
+                "mesoId": 1234,
+                "watchProbability": 30.0,
+                "watchProbabilityText": "30",
+                "placeMark": "Oklahoma City, OK"
+            ]
+        )
+
+        let message = composer.compose(event)
+        #expect(message.subtitle == "Watch Probability: 30%")
+    }
+
+    @Test
+    func composerShowsUnknownWhenProbabilityMissing() {
+        let composer = MesoComposer()
+        let event = NotificationEvent(
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
+            payload: [
+                "mesoId": 1234,
+                "watchProbabilityText": "Unknown",
+                "placeMark": "Norman, OK"
+            ]
+        )
+
+        let message = composer.compose(event)
+        #expect(message.subtitle == "Watch Probability: Unknown")
+    }
 }
 
 // MARK: - Test Doubles

@@ -418,10 +418,10 @@ private struct MesoRowView: View {
                     .padding(.vertical, 6)
                 }
                 
-                if meso.watchProbability >= 20 {
+                if let watchProbability = meso.watchProbability, watchProbability >= 20 {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("Watch \(Int(meso.watchProbability))%")
+                            Text("Watch \(Int(watchProbability))%")
                                 .monospacedDigit()
                                 .font(.caption.weight(.semibold))
                         }

@@ -46,6 +46,7 @@ struct MesoRule: MesoNotificationRuleEvaluating {
                 "validStart": meso.validStart,
                 "validEnd": meso.validEnd,
                 "watchProbability": meso.watchProbability,
+                "watchProbabilityText": meso.watchProbabilityText,
                 "placeMark": ctx.placeMark
             ]
         )

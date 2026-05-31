@@ -17,7 +17,10 @@ struct MesoComposer: NotificationComposing {
         // MARK: Parse payload
         let mesoId = (event.payload["mesoId"] as? Int) ?? -1
         let threats = (event.payload["threats"] as? MDThreats) ?? nil
-        let watchProbability = (event.payload["watchProbability"] as? String) ?? "Unknown"
+        let watchProbability = formatWatchProbability(
+            value: event.payload["watchProbability"] as? Double,
+            text: event.payload["watchProbabilityText"] as? String
+        )
         let placemark = (event.payload["placeMark"] as? String) ?? "Unknown"
         
         let threatString = buildThreatString(from: threats)
@@ -46,5 +49,21 @@ struct MesoComposer: NotificationComposing {
         }
         
         return lines.count == 1 ? "Threats: unknown" : lines.joined(separator: "\n")
+    }
+
+    private func formatWatchProbability(value: Double?, text: String?) -> String {
+        if let value {
+            return "\(Int(value.rounded()))%"
+        }
+
+        guard let rawText = text?.trimmingCharacters(in: .whitespacesAndNewlines), rawText.isEmpty == false else {
+            return "Unknown"
+        }
+
+        if let numericValue = Double(rawText) {
+            return "\(Int(numericValue.rounded()))%"
+        }
+
+        return rawText.localizedCaseInsensitiveCompare("unknown") == .orderedSame ? "Unknown" : rawText
     }
 }
