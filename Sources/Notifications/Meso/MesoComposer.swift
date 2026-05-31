@@ -15,55 +15,115 @@ struct MesoComposer: NotificationComposing {
         logger.debug("Building meso notification")
         
         // MARK: Parse payload
-        let mesoId = (event.payload["mesoId"] as? Int) ?? -1
         let threats = (event.payload["threats"] as? MDThreats) ?? nil
-        let watchProbability = formatWatchProbability(
+        let watchProbabilitySubtitle = formatWatchProbabilitySubtitle(
             value: event.payload["watchProbability"] as? Double,
             text: event.payload["watchProbabilityText"] as? String
         )
-        let placemark = (event.payload["placeMark"] as? String) ?? "Unknown"
+        let placemark = sanitizedPlacemark(event.payload["placeMark"] as? String)
         
-        let threatString = buildThreatString(from: threats)
+        let threatString = buildThreatSummary(from: threats)
         
         logger.debug("Summary notification generated")
         return (
-            "MD\(mesoId) Active mesoscale discussion for \(placemark)",
+            "Mesoscale Discussion for \(placemark)",
             "\(threatString)",
-            "Watch Probability: \(watchProbability)"
+            "\(watchProbabilitySubtitle)"
         )
     }
     
     // MARK: Build Strings
-    private func buildThreatString(from threats: MDThreats?) -> String {
-        guard let t = threats else { return "Threats: unknown" }
-        
-        var lines: [String] = ["Threats:"]
-        if let w = t.peakWindMPH {
-            lines.append("Peak Wind: \(w)")
+    private func buildThreatSummary(from threats: MDThreats?) -> String {
+        guard let threats else {
+            return "SPC is monitoring storms near your area. Open SkyAware for the full discussion."
         }
-        if let h = t.hailRangeInches {
-            lines.append("Hail Range: \(h)")
+
+        let hasWind = threats.peakWindMPH != nil
+        let hasHail = threats.hailRangeInches != nil
+        let hasTornado = isMeaningfulThreatText(threats.tornadoStrength)
+
+        var concerns: [String] = []
+        if hasWind { concerns.append("damaging wind") }
+        if hasHail { concerns.append("large hail") }
+        if hasTornado { concerns.append("isolated tornadoes") }
+
+        guard concerns.isEmpty == false else {
+            return "SPC is monitoring storms near your area. Open SkyAware for the full discussion."
         }
-        if let ts = t.tornadoStrength, !ts.isEmpty {
-            lines.append("Tornado Strength: \(ts)")
+
+        let lead = concerns.count == 1
+            ? "Main concern: \(concerns[0])."
+            : "Main concerns: \(naturalLanguageList(concerns))."
+
+        var detailParts: [String] = []
+        if let wind = threats.peakWindMPH {
+            detailParts.append("Gusts near \(wind) mph")
         }
-        
-        return lines.count == 1 ? "Threats: unknown" : lines.joined(separator: "\n")
+        if let hail = threats.hailRangeInches {
+            detailParts.append("hail up to \(formatHailInches(hail))")
+        }
+
+        if detailParts.isEmpty {
+            return lead
+        }
+
+        return "\(lead) \(detailParts.joined(separator: "; "))."
     }
 
-    private func formatWatchProbability(value: Double?, text: String?) -> String {
+    private func formatWatchProbabilitySubtitle(value: Double?, text: String?) -> String {
         if let value {
-            return "\(Int(value.rounded()))%"
+            return "Watch issuance chance: \(Int(value.rounded()))%"
         }
 
         guard let rawText = text?.trimmingCharacters(in: .whitespacesAndNewlines), rawText.isEmpty == false else {
-            return "Unknown"
+            return "Watch potential not specified"
         }
 
         if let numericValue = Double(rawText) {
-            return "\(Int(numericValue.rounded()))%"
+            return "Watch possible: \(Int(numericValue.rounded()))%"
         }
 
-        return rawText.localizedCaseInsensitiveCompare("unknown") == .orderedSame ? "Unknown" : rawText
+        return rawText.localizedCaseInsensitiveCompare("unknown") == .orderedSame
+            ? "Watch potential not specified"
+            : "Watch possible: \(rawText)"
+    }
+
+    private func sanitizedPlacemark(_ placemark: String?) -> String {
+        let trimmed = placemark?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty || trimmed.localizedCaseInsensitiveCompare("unknown") == .orderedSame {
+            return "your area"
+        }
+        return trimmed
+    }
+
+    private func isMeaningfulThreatText(_ text: String?) -> Bool {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines), text.isEmpty == false else {
+            return false
+        }
+        return text.localizedCaseInsensitiveCompare("unknown") != .orderedSame
+    }
+
+    private func naturalLanguageList(_ items: [String]) -> String {
+        switch items.count {
+        case 0:
+            return ""
+        case 1:
+            return items[0]
+        case 2:
+            return "\(items[0]) and \(items[1])"
+        default:
+            let head = items.dropLast().joined(separator: ", ")
+            return "\(head), and \(items.last ?? "")"
+        }
+    }
+
+    private func formatHailInches(_ inches: Double) -> String {
+        let value: String
+        if inches.truncatingRemainder(dividingBy: 1) == 0 {
+            value = String(Int(inches))
+        } else {
+            value = String(format: "%.1f", inches)
+        }
+        return "\(value)\""
     }
 }

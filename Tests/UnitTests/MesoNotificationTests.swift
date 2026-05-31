@@ -124,11 +124,12 @@ struct MesoNotificationTests {
         )
 
         let message = composer.compose(event)
-        #expect(message.subtitle == "Watch Probability: 30%")
+        #expect(message.title == "Mesoscale Discussion for Oklahoma City, OK")
+        #expect(message.subtitle == "Watch issuance chance: 30%")
     }
 
     @Test
-    func composerShowsUnknownWhenProbabilityMissing() {
+    func composerShowsWatchPotentialNotSpecifiedWhenProbabilityMissing() {
         let composer = MesoComposer()
         let event = NotificationEvent(
             kind: .mesoNotification,
@@ -141,7 +142,75 @@ struct MesoNotificationTests {
         )
 
         let message = composer.compose(event)
-        #expect(message.subtitle == "Watch Probability: Unknown")
+        #expect(message.subtitle == "Watch potential not specified")
+    }
+
+    @Test
+    func composerBuildsWindAndHailSummary() {
+        let composer = MesoComposer()
+        let event = NotificationEvent(
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
+            payload: [
+                "mesoId": 1234,
+                "watchProbability": 35.0,
+                "watchProbabilityText": "35",
+                "placeMark": "Bennett, CO",
+                "threats": MDThreats(
+                    peakWindMPH: 35,
+                    hailRangeInches: 2.0,
+                    tornadoStrength: nil
+                )
+            ]
+        )
+
+        let message = composer.compose(event)
+        #expect(message.body == "Main concerns: damaging wind and large hail. Gusts near 35 mph; hail up to 2\".")
+    }
+
+    @Test
+    func composerUsesFallbackWhenThreatDetailsAreSparse() {
+        let composer = MesoComposer()
+        let event = NotificationEvent(
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
+            payload: [
+                "mesoId": 1234,
+                "watchProbability": 35.0,
+                "watchProbabilityText": "35",
+                "placeMark": "Bennett, CO"
+            ]
+        )
+
+        let message = composer.compose(event)
+        #expect(message.body == "SPC is monitoring storms near your area. Open SkyAware for the full discussion.")
+    }
+
+    @Test
+    func composerNeverShowsUnknownInUserFacingCopy() {
+        let composer = MesoComposer()
+        let event = NotificationEvent(
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
+            payload: [
+                "mesoId": 1234,
+                "watchProbabilityText": "Unknown",
+                "placeMark": "Unknown",
+                "threats": MDThreats(
+                    peakWindMPH: nil,
+                    hailRangeInches: nil,
+                    tornadoStrength: "unknown"
+                )
+            ]
+        )
+
+        let message = composer.compose(event)
+        #expect(message.title == "Mesoscale Discussion for your area")
+        #expect(message.subtitle == "Watch potential not specified")
+        #expect(message.body == "SPC is monitoring storms near your area. Open SkyAware for the full discussion.")
+        #expect(message.title.localizedCaseInsensitiveContains("unknown") == false)
+        #expect(message.subtitle.localizedCaseInsensitiveContains("unknown") == false)
+        #expect(message.body.localizedCaseInsensitiveContains("unknown") == false)
     }
 }
 
