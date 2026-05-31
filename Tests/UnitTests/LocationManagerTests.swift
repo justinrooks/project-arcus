@@ -100,6 +100,8 @@ struct LocationSessionTests {
     private actor StubResolver: LocationContextResolving {
         let context: LocationContext?
         let error: LocationContextError?
+        private var prepareCallCount = 0
+        private var resolveCallCount = 0
 
         init(context: LocationContext?, error: LocationContextError?) {
             self.context = context
@@ -114,6 +116,7 @@ struct LocationSessionTests {
             maximumAcceptedLocationAge: TimeInterval,
             placemarkTimeout: Double
         ) async throws -> LocationContext {
+            prepareCallCount += 1
             if let context {
                 return context
             }
@@ -125,11 +128,15 @@ struct LocationSessionTests {
             maximumAcceptedLocationAge: TimeInterval?,
             placemarkTimeout: Double
         ) async throws -> LocationContext {
+            resolveCallCount += 1
             if let context {
                 return context
             }
             throw error ?? LocationContextError.locationTimeout
         }
+
+        func recordedPrepareCallCount() -> Int { prepareCallCount }
+        func recordedResolveCallCount() -> Int { resolveCallCount }
     }
 
     private actor StubUploadCoordinator: LocationUploadCoordinating {
@@ -378,8 +385,7 @@ struct LocationSessionTests {
             locationUploadCoordinator: uploader
         )
 
-        // Let initialization tasks settle, then set deterministic test state.
-        try await Task.sleep(for: .milliseconds(20))
+        // This path should not resolve context; snapshot presence is irrelevant.
         session.currentSnapshot = context.snapshot
         session.currentContext = nil
 
@@ -392,8 +398,9 @@ struct LocationSessionTests {
         #expect(await uploader.recordedLastReason() == .preferenceChanged)
         #expect(await uploader.recordedLastPreferenceReason() == "location-sharing")
         #expect(await uploader.recordedLastPreferenceIsSubscribedOverride() == nil)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+        #expect(await resolver.recordedResolveCallCount() == 0)
         #expect(session.currentContext == nil)
-        #expect(session.currentSnapshot == context.snapshot)
     }
 
     @MainActor
