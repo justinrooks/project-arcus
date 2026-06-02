@@ -1011,6 +1011,73 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("legacy queued upload payloads decode without a persisted operation key")
+    func persistedQueuedUpload_legacyPayloadsDecodeWithoutOperationKey() throws {
+        let json = #"""
+        [
+          {
+            "source": "manualRefresh",
+            "reason": "locationResolved",
+            "forceUpload": false,
+            "installationId": "install-abc-123",
+            "requestedAt": "2026-06-02T00:00:00Z",
+            "isSubscribed": true,
+            "authorizationState": "always",
+            "apnsToken": "apns-token-123",
+            "context": {
+              "capturedAt": "2026-06-02T00:00:00Z",
+              "horizontalAccuracyMeters": 42,
+              "h3Cell": \#(sampleH3Cell),
+              "county": "OKC109",
+              "fireZone": "OKZ025",
+              "forecastZone": "OKZ055",
+              "countyLabel": "Oklahoma County",
+              "fireZoneLabel": "Central Oklahoma"
+            }
+          },
+          {
+            "source": "settingsPreference",
+            "reason": "preferenceChanged",
+            "forceUpload": true,
+            "installationId": "install-abc-123",
+            "requestedAt": "2026-06-02T00:00:00Z",
+            "isSubscribed": false,
+            "authorizationState": "whenInUse",
+            "apnsToken": "apns-token-123"
+          }
+        ]
+        """#
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let requests = try decoder.decode([PersistedLocationUploadRequest].self, from: Data(json.utf8))
+
+        let snapshotRequest = try #require(requests.first)
+        switch snapshotRequest.operation {
+        case .locationSnapshot(let context):
+            #expect(context.capturedAt == Date(timeIntervalSince1970: 1_780_358_400))
+            #expect(context.horizontalAccuracyMeters == 42)
+            #expect(context.h3Cell == sampleH3Cell)
+            #expect(context.county == "OKC109")
+            #expect(context.fireZone == "OKZ025")
+            #expect(context.forecastZone == "OKZ055")
+            #expect(context.countyLabel == "Oklahoma County")
+            #expect(context.fireZoneLabel == "Central Oklahoma")
+        case .preferenceSync:
+            Issue.record("Expected legacy snapshot payload to decode as a location snapshot")
+        }
+
+        let preferenceRequest = try #require(requests.last)
+        switch preferenceRequest.operation {
+        case .preferenceSync:
+            #expect(preferenceRequest.source == .settingsPreference)
+            #expect(preferenceRequest.reason == .preferenceChanged)
+            #expect(preferenceRequest.forceUpload == true)
+        case .locationSnapshot:
+            Issue.record("Expected legacy preference payload to decode as a preference sync")
+        }
+    }
+
     @Test("snapshot pusher skips upload when location-to-signal is disabled")
     func snapshotPusher_skipsUploadWhenLocationSharingDisabled() async {
         let uploader = MockSnapshotUploader()
