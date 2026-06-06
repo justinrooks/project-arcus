@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.0.1(71)
+## v1.0.1(72)
 
 ### Overview
 This build hardens diagnostics and alert handling against legacy payload shapes, while making the APNs device token easier to copy from Settings diagnostics.

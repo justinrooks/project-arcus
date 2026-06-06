@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.0.1(71)
+## v1.0.1(72)
 
 ### UI / UX
 - Make the APNs device token in Settings diagnostics tappable so it copies to the clipboard.
