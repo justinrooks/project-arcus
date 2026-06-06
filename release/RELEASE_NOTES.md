@@ -5,6 +5,20 @@
 ## v1.0.1(71)
 
 ### Overview
+This build hardens diagnostics and alert handling against legacy payload shapes, while making the APNs device token easier to copy from Settings diagnostics.
+
+### Highlights
+- Settings diagnostics now lets you tap the APNs device token to copy it to the clipboard.
+- Remote alert revision timestamps now decode more reliably from numeric APNs payload values, including legacy Swift reference-date seconds.
+- Legacy `MdDTO` records without `watchProbabilityText` still decode cleanly.
+- Regression coverage was added for legacy queued upload payload decoding, remote alert date parsing, and `MdDTO` round-tripping.
+
+### Maintenance
+- Weekly audit notes were refreshed with the latest bug, contract-drift, and test-gap findings.
+
+## v1.0.1(71)
+
+### Overview
 This update adds an in-app trusted-link viewer, stabilizes SPC map ingest/persistence behavior, refines mesoscale and summary/local-alert presentation, and hardens location upload/preference sync reliability.
 
 ### Highlights

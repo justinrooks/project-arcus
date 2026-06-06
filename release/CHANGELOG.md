@@ -4,6 +4,26 @@
 
 ## v1.0.1(71)
 
+### UI / UX
+- Make the APNs device token in Settings diagnostics tappable so it copies to the clipboard.
+<!-- evidence: 384fcb0 -->
+
+### Reliability
+- Harden remote alert revision-date parsing so numeric APNs payload values decode correctly, including legacy Swift reference-date seconds.
+<!-- evidence: 384fcb0 -->
+- Preserve compatibility when decoding legacy `MdDTO` payloads that omit `watchProbabilityText`.
+<!-- evidence: 384fcb0 -->
+
+### Tests / QA
+- Add regression coverage for legacy queued upload payload decoding, remote alert date parsing, and `MdDTO` round-tripping.
+<!-- evidence: 384fcb0 -->
+
+### Maintenance / Cleanup
+- Refresh the weekly audit notes with the latest bug, contract-drift, and test-gap findings.
+<!-- evidence: 384fcb0 -->
+
+## v1.0.1(71)
+
 ### Features
 - Add a lightweight in-app web content viewer for trusted source links.
 <!-- evidence: 8f1f272 -->

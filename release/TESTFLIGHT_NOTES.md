@@ -1,12 +1,10 @@
-SkyAware v1.0.1(71) build focuses on SPC map ingest reliability, mesoscale notification clarity, and location upload sync hardening.
+SkyAware v1.0.1(72) makes the APNs device token easier to copy in Settings diagnostics and hardens alert handling for legacy payload shapes.
 
 Highlights:
-- Added an in-app trusted-link web viewer.
-- Hardened SPC accepted-batch map persistence and no-area categorical all-clear handling.
-- Improved SPC GeoJSON ingest behavior for sparse/no-area payload transitions.
-- Polished Summary/Local Alerts resolve-forward/loading transitions and fixed local alert row stacking.
-- Updated mesoscale watch-probability and push-notification wording to calmer user-facing copy.
-- Improved location snapshot/preference upload coalescing around APNs token and preference-sync transitions.
+- Tap the APNs device token in Settings diagnostics to copy it to the clipboard.
+- Remote alert revision timestamps now decode correctly from numeric APNs payload values, including legacy Swift reference-date seconds.
+- Legacy `MdDTO` payloads without `watchProbabilityText` continue to decode cleanly.
+- Legacy queued upload payloads now decode cleanly.
 
 SkyAware v1.0.1(67) adds new widget surfaces and tightens alert-targeting and refresh reliability behavior.
 
