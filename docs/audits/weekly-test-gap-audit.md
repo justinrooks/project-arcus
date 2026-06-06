@@ -9,3 +9,12 @@
 - Watchlist items:
   - Verify cross-repo rollout sequencing for canonical `arcusAlertId` payload key to avoid mixed-client drift during staged deploys.
 - Implementation recommended: Completed (no further action for this finding)
+
+## 2026-06-02
+- Repos scanned: SkyAware (`/Users/justin/Code/project-arcus`), arcus-signal (`/Users/justin/Code/arcus-signal`), ArcusCore (`/Users/justin/Code/ArcusCore`)
+- Commit window: since last automation run marker `2026-05-26T15:00:38Z`
+- High-risk areas inspected: SPC accepted-batch persistence and all-clear handling, mesoscale DTO/copy changes, background-location ingestion routing, pending location/preference upload persistence, dedicated device-preference sync API, shared DTO/source enum additions
+- Top recommended test: `DevicePreferenceSyncPayloadContractTests.encodesStableWireKeysAndRoundTripsAcceptedResponse`
+- Watchlist items:
+  - `arcus-signal` source-constraint migration now allows expanded upload sources, but current coverage only smoke-tests `foregroundPrime`; the rest are not directly exercised through `POST /api/v1/devices/location-snapshots`.
+- Implementation recommended: Completed (regression test added in `Tests/UnitTests/LocationProviderTests.swift`)

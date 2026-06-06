@@ -37,3 +37,18 @@
 - best next fix: Thread explicit `enabled` intent into preference-sync payload construction (or pass override into uploader) and assert in unit tests.
 - implementation is recommended: Yes
 - implementation status: Fixed on 2026-05-28 by threading `isSubscribedOverride` through preference-sync enqueue path and adding regression coverage in `LocationSessionTests` and `LocationProviderTests`.
+
+## 2026-06-04T16:10:30Z
+- date: 2026-06-04T16:10:30Z
+- workflow reviewed: Weekly bug scan (audit-only)
+- files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Models/Meso/MdDTO.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MdDTOCodableCompatibilityTests.swift
+  - /Users/justin/Code/arcus-signal/Sources/App/Controllers/DeviceController.swift
+  - /Users/justin/Code/arcus-signal/Sources/App/Jobs/NotificationSendJob.swift
+  - /Users/justin/Code/arcus-signal/Sources/App/Migrations/UpdateDevicePresenceSourceConstraintForExpandedLocationUploadSources.swift
+  - /Users/justin/Code/arcus-signal/Sources/App/Models/Device/DevicePresenceModel.swift
+  - /Users/justin/Code/arcus-signal/Tests/AppTests/DevicePreferencesControllerTests.swift
+- top finding: `DeviceController.upsertDevicePresence` preserves old H3 fields on `ugc-only` updates, but `loadH3Candidates` still targets any row with a non-null `h3_cell`, so stale H3 data can keep devices on the wrong alert path.
+- best next fix: Clear H3 fields when `cellScheme == .ugcOnly` and require `cell_scheme = 'h3'` in H3 candidate queries.
+- implementation is recommended: Yes

@@ -24,3 +24,12 @@
 - Recommended fix: Configure APNs request encoders in `arcus-signal` to `dateEncodingStrategy = .iso8601` for both sandbox and production containers so `HotAlertAPNsPayload.revisionSent` matches ArcusCore/SkyAware decode contract
 - Watchlist items: `GET /api/v2/alerts?sent=` is currently accepted and intentionally ignored; keep docs and client assumptions aligned
 - Implementation recommended: Yes
+
+## 2026-06-01
+- Repos scanned: SkyAware (`/Users/justin/Code/project-arcus`), arcus-signal (`/Users/justin/Code/arcus-signal`), ArcusCore (`/Users/justin/Code/ArcusCore`)
+- Commit window: SkyAware `94db622..36ce30a` (since 2026-05-25), arcus-signal `2c01033..9d1caca`, ArcusCore `83b5cec..ebd690e`
+- Contract surfaces inspected: device registration/location snapshot payloads, device preference sync payload/response, location source enums and DB constraints, endpoint contract docs
+- Top finding: `POST /api/v1/devices/location-snapshots` docs advertise a stale `source` enum set that no longer matches app/shared model emissions or server DB acceptance
+- Recommended fix: Update `arcus-signal/docs/api-endpoints.md` `source` enum documentation to include expanded values (`foregroundPrime`, `foregroundActivate`, `foregroundLocationChange`, `manualRefresh`, `backgroundLocationChange`, `onboarding`, `settingsPreference`) and note backward compatibility with legacy values
+- Watchlist items: Device preference sync response date decoding still relies on ISO-8601 assumptions across Vapor/client; add explicit contract test if this endpoint is consumed beyond best-effort decode
+- Implementation recommended: Yes (documentation contract correction)

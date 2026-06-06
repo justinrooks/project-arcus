@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SettingsDiagnosticsView: View {
     @Environment(LocationSession.self) private var locationSession
@@ -99,10 +100,25 @@ struct SettingsDiagnosticsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("APNs Device Token")
                             .font(.subheadline.weight(.semibold))
-                        Text(apnsDeviceToken.isEmpty ? "Not registered yet" : apnsDeviceToken)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
+                        if apnsDeviceToken.isEmpty {
+                            Text("Not registered yet")
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Button {
+                                UIPasteboard.general.string = apnsDeviceToken
+                            } label: {
+                                Text(apnsDeviceToken)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("APNs Device Token")
+                            .accessibilityValue(apnsDeviceToken)
+                            .accessibilityHint("Copies the token to the clipboard.")
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
