@@ -143,6 +143,8 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
 }
 
 extension HomeRemoteAlertContext {
+    private static let referenceDateEpochOffset: TimeInterval = 978_307_200
+
     init?(userInfo: [AnyHashable: Any]) {
         if let payload = Self.sharedPayload(in: userInfo),
            let alertID = payload.resolvedAlertID {
@@ -211,12 +213,16 @@ extension HomeRemoteAlertContext {
             return date
         }
 
+        if let number = value as? NSNumber {
+            return dateFromNumericPayloadValue(number.doubleValue)
+        }
+
         if let timeInterval = value as? TimeInterval {
-            return normalizedDate(from: timeInterval)
+            return dateFromNumericPayloadValue(timeInterval)
         }
 
         if let integer = value as? Int {
-            return normalizedDate(from: TimeInterval(integer))
+            return dateFromNumericPayloadValue(TimeInterval(integer))
         }
 
         guard let string = normalizedString(from: value) else {
@@ -224,14 +230,17 @@ extension HomeRemoteAlertContext {
         }
 
         if let epoch = TimeInterval(string) {
-            return normalizedDate(from: epoch)
+            return dateFromNumericPayloadValue(epoch)
         }
 
         return ISO8601DateFormatter().date(from: string)
     }
 
-    private static func normalizedDate(from epoch: TimeInterval) -> Date {
-        let seconds = epoch > 10_000_000_000 ? epoch / 1_000 : epoch
+    private static func dateFromNumericPayloadValue(_ value: TimeInterval) -> Date {
+        var seconds = value > 10_000_000_000 ? value / 1_000 : value
+        if seconds > 0, seconds < referenceDateEpochOffset {
+            seconds += referenceDateEpochOffset
+        }
         return Date(timeIntervalSince1970: seconds)
     }
 
