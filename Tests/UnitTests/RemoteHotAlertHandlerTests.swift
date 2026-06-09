@@ -67,6 +67,26 @@ struct RemoteHotAlertHandlerTests {
         #expect(context?.revisionSent == Date(timeIntervalSinceReferenceDate: 802_204_200))
     }
 
+    @Test("numeric APNs revision date decodes from standard epoch seconds")
+    func numericAPNsRevisionDateDecodesFromStandardEpochSeconds() {
+        let userInfo: [AnyHashable: Any] = [
+            "aps": [
+                "alert": [
+                    "title": "Tornado Warning",
+                    "subtitle": "Includes your location",
+                    "body": "Tornado danger in your area."
+                ]
+            ],
+            "arcusAlertId": "99999999-8888-7777-6666-555555555555",
+            "revisionSent": NSNumber(value: 1_711_282_900)
+        ]
+
+        let context = HomeRemoteAlertContext(userInfo: userInfo)
+
+        #expect(context?.alertID == "99999999-8888-7777-6666-555555555555")
+        #expect(context?.revisionSent == Date(timeIntervalSince1970: 1_711_282_900))
+    }
+
     @Test("background receipt maps to newData when the targeted alert becomes locally available")
     func backgroundReceipt_returnsNewData() async throws {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
