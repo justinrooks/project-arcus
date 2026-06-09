@@ -205,6 +205,38 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testAlertCenterSecondAlertTapPushesExpectedDetailAndBackReturnsToList() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
+        alertsTab.tap()
+
+        let secondAlertRow = app.buttons["alert-center-watch-row-ui-test-watch-002"]
+        XCTAssertTrue(secondAlertRow.waitForExistence(timeout: 10), "Expected second seeded alert row to appear.")
+        secondAlertRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected second alert tap to push detail.")
+        XCTAssertTrue(
+            app.staticTexts["UI Test Fire Weather Watch"].waitForExistence(timeout: 10),
+            "Expected detail to show the second alert, not a stale first alert selection."
+        )
+
+        let backButton = app.navigationBars["Weather Alert"].buttons["Active Alerts"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 10), "Expected back button to return to the alert list.")
+        backButton.tap()
+
+        XCTAssertTrue(app.navigationBars["Active Alerts"].waitForExistence(timeout: 10), "Expected Back to return to the alert list.")
+        XCTAssertTrue(secondAlertRow.waitForExistence(timeout: 10), "Expected second alert row to remain available after returning.")
+        XCTAssertFalse(app.navigationBars["Weather Alert"].exists, "Back should not reveal a queued stale alert detail.")
+    }
+
+    @MainActor
     func testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

@@ -15,7 +15,6 @@ struct AlertView: View {
     let focusedAlertRequest: RemoteAlertFocusRequest?
     let onRefresh: (() async -> Void)?
     
-    @State private var selectedMeso: MdDTO?
     @State private var selectedAlert: AlertDTO?
     
     private var hasNoAlerts: Bool {
@@ -80,8 +79,8 @@ struct AlertView: View {
                         symbol: "exclamationmark.triangle.fill"
                     ) {
                         ForEach(sortedAlerts) { alert in
-                            Button {
-                                selectedAlert = alert
+                            NavigationLink {
+                                alertDetail(for: alert)
                             } label: {
                                 AlertRowView(alert: alert)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -106,8 +105,8 @@ struct AlertView: View {
                         symbol: "waveform.path.ecg"
                     ) {
                         ForEach(sortedMesos) { meso in
-                            Button {
-                                selectedMeso = meso
+                            NavigationLink {
+                                mesoDetail(for: meso)
                             } label: {
                                 AlertRowView(alert: meso)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,30 +138,35 @@ struct AlertView: View {
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationDestination(item: $selectedAlert) { alert in
-            ScrollView {
-                AlertDetailView(alert: alert, layout: .full)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
-            }
-            .accessibilityIdentifier("alert-center-watch-detail-view")
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
-            .navigationTitle("Weather Alert")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+            alertDetail(for: alert)
         }
-        .navigationDestination(item: $selectedMeso) { meso in
-            ScrollView {
-                MesoscaleDiscussionCard(meso: meso, layout: .full)
-                    .padding(.top, 8)
-                    .padding(.bottom, 24)
-            }
-            .scrollContentBackground(.hidden)
-            .background(.skyAwareBackground)
-            .navigationTitle("Mesoscale Discussion")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+    }
+
+    private func alertDetail(for alert: AlertDTO) -> some View {
+        ScrollView {
+            AlertDetailView(alert: alert, layout: .full)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
         }
+        .accessibilityIdentifier("alert-center-watch-detail-view")
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
+        .navigationTitle("Weather Alert")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+    }
+
+    private func mesoDetail(for meso: MdDTO) -> some View {
+        ScrollView {
+            MesoscaleDiscussionCard(meso: meso, layout: .full)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+        }
+        .scrollContentBackground(.hidden)
+        .background(.skyAwareBackground)
+        .navigationTitle("Mesoscale Discussion")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
     }
     
     private var overviewCard: some View {

@@ -299,6 +299,7 @@ private extension SkyAwareApp {
 
     static var uiTestSeedWatches: [AlertDTO] {
         let issued = Date().addingTimeInterval(-1_800)
+        let olderIssued = Date().addingTimeInterval(-2_400)
         let ends = Date().addingTimeInterval(7_200)
         return [
             AlertDTO(
@@ -324,6 +325,35 @@ private extension SkyAwareApp {
                 tornadoDamageThreat: "Possible",
                 maxWindGust: "70",
                 maxHailSize: "1.00",
+                windThreat: nil,
+                hailThreat: nil,
+                thunderstormDamageThreat: nil,
+                flashFloodDetection: nil,
+                flashFloodDamageThreat: nil
+            ),
+            AlertDTO(
+                id: "ui-test-watch-002",
+                messageId: "ui-test-watch-message-002",
+                currentRevisionSent: olderIssued,
+                title: "UI Test Fire Weather Watch",
+                headline: "UI Test Fire Weather Watch Headline",
+                issued: olderIssued,
+                expires: ends,
+                ends: ends,
+                messageType: "Alert",
+                sender: "NWS Test Office",
+                severity: "Moderate",
+                urgency: "Expected",
+                certainty: "Likely",
+                description: "Second UI test watch description for alert center navigation validation.",
+                instruction: "Avoid activities that could start fires.",
+                response: "Monitor",
+                areaSummary: "UI Test Fire Zone",
+                geometryData: nil,
+                tornadoDetection: nil,
+                tornadoDamageThreat: nil,
+                maxWindGust: nil,
+                maxHailSize: nil,
                 windThreat: nil,
                 hailThreat: nil,
                 thunderstormDamageThreat: nil,
