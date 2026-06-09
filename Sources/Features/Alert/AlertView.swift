@@ -14,6 +14,7 @@ struct AlertView: View {
     let alerts: [AlertDTO]
     let focusedAlertRequest: RemoteAlertFocusRequest?
     let onRefresh: (() async -> Void)?
+    let onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)?
     
     @State private var selectedAlert: AlertDTO?
     
@@ -59,12 +60,14 @@ struct AlertView: View {
         mesos: [MdDTO],
         alerts: [AlertDTO],
         focusedAlertRequest: RemoteAlertFocusRequest? = nil,
-        onRefresh: (() async -> Void)? = nil
+        onRefresh: (() async -> Void)? = nil,
+        onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)? = nil
     ) {
         self.mesos = mesos
         self.alerts = alerts
         self.focusedAlertRequest = focusedAlertRequest
         self.onRefresh = onRefresh
+        self.onFocusedAlertRequestHandled = onFocusedAlertRequestHandled
     }
     
     var body: some View {
@@ -132,8 +135,9 @@ struct AlertView: View {
             await onRefresh()
         }
         .task(id: focusedAlertRequest?.id) {
-            guard let focusedAlert = focusedAlertRequest?.alert else { return }
+            guard let focusedAlertRequest, let focusedAlert = focusedAlertRequest.alert else { return }
             selectedAlert = focusedAlert
+            onFocusedAlertRequestHandled?(focusedAlertRequest.id)
         }
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())

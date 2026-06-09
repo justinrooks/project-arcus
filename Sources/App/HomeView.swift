@@ -243,6 +243,9 @@ struct HomeView: View {
                                     showsLoading: true,
                                     environment: refreshEnvironment
                                 )
+                            },
+                            onFocusedAlertRequestHandled: { requestID in
+                                remoteAlertPresentationState.clearFocusRequest(id: requestID)
                             }
                         )
                         .background(.skyAwareBackground)

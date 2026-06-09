@@ -184,6 +184,35 @@ struct RemoteHotAlertHandlerTests {
         #expect(await widgetDriver.refreshCallCount() == 1)
     }
 
+    @Test("presentation state clears the matching focus request after it is consumed")
+    @MainActor
+    func presentationStateClearsMatchingFocusRequest() {
+        let state = RemoteAlertPresentationState()
+        let alert = makeAlert(id: "alert-open", revisionSent: Date(timeIntervalSince1970: 1_776_438_000))
+        state.present(alertID: "alert-open", alert: alert)
+        let requestID = state.focusRequest?.id
+
+        state.clearFocusRequest(id: requestID)
+
+        #expect(state.focusRequest == nil)
+    }
+
+    @Test("presentation state keeps newer focus request when an older request is consumed")
+    @MainActor
+    func presentationStateKeepsNewerFocusRequest() throws {
+        let state = RemoteAlertPresentationState()
+        let firstAlert = makeAlert(id: "first-alert", revisionSent: Date(timeIntervalSince1970: 1_776_438_000))
+        let secondAlert = makeAlert(id: "second-alert", revisionSent: Date(timeIntervalSince1970: 1_776_438_100))
+        state.present(alertID: "first-alert", alert: firstAlert)
+        let firstRequestID = try #require(state.focusRequest?.id)
+        state.present(alertID: "second-alert", alert: secondAlert)
+
+        state.clearFocusRequest(id: firstRequestID)
+
+        #expect(state.focusRequest?.alertID == "second-alert")
+        #expect(state.focusRequest?.alert == secondAlert)
+    }
+
     @Test("remote notification returns newData when widget snapshot refresh fails")
     func backgroundReceipt_refreshFailureDoesNotChangeApnsResult() async {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)

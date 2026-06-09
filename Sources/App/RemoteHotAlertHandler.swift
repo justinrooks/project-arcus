@@ -25,6 +25,11 @@ final class RemoteAlertPresentationState {
     func present(alertID: String, alert: AlertDTO?) {
         focusRequest = RemoteAlertFocusRequest(alertID: alertID, alert: alert)
     }
+
+    func clearFocusRequest(id: RemoteAlertFocusRequest.ID?) {
+        guard let id, focusRequest?.id == id else { return }
+        focusRequest = nil
+    }
 }
 
 actor RemoteHotAlertHandler {
