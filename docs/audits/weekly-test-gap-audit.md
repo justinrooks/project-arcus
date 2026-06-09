@@ -25,7 +25,8 @@
 - High-risk areas inspected: remote alert context date parsing, APNs hot-alert handling, `MdDTO` compatibility decoding, persisted location upload queue decoding, diagnostics handling
 - Files inspected: `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Models/Meso/MdDTO.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`, `Tests/UnitTests/MdDTOCodableCompatibilityTests.swift`, `Tests/UnitTests/LocationProviderTests.swift`
 - Existing relevant tests found: `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`, `Tests/UnitTests/MdDTOCodableCompatibilityTests.swift`, `Tests/UnitTests/LocationProviderTests.swift`
-- Top recommended test: `RemoteHotAlertHandlerTests.numericAPNsRevisionDateDecodesFromStandardEpochSeconds` to lock the non-reference-date branch in `HomeRemoteAlertContext.normalizedDate(from:)`
+- Top recommended test: `RemoteHotAlertHandlerTests.numericAPNsRevisionDateDecodesFromStandardEpochSeconds` to lock the non-reference-date branch in `HomeRemoteAlertContext.normalizedDate(from:)` (implemented in `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`)
 - Watchlist items: none
-- Implementation recommended: No
+- Validation note: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/RemoteHotAlertHandlerTests test` passed on 2026-06-09.
+- Implementation recommended: Completed
 - Out-of-scope repositories intentionally not scanned: none
