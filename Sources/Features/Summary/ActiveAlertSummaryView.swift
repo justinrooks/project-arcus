@@ -49,8 +49,8 @@ struct ActiveAlertSummaryView: View {
         self.isLoading = isLoading
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
-        self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
-        self.sortedAlerts = alerts.sorted { $0.expires < $1.expires }
+        self.sortedMesos = AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
+        self.sortedAlerts = AlertPresentationOrdering.ordered(alerts, endDate: \.expires)
     }
 
     private var hasRenderableAlerts: Bool {

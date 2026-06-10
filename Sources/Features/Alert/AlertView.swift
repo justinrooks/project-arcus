@@ -23,21 +23,11 @@ struct AlertView: View {
     }
     
     private var sortedAlerts: [AlertDTO] {
-        alerts.sorted { lhs, rhs in
-            if lhs.ends != rhs.ends {
-                return lhs.ends < rhs.ends
-            }
-            return lhs.issued > rhs.issued
-        }
+        AlertPresentationOrdering.ordered(alerts, endDate: \.ends)
     }
     
     private var sortedMesos: [MdDTO] {
-        mesos.sorted { lhs, rhs in
-            if lhs.validEnd != rhs.validEnd {
-                return lhs.validEnd < rhs.validEnd
-            }
-            return lhs.issued > rhs.issued
-        }
+        AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
     }
     
     private var latestIssued: Date? {
@@ -212,7 +202,7 @@ struct AlertView: View {
             return "Weather alerts are active for your area. Open one to check timing, affected counties, and official instructions."
         }
         
-        return "Open any alert for timing, impacted areas, and the full official product. Items that end sooner are surfaced first."
+        return "Warnings are shown before watches, then mesoscale discussions. Within each group, items that end sooner are surfaced first."
     }
     
     private func alertSection<Content: View>(
