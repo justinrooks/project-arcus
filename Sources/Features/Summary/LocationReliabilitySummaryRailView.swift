@@ -30,31 +30,47 @@ struct LocationReliabilitySummaryRailView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "location.fill")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
+            Button(action: onOpen) {
+                HStack(spacing: 10) {
+                    Image(systemName: "location.fill")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Enable Always")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Text("Get more reliable background severe-weather alerts.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Enable Always")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text("Get more reliable background severe-weather alerts.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .buttonStyle(
+                SkyAwarePressableButtonStyle(
+                    cornerRadius: SkyAwareRadius.large,
+                    pressedScale: 0.985,
+                    pressedOverlayOpacity: 0.08
+                )
+            )
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .accessibilityIdentifier("summary-reliability-rail")
+            .accessibilityHint("Opens location reliability details.")
 
-            Spacer(minLength: 8)
-
-            Button("Not Now") {
+            Button {
                 onDismiss()
+            } label: {
+                Text("Not Now")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
             }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
             .buttonStyle(
                 SkyAwarePressableButtonStyle(
                     cornerRadius: SkyAwareRadius.chipCompact,
@@ -62,17 +78,10 @@ struct LocationReliabilitySummaryRailView: View {
                     pressedOverlayOpacity: 0.08
                 )
             )
+            .frame(minWidth: 44, minHeight: 44, alignment: .center)
             .accessibilityIdentifier("summary-reliability-not-now")
             .accessibilityHint("Dismisses this reliability prompt for today.")
         }
         .railStyle(background: background)
-        .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
-        .onTapGesture {
-            onOpen()
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityIdentifier("summary-reliability-rail")
-        .accessibilityHint("Opens location reliability details.")
     }
 }

@@ -18,7 +18,7 @@ decisions from Git history.
 |---:|---|---|---|---|---|
 | 1 | AN-01 | [#217](https://github.com/justinrooks/project-arcus/issues/217) | Enforce warning-first alert presentation | Completed | Shared ordering helper now enforces warning, watch, mesoscale precedence with deterministic tie-breakers. |
 | 2 | AN-02 | [#218](https://github.com/justinrooks/project-arcus/issues/218) | Preserve critical alert text for VoiceOver | Completed | VoiceOver now reads the visible instruction and summary text directly, while grouped detail rows still read as coherent sections. |
-| 3 | AN-03 | [#219](https://github.com/justinrooks/project-arcus/issues/219) | Convert the location reliability rail to native buttons | Not started | |
+| 3 | AN-03 | [#219](https://github.com/justinrooks/project-arcus/issues/219) | Convert the location reliability rail to native buttons | Completed | Native sibling buttons now replace the parent tap gesture while preserving the existing rail styling, copy, and dismissal flow. |
 | 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Not started | |
 | 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Not started | |
 | 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Not started | |
@@ -157,3 +157,48 @@ Model used: gpt-5.4-mini / medium
 - The default `SkyAware` test plan excludes UI tests; use `SkyAware_All_Tests` when validating UI coverage like this one.
 - The UI test now checks that the generic `Instructions` and `Summary` labels do not survive as accessibility replacements for the visible weather copy.
 - Residual risk: this change improves the accessible reading path, but it does not replace a full manual VoiceOver walkthrough on device or simulator.
+
+### AN-03 / GitHub #219 - Convert the location reliability rail to native buttons
+
+Status: Completed
+Date: 2026-06-10
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Replaced the parent tap gesture in `LocationReliabilitySummaryRailView` with a native primary `Button`.
+- Kept `Not Now` as a separate sibling `Button` with its own accessibility identifier and hint.
+- Preserved the existing rail styling, copy, state transitions, and same-day suppression behavior.
+- Added focused UI coverage that verifies the two rail actions are independently exposed and that `Not Now` does not trigger the explanation sheet.
+
+#### Files Changed
+
+- `Sources/Features/Summary/LocationReliabilitySummaryRailView.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- The rail still opens the location reliability explanation sheet from the primary action.
+- `Not Now` still dismisses the rail for the day and suppresses repeat presentation.
+- The surrounding Summary layout, copy, and business logic paths were unchanged.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData -resultBundlePath /private/tmp/SkyAware-AN03b.xcresult -only-testing:SkyAwareUITests/testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses -only-testing:SkyAwareUITests/testSummaryReliabilityRailPrimaryAndDismissActionsAreIndependentButtons test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData build`
+- XcodeBuildMCP simulator launch on iPhone 17 (iOS 26.5) with the reliability rail forced visible.
+- XcodeBuildMCP runtime snapshot inspection confirmed separate `summary-reliability-rail` and `summary-reliability-not-now` buttons.
+- XcodeBuildMCP runtime interaction confirmed the primary button opens the explanation sheet and `Not Now` dismisses it.
+- XcodeBuildMCP screenshot review confirmed the rail still renders with the expected SkyAware styling.
+
+#### Deferred Work
+
+- Manual VoiceOver focus-order inspection was not available in this environment, so accessibility semantics were validated through runtime snapshot output and the UI tests instead.
+- Exact hit-target dimensions were not mechanically measured here, but both buttons were given explicit minimum frames in code and verified visually in the simulator.
+
+#### Handoff Notes
+
+- Keep the primary rail action as a native button; do not reintroduce a parent gesture or nested interactive controls.
+- The runtime snapshot now exposes the rail and `Not Now` as distinct accessibility buttons, which is the shape later accessibility work should preserve.
+- Residual risk: the actual VoiceOver rotor order still deserves a manual device pass if someone wants absolute proof instead of a simulator/runtime snapshot proxy.

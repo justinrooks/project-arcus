@@ -272,6 +272,7 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses() throws {
+        resetReliabilityLedgerDefaults()
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
@@ -296,6 +297,33 @@ final class SkyAwareUITests: XCTestCase {
 
         XCTAssertTrue(rail.waitForNonExistence(timeout: 10), "Expected same-day suppression to keep rail hidden after dismissal.")
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app to remain on Summary after dismissal.")
+    }
+
+    @MainActor
+    func testSummaryReliabilityRailPrimaryAndDismissActionsAreIndependentButtons() throws {
+        resetReliabilityLedgerDefaults()
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_FORCE_RELIABILITY_RAIL"] = "1"
+        app.launch()
+
+        let railButton = app.buttons["summary-reliability-rail"]
+        XCTAssertTrue(railButton.waitForExistence(timeout: 10), "Expected primary reliability rail button in Summary.")
+
+        let notNowButton = app.buttons["summary-reliability-not-now"]
+        XCTAssertTrue(notNowButton.waitForExistence(timeout: 10), "Expected Not Now button in Summary reliability rail.")
+
+        notNowButton.tap()
+
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app to remain on Summary after dismissing the rail.")
+        XCTAssertFalse(
+            app.navigationBars["Enable Always"].exists,
+            "Tapping Not Now on the rail must not open the explanation sheet."
+        )
+        XCTAssertTrue(railButton.waitForNonExistence(timeout: 10), "Expected same-day suppression to hide the rail after dismissal.")
     }
 
     @MainActor
