@@ -100,11 +100,18 @@ struct SettingsView: View {
         )
     }
 
-    private var notificationsAreDenied: Bool {
-        notificationAuthorizationStatus == .denied
+    private var notificationPreferenceState: NotificationPreferenceState {
+        .init(
+            authorizationStatus: notificationAuthorizationStatus,
+            morningSummariesEnabled: morningSummaryEnabled,
+            mesoNotificationsEnabled: mesoNotificationEnabled,
+            serverNotificationsEnabled: serverNotificationEnabled
+        )
     }
     
     var body: some View {
+        let notificationState = notificationPreferenceState
+
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
                 sectionCard(title: "Notification Preferences", symbol: "bell.badge", accent: .orange) {
@@ -113,7 +120,6 @@ struct SettingsView: View {
                             .onChange(of: morningSummaryEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Morning Summaries")
                             }
-                            .disabled(notificationsAreDenied)
                         Text("Get a daily morning update with a concise overview of local weather hazards and outlook conditions.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -125,7 +131,6 @@ struct SettingsView: View {
                             .onChange(of: mesoNotificationEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Meso Notifications")
                             }
-                            .disabled(notificationsAreDenied)
                         Text("Receive alerts when new mesoscale discussions are issued for your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -148,18 +153,32 @@ struct SettingsView: View {
                                     await locationSession.syncNotificationPreference(enabled: newValue)
                                 }
                             }
-                            .disabled(notificationsAreDenied)
                         Text("Subscribe this device to server-driven push alerts.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
 
-                    if notificationsAreDenied {
-                        Text("Notifications are disabled for SkyAware in iOS Settings. Enable notifications to edit these preferences.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text("iOS Notification Access")
+                            Spacer()
+                            Text(notificationState.authorizationStatusTitle)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(notificationState.systemAvailabilityCopy)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                    }
+
+                    if let actionTitle = notificationState.recoveryActionTitle {
+                        Button(actionTitle) {
+                            locationSession.openSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .font(.subheadline.weight(.semibold))
                     }
                 }
 
@@ -300,20 +319,7 @@ struct SettingsView: View {
 extension SettingsView {
     @MainActor
     func refreshNotificationAuthorizationStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        notificationAuthorizationStatus = settings.authorizationStatus
-
-        guard notificationAuthorizationStatus == .denied else { return }
-
-        if morningSummaryEnabled {
-            morningSummaryEnabled = false
-        }
-        if mesoNotificationEnabled {
-            mesoNotificationEnabled = false
-        }
-        if serverNotificationEnabled {
-            serverNotificationEnabled = false
-        }
+        notificationAuthorizationStatus = await Self.currentNotificationAuthorizationStatus()
     }
 
     func handleNotificationToggle(_ enabled: Bool, for notificationType: String) {
@@ -340,6 +346,131 @@ extension SettingsView {
             locationSession.openSettings()
         case .none:
             return
+        }
+    }
+}
+
+struct NotificationPreferenceState: Equatable {
+    let authorizationStatus: UNAuthorizationStatus
+    let morningSummariesEnabled: Bool
+    let mesoNotificationsEnabled: Bool
+    let serverNotificationsEnabled: Bool
+
+    var allowsNotificationDelivery: Bool {
+        authorizationStatus.allowsNotificationDelivery
+    }
+
+    var effectiveMorningSummariesEnabled: Bool {
+        morningSummariesEnabled && allowsNotificationDelivery
+    }
+
+    var effectiveMesoNotificationsEnabled: Bool {
+        mesoNotificationsEnabled && allowsNotificationDelivery
+    }
+
+    var effectiveServerNotificationsEnabled: Bool {
+        serverNotificationsEnabled && allowsNotificationDelivery
+    }
+
+    var authorizationStatusTitle: String {
+        authorizationStatus.skyAwareTitle
+    }
+
+    var systemAvailabilityCopy: String {
+        authorizationStatus.skyAwareAvailabilityCopy
+    }
+
+    var recoveryActionTitle: String? {
+        authorizationStatus.skyAwareRecoveryActionTitle
+    }
+}
+
+private extension SettingsView {
+    static func currentNotificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        if let override = notificationAuthorizationOverride {
+            return override
+        }
+
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        return settings.authorizationStatus
+    }
+
+    static var notificationAuthorizationOverride: UNAuthorizationStatus? {
+        guard let rawValue = ProcessInfo.processInfo.environment["UI_TESTS_NOTIFICATION_AUTH_MODE"] else {
+            return nil
+        }
+
+        switch rawValue {
+        case "authorized":
+            return .authorized
+        case "provisional":
+            return .provisional
+        case "ephemeral":
+            return .ephemeral
+        case "denied":
+            return .denied
+        case "notDetermined":
+            return .notDetermined
+        default:
+            return nil
+        }
+    }
+}
+
+private extension UNAuthorizationStatus {
+    var allowsNotificationDelivery: Bool {
+        switch self {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .denied, .notDetermined:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    var skyAwareTitle: String {
+        switch self {
+        case .authorized:
+            return "Allowed"
+        case .provisional:
+            return "Quiet"
+        case .ephemeral:
+            return "Temporary"
+        case .denied:
+            return "Off"
+        case .notDetermined:
+            return "Not Set"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    var skyAwareAvailabilityCopy: String {
+        switch self {
+        case .authorized:
+            return "iOS can deliver SkyAware notifications normally."
+        case .provisional:
+            return "iOS can deliver SkyAware notifications quietly until you promote them in Settings."
+        case .ephemeral:
+            return "iOS can deliver SkyAware notifications temporarily for this app session."
+        case .denied:
+            return "Notifications are disabled for SkyAware in iOS Settings. Your preferences are preserved and will apply again if you re-enable notifications."
+        case .notDetermined:
+            return "SkyAware can ask iOS for notification access. Your preferences are saved now and will apply if you allow notifications."
+        @unknown default:
+            return "SkyAware cannot determine notification availability right now."
+        }
+    }
+
+    var skyAwareRecoveryActionTitle: String? {
+        switch self {
+        case .denied:
+            return "Open Settings"
+        case .authorized, .provisional, .ephemeral, .notDetermined:
+            return nil
+        @unknown default:
+            return nil
         }
     }
 }

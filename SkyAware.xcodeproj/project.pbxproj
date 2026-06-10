@@ -69,6 +69,7 @@
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/AlertNotificationTests.swift,
+				UnitTests/AlertPresentationOrderingTests.swift,
 				UnitTests/AlertRepoActiveTests.swift,
 				UnitTests/AlertRepoPurgeTests.swift,
 				UnitTests/AlertRepoRefreshTests.swift,
@@ -103,7 +104,6 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
-				UnitTests/AlertPresentationOrderingTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,
@@ -119,6 +119,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				UnitTests/AlertNotificationTests.swift,
+				UnitTests/AlertPresentationOrderingTests.swift,
 				UnitTests/AlertRepoActiveTests.swift,
 				UnitTests/AlertRepoPurgeTests.swift,
 				UnitTests/AlertRepoRefreshTests.swift,
@@ -153,7 +154,6 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/TestStore.swift,
-				UnitTests/AlertPresentationOrderingTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,

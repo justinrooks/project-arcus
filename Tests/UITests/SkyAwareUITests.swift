@@ -77,6 +77,72 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testSettingsShowsNotificationRecoveryCopyWhenAuthorizationDenied() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_NOTIFICATION_AUTH_MODE"] = "denied"
+        app.launch()
+
+        let settingsTab = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "Expected Settings tab to exist.")
+        settingsTab.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Notifications are disabled for SkyAware in iOS Settings. Your preferences are preserved and will apply again if you re-enable notifications."].waitForExistence(timeout: 10),
+            "Expected blocked notification copy to appear when authorization is denied."
+        )
+
+        let openSettingsButton = app.buttons["Open Settings"]
+        XCTAssertTrue(openSettingsButton.waitForExistence(timeout: 10), "Expected Open Settings action to appear when authorization is denied.")
+        openSettingsButton.tap()
+
+        let settingsApp = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
+        XCTAssertTrue(settingsApp.waitForExistence(timeout: 10), "Expected Open Settings to switch to the Settings app.")
+    }
+
+    @MainActor
+    func testSettingsShowsNotificationAvailabilityCopyWhenAuthorizationAuthorized() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_NOTIFICATION_AUTH_MODE"] = "authorized"
+        app.launch()
+
+        let settingsTab = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "Expected Settings tab to exist.")
+        settingsTab.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["iOS can deliver SkyAware notifications normally."].waitForExistence(timeout: 10),
+            "Expected authorized notification copy to appear when authorization is granted."
+        )
+        XCTAssertFalse(app.buttons["Open Settings"].exists, "Did not expect Open Settings when authorization is available.")
+    }
+
+    @MainActor
+    func testSettingsShowsNotificationPendingCopyWhenAuthorizationNotDetermined() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_NOTIFICATION_AUTH_MODE"] = "notDetermined"
+        app.launch()
+
+        let settingsTab = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "Expected Settings tab to exist.")
+        settingsTab.tap()
+
+        XCTAssertTrue(
+            app.staticTexts["SkyAware can ask iOS for notification access. Your preferences are saved now and will apply if you allow notifications."].waitForExistence(timeout: 10),
+            "Expected pending notification copy to appear when authorization is not determined."
+        )
+        XCTAssertFalse(app.buttons["Open Settings"].exists, "Did not expect Open Settings while authorization is not determined.")
+    }
+
+    @MainActor
     func testFirstLaunchOnboardingCompletesSuccessfully() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"

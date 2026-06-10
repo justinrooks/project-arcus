@@ -19,7 +19,7 @@ decisions from Git history.
 | 1 | AN-01 | [#217](https://github.com/justinrooks/project-arcus/issues/217) | Enforce warning-first alert presentation | Completed | Shared ordering helper now enforces warning, watch, mesoscale precedence with deterministic tie-breakers. |
 | 2 | AN-02 | [#218](https://github.com/justinrooks/project-arcus/issues/218) | Preserve critical alert text for VoiceOver | Completed | VoiceOver now reads the visible instruction and summary text directly, while grouped detail rows still read as coherent sections. |
 | 3 | AN-03 | [#219](https://github.com/justinrooks/project-arcus/issues/219) | Convert the location reliability rail to native buttons | Completed | Native sibling buttons now replace the parent tap gesture while preserving the existing rail styling, copy, and dismissal flow. |
-| 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Not started | |
+| 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Completed | Stored notification preferences now survive denied authorization, effective availability is derived from authorization plus stored choice, and Settings surfaces an Open Settings recovery action. |
 | 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Not started | |
 | 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Not started | |
 | 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
@@ -202,3 +202,52 @@ Model used: gpt-5.4-mini / medium
 - Keep the primary rail action as a native button; do not reintroduce a parent gesture or nested interactive controls.
 - The runtime snapshot now exposes the rail and `Not Now` as distinct accessibility buttons, which is the shape later accessibility work should preserve.
 - Residual risk: the actual VoiceOver rotor order still deserves a manual device pass if someone wants absolute proof instead of a simulator/runtime snapshot proxy.
+
+### AN-04 / GitHub #220 - Separate notification preference from authorization
+
+Status: Completed
+Date: 2026-06-10
+Model used: gpt-5.4-mini / high
+
+#### Scope
+
+- Added a deterministic `NotificationPreferenceState` helper in `SettingsView.swift` to derive effective notification availability from stored preferences and `UNAuthorizationStatus`.
+- Kept stored notification toggles intact when authorization is denied; Settings no longer mutates them back to `false`.
+- Added a notification authorization status row plus explanatory copy in Settings, with an `Open Settings` recovery button for denied authorization.
+- Added a test-only notification authorization override for UI tests so authorized, denied, and not-determined states can be inspected deterministically.
+- Added focused unit coverage for denied, provisional, ephemeral, and not-determined states.
+- Added focused UI coverage for denied, authorized, and not-determined Settings states, including the Open Settings handoff.
+
+#### Files Changed
+
+- `Sources/Features/Settings/SettingsView.swift`
+- `Tests/UnitTests/RemoteNotificationRegistrarTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+- `docs/superpowers/plans/2026-06-10-notification-preference-authorization.md`
+
+#### Behavior Preserved
+
+- Notification delivery and preference synchronization flows were left intact.
+- APNs registration, backend contracts, and unrelated preferences were unchanged.
+- The existing Settings screen structure stayed in place; this did not attempt the broader AN-19 Form migration.
+- Location reliability behavior and diagnostics surfaces were untouched.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/NotificationPreferenceStateTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testSettingsShowsNotificationRecoveryCopyWhenAuthorizationDenied test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testSettingsShowsNotificationAvailabilityCopyWhenAuthorizationAuthorized -only-testing:SkyAwareUITests/testSettingsShowsNotificationPendingCopyWhenAuthorizationNotDetermined test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+#### Deferred Work
+
+- AN-05 still owns removing raw diagnostics from production Settings.
+- AN-19 still owns the broader native `Form`/`Section` Settings migration.
+- A future OS adding a new `UNAuthorizationStatus` case will fall through `@unknown default` until the helper is updated.
+
+#### Handoff Notes
+
+- The notification preference helper is the only place that should encode availability semantics for Settings.
+- The UI test override is intentionally test-only and does not alter production notification delivery behavior.
+- Residual risk: `Open Settings` was verified in the simulator via the UI test, but the actual handoff path still merits a manual device pass if someone wants to validate Apple’s Settings app transition outside XCTest.
