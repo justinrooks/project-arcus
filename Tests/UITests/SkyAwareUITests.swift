@@ -168,6 +168,53 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchPresentsDisclaimerBeforeRestrictedLocationWhenBothApply() throws {
+        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0)
+
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "restricted"
+        app.launch()
+
+        let disclaimerButton = app.buttons["I Understand"]
+        XCTAssertTrue(disclaimerButton.waitForExistence(timeout: 10), "Expected the disclaimer sheet to appear first.")
+        XCTAssertFalse(app.buttons["Enable Location"].exists, "Did not expect the restricted-location sheet before the disclaimer was accepted.")
+
+        disclaimerButton.tap()
+
+        let locationButton = app.buttons["Enable Location"]
+        XCTAssertTrue(locationButton.waitForExistence(timeout: 10), "Expected the restricted-location sheet after accepting the disclaimer.")
+    }
+
+    @MainActor
+    func testLaunchPresentsDisclaimerOnlyWhenDisclaimerIsStale() throws {
+        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 0)
+
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launch()
+
+        let disclaimerButton = app.buttons["I Understand"]
+        XCTAssertTrue(disclaimerButton.waitForExistence(timeout: 10), "Expected the disclaimer sheet to appear when the stored version is stale.")
+        XCTAssertFalse(app.buttons["Enable Location"].exists, "Did not expect a restricted-location sheet when location is authorized.")
+
+        disclaimerButton.tap()
+        XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected home after accepting the disclaimer when no launch sheets remain.")
+    }
+
+    @MainActor
+    func testLaunchPresentsRestrictedLocationOnlyWhenDisclaimerIsCurrent() throws {
+        configureLaunchDefaults(onboardingComplete: true, disclaimerAcceptedVersion: 1)
+
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "restricted"
+        app.launch()
+
+        let locationButton = app.buttons["Enable Location"]
+        XCTAssertTrue(locationButton.waitForExistence(timeout: 10), "Expected the restricted-location sheet when the disclaimer is current.")
+        XCTAssertFalse(app.buttons["I Understand"].exists, "Did not expect the disclaimer sheet when the stored version is current.")
+    }
+
+    @MainActor
     func testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow() throws {
         resetReliabilityLedgerDefaults()
         let app = XCUIApplication()
@@ -198,6 +245,34 @@ final class SkyAwareUITests: XCTestCase {
 
         XCTAssertTrue(app.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected app home tabs after onboarding completion.")
         assertReliabilityAskCountEquals(0)
+    }
+
+    @MainActor
+    func testOnboardingSwipeCannotBypassRequiredSteps() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_RESET_ONBOARDING"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launch()
+
+        let getStartedButton = app.buttons["Get Started"]
+        XCTAssertTrue(getStartedButton.waitForExistence(timeout: 10), "Expected onboarding welcome screen.")
+        app.swipeLeft()
+        XCTAssertTrue(getStartedButton.exists, "Expected the welcome page to ignore swipe navigation.")
+
+        getStartedButton.tap()
+
+        let understandButton = app.buttons["I Understand"]
+        XCTAssertTrue(understandButton.waitForExistence(timeout: 10), "Expected onboarding disclaimer screen.")
+        app.swipeLeft()
+        XCTAssertTrue(understandButton.exists, "Expected the disclaimer page to ignore swipe navigation.")
+
+        understandButton.tap()
+
+        let enableLocationButton = app.buttons["Enable Location"]
+        XCTAssertTrue(enableLocationButton.waitForExistence(timeout: 10), "Expected the location permission step.")
+        app.swipeLeft()
+        XCTAssertTrue(enableLocationButton.exists, "Expected the location permission page to ignore swipe navigation.")
+        XCTAssertFalse(app.buttons["Allow Notifications"].exists, "Swipe should not jump straight to notifications.")
     }
 
     @MainActor
@@ -422,6 +497,7 @@ final class SkyAwareUITests: XCTestCase {
         }
     }
 
+    @MainActor
     private func launchHomeForLocationPermissionScenario(mode: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
@@ -438,6 +514,16 @@ final class SkyAwareUITests: XCTestCase {
         defaults.removeObject(forKey: reliabilityLastCountedDayKey)
         defaults.removeObject(forKey: reliabilitySuppressedDayKey)
         defaults.synchronize()
+    }
+
+    private func configureLaunchDefaults(onboardingComplete: Bool, disclaimerAcceptedVersion: Int) {
+        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else { return }
+        defaults.set(onboardingComplete, forKey: "onboardingComplete")
+        defaults.set(disclaimerAcceptedVersion, forKey: "disclaimerAcceptedVersion")
+        defaults.synchronize()
+        UserDefaults.standard.set(onboardingComplete, forKey: "onboardingComplete")
+        UserDefaults.standard.set(disclaimerAcceptedVersion, forKey: "disclaimerAcceptedVersion")
+        UserDefaults.standard.synchronize()
     }
 
     private func assertReliabilityAskCountEquals(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) {

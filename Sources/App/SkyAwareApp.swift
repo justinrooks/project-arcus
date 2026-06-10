@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import BackgroundTasks
+import CoreLocation
 import OSLog
 
 // e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.skyaware.app.refresh"]
@@ -28,8 +29,7 @@ struct SkyAwareApp: App {
     
     // State
     @State private var didBootstrapBGRefresh = false
-    @State private var showDisclaimerUpdate = false
-    @State private var showLocationPermissionAlert = false
+    @State private var launchPresentation: LaunchPresentationState?
     private let currentDisclaimerVersion = 1
     
     // App Storage
@@ -186,8 +186,7 @@ private extension SkyAwareApp {
             .environment(locationSession)
             .appBackground()
             .onAppear(perform: handleHomeOnAppear)
-            .sheet(isPresented: $showDisclaimerUpdate, content: disclaimerSheet)
-            .sheet(isPresented: $showLocationPermissionAlert, content: locationPermissionSheet)
+            .sheet(item: $launchPresentation, content: launchPresentationSheet)
     }
 
     @ViewBuilder
@@ -206,15 +205,16 @@ private extension SkyAwareApp {
     }
 
     func handleHomeOnAppear() {
-        if disclaimerVersion < currentDisclaimerVersion {
-            showDisclaimerUpdate = true
-        }
+        updateLaunchPresentation()
+    }
 
-        let suppressLocationRestrictedSheet =
-            ProcessInfo.processInfo.environment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] == "1"
-        if (locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted) &&
-            suppressLocationRestrictedSheet == false {
-            showLocationPermissionAlert = true
+    @ViewBuilder
+    func launchPresentationSheet(_ presentation: LaunchPresentationState) -> some View {
+        switch presentation {
+        case .disclaimerUpdate:
+            disclaimerSheet()
+        case .locationRestricted:
+            locationPermissionSheet()
         }
     }
 
@@ -222,7 +222,7 @@ private extension SkyAwareApp {
         NavigationStack {
             DisclaimerView {
                 disclaimerVersion = currentDisclaimerVersion
-                showDisclaimerUpdate = false
+                updateLaunchPresentation()
             }
             .navigationTitle("Updated Disclaimer")
             .navigationBarTitleDisplayMode(.inline)
@@ -237,16 +237,25 @@ private extension SkyAwareApp {
                 statusMessage: nil,
                 onEnable: {
                     locationSession.requestInteractiveAuthorization()
-                    showLocationPermissionAlert = false
+                    launchPresentation = nil
                 },
                 onSkip: {
-                    showLocationPermissionAlert = false
+                    launchPresentation = nil
                 }
             )
             .navigationTitle("Location Restricted")
             .navigationBarTitleDisplayMode(.inline)
         }
         .interactiveDismissDisabled()
+    }
+
+    func updateLaunchPresentation() {
+        launchPresentation = LaunchPresentationState.resolve(
+            disclaimerVersion: disclaimerVersion,
+            currentDisclaimerVersion: currentDisclaimerVersion,
+            authorizationStatus: locationSession.authorizationStatus,
+            suppressLocationRestrictedSheet: ProcessInfo.processInfo.environment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] == "1"
+        )
     }
 
     @MainActor
@@ -361,5 +370,39 @@ private extension SkyAwareApp {
                 flashFloodDamageThreat: nil
             )
         ]
+    }
+}
+
+enum LaunchPresentationState: Identifiable, Equatable {
+    case disclaimerUpdate
+    case locationRestricted
+
+    var id: Self { self }
+
+    static func resolve(
+        disclaimerVersion: Int,
+        currentDisclaimerVersion: Int,
+        authorizationStatus: CLAuthorizationStatus,
+        suppressLocationRestrictedSheet: Bool
+    ) -> LaunchPresentationState? {
+        if disclaimerVersion < currentDisclaimerVersion {
+            return .disclaimerUpdate
+        }
+
+        guard suppressLocationRestrictedSheet == false else {
+            return nil
+        }
+
+        if authorizationStatus.isRestrictedForLaunchPresentation {
+            return .locationRestricted
+        }
+
+        return nil
+    }
+}
+
+private extension CLAuthorizationStatus {
+    var isRestrictedForLaunchPresentation: Bool {
+        self == .denied || self == .restricted
     }
 }

@@ -21,7 +21,7 @@ decisions from Git history.
 | 3 | AN-03 | [#219](https://github.com/justinrooks/project-arcus/issues/219) | Convert the location reliability rail to native buttons | Completed | Native sibling buttons now replace the parent tap gesture while preserving the existing rail styling, copy, and dismissal flow. |
 | 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Completed | Stored notification preferences now survive denied authorization, effective availability is derived from authorization plus stored choice, and Settings surfaces an Open Settings recovery action. |
 | 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Not started | |
-| 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Not started | |
+| 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Completed | Launch presentation now uses a single routed item and onboarding uses typed steps with swipe blocked. |
 | 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
 | 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Not started | |
 | 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Not started | |
@@ -251,3 +251,52 @@ Model used: gpt-5.4-mini / high
 - The notification preference helper is the only place that should encode availability semantics for Settings.
 - The UI test override is intentionally test-only and does not alter production notification delivery behavior.
 - Residual risk: `Open Settings` was verified in the simulator via the UI test, but the actual handoff path still merits a manual device pass if someone wants to validate Apple’s Settings app transition outside XCTest.
+
+### AN-06 / GitHub #222 - Make launch and onboarding presentation state explicit
+
+Status: Completed
+Date: 2026-06-10
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Replaced the competing launch booleans in `SkyAwareApp` with a single item-driven `LaunchPresentationState` and `sheet(item:)` routing.
+- Made launch priority explicit: a stale disclaimer always wins over the restricted-location sheet, and the restricted-location sheet is re-resolved after the disclaimer is accepted.
+- Replaced onboarding page indexes with a typed `OnboardingStep` enum and switched the pager selection to that enum.
+- Kept button actions authoritative for onboarding progression and disabled pager swiping so required steps cannot be bypassed.
+- Added focused unit tests for launch presentation priority and onboarding step transitions.
+- Added UI tests for launch-sheet ordering, launch-sheet independence, and swipe bypass prevention.
+
+#### Files Changed
+
+- `Sources/App/SkyAwareApp.swift`
+- `Sources/Features/Onboarding/OnboardingView.swift`
+- `Tests/UnitTests/LaunchAndOnboardingStateTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `SkyAware.xcodeproj/project.pbxproj`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Launch-sheet dismissal, onboarding completion, and location/notification permission request semantics were unchanged.
+- The disclaimer and restricted-location sheets kept their current copy, navigation chrome, and interactive-dismiss lockout.
+- Onboarding still follows the same visible sequence and uses the same underlying permission request calls.
+- No visual redesign was introduced, and onboarding motion stayed as-is.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LaunchAndOnboardingStateTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testLaunchPresentsDisclaimerBeforeRestrictedLocationWhenBothApply -only-testing:SkyAwareUITests/testLaunchPresentsDisclaimerOnlyWhenDisclaimerIsStale -only-testing:SkyAwareUITests/testLaunchPresentsRestrictedLocationOnlyWhenDisclaimerIsCurrent -only-testing:SkyAwareUITests/testOnboardingSwipeCannotBypassRequiredSteps test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+#### Deferred Work
+
+- AN-07 still owns onboarding layout resilience for Dynamic Type and smaller devices.
+- AN-08 still owns Reduce Motion-specific onboarding treatment.
+- AN-09 still owns user-facing copy normalization.
+
+#### Handoff Notes
+
+- `LaunchPresentationState.resolve(...)` is now the single launch-routing helper; keep any future launch-sheet priority changes there.
+- `OnboardingStep` is the only place that should encode step order. The pager should stay button-driven, not gesture-driven.
+- The UI test coverage proves the current sequence cannot be bypassed by a swipe gesture in the simulator; if anyone changes the pager implementation later, that regression should be rechecked first.
