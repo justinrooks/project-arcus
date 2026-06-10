@@ -205,6 +205,40 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testAlertDetailVoiceOverKeepsFullInstructionAndSummaryText() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
+        alertsTab.tap()
+
+        let alertRow = app.buttons["alert-center-watch-row-ui-test-watch-001"]
+        XCTAssertTrue(alertRow.waitForExistence(timeout: 10), "Expected seeded alert row to appear.")
+        alertRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected alert detail to open.")
+
+        let fullInstruction = "Seek shelter immediately if threatening weather approaches, move to an interior room on the lowest floor, and stay away from windows until the warning is lifted."
+        let fullSummary = "UI test watch description for navigation and sheet validation. This longer summary text is used to verify that VoiceOver announces the full visible weather content without replacing it with a generic label."
+
+        XCTAssertTrue(
+            app.staticTexts[fullInstruction].waitForExistence(timeout: 10),
+            "Expected the full instruction text to remain accessible."
+        )
+        XCTAssertTrue(
+            app.staticTexts[fullSummary].waitForExistence(timeout: 10),
+            "Expected the full summary text to remain accessible."
+        )
+        XCTAssertFalse(app.staticTexts["Instructions"].exists, "Did not expect a generic accessibility label to replace instruction text.")
+        XCTAssertFalse(app.staticTexts["Summary"].exists, "Did not expect a generic accessibility label to replace summary text.")
+    }
+
+    @MainActor
     func testAlertCenterSecondAlertTapPushesExpectedDetailAndBackReturnsToList() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

@@ -132,7 +132,6 @@ struct AlertDetailView: View {
                     .fontWeight(.medium)
                     .foregroundStyle(.primary)
                     .lineSpacing(4)
-                    .accessibilityLabel("Instructions")
             }
 
             SpcProductFooter(link: alert.link, validEnd: alert.validEnd)
@@ -189,7 +188,6 @@ struct AlertDetailView: View {
                     .font(summaryLeadFont)
                     .foregroundStyle(.primary)
                     .lineSpacing(summaryLeadLineSpacing)
-                    .accessibilityLabel("Summary")
                     .lineLimit(leadLineLimit)
                     .truncationMode(.tail)
             }
@@ -204,6 +202,7 @@ struct AlertDetailView: View {
                     .fixedSize(horizontal: false, vertical: bodyLineLimit == nil)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func detailSection(title: String, text: String, areTags: Bool = false) -> some View {
@@ -216,6 +215,7 @@ struct AlertDetailView: View {
                 .foregroundStyle(areTags ? Color.tornadoRed  : .secondary)
         }
         .padding()
+        .accessibilityElement(children: .combine)
         .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.1, shadowRadius: 12, shadowY: 6)
     }
 }

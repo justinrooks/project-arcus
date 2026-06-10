@@ -17,7 +17,7 @@ decisions from Git history.
 | Order | ID | GitHub | Title | Status | Notes |
 |---:|---|---|---|---|---|
 | 1 | AN-01 | [#217](https://github.com/justinrooks/project-arcus/issues/217) | Enforce warning-first alert presentation | Completed | Shared ordering helper now enforces warning, watch, mesoscale precedence with deterministic tie-breakers. |
-| 2 | AN-02 | [#218](https://github.com/justinrooks/project-arcus/issues/218) | Preserve critical alert text for VoiceOver | Not started | |
+| 2 | AN-02 | [#218](https://github.com/justinrooks/project-arcus/issues/218) | Preserve critical alert text for VoiceOver | Completed | VoiceOver now reads the visible instruction and summary text directly, while grouped detail rows still read as coherent sections. |
 | 3 | AN-03 | [#219](https://github.com/justinrooks/project-arcus/issues/219) | Convert the location reliability rail to native buttons | Not started | |
 | 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Not started | |
 | 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Not started | |
@@ -114,3 +114,46 @@ Model used: gpt-5.4-mini / high
 - The alert ordering helper is the only place that should encode class precedence going forward.
 - New files under the synchronized `Tests` folder need target exception updates in `SkyAware.xcodeproj/project.pbxproj` or Xcode will compile them into the app target.
 - Residual risk: warning classification currently keys off canonical NWS title strings, so any new warning label that does not include `warning` will fall back to the watch bucket.
+
+### AN-02 / GitHub #218 - Preserve critical alert text for VoiceOver
+
+Status: Completed
+Date: 2026-06-10
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Removed the overriding `Instructions` and `Summary` accessibility labels from `AlertDetailView`.
+- Added `accessibilityElement(children: .combine)` grouping to the alert detail sections that already expose visible heading + text pairs.
+- Kept the visual presentation unchanged and left alert ingestion, ordering, persistence, notification, and refresh logic untouched.
+- Expanded the UI test fixture text under `UI_TESTS_STATIC_HOME` so the regression test exercises representative long instruction and summary content.
+
+#### Files Changed
+
+- `Sources/Features/Alert/AlertDetailView.swift`
+- `Sources/App/SkyAwareApp.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Visible alert layout and weather copy in production screens remained unchanged.
+- Alert ordering, ingestion, persistence, notification delivery, and refresh behavior were unchanged.
+- The alert detail sections still read in logical order; only the accessibility wrappers changed.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData -clonedSourcePackagesDirPath /private/tmp/SkyAwareSPM -only-testing:SkyAwareUITests/testAlertDetailVoiceOverKeepsFullInstructionAndSummaryText test -resultBundlePath /tmp/SkyAware-AN02-3.xcresult`
+- `xcrun xccov view --report /tmp/SkyAware-AN02-3.xcresult`
+
+#### Deferred Work
+
+- No follow-up was required for A11Y-1.
+- Broader accessibility audit items remain in the epic backlog.
+
+#### Handoff Notes
+
+- The default `SkyAware` test plan excludes UI tests; use `SkyAware_All_Tests` when validating UI coverage like this one.
+- The UI test now checks that the generic `Instructions` and `Summary` labels do not survive as accessibility replacements for the visible weather copy.
+- Residual risk: this change improves the accessible reading path, but it does not replace a full manual VoiceOver walkthrough on device or simulator.
