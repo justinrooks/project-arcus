@@ -29,7 +29,6 @@ struct HomeView: View {
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
     @State private var selectedMapLayer: MapLayer = .categorical
-    @State private var todayHeaderCondenseProgress: CGFloat = 0
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
     @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
@@ -202,29 +201,33 @@ struct HomeView: View {
 
             TabView(selection: $selectedTab) {
                 Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted", value: .today) {
-                    NavigationStack {
-                        ScrollView {
-                            summaryContentView
-                            .toolbar(.hidden, for: .navigationBar)
-                            .background(.skyAwareBackground)
-                        }
-                        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                            geometry.contentOffset.y + geometry.contentInsets.top
-                        } action: { _, newValue in
-                            let normalizedProgress = min(max((newValue - 6) / 68, 0), 1)
-                            if abs(todayHeaderCondenseProgress - normalizedProgress) > 0.001 {
-                                todayHeaderCondenseProgress = normalizedProgress
-                            }
-                        }
-                        .background(Color(.skyAwareBackground).ignoresSafeArea())
-                        .refreshable {
-                            await refreshPipeline.forceRefreshCurrentContext(
-                                showsLoading: true,
-                                environment: refreshEnvironment
+                    TodayTabView(
+                        snap: displayedLocationSnapshot,
+                        stormRisk: displayedStormRisk,
+                        severeRisk: displayedSevereRisk,
+                        fireRisk: displayedFireRisk,
+                        mesos: displayedMesos,
+                        alerts: displayedAlerts,
+                        outlook: displayedOutlook,
+                        weather: displayedWeather,
+                        readinessState: readinessState,
+                        resolutionState: refreshPipeline.resolutionState,
+                        showsOfflineToken: runtimeConnectivityState.isOffline,
+                        locationReliabilityRailState: showsLocationReliabilityRail
+                            ? SummaryView.LocationReliabilityRailState(
+                                onOpen: openLocationReliabilityRail,
+                                onDismiss: dismissLocationReliabilityRailForToday
                             )
-                        }
+                            : nil,
+                        onOpenMapLayer: openMap,
+                        onOpenAlerts: openAlertsTab,
+                        onOpenOutlooks: openOutlooksTab
+                    ) {
+                        await refreshPipeline.forceRefreshCurrentContext(
+                            showsLoading: true,
+                            environment: refreshEnvironment
+                        )
                     }
-                    .background(Color(.skyAwareBackground).ignoresSafeArea())
                 }
 
                 Tab("Alerts", systemImage: "exclamationmark.triangle", value: .alerts) {
@@ -240,6 +243,9 @@ struct HomeView: View {
                                     showsLoading: true,
                                     environment: refreshEnvironment
                                 )
+                            },
+                            onFocusedAlertRequestHandled: { requestID in
+                                remoteAlertPresentationState.clearFocusRequest(id: requestID)
                             }
                         )
                         .background(.skyAwareBackground)
@@ -360,47 +366,6 @@ struct HomeView: View {
 }
 
 extension HomeView {
-    @ViewBuilder
-    private var summaryContentView: some View {
-        let snap = displayedLocationSnapshot
-        let stormRisk = displayedStormRisk
-        let severeRisk = displayedSevereRisk
-        let fireRisk = displayedFireRisk
-        let mesos = displayedMesos
-        let alerts = displayedAlerts
-        let outlook = displayedOutlook
-        let weather = displayedWeather
-        let readiness = readinessState
-        let resolution = refreshPipeline.resolutionState
-        let isOffline = runtimeConnectivityState.isOffline
-        let condenseProgress = todayHeaderCondenseProgress
-        let railState = showsLocationReliabilityRail
-            ? SummaryView.LocationReliabilityRailState(
-                onOpen: openLocationReliabilityRail,
-                onDismiss: dismissLocationReliabilityRailForToday
-            )
-            : nil
-
-        SummaryView(
-            snap: snap,
-            stormRisk: stormRisk,
-            severeRisk: severeRisk,
-            fireRisk: fireRisk,
-            mesos: mesos,
-            alerts: alerts,
-            outlook: outlook,
-            weather: weather,
-            readinessState: readiness,
-            resolutionState: resolution,
-            showsOfflineToken: isOffline,
-            headerCondenseProgress: condenseProgress,
-            locationReliabilityRailState: railState,
-            onOpenMapLayer: openMap,
-            onOpenAlerts: openAlertsTab,
-            onOpenOutlooks: openOutlooksTab
-        )
-    }
-
     private func openMap(_ layer: MapLayer) {
         selectedMapLayer = layer
         selectedTab = .map
@@ -615,6 +580,67 @@ extension HomeView {
         LocationReliabilityAskLedger.live().recordSameDaySuppression(qualifyingDay: qualifyingDay)
     }
 
+}
+
+private struct TodayTabView: View {
+    @State private var headerCondenseProgress: CGFloat = 0
+
+    let snap: LocationSnapshot?
+    let stormRisk: StormRiskLevel?
+    let severeRisk: SevereWeatherThreat?
+    let fireRisk: FireRiskLevel?
+    let mesos: [MdDTO]
+    let alerts: [AlertDTO]
+    let outlook: ConvectiveOutlookDTO?
+    let weather: SummaryWeather?
+    let readinessState: SummaryReadinessState
+    let resolutionState: SummaryResolutionState
+    let showsOfflineToken: Bool
+    let locationReliabilityRailState: SummaryView.LocationReliabilityRailState?
+    let onOpenMapLayer: (MapLayer) -> Void
+    let onOpenAlerts: () -> Void
+    let onOpenOutlooks: () -> Void
+    let refreshAction: () async -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                SummaryView(
+                    snap: snap,
+                    stormRisk: stormRisk,
+                    severeRisk: severeRisk,
+                    fireRisk: fireRisk,
+                    mesos: mesos,
+                    alerts: alerts,
+                    outlook: outlook,
+                    weather: weather,
+                    readinessState: readinessState,
+                    resolutionState: resolutionState,
+                    showsOfflineToken: showsOfflineToken,
+                    headerCondenseProgress: headerCondenseProgress,
+                    locationReliabilityRailState: locationReliabilityRailState,
+                    onOpenMapLayer: onOpenMapLayer,
+                    onOpenAlerts: onOpenAlerts,
+                    onOpenOutlooks: onOpenOutlooks
+                )
+                    .toolbar(.hidden, for: .navigationBar)
+                    .background(.skyAwareBackground)
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, newValue in
+                let normalizedProgress = min(max((newValue - 6) / 68, 0), 1)
+                if abs(headerCondenseProgress - normalizedProgress) > 0.001 {
+                    headerCondenseProgress = normalizedProgress
+                }
+            }
+            .background(Color(.skyAwareBackground).ignoresSafeArea())
+            .refreshable {
+                await refreshAction()
+            }
+        }
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+    }
 }
 
 #Preview("Home") {
