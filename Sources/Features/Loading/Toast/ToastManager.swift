@@ -11,15 +11,14 @@ import SwiftUI
 class ToastManager: ObservableObject {
     @MainActor static let shared = ToastManager()
     
+    @Published
     var toasts: [ToastMessage] = []
     
     private init () {}
     
     @MainActor
     private func display(_ toast: ToastMessage) {
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-            toasts.append(toast)
-        }
+        toasts.append(toast)
     }
     
     @MainActor
@@ -50,16 +49,12 @@ class ToastManager: ObservableObject {
     
     @MainActor
     func dismissToast(_ toast: ToastMessage) {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            toasts.removeAll { $0.id == toast.id }
-        }
+        toasts.removeAll { $0.id == toast.id }
     }
     
     @MainActor
     func dismissAllToasts() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            toasts.removeAll()
-        }
+        toasts.removeAll()
     }
 }
 
@@ -68,9 +63,7 @@ struct ToastModifier: ViewModifier {
     
     func body(content: Content) -> some View {
         content.overlay(alignment: .top) {
-            ToastContainer(toasts: toastManager.toasts, onDismiss: {toast in
-                toastManager.dismissToast(toast)
-            })
+            ToastContainer(toasts: toastManager.toasts)
         }
     }
 }

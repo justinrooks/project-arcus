@@ -12,6 +12,7 @@ import UserNotifications
 
 @MainActor
 struct OnboardingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(LocationSession.self) private var locationSession
 
     private let logger = Logger.appMain
@@ -191,7 +192,7 @@ struct OnboardingView: View {
 
     @MainActor
     private func advance(to step: OnboardingStep) {
-        withAnimation {
+        withAnimation(SkyAwareMotion.onboardingStep(reduceMotion)) {
             currentStep = step
         }
     }

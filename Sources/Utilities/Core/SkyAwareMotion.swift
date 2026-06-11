@@ -39,4 +39,23 @@ enum SkyAwareMotion {
     static func layerChange(_ reduceMotion: Bool) -> Animation {
         reduceMotion ? .linear(duration: 0.01) : .easeOut(duration: 0.32)
     }
+
+    static func onboardingStep(_ reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : .default
+    }
+
+    static func toastPresentation(_ reduceMotion: Bool) -> Animation {
+        reduceMotion ? .linear(duration: 0.15) : .spring(response: 0.5, dampingFraction: 0.8)
+    }
+
+    static func toastTransition(edge: Edge, reduceMotion: Bool) -> AnyTransition {
+        if reduceMotion {
+            return .opacity
+        }
+
+        return .asymmetric(
+            insertion: .move(edge: edge).combined(with: .opacity),
+            removal: .move(edge: edge).combined(with: .opacity)
+        )
+    }
 }

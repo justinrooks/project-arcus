@@ -23,7 +23,7 @@ decisions from Git history.
 | 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Not started | |
 | 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Completed | Launch presentation now uses a single routed item and onboarding uses typed steps with swipe blocked. |
 | 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
-| 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Not started | |
+| 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Completed | Onboarding and toast motion now route through `SkyAwareMotion` and respect `accessibilityReduceMotion`. |
 | 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Not started | |
 | 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Not started | |
 | 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Not started | |
@@ -356,3 +356,54 @@ Model used: gpt-5.4-mini / high
 - `OnboardingStepShell` is the shared layout contract for onboarding pages now; future onboarding content should use it instead of reintroducing non-scrollable vertical stacks.
 - The iPhone 16e AX5 pass kept the primary and secondary actions visible and operable, and the welcome screen now demonstrates actual vertical scrolling in the simulator; a genuinely smaller device or future copy expansion should still be rechecked.
 - Residual risk: the current simulator evidence proves reachability and layout resilience on the tested device/class, but it is not a substitute for a final pass on any newly introduced onboarding copy.
+
+### AN-08 / GitHub #224 - Apply Reduce Motion to onboarding and toasts
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Routed onboarding step changes through `SkyAwareMotion.onboardingStep(_:)` so `accessibilityReduceMotion` now controls whether the step change animates.
+- Moved toast presentation and dismissal onto the shared `SkyAwareMotion` policy so the stack uses a calmer default animation and switches to opacity-only transitions under Reduce Motion.
+- Kept toast queueing, dismissal timing, and onboarding progression logic intact.
+- Added focused unit coverage for the onboarding motion policy and toast list mutation.
+- Verified the onboarding flow in Simulator with Reduce Motion on and off.
+
+#### Files Changed
+
+- `Sources/Utilities/Core/SkyAwareMotion.swift`
+- `Sources/Features/Onboarding/OnboardingView.swift`
+- `Sources/Features/Loading/Toast/ToastManager.swift`
+- `Sources/Features/Loading/Toast/ToastView.swift`
+- `Tests/UnitTests/SkyAwareMotionTests.swift`
+- `Tests/UnitTests/ToastManagerTests.swift`
+- `SkyAware.xcodeproj/project.pbxproj`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Onboarding routing, step order, permission prompts, dismissal, and persistence were unchanged.
+- Summary and map motion were left alone.
+- Toast queueing, duration, priority, and business behavior were unchanged.
+- Default motion remains subtle and still animates state changes without resorting to springy or bounce-heavy motion.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/SkyAwareMotionTests -only-testing:SkyAwareTests/LaunchAndOnboardingStateTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- XcodeBuildMCP simulator session on iPhone 17 Pro with `ReduceMotionEnabled` toggled on and off in the Simulator preferences.
+- XcodeBuildMCP runtime snapshot walkthrough of onboarding progression with Reduce Motion on and off.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/SkyAwareMotionTests -only-testing:SkyAwareTests/ToastManagerTests -only-testing:SkyAwareTests/LaunchAndOnboardingStateTests test`
+
+#### Deferred Work
+
+- Toast visuals were verified at the state and transition-policy level, but not via a live toast trigger sequence in Simulator.
+- AN-09 still owns user-facing copy normalization.
+
+#### Handoff Notes
+
+- `SkyAwareMotion` is now the shared place for onboarding and toast motion policy; future accessibility-aware animation changes should start there.
+- The onboarding flow still needs manual simulator inspection only if a later change reintroduces movement-based transitions.
+- Residual risk: this work confirms the reduced-motion paths and default policy, but it does not replace a full visual review of live toast presentation timing in every state.
