@@ -211,63 +211,18 @@ struct SummaryView: View {
     private var severeMapLayer: MapLayer {
         switch severeRisk ?? .allClear {
         case .allClear:
-            return .categorical
+            .categorical
         case .wind:
-            return .wind
+            .wind
         case .hail:
-            return .hail
+            .hail
         case .tornado:
-            return .tornado
+            .tornado
         }
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
-    }
-
-    @ViewBuilder
-    private var riskSnapshotContent: some View {
-        VStack(spacing: 12) {
-            badgeRow
-            // TODO: Toggle this with an option one day
-            //       Make the option that, if its clear to show
-            //       the row. Default should be to hide a no fire
-            //       danger
-            Button {
-            onOpenMapLayer(.fire)
-        } label: {
-            FireWeatherRailView(
-                level: fireRisk,
-                isOffline: showsOfflineToken,
-                showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
-                    hasRiskValue: fireRisk != nil,
-                        readinessState: readinessState,
-                        isSectionResolving: resolutionState.isResolving(.fireRisk),
-                        showsOfflineToken: showsOfflineToken
-                    )
-                )
-                    .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
-            }
-            .buttonStyle(
-                SkyAwarePressableButtonStyle(
-                    cornerRadius: SkyAwareRadius.large,
-                    pressedScale: 0.992,
-                    pressedOverlayOpacity: 0.06
-                )
-            )
-            .summaryResolving(
-                resolutionState.isResolving(.fireRisk) && fireRisk != nil && showsOfflineToken == false,
-                style: .subtle
-            )
-            .accessibilityHint("Opens the fire risk map.")
-            AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
-                .allowsHitTesting(!isWeatherLoading)
-                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
-                .summaryResolving(
-                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
-                    style: .subtle
-                )
-        }
     }
 
     @ViewBuilder
@@ -354,6 +309,66 @@ struct SummaryView: View {
         .accessibilityHint("Opens the highlighted severe threat map.")
     }
 
+    private var fireRiskButton: some View {
+        Button {
+            onOpenMapLayer(.fire)
+        } label: {
+            FireWeatherRailView(
+                level: fireRisk,
+                isOffline: showsOfflineToken,
+                showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
+                    hasRiskValue: fireRisk != nil,
+                    readinessState: readinessState,
+                    isSectionResolving: resolutionState.isResolving(.fireRisk),
+                    showsOfflineToken: showsOfflineToken
+                )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+        }
+        .buttonStyle(
+            SkyAwarePressableButtonStyle(
+                cornerRadius: SkyAwareRadius.large,
+                pressedScale: 0.992,
+                pressedOverlayOpacity: 0.06
+            )
+        )
+        .summaryResolving(
+            resolutionState.isResolving(.fireRisk) && fireRisk != nil && showsOfflineToken == false,
+            style: .subtle
+        )
+        .accessibilityHint("Opens the fire risk map.")
+    }
+
+    @ViewBuilder
+    private var riskSnapshotContent: some View {
+        VStack(spacing: 12) {
+            // Legacy Summary hero layout for A/B testing.
+            // Uncomment this block and comment out the panel block below to swap back:
+            // Label("Risk Snapshot", systemImage: "gauge.with.needle.fill").sectionLabel()
+            // badgeRow
+            // fireRiskButton
+            PrimaryAwarenessPanel(
+                stormRisk: stormRisk,
+                severeRisk: severeRisk,
+                fireRisk: fireRisk,
+                alerts: alerts,
+                readinessState: readinessState,
+                resolutionState: resolutionState,
+                showsOfflineToken: showsOfflineToken,
+                onOpenMapLayer: onOpenMapLayer,
+                onOpenAlerts: onOpenAlerts
+            )
+
+            AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
+                .allowsHitTesting(!isWeatherLoading)
+                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                .summaryResolving(
+                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                    style: .subtle
+                )
+        }
+    }
+
     @ViewBuilder
     private var summaryContent: some View {
         SummaryStatus(
@@ -366,30 +381,31 @@ struct SummaryView: View {
             condenseProgress: headerCondenseProgress
         )
 
-        VStack(alignment: .leading, spacing: 12) {
-            sectionTitle("Risk Snapshot", icon: "gauge.with.needle.fill")
-            if isLocationUnavailable {
-                unavailableCard(
-                    title: "Location Required",
-                    message: "Enable location access to load local risk, alerts, and weather conditions.",
-                    symbol: "location.slash"
-                )
-            } else if #available(iOS 26, *) {
-                GlassEffectContainer(spacing: 14) {
+        if isLocationUnavailable {
+            unavailableCard(
+                title: "Location Required",
+                message: "Enable location access to load local risk, alerts, and weather conditions.",
+                symbol: "location.slash"
+            )
+        } else {
+            Group {
+                if #available(iOS 26, *) {
+                    GlassEffectContainer(spacing: 14) {
+                        riskSnapshotContent
+                    }
+                } else {
                     riskSnapshotContent
                 }
-            } else {
-                riskSnapshotContent
             }
+            .padding(16)
+            .cardBackground(
+                cornerRadius: SkyAwareRadius.hero,
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+                shadowY: 3,
+                allowsGlass: false
+            )
         }
-        .padding(16)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.hero,
-            shadowOpacity: 0.08,
-            shadowRadius: 8,
-            shadowY: 3,
-            allowsGlass: false
-        )
 
         if let locationReliabilityRailState {
             LocationReliabilitySummaryRailView(
@@ -449,11 +465,6 @@ struct SummaryView: View {
         .padding(.top, 10)
         .padding(.bottom, 20)
         .animation(SkyAwareMotion.settle(reduceMotion), value: showsEmptyResolving)
-    }
-
-    private func sectionTitle(_ title: String, icon: String) -> some View {
-        Label(title, systemImage: icon)
-            .sectionLabel()
     }
 
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
@@ -573,49 +584,69 @@ private extension AnyTransition {
 }
 
 // MARK: Previews
-#Preview("Summary – Slight + 10% Tornado") {
+#Preview("Summary – Thunderstorms") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .thunderstorm,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Tornado Primary") {
     NavigationStack {
         SummaryPreviewContent(
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.10),
-            weather: SummaryPreviewData.weather
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            alerts: []
         )
         .toolbar(.hidden, for: .navigationBar)
     }
 }
 
-#Preview("Summary Hero Cards – XXXL Horizontal") {
+#Preview("Summary – Moderate Storm Risk") {
     NavigationStack {
         SummaryPreviewContent(
             stormRisk: .moderate,
-            severeRisk: .hail(probability: 0.30),
-            weather: SummaryPreviewData.weather
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            alerts: []
         )
-        .environment(\.dynamicTypeSize, .xxxLarge)
         .toolbar(.hidden, for: .navigationBar)
     }
 }
 
-#Preview("Summary Hero Cards – AX1 Stacked") {
+#Preview("Summary – Quiet Weather") {
     NavigationStack {
         SummaryPreviewContent(
-            stormRisk: .moderate,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            mesos: [],
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – AX1 Stacked Awareness") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .high,
             severeRisk: .hail(probability: 0.30),
-            weather: SummaryPreviewData.weather
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            alerts: []
         )
         .environment(\.dynamicTypeSize, .accessibility1)
-        .toolbar(.hidden, for: .navigationBar)
-    }
-}
-
-#Preview("Summary Hero Cards – AX3 Stacked") {
-    NavigationStack {
-        SummaryPreviewContent(
-            stormRisk: .enhanced,
-            severeRisk: .wind(probability: 0.45),
-            weather: SummaryPreviewData.weather
-        )
-        .environment(\.dynamicTypeSize, .accessibility3)
         .toolbar(.hidden, for: .navigationBar)
     }
 }
@@ -625,10 +656,13 @@ private extension AnyTransition {
         SummaryPreviewContent(
             stormRisk: nil,
             severeRisk: nil,
+            fireRisk: nil,
             weather: nil,
             readinessState: .loadingLocalData,
             showsOfflineToken: true,
-            outlook: nil
+            outlook: nil,
+            mesos: [],
+            alerts: []
         )
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -637,25 +671,34 @@ private extension AnyTransition {
 private struct SummaryPreviewContent: View {
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
+    let fireRisk: FireRiskLevel?
     let weather: SummaryWeather?
     let readinessState: SummaryReadinessState
     let showsOfflineToken: Bool
     let outlook: ConvectiveOutlookDTO?
+    let mesos: [MdDTO]
+    let alerts: [AlertDTO]
 
     init(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
+        fireRisk: FireRiskLevel? = .extreme,
         weather: SummaryWeather?,
         readinessState: SummaryReadinessState = .ready,
         showsOfflineToken: Bool = false,
-        outlook: ConvectiveOutlookDTO? = ConvectiveOutlook.sampleOutlookDtos.first
+        outlook: ConvectiveOutlookDTO? = ConvectiveOutlook.sampleOutlookDtos.first,
+        mesos: [MdDTO] = MD.sampleDiscussionDTOs,
+        alerts: [AlertDTO] = Watch.sampleWatchRows
     ) {
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
+        self.fireRisk = fireRisk
         self.weather = weather
         self.readinessState = readinessState
         self.showsOfflineToken = showsOfflineToken
         self.outlook = outlook
+        self.mesos = mesos
+        self.alerts = alerts
     }
 
     var body: some View {
@@ -668,9 +711,9 @@ private struct SummaryPreviewContent: View {
             ),
             stormRisk: stormRisk,
             severeRisk: severeRisk,
-            fireRisk: .extreme,
-            mesos: MD.sampleDiscussionDTOs,
-            alerts: Watch.sampleWatchRows,
+            fireRisk: fireRisk,
+            mesos: mesos,
+            alerts: alerts,
             outlook: outlook,
             weather: weather,
             readinessState: readinessState,
