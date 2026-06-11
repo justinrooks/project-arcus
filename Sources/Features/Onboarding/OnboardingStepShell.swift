@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct OnboardingStepShell<Content: View, Footer: View>: View {
+    private let footerBottomClearance: CGFloat = 52
     private let content: Content
     private let footer: Footer
 
@@ -33,7 +34,7 @@ struct OnboardingStepShell<Content: View, Footer: View>: View {
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 32)
                 .padding(.top, 16)
-                .padding(.bottom, 16)
+                .padding(.bottom, footerBottomClearance)
                 .background(Color(.skyAwareBackground))
         }
         .background(Color(.skyAwareBackground).ignoresSafeArea())

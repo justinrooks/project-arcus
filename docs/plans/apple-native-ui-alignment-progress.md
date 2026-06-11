@@ -311,6 +311,7 @@ Model used: gpt-5.4-mini / high
 
 - Added a shared `OnboardingStepShell` that gives each onboarding page a vertical `ScrollView` and a pinned bottom `safeAreaInset` action area.
 - Added a targeted `OnboardingPagerSwipeBlocker` so the page-style `TabView` keeps its AN-06 swipe protection without disabling descendant vertical scrolling.
+- Reserved extra bottom clearance in the shared shell so the footer buttons sit above the page indicator instead of crowding it at smaller text sizes.
 - Reworked `WelcomeView`, `DisclaimerView`, `LocationPermissionView`, `OnboardingAlwaysUpgradeView`, and `NotificationPermissionView` to use the scrollable shell without changing step order, copy, or permission behavior.
 - Replaced fixed decorative symbol sizes with `@ScaledMetric` so the onboarding glyphs scale with Dynamic Type instead of dominating the layout.
 - Kept the primary and secondary actions as the same buttons, just moved into the safe-area footer so they remain reachable.
@@ -340,10 +341,12 @@ Model used: gpt-5.4-mini / high
 
 - `mcp__xcodebuildmcp.build_run_sim` on iPhone 16e with `UI_TESTS_RESET_ONBOARDING=1` to inspect the default-size onboarding flow.
 - `mcp__xcodebuildmcp.launch_app_sim` on iPhone 16e with `UI_TESTS_RESET_ONBOARDING=1`, `UI_TESTS_LOCATION_AUTH_MODE=authorized`, and `-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL` to inspect the AX5 flow.
+- `mcp__xcodebuildmcp.build_run_sim` and screenshot inspection on iPhone 16e with `UICTContentSizeCategoryXS` to confirm the footer clears the page indicator at smaller text sizes.
 - `mcp__xcodebuildmcp.snapshot_ui`, `touch`, and `swipe` across Welcome, Disclaimer, Location Access, More Reliable Alerts, and Stay Aware screens.
 - `mcp__xcodebuildmcp.build_sim`
 - `mcp__xcodebuildmcp.test_sim` with `-only-testing:SkyAwareTests/LaunchPresentationStateTests -only-testing:SkyAwareTests/OnboardingStepTests` (`8` passed, `0` failed)
 - `mcp__xcodebuildmcp.test_sim` with `-testPlan SkyAware_All_Tests -only-testing:SkyAwareUITests/testOnboardingSwipeCannotBypassRequiredSteps`
+- `mcp__xcodebuildmcp.test_sim` with `-testPlan SkyAware_All_Tests -only-testing:SkyAwareUITests/testOnboardingSwipeCannotBypassRequiredSteps` rerun after the final footer-clearance tweak
 
 #### Deferred Work
 
@@ -354,7 +357,7 @@ Model used: gpt-5.4-mini / high
 #### Handoff Notes
 
 - `OnboardingStepShell` is the shared layout contract for onboarding pages now; future onboarding content should use it instead of reintroducing non-scrollable vertical stacks.
-- The iPhone 16e AX5 pass kept the primary and secondary actions visible and operable, and the welcome screen now demonstrates actual vertical scrolling in the simulator; a genuinely smaller device or future copy expansion should still be rechecked.
+- The iPhone 16e AX5 pass kept the primary and secondary actions visible and operable, and the welcome screen still demonstrates actual vertical scrolling in the simulator; a genuinely smaller device or future copy expansion should still be rechecked.
 - Residual risk: the current simulator evidence proves reachability and layout resilience on the tested device/class, but it is not a substitute for a final pass on any newly introduced onboarding copy.
 
 ### AN-08 / GitHub #224 - Apply Reduce Motion to onboarding and toasts
