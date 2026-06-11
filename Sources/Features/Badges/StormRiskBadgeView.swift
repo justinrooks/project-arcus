@@ -14,6 +14,7 @@ struct StormRiskBadgeView: View {
     var showsResolvingPlaceholder: Bool = false
 
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
@@ -43,26 +44,47 @@ struct StormRiskBadgeView: View {
 
     @ViewBuilder
     private func resolvedContent(level: StormRiskLevel) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: level.iconName)
-                .formatBadgeImage()
-                .contentTransition(.opacity)
-            Text(level.message)
-                .formatMessageText()
-                .contentTransition(.opacity)
-            Text(level.summary)
-                .formatSummaryText(for: colorScheme)
-                .contentTransition(.opacity)
+        VStack(alignment: .leading, spacing: badgeHeaderSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Storm Risk")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Spacer(minLength: 0)
+
+                if isOffline {
+                    SummaryAvailabilityBadge(state: .stale)
+                }
+            }
+
+            VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
+                Image(systemName: level.iconName)
+                    .formatBadgeImage()
+                    .contentTransition(.opacity)
+
+                Text(level.message)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(badgeLineLimit)
+                    .multilineTextAlignment(badgeTextAlignment)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+
+                Text(level.summary)
+                    .formatSummaryText(for: colorScheme)
+                    .lineLimit(badgeSummaryLineLimit)
+                    .multilineTextAlignment(badgeTextAlignment)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+            }
+            .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         }
-        .badgeStyle(background: level.iconColor(for: colorScheme))
+        .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
+        .badgeStyle(background: level.iconColor(for: colorScheme), allowsVerticalGrowth: usesAccessibilityLayout)
         .animation(SkyAwareMotion.settle(reduceMotion), value: level.message)
         .animation(SkyAwareMotion.settle(reduceMotion), value: level.summary)
-        .overlay(alignment: .topTrailing) {
-            if isOffline {
-                SummaryAvailabilityBadge(state: .stale)
-                    .padding(8)
-            }
-        }
     }
 
     private var resolvingContent: some View {
@@ -103,6 +125,38 @@ struct StormRiskBadgeView: View {
         .padding()
         .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
     }
+
+    private var usesAccessibilityLayout: Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesStackedHeroTiles
+    }
+
+    private var badgeAlignment: HorizontalAlignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeTextAlignment: TextAlignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeFrameAlignment: Alignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeSpacing: CGFloat {
+        usesAccessibilityLayout ? 6 : 4
+    }
+
+    private var badgeHeaderSpacing: CGFloat {
+        usesAccessibilityLayout ? 10 : 8
+    }
+
+    private var badgeLineLimit: Int {
+        2
+    }
+
+    private var badgeSummaryLineLimit: Int? {
+        nil
+    }
 }
 
 #Preview {
@@ -130,6 +184,12 @@ struct StormRiskBadgeView: View {
         HStack {
             StormRiskBadgeView(level: .enhanced, isOffline: true)
             StormRiskBadgeView(level: nil, isOffline: true)
+        }
+        HStack {
+            StormRiskBadgeView(level: .high)
+                .environment(\.dynamicTypeSize, .accessibility5)
+            StormRiskBadgeView(level: .moderate)
+                .environment(\.dynamicTypeSize, .accessibility5)
         }
     }.background(.skyAwareBackground)
 }

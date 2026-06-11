@@ -131,20 +131,34 @@ extension View {
             )
     }
     
-    func badgeStyle(background: LinearGradient) -> some View {
-        self
-            .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
-                   minHeight: 150, idealHeight: 150, maxHeight: 160)
-            .aspectRatio(1, contentMode: .fit)
-            .padding()
-            .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
-            .skyAwareSurface(
-                cornerRadius: SkyAwareRadius.large,
-                tint: .white.opacity(0.08),
-                shadowOpacity: 0.18,
-                shadowRadius: 8,
-                shadowY: 4
-            )
+    @ViewBuilder
+    func badgeStyle(background: LinearGradient, allowsVerticalGrowth: Bool = false) -> some View {
+        if allowsVerticalGrowth {
+            self
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.large,
+                    tint: .white.opacity(0.08),
+                    shadowOpacity: 0.18,
+                    shadowRadius: 8,
+                    shadowY: 4
+                )
+        } else {
+            self
+                .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
+                       minHeight: 150, idealHeight: 150)
+                .padding()
+                .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.large,
+                    tint: .white.opacity(0.08),
+                    shadowOpacity: 0.18,
+                    shadowRadius: 8,
+                    shadowY: 4
+                )
+        }
     }
     
     

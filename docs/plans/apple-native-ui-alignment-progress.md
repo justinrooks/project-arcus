@@ -28,7 +28,7 @@ decisions from Git history.
 | 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Completed | Detail presentation now preserves optional day and valid-until metadata truthfully without inventing fallback precision. |
 | 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Completed | Narrative paragraphs now use proportional Dynamic Type typography, with monospaced digits preserved for compact technical values. |
 | 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Completed | Cached Storm Risk, Severe Risk, Fire Risk, Atmospheric Conditions, and Local Alerts now remain visible offline with a quiet freshness/availability cue instead of being replaced by generic offline cards. |
-| 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Not started | |
+| 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Completed | Persistent category labels now stay visible on the resolved hero tiles, and the tiles can grow vertically instead of clipping longer values. |
 | 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Not started | |
 | 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
 | 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Not started | |
@@ -621,3 +621,60 @@ Model used: gpt-5.4 / medium
 - `SummaryContentPresentationState` is the narrow helper that should carry future presentation-state decisions for cached-versus-unavailable behavior.
 - Offline content should stay content-first; the correct pattern is to layer a quiet status cue, not to swap the card out for a generic offline placeholder.
 - If future work adds explicit freshness metadata to the Summary model, that should feed this helper rather than bypass it.
+
+### AN-13 / GitHub #229 - Restore Summary hero category identity at large text sizes
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Added persistent `Storm Risk` and `Severe Risk` header labels inside the resolved hero tiles, using a widget-like header/body hierarchy instead of an overlay that could sit behind the hero art.
+- Let the hero tiles grow vertically instead of enforcing the previous square-ish cap, so longer values can wrap.
+- Relaxed the resolved badge text so the value and supporting summary can wrap instead of shrinking or clipping.
+- Reused the existing `SkyAwareAdaptiveLayout` accessibility threshold so the hero tiles follow the same stacked-hero policy as the Summary surface.
+- Kept the hero tile size and semantic color treatment intact while making the layout feel closer to the small widgets.
+- Updated representative badge previews to show default and accessibility-sized variants for both hero tiles.
+
+#### Files Changed
+
+- `Sources/Features/Badges/StormRiskBadgeView.swift`
+- `Sources/Features/Badges/SevereWeatherBadgeView.swift`
+- `Sources/Utilities/Extensions/ext+View.swift`
+- `tasks/lessons.md`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Risk calculation, mapping, wording, and hazard semantics were unchanged.
+- Navigation and tap destinations were unchanged.
+- Cached/offline presentation behavior from AN-12 stayed intact.
+- Resolved, resolving, cached, offline, unavailable, and confirmed-empty states still render through the same presentation-state path.
+- Existing semantic risk colors and button interactions were preserved.
+- The hero badge size was preserved; only the internal hierarchy and label placement changed.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData-AN13 build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData-AN13 -only-testing:SkyAwareTests/SkyAwareAdaptiveLayoutTests test`
+- XcodeBuildMCP `build_run_sim` on iPhone 17 with the app launched successfully.
+- Simulator screenshot review at the default content-size override confirmed the resolved hero tiles now show `Storm Risk` and `Severe Risk` in the upper-left header area, above the icon and value content.
+- Simulator screenshot review at `UICTContentSizeCategoryM` confirmed the same header placement at a normal content size.
+- Simulator screenshot review at accessibility size confirmed the labels remain visible and do not sit behind the hero artwork.
+- Simulator screenshot review confirmed the severe tile still expands to show `No Active Threats` without truncation in the compact layout.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData-AN13 -only-testing:SkyAwareTests/SkyAwareAdaptiveLayoutTests test`
+
+#### Deferred Work
+
+- AN-14 still owns the accessibility semantics pass for hero buttons and legend rows.
+- AN-18 still owns the broader Summary surface-chrome reduction.
+- If future design feedback asks for further widget parity, that should be handled as a follow-on styling pass rather than broadening this fix into a new layout system.
+
+#### Handoff Notes
+
+- Keep the hero tiles custom; the fix here was about hierarchy and sizing, not replacing them with generic rows or cards.
+- If later work changes hero chrome again, preserve the persistent category labels, the widget-like header/body split, and the vertical-growth behavior introduced here.
+- The badge sizing helper now has a flexible branch; use it only for the Summary hero tiles unless another custom tile has the same accessibility problem.
+- AN-14 should continue from the current header/body hierarchy, not from the old overlay-label implementation.
+- AN-18 can still trim surface chrome later, but it should not undo the hero badge hierarchy established here.

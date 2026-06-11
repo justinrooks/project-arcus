@@ -14,6 +14,7 @@ struct SevereWeatherBadgeView: View {
     var showsResolvingPlaceholder: Bool = false
 
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
@@ -43,27 +44,50 @@ struct SevereWeatherBadgeView: View {
 
     @ViewBuilder
     private func resolvedContent(threat: SevereWeatherThreat) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: threat.iconName)
-                .formatBadgeImage()
-                .contentTransition(.opacity)
-            Text(threat.message)
-                .formatMessageText()
-                .contentTransition(.opacity)
-            Text(threat.dynamicSummary != "" ? threat.dynamicSummary : threat.summary)
-                .formatSummaryText(for: colorScheme)
-                .monospacedDigit()
-                .contentTransition(.opacity)
+        let valueText = threat.dynamicSummary.isEmpty ? threat.summary : threat.dynamicSummary
+
+        VStack(alignment: .leading, spacing: badgeHeaderSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Severe Risk")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Spacer(minLength: 0)
+
+                if isOffline {
+                    SummaryAvailabilityBadge(state: .stale)
+                }
+            }
+
+            VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
+                Image(systemName: threat.iconName)
+                    .formatBadgeImage()
+                    .contentTransition(.opacity)
+
+                Text(threat.message)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(badgeLineLimit)
+                    .multilineTextAlignment(badgeTextAlignment)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+
+                Text(valueText)
+                    .formatSummaryText(for: colorScheme)
+                    .monospacedDigit()
+                    .lineLimit(badgeSummaryLineLimit)
+                    .multilineTextAlignment(badgeTextAlignment)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+            }
+            .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         }
-        .badgeStyle(background: threat.iconColor(for: colorScheme))
+        .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
+        .badgeStyle(background: threat.iconColor(for: colorScheme), allowsVerticalGrowth: usesAccessibilityLayout)
         .animation(SkyAwareMotion.settle(reduceMotion), value: threat.message)
         .animation(SkyAwareMotion.settle(reduceMotion), value: threat.dynamicSummary)
-        .overlay(alignment: .topTrailing) {
-            if isOffline {
-                SummaryAvailabilityBadge(state: .stale)
-                    .padding(8)
-            }
-        }
     }
 
     private var resolvingContent: some View {
@@ -104,6 +128,38 @@ struct SevereWeatherBadgeView: View {
         .padding()
         .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
     }
+
+    private var usesAccessibilityLayout: Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesStackedHeroTiles
+    }
+
+    private var badgeAlignment: HorizontalAlignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeTextAlignment: TextAlignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeFrameAlignment: Alignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeSpacing: CGFloat {
+        usesAccessibilityLayout ? 6 : 4
+    }
+
+    private var badgeHeaderSpacing: CGFloat {
+        usesAccessibilityLayout ? 10 : 8
+    }
+
+    private var badgeLineLimit: Int {
+        2
+    }
+
+    private var badgeSummaryLineLimit: Int? {
+        nil
+    }
 }
 
 #Preview {
@@ -124,6 +180,12 @@ struct SevereWeatherBadgeView: View {
         HStack {
             SevereWeatherBadgeView(threat: .tornado(probability: 0.05), isOffline: true)
             SevereWeatherBadgeView(threat: nil, isOffline: true)
+        }
+        HStack {
+            SevereWeatherBadgeView(threat: .tornado(probability: 0.25))
+                .environment(\.dynamicTypeSize, .accessibility5)
+            SevereWeatherBadgeView(threat: .wind(probability: 0.45))
+                .environment(\.dynamicTypeSize, .accessibility5)
         }
     }
     .background(.skyAwareBackground)
