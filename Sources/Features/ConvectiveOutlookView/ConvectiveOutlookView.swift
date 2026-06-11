@@ -58,7 +58,7 @@ struct ConvectiveOutlookView: View {
                     if let latestOutlook {
                         outlookSection(
                             title: "Latest Outlook",
-                            subtitle: "Newest SPC product",
+                            subtitle: "SPC discussion",
                             symbol: "sparkles.rectangle.stack.fill"
                         ) {
                             outlookButton(for: latestOutlook)
@@ -122,11 +122,7 @@ struct ConvectiveOutlookView: View {
     }
 
     private var overviewMessage: String {
-        if let latestOutlook {
-            return "Open the latest SPC discussion first, then work backward if you want earlier issuances for comparison. Most recent update: \((latestOutlook.issued ?? latestOutlook.published).relativeDate())."
-        }
-
-        return "Latest convective outlook products from SPC will appear here once sync completes."
+        Self.overviewMessage(for: latestOutlook)
     }
 
     private func outlookSection<Content: View>(
@@ -175,6 +171,16 @@ struct ConvectiveOutlookView: View {
                 pressedOverlayOpacity: 0.06
             )
         )
+    }
+}
+
+extension ConvectiveOutlookView {
+    static func overviewMessage(for latestOutlook: ConvectiveOutlookDTO?) -> String {
+        if let latestOutlook {
+            return "Open the latest SPC outlook first, then work backward if you want earlier issuances for comparison. Most recent update: \((latestOutlook.issued ?? latestOutlook.published).relativeDate())."
+        }
+
+        return "Latest outlooks from SPC will appear here once they are ready."
     }
 }
 

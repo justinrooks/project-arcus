@@ -26,11 +26,11 @@ struct OnboardingAlwaysUpgradeView: View {
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("SkyAware can send more reliable severe-weather alerts when it can refresh your location in the background.")
+            Text("SkyAware can keep severe-weather alerts current when it can refresh your location in the background.")
                 .font(.body)
                 .multilineTextAlignment(.center)
 
-            Text("Enable Always to improve background alert reliability. You can continue now and change this later in Settings.")
+            Text("Enable Always to help keep alerts current. You can continue now and change this later in Settings.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)

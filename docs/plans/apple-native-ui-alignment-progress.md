@@ -24,7 +24,7 @@ decisions from Git history.
 | 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Completed | Launch presentation now uses a single routed item and onboarding uses typed steps with swipe blocked. |
 | 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
 | 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Completed | Onboarding and toast motion now route through `SkyAwareMotion` and respect `accessibilityReduceMotion`. |
-| 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Not started | |
+| 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Completed | Canonical terminology now replaces subsystem language in Settings, Outlooks, and onboarding progress copy. |
 | 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Not started | |
 | 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Not started | |
 | 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Not started | |
@@ -410,3 +410,62 @@ Model used: gpt-5.4-mini / medium
 - `SkyAwareMotion` is now the shared place for onboarding and toast motion policy; future accessibility-aware animation changes should start there.
 - The onboarding flow still needs manual simulator inspection only if a later change reintroduces movement-based transitions.
 - Residual risk: this work confirms the reduced-motion paths and default policy, but it does not replace a full visual review of live toast presentation timing in every state.
+
+### AN-09 / GitHub #225 - Replace implementation language in user-facing copy
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Renamed Settings toggles and helper copy to the canonical SkyAware vocabulary: `Mesoscale Discussion Alerts`,
+  `Local Severe-Weather Alerts`, and `Share Approximate Location for Alerts`.
+- Reworded Settings location-sharing and alert helper text to describe user intent instead of server or Signal
+  plumbing.
+- Reworded Outlooks copy so the latest card uses `SPC discussion` provenance and the loading/empty-state message now
+  says outlooks will appear once they are ready.
+- Replaced onboarding progress strings that described registration mechanics with calm progress copy such as
+  `Getting alerts ready…` and `Adding your approximate location for alerts…`.
+- Updated the onboarding alert permission bullet copy to say `mesoscale discussion alerts`.
+- Added focused copy assertions for the new Settings labels and the Outlooks overview helper.
+
+#### Files Changed
+
+- `Sources/Features/Settings/SettingsView.swift`
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookView.swift`
+- `Sources/Features/Onboarding/OnboardingView.swift`
+- `Sources/Features/Onboarding/LocationPermissionView.swift`
+- `Sources/Features/Onboarding/NotificationPermissionView.swift`
+- `Sources/Features/Onboarding/OnboardingAlwaysUpgradeView.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `Tests/UnitTests/ConvectiveOutlookRepoTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Navigation, onboarding sequencing, permission prompts, notification behavior, and loading timing were unchanged.
+- Provider attribution was kept where it helps the user understand what they are seeing.
+- No native Settings or Outlooks restructuring was introduced.
+- No new promises about delivery, coverage, or protection were added.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/ConvectiveOutlookViewCopyTests -only-testing:SkyAwareTests/NotificationPreferenceStateTests -only-testing:SkyAwareUITests/testSettingsShowsNotificationRecoveryCopyWhenAuthorizationDenied -only-testing:SkyAwareUITests/testFirstLaunchOnboardingCompletesSuccessfully -only-testing:SkyAwareUITests/testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcrun xccov view --report /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.11_11-11-15--0600.xcresult`
+- Repository search for deprecated user-facing phrases after the edit.
+
+#### Deferred Work
+
+- AN-10 still owns optional Outlook metadata preservation in the detail surface.
+- AN-19 still owns the broader native Settings structure migration.
+- AN-21 still owns the broader native Outlooks structure migration.
+
+#### Handoff Notes
+
+- `ConvectiveOutlookView.overviewMessage(for:)` is now the copy seam for the Outlooks loading/empty-state helper text.
+- Settings terminology is now aligned with the approved SkyAware vocabulary, so later structure work should keep these
+  labels intact.
+- Onboarding progress copy should stay calm and progressive; do not reintroduce registration or subsystem language in
+  the same flow.

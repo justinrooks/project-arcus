@@ -127,9 +127,9 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Meso Notifications", isOn: $mesoNotificationEnabled)
+                        Toggle("Mesoscale Discussion Alerts", isOn: $mesoNotificationEnabled)
                             .onChange(of: mesoNotificationEnabled) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Meso Notifications")
+                                handleNotificationToggle(newValue, for: "Mesoscale Discussion Alerts")
                             }
                         Text("Receive alerts when new mesoscale discussions are issued for your area.")
                             .font(.caption)
@@ -138,9 +138,9 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Subscribe to Server Notifications", isOn: $serverNotificationEnabled)
+                        Toggle("Local Severe-Weather Alerts", isOn: $serverNotificationEnabled)
                             .onChange(of: serverNotificationEnabled) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Server Notifications")
+                                handleNotificationToggle(newValue, for: "Local Severe-Weather Alerts")
                                 if suppressNextServerNotificationSync {
                                     suppressNextServerNotificationSync = false
                                     return
@@ -153,7 +153,7 @@ struct SettingsView: View {
                                     await locationSession.syncNotificationPreference(enabled: newValue)
                                 }
                             }
-                        Text("Subscribe this device to server-driven push alerts.")
+                        Text("Get local severe-weather alerts relevant to your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -184,9 +184,9 @@ struct SettingsView: View {
 
                 sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .orange) {
                     VStack() {
-                        Toggle("Share Location with Signal", isOn: $sendL8nToSignal)
+                        Toggle("Share Approximate Location for Alerts", isOn: $sendL8nToSignal)
                             .onChange(of: sendL8nToSignal) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Send Location to Signal")
+                                handleNotificationToggle(newValue, for: "Share Approximate Location for Alerts")
                                 if newValue {
                                     Task {
                                         await locationSession.updateLocationSharingPreference(enabled: true)
@@ -203,7 +203,7 @@ struct SettingsView: View {
                                     }
                                 }
                             }
-                        Text("Share your approximate location information with the alert server. This allows SkyAware to send you notifications relevant to your current location.")
+                        Text("Share an approximate location so SkyAware can match alerts to your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)

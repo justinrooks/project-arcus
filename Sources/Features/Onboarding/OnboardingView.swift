@@ -111,7 +111,7 @@ struct OnboardingView: View {
         guard !alwaysUpgradeStepState.isWorking else { return }
 
         Task { @MainActor in
-            alwaysUpgradeStepState = .working("Requesting Always for more reliable background alerts...")
+            alwaysUpgradeStepState = .working("Getting alerts ready...")
             try? await Task.sleep(for: .milliseconds(300))
             let didRequestUpgrade = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
             if didRequestUpgrade {
@@ -144,7 +144,7 @@ struct OnboardingView: View {
 
     @MainActor
     private func finalizeNotificationOnboarding() async {
-        notificationStepState = .working("Requesting notification access...")
+        notificationStepState = .working("Getting alerts ready...")
         let status = await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
 
         guard status.isRemoteRegistrationEligible else {
@@ -159,7 +159,7 @@ struct OnboardingView: View {
             return
         }
 
-        notificationStepState = .working("Finalizing device registration...")
+        notificationStepState = .working("Getting alerts ready...")
         guard await RemoteNotificationRegistrar.shared.waitForDeviceToken() != nil else {
             logger.notice("Continuing onboarding without APNs token; token not received before timeout")
             notificationStepState = .idle
@@ -169,7 +169,7 @@ struct OnboardingView: View {
 
         let canCaptureFreshSnapshot = locationSession.authorizationStatus.isAuthorizedForOnboardingLocation
         if canCaptureFreshSnapshot {
-            notificationStepState = .working("Capturing your first location context...")
+            notificationStepState = .working("Adding your approximate location for alerts...")
             let context = await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: true,
                 showsAuthorizationPrompt: false,

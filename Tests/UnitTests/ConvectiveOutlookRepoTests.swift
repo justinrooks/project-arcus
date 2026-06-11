@@ -420,3 +420,22 @@ struct SpcHttpClientTests {
         }
     }
 }
+
+@Suite("ConvectiveOutlookView copy")
+struct ConvectiveOutlookViewCopyTests {
+    @Test("overview message uses calm ready language while loading")
+    func overviewMessage_usesReadyLanguage() {
+        #expect(
+            ConvectiveOutlookView.overviewMessage(for: nil)
+                == "Latest outlooks from SPC will appear here once they are ready."
+        )
+    }
+
+    @Test("overview message keeps provenance when a latest outlook exists")
+    func overviewMessage_mentionsSPCOutlook() {
+        let message = ConvectiveOutlookView.overviewMessage(for: ConvectiveOutlook.sampleOutlookDtos.first)
+
+        #expect(message.contains("latest SPC outlook"))
+        #expect(message.contains("Most recent update:"))
+    }
+}

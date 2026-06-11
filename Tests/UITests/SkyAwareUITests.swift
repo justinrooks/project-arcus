@@ -94,6 +94,18 @@ final class SkyAwareUITests: XCTestCase {
             "Expected blocked notification copy to appear when authorization is denied."
         )
 
+        XCTAssertTrue(app.switches["Mesoscale Discussion Alerts"].waitForExistence(timeout: 10), "Expected mesoscale discussion copy to use canonical terminology.")
+        XCTAssertTrue(app.switches["Local Severe-Weather Alerts"].waitForExistence(timeout: 10), "Expected local severe-weather alert copy to use canonical terminology.")
+        XCTAssertTrue(app.switches["Share Approximate Location for Alerts"].waitForExistence(timeout: 10), "Expected location-sharing copy to use canonical terminology.")
+        XCTAssertTrue(
+            app.staticTexts["Get local severe-weather alerts relevant to your area."].waitForExistence(timeout: 10),
+            "Expected local severe-weather helper copy to appear."
+        )
+        XCTAssertTrue(
+            app.staticTexts["Share an approximate location so SkyAware can match alerts to your area."].waitForExistence(timeout: 10),
+            "Expected location-sharing helper copy to appear."
+        )
+
         let openSettingsButton = app.buttons["Open Settings"]
         XCTAssertTrue(openSettingsButton.waitForExistence(timeout: 10), "Expected Open Settings action to appear when authorization is denied.")
         openSettingsButton.tap()

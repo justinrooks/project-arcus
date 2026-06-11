@@ -30,7 +30,7 @@ struct LocationPermissionView: View {
                 .font(.body)
                 .multilineTextAlignment(.center)
 
-            Text("To support timely location-based notifications, SkyAware may send derived location information such as your county, fire zone, and a coarse geographic index to the server.")
+            Text("To support timely location-based alerts, SkyAware may share an approximate location with the alert service, such as your county, fire zone, or a coarse geographic index.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
