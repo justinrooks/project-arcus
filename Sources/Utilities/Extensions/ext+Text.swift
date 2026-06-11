@@ -13,9 +13,11 @@ extension Text {
             .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
     }
     
-    func formatMessageText() -> some View {
+    func formatMessageText(for colorScheme: ColorScheme? = nil) -> some View {
         self.font(.headline)
-            .foregroundColor(.primary)
+            .foregroundColor(
+                colorScheme.map { RiskBadgeVisualStyle.messageForeground(for: $0) } ?? .primary
+            )
             .lineLimit(1)
             .minimumScaleFactor(0.5)
     }

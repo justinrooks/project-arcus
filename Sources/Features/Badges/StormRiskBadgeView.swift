@@ -61,7 +61,7 @@ struct StormRiskBadgeView: View {
 
             VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
                 Image(systemName: level.iconName)
-                    .formatBadgeImage()
+                    .formatBadgeImage(colorScheme: colorScheme)
                     .contentTransition(.opacity)
 
                 Text(level.message)
@@ -90,10 +90,10 @@ struct StormRiskBadgeView: View {
     private var resolvingContent: some View {
         VStack(spacing: 4) {
             Image(systemName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90")
-                .formatBadgeImage()
+                .formatBadgeImage(colorScheme: colorScheme)
                 .opacity(0.92)
             Text("Storm Risk")
-                .formatMessageText()
+                .formatMessageText(for: colorScheme)
             Text("Getting storm risk…")
                 .formatSummaryText(for: colorScheme)
         }

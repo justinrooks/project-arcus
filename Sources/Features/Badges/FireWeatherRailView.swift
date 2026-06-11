@@ -54,10 +54,10 @@ struct FireWeatherRailView: View {
 
         HStack(spacing: 12) {
             Image(systemName: level.symbol)
-                .formatBadgeImage(size: 35 * presentation.iconScale)
+                .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
             VStack(alignment: .leading, spacing: 3) {
                 Text(presentation.title)
-                    .formatMessageText()
+                    .formatMessageText(for: colorScheme)
                 Text(presentation.detail)
                     .formatSummaryText(for: colorScheme)
             }
@@ -83,10 +83,10 @@ struct FireWeatherRailView: View {
     private var resolvingContent: some View {
         HStack(spacing: 12) {
             Image(systemName: "flame")
-                .formatBadgeImage()
+                .formatBadgeImage(colorScheme: colorScheme)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Fire Risk")
-                    .formatMessageText()
+                    .formatMessageText(for: colorScheme)
                 Text("Getting fire risk…")
                     .formatSummaryText(for: colorScheme)
             }

@@ -55,9 +55,9 @@ struct AtmosphericConditionsCard: View {
         .padding(.vertical, 12)
         .cardBackground(
             cornerRadius: SkyAwareRadius.section,
-            shadowOpacity: 0.08,
-            shadowRadius: 8,
-            shadowY: 3
+            shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
+            shadowRadius: colorScheme == .dark ? 8 : 10,
+            shadowY: colorScheme == .dark ? 3 : 4
         )
     }
 
@@ -79,7 +79,7 @@ struct AtmosphericConditionsCard: View {
                 .padding(.bottom, 6)
 
             Divider()
-                .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.08))
+                .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.07))
                 .padding(.vertical, 4)
 
             metricsStrip
@@ -92,7 +92,7 @@ struct AtmosphericConditionsCard: View {
                 .fill(atmosphereBackground)
                 .overlay {
                     RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.10 : 0.16), lineWidth: 0.8)
+                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.10 : 0.18), lineWidth: 0.8)
                         .allowsHitTesting(false)
                 }
         }

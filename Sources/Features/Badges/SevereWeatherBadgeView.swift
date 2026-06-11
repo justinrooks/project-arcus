@@ -63,7 +63,7 @@ struct SevereWeatherBadgeView: View {
 
             VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
                 Image(systemName: threat.iconName)
-                    .formatBadgeImage()
+                    .formatBadgeImage(colorScheme: colorScheme)
                     .contentTransition(.opacity)
 
                 Text(threat.message)
@@ -93,10 +93,10 @@ struct SevereWeatherBadgeView: View {
     private var resolvingContent: some View {
         VStack(spacing: 4) {
             Image(systemName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90")
-                .formatBadgeImage()
+                .formatBadgeImage(colorScheme: colorScheme)
                 .opacity(0.92)
             Text("Severe Risk")
-                .formatMessageText()
+                .formatMessageText(for: colorScheme)
             Text("Getting severe risk…")
                 .formatSummaryText(for: colorScheme)
         }

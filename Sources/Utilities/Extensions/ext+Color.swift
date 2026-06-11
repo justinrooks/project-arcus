@@ -35,28 +35,10 @@ extension Color {
     static let fireWeather       = Color(red: 0.80, green: 0.36, blue: 0.16) // ~#CC5C29
     
     func tileGradient(for scheme: ColorScheme) -> LinearGradient {
-        let top: Color
-        let bottom: Color
-
-        switch scheme {
-        case .dark:
-            // Dark mode: richer, deeper, more saturated
-            top = self.opacity(0.85)
-            bottom = self.darken()
-        default:
-            // Light mode: soft, clean, bright
-            top = self.opacity(0.45)
-            bottom = self
-        }
-
-        return LinearGradient(
-            colors: [top, bottom],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        RiskBadgeVisualStyle.badgeBackground(for: self, colorScheme: scheme)
     }
     
-    private func darken(by amount: Double = 0.2) -> Color {
+    func darken(by amount: Double = 0.2) -> Color {
         return self.opacity(1.0 - amount)
     }
 }

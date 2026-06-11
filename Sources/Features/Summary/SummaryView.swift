@@ -117,6 +117,7 @@ struct SummaryAvailabilityBadge: View {
 struct SummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.colorScheme) private var colorScheme
 
     struct LocationReliabilityRailState {
         let onOpen: () -> Void
@@ -387,9 +388,9 @@ struct SummaryView: View {
             .padding(16)
             .cardBackground(
                 cornerRadius: SkyAwareRadius.hero,
-                shadowOpacity: 0.08,
-                shadowRadius: 8,
-                shadowY: 3,
+                shadowOpacity: colorScheme == .dark ? 0.08 : 0.12,
+                shadowRadius: colorScheme == .dark ? 8 : 10,
+                shadowY: colorScheme == .dark ? 3 : 4,
                 allowsGlass: false
             )
 
@@ -472,7 +473,12 @@ struct SummaryView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: colorScheme == .dark ? 0.06 : 0.10,
+            shadowRadius: colorScheme == .dark ? 6 : 8,
+            shadowY: colorScheme == .dark ? 2 : 3
+        )
     }
 
     private func unavailableCard(title: String, message: String, symbol: String) -> some View {
