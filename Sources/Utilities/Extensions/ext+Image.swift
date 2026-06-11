@@ -8,10 +8,10 @@
 import SwiftUI
 
 extension Image {
-    func formatBadgeImage() -> some View {
+    func formatBadgeImage(size: CGFloat = 35) -> some View {
         self.resizable()
             .scaledToFit()
-            .frame(width: 35, height: 35)
+            .frame(width: size, height: size)
             .font(.largeTitle)
             .foregroundColor(.primary)
     }

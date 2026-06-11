@@ -50,19 +50,27 @@ struct FireWeatherRailView: View {
 
     @ViewBuilder
     private func resolvedContent(level: FireRiskLevel) -> some View {
-        let riskLabel = level.status == "Clear" ? "No" : level.status
+        let presentation = level.supportingPresentation()
 
         HStack(spacing: 12) {
             Image(systemName: level.symbol)
-                .formatBadgeImage()
+                .formatBadgeImage(size: 35 * presentation.iconScale)
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(riskLabel) Fire Risk")
+                Text(presentation.title)
                     .formatMessageText()
-                Text(level.message)
+                Text(presentation.detail)
                     .formatSummaryText(for: colorScheme)
             }
         }
-        .railStyle(background: level.iconColor(for: colorScheme))
+        .railStyle(
+            background: presentation.isSubdued
+                ? RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
+                : level.iconColor(for: colorScheme),
+            minHeight: presentation.isSubdued ? 76 : 84,
+            shadowOpacity: presentation.isSubdued ? 0.10 : 0.18,
+            shadowRadius: presentation.isSubdued ? 6 : 8,
+            shadowY: presentation.isSubdued ? 3 : 4
+        )
         .overlay(alignment: .topTrailing) {
             if isOffline {
                 SummaryAvailabilityBadge(state: .stale)
@@ -104,13 +112,20 @@ struct FireWeatherRailView: View {
 #Preview {
     VStack {
         FireWeatherRailView(level: .clear)
-        FireWeatherRailView(level: .clear, showsResolvingPlaceholder: true)
+        FireWeatherRailView(level: .clear, isOffline: true)
         FireWeatherRailView(level: .elevated)
-        FireWeatherRailView(level: .critical)
-        FireWeatherRailView(level: .extreme)
-        FireWeatherRailView(level: .critical, isOffline: true)
-        FireWeatherRailView(level: nil, isOffline: true)
+        FireWeatherRailView(level: .elevated, isOffline: true)
     }
+}
+
+#Preview("Fire Weather Rail Dark") {
+    VStack {
+        FireWeatherRailView(level: .clear)
+        FireWeatherRailView(level: .clear, isOffline: true)
+        FireWeatherRailView(level: .elevated)
+        FireWeatherRailView(level: .elevated, isOffline: true)
+    }
+    .preferredColorScheme(.dark)
 }
 
 //    private var fireRiskState: FireRiskLevel {

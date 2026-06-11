@@ -279,6 +279,7 @@ enum SummaryAwarenessSource: Equatable, Sendable {
 
 enum SupportingRiskRowPresentationMode: Equatable, Sendable {
     case normal
+    case subdued
     case supplemental
 }
 
@@ -329,6 +330,16 @@ struct SupportingRiskRowDisplayModel: Equatable, Sendable {
         level: FireRiskLevel,
         primarySource: SummaryAwarenessSource
     ) -> SupportingRiskRowDisplayModel {
+        let presentation = level.supportingPresentation()
+
+        if presentation.isSubdued {
+            return SupportingRiskRowDisplayModel(
+                title: presentation.title,
+                detail: presentation.detail,
+                presentationMode: .subdued
+            )
+        }
+
         if primarySource == .fireRisk {
             return SupportingRiskRowDisplayModel(
                 title: "Fire Risk",
@@ -338,8 +349,8 @@ struct SupportingRiskRowDisplayModel: Equatable, Sendable {
         }
 
         return SupportingRiskRowDisplayModel(
-            title: level.status == "Clear" ? "No Fire Risk" : "\(level.status) Fire Risk",
-            detail: level.message,
+            title: presentation.title,
+            detail: presentation.detail,
             presentationMode: .normal
         )
     }
@@ -485,6 +496,7 @@ struct PrimaryAwarenessPanel: View {
             symbolName: fireSymbolName,
             background: fireBackground,
             isQuiet: fireIsQuiet,
+            presentationMode: firePresentation.presentationMode,
             action: {
                 onOpenMapLayer(.fire)
             },
@@ -501,6 +513,7 @@ struct PrimaryAwarenessPanel: View {
         symbolName: String,
         background: LinearGradient,
         isQuiet: Bool,
+        presentationMode: SupportingRiskRowPresentationMode = .normal,
         action: @escaping () -> Void,
         showsChevron: Bool = false
     ) -> some View {
@@ -511,6 +524,7 @@ struct PrimaryAwarenessPanel: View {
                 symbolName: symbolName,
                 background: background,
                 isQuiet: isQuiet,
+                presentationMode: presentationMode,
                 showsChevron: showsChevron
             )
         }
@@ -700,10 +714,7 @@ struct PrimaryAwarenessPanel: View {
             return "No Fire Risk"
         }
 
-        return SupportingRiskRowDisplayModel.fire(
-            level: fireRisk,
-            primarySource: primaryState.source
-        ).title
+        return firePresentation.title
     }
 
     private var fireDetail: String {
@@ -716,10 +727,7 @@ struct PrimaryAwarenessPanel: View {
         }
 
         if let fireRisk {
-            return SupportingRiskRowDisplayModel.fire(
-                level: fireRisk,
-                primarySource: primaryState.source
-            ).detail
+            return firePresentation.detail
         }
 
         return "No elevated fire weather risk"
@@ -746,7 +754,26 @@ struct PrimaryAwarenessPanel: View {
             return neutralSupportBackground
         }
 
+        if fireRisk != nil, firePresentation.presentationMode == .subdued {
+            return RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
+        }
+
         return fireRisk?.iconColor(for: colorScheme) ?? Color.riskAllClear.tileGradient(for: colorScheme)
+    }
+
+    private var firePresentation: SupportingRiskRowDisplayModel {
+        guard let fireRisk else {
+            return SupportingRiskRowDisplayModel(
+                title: "No Fire Risk",
+                detail: "No elevated fire weather risk",
+                presentationMode: .subdued
+            )
+        }
+
+        return SupportingRiskRowDisplayModel.fire(
+            level: fireRisk,
+            primarySource: primaryState.source
+        )
     }
 
     private var stormUnavailable: Bool {
@@ -914,14 +941,17 @@ private struct AwarenessSupportRow: View {
     let symbolName: String
     let background: LinearGradient
     var isQuiet: Bool = false
+    var presentationMode: SupportingRiskRowPresentationMode = .normal
     var showsChevron: Bool = false
 
     var body: some View {
+        let iconSize: CGFloat = presentationMode == .subdued ? 24 : 28
+
         HStack(spacing: 12) {
             Image(systemName: symbolName)
-                .font(.title3.weight(.semibold))
+                .font(.system(size: iconSize, weight: .semibold))
                 .foregroundColor(RiskBadgeVisualStyle.iconForeground)
-                .frame(width: 28)
+                .frame(width: iconSize)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -956,19 +986,63 @@ private struct AwarenessSupportRow: View {
         )
         .overlay {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                .strokeBorder(.white.opacity(isQuiet ? 0.08 : 0.12), lineWidth: 0.8)
+                .strokeBorder(.white.opacity(strokeOpacity), lineWidth: 0.8)
                 .allowsHitTesting(false)
         }
         .shadow(
             color: .black.opacity(isQuiet ? 0.06 : 0.10),
-            radius: 5,
+            radius: shadowRadius,
             x: 0,
-            y: 2
+            y: shadowY
         )
-        .opacity(isQuiet ? 0.96 : 1)
+        .opacity(rowOpacity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
         .accessibilityValue(detail)
+    }
+
+    private var rowOpacity: Double {
+        switch presentationMode {
+        case .normal:
+            return isQuiet ? 0.96 : 1
+        case .subdued:
+            return 0.92
+        case .supplemental:
+            return 1
+        }
+    }
+
+    private var strokeOpacity: Double {
+        switch presentationMode {
+        case .normal:
+            return isQuiet ? 0.08 : 0.12
+        case .subdued:
+            return 0.06
+        case .supplemental:
+            return 0.12
+        }
+    }
+
+    private var shadowRadius: CGFloat {
+        switch presentationMode {
+        case .normal:
+            return 5
+        case .subdued:
+            return 3
+        case .supplemental:
+            return 5
+        }
+    }
+
+    private var shadowY: CGFloat {
+        switch presentationMode {
+        case .normal:
+            return 2
+        case .subdued:
+            return 1
+        case .supplemental:
+            return 2
+        }
     }
 }
 

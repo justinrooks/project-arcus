@@ -234,6 +234,30 @@ struct SummaryAwarenessPanelTests {
         #expect(presentation.detail == "Rapid spread potential remains elevated")
     }
 
+    @Test("clear fire risk uses subdued presentation with shortened detail")
+    func clearFireRiskUsesSubduedPresentationWithShortenedDetail() {
+        let presentation = SupportingRiskRowDisplayModel.fire(
+            level: .clear,
+            primarySource: .synthesizedQuietState
+        )
+
+        #expect(presentation.presentationMode == .subdued)
+        #expect(presentation.title == "No Fire Risk")
+        #expect(presentation.detail == "No elevated fire weather risk")
+    }
+
+    @Test("elevated fire risk keeps the normal presentation")
+    func elevatedFireRiskKeepsTheNormalPresentation() {
+        let presentation = SupportingRiskRowDisplayModel.fire(
+            level: .elevated,
+            primarySource: .synthesizedQuietState
+        )
+
+        #expect(presentation.presentationMode == .normal)
+        #expect(presentation.title == "Elevated Fire Risk")
+        #expect(presentation.detail.contains("Elevated fire weather concerns"))
+    }
+
     @Test("quiet primary leaves supporting rows normal")
     func quietPrimaryLeavesSupportingRowsNormal() {
         let stormPresentation = SupportingRiskRowDisplayModel.storm(

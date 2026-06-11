@@ -117,17 +117,23 @@ extension View {
         }
     }
 
-    func railStyle(background: LinearGradient) -> some View {
+    func railStyle(
+        background: LinearGradient,
+        minHeight: CGFloat = 84,
+        shadowOpacity: Double = 0.18,
+        shadowRadius: CGFloat = 8,
+        shadowY: CGFloat = 4
+    ) -> some View {
         self
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
             .padding([.leading, .trailing], 15)
             .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
             .skyAwareSurface(
                 cornerRadius: SkyAwareRadius.large,
                 tint: .white.opacity(0.08),
-                shadowOpacity: 0.18,
-                shadowRadius: 8,
-                shadowY: 4
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
             )
     }
     
