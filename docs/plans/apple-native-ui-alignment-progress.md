@@ -27,7 +27,7 @@ decisions from Git history.
 | 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Completed | Canonical terminology now replaces subsystem language in Settings, Outlooks, and onboarding progress copy. |
 | 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Completed | Detail presentation now preserves optional day and valid-until metadata truthfully without inventing fallback precision. |
 | 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Completed | Narrative paragraphs now use proportional Dynamic Type typography, with monospaced digits preserved for compact technical values. |
-| 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Not started | |
+| 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Completed | Cached Storm Risk, Severe Risk, Fire Risk, Atmospheric Conditions, and Local Alerts now remain visible offline with a quiet freshness/availability cue instead of being replaced by generic offline cards. |
 | 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Not started | |
 | 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Not started | |
 | 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
@@ -569,3 +569,55 @@ Model used: gpt-5.4-mini / medium
 - Keep narrative typography proportional in these surfaces; do not reintroduce `monospaced()` on full prose blocks.
 - Preserve monospaced digits only where the text is acting like a compact technical value, not as a formatting crutch for paragraphs.
 - The AX5 preview additions give future agents a concrete place to check wrapping behavior without touching production data flow.
+
+### AN-12 / GitHub #228 - Preserve cached Summary content while offline
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Added a small shared `SummaryContentPresentationState` helper to distinguish current, stale, resolving, unavailable, and confirmed-empty presentation.
+- Updated Storm Risk and Severe Risk badges to keep cached values visible offline and layer a compact offline badge instead of swapping in generic offline cards.
+- Updated Fire Risk to keep the cached rail visible offline when data exists, and to fall back to an explicit unavailable card only when there is no cached value to show.
+- Updated Atmospheric Conditions to keep the cached rail visible offline with a calm saved-data line, while still falling back to an unavailable card when no weather is cached.
+- Updated Local Alerts to keep the existing content states visible offline and add a quiet offline status line instead of replacing the summary with a generic offline card.
+- Added focused unit coverage for the presentation-state matrix.
+
+#### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Badges/StormRiskBadgeView.swift`
+- `Sources/Features/Badges/SevereWeatherBadgeView.swift`
+- `Sources/Features/Badges/FireWeatherRailView.swift`
+- `Sources/Features/Badges/AtmosphereRailView.swift`
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Provider behavior, refresh orchestration, refresh timing, persistence, cache invalidation, and loading timing were unchanged.
+- Cached-first, resolve-forward behavior stayed intact; this issue only changed presentation when connectivity drops.
+- Custom risk badges, rails, and Summary containers were preserved.
+- No spinner-first fallback was introduced.
+- No new freshness thresholds were invented; offline connectivity is the only stale signal used here because the Summary models do not currently expose per-surface freshness metadata.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests test`
+- `xcrun xccov view --report /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.11_11-58-33--0600.xcresult`
+
+#### Deferred Work
+
+- AN-13 still owns the Summary hero category-label and large Dynamic Type pass.
+- AN-15 still owns the semantic color cleanup for metadata and offline state.
+- I did not run the requested simulator/preview/manual VoiceOver matrix in this session.
+
+#### Handoff Notes
+
+- `SummaryContentPresentationState` is the narrow helper that should carry future presentation-state decisions for cached-versus-unavailable behavior.
+- Offline content should stay content-first; the correct pattern is to layer a quiet status cue, not to swap the card out for a generic offline placeholder.
+- If future work adds explicit freshness metadata to the Summary model, that should feed this helper rather than bypass it.

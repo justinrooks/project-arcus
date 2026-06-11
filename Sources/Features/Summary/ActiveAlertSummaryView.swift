@@ -14,7 +14,6 @@ struct ActiveAlertSummaryView: View {
         case loading
         case empty
         case alerts
-        case offline
     }
 
     private enum HeightPhase: Equatable {
@@ -58,9 +57,6 @@ struct ActiveAlertSummaryView: View {
     }
 
     private var contentState: ContentState {
-        if isOffline {
-            return .offline
-        }
         if isLoading {
             return .loading
         }
@@ -152,6 +148,13 @@ struct ActiveAlertSummaryView: View {
                 }
             }
 
+            if isOffline {
+                Label("Offline. Showing saved local alerts when available.", systemImage: "wifi.slash")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Offline. Showing saved local alerts when available.")
+            }
+
             innerContent
                 .animation(SkyAwareMotion.layerChange(reduceMotion), value: contentState)
         }
@@ -219,8 +222,6 @@ struct ActiveAlertSummaryView: View {
     @ViewBuilder
     private var contentStateView: some View {
         switch contentState {
-        case .offline:
-            offlineContent
         case .loading:
             loadingContent
         case .alerts:
@@ -228,19 +229,6 @@ struct ActiveAlertSummaryView: View {
         case .empty:
             emptyContent
         }
-    }
-
-    private var offlineContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
-                .sectionLabel()
-            Text("SkyAware is showing saved local data. Local alerts will update when your connection returns.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(2)
-        .accessibilityElement(children: .combine)
     }
 
     private var emptyContent: some View {

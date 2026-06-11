@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct StormRiskBadgeView: View {
-    let level: StormRiskLevel
+    let level: StormRiskLevel?
     var isOffline: Bool = false
     var isResolving: Bool = false
     var showsResolvingPlaceholder: Bool = false
@@ -18,17 +18,31 @@ struct StormRiskBadgeView: View {
     
     var body: some View {
         Group {
-            if isOffline {
-                offlineContent
-            } else if showsResolvingPlaceholder {
+            switch presentationState {
+            case .resolving:
                 resolvingContent
-            } else {
-                resolvedContent
+            case .current, .stale:
+                if let level {
+                    resolvedContent(level: level)
+                } else {
+                    unavailableContent
+                }
+            case .unavailable, .confirmedEmpty:
+                unavailableContent
             }
         }
     }
 
-    private var resolvedContent: some View {
+    private var presentationState: SummaryContentPresentationState {
+        SummaryContentPresentationState.from(
+            isOffline: isOffline,
+            hasContent: level != nil,
+            isResolving: showsResolvingPlaceholder
+        )
+    }
+
+    @ViewBuilder
+    private func resolvedContent(level: StormRiskLevel) -> some View {
         VStack(spacing: 4) {
             Image(systemName: level.iconName)
                 .formatBadgeImage()
@@ -43,6 +57,12 @@ struct StormRiskBadgeView: View {
         .badgeStyle(background: level.iconColor(for: colorScheme))
         .animation(SkyAwareMotion.settle(reduceMotion), value: level.message)
         .animation(SkyAwareMotion.settle(reduceMotion), value: level.summary)
+        .overlay(alignment: .topTrailing) {
+            if isOffline {
+                SummaryAvailabilityBadge(state: .stale)
+                    .padding(8)
+            }
+        }
     }
 
     private var resolvingContent: some View {
@@ -69,11 +89,11 @@ struct StormRiskBadgeView: View {
         return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private var offlineContent: some View {
+    private var unavailableContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
+            Label("Unavailable", systemImage: "exclamationmark.circle")
                 .sectionLabel()
-            Text("SkyAware is showing saved local data. Storm risk will update when your connection returns.")
+            Text("No saved storm risk data is available offline.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -106,6 +126,10 @@ struct StormRiskBadgeView: View {
         HStack {
             StormRiskBadgeView(level: .allClear, isResolving: true, showsResolvingPlaceholder: true)
             StormRiskBadgeView(level: .moderate, isResolving: true)
+        }
+        HStack {
+            StormRiskBadgeView(level: .enhanced, isOffline: true)
+            StormRiskBadgeView(level: nil, isOffline: true)
         }
     }.background(.skyAwareBackground)
 }

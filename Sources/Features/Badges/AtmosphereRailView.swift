@@ -135,7 +135,12 @@ struct AtmosphereRailView: View {
     var body: some View {
         Group {
             if isOffline {
-                offlineContent
+                switch presentationState {
+                case .stale:
+                    offlineResolvedContent
+                case .unavailable, .current, .resolving, .confirmedEmpty:
+                    unavailableContent
+                }
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 6) {
@@ -164,11 +169,49 @@ struct AtmosphereRailView: View {
         }
     }
 
-    private var offlineContent: some View {
+    private var presentationState: SummaryContentPresentationState {
+        SummaryContentPresentationState.from(
+            isOffline: isOffline,
+            hasContent: weather != nil,
+            isResolving: false
+        )
+    }
+
+    private var offlineResolvedContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.with.dots.needle.50percent")
+                    .symbolVariant(.fill)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text("Atmospheric Conditions")
+                    .sectionLabel()
+            }
+
+            Text(atmosphereSummary)
+                .formatSummaryText(for: colorScheme)
+                .lineLimit(adaptiveLayout.usesVerticalMetricRows ? 2 : 1)
+
+            Text("Offline. Showing saved local data.")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Divider()
+                .overlay(colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.14))
+
+            metricGrid
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 9)
+        .railStyle(background: atmosphereBackground)
+    }
+
+    private var unavailableContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Unavailable", systemImage: "exclamationmark.circle")
                 .sectionLabel()
-            Text("SkyAware is showing saved local data. Atmospheric details will update when your connection returns.")
+            Text("No saved atmospheric details are available offline.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -435,6 +478,14 @@ private struct AtmosphereMetricTile: View {
         dewPointF: 68
     )
     .padding()
+}
+
+#Preview("Atmosphere - Offline Cached") {
+    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable, isOffline: true)
+}
+
+#Preview("Atmosphere - Offline Unavailable") {
+    AtmosphereRailView(weather: nil, isOffline: true)
 }
 
 private enum AtmosphereRailPreviewData {

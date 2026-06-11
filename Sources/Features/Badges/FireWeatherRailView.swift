@@ -9,36 +9,33 @@ import SwiftUI
 
 struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
-    let level: FireRiskLevel
+    let level: FireRiskLevel?
     var isOffline: Bool = false
     var showsResolvingPlaceholder: Bool = false
-    var label: String {
-        switch level {
-        case .clear: return "No"
-        default: return level.status
-        }
-    }
 
     var body: some View {
         Group {
-            if isOffline {
-                offlineContent
-            } else if showsResolvingPlaceholder {
+            switch presentationState {
+            case .resolving:
                 resolvingContent
-            } else {
-                HStack(spacing: 12) {
-                    Image(systemName: level.symbol)
-                        .formatBadgeImage()
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(label) Fire Risk")
-                            .formatMessageText()
-                        Text(level.message)
-                            .formatSummaryText(for: colorScheme)
-                    }
+            case .current, .stale:
+                if let level {
+                    resolvedContent(level: level)
+                } else {
+                    unavailableContent
                 }
-                .railStyle(background: level.iconColor(for: colorScheme))
+            case .unavailable, .confirmedEmpty:
+                unavailableContent
             }
         }
+    }
+
+    private var presentationState: SummaryContentPresentationState {
+        SummaryContentPresentationState.from(
+            isOffline: isOffline,
+            hasContent: level != nil,
+            isResolving: showsResolvingPlaceholder
+        )
     }
 
     private var resolvingBackground: LinearGradient {
@@ -49,6 +46,30 @@ struct FireWeatherRailView: View {
            Color(red: 0.82, green: 0.87, blue: 0.93)]
 
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    @ViewBuilder
+    private func resolvedContent(level: FireRiskLevel) -> some View {
+        let riskLabel = level.status == "Clear" ? "No" : level.status
+
+        HStack(spacing: 12) {
+            Image(systemName: level.symbol)
+                .formatBadgeImage()
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(riskLabel) Fire Risk")
+                    .formatMessageText()
+                Text(level.message)
+                    .formatSummaryText(for: colorScheme)
+            }
+        }
+        .railStyle(background: level.iconColor(for: colorScheme))
+        .overlay(alignment: .topTrailing) {
+            if isOffline {
+                SummaryAvailabilityBadge(state: .stale)
+                    .padding(.trailing, 12)
+                    .padding(.top, 8)
+            }
+        }
     }
 
     private var resolvingContent: some View {
@@ -65,11 +86,11 @@ struct FireWeatherRailView: View {
         .railStyle(background: resolvingBackground)
     }
 
-    private var offlineContent: some View {
+    private var unavailableContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
+            Label("Unavailable", systemImage: "exclamationmark.circle")
                 .sectionLabel()
-            Text("SkyAware is showing saved local data. Fire risk will update when your connection returns.")
+            Text("No saved fire risk data is available offline.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -87,6 +108,8 @@ struct FireWeatherRailView: View {
         FireWeatherRailView(level: .elevated)
         FireWeatherRailView(level: .critical)
         FireWeatherRailView(level: .extreme)
+        FireWeatherRailView(level: .critical, isOffline: true)
+        FireWeatherRailView(level: nil, isOffline: true)
     }
 }
 

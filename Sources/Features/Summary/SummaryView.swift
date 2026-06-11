@@ -30,6 +30,90 @@ enum SummaryReadinessState: Equatable {
     }
 }
 
+enum SummaryContentPresentationState: Equatable {
+    case current
+    case stale
+    case resolving
+    case unavailable
+    case confirmedEmpty
+
+    static func from(
+        isOffline: Bool,
+        hasContent: Bool,
+        isResolving: Bool,
+        isConfirmedEmpty: Bool = false
+    ) -> SummaryContentPresentationState {
+        if hasContent {
+            return isOffline ? .stale : .current
+        }
+
+        if isResolving && isOffline == false {
+            return .resolving
+        }
+
+        if isConfirmedEmpty {
+            return .confirmedEmpty
+        }
+
+        return .unavailable
+    }
+
+    var badgeText: String? {
+        switch self {
+        case .current, .confirmedEmpty, .resolving:
+            return nil
+        case .stale:
+            return "Offline"
+        case .unavailable:
+            return "Unavailable"
+        }
+    }
+
+    var badgeSymbolName: String {
+        switch self {
+        case .stale:
+            return "wifi.slash"
+        case .unavailable:
+            return "exclamationmark.circle"
+        case .current, .resolving, .confirmedEmpty:
+            return "circle.fill"
+        }
+    }
+
+    var accessibilityLabel: String? {
+        switch self {
+        case .stale:
+            return "Offline. Showing saved local data."
+        case .unavailable:
+            return "Unavailable. No saved local data."
+        case .current, .resolving, .confirmedEmpty:
+            return nil
+        }
+    }
+}
+
+struct SummaryAvailabilityBadge: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let state: SummaryContentPresentationState
+
+    var body: some View {
+        if let badgeText = state.badgeText {
+            Label(badgeText, systemImage: state.badgeSymbolName)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.08))
+                )
+                .accessibilityLabel(state.accessibilityLabel ?? badgeText)
+        }
+    }
+}
+
 struct SummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -150,13 +234,13 @@ struct SummaryView: View {
             //       the row. Default should be to hide a no fire
             //       danger
             Button {
-                onOpenMapLayer(.fire)
-            } label: {
-                FireWeatherRailView(
-                    level: fireRisk ?? .clear,
-                    isOffline: showsOfflineToken,
-                    showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
-                        hasRiskValue: fireRisk != nil,
+            onOpenMapLayer(.fire)
+        } label: {
+            FireWeatherRailView(
+                level: fireRisk,
+                isOffline: showsOfflineToken,
+                showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
+                    hasRiskValue: fireRisk != nil,
                         readinessState: readinessState,
                         isSectionResolving: resolutionState.isResolving(.fireRisk),
                         showsOfflineToken: showsOfflineToken
@@ -216,7 +300,7 @@ struct SummaryView: View {
             onOpenMapLayer(.categorical)
         } label: {
             StormRiskBadgeView(
-                level: stormRisk ?? .allClear,
+                level: stormRisk,
                 isOffline: showsOfflineToken,
                 isResolving: resolutionState.isResolving(.stormRisk),
                 showsResolvingPlaceholder: stormRiskShowsResolvingPlaceholder
@@ -249,7 +333,7 @@ struct SummaryView: View {
             onOpenMapLayer(severeMapLayer)
         } label: {
             SevereWeatherBadgeView(
-                threat: severeRisk ?? .allClear,
+                threat: severeRisk,
                 isOffline: showsOfflineToken,
                 isResolving: resolutionState.isResolving(.severeRisk),
                 showsResolvingPlaceholder: severeRiskShowsResolvingPlaceholder
