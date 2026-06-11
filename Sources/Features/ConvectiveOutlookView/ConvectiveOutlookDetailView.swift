@@ -203,8 +203,9 @@ struct ConvectiveOutlookDetailView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(text)
-                .font(.callout.monospaced())
+                .font(.callout)
                 .foregroundStyle(.secondary)
+                .monospacedDigit()
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
@@ -255,6 +256,17 @@ private struct OutlookMetaChip: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("AX5") {
+    NavigationStack {
+        ConvectiveOutlookDetailView(outlook: ConvectiveOutlook.sampleOutlookDtos[0])
+            .navigationTitle("Outlook Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .environment(\.dynamicTypeSize, .accessibility5)
     }
 }
 

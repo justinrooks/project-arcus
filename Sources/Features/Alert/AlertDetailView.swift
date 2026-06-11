@@ -131,6 +131,7 @@ struct AlertDetailView: View {
                     .font(.body)
                     .fontWeight(.medium)
                     .foregroundStyle(.primary)
+                    .monospacedDigit()
                     .lineSpacing(4)
             }
 
@@ -180,6 +181,7 @@ struct AlertDetailView: View {
                 Text(alert.areaSummary)
                     .font(summaryAreaFont)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
                     .lineLimit(areaLineLimit)
             }
 
@@ -187,6 +189,7 @@ struct AlertDetailView: View {
                 Text(summaryLead)
                     .font(summaryLeadFont)
                     .foregroundStyle(.primary)
+                    .monospacedDigit()
                     .lineSpacing(summaryLeadLineSpacing)
                     .lineLimit(leadLineLimit)
                     .truncationMode(.tail)
@@ -196,6 +199,7 @@ struct AlertDetailView: View {
                 Text(summaryBody)
                     .font(summaryBodyFont)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
                     .lineSpacing(summaryBodyLineSpacing)
                     .lineLimit(bodyLineLimit)
                     .truncationMode(.tail)
@@ -211,8 +215,9 @@ struct AlertDetailView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(text)
-                .font(areTags ? .subheadline.weight(.semibold)  : .callout.monospaced())
+                .font(areTags ? .subheadline.weight(.semibold) : .callout)
                 .foregroundStyle(areTags ? Color.tornadoRed  : .secondary)
+                .monospacedDigit()
         }
         .padding()
         .accessibilityElement(children: .combine)
@@ -242,6 +247,20 @@ struct AlertDetailView: View {
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)
                 .background(.skyAwareBackground)
+        }
+    }
+}
+
+#Preview("Tornado Watch AX5") {
+    NavigationStack {
+        ScrollView {
+            AlertDetailView(alert: Watch.sampleWatchRows.last!, layout: .full)
+                .navigationTitle("Weather Alert")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                .scrollContentBackground(.hidden)
+                .background(.skyAwareBackground)
+                .environment(\.dynamicTypeSize, .accessibility5)
         }
     }
 }

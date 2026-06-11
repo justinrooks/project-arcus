@@ -26,7 +26,7 @@ decisions from Git history.
 | 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Completed | Onboarding and toast motion now route through `SkyAwareMotion` and respect `accessibilityReduceMotion`. |
 | 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Completed | Canonical terminology now replaces subsystem language in Settings, Outlooks, and onboarding progress copy. |
 | 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Completed | Detail presentation now preserves optional day and valid-until metadata truthfully without inventing fallback precision. |
-| 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Not started | |
+| 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Completed | Narrative paragraphs now use proportional Dynamic Type typography, with monospaced digits preserved for compact technical values. |
 | 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Not started | |
 | 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Not started | |
 | 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Not started | |
@@ -521,3 +521,51 @@ Model used: gpt-5.4-mini / medium
   reintroduce a publication-time fallback.
 - If a future Outlook title format expands beyond `Day 1/2/3`, update the derived-day helper deliberately rather than
   falling back to an assumed day.
+
+### AN-11 / GitHub #227 - Use proportional typography for weather narratives
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Switched alert detail narrative sections from monospaced body text to proportional Dynamic Type text while preserving monospaced digits where they appear in compact technical values.
+- Switched Mesoscale Discussion full-discussion copy to proportional text and kept digits monospaced where they appear in compact technical values.
+- Switched Convective Outlook summary and full-discussion copy to proportional text and kept digits monospaced where they appear in compact technical values.
+- Added representative AX5 previews for the affected detail surfaces.
+
+#### Files Changed
+
+- `Sources/Features/Alert/AlertDetailView.swift`
+- `Sources/Features/MesoscaleDiscussion/MesoscaleDiscussionCard.swift`
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookDetailView.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Official weather text content was left verbatim.
+- Ingestion, parsing, persistence, refresh behavior, and presentation semantics were unchanged.
+- Screen structure and hierarchy were unchanged.
+- VoiceOver reading order and visible text content were not intentionally altered.
+- Monospaced treatment remains in place for compact technical values, numeric measurements, and identifier-like text.
+
+#### Validation
+
+- Reviewed the diff for the three feature views and confirmed only typography modifiers and previews changed.
+- Confirmed the official weather strings in the affected source files were not rewritten, normalized, or truncated.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData -only-testing:SkyAwareTests/ConvectiveOutlookRepoTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedData -only-testing:SkyAwareUITests/testAlertDetailVoiceOverKeepsFullInstructionAndSummaryText test`
+- Captured a simulator screenshot of the current Home screen after the UI-test run and confirmed the app remained stable at the root surface.
+
+#### Deferred Work
+
+- I did not complete a direct simulator screenshot of the alert, mesoscale discussion, or outlook detail screens in this session because the current UI-test harness does not expose a deterministic launch hook for those detail states.
+- AN-21 still owns native Outlook list structure work; this issue only changes the narrative typography inside the existing detail surface.
+
+#### Handoff Notes
+
+- Keep narrative typography proportional in these surfaces; do not reintroduce `monospaced()` on full prose blocks.
+- Preserve monospaced digits only where the text is acting like a compact technical value, not as a formatting crutch for paragraphs.
+- The AX5 preview additions give future agents a concrete place to check wrapping behavior without touching production data flow.
