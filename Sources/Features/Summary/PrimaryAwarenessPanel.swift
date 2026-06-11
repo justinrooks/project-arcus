@@ -945,24 +945,24 @@ private struct AwarenessSupportRow: View {
     var showsChevron: Bool = false
 
     var body: some View {
-        let iconSize: CGFloat = presentationMode == .subdued ? 24 : 28
+        let rowMetrics = metrics
 
-        HStack(spacing: 12) {
+        HStack(spacing: rowMetrics.horizontalSpacing) {
             Image(systemName: symbolName)
-                .font(.system(size: iconSize, weight: .semibold))
+                .font(.system(size: rowMetrics.iconSize, weight: .semibold))
                 .foregroundColor(RiskBadgeVisualStyle.iconForeground)
-                .frame(width: iconSize)
+                .frame(width: rowMetrics.iconSize)
                 .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: rowMetrics.verticalSpacing) {
                 Text(title)
-                    .font(.headline.weight(.semibold))
+                    .font(rowMetrics.titleFont)
                     .foregroundColor(RiskBadgeVisualStyle.messageForeground)
                     .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(detail)
-                    .font(.subheadline)
+                    .font(rowMetrics.detailFont)
                     .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -977,8 +977,8 @@ private struct AwarenessSupportRow: View {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, rowMetrics.horizontalPadding)
+        .padding(.vertical, rowMetrics.verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
@@ -999,6 +999,51 @@ private struct AwarenessSupportRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
         .accessibilityValue(detail)
+    }
+
+    private var metrics: Metrics {
+        switch presentationMode {
+        case .normal:
+            return Metrics(
+                iconSize: 26,
+                horizontalSpacing: 10,
+                verticalSpacing: 2,
+                horizontalPadding: 12,
+                verticalPadding: 10,
+                titleFont: .subheadline.weight(.semibold),
+                detailFont: .footnote
+            )
+        case .subdued:
+            return Metrics(
+                iconSize: 22,
+                horizontalSpacing: 10,
+                verticalSpacing: 2,
+                horizontalPadding: 12,
+                verticalPadding: 9,
+                titleFont: .subheadline.weight(.semibold),
+                detailFont: .footnote
+            )
+        case .supplemental:
+            return Metrics(
+                iconSize: 24,
+                horizontalSpacing: 10,
+                verticalSpacing: 2,
+                horizontalPadding: 12,
+                verticalPadding: 10,
+                titleFont: .subheadline.weight(.semibold),
+                detailFont: .footnote
+            )
+        }
+    }
+
+    private struct Metrics {
+        let iconSize: CGFloat
+        let horizontalSpacing: CGFloat
+        let verticalSpacing: CGFloat
+        let horizontalPadding: CGFloat
+        let verticalPadding: CGFloat
+        let titleFont: Font
+        let detailFont: Font
     }
 
     private var rowOpacity: Double {
@@ -1050,7 +1095,7 @@ private struct AwarenessSupportRow: View {
     ScrollView {
         VStack(spacing: 18) {
             PrimaryAwarenessPanelPreviewCard(
-                title: "Tornado Watch",
+                title: "Watch Primary",
                 stormRisk: .allClear,
                 severeRisk: .allClear,
                 fireRisk: .clear,
@@ -1058,56 +1103,67 @@ private struct AwarenessSupportRow: View {
             )
 
             PrimaryAwarenessPanelPreviewCard(
-                title: "Severe Thunderstorm Watch",
+                title: "Watch Primary - Dark",
                 stormRisk: .allClear,
                 severeRisk: .allClear,
                 fireRisk: .clear,
-                alerts: [AlertDTO(from: Watch.sampleWatches[1])]
-            )
-
-            PrimaryAwarenessPanelPreviewCard(
-                title: "Thunderstorms Light",
-                stormRisk: .thunderstorm,
-                severeRisk: .allClear,
-                fireRisk: .clear
-            )
-
-            PrimaryAwarenessPanelPreviewCard(
-                title: "Thunderstorms Dark",
-                stormRisk: .thunderstorm,
-                severeRisk: .allClear,
-                fireRisk: .clear,
+                alerts: [AlertDTO(from: Watch.sampleWatches[1])],
                 colorScheme: .dark
             )
 
             PrimaryAwarenessPanelPreviewCard(
-                title: "Tornado Light",
+                title: "Tornado Primary",
                 stormRisk: .slight,
                 severeRisk: .tornado(probability: 0.10),
                 fireRisk: .clear
             )
 
             PrimaryAwarenessPanelPreviewCard(
-                title: "Tornado Dark",
-                stormRisk: .slight,
+                title: "Quiet Weather",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .clear,
+                alerts: []
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Quiet Weather - Dark",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .clear,
+                alerts: [],
+                colorScheme: .dark
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Large Dynamic Type",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .clear,
+                alerts: [AlertDTO(from: Watch.sampleWatches[0])],
+                dynamicTypeSize: .accessibility3
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Supporting Rows Light",
+                stormRisk: .thunderstorm,
+                severeRisk: .tornado(probability: 0.10),
+                fireRisk: .clear
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Supporting Rows Dark",
+                stormRisk: .thunderstorm,
                 severeRisk: .tornado(probability: 0.10),
                 fireRisk: .clear,
                 colorScheme: .dark
             )
 
             PrimaryAwarenessPanelPreviewCard(
-                title: "Moderate Storm Light",
+                title: "Fire Supporting",
                 stormRisk: .moderate,
                 severeRisk: .allClear,
-                fireRisk: .clear
-            )
-
-            PrimaryAwarenessPanelPreviewCard(
-                title: "High Storm Dark",
-                stormRisk: .high,
-                severeRisk: .allClear,
-                fireRisk: .clear,
-                colorScheme: .dark
+                fireRisk: .elevated
             )
         }
         .padding()
@@ -1122,6 +1178,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
     let fireRisk: FireRiskLevel
     var alerts: [AlertDTO] = []
     var colorScheme: ColorScheme? = nil
+    var dynamicTypeSize: DynamicTypeSize? = nil
 
     private var resolutionState: SummaryResolutionState { SummaryResolutionState() }
 
@@ -1144,5 +1201,6 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
             )
         }
         .preferredColorScheme(colorScheme)
+        .dynamicTypeSize(dynamicTypeSize ?? .large)
     }
 }
