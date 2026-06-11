@@ -76,7 +76,10 @@ struct OnboardingView: View {
         }
         .tabViewStyle(.page)
         .indexViewStyle(.page(backgroundDisplayMode: .always))
-        .scrollDisabled(true)
+        .overlay {
+            OnboardingPagerSwipeBlocker()
+                .allowsHitTesting(false)
+        }
         .background(.skyAwareBackground)
     }
 

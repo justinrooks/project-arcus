@@ -300,3 +300,59 @@ Model used: gpt-5.4 / medium
 - `LaunchPresentationState.resolve(...)` is now the single launch-routing helper; keep any future launch-sheet priority changes there.
 - `OnboardingStep` is the only place that should encode step order. The pager should stay button-driven, not gesture-driven.
 - The UI test coverage proves the current sequence cannot be bypassed by a swipe gesture in the simulator; if anyone changes the pager implementation later, that regression should be rechecked first.
+
+### AN-07 / GitHub #223 - Make onboarding resilient to Dynamic Type
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4-mini / high
+
+#### Scope
+
+- Added a shared `OnboardingStepShell` that gives each onboarding page a vertical `ScrollView` and a pinned bottom `safeAreaInset` action area.
+- Added a targeted `OnboardingPagerSwipeBlocker` so the page-style `TabView` keeps its AN-06 swipe protection without disabling descendant vertical scrolling.
+- Reworked `WelcomeView`, `DisclaimerView`, `LocationPermissionView`, `OnboardingAlwaysUpgradeView`, and `NotificationPermissionView` to use the scrollable shell without changing step order, copy, or permission behavior.
+- Replaced fixed decorative symbol sizes with `@ScaledMetric` so the onboarding glyphs scale with Dynamic Type instead of dominating the layout.
+- Kept the primary and secondary actions as the same buttons, just moved into the safe-area footer so they remain reachable.
+- Added representative default and AX5 previews for each onboarding step.
+
+#### Files Changed
+
+- `Sources/Features/Onboarding/OnboardingStepShell.swift`
+- `Sources/Features/Onboarding/OnboardingPagerSwipeBlocker.swift`
+- `Sources/Features/Onboarding/WelcomeView.swift`
+- `Sources/Features/Onboarding/DisclaimerView.swift`
+- `Sources/Features/Onboarding/LocationPermissionView.swift`
+- `Sources/Features/Onboarding/OnboardingAlwaysUpgradeView.swift`
+- `Sources/Features/Onboarding/NotificationPermissionView.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Onboarding step order and completion behavior were unchanged.
+- The permission request flow and persistence behavior from AN-06 stayed intact.
+- No copy was rewritten; AN-09 still owns vocabulary changes.
+- Motion policy was not touched; AN-08 still owns Reduce Motion treatment.
+- The welcome, disclaimer, and permission screens kept their existing tone and visual hierarchy at default sizes.
+- The page-style onboarding container still blocks horizontal swipe navigation, but only by disabling the paging scroll view instead of the onboarding screens' own vertical `ScrollView`s.
+
+#### Validation
+
+- `mcp__xcodebuildmcp.build_run_sim` on iPhone 16e with `UI_TESTS_RESET_ONBOARDING=1` to inspect the default-size onboarding flow.
+- `mcp__xcodebuildmcp.launch_app_sim` on iPhone 16e with `UI_TESTS_RESET_ONBOARDING=1`, `UI_TESTS_LOCATION_AUTH_MODE=authorized`, and `-UIPreferredContentSizeCategoryName UICTContentSizeCategoryAccessibilityXXXL` to inspect the AX5 flow.
+- `mcp__xcodebuildmcp.snapshot_ui`, `touch`, and `swipe` across Welcome, Disclaimer, Location Access, More Reliable Alerts, and Stay Aware screens.
+- `mcp__xcodebuildmcp.build_sim`
+- `mcp__xcodebuildmcp.test_sim` with `-only-testing:SkyAwareTests/LaunchPresentationStateTests -only-testing:SkyAwareTests/OnboardingStepTests` (`8` passed, `0` failed)
+- `mcp__xcodebuildmcp.test_sim` with `-testPlan SkyAware_All_Tests -only-testing:SkyAwareUITests/testOnboardingSwipeCannotBypassRequiredSteps`
+
+#### Deferred Work
+
+- AN-08 still owns Reduce Motion-specific onboarding treatment.
+- AN-09 still owns user-facing copy normalization.
+- If onboarding copy grows again, the AX5 and small-device pass should be repeated to confirm the shell still provides enough headroom.
+
+#### Handoff Notes
+
+- `OnboardingStepShell` is the shared layout contract for onboarding pages now; future onboarding content should use it instead of reintroducing non-scrollable vertical stacks.
+- The iPhone 16e AX5 pass kept the primary and secondary actions visible and operable, and the welcome screen now demonstrates actual vertical scrolling in the simulator; a genuinely smaller device or future copy expansion should still be rechecked.
+- Residual risk: the current simulator evidence proves reachability and layout resilience on the tested device/class, but it is not a substitute for a final pass on any newly introduced onboarding copy.

@@ -9,20 +9,21 @@ import SwiftUI
 
 struct DisclaimerView: View {
     let onAccept: () -> Void
-    
+
+    @ScaledMetric(relativeTo: .largeTitle)
+    private var symbolSize: CGFloat = 80
+
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            
+        OnboardingStepShell {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 80))
+                .font(.system(size: symbolSize))
                 .foregroundColor(.skyAwareAccent)
-            
+
             Text("Important Information")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-            
-            VStack(alignment: .leading, spacing: 12) {                
+
+            VStack(alignment: .leading, spacing: 12) {
                 Text("""
                     SkyAware provides severe weather awareness using public data from the Storm Prediction Center, National Weather Service, & Apple Weather.
                     
@@ -42,11 +43,9 @@ struct DisclaimerView: View {
                     .foregroundColor(.orange)
                     .padding(.top, 8)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .multilineTextAlignment(.leading)
-            .padding(.horizontal, 32)
-            
-            Spacer()
-            
+        } footer: {
             Button(action: onAccept) {
                 Text("I Understand")
                     .font(.headline)
@@ -58,14 +57,18 @@ struct DisclaimerView: View {
                             .fill(Color.skyAwareAccent)
                     )
             }
-            .padding(.horizontal, 32)
-            Spacer()
         }
-        .padding()
-        .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
 }
 
 #Preview {
     DisclaimerView() { }
+}
+
+private struct DisclaimerViewAX5Preview: PreviewProvider {
+    static var previews: some View {
+        DisclaimerView() { }
+            .previewDevice("iPhone SE (3rd generation)")
+            .environment(\.dynamicTypeSize, .accessibility5)
+    }
 }
