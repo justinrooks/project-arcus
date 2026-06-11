@@ -439,3 +439,117 @@ struct ConvectiveOutlookViewCopyTests {
         #expect(message.contains("Most recent update:"))
     }
 }
+
+@Suite("ConvectiveOutlookDetailPresentation")
+struct ConvectiveOutlookDetailPresentationTests {
+    @Test("all metadata present stays visible and truthful")
+    func allMetadataPresent() {
+        let validUntil = Date(timeIntervalSince1970: 1_700_000_000)
+        let outlook = ConvectiveOutlookDTO(
+            title: "Day 3 Convective Outlook",
+            link: URL(string: "https://example.com/day3")!,
+            published: Date(timeIntervalSince1970: 1_700_000_100),
+            summary: "Summary",
+            fullText: "Full text",
+            day: 3,
+            riskLevel: "SLGT",
+            issued: Date(timeIntervalSince1970: 1_700_000_050),
+            validUntil: validUntil
+        )
+
+        let presentation = ConvectiveOutlookDetailPresentation(outlook: outlook)
+
+        #expect(presentation.headerTitle == "Day 3 Convective Outlook")
+        #expect(presentation.navigationTitle == "Day 3 Outlook")
+        #expect(presentation.metadataChips.count == 3)
+        #expect(presentation.metadataChips.contains(where: { $0.icon == "calendar" && $0.title == "Day 3" }))
+        #expect(presentation.metadataChips.contains(where: { $0.icon == "exclamationmark.triangle" && $0.title == "Slight" }))
+        #expect(presentation.validUntil == validUntil)
+    }
+
+    @Test("missing day does not invent Day 1")
+    func missingDayDoesNotInventDayOne() {
+        let outlook = ConvectiveOutlookDTO(
+            title: "Convective Outlook",
+            link: URL(string: "https://example.com/dayless")!,
+            published: Date(timeIntervalSince1970: 1_700_000_100),
+            summary: "Summary",
+            fullText: "Full text",
+            day: nil,
+            riskLevel: "ENH",
+            issued: Date(timeIntervalSince1970: 1_700_000_050),
+            validUntil: Date(timeIntervalSince1970: 1_700_000_900)
+        )
+
+        let presentation = ConvectiveOutlookDetailPresentation(outlook: outlook)
+
+        #expect(presentation.headerTitle == "Convective Outlook")
+        #expect(presentation.navigationTitle == "Outlook Details")
+        #expect(presentation.metadataChips.contains(where: { $0.icon == "calendar" }) == false)
+        #expect(presentation.metadataChips.contains(where: { $0.title == "Day 1" }) == false)
+    }
+
+    @Test("title-derived day remains visible when source metadata omits it")
+    func derivesDayFromTitleWhenMetadataMissing() {
+        let outlook = ConvectiveOutlookDTO(
+            title: "Day 2 Convective Outlook",
+            link: URL(string: "https://example.com/day2")!,
+            published: Date(timeIntervalSince1970: 1_700_000_100),
+            summary: "Summary",
+            fullText: "Full text",
+            day: nil,
+            riskLevel: "ENH",
+            issued: Date(timeIntervalSince1970: 1_700_000_050),
+            validUntil: Date(timeIntervalSince1970: 1_700_000_900)
+        )
+
+        let presentation = ConvectiveOutlookDetailPresentation(outlook: outlook)
+
+        #expect(presentation.headerTitle == "Day 2 Convective Outlook")
+        #expect(presentation.navigationTitle == "Day 2 Outlook")
+        #expect(presentation.metadataChips.contains(where: { $0.icon == "calendar" && $0.title == "Day 2" }))
+    }
+
+    @Test("missing valid-until does not reuse publication time")
+    func missingValidUntilDoesNotReusePublicationTime() {
+        let outlook = ConvectiveOutlookDTO(
+            title: "Day 2 Convective Outlook",
+            link: URL(string: "https://example.com/day2")!,
+            published: Date(timeIntervalSince1970: 1_700_000_100),
+            summary: "Summary",
+            fullText: "Full text",
+            day: 2,
+            riskLevel: "MDT",
+            issued: Date(timeIntervalSince1970: 1_700_000_050),
+            validUntil: nil
+        )
+
+        let presentation = ConvectiveOutlookDetailPresentation(outlook: outlook)
+
+        #expect(presentation.headerTitle == "Day 2 Convective Outlook")
+        #expect(presentation.navigationTitle == "Day 2 Outlook")
+        #expect(presentation.validUntil == nil)
+    }
+
+    @Test("missing day and valid-until render without placeholder metadata")
+    func missingDayAndValidUntilRenderCleanly() {
+        let outlook = ConvectiveOutlookDTO(
+            title: "Convective Outlook",
+            link: URL(string: "https://example.com/dayless")!,
+            published: Date(timeIntervalSince1970: 1_700_000_100),
+            summary: "Summary",
+            fullText: "Full text",
+            day: nil,
+            riskLevel: nil,
+            issued: Date(timeIntervalSince1970: 1_700_000_050),
+            validUntil: nil
+        )
+
+        let presentation = ConvectiveOutlookDetailPresentation(outlook: outlook)
+
+        #expect(presentation.metadataChips.count == 1)
+        #expect(presentation.metadataChips.first?.icon == "clock.arrow.circlepath")
+        #expect(presentation.metadataChips.first?.title.contains("Published") == true)
+        #expect(presentation.validUntil == nil)
+    }
+}

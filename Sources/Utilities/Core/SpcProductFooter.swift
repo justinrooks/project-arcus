@@ -12,7 +12,7 @@ struct SpcProductFooter: View {
     @Environment(\.openURL) private var openURL
 
     let link: URL
-    let validEnd: Date
+    let validEnd: Date?
     @State private var webRoute: WebContentRoute?
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -20,21 +20,27 @@ struct SpcProductFooter: View {
     }
     
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { ctx in
-            let remaining = max(0, validEnd.timeIntervalSince(ctx.date))
-            Group {
-                if adaptiveLayout.usesAccessibilityLayout {
-                    VStack(alignment: .leading, spacing: 8) {
-                        openInBrowserLink
-                        ExpiryLabel(remaining: remaining)
-                    }
-                } else {
-                    HStack {
-                        openInBrowserLink
-                        Spacer()
-                        ExpiryLabel(remaining: remaining)
+        Group {
+            if let validEnd {
+                TimelineView(.periodic(from: .now, by: 60)) { ctx in
+                    let remaining = max(0, validEnd.timeIntervalSince(ctx.date))
+                    Group {
+                        if adaptiveLayout.usesAccessibilityLayout {
+                            VStack(alignment: .leading, spacing: 8) {
+                                openInBrowserLink
+                                ExpiryLabel(remaining: remaining)
+                            }
+                        } else {
+                            HStack {
+                                openInBrowserLink
+                                Spacer()
+                                ExpiryLabel(remaining: remaining)
+                            }
+                        }
                     }
                 }
+            } else {
+                openInBrowserLink
             }
         }
     }

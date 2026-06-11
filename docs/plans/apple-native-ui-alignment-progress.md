@@ -25,7 +25,7 @@ decisions from Git history.
 | 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
 | 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Completed | Onboarding and toast motion now route through `SkyAwareMotion` and respect `accessibilityReduceMotion`. |
 | 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Completed | Canonical terminology now replaces subsystem language in Settings, Outlooks, and onboarding progress copy. |
-| 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Not started | |
+| 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Completed | Detail presentation now preserves optional day and valid-until metadata truthfully without inventing fallback precision. |
 | 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Not started | |
 | 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Not started | |
 | 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Not started | |
@@ -458,7 +458,6 @@ Model used: gpt-5.4-mini / medium
 
 #### Deferred Work
 
-- AN-10 still owns optional Outlook metadata preservation in the detail surface.
 - AN-19 still owns the broader native Settings structure migration.
 - AN-21 still owns the broader native Outlooks structure migration.
 
@@ -469,3 +468,56 @@ Model used: gpt-5.4-mini / medium
   labels intact.
 - Onboarding progress copy should stay calm and progressive; do not reintroduce registration or subsystem language in
   the same flow.
+
+### AN-10 / GitHub #226 - Preserve optional Outlook metadata truthfully
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Added a small `ConvectiveOutlookDetailPresentation` helper so the detail surface derives header/title metadata from
+  the DTO without inventing fallback day values.
+- Preserved day metadata only when the DTO supplies it or the existing verified `Day 1/2/3` title rule can derive it.
+- Kept publication time distinct from validity time by making `SpcProductHeader` and `SpcProductFooter` respect
+  optional `validUntil` values instead of reusing publication time.
+- Kept the existing detail screen structure, row structure, and provider attribution intact.
+- Added focused unit coverage for the four required metadata combinations plus a preview for the partial-metadata
+  case.
+
+#### Files Changed
+
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookDetailView.swift`
+- `Sources/Utilities/Core/SpcProductFooter.swift`
+- `Sources/Utilities/Core/SpcProductHeader.swift`
+- `Tests/UnitTests/ConvectiveOutlookRepoTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Outlook ingestion, decoding, persistence, refresh, and provider behavior were unchanged.
+- The Outlook list structure and navigation stay the same; AN-21 still owns the native list/section migration.
+- Canonical copy and provider attribution from AN-09 were preserved.
+- Existing known day and valid-until values still format and display normally.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/ConvectiveOutlookDetailPresentationTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `mcp__xcodebuildmcp.build_run_sim` on iPhone 17 with `UI_TESTS_STATIC_HOME=1`
+- `mcp__xcodebuildmcp.screenshot` of the launched simulator after the static-home boot
+
+#### Deferred Work
+
+- AN-21 still owns the broader native Outlooks structure migration.
+- Manual Xcode preview-canvas inspection of the added partial-metadata preview was not available in this environment,
+  so the preview change was validated by compilation and the focused unit tests instead.
+
+#### Handoff Notes
+
+- `ConvectiveOutlookDetailPresentation` is the narrow seam for future Outlook detail metadata rules.
+- `SpcProductHeader` and `SpcProductFooter` now treat validity as optional, so future Outlook work should not
+  reintroduce a publication-time fallback.
+- If a future Outlook title format expands beyond `Day 1/2/3`, update the derived-day helper deliberately rather than
+  falling back to an assumed day.

@@ -12,7 +12,7 @@ struct SpcProductHeader: View {
     let title: String
     let issued: Date
     let validStart: Date
-    let validEnd: Date
+    let validEnd: Date?
     let subtitle: String?
     let inZone: Bool
     let sender: String?
@@ -22,7 +22,7 @@ struct SpcProductHeader: View {
         title: String,
         issued: Date,
         validStart: Date,
-        validEnd: Date,
+        validEnd: Date?,
         subtitle: String?,
         inZone: Bool,
         sender: String?
@@ -56,10 +56,12 @@ struct SpcProductHeader: View {
             Text("Issued: \(issued.shorten())")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            
-            Text("Valid Until: \(validEnd.shorten())")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+
+            if let validEnd {
+                Text("Valid Until: \(validEnd.shorten())")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             
             if let sender {
                 Text("Issued by \(sender)")

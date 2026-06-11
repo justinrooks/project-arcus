@@ -7,6 +7,91 @@
 
 import SwiftUI
 
+struct ConvectiveOutlookDetailPresentation: Sendable, Equatable {
+    struct MetadataChip: Sendable, Equatable, Identifiable {
+        let title: String
+        let icon: String
+
+        var id: String {
+            "\(icon)|\(title)"
+        }
+    }
+
+    let headerTitle: String
+    let navigationTitle: String
+    let metadataChips: [MetadataChip]
+    let validUntil: Date?
+
+    init(outlook: ConvectiveOutlookDTO) {
+        let day = Self.derivedDay(for: outlook)
+        headerTitle = day.map { "Day \($0) Convective Outlook" } ?? outlook.title
+        navigationTitle = day.map { "Day \($0) Outlook" } ?? "Outlook Details"
+        validUntil = outlook.validUntil
+        metadataChips = Self.makeMetadataChips(for: outlook, derivedDay: day)
+    }
+
+    private static func makeMetadataChips(
+        for outlook: ConvectiveOutlookDTO,
+        derivedDay: Int?
+    ) -> [MetadataChip] {
+        var chips: [MetadataChip] = [
+            MetadataChip(
+                title: "Published \(outlook.published.relativeDate())",
+                icon: "clock.arrow.circlepath"
+            )
+        ]
+
+        if let derivedDay {
+            chips.append(MetadataChip(title: "Day \(derivedDay)", icon: "calendar"))
+        }
+
+        if let risk = outlook.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !risk.isEmpty {
+            chips.append(
+                MetadataChip(
+                    title: ConvectiveOutlookDetailPresentation.sentenceCaseRiskLevel(risk),
+                    icon: "exclamationmark.triangle"
+                )
+            )
+        }
+
+        return chips
+    }
+
+    private static func derivedDay(for outlook: ConvectiveOutlookDTO) -> Int? {
+        outlook.day ?? parsedDay(from: outlook.title)
+    }
+
+    private static func parsedDay(from title: String) -> Int? {
+        if title.contains("Day 1") {
+            return 1
+        }
+        if title.contains("Day 2") {
+            return 2
+        }
+        if title.contains("Day 3") {
+            return 3
+        }
+        return nil
+    }
+
+    static func sentenceCaseRiskLevel(_ risk: String) -> String {
+        let normalized = risk.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return normalized }
+
+        switch normalized.uppercased() {
+        case "MRGL": return "Marginal"
+        case "SLGT": return "Slight"
+        case "ENH": return "Enhanced"
+        case "MDT": return "Moderate"
+        case "HIGH": return "High"
+        default:
+            let lowercase = normalized.lowercased()
+            return lowercase.prefix(1).uppercased() + lowercase.dropFirst()
+        }
+    }
+}
+
 struct ConvectiveOutlookDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -14,19 +99,16 @@ struct ConvectiveOutlookDetailView: View {
     
     private let sectionSpacing: CGFloat = 14
     
+    private var presentation: ConvectiveOutlookDetailPresentation {
+        ConvectiveOutlookDetailPresentation(outlook: outlook)
+    }
+
     private var displayTitle: String {
-        if let day = outlook.day {
-            return "Day \(day) Convective Outlook"
-        }
-        return outlook.title
+        presentation.headerTitle
     }
     
     private var issuedDate: Date {
         outlook.issued ?? outlook.published
-    }
-    
-    private var validUntilDate: Date {
-        outlook.validUntil ?? outlook.published
     }
     
     private var subtitle: String? {
@@ -72,18 +154,18 @@ struct ConvectiveOutlookDetailView: View {
         }
         .scrollContentBackground(.hidden)
         .background(.skyAwareBackground)
-        .navigationTitle("Day \(outlook.day ?? 1) Outlook")
+        .navigationTitle(presentation.navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.skyAwareBackground, for: .navigationBar)
     }
-    
+
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: sectionSpacing) {
             SpcProductHeader(
                 title: displayTitle,
                 issued: issuedDate,
                 validStart: issuedDate,
-                validEnd: validUntilDate,
+                validEnd: presentation.validUntil,
                 subtitle: subtitle,
                 inZone: false,
                 sender: "Storm Prediction Center"
@@ -93,30 +175,25 @@ struct ConvectiveOutlookDetailView: View {
 
             if adaptiveLayout.usesAccessibilityLayout {
                 VStack(alignment: .leading, spacing: 8) {
-                    OutlookMetaChip(title: "Published \(outlook.published.relativeDate())", icon: "clock.arrow.circlepath")
-                    if let day = outlook.day {
-                        OutlookMetaChip(title: "Day \(day)", icon: "calendar")
-                    }
-                    if let risk = outlook.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines), !risk.isEmpty {
-                        OutlookMetaChip(title: sentenceCaseRiskLevel(risk), icon: "exclamationmark.triangle")
-                    }
+                    metadataChips
                 }
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        OutlookMetaChip(title: "Published \(outlook.published.relativeDate())", icon: "clock.arrow.circlepath")
-                        if let day = outlook.day {
-                            OutlookMetaChip(title: "Day \(day)", icon: "calendar")
-                        }
-                        if let risk = outlook.riskLevel?.trimmingCharacters(in: .whitespacesAndNewlines), !risk.isEmpty {
-                            OutlookMetaChip(title: sentenceCaseRiskLevel(risk), icon: "exclamationmark.triangle")
-                        }
+                        metadataChips
                     }
                     .padding(.vertical, 2)
                 }
             }
             
-            SpcProductFooter(link: outlook.link, validEnd: validUntilDate)
+            SpcProductFooter(link: outlook.link, validEnd: presentation.validUntil)
+        }
+    }
+
+    @ViewBuilder
+    private var metadataChips: some View {
+        ForEach(presentation.metadataChips) { chip in
+            OutlookMetaChip(title: chip.title, icon: chip.icon)
         }
     }
     
@@ -141,19 +218,7 @@ struct ConvectiveOutlookDetailView: View {
     }
 
     private func sentenceCaseRiskLevel(_ risk: String) -> String {
-        let normalized = risk.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else { return normalized }
-
-        switch normalized.uppercased() {
-        case "MRGL": return "Marginal"
-        case "SLGT": return "Slight"
-        case "ENH": return "Enhanced"
-        case "MDT": return "Moderate"
-        case "HIGH": return "High"
-        default:
-            let lowercase = normalized.lowercased()
-            return lowercase.prefix(1).uppercased() + lowercase.dropFirst()
-        }
+        ConvectiveOutlookDetailPresentation.sentenceCaseRiskLevel(risk)
     }
 }
 
@@ -186,6 +251,28 @@ private struct OutlookMetaChip: View {
 #Preview {
     NavigationStack {
         ConvectiveOutlookDetailView(outlook: ConvectiveOutlook.sampleOutlookDtos[0])
+            .navigationTitle("Outlook Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Partial Metadata") {
+    let outlook = ConvectiveOutlookDTO(
+        title: "Convective Outlook",
+        link: URL(string: "https://www.spc.noaa.gov/products/outlook/day4otlk.html")!,
+        published: Date(),
+        summary: "Summary",
+        fullText: "Full text",
+        day: nil,
+        riskLevel: nil,
+        issued: nil,
+        validUntil: nil
+    )
+
+    NavigationStack {
+        ConvectiveOutlookDetailView(outlook: outlook)
             .navigationTitle("Outlook Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
