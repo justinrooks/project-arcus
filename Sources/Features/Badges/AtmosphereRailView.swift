@@ -74,13 +74,16 @@ struct AtmosphericConditionsCard: View {
     }
 
     private var contentSurface: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             leadMetricRow
+                .padding(.bottom, 6)
 
             Divider()
-                .overlay(colorScheme == .dark ? .white.opacity(0.20) : .black.opacity(0.12))
+                .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.08))
+                .padding(.vertical, 4)
 
             metricsStrip
+                .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
@@ -101,7 +104,7 @@ struct AtmosphericConditionsCard: View {
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(width: 22, height: 22, alignment: .center)
-                .padding(.top, 3)
+                .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Dew Point")
@@ -137,7 +140,7 @@ struct AtmosphericConditionsCard: View {
 
                     Image(systemName: "chevron.right")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.secondary.opacity(0.65))
                 }
                 .padding(.leading, 4)
                 .padding(.vertical, 4)
@@ -420,7 +423,7 @@ private struct AtmosphericMetricRow: View {
     AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm)
 }
 
-#Preview("Atmospheric Conditions - Storm Supportive") {
+#Preview("Atmospheric Conditions - Moist") {
     AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
 }
 
@@ -438,12 +441,12 @@ private struct AtmosphericMetricRow: View {
 }
 
 #Preview("Atmospheric Conditions - Dark Mode") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Atmospheric Conditions - Large Dynamic Type") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
         .environment(\.dynamicTypeSize, .accessibility3)
 }
 
