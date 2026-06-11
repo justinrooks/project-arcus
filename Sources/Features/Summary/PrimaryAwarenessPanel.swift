@@ -105,10 +105,17 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             return nil
         }
 
+        if Self.isWatch(title: alert.title) {
+            return (
+                title: alert.title.trimmingCharacters(in: .whitespacesAndNewlines),
+                detail: Self.watchHeroDetail(expires: alert.expires)
+            )
+        }
+
         let detail = alert.headline.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallback = alert.areaSummary.trimmingCharacters(in: .whitespacesAndNewlines)
         return (
-            title: alert.title,
+            title: alert.title.trimmingCharacters(in: .whitespacesAndNewlines),
             detail: detail.isEmpty ? fallback : detail
         )
     }
@@ -116,6 +123,34 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
     private static func isWarningOrWatch(title: String) -> Bool {
         let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase
         return normalized.contains("warning") || normalized.contains("watch")
+    }
+
+    private static func isWatch(title: String) -> Bool {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).localizedLowercase.contains("watch")
+    }
+
+    static func watchHeroDetail(
+        expires: Date?,
+        now: Date = .now,
+        timeZone: TimeZone = .autoupdatingCurrent
+    ) -> String {
+        guard let expires else {
+            return "Watch currently in effect"
+        }
+
+        let calendar = Calendar(identifier: .gregorian)
+        var localCalendar = calendar
+        localCalendar.timeZone = timeZone
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.calendar = localCalendar
+        formatter.dateFormat = localCalendar.isDate(expires, inSameDayAs: now)
+            ? "h:mm a zzz"
+            : "MMM d, h:mm a zzz"
+
+        return "In effect until \(formatter.string(from: expires))"
     }
 
     var title: String {
@@ -941,6 +976,22 @@ private struct AwarenessSupportRow: View {
     ScrollView {
         VStack(spacing: 18) {
             PrimaryAwarenessPanelPreviewCard(
+                title: "Tornado Watch",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .clear,
+                alerts: [AlertDTO(from: Watch.sampleWatches[0])]
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Severe Thunderstorm Watch",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .clear,
+                alerts: [AlertDTO(from: Watch.sampleWatches[1])]
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
                 title: "Thunderstorms Light",
                 stormRisk: .thunderstorm,
                 severeRisk: .allClear,
@@ -995,6 +1046,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
     let stormRisk: StormRiskLevel
     let severeRisk: SevereWeatherThreat
     let fireRisk: FireRiskLevel
+    var alerts: [AlertDTO] = []
     var colorScheme: ColorScheme? = nil
 
     private var resolutionState: SummaryResolutionState { SummaryResolutionState() }
@@ -1009,7 +1061,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
                 stormRisk: stormRisk,
                 severeRisk: severeRisk,
                 fireRisk: fireRisk,
-                alerts: [],
+                alerts: alerts,
                 readinessState: .ready,
                 resolutionState: resolutionState,
                 showsOfflineToken: false,

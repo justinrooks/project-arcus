@@ -33,28 +33,105 @@ struct SummaryAwarenessPanelTests {
 
     @Test("watch outranks storm severe and fire when no warning is active")
     func watch_outranksOtherSignals() {
+        let alert = makeAlert(
+            title: "Severe Thunderstorm Watch",
+            headline: "Severe Thunderstorm Watch issued June 11 at 2:02PM CDT until June 11 at 9:00PM CDT by NWS Chicago IL"
+        )
+
         let selected = SummaryAwarenessPrimaryState.resolve(
             stormRisk: .high,
             severeRisk: .hail(probability: 0.20),
             fireRisk: .extreme,
-            alerts: [
-                makeAlert(
-                    title: "Severe Thunderstorm Watch",
-                    headline: "Conditions are favorable for severe thunderstorms."
-                )
-            ],
+            alerts: [alert],
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
             isOffline: false
         )
 
+        let expectedDetail = SummaryAwarenessPrimaryState.watchHeroDetail(expires: alert.expires)
+
         #expect(
             selected == .alert(
                 title: "Severe Thunderstorm Watch",
-                detail: "Conditions are favorable for severe thunderstorms."
+                detail: expectedDetail
             )
         )
+    }
+
+    @Test("watch subtitle uses a concise same-day expiration time")
+    func watchSubtitle_usesConciseSameDayExpirationTime() {
+        let chicago = TimeZone(identifier: "America/Chicago")!
+        let now = makeDate(year: 2026, month: 6, day: 11, hour: 14, minute: 30, timeZone: chicago)
+        let expires = makeDate(year: 2026, month: 6, day: 11, hour: 21, minute: 0, timeZone: chicago)
+
+        let subtitle = SummaryAwarenessPrimaryState.watchHeroDetail(
+            expires: expires,
+            now: now,
+            timeZone: chicago
+        )
+
+        #expect(subtitle == "In effect until 9:00 PM CDT")
+    }
+
+    @Test("watch subtitle keeps concise wording for severe thunderstorm watches")
+    func watchSubtitle_keepsConciseWordingForSevereThunderstormWatches() {
+        let chicago = TimeZone(identifier: "America/Chicago")!
+        let now = makeDate(year: 2026, month: 8, day: 12, hour: 16, minute: 15, timeZone: chicago)
+        let expires = makeDate(year: 2026, month: 8, day: 12, hour: 18, minute: 0, timeZone: chicago)
+
+        let subtitle = SummaryAwarenessPrimaryState.watchHeroDetail(
+            expires: expires,
+            now: now,
+            timeZone: chicago
+        )
+
+        #expect(subtitle == "In effect until 6:00 PM CDT")
+    }
+
+    @Test("watch subtitle includes a short date when the expiration is on a later day")
+    func watchSubtitle_includesShortDateWhenExpirationIsOnALaterDay() {
+        let chicago = TimeZone(identifier: "America/Chicago")!
+        let now = makeDate(year: 2026, month: 6, day: 11, hour: 20, minute: 0, timeZone: chicago)
+        let expires = makeDate(year: 2026, month: 6, day: 12, hour: 1, minute: 0, timeZone: chicago)
+
+        let subtitle = SummaryAwarenessPrimaryState.watchHeroDetail(
+            expires: expires,
+            now: now,
+            timeZone: chicago
+        )
+
+        #expect(subtitle == "In effect until Jun 12, 1:00 AM CDT")
+    }
+
+    @Test("watch subtitle falls back when expiration is missing")
+    func watchSubtitle_fallsBackWhenExpirationIsMissing() {
+        let chicago = TimeZone(identifier: "America/Chicago")!
+
+        let subtitle = SummaryAwarenessPrimaryState.watchHeroDetail(
+            expires: nil,
+            now: makeDate(year: 2026, month: 6, day: 11, hour: 14, minute: 0, timeZone: chicago),
+            timeZone: chicago
+        )
+
+        #expect(subtitle == "Watch currently in effect")
+    }
+
+    @Test("watch subtitle excludes issue metadata from the hero copy")
+    func watchSubtitle_excludesIssueMetadataFromTheHeroCopy() {
+        let chicago = TimeZone(identifier: "America/Chicago")!
+        let now = makeDate(year: 2026, month: 6, day: 11, hour: 14, minute: 30, timeZone: chicago)
+        let expires = makeDate(year: 2026, month: 6, day: 11, hour: 21, minute: 0, timeZone: chicago)
+
+        let subtitle = SummaryAwarenessPrimaryState.watchHeroDetail(
+            expires: expires,
+            now: now,
+            timeZone: chicago
+        )
+
+        #expect(subtitle == "In effect until 9:00 PM CDT")
+        #expect(subtitle.contains("issued") == false)
+        #expect(subtitle.contains("NWS Chicago IL") == false)
     }
 
     @Test("tornado outranks hail and wind within severe risk")
@@ -227,6 +304,30 @@ struct SummaryAwarenessPanelTests {
             flashFloodDetection: nil,
             flashFloodDamageThreat: nil
         )
+    }
+
+    private func makeDate(
+        year: Int,
+        month: Int,
+        day: Int,
+        hour: Int,
+        minute: Int,
+        timeZone: TimeZone
+    ) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+
+        let components = DateComponents(
+            calendar: calendar,
+            timeZone: timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        )
+
+        return components.date!
     }
 }
 
