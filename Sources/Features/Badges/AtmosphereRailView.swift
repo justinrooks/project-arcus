@@ -7,277 +7,313 @@
 
 import SwiftUI
 
-struct AtmosphereRailView: View {
+struct AtmosphericConditionsCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var activeTip: AtmosphereTip?
+    @State private var activeTip: DewPointTip?
+
     let weather: SummaryWeather?
     var isOffline: Bool = false
 
-    private static let temperatureFormatter: MeasurementFormatter = {
-        let formatter = MeasurementFormatter()
-        formatter.numberFormatter.maximumFractionDigits = 0
-        return formatter
-    }()
-
-    private var atmosphereSummary: String {
-        guard let weather else {
-            return "Getting atmospheric details…"
-        }
-
-        let condition = weather.conditionText.isEmpty ? "Atmospheric conditions" : weather.conditionText
-        return "\(condition)."
+    private var model: AtmosphericConditionsDisplayModel {
+        AtmosphericConditionsDisplayModel(weather: weather)
     }
-
-    private var formattedDewPoint: String? {
-        guard let weather else { return nil }
-        return formatTemperature(weather.dewPoint)
-    }
-
-    private var dewPointFahrenheit: Double? {
-        weather?.dewPoint.converted(to: .fahrenheit).value
-    }
-
-    private var formattedHumidity: String? {
-        guard let weather else { return nil }
-        let percent = weather.humidity * 100
-        return "\(percent.formatted(.number.precision(.fractionLength(0))))%"
-    }
-
-    private var formattedWind: String? {
-        guard let weather else { return nil }
-        let mph = weather.windSpeed.converted(to: .milesPerHour).value
-        return "\(mph.formatted(.number.precision(.fractionLength(0)))) mph"
-    }
-
-    private var formattedPressure: String? {
-        guard let weather else { return nil }
-        let inHg = weather.pressure.converted(to: .inchesOfMercury).value
-        return "\(inHg.formatted(.number.precision(.fractionLength(2)))) inHg"
-    }
-
-    private var pressureTrendLabel: String {
-        guard let trend = weather?.pressureTrend.trimmingCharacters(in: .whitespacesAndNewlines),
-              !trend.isEmpty else {
-            return "Trend unavailable"
-        }
-
-        return trend.capitalized
-    }
-
-    private var pressureTrendSymbol: String {
-        guard let trend = weather?.pressureTrend.lowercased() else { return "arrow.left.and.right" }
-
-        if trend.contains("fall") || trend.contains("drop") || trend.contains("down") {
-            return "arrow.down.right"
-        }
-
-        if trend.contains("climb") || trend.contains("rise") || trend.contains("up") {
-            return "arrow.up.right"
-        }
-
-        return "arrow.left.and.right"
-    }
-
-    private var metrics: [AtmosphereMetric] {
-        [
-            .init(kind: .dewPoint,
-                  title: "Dew Point",
-                  value: formattedDewPoint ?? "—",
-                  numericValue: dewPointFahrenheit,
-                  detail: nil,
-                  symbol: "thermometer.sun"),
-            .init(kind: .humidity,
-                  title: "Humidity",
-                  value: formattedHumidity ?? "—",
-                  numericValue: nil,
-                  detail: nil,
-                  symbol: "humidity.fill"),
-            .init(kind: .wind,
-                  title: "Wind",
-                  value: formattedWind ?? "—",
-                  numericValue: nil,
-                  detail: weather?.windDirection ?? "Direction unavailable",
-                  symbol: "wind"),
-            .init(kind: .pressure,
-                  title: "Pressure",
-                  value: formattedPressure ?? "—",
-                  numericValue: nil,
-                  detail: pressureTrendLabel,
-                  symbol: pressureTrendSymbol)
-        ]
-    }
-
-    private let metricColumns: [GridItem] = [
-        GridItem(.flexible(), spacing: 2, alignment: .leading),
-        GridItem(.flexible(), spacing: 2, alignment: .leading)
-    ]
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
     private var atmosphereBackground: LinearGradient {
-        // Intentionally non-semantic: instrumentation, not risk.
         let colors: [Color] = colorScheme == .dark
-        ? [Color(red: 0.16, green: 0.24, blue: 0.30).opacity(0.92),
-           Color(red: 0.08, green: 0.11, blue: 0.15).opacity(0.92)]
-        : [Color(red: 0.92, green: 0.96, blue: 0.97),
-           Color(red: 0.88, green: 0.93, blue: 0.95)]
+        ? [
+            Color(red: 0.14, green: 0.20, blue: 0.26).opacity(0.95),
+            Color(red: 0.09, green: 0.13, blue: 0.17).opacity(0.95)
+        ]
+        : [
+            Color(red: 0.92, green: 0.96, blue: 0.98),
+            Color(red: 0.87, green: 0.92, blue: 0.95)
+        ]
 
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
-        Self.temperatureFormatter.string(from: temperature)
-    }
-
     var body: some View {
-        Group {
-            if isOffline {
-                switch presentationState {
-                case .stale:
-                    offlineResolvedContent
-                case .unavailable, .current, .resolving, .confirmedEmpty:
-                    unavailableContent
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "gauge.with.dots.needle.50percent")
-                            .symbolVariant(.fill)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            header
 
-                        Text("Atmospheric Conditions")
-                            .sectionLabel()
-                    }
-
-                    Text(atmosphereSummary)
-                        .formatSummaryText(for: colorScheme)
-                        .lineLimit(adaptiveLayout.usesVerticalMetricRows ? 2 : 1)
-
-                    Divider()
-                        .overlay(colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.14))
-
-                    metricGrid
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 9)
-                .railStyle(background: atmosphereBackground)
+            if isOffline, weather != nil {
+                Text("Offline. Showing saved local data.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
 
-    private var presentationState: SummaryContentPresentationState {
-        SummaryContentPresentationState.from(
-            isOffline: isOffline,
-            hasContent: weather != nil,
-            isResolving: false
+            contentSurface
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.section,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3
         )
     }
 
-    private var offlineResolvedContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "gauge.with.dots.needle.50percent")
-                    .symbolVariant(.fill)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text("Atmospheric Conditions")
-                    .sectionLabel()
-            }
-
-            Text(atmosphereSummary)
-                .formatSummaryText(for: colorScheme)
-                .lineLimit(adaptiveLayout.usesVerticalMetricRows ? 2 : 1)
-
-            Text("Offline. Showing saved local data.")
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "gauge.with.dots.needle.50percent")
+                .symbolVariant(.fill)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            Divider()
-                .overlay(colorScheme == .dark ? .white.opacity(0.22) : .black.opacity(0.14))
-
-            metricGrid
+            Text("Atmospheric Conditions")
+                .sectionLabel()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 9)
-        .railStyle(background: atmosphereBackground)
     }
 
-    private var unavailableContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Unavailable", systemImage: "exclamationmark.circle")
-                .sectionLabel()
-            Text("No saved atmospheric details are available offline.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private var contentSurface: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            leadMetricRow
+
+            Divider()
+                .overlay(colorScheme == .dark ? .white.opacity(0.20) : .black.opacity(0.12))
+
+            metricsStrip
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
-        .padding([.leading, .trailing], 15)
-        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
+        .padding(14)
+        .background {
+            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
+                .fill(atmosphereBackground)
+                .overlay {
+                    RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
+                        .strokeBorder(.white.opacity(colorScheme == .dark ? 0.10 : 0.16), lineWidth: 0.8)
+                        .allowsHitTesting(false)
+                }
+        }
+    }
+
+    private var leadMetricRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "drop.fill")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 22, height: 22, alignment: .center)
+                .padding(.top, 3)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Dew Point")
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(model.dewPointDescriptor)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            dewPointValueControl
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private var metricGrid: some View {
-        if adaptiveLayout.usesVerticalMetricRows {
-            metricRowsContent
+    private var dewPointValueControl: some View {
+        if let value = model.dewPointValue {
+            Button {
+                activeTip = activeTip == .dewPoint ? nil : .dewPoint
+            } label: {
+                HStack(spacing: 5) {
+                    Text(value)
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.72))
+                        .monospacedDigit()
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.leading, 4)
+                .padding(.vertical, 4)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dew Point \(value)")
+            .accessibilityHint("Shows more detail about dew point.")
+            .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
+                switch tip {
+                case .dewPoint:
+                    DewPointTipView(
+                        currentValue: value,
+                        dewPointF: model.dewPointFahrenheit
+                    )
+                    .presentationCompactAdaptation(.popover)
+                }
+            }
         } else {
-            metricGridContent
+            Text("Unavailable")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    private var metricGridContent: some View {
-        LazyVGrid(columns: metricColumns, spacing: 8) {
-            ForEach(metrics) { metric in
-                AtmosphereMetricTile(
-                    metric: metric,
-                    activeTip: $activeTip,
-                    usesVerticalRowLayout: false
-                )
+    @ViewBuilder
+    private var metricsStrip: some View {
+        if adaptiveLayout.usesVerticalMetricRows {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(model.secondaryMetrics) { metric in
+                    AtmosphericMetricRow(metric: metric, isCompact: false)
+                }
+            }
+        } else {
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(Array(model.secondaryMetrics.enumerated()), id: \.element.id) { index, metric in
+                    AtmosphericMetricRow(metric: metric, isCompact: true)
+
+                    if index < model.secondaryMetrics.count - 1 {
+                        Divider()
+                            .frame(maxHeight: .infinity)
+                            .padding(.vertical, 2)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 4)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private var metricRowsContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(metrics) { metric in
-                AtmosphereMetricTile(
-                    metric: metric,
-                    activeTip: $activeTip,
-                    usesVerticalRowLayout: true
-                )
-            }
+struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
+    struct Metric: Identifiable, Sendable, Equatable {
+        enum Kind: String, Identifiable, Sendable {
+            case humidity
+            case wind
+            case pressure
+
+            var id: String { rawValue }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+
+        let kind: Kind
+        let title: String
+        let value: String
+        let iconName: String
+
+        var id: String { kind.id }
+    }
+
+    let dewPointValue: String?
+    let dewPointFahrenheit: Double?
+    let dewPointDescriptor: String
+    let secondaryMetrics: [Metric]
+
+    init(weather: SummaryWeather?) {
+        guard let weather else {
+            dewPointValue = nil
+            dewPointFahrenheit = nil
+            dewPointDescriptor = DewPointDescriptor.text(for: nil)
+            secondaryMetrics = Self.unavailableMetrics
+            return
+        }
+
+        let dewPoint = weather.dewPoint.converted(to: .fahrenheit).value
+        dewPointValue = Self.formatTemperature(weather.dewPoint)
+        dewPointFahrenheit = dewPoint
+        dewPointDescriptor = DewPointDescriptor.text(for: dewPoint)
+        secondaryMetrics = [
+            .init(
+                kind: .humidity,
+                title: "Humidity",
+                value: Self.formatHumidity(weather.humidity),
+                iconName: "humidity.fill"
+            ),
+            .init(
+                kind: .wind,
+                title: "Wind",
+                value: Self.formatWind(
+                    speed: weather.windSpeed,
+                    direction: weather.windDirection
+                ),
+                iconName: "wind"
+            ),
+            .init(
+                kind: .pressure,
+                title: "Pressure",
+                value: Self.formatPressure(weather.pressure),
+                iconName: "gauge.with.dots.needle.50percent"
+            )
+        ]
+    }
+
+    private static func temperatureFormatter() -> MeasurementFormatter {
+        let formatter = MeasurementFormatter()
+        formatter.numberFormatter.maximumFractionDigits = 0
+        return formatter
+    }
+
+    private static func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
+        temperatureFormatter().string(from: temperature)
+    }
+
+    private static func formatHumidity(_ humidity: Double) -> String {
+        let percent = humidity * 100
+        return "\(percent.formatted(.number.precision(.fractionLength(0))))%"
+    }
+
+    private static func formatWind(
+        speed: Measurement<UnitSpeed>,
+        direction: String
+    ) -> String {
+        let mph = speed.converted(to: .milesPerHour).value
+        let formattedSpeed = "\(mph.formatted(.number.precision(.fractionLength(0)))) mph"
+        let cleanDirection = direction.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard cleanDirection.isEmpty == false else {
+            return formattedSpeed
+        }
+
+        return "\(cleanDirection) \(formattedSpeed)"
+    }
+
+    private static func formatPressure(_ pressure: Measurement<UnitPressure>) -> String {
+        let inHg = pressure.converted(to: .inchesOfMercury).value
+        return "\(inHg.formatted(.number.precision(.fractionLength(2)))) inHg"
+    }
+
+    private static var unavailableMetrics: [Metric] {
+        [
+            .init(kind: .humidity, title: "Humidity", value: "—", iconName: "humidity.fill"),
+            .init(kind: .wind, title: "Wind", value: "—", iconName: "wind"),
+            .init(kind: .pressure, title: "Pressure", value: "—", iconName: "gauge.with.dots.needle.50percent")
+        ]
     }
 }
 
-private enum AtmosphereMetricKind: String, Identifiable {
-    case dewPoint
-    case humidity
-    case wind
-    case pressure
+enum DewPointDescriptor {
+    static func text(for dewPointF: Double?) -> String {
+        guard let dewPointF else {
+            return "Dew point unavailable"
+        }
 
-    var id: String { rawValue }
+        switch dewPointF {
+        case ..<50:
+            return "Dry air in place"
+        case 50..<60:
+            return "Comfortable moisture"
+        case 60..<65:
+            return "Moisture increasing"
+        case 65..<70:
+            return "Moist air may support storms"
+        default:
+            return "Very moist air in place"
+        }
+    }
 }
 
-private struct AtmosphereMetric: Identifiable {
-    var id: AtmosphereMetricKind { kind }
-    let kind: AtmosphereMetricKind
-    let title: String
-    let value: String
-    let numericValue: Double?
-    let detail: String?
-    let symbol: String
-}
-
-private enum AtmosphereTip: String, Identifiable {
+private enum DewPointTip: String, Identifiable {
     case dewPoint
 
     var id: String { rawValue }
@@ -287,21 +323,8 @@ private struct DewPointTipView: View {
     let currentValue: String
     let dewPointF: Double?
 
-    private var dewPointHint: String? {
-        guard let dp = dewPointF else { return nil }
-
-        switch dp {
-        case ..<55:
-            return "The air is fairly dry. Strong thunderstorms are less likely."
-        case 55..<60:
-            return "Moisture is increasing, but still somewhat limited for stronger storms."
-        case 60..<65:
-            return "Moisture levels are supportive of developing thunderstorms."
-        case 65..<70:
-            return "Moisture is high and can support stronger storms."
-        default:
-            return "Very humid air. Storms can become intense if other conditions align."
-        }
+    private var bodyCopy: String {
+        "Dew point measures how much moisture is in the air. Higher values can help storms organize, but dew point alone does not determine severe weather."
     }
 
     var body: some View {
@@ -309,28 +332,21 @@ private struct DewPointTipView: View {
             Text("Dew Point")
                 .font(.headline.weight(.semibold))
 
-            Text("Dew point measures how much moisture is in the air. Moisture acts as fuel for thunderstorms.")
+            Text(bodyCopy)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if currentValue != "—" {
-                Text("Current value: \(currentValue)")
-                    .font(.subheadline.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Current value: \(currentValue)")
+                .font(.subheadline.weight(.semibold))
+                .fixedSize(horizontal: false, vertical: true)
 
-            if let hint = dewPointHint {
-                Text(hint)
+            if let dewPointF {
+                Text(DewPointDescriptor.text(for: dewPointF))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-
-            Text("When dew points climb into the mid‑60s°F or higher, storms can grow stronger and the potential for severe weather increases.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -338,182 +354,139 @@ private struct DewPointTipView: View {
     }
 }
 
-private struct AtmosphereMetricTile: View {
-    let metric: AtmosphereMetric
-    @Binding var activeTip: AtmosphereTip?
-    let usesVerticalRowLayout: Bool
-    @Environment(\.colorScheme) private var colorScheme
+private struct AtmosphericMetricRow: View {
+    let metric: AtmosphericConditionsDisplayModel.Metric
+    let isCompact: Bool
 
-    private var isDewPoint: Bool {
-        metric.kind == .dewPoint
-    }
-
-    private var tileContent: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if usesVerticalRowLayout {
-                Text(metric.title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-
-                Text(metric.value)
-                    .font(.body.weight(isDewPoint ? .bold : .semibold))
-                    .foregroundStyle(
-                        isDewPoint
-                        ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
-                        : .primary
-                    )
-                    .monospacedDigit()
-                    .lineLimit(2)
-
-                if let detail = metric.detail {
-                    Text(detail)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: metric.symbol)
-                        .symbolRenderingMode(.monochrome)
+    var body: some View {
+        if isCompact {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: metric.iconName)
                         .font(.caption.weight(.semibold))
-                        .imageScale(.medium)
-                        .frame(width: 24, height: 18, alignment: .leading)
-                        .padding(.leading, 2)
-                        .layoutPriority(1)
+                        .foregroundStyle(.secondary)
 
                     Text(metric.title)
                         .font(.footnote.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .layoutPriority(0)
-                }
-                .foregroundStyle(.secondary)
-
-                Text(metric.value)
-                    .font(.callout.weight(isDewPoint ? .bold : .semibold))
-                    .foregroundStyle(
-                        isDewPoint
-                        ? Color.orange.opacity(colorScheme == .dark ? 0.75 : 0.70)
-                        : .primary
-                    )
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
-                if let detail = metric.detail {
-                    Text(detail)
-                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
+
+                Text(metric.value)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(metric.title) \(metric.value)")
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: metric.iconName)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 15, alignment: .leading)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(metric.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+
+                    Text(metric.value)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .monospacedDigit()
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 2)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(metric.title) \(metric.value)")
         }
     }
-
-    var body: some View {
-        Group {
-            if isDewPoint {
-                Button {
-                    activeTip = activeTip == .dewPoint ? nil : .dewPoint
-                } label: {
-                    tileContent
-                }
-                .buttonStyle(
-                    SkyAwarePressableButtonStyle(
-                        cornerRadius: SkyAwareRadius.medium,
-                        pressedScale: 0.99,
-                        pressedOverlayOpacity: 0.06
-                    )
-                )
-                .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous))
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Dew Point \(metric.value)")
-                .accessibilityHint("Shows more detail about dew point.")
-                .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
-                    switch tip {
-                    case .dewPoint:
-                        DewPointTipView(currentValue: metric.value, dewPointF: metric.numericValue)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 6)
-                .padding(.trailing, 4)
-                .padding(.vertical, usesVerticalRowLayout ? 8 : 6)
-            } else {
-                tileContent
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 6)
-                    .padding(.trailing, 4)
-                    .padding(.vertical, usesVerticalRowLayout ? 8 : 6)
-            }
-        }
-    }
 }
 
-#Preview("Atmosphere - Normal Grid") {
-    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
+#Preview("Atmospheric Conditions - Calm Light") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm)
 }
 
-#Preview("Atmosphere - XXXL Grid") {
-    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
-        .environment(\.dynamicTypeSize, .xxxLarge)
+#Preview("Atmospheric Conditions - Storm Supportive") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
 }
 
-#Preview("Atmosphere - AX1 Vertical Rows") {
-    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable)
-        .environment(\.dynamicTypeSize, .accessibility1)
+#Preview("Atmospheric Conditions - Very Moist") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
 }
 
-#Preview("Atmosphere - AX3 Vertical Rows Small iPhone") {
-    AtmosphereRailView(weather: AtmosphereRailPreviewData.steady)
+#Preview("Atmospheric Conditions - Missing Values") {
+    AtmosphericConditionsCard(weather: nil)
+}
+
+#Preview("Atmospheric Conditions - Light Mode") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+        .preferredColorScheme(.light)
+}
+
+#Preview("Atmospheric Conditions - Dark Mode") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Atmospheric Conditions - Large Dynamic Type") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm)
         .environment(\.dynamicTypeSize, .accessibility3)
-        .frame(width: 320)
 }
 
-#Preview("Atmosphere - Dew Point Tip Content") {
-    DewPointTipView(
-        currentValue: "68°F",
-        dewPointF: 68
-    )
-    .padding()
-}
-
-#Preview("Atmosphere - Offline Cached") {
-    AtmosphereRailView(weather: AtmosphereRailPreviewData.unstable, isOffline: true)
-}
-
-#Preview("Atmosphere - Offline Unavailable") {
-    AtmosphereRailView(weather: nil, isOffline: true)
-}
-
-private enum AtmosphereRailPreviewData {
-    static let unstable = SummaryWeather(
-        temperature: Measurement(value: 82.0, unit: .fahrenheit),
-        symbolName: "cloud.bolt.rain.fill",
-        conditionText: "Hot, humid, unstable",
-        asOf: .now,
-        dewPoint: Measurement(value: 68.0, unit: .fahrenheit),
-        humidity: 0.72,
-        windSpeed: Measurement(value: 21.0, unit: .milesPerHour),
-        windGust: Measurement(value: 34.0, unit: .milesPerHour),
-        windDirection: "SSW",
-        pressure: Measurement(value: 29.74, unit: .inchesOfMercury),
-        pressureTrend: "falling"
-    )
-
-    static let steady = SummaryWeather(
-        temperature: Measurement(value: 48.0, unit: .fahrenheit),
+private enum AtmosphericConditionsPreviewData {
+    static let calm = SummaryWeather(
+        temperature: Measurement(value: 58.0, unit: .fahrenheit),
         symbolName: "cloud.sun.fill",
         conditionText: "Cool and steady",
         asOf: .now,
-        dewPoint: Measurement(value: 43.0, unit: .fahrenheit),
-        humidity: 0.56,
+        dewPoint: Measurement(value: 52.0, unit: .fahrenheit),
+        humidity: 0.45,
         windSpeed: Measurement(value: 8.0, unit: .milesPerHour),
         windGust: nil,
-        windDirection: "SE",
-        pressure: Measurement(value: 29.95, unit: .inchesOfMercury),
+        windDirection: "NW",
+        pressure: Measurement(value: 30.04, unit: .inchesOfMercury),
         pressureTrend: "steady"
+    )
+
+    static let stormSupportive = SummaryWeather(
+        temperature: Measurement(value: 82.0, unit: .fahrenheit),
+        symbolName: "cloud.bolt.rain.fill",
+        conditionText: "Warm, moist, and unsettled",
+        asOf: .now,
+        dewPoint: Measurement(value: 68.0, unit: .fahrenheit),
+        humidity: 0.71,
+        windSpeed: Measurement(value: 14.0, unit: .milesPerHour),
+        windGust: Measurement(value: 22.0, unit: .milesPerHour),
+        windDirection: "S",
+        pressure: Measurement(value: 29.82, unit: .inchesOfMercury),
+        pressureTrend: "falling"
+    )
+
+    static let veryMoist = SummaryWeather(
+        temperature: Measurement(value: 86.0, unit: .fahrenheit),
+        symbolName: "cloud.drizzle.fill",
+        conditionText: "Very humid",
+        asOf: .now,
+        dewPoint: Measurement(value: 72.0, unit: .fahrenheit),
+        humidity: 0.84,
+        windSpeed: Measurement(value: 11.0, unit: .milesPerHour),
+        windGust: nil,
+        windDirection: "SE",
+        pressure: Measurement(value: 29.76, unit: .inchesOfMercury),
+        pressureTrend: "falling"
     )
 }

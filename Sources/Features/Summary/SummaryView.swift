@@ -342,11 +342,6 @@ struct SummaryView: View {
     @ViewBuilder
     private var riskSnapshotContent: some View {
         VStack(spacing: 12) {
-            // Legacy Summary hero layout for A/B testing.
-            // Uncomment this block and comment out the panel block below to swap back:
-            // Label("Risk Snapshot", systemImage: "gauge.with.needle.fill").sectionLabel()
-            // badgeRow
-            // fireRiskButton
             PrimaryAwarenessPanel(
                 stormRisk: stormRisk,
                 severeRisk: severeRisk,
@@ -358,14 +353,6 @@ struct SummaryView: View {
                 onOpenMapLayer: onOpenMapLayer,
                 onOpenAlerts: onOpenAlerts
             )
-
-            AtmosphereRailView(weather: weather, isOffline: showsOfflineToken)
-                .allowsHitTesting(!isWeatherLoading)
-                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
-                .summaryResolving(
-                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
-                    style: .subtle
-                )
         }
     }
 
@@ -405,6 +392,14 @@ struct SummaryView: View {
                 shadowY: 3,
                 allowsGlass: false
             )
+
+            AtmosphericConditionsCard(weather: weather, isOffline: showsOfflineToken)
+                .allowsHitTesting(!isWeatherLoading)
+                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                .summaryResolving(
+                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                    style: .subtle
+                )
         }
 
         if let locationReliabilityRailState {
