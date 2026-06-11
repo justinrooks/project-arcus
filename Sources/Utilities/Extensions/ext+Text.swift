@@ -10,7 +10,7 @@ import SwiftUI
 extension Text {
     func formatSummaryText(for colorScheme: ColorScheme) -> some View {
         self.font(.caption)
-            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(1.85) : .secondary)
+            .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
     }
     
     func formatMessageText() -> some View {
