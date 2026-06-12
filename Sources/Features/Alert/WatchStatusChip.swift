@@ -32,38 +32,9 @@ enum WatchChipKind {
     }
 
     /// Calm, complementary, not duplicating your risk gradients.
-    /// This is *not* your SPC risk color system; it's metadata chips.
+    /// This stays neutral so the hazard colors remain reserved for actual weather meaning.
     func tint(for scheme: ColorScheme) -> Color {
-        func c(_ light: Color, _ dark: Color) -> Color { scheme == .dark ? dark : light }
-
-        switch self {
-        case .severity(let v):
-            switch v.lowercased() {
-            case "extreme":   return c(.riskHigh.opacity(0.70),      .riskHigh.opacity(0.60))
-            case "severe":    return c(.riskModerate.opacity(0.75),  .riskModerate.opacity(0.65))
-            case "moderate":  return c(.riskEnhanced.opacity(0.80),  .riskEnhanced.opacity(0.70))
-            case "minor":     return c(.riskMarginal.opacity(0.65),  .riskMarginal.opacity(0.55))
-            default:          return c(.secondary.opacity(0.6), .secondary.opacity(0.5))
-            }
-
-        case .certainty(let v):
-            switch v.lowercased() {
-            case "observed", "confirmed", "likely":
-                return c(.windTeal.opacity(0.70), .windTeal.opacity(0.60))
-            case "possible":
-                return c(.hailBlue.opacity(0.65), .hailBlue.opacity(0.55))
-            default:
-                return c(.secondary.opacity(0.6), .secondary.opacity(0.5))
-            }
-
-        case .urgency(let v):
-            switch v.lowercased() {
-            case "immediate": return c(.tornadoRed.opacity(0.65), .tornadoRed.opacity(0.55))
-            case "expected":  return c(.riskEnhanced.opacity(0.70), .riskEnhanced.opacity(0.60))
-            case "future":    return c(.hailBlue.opacity(0.60), .hailBlue.opacity(0.50))
-            default:          return c(.secondary.opacity(0.6), .secondary.opacity(0.5))
-            }
-        }
+        scheme == .dark ? .semanticMetadata.opacity(0.80) : .semanticMetadata
     }
 }
 
@@ -97,4 +68,25 @@ struct StatusChip: View {
         }
         .accessibilityLabel(kind.title)
     }
+}
+
+#Preview("Metadata Chips") {
+    VStack(alignment: .leading, spacing: 10) {
+        StatusChip(kind: .severity("Severe"))
+        StatusChip(kind: .certainty("Likely"))
+        StatusChip(kind: .urgency("Immediate"))
+    }
+    .padding(16)
+    .background(.skyAwareBackground)
+}
+
+#Preview("Metadata Chips Dark") {
+    VStack(alignment: .leading, spacing: 10) {
+        StatusChip(kind: .severity("Severe"))
+        StatusChip(kind: .certainty("Likely"))
+        StatusChip(kind: .urgency("Immediate"))
+    }
+    .padding(16)
+    .background(.skyAwareBackground)
+    .preferredColorScheme(.dark)
 }

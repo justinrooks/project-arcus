@@ -114,7 +114,7 @@ struct SettingsView: View {
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                sectionCard(title: "Notification Preferences", symbol: "bell.badge", accent: .orange) {
+                sectionCard(title: "Notification Preferences", symbol: "bell.badge", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Morning Summaries", isOn: $morningSummaryEnabled)
                             .onChange(of: morningSummaryEnabled) { _, newValue in
@@ -182,7 +182,7 @@ struct SettingsView: View {
                     }
                 }
 
-                sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .orange) {
+                sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .primary) {
                     VStack() {
                         Toggle("Share Approximate Location for Alerts", isOn: $sendL8nToSignal)
                             .onChange(of: sendL8nToSignal) { _, newValue in
@@ -210,7 +210,7 @@ struct SettingsView: View {
                     }
                 }
 
-                sectionCard(title: "Alerts / Location Reliability", symbol: "checkmark.circle", accent: .orange) {
+                sectionCard(title: "Alerts / Location Reliability", symbol: "checkmark.circle", accent: .primary) {
                     let reliability = locationSession.reliabilityState
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
@@ -243,7 +243,7 @@ struct SettingsView: View {
                     }
                 }
 
-                sectionCard(title: "Map", symbol: "map", accent: .orange) {
+                sectionCard(title: "Map", symbol: "map", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Show Active Alerts on Map", isOn: $mapWarningGeometryVisible)
                         Text("Controls whether active warning geometry is shown on the map.")
@@ -253,7 +253,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                sectionCard(title: "About", symbol: "info.circle", accent: .orange) {
+                sectionCard(title: "About", symbol: "info.circle", accent: .primary) {
                     infoRow("Version", Bundle.main.fullVersion)
                     infoRow("Disclaimer", "\(disclaimerVersion)")
                     NavigationLink("Diagnostics") {

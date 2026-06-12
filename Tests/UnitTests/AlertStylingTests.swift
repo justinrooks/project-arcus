@@ -1,4 +1,5 @@
 import Testing
+import SwiftUI
 import UIKit
 @testable import SkyAware
 
@@ -75,12 +76,41 @@ struct AlertStylingTests {
         #expect(warningPolygonStyle(for: "Tornado Watch") == nil)
     }
 
+    @Test("Watch status chips share the neutral metadata tint")
+    func watchStatusChipsShareTheNeutralMetadataTint() {
+        let lightSeverity = rgba(WatchChipKind.severity("Severe").tint(for: .light), scheme: .light)
+        let lightCertainty = rgba(WatchChipKind.certainty("Likely").tint(for: .light), scheme: .light)
+        let lightUrgency = rgba(WatchChipKind.urgency("Immediate").tint(for: .light), scheme: .light)
+
+        #expect(lightSeverity == lightCertainty)
+        #expect(lightCertainty == lightUrgency)
+
+        let darkSeverity = rgba(WatchChipKind.severity("Severe").tint(for: .dark), scheme: .dark)
+        let darkCertainty = rgba(WatchChipKind.certainty("Likely").tint(for: .dark), scheme: .dark)
+        let darkUrgency = rgba(WatchChipKind.urgency("Immediate").tint(for: .dark), scheme: .dark)
+
+        #expect(darkSeverity == darkCertainty)
+        #expect(darkCertainty == darkUrgency)
+    }
+
     private func rgba(_ color: UIColor) -> (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) {
         var red: CGFloat = 0
         var green: CGFloat = 0
         var blue: CGFloat = 0
         var alpha: CGFloat = 0
         color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return (red, green, blue, alpha)
+    }
+
+    private func rgba(_ color: Color, scheme: ColorScheme) -> (red: CGFloat, green: CGFloat, blue: CGFloat, alpha: CGFloat) {
+        let resolved = UIColor(color)
+            .resolvedColor(with: UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light))
+
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
         return (red, green, blue, alpha)
     }
 }

@@ -33,6 +33,10 @@ extension Color {
     static let mesoPurple        = Color(red: 0.45, green: 0.35, blue: 0.85)
     
     static let fireWeather       = Color(red: 0.80, green: 0.36, blue: 0.16) // ~#CC5C29
+
+    // MARK: - Semantic Metadata Colors
+    static let semanticMetadata  = Color.secondary
+    static let semanticMetadataSurface = Color(uiColor: .secondarySystemFill)
     
     func tileGradient(for scheme: ColorScheme) -> LinearGradient {
         RiskBadgeVisualStyle.badgeBackground(for: self, colorScheme: scheme)

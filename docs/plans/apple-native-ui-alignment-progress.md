@@ -678,3 +678,56 @@ Model used: gpt-5.4 / medium
 - The badge sizing helper now has a flexible branch; use it only for the Summary hero tiles unless another custom tile has the same accessibility problem.
 - AN-14 should continue from the current header/body hierarchy, not from the old overlay-label implementation.
 - AN-18 can still trim surface chrome later, but it should not undo the hero badge hierarchy established here.
+
+### AN-15 / GitHub #231 - Restore semantic color discipline
+
+Status: Completed
+Date: 2026-06-11
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Replaced the watch detail metadata chip tint ladder with a neutral semantic metadata tint so severity, certainty, and urgency no longer borrow tornado, wind, hail, or storm-risk colors.
+- Recolored the Summary offline token to a neutral semantic surface tint instead of fire-weather orange.
+- Switched Settings and Settings diagnostics section headings from decorative orange to primary text styling.
+- Added a focused unit regression test that proves all watch chip kinds resolve to the same neutral metadata tint.
+- Added representative previews for the metadata chips in light and dark mode.
+
+#### Files Changed
+
+- `Sources/Utilities/Extensions/ext+Color.swift`
+- `Sources/Features/Alert/WatchStatusChip.swift`
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Sources/Features/Settings/SettingsView.swift`
+- `Sources/Features/Settings/SettingsDiagnosticsView.swift`
+- `Tests/UnitTests/AlertStylingTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Actual hazard and risk color ladders stayed intact on the Summary hero tiles, alert rows, alert detail surfaces, map overlays, and other hazard-specific surfaces.
+- Alert classification, severity mapping, risk calculation, persistence, and notification semantics were unchanged.
+- The summary offline/freshness copy still communicates state without relying on color alone.
+- Settings structure and navigation stayed unchanged; this only corrected heading color semantics.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/AlertStylingTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- XcodeBuildMCP `build_run_sim` on iPhone 17 with `UI_TESTS_STATIC_HOME=1` and `UI_TESTS_NOTIFICATION_AUTH_MODE=authorized`
+- XcodeBuildMCP runtime snapshot and screenshot review of the Summary screen in light and dark appearance
+- XcodeBuildMCP runtime snapshot and screenshot review of watch detail under Increased Contrast and an accessibility text size
+- XcodeBuildMCP runtime snapshot and screenshot review of Settings in light and dark appearance
+
+#### Deferred Work
+
+- AN-16 still owns static-chip interaction/haptics cleanup.
+- AN-17 still owns the broader Liquid Glass opt-in policy.
+- AN-19 still owns the Settings structural migration.
+- `Differentiate Without Color` could not be toggled directly in this simulator workflow because `simctl ui` exposes appearance, increase contrast, and content size controls but not that accessibility option; the neutral chip labels and icons are still the fallback semantic path.
+
+#### Handoff Notes
+
+- Keep hazard colors reserved for actual weather meaning. The only shared neutral palette introduced here is the metadata/offline tint in `ext+Color.swift`.
+- The new watch-chip regression test should remain the guardrail if future metadata chips drift back toward weather-danger colors.
+- Residual risk: the neutral chip tint is visually conservative by design, so if future copy makes the chips denser, they may need a small contrast tweak rather than a new color family.

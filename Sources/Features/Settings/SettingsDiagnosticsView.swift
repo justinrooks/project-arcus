@@ -49,7 +49,7 @@ struct SettingsDiagnosticsView: View {
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                sectionCard(title: "Diagnostics", symbol: "stethoscope", accent: .orange) {
+                sectionCard(title: "Diagnostics", symbol: "stethoscope", accent: .primary) {
                     NavigationLink {
                         BgHealthDiagnosticsView()
                             .navigationTitle("Background Refresh History")
@@ -87,7 +87,7 @@ struct SettingsDiagnosticsView: View {
                     .contentShape(Rectangle())
                 }
 
-                sectionCard(title: "Location Diagnostics", symbol: "iphone.badge.location", accent: .orange) {
+                sectionCard(title: "Location Diagnostics", symbol: "iphone.badge.location", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Installation ID")
                             .font(.subheadline.weight(.semibold))
@@ -131,7 +131,7 @@ struct SettingsDiagnosticsView: View {
                     }
                 }
 
-                sectionCard(title: "Onboarding Debug", symbol: "ladybug", accent: .orange) {
+                sectionCard(title: "Onboarding Debug", symbol: "ladybug", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Onboarding flow complete", isOn: $onboardingComplete)
                         Text("Marks onboarding as completed so the app skips first-run onboarding screens on launch.")
