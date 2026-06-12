@@ -33,7 +33,7 @@ decisions from Git history.
 | 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
 | 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Not started | |
 | 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Completed | Glass is now opt-in on shared card backgrounds; ordinary content surfaces fall back to stable cards by default. |
-| 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Not started | |
+| 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Completed | Removed the outer Risk Snapshot surface so Current Conditions stays distinct while the hero tiles, rails, and supporting cards keep their own domain chrome. |
 | 19 | AN-19 | [#235](https://github.com/justinrooks/project-arcus/issues/235) | Move Settings to native Form structure | Not started | |
 | 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Not started | |
 | 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Not started | |
@@ -780,7 +780,6 @@ Model used: gpt-5.4 / medium
 
 #### Deferred Work
 
-- AN-18 still owns the remaining Summary surface-chrome reduction.
 - AN-19 still owns the native Settings structure migration.
 - AN-20 still owns the native Alerts list structure.
 - AN-21 still owns the native Outlooks list structure.
@@ -790,5 +789,48 @@ Model used: gpt-5.4 / medium
 
 - The shared policy is now content-first. If a surface does not need hierarchy or interaction, it should not ask for glass.
 - Keep using `skyAwareSurface` and `.glass` button styles for navigation chrome and floating interactive controls; those are intentionally separate from content cards.
-- AN-18 through AN-21 should inherit the stable card default rather than reintroducing glass as a visual crutch while moving to native structure.
+- AN-19 through AN-21 should inherit the stable card default rather than reintroducing glass as a visual crutch while moving to native structure.
 - Residual risk: the XcodeBuildMCP test result summary did not report per-test counts even when the invoked smoke tests completed successfully, so future validation should still inspect the bundle or run additional targeted checks if exact per-test accounting matters.
+
+### AN-18 / GitHub #234 - Reduce nested Summary surface chrome
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Removed the outer Risk Snapshot card wrapper from `SummaryView`, leaving the hero tiles, fire rail, and supporting rows as the visible hierarchy.
+- Kept `Current Conditions` as the anchored top Summary card so the weather identity still has one clear entry point.
+- Preserved the custom Summary content surfaces, including Storm Risk, Severe Risk, Fire Risk, Atmospheric Conditions, the local alerts card, and the outlook card.
+- Preserved the cached-first and resolve-forward presentation paths from AN-12, the hero category hierarchy from AN-13, and the semantic color discipline from AN-15.
+
+#### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Summary section order, navigation, interactions, refresh behavior, loading behavior, persistence, and weather semantics were unchanged.
+- The existing summary cards, rails, and hero tiles kept their identity and their existing state handling.
+- The AN-17 opt-in glass policy stayed intact; this change only removed a redundant outer card wrapper instead of broadening shared surface material behavior.
+- Cached, resolving, offline, unavailable, and confirmed-empty states still route through the same presentation-state logic.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+#### Deferred Work
+
+- AN-19 still owns the native Settings structure migration.
+- AN-20 still owns the native Alerts list structure.
+- AN-21 still owns the native Outlooks list structure.
+- AN-27 still owns the final spacing-scale polish pass once the remaining native-structure issues land.
+
+#### Handoff Notes
+
+- Keep `Current Conditions` as the only top-level Summary card; any future Summary hierarchy work should trim within the remaining content stack rather than adding another wrapper around the risk snapshot.
+- The risk tiles and rails should continue to own their own identity through typography, spacing, and semantic color instead of extra chrome.
+- AN-27 should treat this as the baseline: hierarchy first, spacing second, and no new decorative surface layers.

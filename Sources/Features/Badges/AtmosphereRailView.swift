@@ -63,12 +63,8 @@ struct AtmosphericConditionsCard: View {
 
     private var header: some View {
         HStack(spacing: 6) {
-            Image(systemName: "gauge.with.dots.needle.50percent")
+            Label("Atmospheric Conditions", systemImage: "gauge.with.dots.needle.50percent")
                 .symbolVariant(.fill)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Text("Atmospheric Conditions")
                 .sectionLabel()
         }
     }

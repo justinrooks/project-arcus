@@ -376,22 +376,7 @@ struct SummaryView: View {
                 symbol: "location.slash"
             )
         } else {
-            Group {
-                if #available(iOS 26, *) {
-                    GlassEffectContainer(spacing: 14) {
-                        riskSnapshotContent
-                    }
-                } else {
-                    riskSnapshotContent
-                }
-            }
-            .padding(16)
-            .cardBackground(
-                cornerRadius: SkyAwareRadius.hero,
-                shadowOpacity: colorScheme == .dark ? 0.08 : 0.12,
-                shadowRadius: colorScheme == .dark ? 8 : 10,
-                shadowY: colorScheme == .dark ? 3 : 4,
-            )
+            riskSnapshotContent
 
             AtmosphericConditionsCard(weather: weather, isOffline: showsOfflineToken)
                 .allowsHitTesting(!isWeatherLoading)

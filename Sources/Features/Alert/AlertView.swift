@@ -169,6 +169,7 @@ struct AlertView: View {
                 hasNoAlerts ? "Quiet right now" : activeLocalAlertLabel,
                 systemImage: hasNoAlerts ? "checkmark.shield" : "bolt.badge.clock"
             )
+            .symbolVariant(.fill)
             .font(.headline.weight(.semibold))
             
             Text(overviewMessage)

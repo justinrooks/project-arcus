@@ -232,7 +232,11 @@ struct ActiveAlertSummaryView: View {
 
     private var emptyContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("No Active Alerts", systemImage: "checkmark.shield")
+//            Label("No Active Alerts", systemImage: "checkmark.shield")
+//                .symbolVariant(.fill)
+//                .sectionLabel()
+            Label("No Active Alerts", systemImage: "")
+                .labelStyle(.titleOnly)
                 .sectionLabel()
             Text("Your local area currently has no active alerts or mesoscale discussions.")
                 .font(.subheadline)

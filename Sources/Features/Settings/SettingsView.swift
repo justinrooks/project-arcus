@@ -182,7 +182,7 @@ struct SettingsView: View {
                     }
                 }
 
-                sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .primary) {
+                sectionCard(title: "Location", symbol: "location", accent: .primary) {
                     VStack() {
                         Toggle("Share Approximate Location for Alerts", isOn: $sendL8nToSignal)
                             .onChange(of: sendL8nToSignal) { _, newValue in
@@ -293,6 +293,7 @@ struct SettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
+                .symbolVariant(.fill)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(accent)
 
