@@ -671,6 +671,216 @@ struct MapFeatureModelTests {
         #expect(restoredKeys.last?.contains("warn|") == true)
     }
 
+    @Test("warning legend stays hidden when warning geometry is disabled")
+    func warningLegend_staysHiddenWhenGeometryIsDisabled() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+
+        model.setWarningGeometryVisible(false)
+
+        #expect(warningLegendItems(in: model.activeScene).isEmpty)
+        #expect(model.activeScene.canvasState.overlays.count == 1)
+        #expect(model.activeScene.canvasState.overlays.allSatisfy { $0.key.contains("warn|") == false })
+    }
+
+    @Test("warning legend stays empty when no warnings are rendered")
+    func warningLegend_staysEmptyWhenNoWarningsAreRendered() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(warningLegendItems(in: model.activeScene).isEmpty)
+    }
+
+    @Test("warning legend renders one tornado row")
+    func warningLegend_rendersOneTornadoRow() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Tornado"])
+        #expect(items.map(\.accessibilityLabel) == ["Tornado warning"])
+    }
+
+    @Test("warning legend renders one severe thunderstorm row")
+    func warningLegend_rendersOneSevereThunderstormRow() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Severe Thunderstorm Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Severe Thunderstorm"])
+        #expect(items.map(\.accessibilityLabel) == ["Severe Thunderstorm warning"])
+    }
+
+    @Test("warning legend renders one flash flood row")
+    func warningLegend_rendersOneFlashFloodRow() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Flash Flood Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Flash Flood"])
+        #expect(items.map(\.accessibilityLabel) == ["Flash Flood warning"])
+    }
+
+    @Test("warning legend deduplicates repeated warning types")
+    func warningLegend_deduplicatesRepeatedWarningTypes() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1"),
+                makeWarning(event: " Tornado Warning ", id: "warning-2", messageId: "msg-2"),
+                makeWarning(event: "TORNADO WARNING", id: "warning-3", messageId: "msg-3")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.count == 1)
+        #expect(items.map(\.title) == ["Tornado"])
+    }
+
+    @Test("warning legend orders mixed warning types deterministically")
+    func warningLegend_ordersMixedWarningTypesDeterministically() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Flash Flood Warning", id: "warning-1", messageId: "msg-1"),
+                makeWarning(event: "Tornado Warning", id: "warning-2", messageId: "msg-2"),
+                makeWarning(event: "Severe Thunderstorm Warning", id: "warning-3", messageId: "msg-3")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == [
+            "Tornado",
+            "Severe Thunderstorm",
+            "Flash Flood"
+        ])
+    }
+
+    @Test("warning legend preserves unknown warning events without fabricating a category")
+    func warningLegend_preservesUnknownWarningEventsWithoutFabricatingACategory() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Special Weather Statement", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Special Weather Statement"])
+        #expect(items.map(\.accessibilityLabel) == ["Special Weather Statement"])
+    }
+
+    @Test("stale warning scenes keep the rendered warning legend")
+    func warningLegend_keepsRenderedWarningsWhenSceneBecomesStale() async {
+        let model = MapFeatureModel()
+        let store = MutableResultMapDataStore(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let mapped = MutableResultSpcMapData(store: store)
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+
+        await store.replace(severeRisks: .failure(StubError()))
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+    }
+
     @Test("offline cached warning geometry renders from query data and toggle hides and shows it")
     func offlineWarningGeometry_rendersAndToggles() async throws {
         let model = MapFeatureModel()
@@ -838,6 +1048,8 @@ struct MapFeatureModelTests {
 
     private func makeWarning(
         event: String,
+        id: String = "warn-1",
+        messageId: String? = "msg-1",
         geometry: DeviceAlertGeometry = .polygon(
             rings: [[
                 DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
@@ -847,8 +1059,8 @@ struct MapFeatureModelTests {
         )
     ) -> ActiveWarningGeometry {
         ActiveWarningGeometry(
-            id: "warn-1",
-            messageId: "msg-1",
+            id: id,
+            messageId: messageId,
             currentRevisionSent: now,
             event: event,
             issued: now,
@@ -877,6 +1089,10 @@ struct MapFeatureModelTests {
 
     private func overlayKeys(in scene: MapLayerScene) -> [String] {
         scene.canvasState.overlays.map(\.key)
+    }
+
+    private func warningLegendItems(in scene: MapLayerScene) -> [WarningLegendItem] {
+        WarningLegendItem.rendered(from: scene.canvasState.overlays)
     }
 
     private func singleWarningPolygonCoordinates(in scene: MapLayerScene) -> [CLLocationCoordinate2D]? {

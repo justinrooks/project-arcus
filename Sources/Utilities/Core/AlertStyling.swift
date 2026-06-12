@@ -14,6 +14,62 @@ struct WarningPolygonStyle {
     let stroke: UIColor
 }
 
+enum WarningPolygonKind: Int, Sendable {
+    case tornado = 0
+    case severeThunderstorm = 1
+    case flashFlood = 2
+
+    init?(event: String) {
+        switch event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "tornado warning":
+            self = .tornado
+        case "severe thunderstorm warning":
+            self = .severeThunderstorm
+        case "flash flood warning":
+            self = .flashFlood
+        default:
+            return nil
+        }
+    }
+
+    var displayTitle: String {
+        switch self {
+        case .tornado:
+            return "Tornado"
+        case .severeThunderstorm:
+            return "Severe Thunderstorm"
+        case .flashFlood:
+            return "Flash Flood"
+        }
+    }
+
+    var accessibilityLabel: String {
+        "\(displayTitle) warning"
+    }
+
+    func style(fillAlpha: CGFloat = 0.22) -> WarningPolygonStyle {
+        switch self {
+        case .tornado:
+            return WarningPolygonStyle(
+                fill: UIColor.tornadoRed.withAlphaComponent(fillAlpha),
+                stroke: .tornadoRed
+            )
+
+        case .severeThunderstorm:
+            return WarningPolygonStyle(
+                fill: UIColor.warningYellow.withAlphaComponent(fillAlpha),
+                stroke: .warningYellow
+            )
+
+        case .flashFlood:
+            return WarningPolygonStyle(
+                fill: UIColor.floodBlue.withAlphaComponent(fillAlpha),
+                stroke: .floodBlue
+            )
+        }
+    }
+}
+
 // TODO: There's likely a better place for this than its own file. Move it when we figure it out.
 func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
     switch type {
@@ -35,29 +91,6 @@ func styleForType(_ type: AlertType, _ watchType: String?) -> (String, Color) {
 }
 
 func warningPolygonStyle(for event: String) -> WarningPolygonStyle? {
-    let normalizedEvent = event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let fillAlpha: CGFloat = 0.22
-
-    switch normalizedEvent {
-    case "tornado warning":
-        return WarningPolygonStyle(
-            fill: UIColor.tornadoRed.withAlphaComponent(fillAlpha),
-            stroke: .tornadoRed
-        )
-
-    case "severe thunderstorm warning":
-        return WarningPolygonStyle(
-            fill: UIColor.warningYellow.withAlphaComponent(fillAlpha),
-            stroke: .warningYellow
-        )
-
-    case "flash flood warning":
-        return WarningPolygonStyle(
-            fill: UIColor.floodBlue.withAlphaComponent(fillAlpha),
-            stroke: .floodBlue
-        )
-
-    default:
-        return nil
-    }
+    guard let kind = WarningPolygonKind(event: event) else { return nil }
+    return kind.style()
 }

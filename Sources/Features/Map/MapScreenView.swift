@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import MapKit
 
 struct MapScreenView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -106,7 +107,7 @@ private struct MapScreenContent: View {
                 Spacer()
                 HStack(alignment: .bottom, spacing: 10) {
                     if showsWarningLegend && adaptiveLayout.mapLegendMode == .inline {
-                        WarningLegend()
+                        WarningLegend(items: warningLegendItems)
                             .transition(.opacity)
                     }
 
@@ -121,13 +122,20 @@ private struct MapScreenContent: View {
             .allowsHitTesting(legendAllowsHitTesting)
         }
         .sheet(isPresented: $showsLegendSheet) {
-            MapLegendSheet(showWarnings: showsWarningLegend, legendState: scene.legendState)
+            MapLegendSheet(
+                warningItems: warningLegendItems,
+                legendState: scene.legendState
+            )
             .presentationDetents([.medium, .large])
         }
     }
 
     private var showsWarningLegend: Bool {
-        scene.canvasState.overlays.contains { $0.key.hasPrefix("warn|") }
+        warningLegendItems.isEmpty == false
+    }
+
+    private var warningLegendItems: [WarningLegendItem] {
+        WarningLegendItem.rendered(from: scene.canvasState.overlays)
     }
 
     @ViewBuilder
@@ -177,15 +185,15 @@ private struct ViewportCoordinate: Equatable {
 }
 
 private struct MapLegendSheet: View {
-    let showWarnings: Bool
+    let warningItems: [WarningLegendItem]
     let legendState: MapLegendState
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if showWarnings {
-                        WarningLegend()
+                    if warningItems.isEmpty == false {
+                        WarningLegend(items: warningItems)
                             .fixedSize(horizontal: false, vertical: false)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -280,7 +288,7 @@ private enum MapScreenPreviewLegendState {
 
 #Preview("Map Legend Sheet - AX3 Small iPhone") {
     MapLegendSheet(
-        showWarnings: true,
+        warningItems: MapScreenPreviewWarningLegend.items,
         legendState: MapScreenPreviewLegendState.severeWithHatching
     )
     .environment(\.dynamicTypeSize, .accessibility3)
@@ -291,4 +299,32 @@ private enum MapScreenPreviewLegendState {
     MapLegend(state: MapScreenPreviewLegendState.severeWithoutHatching)
         .padding()
         .background(.thinMaterial)
+}
+
+private enum MapScreenPreviewWarningLegend {
+    static let items: [WarningLegendItem] = WarningLegendItem.rendered(from: [
+        MapOverlayEntry(
+            key: "warn|demo|rev-demo|tornado|0|demo",
+            overlay: previewPolygon(title: "Tornado Warning"),
+            signature: 1
+        ),
+        MapOverlayEntry(
+            key: "warn|demo|rev-demo|flashFlood|0|demo",
+            overlay: previewPolygon(title: "Flash Flood Warning"),
+            signature: 2
+        )
+    ])
+
+    private static func previewPolygon(title: String) -> MKPolygon {
+        let polygon = MKPolygon(
+            coordinates: [
+                CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+                CLLocationCoordinate2D(latitude: 35.1, longitude: -96.9),
+                CLLocationCoordinate2D(latitude: 35.2, longitude: -97.1)
+            ],
+            count: 3
+        )
+        polygon.title = title
+        return polygon
+    }
 }

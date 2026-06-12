@@ -38,7 +38,7 @@ decisions from Git history.
 | 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Not started | |
 | 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Not started | |
 | 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Completed | Map scenes now carry explicit loading, resolving, current, confirmed-empty, stale, and unavailable presentation states so failed refreshes do not collapse to confirmed no-risk language. |
-| 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Not started | |
+| 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Completed | Legend rows now derive from the rendered warning overlays, dedupe by displayed warning type, and keep the warning-state legend truthful when overlay visibility or stale map state changes. |
 | 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Completed | Native `Menu` trigger now shows the current layer and semantic symbol, keeps warning overlays in a separate menu section, and preserves the existing selection / haptic / availability paths. |
 | 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Not started | |
 | 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Not started | |
@@ -938,6 +938,55 @@ Model used: gpt-5 / medium
 - AN-23 should build on the new presentation state model when deriving warning legend content from rendered warnings.
 - AN-24 kept the current layer-selection state machine intact and only changed the control surface.
 - AN-25 should use the same availability metadata for accessible overlay equivalents instead of inventing new state.
+
+### AN-23 / GitHub #239 - Build the warning legend from rendered warnings
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5 / medium
+
+#### Scope
+
+- Replaced the static warning legend rows with legend items derived from the warning overlays currently rendered in the map scene.
+- Added a small deterministic derivation helper that normalizes supported warning kinds, deduplicates repeated displayed types, and keeps a stable urgency-aware order.
+- Preserved the existing warning overlay colors and fallback renderer style for unsupported warning events while keeping unknown events explicit instead of inventing a new category.
+- Kept the warning legend hidden when warning geometry is disabled or when the scene contains no rendered warnings.
+- Added focused unit coverage for overlay-disabled, empty, single-type, duplicate-type, mixed-type, unknown-event, and stale-refresh warning legend states.
+
+#### Files Changed
+
+- `Sources/Utilities/Core/AlertStyling.swift`
+- `Sources/Features/Map/MapLegendView.swift`
+- `Sources/Features/Map/MapScreenView.swift`
+- `Tests/UnitTests/MapFeatureModelTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Warning ingestion, filtering, persistence, expiration, geospatial matching, and refresh behavior were unchanged.
+- Warning geometry colors, overlay composition, and overlay visibility behavior were preserved.
+- AN-22 availability, freshness, stale, and confirmed-empty presentation stayed intact.
+- The map layer selector and broader legend layout were left for later work.
+- The static `Warning styles` preview remains a development-only reference and is not used as current-state UI.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/MapFeatureModelTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcrun xccov view --report /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.12_14-32-43--0600.xcresult | rg "MapLegendView.swift|MapScreenView.swift|AlertStyling.swift|MapFeatureModelTests.swift"`
+
+#### Deferred Work
+
+- AN-25 still owns accessible map overlay equivalents.
+- AN-26 still owns the remaining map control and legend crowding pass.
+- AN-28 still owns the broader acceptance matrix across the finished map surface.
+
+#### Handoff Notes
+
+- `WarningLegendItem.rendered(from:)` is now the legend source of truth for rendered warnings. Keep future legend work on that path, not on a static supported-type list.
+- Supported warning ordering is intentionally urgency-first: tornado, severe thunderstorm, flash flood, then explicit fallback rows for unsupported events.
+- Unknown warning events intentionally keep their raw event text and fallback renderer styling so the legend stays honest instead of pretending they are one of the supported warning classes.
+- AN-26 should treat this warning legend as stateful current conditions, not as a static style reference, when reducing crowding or reorganizing controls.
 
 ### AN-24 / GitHub #240 - Replace the map layer sheet with a native current-state menu
 

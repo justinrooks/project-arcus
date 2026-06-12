@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 import UIKit
 
 struct MapLegend: View {
@@ -116,11 +117,7 @@ struct CompactMapLegendTrigger: View {
 }
 
 struct WarningLegend: View {
-    private let items: [WarningLegendItem] = [
-        .init(event: "Tornado Warning", title: "Tornado"),
-        .init(event: "Severe Thunderstorm Warning", title: "Severe Thunderstorm"),
-        .init(event: "Flash Flood Warning", title: "Flash Flood")
-    ]
+    let items: [WarningLegendItem]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -142,24 +139,95 @@ struct WarningLegend: View {
     }
 }
 
-private struct WarningLegendItem: Identifiable {
-    let event: String
-    let title: String
+struct WarningLegendItem: Identifiable {
+    private enum Kind {
+        case recognized(WarningPolygonKind)
+        case fallback(event: String)
+    }
 
-    var id: String { event }
+    private let kind: Kind
+    let title: String
+    let accessibilityLabel: String
+    let fill: UIColor
+    let stroke: UIColor
+
+    var id: String {
+        switch kind {
+        case .recognized(let warningKind):
+            return "recognized-\(warningKind.rawValue)"
+        case .fallback(let event):
+            return "fallback-\(event.lowercased())"
+        }
+    }
+
+    init?(overlay: MapOverlayEntry) {
+        guard overlay.key.hasPrefix("warn|"),
+              let polygon = overlay.overlay as? MKPolygon,
+              let rawEvent = polygon.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              rawEvent.isEmpty == false else {
+            return nil
+        }
+
+        if let warningKind = WarningPolygonKind(event: rawEvent) {
+            kind = .recognized(warningKind)
+            title = warningKind.displayTitle
+            accessibilityLabel = warningKind.accessibilityLabel
+            let style = warningKind.style()
+            fill = style.fill
+            stroke = style.stroke
+            return
+        }
+
+        kind = .fallback(event: rawEvent)
+        title = rawEvent
+        accessibilityLabel = rawEvent
+        let fallbackStyle = warningPolygonStyle(for: rawEvent).map {
+            (fill: $0.fill, stroke: $0.stroke)
+        } ?? RiskPolygonStyleResolver.probabilityStyle(for: polygon)
+        fill = fallbackStyle.fill
+        stroke = fallbackStyle.stroke
+    }
+
+    static func rendered(from overlays: [MapOverlayEntry]) -> [WarningLegendItem] {
+        var deduped: [WarningLegendItem] = []
+        var seen = Set<String>()
+
+        for item in overlays.compactMap(WarningLegendItem.init) {
+            guard seen.insert(item.id).inserted else { continue }
+            deduped.append(item)
+        }
+
+        return deduped.sorted {
+            let lhsRank = $0.sortRank
+            let rhsRank = $1.sortRank
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private var sortRank: Int {
+        switch kind {
+        case .recognized(let warningKind):
+            return warningKind.rawValue
+        case .fallback:
+            return 3
+        }
+    }
 }
 
 private struct WarningLegendRow: View {
     let item: WarningLegendItem
 
     var body: some View {
-        let style = warningPolygonStyle(for: item.event)
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color(style?.fill ?? UIColor.secondaryLabel))
+                .fill(Color(item.fill))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color(style?.stroke ?? UIColor.secondaryLabel), lineWidth: 1.15)
+                        .stroke(Color(item.stroke), lineWidth: 1.15)
                 )
                 .frame(width: 14, height: 14)
 
@@ -171,7 +239,7 @@ private struct WarningLegendRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(item.title)
+        .accessibilityLabel(item.accessibilityLabel)
     }
 }
 
@@ -404,8 +472,45 @@ private struct HatchSwatchView: View {
         .background(.thinMaterial)
 }
 
-#Preview("Warnings") {
-    WarningLegend()
+#Preview("Warning styles") {
+    WarningLegend(items: [
+        .init(
+            overlay: {
+                let polygon = MKPolygon(
+                    coordinates: [
+                        CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+                        CLLocationCoordinate2D(latitude: 35.1, longitude: -96.9),
+                        CLLocationCoordinate2D(latitude: 35.2, longitude: -97.1)
+                    ],
+                    count: 3
+                )
+                polygon.title = "Tornado Warning"
+                return MapOverlayEntry(
+                    key: "warn|demo|rev-demo|tornado|0|demo",
+                    overlay: polygon,
+                    signature: 1
+                )
+            }()
+        )!,
+        .init(
+            overlay: {
+                let polygon = MKPolygon(
+                    coordinates: [
+                        CLLocationCoordinate2D(latitude: 35.2, longitude: -96.8),
+                        CLLocationCoordinate2D(latitude: 35.3, longitude: -96.7),
+                        CLLocationCoordinate2D(latitude: 35.4, longitude: -96.9)
+                    ],
+                    count: 3
+                )
+                polygon.title = "Flash Flood Warning"
+                return MapOverlayEntry(
+                    key: "warn|demo|rev-demo|flashFlood|0|demo",
+                    overlay: polygon,
+                    signature: 2
+                )
+            }()
+        )!
+    ])
         .padding()
         .background(.thinMaterial)
 }
