@@ -499,8 +499,7 @@ struct PrimaryAwarenessPanel: View {
             presentationMode: firePresentation.presentationMode,
             action: {
                 onOpenMapLayer(.fire)
-            },
-            showsChevron: true
+            }
         )
         .summaryResolving(fireResolving, style: .subtle)
         .accessibilityHint("Opens the fire risk map.")
@@ -836,8 +835,8 @@ private struct PrimaryAwarenessHeroView: View {
 
     private var heroContent: some View {
         let iconSize: CGFloat = adaptiveLayout.usesStackedHeroTiles ? 34 : 42
-        let titleFont: Font = adaptiveLayout.usesStackedHeroTiles ? .title3.weight(.semibold) : .title2.weight(.semibold)
-        let detailFont: Font = adaptiveLayout.usesStackedHeroTiles ? .subheadline : .headline
+        let titleFont: Font = adaptiveLayout.usesStackedHeroTiles ? .headline.weight(.semibold) : .title3.weight(.semibold)
+        let detailFont: Font = adaptiveLayout.usesStackedHeroTiles ? .subheadline : .subheadline
 
         return VStack(alignment: .leading, spacing: adaptiveLayout.usesStackedHeroTiles ? 10 : 12) {
             if adaptiveLayout.usesStackedHeroTiles {

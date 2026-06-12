@@ -131,23 +131,17 @@ struct AtmosphericConditionsCard: View {
             Button {
                 activeTip = activeTip == .dewPoint ? nil : .dewPoint
             } label: {
-                HStack(spacing: 5) {
-                    Text(value)
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.72))
-                        .monospacedDigit()
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary.opacity(0.65))
-                }
-                .padding(.leading, 4)
+                Text(value)
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(Color.orange.opacity(colorScheme == .dark ? 0.78 : 0.72))
+                    .monospacedDigit()
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 4)
                 .padding(.vertical, 4)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dew Point \(value)")
-            .accessibilityHint("Shows more detail about dew point.")
+            .accessibilityHint("Shows dew point explanation.")
             .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
                 switch tip {
                 case .dewPoint:
