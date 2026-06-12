@@ -16,6 +16,8 @@ struct MapOverlayEntry {
 }
 
 struct MapCanvasView: UIViewRepresentable {
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
     let state: MapCanvasState
     private let defaultViewportMeters: CLLocationDistance = 1_450_000//2_200_000
     
@@ -24,6 +26,8 @@ struct MapCanvasView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.mapType = .mutedStandard
         mapView.showsUserLocation = true
+        context.coordinator.differentiateWithoutColor = differentiateWithoutColor
+        configureAccessibility(for: mapView)
 
         // Initial viewport: center once when we first get a coordinate.
         if let coord = state.initialCenterCoordinate {
@@ -51,6 +55,13 @@ struct MapCanvasView: UIViewRepresentable {
             syncOverlays(on: uiView, incoming: state.overlays, coordinator: context.coordinator)
             context.coordinator.lastAppliedOverlayRevision = state.overlayRevision
         }
+
+        if context.coordinator.differentiateWithoutColor != differentiateWithoutColor {
+            context.coordinator.differentiateWithoutColor = differentiateWithoutColor
+            refreshOverlayRenderers(on: uiView)
+        }
+
+        configureAccessibility(for: uiView)
 
         if context.coordinator.lastCenteredCoordinate == nil, let coord = state.initialCenterCoordinate {
             let region = MKCoordinateRegion(
@@ -130,5 +141,21 @@ struct MapCanvasView: UIViewRepresentable {
         }
 
         coordinator.pruneOverlayCache(keeping: desiredKeySet)
+    }
+
+    private func refreshOverlayRenderers(on mapView: MKMapView) {
+        let overlays = mapView.overlays
+        guard overlays.isEmpty == false else { return }
+
+        mapView.removeOverlays(overlays)
+        mapView.addOverlays(overlays)
+    }
+
+    private func configureAccessibility(for mapView: MKMapView) {
+        mapView.isAccessibilityElement = true
+        mapView.accessibilityLabel = "Weather map"
+        mapView.accessibilityHint = "Use the map summary for the selected layer details."
+        mapView.accessibilityTraits = [.image, .allowsDirectInteraction]
+        mapView.accessibilityElementsHidden = true
     }
 }

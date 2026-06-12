@@ -40,7 +40,7 @@ decisions from Git history.
 | 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Completed | Map scenes now carry explicit loading, resolving, current, confirmed-empty, stale, and unavailable presentation states so failed refreshes do not collapse to confirmed no-risk language. |
 | 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Completed | Legend rows now derive from the rendered warning overlays, dedupe by displayed warning type, and keep the warning-state legend truthful when overlay visibility or stale map state changes. |
 | 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Completed | Native `Menu` trigger now shows the current layer and semantic symbol, keeps warning overlays in a separate menu section, and preserves the existing selection / haptic / availability paths. |
-| 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Not started | |
+| 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Completed | Added a single accessible map summary derived from `MapLayerScene`, kept the warning toggle reachable at large text sizes, and added Differentiate Without Color overlay/legend distinctions without changing map geometry or warning-legend truthfulness. |
 | 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Not started | |
 | 27 | AN-27 | [#243](https://github.com/justinrooks/project-arcus/issues/243) | Add a minimal spacing scale during final polish | Not started | |
 | 28 | AN-28 | [#244](https://github.com/justinrooks/project-arcus/issues/244) | Run the Apple-native acceptance matrix | Not started | |
@@ -1043,3 +1043,79 @@ Model used: gpt-5 / medium
 - If the warning overlay control moves again, keep it in a clearly separated menu section rather than folding it into the layer list.
 - AN-25 should reuse the same current-value and availability semantics rather than inventing a second overlay state model.
 - AN-26 should treat the menu as the new baseline and only trim the surrounding control chrome.
+
+### AN-25 / GitHub #241 - Add accessible equivalents for map overlays
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5.4 / high reasoning
+
+#### Scope
+
+- Added `MapAccessibilitySummary`, a single semantic summary derived from the same `MapLayerScene` and `MapLegendState` used to render the map.
+- The summary contract now covers the selected layer, availability or freshness state, confirmed-empty state when present, local relationship when it is known, and the active-warning overlay state.
+- Added Differentiate Without Color distinctions for applicable thematic overlay strokes and matching legend swatches by reusing a shared `MapOverlayDifferentiationStyle`.
+- Kept the raw `MKMapView` from exposing individual overlay geometry to VoiceOver, while preserving direct map interaction and adding a concise summary outside the map.
+- Preserved the AN-24 menu-based control surface so the active-warning overlay toggle stays reachable at large Dynamic Type sizes.
+- Preserved AN-23 warning-legend truthfulness by deriving warning-summary text from `WarningLegendItem.rendered(from:)` instead of synthesizing new warning categories.
+
+#### Accessible Summary Contract
+
+- Source of truth is `MapLayerScene`; no second accessibility-only map state model was introduced.
+- Base summary text comes from `MapLegendState.voiceOverText`, so loading, unavailable, saved/stale, populated, and confirmed-empty wording stays aligned with the rendered legend state.
+- Local relationship only uses the known user coordinate plus rendered thematic `RiskPolygonOverlay` geometry for the selected layer.
+- If the selected layer is confirmed empty, the summary does not invent a local relationship sentence.
+- If the user coordinate is unavailable, the summary says `Local relationship unavailable.`
+- If geometry needed for a local relationship is unavailable, the summary says `Local relationship unknown.` rather than inferring from the viewport or visible colors.
+- Warning overlay text reports whether the overlay is hidden, enabled with active warning areas, or enabled with no rendered warning areas.
+
+#### Differentiate Without Color Treatment
+
+- Categorical, severe, fire, and mesoscale legend swatches now add stroke-pattern distinctions when Differentiate Without Color is enabled.
+- Matching thematic polygon overlays use the same dashed-outline vocabulary, with modest line-width emphasis, while keeping existing colors, fills, geometry, and hatching intact.
+- Warning overlays and warning legend semantics were not redefined here; AN-23 warning behavior remains the source of truth.
+
+#### Controls At Large Text Sizes
+
+- The active-warning overlay control remains in the AN-24 native menu path, which already keeps it reachable through AX5.
+- This issue did not redesign the menu or broader control/legend layout; it only preserved that reachability while adding the new summary layer.
+
+#### Files Changed
+
+- `Sources/Features/Map/MapAccessibilitySupport.swift`
+- `Sources/Features/Map/MapCanvasView.swift`
+- `Sources/Features/Map/MapFeatureModel.swift`
+- `Sources/Features/Map/MapLegendView.swift`
+- `Sources/Features/Map/MapScreenView.swift`
+- `Sources/Features/Map/RiskPolygonOverlay.swift`
+- `Sources/Features/Map/RiskPolygonRenderer.swift`
+- `Tests/UnitTests/MapFeatureModelTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- AN-22 availability, freshness, stale, and confirmed-empty semantics remain the visible and accessible source of truth.
+- AN-23 warning legend rendering and unknown-warning truthfulness remain intact.
+- AN-24 layer selection, persistence, menu behavior, and warning-toggle reachability remain intact.
+- Overlay colors, geometry, hatching semantics, refresh timing, and layer definitions remain unchanged.
+- The implementation does not derive local relationship from screen position, map framing, or visual appearance.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/MapFeatureModelTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection -only-testing:SkyAwareUITests/testMapLayerMenuKeepsWarningToggleReachableAndFunctional -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+#### Deferred Work
+
+- A manual VoiceOver pass across the full map scene was not completed in this change.
+- Manual simulator inspection for Differentiate Without Color on/off, Increased Contrast, and light/dark mode remains outstanding.
+- AN-26 still owns the broader visible control and legend crowding work around the map chrome.
+- AN-28 still owns the broader end-to-end acceptance sweep across the completed map surface.
+
+#### Handoff Notes For AN-26
+
+- Keep the accessible summary derived from `MapLayerScene` and `MapLegendState`; do not fork a second summary source when rearranging controls.
+- Keep local relationship limited to known user coordinates plus rendered thematic polygons for the selected layer. Do not infer it from viewport position or visible styling.
+- Keep `WarningLegendItem.rendered(from:)` as the warning-overlay truth source so unknown warning events stay honest.
+- If AN-26 moves visible legend or control chrome, preserve the summary contract and the current menu-based warning-toggle reachability at large text sizes.

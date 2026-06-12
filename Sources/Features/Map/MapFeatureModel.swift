@@ -641,14 +641,15 @@ private enum MapSceneMaterializer {
             let overlay: MKOverlay
             switch overlayPlan.kind {
             case .probability:
-                overlay = RiskPolygonOverlay.probability(from: polygon)
+                overlay = RiskPolygonOverlay.probability(from: polygon, overlayKey: overlayPlan.key)
             case .intensity(let level):
                 let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
                 overlay = RiskPolygonOverlay.intensity(
                     from: polygon,
                     level: level,
                     strokeColor: style.stroke,
-                    fillColor: style.fill
+                    fillColor: style.fill,
+                    overlayKey: overlayPlan.key
                 )
             case .warning:
                 overlay = polygon

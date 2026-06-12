@@ -15,9 +15,11 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
     private static let hatchZoomRelaxationExponent: CGFloat = 1.65
 
     private let riskOverlay: RiskPolygonOverlay
+    private let differentiateWithoutColor: Bool
 
-    init(riskOverlay: RiskPolygonOverlay) {
+    init(riskOverlay: RiskPolygonOverlay, differentiateWithoutColor: Bool) {
         self.riskOverlay = riskOverlay
+        self.differentiateWithoutColor = differentiateWithoutColor
         super.init(overlay: riskOverlay)
     }
 
@@ -44,6 +46,9 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
 
     private func drawProbability(path: CGPath, zoomScale: MKZoomScale, in context: CGContext) {
         context.saveGState()
+        let strokeStyle = riskOverlay.differentiateWithoutColorStyle?.strokeStyle(
+            differentiateWithoutColor: differentiateWithoutColor
+        )
 
         if riskOverlay.fillColor.cgColor.alpha > 0 {
             context.addPath(path)
@@ -53,7 +58,16 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
 
         context.addPath(path)
         context.setStrokeColor(riskOverlay.strokeColor.cgColor)
-        context.setLineWidth(1.0 / zoomScale)
+        context.setLineWidth((1.0 * (strokeStyle?.lineWidthMultiplier ?? 1.0)) / zoomScale)
+        context.setLineCap(.round)
+        if let strokeStyle {
+            context.setLineDash(
+                phase: 0,
+                lengths: strokeStyle.dashPattern.map { $0 / zoomScale }
+            )
+        } else {
+            context.setLineDash(phase: 0, lengths: [])
+        }
         context.strokePath()
 
         context.restoreGState()

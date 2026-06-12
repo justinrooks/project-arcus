@@ -273,16 +273,17 @@ private struct CategoricalLegendRow: View {
     var body: some View {
         let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk.abbreviation.uppercased(), probability: "0%")
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: MapOverlayDifferentiationStyle.categorical(risk)
+            )
             Text(risk.message.split(separator: " ")[0])
                 .font(.caption)
                 .fontWeight(["HIGH", "MDT", "ENH"].contains(risk.abbreviation.uppercased()) ? .semibold : .regular)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Severe Risk, \(risk.message)")
     }
 }
 
@@ -292,16 +293,17 @@ private struct MesoLegendRow: View {
     var body: some View {
         let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk, probability: "0%")
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: .mesoscale
+            )
             Text(risk)
                 .font(.caption)
                 .fontWeight(.regular)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Mesoscale, displayed area")
     }
 }
 
@@ -318,12 +320,11 @@ private struct SevereLegendRow: View {
             spcStrokeHex: risk.strokeHex
         )
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: MapOverlayDifferentiationStyle.severe(probability: probability)
+            )
             switch probability {
             case .significant:
                 Text(probability.description)
@@ -334,6 +335,8 @@ private struct SevereLegendRow: View {
                     .font(.caption)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(layer.accessibilityLegendTitle), \(probability.accessibilityDescription)")
     }
 }
 
@@ -348,16 +351,17 @@ private struct FireLegendRow: View {
             spcStrokeHex: risk.strokeHex
         )
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: MapOverlayDifferentiationStyle.fire(riskLevel: risk.riskLevel)
+            )
             Text(riskLabel)
                 .font(.caption)
                 .fontWeight(risk.riskLevel >= 8 ? .semibold : .regular)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Fire Risk, \(riskLabel)")
     }
 
     private var riskLabel: String {
@@ -440,6 +444,33 @@ private struct HatchSwatchView: View {
         .overlay(swatchShape.stroke(.primary.opacity(0.12), lineWidth: 1))
         .clipShape(swatchShape)
         .accessibilityHidden(true)
+    }
+}
+
+private struct LegendCircleSwatch: View {
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    let fill: UIColor
+    let stroke: UIColor
+    let differentiationStyle: MapOverlayDifferentiationStyle?
+
+    var body: some View {
+        let strokeStyle = differentiationStyle?.strokeStyle(
+            differentiateWithoutColor: differentiateWithoutColor
+        )
+
+        Circle()
+            .fill(Color(fill))
+            .overlay(
+                Circle().stroke(
+                    Color(stroke),
+                    style: StrokeStyle(
+                        lineWidth: 1.15 * (strokeStyle?.lineWidthMultiplier ?? 1.0),
+                        dash: strokeStyle?.dashPattern ?? []
+                    )
+                )
+            )
+            .frame(width: 14, height: 14)
     }
 }
 

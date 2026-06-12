@@ -35,7 +35,8 @@ struct MapScreenView: View {
         MapScreenContent(
             selected: $selected,
             showsWarningGeometry: $showsWarningGeometry,
-            scene: model.activeScene
+            scene: model.activeScene,
+            locationCoordinate: locationSession.currentSnapshot?.coordinates
         )
         .onChange(of: selected, initial: true) { _, newValue in
             model.selectLayer(newValue)
@@ -79,6 +80,7 @@ private struct MapScreenContent: View {
     @Binding var showsWarningGeometry: Bool
 
     let scene: MapLayerScene
+    let locationCoordinate: CLLocationCoordinate2D?
 
     @State private var showsLegendSheet = false
 
@@ -86,10 +88,24 @@ private struct MapScreenContent: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
+    private var accessibilitySummary: MapAccessibilitySummary {
+        MapAccessibilitySummary.make(
+            scene: scene,
+            locationCoordinate: locationCoordinate,
+            showsWarningGeometry: showsWarningGeometry
+        )
+    }
+
     var body: some View {
         ZStack {
             MapCanvasView(state: scene.canvasState)
                 .ignoresSafeArea()
+
+            MapAccessibilitySummaryElement(summary: accessibilitySummary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, 8)
+                .padding(.leading, 8)
+                .zIndex(1)
 
             VStack(alignment: .trailing) {
                 MapLayerMenu(
@@ -229,8 +245,26 @@ private struct MapScreenContentPreview: View {
             scene: MapLayerScene(
                 canvasState: MapCanvasState(overlays: [], overlayRevision: 0, initialCenterCoordinate: nil),
                 legendState: legendState
-            )
+            ),
+            locationCoordinate: CLLocationCoordinate2D(latitude: 39.75, longitude: -104.44)
         )
+    }
+}
+
+private struct MapAccessibilitySummaryElement: View {
+    let summary: MapAccessibilitySummary
+
+    var body: some View {
+        Text(summary.value)
+            .font(.caption2)
+            .foregroundStyle(.clear)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: 260, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summary.label)
+            .accessibilityValue(summary.value)
+            .accessibilityHint("Summarizes the selected layer, map status, local relationship, and active warnings overlay.")
+            .allowsHitTesting(false)
     }
 }
 
@@ -299,6 +333,14 @@ private enum MapScreenPreviewLegendState {
     MapLegend(state: MapScreenPreviewLegendState.severeWithoutHatching)
         .padding()
         .background(.thinMaterial)
+}
+
+#Preview("Map Screen - AX5 Summary") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado
+    )
+    .environment(\.dynamicTypeSize, .accessibility5)
 }
 
 private enum MapScreenPreviewWarningLegend {
