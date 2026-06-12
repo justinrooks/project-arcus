@@ -41,7 +41,7 @@ decisions from Git history.
 | 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Completed | Legend rows now derive from the rendered warning overlays, dedupe by displayed warning type, and keep the warning-state legend truthful when overlay visibility or stale map state changes. |
 | 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Completed | Native `Menu` trigger now shows the current layer and semantic symbol, keeps warning overlays in a separate menu section, and preserves the existing selection / haptic / availability paths. |
 | 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Completed | Added a single accessible map summary derived from `MapLayerScene`, kept the warning toggle reachable at large text sizes, and added Differentiate Without Color overlay/legend distinctions without changing map geometry or warning-legend truthfulness. |
-| 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Not started | |
+| 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Completed | Legend controls now stack, compact, or collapse before they crowd the map, interactive map controls meet the 44-point target, and remaining sheets use native cancellation actions. |
 | 27 | AN-27 | [#243](https://github.com/justinrooks/project-arcus/issues/243) | Add a minimal spacing scale during final polish | Not started | |
 | 28 | AN-28 | [#244](https://github.com/justinrooks/project-arcus/issues/244) | Run the Apple-native acceptance matrix | Not started | |
 
@@ -928,7 +928,7 @@ Model used: gpt-5 / medium
 - AN-23 still owns the warning legend source-of-truth cleanup.
 - AN-24 replaced the layer sheet with a native current-state menu.
 - AN-25 still owns accessible overlay equivalents; this issue only adds the state text and accessibility cues for the map scene itself.
-- Broader map control and legend spacing cleanup remains with AN-26.
+- Broader map control and legend spacing cleanup was completed in AN-26.
 
 #### Handoff Notes
 
@@ -978,7 +978,7 @@ Model used: gpt-5 / medium
 #### Deferred Work
 
 - AN-25 still owns accessible map overlay equivalents.
-- AN-26 still owns the remaining map control and legend crowding pass.
+- AN-26 completed the remaining map control and legend crowding pass.
 - AN-28 still owns the broader acceptance matrix across the finished map surface.
 
 #### Handoff Notes
@@ -986,7 +986,7 @@ Model used: gpt-5 / medium
 - `WarningLegendItem.rendered(from:)` is now the legend source of truth for rendered warnings. Keep future legend work on that path, not on a static supported-type list.
 - Supported warning ordering is intentionally urgency-first: tornado, severe thunderstorm, flash flood, then explicit fallback rows for unsupported events.
 - Unknown warning events intentionally keep their raw event text and fallback renderer styling so the legend stays honest instead of pretending they are one of the supported warning classes.
-- AN-26 should treat this warning legend as stateful current conditions, not as a static style reference, when reducing crowding or reorganizing controls.
+- AN-26 treated this warning legend as stateful current conditions while reducing crowding and reorganizing controls.
 
 ### AN-24 / GitHub #240 - Replace the map layer sheet with a native current-state menu
 
@@ -1033,7 +1033,7 @@ Model used: gpt-5 / medium
 #### Deferred Work
 
 - AN-25 still owns the accessible overlay equivalents and related overlay summaries.
-- AN-26 still owns the remaining control / legend crowding pass around the now-menu-driven selector.
+- AN-26 completed the remaining control / legend crowding pass around the now-menu-driven selector.
 
 #### Handoff Notes
 
@@ -1042,7 +1042,7 @@ Model used: gpt-5 / medium
 - Keep the label subtree transaction override in place unless you have a clear replacement for the same no-reflow behavior.
 - If the warning overlay control moves again, keep it in a clearly separated menu section rather than folding it into the layer list.
 - AN-25 should reuse the same current-value and availability semantics rather than inventing a second overlay state model.
-- AN-26 should treat the menu as the new baseline and only trim the surrounding control chrome.
+- AN-26 treated the menu as the new baseline and only trimmed the surrounding control chrome.
 
 ### AN-25 / GitHub #241 - Add accessible equivalents for map overlays
 
@@ -1110,12 +1110,60 @@ Model used: gpt-5.4 / high reasoning
 
 - A manual VoiceOver pass across the full map scene was not completed in this change.
 - Manual simulator inspection for Differentiate Without Color on/off, Increased Contrast, and light/dark mode remains outstanding.
-- AN-26 still owns the broader visible control and legend crowding work around the map chrome.
+- AN-26 completed the broader visible control and legend crowding work around the map chrome.
 - AN-28 still owns the broader end-to-end acceptance sweep across the completed map surface.
 
-#### Handoff Notes For AN-26
+### AN-26 / GitHub #242 - Reduce map control and legend crowding
 
-- Keep the accessible summary derived from `MapLayerScene` and `MapLegendState`; do not fork a second summary source when rearranging controls.
-- Keep local relationship limited to known user coordinates plus rendered thematic polygons for the selected layer. Do not infer it from viewport position or visible styling.
-- Keep `WarningLegendItem.rendered(from:)` as the warning-overlay truth source so unknown warning events stay honest.
-- If AN-26 moves visible legend or control chrome, preserve the summary contract and the current menu-based warning-toggle reachability at large text sizes.
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5.4 / high reasoning
+
+#### Scope
+
+- Reworked the bottom map chrome so the warning legend and layer legend can stack, compact, or collapse instead of staying side by side when space gets tight.
+- Added a compact legend trigger that appears before the combined control cluster consumes too much of the map, with a short warning subtitle so the current-state legend stays readable at a glance.
+- Reflowed the hatching explainer into a narrower wrapped layout so the severe legend grows taller instead of wider when hatching is present.
+- Increased the interactive hit targets for the map layer trigger, compact legend trigger, hatch explainer row, and remaining legend controls to at least 44 by 44 points.
+- Replaced the remaining custom legend-sheet close control with a native toolbar cancellation action.
+- Added focused UI coverage for the compact legend path, 44-point target checks, and native sheet cancellation.
+
+#### Files Changed
+
+- `Sources/Features/Map/MapLegendView.swift`
+- `Sources/Features/Map/MapScreenView.swift`
+- `Sources/Features/Map/Picker.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Map data loading, selection, refresh, availability, rendering, hatching, and persistence behavior were unchanged.
+- AN-23 warning legend truthfulness remains intact.
+- AN-24 native layer menu behavior and current-state selection semantics remain intact.
+- AN-25 accessible map summary, Differentiate Without Color treatment, and warning-toggle reachability remain intact.
+- The map still keeps its visual priority; this only trims the surrounding chrome.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLegendCompactTriggerOpensSheetWithNativeCancellationAction test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLegendCompactTriggerOpensSheetWithNativeCancellationAction test`
+- `xcrun xcresulttool export attachments --path /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.12_15-28-17--0600.xcresult --output-path /private/tmp/AN26-attachments`
+- `xcrun xcresulttool export attachments --path /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.12_15-32-24--0600.xcresult --output-path /private/tmp/AN26-attachments`
+
+#### Deferred Work
+
+- AN-27 still owns the final shared spacing-scale polish pass.
+- AN-28 still owns the complete acceptance matrix sweep, including the remaining manual device and accessibility permutations.
+- Manual inspection across every layout permutation in the matrix was only partially automated here; the UI tests cover the representative compact path and target sizes.
+- Screenshot attachment export did not produce a host-visible file, so no screenshot artifact is being claimed for this pass.
+
+#### Handoff Notes
+
+- Keep compact legend behavior driven by the current available width and Dynamic Type, not by device-model breakpoints.
+- Preserve the current menu-based layer selector and stateful warning legend truth source when tuning any remaining map chrome.
+- The compact trigger is the pressure valve for future map chrome changes; do not replace it with a permanent control panel.
+- AN-27 should treat this compact legend behavior as the baseline spacing reference, not as an invitation to add more chrome.
+- AN-28 should verify the remaining portrait, landscape, contrast, and VoiceOver permutations against this completed control layout.

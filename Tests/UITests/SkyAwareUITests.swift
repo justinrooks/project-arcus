@@ -151,6 +151,60 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testMapLegendCompactTriggerOpensSheetWithNativeCancellationAction() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+
+        let mapTab = app.tabBars.buttons["Map"]
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10), "Expected Map tab to exist.")
+        mapTab.tap()
+
+        let mapLayersButton = app.buttons["Map layers"]
+        XCTAssertTrue(mapLayersButton.waitForExistence(timeout: 10), "Expected the map layer menu trigger.")
+        XCTAssertGreaterThanOrEqual(mapLayersButton.frame.size.width, 44)
+        XCTAssertGreaterThanOrEqual(mapLayersButton.frame.size.height, 44)
+
+        mapLayersButton.tap()
+        let warningToggle = app.switches["Show Active Alerts"]
+        XCTAssertTrue(warningToggle.waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
+        XCTAssertGreaterThanOrEqual(warningToggle.frame.size.width, 44)
+        XCTAssertGreaterThanOrEqual(warningToggle.frame.size.height, 44)
+
+        mapLayersButton.tap()
+
+        let mapLegendButton = app.buttons["Map legend"]
+        XCTAssertTrue(mapLegendButton.waitForExistence(timeout: 10), "Expected the compact map legend trigger at accessibility text sizes.")
+        XCTAssertGreaterThanOrEqual(mapLegendButton.frame.size.width, 44)
+        XCTAssertGreaterThanOrEqual(mapLegendButton.frame.size.height, 44)
+
+        mapLegendButton.tap()
+
+        let closeButton = app.buttons["Close"]
+        XCTAssertTrue(closeButton.waitForExistence(timeout: 10), "Expected the legend sheet to expose a native cancellation action.")
+        XCTAssertGreaterThanOrEqual(closeButton.frame.size.width, 44)
+        XCTAssertGreaterThanOrEqual(closeButton.frame.size.height, 44)
+
+        let screenshotURL = URL(fileURLWithPath: "/private/tmp/AN26-map-legend.png")
+        do {
+            try XCUIScreen.main.screenshot().pngRepresentation.write(to: screenshotURL)
+        } catch {
+            XCTFail("Expected to write a representative map screenshot: \(error)")
+        }
+
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = "AN-26 map legend"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        XCTAssertTrue(app.navigationBars["Legend"].waitForExistence(timeout: 10), "Expected the legend sheet title to remain intact.")
+    }
+
+    @MainActor
     func testOutlookDetailOpensFromTheLatestOutlookRow() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"

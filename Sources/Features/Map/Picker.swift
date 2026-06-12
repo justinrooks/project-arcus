@@ -132,10 +132,10 @@ private struct MapLayerMenuLabel: View {
 
     var body: some View {
         labelBody(title: layer.title)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(minHeight: 40)
-        .contentShape(Capsule())
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
     }
 
     @ViewBuilder

@@ -121,18 +121,7 @@ private struct MapScreenContent: View {
 
             VStack {
                 Spacer()
-                HStack(alignment: .bottom, spacing: 10) {
-                    if showsWarningLegend && adaptiveLayout.mapLegendMode == .inline {
-                        WarningLegend(items: warningLegendItems)
-                            .transition(.opacity)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    mapLegendControl
-                }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                legendControls
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(legendAllowsHitTesting)
@@ -155,35 +144,95 @@ private struct MapScreenContent: View {
     }
 
     @ViewBuilder
-    private var mapLegendControl: some View {
+    private var legendControls: some View {
+        HStack(alignment: .bottom) {
+            Spacer(minLength: 0)
+            legendControlsContent
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 14)
+    }
+
+    @ViewBuilder
+    private var legendControlsContent: some View {
         switch adaptiveLayout.mapLegendMode {
         case .inline:
+            ViewThatFits(in: .horizontal) {
+                inlineLegendRow
+                ViewThatFits(in: .vertical) {
+                    stackedLegendColumn
+                    compactLegendTrigger
+                }
+            }
+        case .compactTrigger, .sheetOnly:
+            compactLegendTrigger
+        }
+    }
+
+    @ViewBuilder
+    private var inlineLegendRow: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            if showsWarningLegend {
+                WarningLegend(items: warningLegendItems)
+                    .transition(.opacity)
+            }
+
+            Spacer(minLength: 8)
+
             MapLegend(state: scene.legendState)
                 .transition(.opacity)
                 .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
-        case .compactTrigger, .sheetOnly:
-            CompactMapLegendTrigger(
-                label: compactLegendLabel,
-                accessibilityValue: scene.legendState.voiceOverText
-            ) {
-                showsLegendSheet = true
-            }
-            .transition(.opacity)
-            .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
         }
+    }
+
+    @ViewBuilder
+    private var stackedLegendColumn: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            if showsWarningLegend {
+                WarningLegend(items: warningLegendItems)
+                    .transition(.opacity)
+            }
+
+            MapLegend(state: scene.legendState)
+                .transition(.opacity)
+                .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+        }
+    }
+
+    private var compactLegendTrigger: some View {
+        CompactMapLegendTrigger(
+            label: compactLegendLabel,
+            subtitle: compactLegendSubtitle,
+            accessibilityValue: scene.legendState.voiceOverText
+        ) {
+            showsLegendSheet = true
+        }
+        .transition(.opacity)
+        .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
     }
 
     private var compactLegendLabel: String {
         "Legend · \(scene.legendState.layer.title)"
     }
 
-    private var legendAllowsHitTesting: Bool {
-        switch adaptiveLayout.mapLegendMode {
-        case .inline:
-            return scene.legendState.allowsInteraction
-        case .compactTrigger, .sheetOnly:
-            return true
+    private var compactLegendSubtitle: String? {
+        guard showsWarningLegend else { return nil }
+
+        let warningTitles = warningLegendItems.map(\.title)
+        switch warningTitles.count {
+        case 0:
+            return nil
+        case 1:
+            return "\(warningTitles[0]) warning"
+        case 2:
+            return "\(warningTitles[0]) and \(warningTitles[1]) warnings"
+        default:
+            return "\(warningTitles.count) warning types"
         }
+    }
+
+    private var legendAllowsHitTesting: Bool {
+        true
     }
 }
 
@@ -201,6 +250,8 @@ private struct ViewportCoordinate: Equatable {
 }
 
 private struct MapLegendSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
     let warningItems: [WarningLegendItem]
     let legendState: MapLegendState
 
@@ -222,6 +273,13 @@ private struct MapLegendSheet: View {
             }
             .navigationTitle("Legend")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", role: .cancel) {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
@@ -229,13 +287,16 @@ private struct MapLegendSheet: View {
 private struct MapScreenContentPreview: View {
     let legendState: MapLegendState
     let selectedLayer: MapLayer
+    let warningOverlays: [MapOverlayEntry]
 
     init(
         legendState: MapLegendState = .loading(for: .categorical),
-        selectedLayer: MapLayer = .categorical
+        selectedLayer: MapLayer = .categorical,
+        warningOverlays: [MapOverlayEntry] = []
     ) {
         self.legendState = legendState
         self.selectedLayer = selectedLayer
+        self.warningOverlays = warningOverlays
     }
 
     var body: some View {
@@ -243,7 +304,11 @@ private struct MapScreenContentPreview: View {
             selected: .constant(selectedLayer),
             showsWarningGeometry: .constant(true),
             scene: MapLayerScene(
-                canvasState: MapCanvasState(overlays: [], overlayRevision: 0, initialCenterCoordinate: nil),
+                canvasState: MapCanvasState(
+                    overlays: warningOverlays,
+                    overlayRevision: warningOverlays.count,
+                    initialCenterCoordinate: nil
+                ),
                 legendState: legendState
             ),
             locationCoordinate: CLLocationCoordinate2D(latitude: 39.75, longitude: -104.44)
@@ -299,6 +364,26 @@ private enum MapScreenPreviewLegendState {
         .environment(\.dynamicTypeSize, .large)
 }
 
+#Preview("Map Legend - Warning Inline Wide") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .large)
+    .frame(width: 430, height: 430)
+}
+
+#Preview("Map Legend - Warning Stacked Narrow") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .large)
+    .frame(width: 320, height: 568)
+}
+
 #Preview("Map Legend - XXXL Inline") {
     MapScreenContentPreview()
         .environment(\.dynamicTypeSize, .xxxLarge)
@@ -315,9 +400,20 @@ private enum MapScreenPreviewLegendState {
 #Preview("Map Legend - AX3 Compact Trigger") {
     MapScreenContentPreview(
         legendState: MapScreenPreviewLegendState.severeWithHatching,
-        selectedLayer: .tornado
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
     )
     .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Map Screen - Warning Compact Trigger") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .frame(width: 320, height: 568)
 }
 
 #Preview("Map Legend Sheet - AX3 Small iPhone") {
@@ -338,13 +434,15 @@ private enum MapScreenPreviewLegendState {
 #Preview("Map Screen - AX5 Summary") {
     MapScreenContentPreview(
         legendState: MapScreenPreviewLegendState.severeWithHatching,
-        selectedLayer: .tornado
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
     )
     .environment(\.dynamicTypeSize, .accessibility5)
 }
 
 private enum MapScreenPreviewWarningLegend {
-    static let items: [WarningLegendItem] = WarningLegendItem.rendered(from: [
+    @MainActor
+    static let overlays: [MapOverlayEntry] = [
         MapOverlayEntry(
             key: "warn|demo|rev-demo|tornado|0|demo",
             overlay: previewPolygon(title: "Tornado Warning"),
@@ -355,8 +453,12 @@ private enum MapScreenPreviewWarningLegend {
             overlay: previewPolygon(title: "Flash Flood Warning"),
             signature: 2
         )
-    ])
+    ]
 
+    @MainActor
+    static let items: [WarningLegendItem] = WarningLegendItem.rendered(from: overlays)
+
+    @MainActor
     private static func previewPolygon(title: String) -> MKPolygon {
         let polygon = MKPolygon(
             coordinates: [

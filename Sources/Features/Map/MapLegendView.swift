@@ -82,23 +82,33 @@ struct MapLegend: View {
 
 struct CompactMapLegendTrigger: View {
     let label: String
+    let subtitle: String?
     let accessibilityValue: String
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 8) {
-                Text(label)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: subtitle == nil ? 0 : 2) {
+                HStack(spacing: 8) {
+                    Text(label)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
 
-                Image(systemName: "chevron.up")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minHeight: 40)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -382,7 +392,7 @@ private struct HatchLegendRow: View {
     let hatchStyles: [HatchStyle]
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HatchSwatchView(styles: hatchStyles)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -392,8 +402,14 @@ private struct HatchLegendRow: View {
                 Text("Stronger storms possible")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
             }
         }
+        .frame(maxWidth: 128, alignment: .leading)
+        .padding(.vertical, 8)
+        .frame(minHeight: 44, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Hatching. Stronger storms possible.")
     }
