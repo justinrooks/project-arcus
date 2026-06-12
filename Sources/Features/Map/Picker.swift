@@ -80,6 +80,9 @@ struct MapLayerMenu: View {
             Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
         } label: {
             MapLayerMenuLabel(layer: selection)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
         }
         .accessibilityLabel("Map layers")
         .accessibilityValue(selection.title)
@@ -128,25 +131,33 @@ private struct MapLayerMenuLabel: View {
     }
 
     var body: some View {
+        labelBody(title: layer.title)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(minHeight: 40)
+        .contentShape(Capsule())
+    }
+
+    @ViewBuilder
+    private func labelBody(title: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: layer.symbol)
                 .imageScale(.medium)
                 .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
+                .frame(width: 18)
 
-            Text(layer.title)
+            Text(title)
                 .font(adaptiveLayout.usesAccessibilityLayout ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
                 .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
                 .minimumScaleFactor(0.85)
+                .layoutPriority(1)
 
             Image(systemName: "chevron.down")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(.secondary)
+                .frame(width: 12)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(minHeight: 40)
-        .contentShape(Capsule())
     }
 }
 

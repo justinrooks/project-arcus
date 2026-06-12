@@ -19,5 +19,11 @@ struct MapLayerMenuTests {
         #expect(MapLayerMenu.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility1))
         #expect(MapLayerMenu.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility3))
     }
+
+    @Test("Duplicate layer selections do not request updates")
+    func duplicateSelection_doesNotUpdate() {
+        #expect(MapLayerMenu.shouldUpdateSelection(current: .categorical, to: .categorical) == false)
+        #expect(MapLayerMenu.shouldUpdateSelection(current: .categorical, to: .wind))
+    }
 }
 #endif

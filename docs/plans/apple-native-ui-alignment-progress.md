@@ -952,6 +952,7 @@ Model used: gpt-5 / medium
 - Layer selection stays on the existing `selection` binding, and the menu uses native picker semantics for the existing six choices.
 - The active-warning overlay control moved into the same menu as a clearly separated section and remains available at all Dynamic Type sizes.
 - Removed the sheet-only close affordance and grid/list picker layout; no separate sheet remains for layer selection.
+- Stabilized the closed trigger so layer swaps no longer reflow the button chrome by reserving icon/chevron space in the label, keeping the trigger on the current selection only, and suppressing implicit animation on the label subtree.
 - Preserved the existing map layer selection state, persistence, default selection, data loading, refresh behavior, and rendering path.
 
 #### Files Changed
@@ -977,6 +978,7 @@ Model used: gpt-5 / medium
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection -only-testing:SkyAwareUITests/testMapLayerMenuKeepsWarningToggleReachableAndFunctional test -resultBundlePath /private/tmp/SkyAware-AN24-ui.xcresult`
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes test`
 - `xcrun xccov view --report /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.12_10-53-24--0600.xcresult | rg "MapScreenView.swift|Picker.swift|LayerPickerAdaptiveLayoutTests.swift"`
+- After the trigger-stability refinement, reran `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` and `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection test`.
 - Coverage report signal on the touched files was minimal: `MapScreenView.swift` showed 2.84% (9/317) and `Picker.swift` showed 0.00% (0/162) in the captured report, so there is no meaningful coverage gain to claim from this slice.
 
 #### Deferred Work
@@ -987,6 +989,8 @@ Model used: gpt-5 / medium
 #### Handoff Notes
 
 - Keep the trigger label tied to the current selected layer and its semantic symbol; do not replace it with generic layers chrome.
+- Keep the trigger label’s reserved icon/chevron widths and the current-selection-only label sizing unless the menu changes materially; widening the label with hidden measurement content will reintroduce the dead space this pass removed.
+- Keep the label subtree transaction override in place unless you have a clear replacement for the same no-reflow behavior.
 - If the warning overlay control moves again, keep it in a clearly separated menu section rather than folding it into the layer list.
 - AN-25 should reuse the same current-value and availability semantics rather than inventing a second overlay state model.
 - AN-26 should treat the menu as the new baseline and only trim the surrounding control chrome.
