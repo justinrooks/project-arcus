@@ -77,6 +77,52 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let mapTab = app.tabBars.buttons["Map"]
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10), "Expected Map tab to exist.")
+        mapTab.tap()
+
+        let mapLayersButton = app.buttons["Map layers"]
+        XCTAssertTrue(mapLayersButton.waitForExistence(timeout: 10), "Expected map layer picker button.")
+
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Wind", expectedValue: "Wind")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Wind, selected", expectedValue: "Wind")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Hail", expectedValue: "Hail")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Tornado", expectedValue: "Tornado")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Mesoscale", expectedValue: "Mesoscale")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Fire", expectedValue: "Fire")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Severe Risk", expectedValue: "Severe Risk")
+    }
+
+    @MainActor
+    func testOutlookDetailOpensFromTheLatestOutlookRow() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let outlooksTab = app.tabBars.buttons["Outlooks"]
+        XCTAssertTrue(outlooksTab.waitForExistence(timeout: 10), "Expected Outlooks tab to exist.")
+        outlooksTab.tap()
+
+        let latestOutlookRow = app.buttons["Day 1 Convective Outlook"]
+        XCTAssertTrue(latestOutlookRow.waitForExistence(timeout: 10), "Expected the latest outlook row to appear.")
+        latestOutlookRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Day 1 Outlook"].waitForExistence(timeout: 10), "Expected the detail view to open.")
+        saveScreenshot(app, named: "outlook-detail-light")
+    }
+
+    @MainActor
     func testSettingsShowsNotificationRecoveryCopyWhenAuthorizationDenied() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
@@ -355,6 +401,7 @@ final class SkyAwareUITests: XCTestCase {
         alertCenterWatchText.tap()
 
         XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected Alert tab watch tap to push WatchDetailView.")
+        saveScreenshot(app, named: "alert-detail-light")
     }
 
     @MainActor
@@ -507,6 +554,34 @@ final class SkyAwareUITests: XCTestCase {
         if app.buttons["Skip for Now"].waitForExistence(timeout: 2) {
             app.buttons["Skip for Now"].tap()
         }
+    }
+
+    @MainActor
+    private func assertLayerSelection(
+        _ app: XCUIApplication,
+        pickerButton: XCUIElement,
+        layerLabel: String,
+        expectedValue: String
+    ) {
+        pickerButton.tap()
+
+        let pickerTitle = app.staticTexts["Map Layers"]
+        XCTAssertTrue(pickerTitle.waitForExistence(timeout: 10), "Expected map layer picker sheet.")
+
+        let layerButton = app.buttons[layerLabel]
+        XCTAssertTrue(layerButton.waitForExistence(timeout: 10), "Expected layer button \(layerLabel).")
+        layerButton.tap()
+
+        XCTAssertTrue(pickerButton.waitForExistence(timeout: 10), "Expected picker button to remain available after dismissal.")
+        XCTAssertEqual(pickerButton.value as? String, expectedValue, "Expected map picker to report \(expectedValue) after selecting \(layerLabel).")
+    }
+
+    @MainActor
+    private func saveScreenshot(_ app: XCUIApplication, named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     @MainActor

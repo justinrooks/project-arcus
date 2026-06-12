@@ -31,7 +31,7 @@ decisions from Git history.
 | 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Completed | Persistent category labels now stay visible on the resolved hero tiles, and the tiles can grow vertically instead of clipping longer values. |
 | 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Not started | |
 | 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
-| 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Not started | |
+| 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Completed | Static status and metadata chips now use the noninteractive chip treatment, and map layer selection now routes feedback through SwiftUI `sensoryFeedback` on actual selection changes. |
 | 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Completed | Glass is now opt-in on shared card backgrounds; ordinary content surfaces fall back to stable cards by default. |
 | 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Completed | Removed the outer Risk Snapshot surface so Current Conditions stays distinct while the hero tiles, rails, and supporting cards keep their own domain chrome. |
 | 19 | AN-19 | [#235](https://github.com/justinrooks/project-arcus/issues/235) | Move Settings to native Form structure | Not started | |
@@ -721,7 +721,6 @@ Model used: gpt-5.4 / medium
 
 #### Deferred Work
 
-- AN-16 still owns static-chip interaction/haptics cleanup.
 - AN-17 still owns the broader Liquid Glass opt-in policy.
 - AN-19 still owns the Settings structural migration.
 - `Differentiate Without Color` could not be toggled directly in this simulator workflow because `simctl ui` exposes appearance, increase contrast, and content size controls but not that accessibility option; the neutral chip labels and icons are still the fallback semantic path.
@@ -731,6 +730,60 @@ Model used: gpt-5.4 / medium
 - Keep hazard colors reserved for actual weather meaning. The only shared neutral palette introduced here is the metadata/offline tint in `ext+Color.swift`.
 - The new watch-chip regression test should remain the guardrail if future metadata chips drift back toward weather-danger colors.
 - Residual risk: the neutral chip tint is visually conservative by design, so if future copy makes the chips denser, they may need a small contrast tweak rather than a new color family.
+
+### AN-16 / GitHub #232 - Make static chips noninteractive and modernize haptics
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Removed the interactive glass request from the watch-status chips in `WatchStatusChip.swift`.
+- Removed the interactive glass request from the convective outlook metadata chips in `ConvectiveOutlookDetailView.swift`.
+- Replaced the scoped UIKit impact generator in the map layer picker with SwiftUI `.sensoryFeedback(.selection, trigger: selection)`.
+- Added a small selection-change guard so tapping the already-selected map layer dismisses the sheet without mutating selection or creating duplicate feedback.
+- Added a focused unit test for the selection-change helper and a UI test that cycles every map layer while checking duplicate selection behavior.
+
+#### Files Changed
+
+- `Sources/Features/Alert/WatchStatusChip.swift`
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookDetailView.swift`
+- `Sources/Features/Map/Picker.swift`
+- `Tests/UnitTests/LayerPickerAdaptiveLayoutTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Chip copy, status meaning, hazard semantics, iconography, and semantic colors were unchanged.
+- The watch-status and outlook metadata chip shapes, hierarchy, and domain identity were preserved.
+- Map layer choices, map rendering, selection ownership, and navigation behavior stayed intact.
+- Reduce Motion handling stayed delegated to the existing motion helpers.
+- The AN-17 glass policy stayed intact; this change only removed interactive treatment from the scoped static chips.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LayerPickerAdaptiveLayoutTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,id=EA7220E9-B3E8-401C-8E77-8967CA051A05" -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,id=D074401E-6727-42D8-AF91-1DF0250EACDE" -only-testing:SkyAwareUITests/testSummaryAlertTapShowsSheetAndAlertTabTapShowsWatchDetailView -only-testing:SkyAwareUITests/testOutlookDetailOpensFromTheLatestOutlookRow test`
+- XcodeBuildMCP runtime snapshot review of the seeded Summary screen in the light appearance
+- XcodeBuildMCP screenshot review of the seeded watch detail path, Outlook detail screen, and map layer picker in the light appearance
+- XcodeBuildMCP runtime snapshot review of the seeded map layer picker sequence, including the selected-state path
+
+#### Deferred Work
+
+- AN-24 still owns replacing the map layer sheet with a native current-state menu.
+- Dark-appearance visual verification was not achievable in this simulator workflow; the visible screenshots captured here are light appearance only.
+- Direct haptic verification still depends on the runtime feedback path; this pass confirmed the code path and selection gating, not the physical vibration itself.
+
+#### Handoff Notes
+
+- Keep the static chips noninteractive; do not reintroduce `interactive: true` just to get glass to look fancier.
+- The map picker now has a single selection-change gate, so AN-24 should preserve that state ownership even if the presentation chrome changes.
+- If AN-24 replaces the picker sheet, it should continue to drive the same `selection` binding so `.sensoryFeedback` remains tied to real layer changes.
+- Residual risk: the current manual validation proved the light appearance only, so a future dark-mode pass should still confirm the chip chrome remains noninteractive there.
 
 ### AN-17 / GitHub #233 - Make Liquid Glass opt-in
 

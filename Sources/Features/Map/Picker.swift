@@ -101,7 +101,6 @@ struct LayerTile: View {
     var body: some View {
         Button(action: {
             action()
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }) {
             Group {
                 if adaptiveLayout.usesAccessibilityLayout {
@@ -255,9 +254,15 @@ struct LayerPickerSheet: View {
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .presentationDetents([.height(510), .large])
         .interactiveDismissDisabled(false)
+        .sensoryFeedback(.selection, trigger: selection)
     }
 
     private func toggle(_ layer: MapLayer) {
+        guard Self.shouldUpdateSelection(current: selection, to: layer) else {
+            dismiss()
+            return
+        }
+
         withAnimation(SkyAwareMotion.press(reduceMotion)) {
             selection = layer
         }
@@ -270,6 +275,10 @@ struct LayerPickerSheet: View {
 
     static func showsWarningGeometryTogglePolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout == false
+    }
+
+    static func shouldUpdateSelection(current: MapLayer, to candidate: MapLayer) -> Bool {
+        current != candidate
     }
 }
 

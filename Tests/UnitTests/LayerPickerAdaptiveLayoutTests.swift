@@ -25,5 +25,11 @@ struct LayerPickerAdaptiveLayoutTests {
         #expect(LayerPickerSheet.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility1) == false)
         #expect(LayerPickerSheet.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility3) == false)
     }
+
+    @Test("Picker selection only updates when the layer changes")
+    func selectionOnlyUpdatesOnChange() {
+        #expect(LayerPickerSheet.shouldUpdateSelection(current: .categorical, to: .wind))
+        #expect(LayerPickerSheet.shouldUpdateSelection(current: .wind, to: .wind) == false)
+    }
 }
 #endif

@@ -243,7 +243,7 @@ private struct OutlookMetaChip: View {
         .frame(maxWidth: adaptiveLayout.usesAccessibilityLayout ? .infinity : nil, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .skyAwareChip(cornerRadius: SkyAwareRadius.hero, tint: .white.opacity(0.10), interactive: true)
+        .skyAwareChip(cornerRadius: SkyAwareRadius.hero, tint: .white.opacity(0.10))
     }
 }
 
