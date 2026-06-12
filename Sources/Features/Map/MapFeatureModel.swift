@@ -46,11 +46,14 @@ final class MapFeatureModel {
             pendingReload = false
         }
 
+        showRefreshStateForCurrentSelection()
+
         while Task.isCancelled == false {
             pendingReload = false
             await performReload(using: service, warningSource: warningSource)
 
             guard pendingReload else { return }
+            showRefreshStateForCurrentSelection()
         }
     }
 
@@ -82,32 +85,27 @@ final class MapFeatureModel {
             return
         }
 
-        let severeRisks = severeResult.value(orLogging: "severe risk map data", logger: logger)
-        let stormRisk = stormResult.value(orLogging: "categorical map data", logger: logger)
-        let mesos = mesoResult.value(orLogging: "mesoscale map data", logger: logger)
-        let fireRisk = fireResult.value(orLogging: "fire map data", logger: logger)
         let activeWarnings: [ActiveWarningGeometry]
         switch warningResult {
         case .success(let value):
             activeWarnings = value
-        case .failure(let error):
-            if error is CancellationError {
-                return
-            }
-            logger.error("Failed to load active warning geometry: \(error.localizedDescription, privacy: .public)")
+        case .failure:
             activeWarnings = []
+        case .cancelled:
+            return
         }
 
         let payload = MapDataPayload(
-            stormRisk: stormRisk,
-            severeRisks: severeRisks,
-            mesos: mesos,
-            fireRisk: fireRisk,
+            stormRisk: stormResult,
+            severeRisks: severeResult,
+            mesos: mesoResult,
+            fireRisk: fireResult,
             activeWarnings: activeWarnings
         )
 
         let plannedScenes = await planner.buildRenderPlans(
             payload: payload,
+            existingPlans: renderPlans,
             polygonMapper: polygonMapper
         )
 
@@ -152,6 +150,26 @@ final class MapFeatureModel {
     func cancelWork() {
         warmScenesTask?.cancel()
         warmScenesTask = nil
+    }
+
+    private func showRefreshStateForCurrentSelection() {
+        if let scene = cachedScenes[currentSelectedLayer] ?? renderPlans[currentSelectedLayer].map({ MapSceneMaterializer.materialize(
+            plan: $0,
+            initialCenterCoordinate: initialCenterCoordinate,
+            showsWarningGeometry: showsWarningGeometry
+        ) }) {
+            switch scene.legendState.presentationState {
+            case .current, .confirmedEmpty, .stale:
+                activeScene = scene.withPresentationState(.resolving)
+            case .loading, .resolving, .unavailable:
+                activeScene = scene
+            }
+        } else {
+            activeScene = MapLayerScene.placeholder(
+                for: currentSelectedLayer,
+                initialCenterCoordinate: initialCenterCoordinate
+            )
+        }
     }
 
     private func applySelectedLayer(_ layer: MapLayer) {
@@ -201,55 +219,60 @@ final class MapFeatureModel {
         }
     }
 
-    private func fetchSevereRiskShapes(using service: any SpcMapData) async -> Result<[SevereRiskShapeDTO], Error> {
+    private func fetchSevereRiskShapes(using service: any SpcMapData) async -> MapFetchOutcome<[SevereRiskShapeDTO]> {
         do {
             return .success(try await service.getSevereRiskShapes())
         } catch is CancellationError {
-            return .failure(CancellationError())
+            return .cancelled
         } catch {
-            return .failure(error)
+            logger.error("Failed to load severe risk map data: \(error.localizedDescription, privacy: .public)")
+            return .failure
         }
     }
 
-    private func fetchStormRiskShapes(using service: any SpcMapData) async -> Result<[StormRiskDTO], Error> {
+    private func fetchStormRiskShapes(using service: any SpcMapData) async -> MapFetchOutcome<[StormRiskDTO]> {
         do {
             return .success(try await service.getStormRiskMapData())
         } catch is CancellationError {
-            return .failure(CancellationError())
+            return .cancelled
         } catch {
-            return .failure(error)
+            logger.error("Failed to load categorical map data: \(error.localizedDescription, privacy: .public)")
+            return .failure
         }
     }
 
-    private func fetchMesoShapes(using service: any SpcMapData) async -> Result<[MdDTO], Error> {
+    private func fetchMesoShapes(using service: any SpcMapData) async -> MapFetchOutcome<[MdDTO]> {
         do {
             return .success(try await service.getMesoMapData())
         } catch is CancellationError {
-            return .failure(CancellationError())
+            return .cancelled
         } catch {
-            return .failure(error)
+            logger.error("Failed to load mesoscale map data: \(error.localizedDescription, privacy: .public)")
+            return .failure
         }
     }
 
-    private func fetchFireRiskShapes(using service: any SpcMapData) async -> Result<[FireRiskDTO], Error> {
+    private func fetchFireRiskShapes(using service: any SpcMapData) async -> MapFetchOutcome<[FireRiskDTO]> {
         do {
             return .success(try await service.getFireRisk())
         } catch is CancellationError {
-            return .failure(CancellationError())
+            return .cancelled
         } catch {
-            return .failure(error)
+            logger.error("Failed to load fire map data: \(error.localizedDescription, privacy: .public)")
+            return .failure
         }
     }
 
     private func fetchActiveWarningGeometry(
         using warningSource: any ArcusAlertQuerying
-    ) async -> Result<[ActiveWarningGeometry], Error> {
+    ) async -> MapFetchOutcome<[ActiveWarningGeometry]> {
         do {
             return .success(try await warningSource.getActiveWarningGeometries())
         } catch is CancellationError {
-            return .failure(CancellationError())
+            return .cancelled
         } catch {
-            return .failure(error)
+            logger.error("Failed to load active warning geometry: \(error.localizedDescription, privacy: .public)")
+            return .failure
         }
     }
 
@@ -316,7 +339,7 @@ struct MapLayerScene {
                 overlayRevision: 0,
                 initialCenterCoordinate: initialCenterCoordinate
             ),
-            legendState: .empty(for: layer)
+            legendState: .loading(for: layer)
         )
     }
 
@@ -325,6 +348,13 @@ struct MapLayerScene {
         return MapLayerScene(
             canvasState: canvasState.withInitialCenterCoordinate(coordinate),
             legendState: legendState
+        )
+    }
+
+    func withPresentationState(_ presentationState: MapLegendPresentationState) -> MapLayerScene {
+        MapLayerScene(
+            canvasState: canvasState,
+            legendState: legendState.withPresentationState(presentationState)
         )
     }
 }
@@ -344,23 +374,147 @@ struct MapCanvasState {
 }
 
 struct MapLegendState: Sendable {
+    let presentationState: MapLegendPresentationState
     let layer: MapLayer
     let severeItems: [SevereLegendItem]
     let fireItems: [FireLegendItem]
     let showsHatchingExplanation: Bool
 
     var allowsInteraction: Bool {
-        showsHatchingExplanation && !severeItems.isEmpty
+        showsHatchingExplanation &&
+        !severeItems.isEmpty &&
+        presentationState != .loading &&
+        presentationState != .confirmedEmpty &&
+        presentationState != .unavailable
     }
 
-    static func empty(for layer: MapLayer) -> MapLegendState {
+    static func loading(for layer: MapLayer) -> MapLegendState {
         MapLegendState(
+            presentationState: .loading,
             layer: layer,
             severeItems: [],
             fireItems: [],
             showsHatchingExplanation: false
         )
     }
+
+    static func resolving(
+        for layer: MapLayer,
+        severeItems: [SevereLegendItem],
+        fireItems: [FireLegendItem],
+        showsHatchingExplanation: Bool
+    ) -> MapLegendState {
+        MapLegendState(
+            presentationState: .resolving,
+            layer: layer,
+            severeItems: severeItems,
+            fireItems: fireItems,
+            showsHatchingExplanation: showsHatchingExplanation
+        )
+    }
+
+    static func current(
+        for layer: MapLayer,
+        severeItems: [SevereLegendItem],
+        fireItems: [FireLegendItem],
+        showsHatchingExplanation: Bool
+    ) -> MapLegendState {
+        MapLegendState(
+            presentationState: .current,
+            layer: layer,
+            severeItems: severeItems,
+            fireItems: fireItems,
+            showsHatchingExplanation: showsHatchingExplanation
+        )
+    }
+
+    static func confirmedEmpty(for layer: MapLayer) -> MapLegendState {
+        MapLegendState(
+            presentationState: .confirmedEmpty,
+            layer: layer,
+            severeItems: [],
+            fireItems: [],
+            showsHatchingExplanation: false
+        )
+    }
+
+    static func stale(
+        for layer: MapLayer,
+        severeItems: [SevereLegendItem],
+        fireItems: [FireLegendItem],
+        showsHatchingExplanation: Bool
+    ) -> MapLegendState {
+        MapLegendState(
+            presentationState: .stale,
+            layer: layer,
+            severeItems: severeItems,
+            fireItems: fireItems,
+            showsHatchingExplanation: showsHatchingExplanation
+        )
+    }
+
+    static func unavailable(for layer: MapLayer) -> MapLegendState {
+        MapLegendState(
+            presentationState: .unavailable,
+            layer: layer,
+            severeItems: [],
+            fireItems: [],
+            showsHatchingExplanation: false
+        )
+    }
+
+    func withPresentationState(_ presentationState: MapLegendPresentationState) -> MapLegendState {
+        MapLegendState(
+            presentationState: presentationState,
+            layer: layer,
+            severeItems: severeItems,
+            fireItems: fireItems,
+            showsHatchingExplanation: showsHatchingExplanation
+        )
+    }
+
+    var headlineText: String {
+        switch presentationState {
+        case .loading:
+            "Getting \(layer.legendSubject)…"
+        case .resolving:
+            "\(layer.legendDisplayTitle) · Updating"
+        case .current:
+            layer.legendDisplayTitle
+        case .confirmedEmpty:
+            "No \(layer.legendSubject)"
+        case .stale:
+            "\(layer.legendDisplayTitle) saved locally"
+        case .unavailable:
+            "\(layer.legendDisplayTitle) unavailable"
+        }
+    }
+
+    var voiceOverText: String {
+        switch presentationState {
+        case .loading:
+            "Getting \(layer.legendSubject). Loading."
+        case .resolving:
+            "Updating \(layer.legendSubject). Showing saved data while the refresh completes."
+        case .current:
+            "\(layer.legendDisplayTitle) loaded."
+        case .confirmedEmpty:
+            "No \(layer.legendSubject). Successfully loaded and confirmed empty."
+        case .stale:
+            "\(layer.legendDisplayTitle) saved locally. Refresh failed."
+        case .unavailable:
+            "\(layer.legendDisplayTitle) unavailable. No saved data."
+        }
+    }
+}
+
+enum MapLegendPresentationState: Sendable, Equatable {
+    case loading
+    case resolving
+    case current
+    case confirmedEmpty
+    case stale
+    case unavailable
 }
 
 struct SevereLegendItem: Sendable, Hashable, Identifiable {
@@ -380,11 +534,31 @@ struct FireLegendItem: Sendable, Hashable, Identifiable {
 }
 
 private struct MapDataPayload: Sendable {
-    let stormRisk: [StormRiskDTO]
-    let severeRisks: [SevereRiskShapeDTO]
-    let mesos: [MdDTO]
-    let fireRisk: [FireRiskDTO]
+    let stormRisk: MapFetchOutcome<[StormRiskDTO]>
+    let severeRisks: MapFetchOutcome<[SevereRiskShapeDTO]>
+    let mesos: MapFetchOutcome<[MdDTO]>
+    let fireRisk: MapFetchOutcome<[FireRiskDTO]>
     let activeWarnings: [ActiveWarningGeometry]
+}
+
+private enum MapFetchOutcome<Value: Sendable>: Sendable {
+    case success(Value)
+    case failure
+    case cancelled
+
+    var isCancellation: Bool {
+        if case .cancelled = self {
+            return true
+        }
+        return false
+    }
+
+    var value: Value? {
+        if case .success(let value) = self {
+            return value
+        }
+        return nil
+    }
 }
 
 struct MapOverlayBuildPlan: Sendable {
@@ -406,11 +580,22 @@ private struct MapLayerRenderPlan: Sendable {
     let overlayPlans: [MapOverlayBuildPlan]
     let overlayRevision: Int
     let legendState: MapLegendState
+
+    func withLegendState(_ legendState: MapLegendState) -> MapLayerRenderPlan {
+        MapLayerRenderPlan(
+            layer: layer,
+            polygonEntries: polygonEntries,
+            overlayPlans: overlayPlans,
+            overlayRevision: overlayRevision,
+            legendState: legendState
+        )
+    }
 }
 
 private actor MapScenePlanner {
     func buildRenderPlans(
         payload: MapDataPayload,
+        existingPlans: [MapLayer: MapLayerRenderPlan],
         polygonMapper: MapPolygonMapper
     ) -> [MapLayer: MapLayerRenderPlan] {
         Dictionary(
@@ -420,6 +605,7 @@ private actor MapScenePlanner {
                     MapRenderPlanBuilder.build(
                         layer: layer,
                         payload: payload,
+                        existingPlan: existingPlans[layer],
                         polygonMapper: polygonMapper
                     )
                 )
@@ -504,17 +690,126 @@ private enum MapRenderPlanBuilder {
     static func build(
         layer: MapLayer,
         payload: MapDataPayload,
+        existingPlan: MapLayerRenderPlan?,
         polygonMapper: MapPolygonMapper
     ) -> MapLayerRenderPlan {
-        let mappedPolygons = polygonMapper.polygons(
-            for: layer,
-            stormRisk: payload.stormRisk,
-            severeRisks: payload.severeRisks,
-            mesos: payload.mesos,
-            fires: payload.fireRisk
-        )
-        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+        switch layer {
+        case .categorical:
+            guard case .success(let stormRisk) = payload.stormRisk else {
+                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+            }
+            let severeRisks = payload.severeRisks.value ?? []
+            let mesos = payload.mesos.value ?? []
+            let fireRisk = payload.fireRisk.value ?? []
+            let mappedPolygons = polygonMapper.polygons(
+                for: layer,
+                stormRisk: stormRisk,
+                severeRisks: severeRisks,
+                mesos: mesos,
+                fires: fireRisk
+            )
+            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+            return buildLoadedPlan(
+                layer: layer,
+                mappedPolygons: mappedPolygons,
+                warningPolygons: warningPolygons,
+                legendState: legendState(
+                    for: layer,
+                    presentationState: stormRisk.isEmpty ? .confirmedEmpty : .current,
+                    severeRisks: severeRisks,
+                    fireRisk: fireRisk
+                )
+            )
 
+        case .wind, .hail, .tornado:
+            guard case .success(let severeRisks) = payload.severeRisks else {
+                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+            }
+            let stormRisk = payload.stormRisk.value ?? []
+            let mesos = payload.mesos.value ?? []
+            let fireRisk = payload.fireRisk.value ?? []
+            let mappedPolygons = polygonMapper.polygons(
+                for: layer,
+                stormRisk: stormRisk,
+                severeRisks: severeRisks,
+                mesos: mesos,
+                fires: fireRisk
+            )
+            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+            return buildLoadedPlan(
+                layer: layer,
+                mappedPolygons: mappedPolygons,
+                warningPolygons: warningPolygons,
+                legendState: legendState(
+                    for: layer,
+                    presentationState: severeRisks.isEmpty ? .confirmedEmpty : .current,
+                    severeRisks: severeRisks,
+                    fireRisk: fireRisk
+                )
+            )
+
+        case .fire:
+            guard case .success(let fireRisk) = payload.fireRisk else {
+                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+            }
+            let stormRisk = payload.stormRisk.value ?? []
+            let severeRisks = payload.severeRisks.value ?? []
+            let mesos = payload.mesos.value ?? []
+            let mappedPolygons = polygonMapper.polygons(
+                for: layer,
+                stormRisk: stormRisk,
+                severeRisks: severeRisks,
+                mesos: mesos,
+                fires: fireRisk
+            )
+            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+            return buildLoadedPlan(
+                layer: layer,
+                mappedPolygons: mappedPolygons,
+                warningPolygons: warningPolygons,
+                legendState: legendState(
+                    for: layer,
+                    presentationState: fireRisk.isEmpty ? .confirmedEmpty : .current,
+                    severeRisks: severeRisks,
+                    fireRisk: fireRisk
+                )
+            )
+
+        case .meso:
+            guard case .success(let mesos) = payload.mesos else {
+                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+            }
+            let stormRisk = payload.stormRisk.value ?? []
+            let severeRisks = payload.severeRisks.value ?? []
+            let fireRisk = payload.fireRisk.value ?? []
+            let mappedPolygons = polygonMapper.polygons(
+                for: layer,
+                stormRisk: stormRisk,
+                severeRisks: severeRisks,
+                mesos: mesos,
+                fires: fireRisk
+            )
+            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+            return buildLoadedPlan(
+                layer: layer,
+                mappedPolygons: mappedPolygons,
+                warningPolygons: warningPolygons,
+                legendState: legendState(
+                    for: layer,
+                    presentationState: mesos.isEmpty ? .confirmedEmpty : .current,
+                    severeRisks: severeRisks,
+                    fireRisk: fireRisk
+                )
+            )
+        }
+    }
+
+    private static func buildLoadedPlan(
+        layer: MapLayer,
+        mappedPolygons: KeyedMapPolygons,
+        warningPolygons: KeyedMapPolygons,
+        legendState: MapLegendState
+    ) -> MapLayerRenderPlan {
         var probabilityOverlays: [MapOverlayBuildPlan] = []
         var intensityOverlaysByLevel: [(level: Int, plan: MapOverlayBuildPlan)] = []
         probabilityOverlays.reserveCapacity(mappedPolygons.keyedPolygons.count)
@@ -558,12 +853,38 @@ private enum MapRenderPlanBuilder {
             polygonEntries: mappedPolygons.keyedPolygons + warningPolygons.keyedPolygons,
             overlayPlans: overlayPlans,
             overlayRevision: overlayRevision(for: overlayPlans),
-            legendState: legendState(
-                for: layer,
-                severeRisks: payload.severeRisks,
-                fireRisk: payload.fireRisk
-            )
+            legendState: legendState
         )
+    }
+
+    private static func buildFailurePlan(
+        layer: MapLayer,
+        existingPlan: MapLayerRenderPlan?
+    ) -> MapLayerRenderPlan {
+        guard let existingPlan else {
+            return MapLayerRenderPlan(
+                layer: layer,
+                polygonEntries: [],
+                overlayPlans: [],
+                overlayRevision: 0,
+                legendState: .unavailable(for: layer)
+            )
+        }
+
+        switch existingPlan.legendState.presentationState {
+        case .current, .resolving, .stale:
+            return existingPlan.withLegendState(
+                existingPlan.legendState.withPresentationState(.stale)
+            )
+        case .loading, .confirmedEmpty, .unavailable:
+            return MapLayerRenderPlan(
+                layer: layer,
+                polygonEntries: [],
+                overlayPlans: [],
+                overlayRevision: 0,
+                legendState: .unavailable(for: layer)
+            )
+        }
     }
 
     private static func overlayPlan(
@@ -626,15 +947,22 @@ private enum MapRenderPlanBuilder {
 
     private static func legendState(
         for layer: MapLayer,
+        presentationState: MapLegendPresentationState,
         severeRisks: [SevereRiskShapeDTO],
         fireRisk: [FireRiskDTO]
     ) -> MapLegendState {
         switch layer {
         case .fire:
+            let items = fireLegendItems(from: fireRisk)
+            if presentationState == .confirmedEmpty {
+                return .confirmedEmpty(for: layer)
+            }
+
             return MapLegendState(
+                presentationState: presentationState,
                 layer: layer,
                 severeItems: [],
-                fireItems: fireLegendItems(from: fireRisk),
+                fireItems: items,
                 showsHatchingExplanation: false
             )
 
@@ -644,7 +972,12 @@ private enum MapRenderPlanBuilder {
                 .filter { $0.type == layer.threatType }
                 .contains { $0.intensityLevel != nil }
 
+            if presentationState == .confirmedEmpty {
+                return .confirmedEmpty(for: layer)
+            }
+
             return MapLegendState(
+                presentationState: presentationState,
                 layer: layer,
                 severeItems: severeItems,
                 fireItems: [],
@@ -652,7 +985,17 @@ private enum MapRenderPlanBuilder {
             )
 
         default:
-            return .empty(for: layer)
+            if presentationState == .confirmedEmpty {
+                return .confirmedEmpty(for: layer)
+            }
+
+            return MapLegendState(
+                presentationState: presentationState,
+                layer: layer,
+                severeItems: [],
+                fireItems: [],
+                showsHatchingExplanation: false
+            )
         }
     }
 
@@ -792,6 +1135,40 @@ private extension Result where Success == [FireRiskDTO], Failure == Error {
 }
 
 private extension MapLayer {
+    var legendDisplayTitle: String {
+        switch self {
+        case .categorical:
+            return "Severe Risk"
+        case .wind:
+            return "Wind Risk"
+        case .hail:
+            return "Hail Risk"
+        case .tornado:
+            return "Tornado Risk"
+        case .meso:
+            return "Mesoscale"
+        case .fire:
+            return "Fire Risk"
+        }
+    }
+
+    var legendSubject: String {
+        switch self {
+        case .categorical:
+            return "severe risk"
+        case .wind:
+            return "wind risk"
+        case .hail:
+            return "hail risk"
+        case .tornado:
+            return "tornado risk"
+        case .meso:
+            return "mesoscale"
+        case .fire:
+            return "fire risk"
+        }
+    }
+
     var threatType: ThreatType {
         switch self {
         case .tornado:

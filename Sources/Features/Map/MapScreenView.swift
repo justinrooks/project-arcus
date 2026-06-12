@@ -178,7 +178,10 @@ private struct MapScreenContent: View {
                 .transition(.opacity)
                 .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
         case .compactTrigger, .sheetOnly:
-            CompactMapLegendTrigger(label: compactLegendLabel) {
+            CompactMapLegendTrigger(
+                label: compactLegendLabel,
+                accessibilityValue: scene.legendState.voiceOverText
+            ) {
                 showsLegendSheet = true
             }
             .transition(.opacity)
@@ -280,7 +283,7 @@ private struct MapScreenContentPreview: View {
     let selectedLayer: MapLayer
 
     init(
-        legendState: MapLegendState = .empty(for: .categorical),
+        legendState: MapLegendState = .loading(for: .categorical),
         selectedLayer: MapLayer = .categorical
     ) {
         self.legendState = legendState
@@ -303,6 +306,7 @@ private struct MapScreenContentPreview: View {
 
 private enum MapScreenPreviewLegendState {
     static let severeWithHatching = MapLegendState(
+        presentationState: .current,
         layer: .tornado,
         severeItems: [
             SevereLegendItem(id: "5%", probability: .percent(0.05), fillHex: nil, strokeHex: nil),
@@ -315,6 +319,7 @@ private enum MapScreenPreviewLegendState {
     )
 
     static let severeWithoutHatching = MapLegendState(
+        presentationState: .current,
         layer: .tornado,
         severeItems: [
             SevereLegendItem(id: "5%", probability: .percent(0.05), fillHex: nil, strokeHex: nil),

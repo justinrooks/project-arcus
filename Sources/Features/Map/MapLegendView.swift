@@ -10,29 +10,33 @@ struct MapLegend: View {
         VStack(alignment: .leading, spacing: 10) {
             switch state.layer {
             case .categorical:
-                Text("Severe Risk")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
                 ForEach(Array(StormRiskLevel.allCases.reversed().dropLast()), id: \.self) { level in
                     CategoricalLegendRow(risk: level)
                 }
 
             case .meso:
-                Text("Legend")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
                 MesoLegendRow(risk: state.layer.key.capitalized) // MESO
             
             case .fire:
                 let risks = state.fireItems
-                Text(risks.isEmpty ? "No fire risk" : "Fire Risk")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
                 ForEach(risks) { risk in
                     FireLegendRow(risk: risk)
                 }
 
             case .tornado, .hail, .wind:
                 let risks = state.severeItems
-                Text(risks.isEmpty ? "No \(state.layer.title.lowercased()) risk" : "\(state.layer.title) Risk")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
 
                 ForEach(risks) { risk in
                     SevereLegendRow(layer: state.layer, risk: risk)
@@ -77,6 +81,7 @@ struct MapLegend: View {
 
 struct CompactMapLegendTrigger: View {
     let label: String
+    let accessibilityValue: String
     let onTap: () -> Void
 
     var body: some View {
@@ -105,6 +110,7 @@ struct CompactMapLegendTrigger: View {
             shadowY: 4
         )
         .accessibilityLabel("Map legend")
+        .accessibilityValue(accessibilityValue)
         .accessibilityHint("Opens the full map legend.")
     }
 }
@@ -372,13 +378,14 @@ private struct HatchSwatchView: View {
 // MARK: - Previews
 
 #Preview("Categorical") {
-    MapLegend(state: .empty(for: .categorical))
+    MapLegend(state: .loading(for: .categorical))
         .padding()
         .background(.thinMaterial)
 }
 
 #Preview("Tornado 10% + SIGN") {
     MapLegend(state: MapLegendState(
+        presentationState: .current,
         layer: .tornado,
         severeItems: [
             SevereLegendItem(id: "10%", probability: .percent(0.10), fillHex: nil, strokeHex: nil),
@@ -392,7 +399,7 @@ private struct HatchSwatchView: View {
 }
 
 #Preview("Meso") {
-    MapLegend(state: .empty(for: .meso))
+    MapLegend(state: .confirmedEmpty(for: .meso))
         .padding()
         .background(.thinMaterial)
 }

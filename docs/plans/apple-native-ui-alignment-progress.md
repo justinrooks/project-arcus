@@ -37,7 +37,7 @@ decisions from Git history.
 | 19 | AN-19 | [#235](https://github.com/justinrooks/project-arcus/issues/235) | Move Settings to native Form structure | Not started | |
 | 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Not started | |
 | 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Not started | |
-| 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Not started | |
+| 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Completed | Map scenes now carry explicit loading, resolving, current, confirmed-empty, stale, and unavailable presentation states so failed refreshes do not collapse to confirmed no-risk language. |
 | 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Not started | |
 | 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Not started | |
 | 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Not started | |
@@ -887,3 +887,54 @@ Model used: gpt-5.4 / medium
 - Keep `Current Conditions` as the only top-level Summary card; any future Summary hierarchy work should trim within the remaining content stack rather than adding another wrapper around the risk snapshot.
 - The risk tiles and rails should continue to own their own identity through typography, spacing, and semantic color instead of extra chrome.
 - AN-27 should treat this as the baseline: hierarchy first, spacing second, and no new decorative surface layers.
+
+### AN-22 / GitHub #238 - Distinguish map unavailable, stale, and confirmed-empty states
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5 / medium
+
+#### Scope
+
+- Added explicit map presentation states for loading, resolving, current, confirmed-empty, stale, and unavailable layers.
+- Carried availability metadata through `MapFeatureModel`, layer scenes, legend state, and map rendering plans instead of flattening failures into empty arrays.
+- Preserved successful empty responses as confirmed-empty while keeping failed refreshes from rendering as confirmed no-risk.
+- Preserved previously rendered saved data when refreshes fail and marked those layers as stale instead of discarding the overlays.
+- Updated legend text and accessibility labels so VoiceOver can distinguish loading, resolving, stale, unavailable, and confirmed-empty states without relying on color alone.
+- Added focused unit coverage for loading, success, confirmed-empty, failure, stale saved data, layer switching, and refresh transitions.
+
+#### Files Changed
+
+- `Sources/Features/Map/MapFeatureModel.swift`
+- `Sources/Features/Map/MapLegendView.swift`
+- `Sources/Features/Map/MapScreenView.swift`
+- `Tests/UnitTests/MapFeatureModelTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- SPC/NWS ingestion, acceptance rules, persistence, retry policy, and refresh timing were unchanged.
+- Existing polygon geometry, hatching, map styling, and layer selection behavior were left intact.
+- Successful populated responses still render as current and successful empty responses still render calm no-risk language.
+- Saved overlays remain visible after failed refreshes; the new state only changes how availability is described.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/MapFeatureModelTests`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+#### Deferred Work
+
+- AN-23 still owns the warning legend source-of-truth cleanup.
+- AN-24 still owns replacing the layer sheet with a native current-state menu.
+- AN-25 still owns accessible overlay equivalents; this issue only adds the state text and accessibility cues for the map scene itself.
+- Broader map control and legend spacing cleanup remains with AN-26.
+
+#### Handoff Notes
+
+- The root rule is now: only a successful empty response may produce `No … risk`; a failed request must go through unavailable or stale state.
+- Keep future map legend work keyed off the scene presentation state, not off empty arrays alone.
+- Preserve saved overlays on refresh failure. The map should surface stale/saved data quietly rather than erase it.
+- AN-23 should build on the new presentation state model when deriving warning legend content from rendered warnings.
+- AN-24 should keep the current layer-selection state machine intact and only change the control surface.
+- AN-25 should use the same availability metadata for accessible overlay equivalents instead of inventing new state.
