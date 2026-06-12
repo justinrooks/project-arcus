@@ -4,32 +4,20 @@ import SwiftUI
 import Testing
 @testable import SkyAware
 
-@Suite("Layer Picker Adaptive Layout")
-struct LayerPickerAdaptiveLayoutTests {
-    @Test("Normal and xxxLarge keep grid layout")
-    func normalAndXXXL_useGridLayout() {
-        #expect(LayerPickerSheet.usesAccessibilityListLayoutPolicy(dynamicTypeSize: .large) == false)
-        #expect(LayerPickerSheet.usesAccessibilityListLayoutPolicy(dynamicTypeSize: .xxxLarge) == false)
-    }
-
-    @Test("Accessibility sizes use vertical list layout")
-    func accessibilitySizes_useListLayout() {
-        #expect(LayerPickerSheet.usesAccessibilityListLayoutPolicy(dynamicTypeSize: .accessibility1))
-        #expect(LayerPickerSheet.usesAccessibilityListLayoutPolicy(dynamicTypeSize: .accessibility3))
-    }
-
-    @Test("Warning geometry toggle is hidden in accessibility sizes")
-    func warningToggle_visibilityMatchesPolicy() {
-        #expect(LayerPickerSheet.showsWarningGeometryTogglePolicy(dynamicTypeSize: .large))
-        #expect(LayerPickerSheet.showsWarningGeometryTogglePolicy(dynamicTypeSize: .xxxLarge))
-        #expect(LayerPickerSheet.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility1) == false)
-        #expect(LayerPickerSheet.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility3) == false)
-    }
-
+@Suite("Map Layer Menu")
+struct MapLayerMenuTests {
     @Test("Picker selection only updates when the layer changes")
     func selectionOnlyUpdatesOnChange() {
-        #expect(LayerPickerSheet.shouldUpdateSelection(current: .categorical, to: .wind))
-        #expect(LayerPickerSheet.shouldUpdateSelection(current: .wind, to: .wind) == false)
+        #expect(MapLayerMenu.shouldUpdateSelection(current: .categorical, to: .wind))
+        #expect(MapLayerMenu.shouldUpdateSelection(current: .wind, to: .wind) == false)
+    }
+
+    @Test("Warning geometry toggle remains available at all Dynamic Type sizes")
+    func warningToggle_staysVisible() {
+        #expect(MapLayerMenu.showsWarningGeometryTogglePolicy(dynamicTypeSize: .large))
+        #expect(MapLayerMenu.showsWarningGeometryTogglePolicy(dynamicTypeSize: .xxxLarge))
+        #expect(MapLayerMenu.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility1))
+        #expect(MapLayerMenu.showsWarningGeometryTogglePolicy(dynamicTypeSize: .accessibility3))
     }
 }
 #endif

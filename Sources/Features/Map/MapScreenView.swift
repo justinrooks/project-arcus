@@ -20,8 +20,6 @@ struct MapScreenView: View {
     @Binding private var selected: MapLayer
     @State private var model = MapFeatureModel()
     @State private var reloadTask: Task<Void, Never>?
-    @State private var showLayerPicker = false
-    @Namespace private var layerNamespace
 
     init(selectedLayer: Binding<MapLayer> = .constant(.categorical)) {
         _selected = selectedLayer
@@ -35,10 +33,8 @@ struct MapScreenView: View {
     var body: some View {
         MapScreenContent(
             selected: $selected,
-            showLayerPicker: $showLayerPicker,
             showsWarningGeometry: $showsWarningGeometry,
-            scene: model.activeScene,
-            layerNamespace: layerNamespace
+            scene: model.activeScene
         )
         .onChange(of: selected, initial: true) { _, newValue in
             model.selectLayer(newValue)
@@ -62,16 +58,16 @@ struct MapScreenView: View {
     }
     
     @MainActor
-        private func scheduleReload() {
-            reloadTask?.cancel()
-            reloadTask = Task {
-                await model.reload(
-                    using: dependencies.spcMapData,
-                    warningSource: dependencies.arcusProvider,
-                    selectedLayer: selected
-                )
-            }
+    private func scheduleReload() {
+        reloadTask?.cancel()
+        reloadTask = Task {
+            await model.reload(
+                using: dependencies.spcMapData,
+                warningSource: dependencies.arcusProvider,
+                selectedLayer: selected
+            )
         }
+    }
 }
 
 private struct MapScreenContent: View {
@@ -79,11 +75,9 @@ private struct MapScreenContent: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Binding var selected: MapLayer
-    @Binding var showLayerPicker: Bool
     @Binding var showsWarningGeometry: Bool
 
     let scene: MapLayerScene
-    let layerNamespace: Namespace.ID
 
     @State private var showsLegendSheet = false
 
@@ -97,36 +91,10 @@ private struct MapScreenContent: View {
                 .ignoresSafeArea()
 
             VStack(alignment: .trailing) {
-                HStack(spacing: 10) {
-                    Button {
-                        showLayerPicker = true
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "square.2.layers.3d.top.filled")
-                                .imageScale(.medium)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.secondary)
-                            Text(selected.title)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                                .contentTransition(.opacity)
-                            Image(systemName: "chevron.down")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(minHeight: 40)
-                        .contentShape(Capsule())
-                    }
-                    .accessibilityLabel("Map layers")
-                    .accessibilityValue(selected.title)
-                    .scaleEffect(showLayerPicker ? 0.98 : 1)
-                    .animation(SkyAwareMotion.press(reduceMotion), value: showLayerPicker)
-                    .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
-                    .modifier(MapLayerPickerButtonStyle())
-                    .modifier(MapLayerButtonMorph(namespace: layerNamespace))
-                }
+                MapLayerMenu(
+                    selection: $selected,
+                    showsWarningGeometry: $showsWarningGeometry
+                )
                 .padding(.horizontal, 18)
                 .padding(.top, 14)
                 Spacer()
@@ -151,14 +119,6 @@ private struct MapScreenContent: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(legendAllowsHitTesting)
-        }
-        .sheet(isPresented: $showLayerPicker) {
-            LayerPickerSheet(
-                selection: $selected,
-                showsWarningGeometry: $showsWarningGeometry,
-                title: "Map Layers",
-                triggerNamespace: layerNamespace
-            )
         }
         .sheet(isPresented: $showsLegendSheet) {
             MapLegendSheet(showWarnings: showsWarningLegend, legendState: scene.legendState)
@@ -216,40 +176,6 @@ private struct ViewportCoordinate: Equatable {
     }
 }
 
-private struct MapLayerPickerButtonStyle: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content
-                .buttonStyle(.glass)
-        } else {
-            content
-                .buttonStyle(.plain)
-                .skyAwareSurface(
-                    cornerRadius: SkyAwareRadius.section,
-                    tint: .skyAwareAccent.opacity(0.18),
-                    interactive: true,
-                    shadowOpacity: 0.16,
-                    shadowRadius: 10,
-                    shadowY: 6
-                )
-        }
-    }
-}
-
-private struct MapLayerButtonMorph: ViewModifier {
-    let namespace: Namespace.ID
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content.glassEffectID("map-layer-button", in: namespace)
-        } else {
-            content
-        }
-    }
-}
-
 private struct MapLegendSheet: View {
     let showWarnings: Bool
     let legendState: MapLegendState
@@ -277,8 +203,6 @@ private struct MapLegendSheet: View {
 }
 
 private struct MapScreenContentPreview: View {
-    @Namespace private var layerNamespace
-
     let legendState: MapLegendState
     let selectedLayer: MapLayer
 
@@ -293,13 +217,11 @@ private struct MapScreenContentPreview: View {
     var body: some View {
         MapScreenContent(
             selected: .constant(selectedLayer),
-            showLayerPicker: .constant(false),
             showsWarningGeometry: .constant(true),
             scene: MapLayerScene(
                 canvasState: MapCanvasState(overlays: [], overlayRevision: 0, initialCenterCoordinate: nil),
                 legendState: legendState
-            ),
-            layerNamespace: layerNamespace
+            )
         )
     }
 }

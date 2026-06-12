@@ -93,12 +93,61 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(mapLayersButton.waitForExistence(timeout: 10), "Expected map layer picker button.")
 
         assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Wind", expectedValue: "Wind")
-        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Wind, selected", expectedValue: "Wind")
+        assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Wind", expectedValue: "Wind")
         assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Hail", expectedValue: "Hail")
         assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Tornado", expectedValue: "Tornado")
         assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Mesoscale", expectedValue: "Mesoscale")
         assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Fire", expectedValue: "Fire")
         assertLayerSelection(app, pickerButton: mapLayersButton, layerLabel: "Severe Risk", expectedValue: "Severe Risk")
+    }
+
+    @MainActor
+    func testMapLayerMenuKeepsWarningToggleReachableAndFunctional() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let mapTab = app.tabBars.buttons["Map"]
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10), "Expected Map tab to exist.")
+        mapTab.tap()
+
+        let mapLayersButton = app.buttons["Map layers"]
+        XCTAssertTrue(mapLayersButton.waitForExistence(timeout: 10), "Expected map layer menu trigger.")
+        mapLayersButton.tap()
+
+        XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the map layer chooser to open as a menu, not a sheet.")
+
+        let warningToggle = app.switches["Show Active Alerts"]
+        XCTAssertTrue(warningToggle.waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
+        let initialValue = warningToggle.value as? String
+        warningToggle.tap()
+        XCTAssertNotEqual(warningToggle.value as? String, initialValue, "Expected the warning overlay toggle to change state.")
+        warningToggle.tap()
+    }
+
+    @MainActor
+    func testMapLayerMenuRemainsReachableAtAccessibilityTextSizes() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+
+        let mapTab = app.tabBars.buttons["Map"]
+        XCTAssertTrue(mapTab.waitForExistence(timeout: 10), "Expected Map tab to exist.")
+        mapTab.tap()
+
+        let mapLayersButton = app.buttons["Map layers"]
+        XCTAssertTrue(mapLayersButton.waitForExistence(timeout: 10), "Expected the map layer menu trigger at accessibility text sizes.")
+        mapLayersButton.tap()
+
+        XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the accessibility-size chooser to stay a menu, not a sheet.")
+        XCTAssertTrue(app.switches["Show Active Alerts"].waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable at accessibility text sizes.")
     }
 
     @MainActor
@@ -565,15 +614,47 @@ final class SkyAwareUITests: XCTestCase {
     ) {
         pickerButton.tap()
 
-        let pickerTitle = app.staticTexts["Map Layers"]
-        XCTAssertTrue(pickerTitle.waitForExistence(timeout: 10), "Expected map layer picker sheet.")
+        XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the map layer chooser to open as a menu, not a sheet.")
+        XCTAssertTrue(app.switches["Show Active Alerts"].waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
 
-        let layerButton = app.buttons[layerLabel]
-        XCTAssertTrue(layerButton.waitForExistence(timeout: 10), "Expected layer button \(layerLabel).")
-        layerButton.tap()
+        tapLayerOption(app, titled: layerLabel)
 
         XCTAssertTrue(pickerButton.waitForExistence(timeout: 10), "Expected picker button to remain available after dismissal.")
         XCTAssertEqual(pickerButton.value as? String, expectedValue, "Expected map picker to report \(expectedValue) after selecting \(layerLabel).")
+    }
+
+    @MainActor
+    private func tapLayerOption(_ app: XCUIApplication, titled title: String) {
+        let directButton = app.buttons[title].firstMatch
+        if directButton.waitForExistence(timeout: 5) {
+            directButton.tap()
+            return
+        }
+
+        let directMenuItem = app.menuItems[title].firstMatch
+        if directMenuItem.waitForExistence(timeout: 5) {
+            directMenuItem.tap()
+            return
+        }
+
+        let pickerRow = app.buttons["Map layer"].firstMatch
+        if pickerRow.waitForExistence(timeout: 5) {
+            pickerRow.tap()
+        } else {
+            let pickerMenuItem = app.menuItems["Map layer"].firstMatch
+            XCTAssertTrue(pickerMenuItem.waitForExistence(timeout: 10), "Expected the map layer submenu.")
+            pickerMenuItem.tap()
+        }
+
+        let nestedButton = app.buttons[title].firstMatch
+        if nestedButton.waitForExistence(timeout: 10) {
+            nestedButton.tap()
+            return
+        }
+
+        let nestedMenuItem = app.menuItems[title].firstMatch
+        XCTAssertTrue(nestedMenuItem.waitForExistence(timeout: 10), "Expected layer option \(title).")
+        nestedMenuItem.tap()
     }
 
     @MainActor

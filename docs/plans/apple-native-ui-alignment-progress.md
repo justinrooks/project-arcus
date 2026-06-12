@@ -39,7 +39,7 @@ decisions from Git history.
 | 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Not started | |
 | 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Completed | Map scenes now carry explicit loading, resolving, current, confirmed-empty, stale, and unavailable presentation states so failed refreshes do not collapse to confirmed no-risk language. |
 | 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Not started | |
-| 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Not started | |
+| 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Completed | Native `Menu` trigger now shows the current layer and semantic symbol, keeps warning overlays in a separate menu section, and preserves the existing selection / haptic / availability paths. |
 | 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Not started | |
 | 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Not started | |
 | 27 | AN-27 | [#243](https://github.com/justinrooks/project-arcus/issues/243) | Add a minimal spacing scale during final polish | Not started | |
@@ -774,15 +774,15 @@ Model used: gpt-5.4 / medium
 
 #### Deferred Work
 
-- AN-24 still owns replacing the map layer sheet with a native current-state menu.
+- AN-24 replaced the map layer sheet with a native current-state menu.
 - Dark-appearance visual verification was not achievable in this simulator workflow; the visible screenshots captured here are light appearance only.
 - Direct haptic verification still depends on the runtime feedback path; this pass confirmed the code path and selection gating, not the physical vibration itself.
 
 #### Handoff Notes
 
 - Keep the static chips noninteractive; do not reintroduce `interactive: true` just to get glass to look fancier.
-- The map picker now has a single selection-change gate, so AN-24 should preserve that state ownership even if the presentation chrome changes.
-- If AN-24 replaces the picker sheet, it should continue to drive the same `selection` binding so `.sensoryFeedback` remains tied to real layer changes.
+- The map picker now has a single selection-change gate, and AN-24 keeps that same `selection` binding while changing the presentation chrome.
+- AN-24 now routes the control through a native menu, so `.sensoryFeedback` remains tied to real layer changes without reintroducing a modal chooser.
 - Residual risk: the current manual validation proved the light appearance only, so a future dark-mode pass should still confirm the chip chrome remains noninteractive there.
 
 ### AN-17 / GitHub #233 - Make Liquid Glass opt-in
@@ -926,7 +926,7 @@ Model used: gpt-5 / medium
 #### Deferred Work
 
 - AN-23 still owns the warning legend source-of-truth cleanup.
-- AN-24 still owns replacing the layer sheet with a native current-state menu.
+- AN-24 replaced the layer sheet with a native current-state menu.
 - AN-25 still owns accessible overlay equivalents; this issue only adds the state text and accessibility cues for the map scene itself.
 - Broader map control and legend spacing cleanup remains with AN-26.
 
@@ -936,5 +936,57 @@ Model used: gpt-5 / medium
 - Keep future map legend work keyed off the scene presentation state, not off empty arrays alone.
 - Preserve saved overlays on refresh failure. The map should surface stale/saved data quietly rather than erase it.
 - AN-23 should build on the new presentation state model when deriving warning legend content from rendered warnings.
-- AN-24 should keep the current layer-selection state machine intact and only change the control surface.
+- AN-24 kept the current layer-selection state machine intact and only changed the control surface.
 - AN-25 should use the same availability metadata for accessible overlay equivalents instead of inventing new state.
+
+### AN-24 / GitHub #240 - Replace the map layer sheet with a native current-state menu
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5 / medium
+
+#### Scope
+
+- Replaced the large single-selection map layer sheet with a native floating `Menu` trigger.
+- The closed trigger now shows the selected layer’s semantic SF Symbol and concise title.
+- Layer selection stays on the existing `selection` binding, and the menu uses native picker semantics for the existing six choices.
+- The active-warning overlay control moved into the same menu as a clearly separated section and remains available at all Dynamic Type sizes.
+- Removed the sheet-only close affordance and grid/list picker layout; no separate sheet remains for layer selection.
+- Preserved the existing map layer selection state, persistence, default selection, data loading, refresh behavior, and rendering path.
+
+#### Files Changed
+
+- `Sources/Features/Map/MapScreenView.swift`
+- `Sources/Features/Map/Picker.swift`
+- `Tests/UnitTests/LayerPickerAdaptiveLayoutTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- The map still uses the same layer-selection state machine and the same `MapFeatureModel` rendering path.
+- AN-16 sensory feedback remains tied to actual selection changes only.
+- AN-22 availability, freshness, stale, and confirmed-empty semantics remain intact.
+- All six map layers remain available.
+- The map remains more visually dominant because the chooser no longer opens a large modal sheet.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/MapLayerMenuTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection -only-testing:SkyAwareUITests/testMapLayerMenuKeepsWarningToggleReachableAndFunctional test -resultBundlePath /private/tmp/SkyAware-AN24-ui.xcresult`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes test`
+- `xcrun xccov view --report /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.12_10-53-24--0600.xcresult | rg "MapScreenView.swift|Picker.swift|LayerPickerAdaptiveLayoutTests.swift"`
+- Coverage report signal on the touched files was minimal: `MapScreenView.swift` showed 2.84% (9/317) and `Picker.swift` showed 0.00% (0/162) in the captured report, so there is no meaningful coverage gain to claim from this slice.
+
+#### Deferred Work
+
+- AN-25 still owns the accessible overlay equivalents and related overlay summaries.
+- AN-26 still owns the remaining control / legend crowding pass around the now-menu-driven selector.
+
+#### Handoff Notes
+
+- Keep the trigger label tied to the current selected layer and its semantic symbol; do not replace it with generic layers chrome.
+- If the warning overlay control moves again, keep it in a clearly separated menu section rather than folding it into the layer list.
+- AN-25 should reuse the same current-value and availability semantics rather than inventing a second overlay state model.
+- AN-26 should treat the menu as the new baseline and only trim the surrounding control chrome.
