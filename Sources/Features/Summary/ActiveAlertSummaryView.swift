@@ -164,7 +164,6 @@ struct ActiveAlertSummaryView: View {
             shadowOpacity: 0.08,
             shadowRadius: 8,
             shadowY: 3,
-            allowsGlass: false
         )
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in

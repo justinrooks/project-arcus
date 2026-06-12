@@ -105,7 +105,7 @@ struct FireWeatherRailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
         .padding([.leading, .trailing], 15)
-        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
+        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4)
     }
 }
 

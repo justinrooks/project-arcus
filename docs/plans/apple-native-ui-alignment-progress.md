@@ -32,7 +32,7 @@ decisions from Git history.
 | 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Not started | |
 | 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
 | 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Not started | |
-| 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Not started | |
+| 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Completed | Glass is now opt-in on shared card backgrounds; ordinary content surfaces fall back to stable cards by default. |
 | 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Not started | |
 | 19 | AN-19 | [#235](https://github.com/justinrooks/project-arcus/issues/235) | Move Settings to native Form structure | Not started | |
 | 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Not started | |
@@ -67,7 +67,7 @@ decisions from Git history.
 Record facts that affect more than one issue here. Include the date, source issue, affected later issues, and the
 decision made.
 
-None yet.
+- 2026-06-12, AN-17: `cardBackground` now defaults to stable content surfaces, with explicit `allowsGlass: true` opt-in retained for future hierarchy-bearing cards. Remaining glass usage lives in `skyAwareSurface`, `skyAwareChip`, and `.glass` button styles for navigation chrome and floating interactive controls.
 
 ## Issue Log Template
 
@@ -731,3 +731,64 @@ Model used: gpt-5.4 / medium
 - Keep hazard colors reserved for actual weather meaning. The only shared neutral palette introduced here is the metadata/offline tint in `ext+Color.swift`.
 - The new watch-chip regression test should remain the guardrail if future metadata chips drift back toward weather-danger colors.
 - Residual risk: the neutral chip tint is visually conservative by design, so if future copy makes the chips denser, they may need a small contrast tweak rather than a new color family.
+
+### AN-17 / GitHub #233 - Make Liquid Glass opt-in
+
+Status: Completed
+Date: 2026-06-12
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Changed the shared `cardBackground` helper so stable content surfaces are the default on iOS 26+ instead of glass.
+- Kept glass available as an explicit opt-in via `allowsGlass: true` and added `glassCardBackground(...)` for future call sites that genuinely need hierarchy-bearing glass.
+- Removed redundant `allowsGlass: false` arguments from ordinary content cards, risk tiles, Summary sections, alert detail content, Outlook detail content, and the reliability explanation sheet.
+- Left the floating map controls, map-layer trigger, and other intentional glass chrome in their existing `skyAwareSurface` / glass button paths.
+
+#### Files Changed
+
+- `Sources/Utilities/Extensions/ext+View.swift`
+- `Sources/Features/Badges/FireWeatherRailView.swift`
+- `Sources/Features/Badges/SevereWeatherBadgeView.swift`
+- `Sources/Features/Badges/StormRiskBadgeView.swift`
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookDetailView.swift`
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Sources/Features/Summary/LocationReliabilitySummaryExplanationSheet.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Content hierarchy, navigation, data flow, and business logic were unchanged.
+- Pre-iOS-26 behavior stayed on the existing opaque card fallback.
+- Semantic risk and hazard surfaces kept their established colors, shapes, and readability.
+- Floating map controls and navigation chrome kept their intentional glass treatment.
+- Existing continuous corner language and the soft surface language remained intact.
+- No new gradients, decorative blur, extra borders, or heavier shadows were introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` via `build_run_sim`
+- XcodeBuildMCP runtime snapshot review of Summary in dark appearance
+- XcodeBuildMCP screenshot review of Summary in dark appearance
+- XcodeBuildMCP runtime snapshot and screenshot review of Alerts, Outlooks, Settings, alert detail, and Map in dark appearance
+- `xcrun simctl ui F3BDA3CC-F088-40E2-8F34-825CA52C166F appearance light`
+- XcodeBuildMCP runtime snapshot and screenshot review of Summary in light appearance
+- XcodeBuildMCP runtime snapshot and screenshot review of Map in light appearance
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iPhone Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testTabNavigationLoadsEachPrimaryView -only-testing:SkyAwareUITests/testSummaryAlertTapShowsSheetAndAlertTabTapShowsWatchDetailView test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iPhone Simulator,name=iPhone 17" -only-testing:SkyAwareTests/SkyAwareAdaptiveLayoutTests test`
+
+#### Deferred Work
+
+- AN-18 still owns the remaining Summary surface-chrome reduction.
+- AN-19 still owns the native Settings structure migration.
+- AN-20 still owns the native Alerts list structure.
+- AN-21 still owns the native Outlooks list structure.
+- Any future card that genuinely needs glass should use the explicit `allowsGlass: true` opt-in or the new `glassCardBackground(...)` helper rather than relying on a shared default.
+
+#### Handoff Notes
+
+- The shared policy is now content-first. If a surface does not need hierarchy or interaction, it should not ask for glass.
+- Keep using `skyAwareSurface` and `.glass` button styles for navigation chrome and floating interactive controls; those are intentionally separate from content cards.
+- AN-18 through AN-21 should inherit the stable card default rather than reintroducing glass as a visual crutch while moving to native structure.
+- Residual risk: the XcodeBuildMCP test result summary did not report per-test counts even when the invoked smoke tests completed successfully, so future validation should still inspect the bundle or run additional targeted checks if exact per-test accounting matters.

@@ -391,7 +391,6 @@ struct SummaryView: View {
                 shadowOpacity: colorScheme == .dark ? 0.08 : 0.12,
                 shadowRadius: colorScheme == .dark ? 8 : 10,
                 shadowY: colorScheme == .dark ? 3 : 4,
-                allowsGlass: false
             )
 
             AtmosphericConditionsCard(weather: weather, isOffline: showsOfflineToken)

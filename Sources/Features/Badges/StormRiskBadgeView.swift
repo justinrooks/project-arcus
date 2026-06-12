@@ -123,7 +123,7 @@ struct StormRiskBadgeView: View {
         .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
                minHeight: 150, idealHeight: 150, maxHeight: 160)
         .padding()
-        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
+        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4)
     }
 
     private var usesAccessibilityLayout: Bool {

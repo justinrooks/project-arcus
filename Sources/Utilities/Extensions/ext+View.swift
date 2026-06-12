@@ -182,9 +182,17 @@ extension View {
         shadowOpacity: Double = 0.10,
         shadowRadius: CGFloat = 10,
         shadowY: CGFloat = 4,
-        allowsGlass: Bool = true
+        allowsGlass: Bool = false
     ) -> some View {
-        if #available(iOS 26, *), allowsGlass == false {
+        if #available(iOS 26, *), allowsGlass {
+            self.skyAwareSurface(
+                cornerRadius: cornerRadius,
+                tint: .white.opacity(0.10),
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
+            )
+        } else {
             self.background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.cardBackground)
@@ -195,15 +203,23 @@ extension View {
                     }
                     .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             )
-        } else {
-            self.skyAwareSurface(
-                cornerRadius: cornerRadius,
-                tint: .white.opacity(0.10),
-                shadowOpacity: shadowOpacity,
-                shadowRadius: shadowRadius,
-                shadowY: shadowY
-            )
         }
+    }
+
+    @ViewBuilder
+    func glassCardBackground(
+        cornerRadius: CGFloat = SkyAwareRadius.hero,
+        shadowOpacity: Double = 0.10,
+        shadowRadius: CGFloat = 10,
+        shadowY: CGFloat = 4
+    ) -> some View {
+        self.cardBackground(
+            cornerRadius: cornerRadius,
+            shadowOpacity: shadowOpacity,
+            shadowRadius: shadowRadius,
+            shadowY: shadowY,
+            allowsGlass: true
+        )
     }
     
     func cardRowBackground(

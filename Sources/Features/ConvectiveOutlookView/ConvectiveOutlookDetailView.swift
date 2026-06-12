@@ -139,7 +139,6 @@ struct ConvectiveOutlookDetailView: View {
                         shadowOpacity: 0.12,
                         shadowRadius: 16,
                         shadowY: 8,
-                        allowsGlass: false
                     )
                 
                 detailSection(title: "Summary", text: outlook.summary)
@@ -214,7 +213,6 @@ struct ConvectiveOutlookDetailView: View {
             shadowOpacity: 0.10,
             shadowRadius: 12,
             shadowY: 6,
-            allowsGlass: false
         )
     }
 
