@@ -228,6 +228,36 @@ struct WarningLegendItem: Identifiable {
     }
 }
 
+struct MapLegendAccessibilityContract: Equatable, Sendable {
+    let label: String
+    let value: String
+}
+
+enum MapLegendAccessibility {
+    static func categorical(risk: StormRiskLevel) -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Severe Risk", value: risk.message)
+    }
+
+    static func meso() -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Mesoscale", value: "Displayed area")
+    }
+
+    static func severe(layer: MapLayer, probability: ThreatProbability) -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(
+            label: layer.accessibilityLegendTitle,
+            value: probability.accessibilityDescription
+        )
+    }
+
+    static func fire(riskLabel: String) -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Fire Risk", value: riskLabel)
+    }
+
+    static func hatch() -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Hatching", value: "Stronger storms possible")
+    }
+}
+
 private struct WarningLegendRow: View {
     let item: WarningLegendItem
 
@@ -293,7 +323,8 @@ private struct CategoricalLegendRow: View {
                 .fontWeight(["HIGH", "MDT", "ENH"].contains(risk.abbreviation.uppercased()) ? .semibold : .regular)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Severe Risk, \(risk.message)")
+        .accessibilityLabel(MapLegendAccessibility.categorical(risk: risk).label)
+        .accessibilityValue(MapLegendAccessibility.categorical(risk: risk).value)
     }
 }
 
@@ -313,7 +344,8 @@ private struct MesoLegendRow: View {
                 .fontWeight(.regular)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Mesoscale, displayed area")
+        .accessibilityLabel(MapLegendAccessibility.meso().label)
+        .accessibilityValue(MapLegendAccessibility.meso().value)
     }
 }
 
@@ -346,7 +378,8 @@ private struct SevereLegendRow: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(layer.accessibilityLegendTitle), \(probability.accessibilityDescription)")
+        .accessibilityLabel(MapLegendAccessibility.severe(layer: layer, probability: probability).label)
+        .accessibilityValue(MapLegendAccessibility.severe(layer: layer, probability: probability).value)
     }
 }
 
@@ -371,7 +404,8 @@ private struct FireLegendRow: View {
                 .fontWeight(risk.riskLevel >= 8 ? .semibold : .regular)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Fire Risk, \(riskLabel)")
+        .accessibilityLabel(MapLegendAccessibility.fire(riskLabel: riskLabel).label)
+        .accessibilityValue(MapLegendAccessibility.fire(riskLabel: riskLabel).value)
     }
 
     private var riskLabel: String {
@@ -411,7 +445,8 @@ private struct HatchLegendRow: View {
         .padding(.vertical, 8)
         .frame(minHeight: 44, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Hatching. Stronger storms possible.")
+        .accessibilityLabel(MapLegendAccessibility.hatch().label)
+        .accessibilityValue(MapLegendAccessibility.hatch().value)
     }
 }
 

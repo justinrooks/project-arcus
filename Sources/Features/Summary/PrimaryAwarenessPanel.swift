@@ -12,6 +12,23 @@ enum SummaryAwarenessDestination: Equatable, Sendable {
     case alerts
     case map(MapLayer)
     case none
+
+    var accessibilityHint: String? {
+        switch self {
+        case .alerts:
+            "Opens the alert center."
+        case .map(let layer):
+            "Opens the \(layer.title.lowercased()) map."
+        case .none:
+            nil
+        }
+    }
+}
+
+struct SummaryAwarenessAccessibilityContract: Equatable, Sendable {
+    let label: String
+    let value: String
+    let hint: String?
 }
 
 enum SummaryAwarenessPrimaryState: Equatable, Sendable {
@@ -267,6 +284,48 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         case .alert, .loading:
             false
         }
+    }
+
+    var accessibilityContract: SummaryAwarenessAccessibilityContract {
+        SummaryAwarenessAccessibilityContract(
+            label: accessibilityLabel,
+            value: accessibilityValue,
+            hint: destination.accessibilityHint
+        )
+    }
+
+    private var accessibilityLabel: String {
+        switch self {
+        case .alert(let title, _):
+            title
+        case .severe:
+            "Severe Risk"
+        case .storm:
+            "Storm Risk"
+        case .fire:
+            "Fire Risk"
+        case .loading(let title, _, _):
+            title
+        case .quiet:
+            "Quiet Weather"
+        }
+    }
+
+    private var accessibilityValue: String {
+        switch self {
+        case let .alert(_, detail):
+            detail
+        case .severe, .storm, .fire:
+            accessibilityCurrentValue(title: title, detail: detail)
+        case let .loading(_, detail, _):
+            detail
+        case .quiet:
+            "No active severe threats nearby"
+        }
+    }
+
+    private func accessibilityCurrentValue(title: String, detail: String) -> String {
+        detail.isEmpty ? title : "\(title). \(detail)"
     }
 }
 
@@ -819,14 +878,20 @@ private struct PrimaryAwarenessHeroView: View {
     }
 
     var body: some View {
+        let contract = primary.accessibilityContract
+
         if action == .none {
             heroContent
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(contract.label)
+                .accessibilityValue(contract.value)
         } else {
             Button {
                 handle(action: action)
             } label: {
                 heroContent
                     .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
+                    .accessibilityHidden(true)
             }
             .buttonStyle(
                 SkyAwarePressableButtonStyle(
@@ -835,7 +900,10 @@ private struct PrimaryAwarenessHeroView: View {
                     pressedOverlayOpacity: 0.06
                 )
             )
-            .accessibilityHint(accessibilityHint(for: action))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(contract.label)
+            .accessibilityValue(contract.value)
+            .accessibilityHintIfNeeded(contract.hint)
         }
     }
 
@@ -926,16 +994,6 @@ private struct PrimaryAwarenessHeroView: View {
         }
     }
 
-    private func accessibilityHint(for action: SummaryAwarenessDestination) -> String {
-        switch action {
-        case .alerts:
-            "Opens the alert center."
-        case .map(let layer):
-            "Opens the \(layer.title.lowercased()) map."
-        case .none:
-            ""
-        }
-    }
 }
 
 private struct AwarenessSupportRow: View {
@@ -1092,6 +1150,17 @@ private struct AwarenessSupportRow: View {
             return 1
         case .supplemental:
             return 2
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func accessibilityHintIfNeeded(_ hint: String?) -> some View {
+        if let hint {
+            accessibilityHint(hint)
+        } else {
+            self
         }
     }
 }

@@ -29,7 +29,7 @@ decisions from Git history.
 | 11 | AN-11 | [#227](https://github.com/justinrooks/project-arcus/issues/227) | Use proportional typography for weather narratives | Completed | Narrative paragraphs now use proportional Dynamic Type typography, with monospaced digits preserved for compact technical values. |
 | 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Completed | Cached Storm Risk, Severe Risk, Fire Risk, Atmospheric Conditions, and Local Alerts now remain visible offline with a quiet freshness/availability cue instead of being replaced by generic offline cards. |
 | 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Completed | Persistent category labels now stay visible on the resolved hero tiles, and the tiles can grow vertically instead of clipping longer values. |
-| 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Not started | |
+| 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Completed | Summary hero controls, map selections, and legend rows now expose explicit label/value/hint/traits contracts without changing visuals or domain meaning. |
 | 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
 | 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Completed | Static status and metadata chips now use the noninteractive chip treatment, and map layer selection now routes feedback through SwiftUI `sensoryFeedback` on actual selection changes. |
 | 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Completed | Glass is now opt-in on shared card backgrounds; ordinary content surfaces fall back to stable cards by default. |
@@ -678,6 +678,59 @@ Model used: gpt-5.4 / medium
 - The badge sizing helper now has a flexible branch; use it only for the Summary hero tiles unless another custom tile has the same accessibility problem.
 - AN-14 should continue from the current header/body hierarchy, not from the old overlay-label implementation.
 - AN-18 can still trim surface chrome later, but it should not undo the hero badge hierarchy established here.
+
+### AN-14 / GitHub #230 - Define explicit semantics for custom controls
+
+Status: Completed
+Date: 2026-06-14
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Added explicit accessibility contracts for the Summary hero controls in `PrimaryAwarenessPanel.swift` so the visible category, current value, and action hint stay separate instead of collapsing into one inferred label.
+- Kept the hero presentation unchanged while routing the accessible contract through the same visible state data used by the panel.
+- Switched selected map-layer choices to native selected traits in `Picker.swift` instead of appending `selected` to labels.
+- Added explicit semantic descriptions for legend rows in `MapLegendView.swift` so the layer or warning type and the displayed level or probability are exposed as label/value pairs.
+- Preserved static legend content as static content; the rows are not exposed as buttons.
+
+#### Files Changed
+
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift`
+- `Sources/Features/Map/Picker.swift`
+- `Sources/Features/Map/MapLegendView.swift`
+- `Tests/UnitTests/SummaryAwarenessPanelTests.swift`
+- `Tests/UnitTests/LayerPickerAdaptiveLayoutTests.swift`
+- `Tests/UnitTests/MapLegendAccessibilityTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Summary hero visuals, hierarchy, category identity, and Dynamic Type behavior stayed intact.
+- Risk calculation, map state, selection ownership, persistence, warning derivation, geometry, and navigation were unchanged.
+- AN-03 reliability-rail actions stayed separate and untouched.
+- AN-13 visible category labels remained the source of truth for the resolved hero layout.
+- The map legend stayed domain-specific; no generic row replacement was introduced.
+- Useful child content remains available unless a control is deliberately grouped for a clearer semantic result.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,OS=26.5,name=iPhone 17" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,OS=26.5,name=iPhone 17" -only-testing:SkyAwareTests/SummaryAwarenessPanelTests -only-testing:SkyAwareTests/LayerPickerAdaptiveLayoutTests -only-testing:SkyAwareTests/MapLegendAccessibilityTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,OS=26.5,name=iPhone 17" -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection -only-testing:SkyAwareUITests/testMapLayerMenuKeepsWarningToggleReachableAndFunctional -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes test`
+
+#### Deferred Work
+
+- A literal spoken VoiceOver pass in the simulator was not completed in this change.
+- AN-28 still owns the full acceptance matrix across portrait, landscape, text-size, contrast, and VoiceOver permutations.
+- The badge views are effectively legacy now; future cleanup should remove them only after later consumers stop referencing them.
+
+#### Handoff Notes
+
+- The contract now lives in presentation helpers, not scattered label literals, so future accessibility tweaks should reuse the same helpers instead of re-synthesizing strings at the call site.
+- Keep map selection semantics on `.isSelected`; do not reintroduce manual `selected` suffixes in labels.
+- Preserve visible category identity and Dynamic Type behavior from AN-13 while iterating on hero accessibility.
+- AN-28 should verify the whole map and Summary acceptance matrix, including portrait and landscape VoiceOver order, because this change narrows semantics but intentionally does not widen layout coverage.
 
 ### AN-15 / GitHub #231 - Restore semantic color discipline
 

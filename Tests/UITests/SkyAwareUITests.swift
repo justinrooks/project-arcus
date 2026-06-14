@@ -666,10 +666,16 @@ final class SkyAwareUITests: XCTestCase {
         layerLabel: String,
         expectedValue: String
     ) {
+        let currentValue = pickerButton.value as? String ?? ""
         pickerButton.tap()
 
         XCTAssertFalse(app.buttons["Close"].waitForExistence(timeout: 2), "Expected the map layer chooser to open as a menu, not a sheet.")
         XCTAssertTrue(app.switches["Show Active Alerts"].waitForExistence(timeout: 10), "Expected the warning overlay toggle to remain reachable.")
+
+        let selectedOption = menuOption(in: app, titled: currentValue)
+        XCTAssertTrue(selectedOption.waitForExistence(timeout: 10), "Expected the current layer option to remain accessible in the menu.")
+        XCTAssertTrue(selectedOption.isSelected, "Expected the current layer option to expose native selected state.")
+        XCTAssertFalse(selectedOption.label.localizedCaseInsensitiveContains("selected"), "Did not expect the selected state to be baked into the label.")
 
         tapLayerOption(app, titled: layerLabel)
 
@@ -709,6 +715,21 @@ final class SkyAwareUITests: XCTestCase {
         let nestedMenuItem = app.menuItems[title].firstMatch
         XCTAssertTrue(nestedMenuItem.waitForExistence(timeout: 10), "Expected layer option \(title).")
         nestedMenuItem.tap()
+    }
+
+    @MainActor
+    private func menuOption(in app: XCUIApplication, titled title: String) -> XCUIElement {
+        let directButton = app.buttons[title].firstMatch
+        if directButton.exists {
+            return directButton
+        }
+
+        let directMenuItem = app.menuItems[title].firstMatch
+        if directMenuItem.exists {
+            return directMenuItem
+        }
+
+        return app.staticTexts[title].firstMatch
     }
 
     @MainActor

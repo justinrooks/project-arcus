@@ -25,5 +25,16 @@ struct MapLayerMenuTests {
         #expect(MapLayerMenu.shouldUpdateSelection(current: .categorical, to: .categorical) == false)
         #expect(MapLayerMenu.shouldUpdateSelection(current: .categorical, to: .wind))
     }
+
+    @Test("Map layer menu accessibility state uses selected traits instead of label suffixes")
+    func accessibilityState_marksOnlyTheSelectedLayer() {
+        let selected = MapLayerMenu.accessibilityState(for: .wind, selection: .wind)
+        let unselected = MapLayerMenu.accessibilityState(for: .hail, selection: .wind)
+
+        #expect(selected.label == "Wind")
+        #expect(selected.isSelected)
+        #expect(unselected.label == "Hail")
+        #expect(unselected.isSelected == false)
+    }
 }
 #endif

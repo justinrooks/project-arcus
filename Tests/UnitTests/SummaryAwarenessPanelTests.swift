@@ -315,6 +315,67 @@ struct SummaryAwarenessPanelTests {
         #expect(firePresentation.presentationMode == .normal)
     }
 
+    @Test("storm hero accessibility contract separates category value and hint")
+    func stormHeroAccessibilityContract_separatesCategoryValueAndHint() {
+        let contract = SummaryAwarenessPrimaryState.storm(.moderate).accessibilityContract
+
+        #expect(contract.label == "Storm Risk")
+        #expect(contract.value == "Moderate Risk. Widespread severe storms expected.")
+        #expect(contract.hint == "Opens the severe risk map.")
+    }
+
+    @Test("severe hero accessibility contract keeps the hazard name and probability clear")
+    func severeHeroAccessibilityContract_keepsHazardNameAndProbabilityClear() {
+        let contract = SummaryAwarenessPrimaryState.severe(.tornado(probability: 0.10)).accessibilityContract
+
+        #expect(contract.label == "Severe Risk")
+        #expect(contract.value == "Tornado. 10% chance of tornadoes")
+        #expect(contract.hint == "Opens the tornado map.")
+    }
+
+    @Test("fire hero accessibility contract keeps the fire value readable")
+    func fireHeroAccessibilityContract_keepsTheFireValueReadable() {
+        let contract = SummaryAwarenessPrimaryState.fire(.critical).accessibilityContract
+
+        #expect(contract.label == "Fire Risk")
+        #expect(
+            contract.value ==
+            "Critical Fire Risk. Critical fire weather is forecast. Strong winds and dry air could support rapid fire spread."
+        )
+        #expect(contract.hint == "Opens the fire risk map.")
+    }
+
+    @Test("alert hero accessibility contract keeps weather text intact")
+    func alertHeroAccessibilityContract_keepsWeatherTextIntact() {
+        let contract = SummaryAwarenessPrimaryState.alert(
+            title: "Severe Thunderstorm Watch",
+            detail: "In effect until 9:00 PM CDT"
+        ).accessibilityContract
+
+        #expect(contract.label == "Severe Thunderstorm Watch")
+        #expect(contract.value == "In effect until 9:00 PM CDT")
+        #expect(contract.hint == "Opens the alert center.")
+    }
+
+    @Test("loading and quiet hero accessibility contracts remain concise")
+    func loadingAndQuietHeroAccessibilityContracts_remainConcise() {
+        let loading = SummaryAwarenessPrimaryState.loading(
+            title: "Storm Risk",
+            detail: "Getting storm risk…",
+            symbolName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
+        ).accessibilityContract
+
+        let quiet = SummaryAwarenessPrimaryState.quiet.accessibilityContract
+
+        #expect(loading.label == "Storm Risk")
+        #expect(loading.value == "Getting storm risk…")
+        #expect(loading.hint == nil)
+
+        #expect(quiet.label == "Quiet Weather")
+        #expect(quiet.value == "No active severe threats nearby")
+        #expect(quiet.hint == nil)
+    }
+
     private func makeAlert(title: String, headline: String) -> AlertDTO {
         AlertDTO(
             id: UUID().uuidString,

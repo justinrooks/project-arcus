@@ -60,6 +60,11 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+struct MapLayerMenuAccessibilityState: Equatable, Sendable {
+    let label: String
+    let isSelected: Bool
+}
+
 // MARK: - Menu
 
 struct MapLayerMenu: View {
@@ -70,8 +75,12 @@ struct MapLayerMenu: View {
         Menu {
             Picker("Map layer", selection: $selection) {
                 ForEach(MapLayer.allCases) { layer in
+                    let accessibilityState = Self.accessibilityState(for: layer, selection: selection)
+
                     Label(layer.title, systemImage: layer.symbol)
                         .tag(layer)
+                        .accessibilityLabel(accessibilityState.label)
+                        .accessibilityAddTraits(accessibilityState.isSelected ? .isSelected : [])
                 }
             }
 
@@ -97,6 +106,10 @@ struct MapLayerMenu: View {
 
     static func showsWarningGeometryTogglePolicy(dynamicTypeSize _: DynamicTypeSize) -> Bool {
         true
+    }
+
+    static func accessibilityState(for layer: MapLayer, selection: MapLayer) -> MapLayerMenuAccessibilityState {
+        MapLayerMenuAccessibilityState(label: layer.title, isSelected: layer == selection)
     }
 }
 
