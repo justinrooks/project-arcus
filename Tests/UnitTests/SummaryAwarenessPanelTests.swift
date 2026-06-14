@@ -134,6 +134,23 @@ struct SummaryAwarenessPanelTests {
         #expect(subtitle.contains("NWS Chicago IL") == false)
     }
 
+    @Test("refreshing without a resolved risk keeps the primary hero calm")
+    func refreshWithoutResolvedRisk_keepsPrimaryHeroCalm() {
+        let selected = SummaryAwarenessPrimaryState.resolve(
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            alerts: [],
+            isStormRiskResolving: false,
+            isSevereRiskResolving: false,
+            isFireRiskResolving: false,
+            isOffline: false,
+            isRefreshing: true
+        )
+
+        #expect(selected == .quiet)
+    }
+
     @Test("tornado outranks hail and wind within severe risk")
     func tornado_outranksHailAndWind() {
         let selected = SummaryAwarenessPrimaryState.resolve(

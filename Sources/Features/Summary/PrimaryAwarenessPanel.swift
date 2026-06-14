@@ -30,7 +30,8 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         isStormRiskResolving: Bool,
         isSevereRiskResolving: Bool,
         isFireRiskResolving: Bool,
-        isOffline: Bool
+        isOffline: Bool,
+        isRefreshing: Bool = false
     ) -> SummaryAwarenessPrimaryState {
         if let alert = Self.activeAlert(from: alerts) {
             return .alert(title: alert.title, detail: alert.detail)
@@ -72,6 +73,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
                     symbolName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
                 )
             }
+
         }
 
         return .quiet
@@ -422,7 +424,8 @@ struct PrimaryAwarenessPanel: View {
             isStormRiskResolving: resolutionState.isResolving(.stormRisk),
             isSevereRiskResolving: resolutionState.isResolving(.severeRisk),
             isFireRiskResolving: resolutionState.isResolving(.fireRisk),
-            isOffline: showsOfflineToken
+            isOffline: showsOfflineToken,
+            isRefreshing: resolutionState.isRefreshing
         )
     }
 
@@ -541,7 +544,8 @@ struct PrimaryAwarenessPanel: View {
             hasRiskValue: stormRisk != nil,
             readinessState: readinessState,
             isSectionResolving: resolutionState.isResolving(.stormRisk),
-            showsOfflineToken: showsOfflineToken
+            showsOfflineToken: showsOfflineToken,
+            isRefreshing: resolutionState.isRefreshing
         )
     }
 
@@ -550,7 +554,8 @@ struct PrimaryAwarenessPanel: View {
             hasRiskValue: severeRisk != nil,
             readinessState: readinessState,
             isSectionResolving: resolutionState.isResolving(.severeRisk),
-            showsOfflineToken: showsOfflineToken
+            showsOfflineToken: showsOfflineToken,
+            isRefreshing: resolutionState.isRefreshing
         )
     }
 
@@ -559,7 +564,8 @@ struct PrimaryAwarenessPanel: View {
             hasRiskValue: fireRisk != nil,
             readinessState: readinessState,
             isSectionResolving: resolutionState.isResolving(.fireRisk),
-            showsOfflineToken: showsOfflineToken
+            showsOfflineToken: showsOfflineToken,
+            isRefreshing: resolutionState.isRefreshing
         )
     }
 
@@ -709,7 +715,7 @@ struct PrimaryAwarenessPanel: View {
             return "Fire Risk"
         }
 
-        guard let fireRisk else {
+        guard fireRisk != nil else {
             return "No Fire Risk"
         }
 
@@ -725,7 +731,7 @@ struct PrimaryAwarenessPanel: View {
             return "Getting fire risk…"
         }
 
-        if let fireRisk {
+        if fireRisk != nil {
             return firePresentation.detail
         }
 

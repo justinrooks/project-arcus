@@ -647,6 +647,19 @@ struct SummaryViewRiskPlaceholderPresentationTests {
         )
     }
 
+    @Test("nil risk keeps the resolving placeholder visible while a refresh batch is still active")
+    func riskPlaceholder_nilRiskDuringActiveRefreshBatch() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .ready,
+                isSectionResolving: false,
+                showsOfflineToken: false,
+                isRefreshing: true
+            )
+        )
+    }
+
     @Test("nil risk does not show resolving placeholder after completed local data attempt")
     func riskPlaceholder_nilRiskWhenReadyAfterCompletedAttempt() {
         #expect(

@@ -455,6 +455,69 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
     }
 
+    @Test("prime refresh keeps the visible summary stable until the follow-up commit lands")
+    func sceneActiveRefresh_keepsVisibleSummaryStableDuringPrimeBatch() async throws {
+        let context = makeContext()
+        let primeSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .hail(probability: 0.30),
+            fireRisk: .elevated,
+            outlooks: sampleOutlooks(),
+            latestOutlook: sampleOutlooks().first
+        )
+        let finalSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            outlooks: sampleOutlooks(),
+            latestOutlook: sampleOutlooks().last
+        )
+        let followUpGate = AsyncGate()
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: [primeSnapshot, finalSnapshot],
+            gates: [nil, followUpGate]
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: .slight,
+            initialSevereRisk: .wind(probability: 0.15),
+            initialFireRisk: .critical,
+            initialMesos: [MD.sampleDiscussionDTOs[0]],
+            initialAlerts: [Watch.sampleWatchRows[0]],
+            initialOutlooks: sampleOutlooks(),
+            initialOutlook: sampleOutlooks().first
+        )
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: locationSession
+        )
+
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+
+        let followUpStarted = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.requestCount() == 2
+        }
+        #expect(followUpStarted)
+        #expect(pipeline.stormRisk == .slight)
+        #expect(pipeline.severeRisk == .wind(probability: 0.15))
+        #expect(pipeline.fireRisk == .critical)
+        #expect(pipeline.resolutionState.isRefreshing)
+
+        await followUpGate.open()
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.severeRisk == .tornado(probability: 0.10))
+        #expect(pipeline.fireRisk == .critical)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+        #expect(pipeline.resolutionState.isRefreshing == false)
+    }
+
     @Test("failed location-scoped reads keep the existing cached projection without marking the context resolved")
     func locationScopedReadFailure_preservesExistingProjection() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -1118,6 +1181,72 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requests() -> [HomeIngestionRequest] {
         submittedRequests
+    }
+
+    func requestCount() -> Int {
+        submittedRequests.count
+    }
+}
+
+private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
+    private let snapshots: [HomeSnapshot]
+    private let gates: [AsyncGate?]
+    private var submittedRequests: [HomeIngestionRequest] = []
+
+    init(
+        snapshots: [HomeSnapshot],
+        gates: [AsyncGate?]
+    ) {
+        self.snapshots = snapshots
+        self.gates = gates
+    }
+
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {
+        submittedRequests.append(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            )
+        )
+    }
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        let request = HomeIngestionRequest(
+            trigger: trigger,
+            locationContext: locationContext,
+            remoteAlertContext: remoteAlertContext
+        )
+        return try await enqueueAndWait(request)
+    }
+
+    func enqueue(_ request: HomeIngestionRequest) {
+        submittedRequests.append(request)
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: nil)
+    }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?
+    ) async throws -> HomeSnapshot {
+        submittedRequests.append(request)
+        let index = submittedRequests.count - 1
+        precondition(index < snapshots.count, "Test coordinator received more requests than snapshots")
+        if index < gates.count, let gate = gates[index] {
+            await gate.wait()
+        }
+        return snapshots[index]
     }
 
     func requestCount() -> Int {

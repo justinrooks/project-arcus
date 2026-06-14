@@ -183,9 +183,9 @@ final class HomeRefreshPipeline {
         updateEnvironment(environment)
         guard scenePhase == .active, let newKey else { return }
 
-        if activeRefreshCount > 0 {
+        if isForegroundRefreshInFlight {
             environment.logger.debug(
-                "Deferring foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) while activeRefreshCount=\(self.activeRefreshCount, privacy: .public)"
+                "Deferring foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) while activeRefreshCount=\(self.activeRefreshCount, privacy: .public) followUpRefreshCount=\(self.followUpRefreshCount, privacy: .public)"
             )
             deferredContextRefreshKey = newKey
             return
@@ -263,6 +263,11 @@ final class HomeRefreshPipeline {
                         await self?.handleIngestionProgress(event)
                     }
                 )
+                apply(snapshot, commitsVisibleSnapshot: false)
+                if trigger == .sceneActive, snapshot.locationSnapshot != nil {
+                    lastResolvedLocationScopedRefreshKey = snapshot.refreshKey
+                }
+                scheduleFollowUpRefresh(request, environment: environment)
             } else {
                 snapshot = try await environment.coordinator.enqueueAndWait(
                     request,
@@ -270,10 +275,7 @@ final class HomeRefreshPipeline {
                         await self?.handleIngestionProgress(event)
                     }
                 )
-            }
-            apply(snapshot)
-            if shouldPrimeSummary(for: trigger) {
-                scheduleFollowUpRefresh(request, environment: environment)
+                apply(snapshot, commitsVisibleSnapshot: true)
             }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.info(
@@ -316,25 +318,11 @@ final class HomeRefreshPipeline {
     private func finishForegroundRefresh() {
         guard activeRefreshCount > 0 else { return }
         activeRefreshCount -= 1
-        if activeRefreshCount == 0 {
-            resolutionState.finishAll(completedTask: .finalizing)
-            let deferredContextRefreshKey = self.deferredContextRefreshKey
-            self.deferredContextRefreshKey = nil
-            guard
-                lastHandledScenePhase == .active,
-                deferredContextRefreshKey != nil,
-                deferredContextRefreshKey != lastResolvedLocationScopedRefreshKey
-            else {
-                return
-            }
+        finalizeForegroundRefreshIfNeeded()
+    }
 
-            environment?.logger.info(
-                "Submitting deferred foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public)"
-            )
-            Task { @MainActor [weak self] in
-                await self?.submit(.contextChanged, waitsForCompletion: false)
-            }
-        }
+    private var isForegroundRefreshInFlight: Bool {
+        activeRefreshCount > 0 || followUpRefreshCount > 0
     }
 
     private func handleIngestionProgress(_ event: HomeIngestionProgressEvent) async {
@@ -430,9 +418,7 @@ final class HomeRefreshPipeline {
             guard let self else { return }
             defer {
                 self.followUpRefreshCount -= 1
-                if self.activeRefreshCount == 0, self.followUpRefreshCount == 0 {
-                    self.resolutionState.finishAll(completedTask: .finalizing)
-                }
+                self.finalizeForegroundRefreshIfNeeded()
             }
             do {
                 let snapshot = try await environment.coordinator.enqueueAndWait(
@@ -441,7 +427,7 @@ final class HomeRefreshPipeline {
                         await self?.handleIngestionProgress(event)
                     }
                 )
-                self.apply(snapshot)
+                self.apply(snapshot, commitsVisibleSnapshot: true)
                 environment.logger.debug(
                     "Finished non-blocking follow-up refresh trigger=\(request.trigger.logName, privacy: .public) result=success"
                 )
@@ -453,7 +439,35 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func apply(_ snapshot: HomeSnapshot) {
+    private func finalizeForegroundRefreshIfNeeded() {
+        guard activeRefreshCount == 0, followUpRefreshCount == 0 else {
+            return
+        }
+
+        resolutionState.finishAll(completedTask: .finalizing)
+        let deferredContextRefreshKey = self.deferredContextRefreshKey
+        self.deferredContextRefreshKey = nil
+        guard
+            lastHandledScenePhase == .active,
+            deferredContextRefreshKey != nil,
+            deferredContextRefreshKey != lastResolvedLocationScopedRefreshKey
+        else {
+            return
+        }
+
+        environment?.logger.info(
+            "Submitting deferred foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public)"
+        )
+        Task { @MainActor [weak self] in
+            await self?.submit(.contextChanged, waitsForCompletion: false)
+        }
+    }
+
+    private func apply(_ snapshot: HomeSnapshot, commitsVisibleSnapshot: Bool) {
+        guard commitsVisibleSnapshot else {
+            return
+        }
+
         if let locationSnapshot = snapshot.locationSnapshot {
             snap = locationSnapshot
             lastResolvedLocationScopedRefreshKey = snapshot.refreshKey

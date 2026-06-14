@@ -249,7 +249,8 @@ struct SummaryView: View {
             hasRiskValue: stormRisk != nil,
             readinessState: readinessState,
             isSectionResolving: resolutionState.isResolving(.stormRisk),
-            showsOfflineToken: showsOfflineToken
+            showsOfflineToken: showsOfflineToken,
+            isRefreshing: resolutionState.isRefreshing
         )
 
         return Button {
@@ -282,7 +283,8 @@ struct SummaryView: View {
             hasRiskValue: severeRisk != nil,
             readinessState: readinessState,
             isSectionResolving: resolutionState.isResolving(.severeRisk),
-            showsOfflineToken: showsOfflineToken
+            showsOfflineToken: showsOfflineToken,
+            isRefreshing: resolutionState.isRefreshing
         )
 
         return Button {
@@ -321,7 +323,8 @@ struct SummaryView: View {
                     hasRiskValue: fireRisk != nil,
                     readinessState: readinessState,
                     isSectionResolving: resolutionState.isResolving(.fireRisk),
-                    showsOfflineToken: showsOfflineToken
+                    showsOfflineToken: showsOfflineToken,
+                    isRefreshing: resolutionState.isRefreshing
                 )
             )
             .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
@@ -526,10 +529,15 @@ struct SummaryView: View {
         hasRiskValue: Bool,
         readinessState: SummaryReadinessState,
         isSectionResolving: Bool,
-        showsOfflineToken: Bool
+        showsOfflineToken: Bool,
+        isRefreshing: Bool = false
     ) -> Bool {
         guard showsOfflineToken == false, hasRiskValue == false else {
             return false
+        }
+
+        if isRefreshing {
+            return true
         }
 
         if isSectionResolving {
