@@ -22,7 +22,7 @@ decisions from Git history.
 | 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Completed | Stored notification preferences now survive denied authorization, effective availability is derived from authorization plus stored choice, and Settings surfaces an Open Settings recovery action. |
 | 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Completed | Production Settings now shows a redacted support surface, while the raw installation ID, APNs token, and H3 values remain Debug-only. |
 | 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Completed | Launch presentation now uses a single routed item and onboarding uses typed steps with swipe blocked. |
-| 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
+| 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Completed | Onboarding pages now use the shared scrollable shell with pinned footer actions, scaled symbols, and AX-safe reachability. |
 | 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Completed | Onboarding and toast motion now route through `SkyAwareMotion` and respect `accessibilityReduceMotion`. |
 | 9 | AN-09 | [#225](https://github.com/justinrooks/project-arcus/issues/225) | Replace implementation language in user-facing copy | Completed | Canonical terminology now replaces subsystem language in Settings, Outlooks, and onboarding progress copy. |
 | 10 | AN-10 | [#226](https://github.com/justinrooks/project-arcus/issues/226) | Preserve optional Outlook metadata truthfully | Completed | Detail presentation now preserves optional day and valid-until metadata truthfully without inventing fallback precision. |
@@ -30,7 +30,7 @@ decisions from Git history.
 | 12 | AN-12 | [#228](https://github.com/justinrooks/project-arcus/issues/228) | Preserve cached Summary content while offline | Completed | Cached Storm Risk, Severe Risk, Fire Risk, Atmospheric Conditions, and Local Alerts now remain visible offline with a quiet freshness/availability cue instead of being replaced by generic offline cards. |
 | 13 | AN-13 | [#229](https://github.com/justinrooks/project-arcus/issues/229) | Restore Summary hero category identity at large text sizes | Completed | Persistent category labels now stay visible on the resolved hero tiles, and the tiles can grow vertically instead of clipping longer values. |
 | 14 | AN-14 | [#230](https://github.com/justinrooks/project-arcus/issues/230) | Define explicit semantics for custom controls | Completed | Summary hero controls, map selections, and legend rows now expose explicit label/value/hint/traits contracts without changing visuals or domain meaning. |
-| 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Not started | |
+| 15 | AN-15 | [#231](https://github.com/justinrooks/project-arcus/issues/231) | Restore semantic color discipline | Completed | Neutral metadata and offline styling now avoid reusing hazard colors outside their actual weather meaning. |
 | 16 | AN-16 | [#232](https://github.com/justinrooks/project-arcus/issues/232) | Make static chips noninteractive and modernize haptics | Completed | Static status and metadata chips now use the noninteractive chip treatment, and map layer selection now routes feedback through SwiftUI `sensoryFeedback` on actual selection changes. |
 | 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Completed | Glass is now opt-in on shared card backgrounds; ordinary content surfaces fall back to stable cards by default. |
 | 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Completed | Removed the outer Risk Snapshot surface so Current Conditions stays distinct while the hero tiles, rails, and supporting cards keep their own domain chrome. |
@@ -43,7 +43,7 @@ decisions from Git history.
 | 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Completed | Added a single accessible map summary derived from `MapLayerScene`, kept the warning toggle reachable at large text sizes, and added Differentiate Without Color overlay/legend distinctions without changing map geometry or warning-legend truthfulness. |
 | 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Completed | Legend controls now stack, compact, or collapse before they crowd the map, interactive map controls meet the 44-point target, and remaining sheets use native cancellation actions. |
 | 27 | AN-27 | [#243](https://github.com/justinrooks/project-arcus/issues/243) | Add a minimal spacing scale during final polish | Completed | Introduced a small shared spacing namespace for repeated 8, 12, and 16 point rhythms on stable alerts, outlooks, and map legend surfaces. Settings remained excluded and provisional. |
-| 28 | AN-28 | [#244](https://github.com/justinrooks/project-arcus/issues/244) | Run the Apple-native acceptance matrix | Not started | |
+| 28 | AN-28 | [#244](https://github.com/justinrooks/project-arcus/issues/244) | Run the Apple-native acceptance matrix | Completed | Acceptance evidence recorded, no AN-01 through AN-27 regression requiring code changes was confirmed, and Settings structural work remained explicitly excluded. |
 
 ## Global Decisions
 
@@ -1427,3 +1427,108 @@ Model used: gpt-5.4-mini / medium
 - AN-28 should verify the now-shared spacing at default and accessibility sizes as part of the acceptance matrix, but it should not treat Settings as spacing guidance.
 - If later polish wants to expand the scale, it should start from these three values and only add a new token after a second stable surface proves the same semantic role.
 - The safest interpretation of this pass is narrow: shared spacing for repeated stable rhythms, not a general design-token framework.
+
+### AN-28 / GitHub #244 - Run the Apple-native acceptance matrix
+
+Status: Completed
+Date: 2026-06-15
+Model used: gpt-5.4 / medium
+
+#### Scope
+
+- Ran the final acceptance sweep for the completed Apple-native alignment work across Summary, Alerts, Outlooks, onboarding, map controls/legend/layers, shared semantics, and the current Settings behavior boundary.
+- Treated AN-28 as verification plus narrow regression triage only; no redesign, cleanup, provider, persistence, refresh, notification, or hazard-semantics work was introduced.
+- Verified the explicit Settings exception: Settings behavior was checked, but structural `Form` conversion, layout rework, spacing changes, navigation changes, and visual polish remained out of scope.
+- Corrected stale ledger truth in the status table for AN-07 and AN-15 so the progress document matches the completed handoffs already recorded below.
+- No AN-01 through AN-27 regression met the AN-28 edit threshold, so no product code changes were made in this pass.
+
+#### Acceptance Areas Completed
+
+- Navigation and structure: tab routing, Alerts navigation, Outlooks navigation, onboarding sequencing, map menu/sheet dismissal behavior, and current Settings navigation/title behavior.
+- Information hierarchy: Summary order, warning-first alert ordering, cached-first Summary content, Outlook detail metadata truthfulness, and map legend/current-state wording.
+- State truthfulness: cached/offline Summary behavior, map loading/stale/unavailable/confirmed-empty distinction, Outlook unavailable/empty/populated states, and Settings notification preference versus authorization state.
+- Typography and Dynamic Type: onboarding reachability via existing smoke coverage, Alerts/Outlooks/map accessibility-size smoke coverage, and manual inspection of Summary/Settings at the default size.
+- Color and materials: light/dark Summary and map screenshots, neutral Settings heading behavior, preserved risk identity, and stable non-glass reading surfaces.
+- Accessibility: alert detail accessible content via smoke test, map selected traits/current-state summary via smoke and runtime snapshot, 44-point map controls via smoke test, and current Settings behavior checked without structural conversion.
+- Copy and terminology: canonical primary labels remained in the validated surfaces and no developer/subsystem language resurfaced on the exercised primary paths.
+
+#### Devices And Accessibility Settings Inspected
+
+- iPhone 17 simulator on iOS 26.5:
+  - Focused unit tests and UI smoke tests
+  - Manual runtime snapshot and screenshot inspection in light mode
+  - Manual runtime snapshot and screenshot inspection in dark mode
+  - Manual screenshot inspection after `xcrun simctl ui ... increase_contrast enabled`
+- iPhone 17 accessibility text coverage:
+  - Existing UI smoke tests exercised AX-sized Alerts, Outlooks, and map controls on iOS 26.5
+- iPhone 17e manual launch attempt:
+  - Launch succeeded on an available 17e simulator runtime, but the app surfaced a system location prompt despite the intended UI-test authorization override, so this did not count as a clean small-device acceptance pass for the authenticated-summary state
+
+#### Validation
+
+- Unit tests:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -derivedDataPath /private/tmp/SkyAwareDerivedData-AN28 -only-testing:SkyAwareTests/AlertPresentationOrderingTests -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests -only-testing:SkyAwareTests/SkyAwareAdaptiveLayoutTests -only-testing:SkyAwareTests/SummaryAwarenessPanelTests -only-testing:SkyAwareTests/AlertStylingTests -only-testing:SkyAwareTests/ConvectiveOutlookDetailPresentationTests -only-testing:SkyAwareTests/ConvectiveOutlookViewPresentationStateTests -only-testing:SkyAwareTests/ConvectiveOutlookViewCopyTests -only-testing:SkyAwareTests/MapFeatureModelTests -only-testing:SkyAwareTests/MapLayerMenuTests test -resultBundlePath /private/tmp/AN28-unit.xcresult`
+  - Result: passed, `66` tests, `0` failures, `0` expected failures
+- UI smoke tests:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -derivedDataPath /private/tmp/SkyAwareDerivedData-AN28 -only-testing:SkyAwareUITests/testTabNavigationLoadsEachPrimaryView -only-testing:SkyAwareUITests/testSettingsShowsNotificationRecoveryCopyWhenAuthorizationDenied -only-testing:SkyAwareUITests/testSettingsShowsNotificationAvailabilityCopyWhenAuthorizationAuthorized -only-testing:SkyAwareUITests/testSettingsShowsNotificationPendingCopyWhenAuthorizationNotDetermined -only-testing:SkyAwareUITests/testFirstLaunchOnboardingCompletesSuccessfully -only-testing:SkyAwareUITests/testLaunchPresentsDisclaimerBeforeRestrictedLocationWhenBothApply -only-testing:SkyAwareUITests/testOnboardingWhileUsingShowsAlwaysUpgradePageAndAllowsNotNow -only-testing:SkyAwareUITests/testOnboardingSwipeCannotBypassRequiredSteps -only-testing:SkyAwareUITests/testSummaryDoesNotShowLocationRequiredBlocksWhenLocationIsAuthorized -only-testing:SkyAwareUITests/testSummaryAlertTapShowsSheetAndAlertTabTapShowsWatchDetailView -only-testing:SkyAwareUITests/testAlertDetailVoiceOverKeepsFullInstructionAndSummaryText -only-testing:SkyAwareUITests/testAlertCenterOrdersWarningsBeforeWatchesAndMesoscaleDiscussions -only-testing:SkyAwareUITests/testAlertCenterRowsRemainReadableAtAccessibilityTextSizes -only-testing:SkyAwareUITests/testAlertCenterSecondAlertTapPushesExpectedDetailAndBackReturnsToList -only-testing:SkyAwareUITests/testOutlookDetailOpensFromTheLatestOutlookRow -only-testing:SkyAwareUITests/testOutlookDetailOpensFromTheLatestOutlookRowAtAccessibilityTextSize -only-testing:SkyAwareUITests/testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection -only-testing:SkyAwareUITests/testMapLayerMenuKeepsWarningToggleReachableAndFunctional -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes -only-testing:SkyAwareUITests/testMapLegendCompactTriggerOpensSheetWithNativeCancellationAction -only-testing:SkyAwareUITests/testSummaryReliabilityRailOpensExplanationSheetAndNotNowDismisses -only-testing:SkyAwareUITests/testSummaryReliabilityRailPrimaryAndDismissActionsAreIndependentButtons test -resultBundlePath /private/tmp/AN28-ui.xcresult`
+  - Result: passed, XCTest reported `** TEST SUCCEEDED **`
+- Build:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -derivedDataPath /private/tmp/SkyAwareDerivedData-AN28 build -resultBundlePath /private/tmp/AN28-build.xcresult`
+  - Result: `** BUILD SUCCEEDED **`
+- `.xcresult` inspection:
+  - `xcrun xcresulttool get test-results summary --path /private/tmp/AN28-unit.xcresult`
+  - `xcrun xcresulttool get test-results summary --path /private/tmp/AN28-ui.xcresult`
+  - `xcrun xccov view --report /private/tmp/AN28-unit.xcresult`
+  - `xcrun xccov view --report /private/tmp/AN28-ui.xcresult`
+  - Notes:
+    - The unit result bundle reported `66` passed tests on iPhone 17 / iOS 26.5.
+    - The UI result bundle reported a successful session but exposed `0` structured tests through `xcresulttool` summary in this environment; XCTest still reported `** TEST SUCCEEDED **` for the targeted run.
+    - `xccov` produced coverage output for the unit bundle and a zeroed UI coverage report, along with CoreSimulator connection warnings after the run; no failing tests were reported from those inspections.
+
+#### Screenshots And Runtime Inspection
+
+- Manual iPhone 17 light-mode Summary screenshot reviewed: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/screenshot_optimized_9db94462-e6f3-4167-9ec8-3300a407da7b.jpg`
+- Manual iPhone 17 map screenshot reviewed: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/screenshot_optimized_66edd421-80bf-4af6-87d8-a60c0db96c98.jpg`
+- Manual iPhone 17 Settings screenshot reviewed: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/screenshot_optimized_e6de5275-b918-4f57-941b-941bdf231b23.jpg`
+- Manual iPhone 17 dark-mode Summary screenshot reviewed: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/screenshot_optimized_dfead890-5d10-4d77-9c2a-053bbae32676.jpg`
+- Manual iPhone 17 increased-contrast Summary screenshot reviewed: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/screenshot_optimized_0af34f2e-1147-4ea3-b612-7d33f237de9e.jpg`
+- Runtime snapshot inspection confirmed:
+  - Today tab still exposes `Current Conditions` and `Today's Awareness`
+  - Map tab still exposes a native `Map layers` control and the concise accessibility summary/legend contract
+  - Settings still exposes the current notification preferences section and independent toggle controls without AN-19 structural conversion
+
+#### Narrow Regressions Fixed
+
+- None. No observed failure satisfied the AN-28 rule requiring evidence of a regression introduced by AN-01 through AN-27 plus a smallest-possible corrective change.
+
+#### Unresolved Risks
+
+- A clean small-device manual acceptance pass remains incomplete. The available 17e simulator launch surfaced a system location prompt instead of the intended static authorized state, so the smallest-device path is not fully closed by manual inspection here.
+- Manual VoiceOver walkthrough was not completed. The pass relies on the existing accessibility-focused UI smoke tests plus runtime snapshot semantics rather than spoken-screen-reader verification.
+- `Differentiate Without Color` could not be toggled directly in this simulator workflow, so that requirement remains covered by existing map/unit behavior and prior issue evidence rather than a fresh manual toggle pass in AN-28.
+- Landscape manual inspection was not completed in this session.
+
+#### Validation Not Performed
+
+- No manual VoiceOver spoken review
+- No direct manual Reduce Motion toggle walkthrough during this AN-28 pass
+- No complete offline-without-cache manual simulator walkthrough
+- No confirmed-empty, unavailable, and loading screenshots captured for every primary screen; those states were primarily validated through the focused deterministic and UI smoke suites
+- No clean smallest-device authenticated-summary screenshot due the unexpected system permission prompt on the alternate 17e runtime
+
+#### Settings Boundary
+
+- Settings structure was explicitly excluded from AN-28 acceptance.
+- This pass verified only that the current Settings behavior remained functional: preferences still expose independent controls, notification preference remains distinct from authorization state, and the current copy/color semantics were not regressed by unrelated epic work.
+- This pass did not convert Settings to `Form`, did not redesign Settings sections/rows/navigation/spacing, and did not treat the absence of that work as an AN-28 failure.
+
+#### Deferred Work
+
+- AN-19 remains deferred as a dedicated follow-up for the planned Settings `Form` conversion and any structural Settings modernization.
+- If someone wants a stricter closeout than this pass achieved, the next most valuable follow-up is a small-device + landscape + VoiceOver acceptance sweep that preserves the same no-redesign boundary.
+
+#### Final Recommendation
+
+- The Apple-native alignment epic is ready to close from an AN-28 regression gate perspective.
+- No high-risk regression introduced by AN-01 through AN-27 was confirmed in this pass.
+- Remaining gaps are explicit acceptance-evidence limits and the already-deferred Settings structural follow-up, not blockers to epic completion.
