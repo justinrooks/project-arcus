@@ -246,3 +246,17 @@ struct NotificationPreferenceStateTests {
         #expect(state.systemAvailabilityCopy.contains("saved now"))
     }
 }
+
+@Suite("Settings diagnostics support")
+struct SettingsDiagnosticsSupportTests {
+    @Test("production support copy remains redacted")
+    func productionSupportCopyRemainsRedacted() {
+        let summary = SettingsSupportSummary(version: "1.2.3 (45)")
+
+        #expect(summary.copyText.contains("1.2.3 (45)"))
+        #expect(summary.copyText.contains("redacted"))
+        #expect(!summary.copyText.localizedCaseInsensitiveContains("installation"))
+        #expect(!summary.copyText.localizedCaseInsensitiveContains("apns"))
+        #expect(!summary.copyText.localizedCaseInsensitiveContains("h3"))
+    }
+}

@@ -256,6 +256,7 @@ struct SettingsView: View {
                 sectionCard(title: "About", symbol: "info.circle", accent: .primary) {
                     infoRow("Version", Bundle.main.fullVersion)
                     infoRow("Disclaimer", "\(disclaimerVersion)")
+#if DEBUG
                     NavigationLink("Diagnostics") {
                         SettingsDiagnosticsView()
                             .navigationTitle("Diagnostics")
@@ -266,6 +267,18 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
                     .font(.subheadline.weight(.medium))
+#else
+                    NavigationLink("Support") {
+                        SettingsDiagnosticsView()
+                            .navigationTitle("Support")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                    .font(.subheadline.weight(.medium))
+#endif
                 }
             }
             .padding(.horizontal, 16)

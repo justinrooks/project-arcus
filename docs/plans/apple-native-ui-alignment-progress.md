@@ -20,7 +20,7 @@ decisions from Git history.
 | 2 | AN-02 | [#218](https://github.com/justinrooks/project-arcus/issues/218) | Preserve critical alert text for VoiceOver | Completed | VoiceOver now reads the visible instruction and summary text directly, while grouped detail rows still read as coherent sections. |
 | 3 | AN-03 | [#219](https://github.com/justinrooks/project-arcus/issues/219) | Convert the location reliability rail to native buttons | Completed | Native sibling buttons now replace the parent tap gesture while preserving the existing rail styling, copy, and dismissal flow. |
 | 4 | AN-04 | [#220](https://github.com/justinrooks/project-arcus/issues/220) | Separate notification preference from authorization | Completed | Stored notification preferences now survive denied authorization, effective availability is derived from authorization plus stored choice, and Settings surfaces an Open Settings recovery action. |
-| 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Not started | |
+| 5 | AN-05 | [#221](https://github.com/justinrooks/project-arcus/issues/221) | Remove raw diagnostics from production Settings | Completed | Production Settings now shows a redacted support surface, while the raw installation ID, APNs token, and H3 values remain Debug-only. |
 | 6 | AN-06 | [#222](https://github.com/justinrooks/project-arcus/issues/222) | Make launch and onboarding presentation state explicit | Completed | Launch presentation now uses a single routed item and onboarding uses typed steps with swipe blocked. |
 | 7 | AN-07 | [#223](https://github.com/justinrooks/project-arcus/issues/223) | Make onboarding resilient to Dynamic Type | Not started | |
 | 8 | AN-08 | [#224](https://github.com/justinrooks/project-arcus/issues/224) | Apply Reduce Motion to onboarding and toasts | Completed | Onboarding and toast motion now route through `SkyAwareMotion` and respect `accessibilityReduceMotion`. |
@@ -251,6 +251,51 @@ Model used: gpt-5.4-mini / high
 - The notification preference helper is the only place that should encode availability semantics for Settings.
 - The UI test override is intentionally test-only and does not alter production notification delivery behavior.
 - Residual risk: `Open Settings` was verified in the simulator via the UI test, but the actual handoff path still merits a manual device pass if someone wants to validate Apple’s Settings app transition outside XCTest.
+
+### AN-05 / GitHub #221 - Remove raw diagnostics from production Settings
+
+Status: Completed
+Date: 2026-06-15
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Kept the Settings structure intact and left notification preference behavior from AN-04 unchanged.
+- Gated the raw diagnostics path behind `#if DEBUG` and kept it reachable only through the debug-only Settings link.
+- Added a Release-only redacted support surface in `SettingsDiagnosticsView` that shows version info and a copy action without installation ID, APNs token, or H3 values.
+- Added a focused unit test for the redacted support copy helper.
+
+#### Files Changed
+
+- `Sources/Features/Settings/SettingsView.swift`
+- `Sources/Features/Settings/SettingsDiagnosticsView.swift`
+- `Tests/UnitTests/RemoteNotificationRegistrarTests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Notification preferences and authorization handling from AN-04 were unchanged.
+- Settings layout, card order, and non-diagnostic copy were unchanged.
+- APNs registration, installation identity, H3 computation, backend contracts, and synchronization were unchanged.
+- Raw diagnostics still exist for Debug builds only.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedDataAN05 -only-testing:SkyAwareTests/SettingsDiagnosticsSupportTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedDataAN05 build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Release -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAwareDerivedDataAN05 build`
+- `strings /private/tmp/SkyAwareDerivedDataAN05/Build/Products/Release-iphonesimulator/SkyAware.app/SkyAware | rg -n "APNs Device Token|Current H3 Cell|Installation ID|Diagnostics|Support Details"`
+
+#### Deferred Work
+
+- AN-19 still owns the broader native Settings structure migration.
+- A full manual simulator pass of the redacted support flow was not performed here.
+
+#### Handoff Notes
+
+- The raw diagnostics screen is intentionally Debug-only; do not remove the `#if DEBUG` guard without replacing it with another explicit privacy review.
+- The Release support copy is intentionally redacted and user-initiated, but it still exposes the app version.
+- Residual risk: other diagnostic surfaces outside Settings may still print debug identifiers in logs, so the repo should keep its general privacy logging discipline intact.
 
 ### AN-06 / GitHub #222 - Make launch and onboarding presentation state explicit
 
