@@ -496,6 +496,7 @@ final class HomeRefreshPipeline {
             outlooks: snapshot.outlooks,
             outlook: snapshot.latestOutlook
         )
+        outlookRefreshStatus = .success(hasContent: snapshot.outlooks.isEmpty == false)
     }
 }
 

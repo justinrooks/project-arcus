@@ -128,6 +128,29 @@ struct MapFeatureModelTests {
         #expect(model.activeScene.legendState.voiceOverText.contains("No saved"))
     }
 
+    @Test("failed first load keeps active warning overlays when they are available")
+    func reload_failedFirstLoad_keepsActiveWarningOverlays() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .failure(StubError()),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .unavailable)
+        #expect(model.activeScene.canvasState.overlays.count == 1)
+        #expect(overlayKeys(in: model.activeScene).contains { $0.contains("warn|") })
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+    }
+
     @Test("failed refresh with saved data keeps the rendered scene visible and marks it stale")
     func reload_failedRefreshWithSavedDataKeepsRenderedSceneVisibleAndMarksItStale() async {
         let model = MapFeatureModel()

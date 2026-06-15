@@ -103,10 +103,13 @@ final class MapFeatureModel {
             activeWarnings: activeWarnings
         )
 
+        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+
         let plannedScenes = await planner.buildRenderPlans(
             payload: payload,
             existingPlans: renderPlans,
-            polygonMapper: polygonMapper
+            polygonMapper: polygonMapper,
+            warningPolygons: warningPolygons
         )
 
         guard !Task.isCancelled else { return }
@@ -596,7 +599,8 @@ private actor MapScenePlanner {
     func buildRenderPlans(
         payload: MapDataPayload,
         existingPlans: [MapLayer: MapLayerRenderPlan],
-        polygonMapper: MapPolygonMapper
+        polygonMapper: MapPolygonMapper,
+        warningPolygons: KeyedMapPolygons
     ) -> [MapLayer: MapLayerRenderPlan] {
         Dictionary(
             uniqueKeysWithValues: MapLayer.allCases.map { layer in
@@ -606,7 +610,8 @@ private actor MapScenePlanner {
                         layer: layer,
                         payload: payload,
                         existingPlan: existingPlans[layer],
-                        polygonMapper: polygonMapper
+                        polygonMapper: polygonMapper,
+                        warningPolygons: warningPolygons
                     )
                 )
             }
@@ -692,12 +697,17 @@ private enum MapRenderPlanBuilder {
         layer: MapLayer,
         payload: MapDataPayload,
         existingPlan: MapLayerRenderPlan?,
-        polygonMapper: MapPolygonMapper
+        polygonMapper: MapPolygonMapper,
+        warningPolygons: KeyedMapPolygons
     ) -> MapLayerRenderPlan {
         switch layer {
         case .categorical:
             guard case .success(let stormRisk) = payload.stormRisk else {
-                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+                return buildFailurePlan(
+                    layer: layer,
+                    existingPlan: existingPlan,
+                    warningPolygons: warningPolygons
+                )
             }
             let severeRisks = payload.severeRisks.value ?? []
             let mesos = payload.mesos.value ?? []
@@ -709,7 +719,6 @@ private enum MapRenderPlanBuilder {
                 mesos: mesos,
                 fires: fireRisk
             )
-            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
             return buildLoadedPlan(
                 layer: layer,
                 mappedPolygons: mappedPolygons,
@@ -724,7 +733,11 @@ private enum MapRenderPlanBuilder {
 
         case .wind, .hail, .tornado:
             guard case .success(let severeRisks) = payload.severeRisks else {
-                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+                return buildFailurePlan(
+                    layer: layer,
+                    existingPlan: existingPlan,
+                    warningPolygons: warningPolygons
+                )
             }
             let stormRisk = payload.stormRisk.value ?? []
             let mesos = payload.mesos.value ?? []
@@ -736,7 +749,6 @@ private enum MapRenderPlanBuilder {
                 mesos: mesos,
                 fires: fireRisk
             )
-            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
             return buildLoadedPlan(
                 layer: layer,
                 mappedPolygons: mappedPolygons,
@@ -751,7 +763,11 @@ private enum MapRenderPlanBuilder {
 
         case .fire:
             guard case .success(let fireRisk) = payload.fireRisk else {
-                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+                return buildFailurePlan(
+                    layer: layer,
+                    existingPlan: existingPlan,
+                    warningPolygons: warningPolygons
+                )
             }
             let stormRisk = payload.stormRisk.value ?? []
             let severeRisks = payload.severeRisks.value ?? []
@@ -763,7 +779,6 @@ private enum MapRenderPlanBuilder {
                 mesos: mesos,
                 fires: fireRisk
             )
-            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
             return buildLoadedPlan(
                 layer: layer,
                 mappedPolygons: mappedPolygons,
@@ -778,7 +793,11 @@ private enum MapRenderPlanBuilder {
 
         case .meso:
             guard case .success(let mesos) = payload.mesos else {
-                return buildFailurePlan(layer: layer, existingPlan: existingPlan)
+                return buildFailurePlan(
+                    layer: layer,
+                    existingPlan: existingPlan,
+                    warningPolygons: warningPolygons
+                )
             }
             let stormRisk = payload.stormRisk.value ?? []
             let severeRisks = payload.severeRisks.value ?? []
@@ -790,7 +809,6 @@ private enum MapRenderPlanBuilder {
                 mesos: mesos,
                 fires: fireRisk
             )
-            let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
             return buildLoadedPlan(
                 layer: layer,
                 mappedPolygons: mappedPolygons,
@@ -860,15 +878,29 @@ private enum MapRenderPlanBuilder {
 
     private static func buildFailurePlan(
         layer: MapLayer,
-        existingPlan: MapLayerRenderPlan?
+        existingPlan: MapLayerRenderPlan?,
+        warningPolygons: KeyedMapPolygons
     ) -> MapLayerRenderPlan {
         guard let existingPlan else {
-            return MapLayerRenderPlan(
+            return warningPolygons.keyedPolygons.isEmpty
+                ? MapLayerRenderPlan(
+                    layer: layer,
+                    polygonEntries: [],
+                    overlayPlans: [],
+                    overlayRevision: 0,
+                    legendState: .unavailable(for: layer)
+                )
+                : buildWarningOnlyFailurePlan(
+                    layer: layer,
+                    warningPolygons: warningPolygons
+                )
+        }
+
+        if warningPolygons.keyedPolygons.isEmpty == false {
+            return buildWarningPreservingFailurePlan(
                 layer: layer,
-                polygonEntries: [],
-                overlayPlans: [],
-                overlayRevision: 0,
-                legendState: .unavailable(for: layer)
+                existingPlan: existingPlan,
+                warningPolygons: warningPolygons
             )
         }
 
@@ -886,6 +918,69 @@ private enum MapRenderPlanBuilder {
                 legendState: .unavailable(for: layer)
             )
         }
+    }
+
+    private static func buildWarningOnlyFailurePlan(
+        layer: MapLayer,
+        warningPolygons: KeyedMapPolygons
+    ) -> MapLayerRenderPlan {
+        let warningOverlayPlans = warningPolygons.keyedPolygons.map {
+            overlayPlan(for: $0, kind: .warning)
+        }
+
+        return MapLayerRenderPlan(
+            layer: layer,
+            polygonEntries: warningPolygons.keyedPolygons,
+            overlayPlans: warningOverlayPlans,
+            overlayRevision: overlayRevision(for: warningOverlayPlans),
+            legendState: .unavailable(for: layer)
+        )
+    }
+
+    private static func buildWarningPreservingFailurePlan(
+        layer: MapLayer,
+        existingPlan: MapLayerRenderPlan,
+        warningPolygons: KeyedMapPolygons
+    ) -> MapLayerRenderPlan {
+        let existingWarningPolygonKeys = Set(
+            existingPlan.overlayPlans.compactMap {
+                if case .warning = $0.kind {
+                    $0.polygonKey
+                } else {
+                    nil
+                }
+            }
+        )
+
+        let preservedPolygons = existingPlan.polygonEntries.filter {
+            existingWarningPolygonKeys.contains($0.key) == false
+        }
+        let warningOverlayPlans = warningPolygons.keyedPolygons.map {
+            overlayPlan(for: $0, kind: .warning)
+        }
+        let preservedOverlayPlans = existingPlan.overlayPlans.filter {
+            if case .warning = $0.kind {
+                return false
+            }
+            return true
+        }
+
+        let legendState: MapLegendState
+        switch existingPlan.legendState.presentationState {
+        case .current, .resolving, .stale:
+            legendState = existingPlan.legendState.withPresentationState(.stale)
+        case .loading, .confirmedEmpty, .unavailable:
+            legendState = .unavailable(for: layer)
+        }
+
+        let overlayPlans = preservedOverlayPlans + warningOverlayPlans
+        return MapLayerRenderPlan(
+            layer: layer,
+            polygonEntries: preservedPolygons + warningPolygons.keyedPolygons,
+            overlayPlans: overlayPlans,
+            overlayRevision: overlayRevision(for: overlayPlans),
+            legendState: legendState
+        )
     }
 
     private static func overlayPlan(

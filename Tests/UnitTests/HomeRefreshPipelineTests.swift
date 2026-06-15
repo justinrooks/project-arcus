@@ -814,6 +814,27 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
     }
 
+    @Test("foreground outlook refresh marks empty results as completed")
+    func foregroundOutlookRefresh_marksEmptyResultsAsCompleted() async {
+        let context = makeContext()
+        let spc = FakeSpcProvider(outlooks: [])
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.handleScenePhaseChange(
+            .active,
+            environment: makeEnvironment(
+                spc: spc,
+                locationSession: locationSession
+            )
+        )
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.outlooks.isEmpty)
+        #expect(pipeline.outlook == nil)
+        #expect(pipeline.outlookRefreshStatus == .success(hasContent: false))
+    }
+
     @Test("background location change resolves from latest accepted snapshot instead of stale current context")
     func backgroundLocationChange_resolvesLatestAcceptedSnapshot() async throws {
         let oldSnapshot = LocationSnapshot(
