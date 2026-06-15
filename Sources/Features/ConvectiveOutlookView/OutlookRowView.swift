@@ -20,7 +20,7 @@ struct OutlookRowView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: SkyAwareSpacing.standard) {
 //            Image(systemName: "pencil.and.list.clipboard")
 //                .foregroundColor(.skyAwareAccent)
 //                .font(.headline.weight(.semibold))
@@ -35,8 +35,8 @@ struct OutlookRowView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, SkyAwareSpacing.contentInset)
+        .padding(.vertical, SkyAwareSpacing.compact)
         .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)

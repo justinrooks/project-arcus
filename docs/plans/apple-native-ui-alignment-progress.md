@@ -42,7 +42,7 @@ decisions from Git history.
 | 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Completed | Native `Menu` trigger now shows the current layer and semantic symbol, keeps warning overlays in a separate menu section, and preserves the existing selection / haptic / availability paths. |
 | 25 | AN-25 | [#241](https://github.com/justinrooks/project-arcus/issues/241) | Add accessible equivalents for map overlays | Completed | Added a single accessible map summary derived from `MapLayerScene`, kept the warning toggle reachable at large text sizes, and added Differentiate Without Color overlay/legend distinctions without changing map geometry or warning-legend truthfulness. |
 | 26 | AN-26 | [#242](https://github.com/justinrooks/project-arcus/issues/242) | Reduce map control and legend crowding | Completed | Legend controls now stack, compact, or collapse before they crowd the map, interactive map controls meet the 44-point target, and remaining sheets use native cancellation actions. |
-| 27 | AN-27 | [#243](https://github.com/justinrooks/project-arcus/issues/243) | Add a minimal spacing scale during final polish | Not started | |
+| 27 | AN-27 | [#243](https://github.com/justinrooks/project-arcus/issues/243) | Add a minimal spacing scale during final polish | Completed | Introduced a small shared spacing namespace for repeated 8, 12, and 16 point rhythms on stable alerts, outlooks, and map legend surfaces. Settings remained excluded and provisional. |
 | 28 | AN-28 | [#244](https://github.com/justinrooks/project-arcus/issues/244) | Run the Apple-native acceptance matrix | Not started | |
 
 ## Global Decisions
@@ -1326,3 +1326,59 @@ Model used: gpt-5.4 / high reasoning
 - The compact trigger is the pressure valve for future map chrome changes; do not replace it with a permanent control panel.
 - AN-27 should treat this compact legend behavior as the baseline spacing reference, not as an invitation to add more chrome.
 - AN-28 should verify the remaining portrait, landscape, contrast, and VoiceOver permutations against this completed control layout.
+
+### AN-27 / GitHub #243 - Add a minimal spacing scale during final polish
+
+Status: Completed
+Date: 2026-06-15
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Added `SkyAwareSpacing` as a small shared spacing namespace under `Sources/Utilities/Core`.
+- Introduced three shared values with stable semantic roles:
+  - `compact` = 8 points for tight, repeated in-component spacing and compact row insets
+  - `standard` = 12 points for the primary gap between row content clusters and compact control interior spacing
+  - `contentInset` = 16 points for common outer padding and list row horizontal insets
+- Migrated only repeated, stable spacing call sites on the surfaces already touched by the epic:
+  - Alerts row spacing and overview/list padding
+  - Outlook row spacing and overview/list padding
+  - map legend container padding and compact trigger spacing
+- Left feature-specific rhythms local, including values such as 4, 6, 10, 14, 18, 20, and 24 where they still communicate local hierarchy or layout tuning.
+- Excluded Settings from discretionary migration. No spacing from the provisional AN-19 `Form` conversion was used as the basis for the shared scale.
+
+#### Files Changed
+
+- `Sources/Utilities/Core/SkyAwareSpacing.swift`
+- `Sources/Features/Alert/AlertRowView.swift`
+- `Sources/Features/Alert/AlertView.swift`
+- `Sources/Features/ConvectiveOutlookView/OutlookRowView.swift`
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookView.swift`
+- `Sources/Features/Map/MapLegendView.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Summary hierarchy remained unchanged.
+- Alerts kept native list behavior and warning-first ordering.
+- Outlooks kept native list behavior, navigation links, and presentation-state handling.
+- Map controls kept their existing 44-point target behavior and adaptive layout logic from AN-26.
+- Settings remained visually and structurally untouched by this issue.
+- No broad numeric-literal replacement was performed.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareUITests/testAlertCenterRowsRemainReadableAtAccessibilityTextSizes -only-testing:SkyAwareUITests/testOutlookDetailOpensFromTheLatestOutlookRowAtAccessibilityTextSize -only-testing:SkyAwareUITests/testMapLayerMenuRemainsReachableAtAccessibilityTextSizes -only-testing:SkyAwareUITests/testMapLegendCompactTriggerOpensSheetWithNativeCancellationAction test -resultBundlePath /private/tmp/AN27-spacing-smoke.xcresult`
+
+#### Deferred Work
+
+- Settings remains provisional until AN-19 is revisited in a dedicated follow-up.
+- Any future spacing polish on Summary should be handled separately; this issue intentionally left the Summary rhythm alone.
+- Additional feature-specific values remain local for now because they did not meet the “same semantic purpose across stable surfaces” bar.
+
+#### Handoff Notes
+
+- AN-28 should verify the now-shared spacing at default and accessibility sizes as part of the acceptance matrix, but it should not treat Settings as spacing guidance.
+- If later polish wants to expand the scale, it should start from these three values and only add a new token after a second stable surface proves the same semantic role.
+- The safest interpretation of this pass is narrow: shared spacing for repeated stable rhythms, not a general design-token framework.

@@ -65,7 +65,14 @@ struct AlertView: View {
         List {
             Section {
                 overviewCard
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
@@ -149,13 +156,20 @@ struct AlertView: View {
             shadowRadius: 4,
             shadowY: 1
         )
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowInsets(
+            EdgeInsets(
+                top: 6,
+                leading: SkyAwareSpacing.contentInset,
+                bottom: 6,
+                trailing: SkyAwareSpacing.contentInset
+            )
+        )
     }
 
     private func alertDetail(for alert: AlertDTO) -> some View {
         ScrollView {
             AlertDetailView(alert: alert, layout: .full)
-                .padding(.top, 8)
+                .padding(.top, SkyAwareSpacing.compact)
                 .padding(.bottom, 24)
         }
         .accessibilityIdentifier("alert-center-watch-detail-view")
@@ -169,7 +183,7 @@ struct AlertView: View {
     private func mesoDetail(for meso: MdDTO) -> some View {
         ScrollView {
             MesoscaleDiscussionCard(meso: meso, layout: .full)
-                .padding(.top, 8)
+                .padding(.top, SkyAwareSpacing.compact)
                 .padding(.bottom, 24)
         }
         .scrollContentBackground(.hidden)
@@ -202,7 +216,7 @@ struct AlertView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
     

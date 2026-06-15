@@ -28,7 +28,7 @@ struct AlertRowView: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: SkyAwareSpacing.standard) {
             Image(systemName: iconAndColor.icon)
                 .foregroundStyle(iconAndColor.color)
                 .font(.headline.weight(.semibold))
@@ -57,8 +57,8 @@ struct AlertRowView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, SkyAwareSpacing.contentInset)
+        .padding(.vertical, SkyAwareSpacing.compact)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityTitle)

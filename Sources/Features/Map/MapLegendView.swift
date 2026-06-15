@@ -68,7 +68,7 @@ struct MapLegend: View {
                 }
             }
         }
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .frame(minWidth: 144, maxWidth: 260, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .cardBackground(
@@ -89,7 +89,7 @@ struct CompactMapLegendTrigger: View {
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: subtitle == nil ? 0 : 2) {
-                HStack(spacing: 8) {
+                HStack(spacing: SkyAwareSpacing.compact) {
                     Text(label)
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
@@ -106,7 +106,7 @@ struct CompactMapLegendTrigger: View {
                         .lineLimit(1)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, SkyAwareSpacing.standard)
             .padding(.vertical, 10)
             .frame(minHeight: 44)
             .contentShape(Capsule())
@@ -138,7 +138,7 @@ struct WarningLegend: View {
                 WarningLegendRow(item: item)
             }
         }
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .frame(width: 160, alignment: .leading)
         .cardBackground(
             cornerRadius: SkyAwareRadius.row,

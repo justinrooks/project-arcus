@@ -51,7 +51,14 @@ struct ConvectiveOutlookView: View {
         List {
             Section {
                 overviewCard
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
             }
@@ -64,7 +71,14 @@ struct ConvectiveOutlookView: View {
                         message: "Latest outlooks from SPC will appear here once they are ready.",
                         symbol: "clock.arrow.circlepath"
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
@@ -76,7 +90,14 @@ struct ConvectiveOutlookView: View {
                         message: "SkyAware could not load the latest SPC outlooks right now. Severe-weather risk can still exist even when this feed is unavailable.",
                         symbol: "cloud.slash"
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
@@ -88,7 +109,14 @@ struct ConvectiveOutlookView: View {
                         message: "The latest SPC refresh did not return any convective outlooks.",
                         symbol: "cloud.sun.fill"
                     )
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
@@ -166,7 +194,7 @@ struct ConvectiveOutlookView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
@@ -288,7 +316,14 @@ struct ConvectiveOutlookView: View {
             shadowRadius: 4,
             shadowY: 1
         )
-        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+        .listRowInsets(
+            EdgeInsets(
+                top: 6,
+                leading: SkyAwareSpacing.contentInset,
+                bottom: 6,
+                trailing: SkyAwareSpacing.contentInset
+            )
+        )
     }
 }
 
