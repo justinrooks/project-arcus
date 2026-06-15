@@ -217,12 +217,36 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(outlooksTab.waitForExistence(timeout: 10), "Expected Outlooks tab to exist.")
         outlooksTab.tap()
 
-        let latestOutlookRow = app.buttons["Day 1 Convective Outlook"]
+        let latestOutlookRow = app.buttons["outlook-latest-row"]
         XCTAssertTrue(latestOutlookRow.waitForExistence(timeout: 10), "Expected the latest outlook row to appear.")
+        XCTAssertGreaterThanOrEqual(latestOutlookRow.frame.size.height, 44)
         latestOutlookRow.tap()
 
         XCTAssertTrue(app.navigationBars["Day 1 Outlook"].waitForExistence(timeout: 10), "Expected the detail view to open.")
         saveScreenshot(app, named: "outlook-detail-light")
+    }
+
+    @MainActor
+    func testOutlookDetailOpensFromTheLatestOutlookRowAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+
+        let outlooksTab = app.tabBars.buttons["Outlooks"]
+        XCTAssertTrue(outlooksTab.waitForExistence(timeout: 10), "Expected Outlooks tab to exist.")
+        outlooksTab.tap()
+
+        let latestOutlookRow = app.buttons["outlook-latest-row"]
+        XCTAssertTrue(latestOutlookRow.waitForExistence(timeout: 10), "Expected the latest outlook row to appear at accessibility sizes.")
+        XCTAssertGreaterThanOrEqual(latestOutlookRow.frame.size.height, 44)
+        latestOutlookRow.tap()
+
+        XCTAssertTrue(app.navigationBars["Day 1 Outlook"].waitForExistence(timeout: 10), "Expected the detail view to open at accessibility sizes.")
+        saveScreenshot(app, named: "outlook-detail-ax")
     }
 
     @MainActor
@@ -800,10 +824,20 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     private func saveScreenshot(_ app: XCUIApplication, named name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = app.screenshot()
+        let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+
+        let pngData = screenshot.pngRepresentation
+        let temporaryURL = URL(fileURLWithPath: "/private/tmp/\(name).png")
+        try? pngData.write(to: temporaryURL)
+
+        let artifactsDirectory = URL(fileURLWithPath: "/Users/justin/Code/project-arcus/.artifacts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: artifactsDirectory, withIntermediateDirectories: true)
+        let workspaceURL = artifactsDirectory.appendingPathComponent("\(name).png")
+        try? pngData.write(to: workspaceURL)
     }
 
     @MainActor

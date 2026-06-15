@@ -76,6 +76,7 @@ final class HomeRefreshPipeline {
     private(set) var riskSnapshot: HomeRiskSnapshot
     private(set) var alertSnapshot: HomeAlertSnapshot
     private(set) var outlookSnapshot: HomeOutlookSnapshot
+    private(set) var outlookRefreshStatus: ConvectiveOutlookRefreshStatus
     var resolutionState = SummaryResolutionState()
 
     var stormRisk: StormRiskLevel? { riskSnapshot.stormRisk }
@@ -117,6 +118,7 @@ final class HomeRefreshPipeline {
             outlooks: initialOutlooks,
             outlook: initialOutlook
         )
+        self.outlookRefreshStatus = initialOutlooks.isEmpty && initialOutlook == nil ? .loading : .success(hasContent: true)
         self.foregroundTimerInterval = foregroundTimerInterval
     }
 
@@ -296,11 +298,15 @@ final class HomeRefreshPipeline {
             let dtos = try await outlooksService.getConvectiveOutlooks()
             let latest = dtos.max(by: { $0.published < $1.published })
             outlookSnapshot = HomeOutlookSnapshot(outlooks: dtos, outlook: latest)
+            outlookRefreshStatus = .success(hasContent: dtos.isEmpty == false)
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment?.logger.info(
                 "Manual convective outlook refresh finished result=success durationMs=\(durationMs, privacy: .public) outlooks=\(dtos.count, privacy: .public)"
             )
         } catch {
+            if case .loading = outlookRefreshStatus {
+                outlookRefreshStatus = .failed
+            }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment?.logger.error(
                 "Manual convective outlook refresh finished result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"

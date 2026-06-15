@@ -423,6 +423,7 @@ struct SpcHttpClientTests {
 
 @Suite("ConvectiveOutlookView copy")
 struct ConvectiveOutlookViewCopyTests {
+    @MainActor
     @Test("overview message uses calm ready language while loading")
     func overviewMessage_usesReadyLanguage() {
         #expect(
@@ -431,6 +432,7 @@ struct ConvectiveOutlookViewCopyTests {
         )
     }
 
+    @MainActor
     @Test("overview message keeps provenance when a latest outlook exists")
     func overviewMessage_mentionsSPCOutlook() {
         let message = ConvectiveOutlookView.overviewMessage(for: ConvectiveOutlook.sampleOutlookDtos.first)
@@ -551,5 +553,48 @@ struct ConvectiveOutlookDetailPresentationTests {
         #expect(presentation.metadataChips.first?.icon == "clock.arrow.circlepath")
         #expect(presentation.metadataChips.first?.title.contains("Published") == true)
         #expect(presentation.validUntil == nil)
+    }
+}
+
+@Suite("ConvectiveOutlookView presentation state")
+struct ConvectiveOutlookViewPresentationStateTests {
+    @Test("loading state wins while refresh is in flight and no outlooks are shown")
+    func loadingStateWins() {
+        #expect(
+            ConvectiveOutlookPresentationState.resolve(
+                dtos: [],
+                refreshStatus: .loading
+            ) == .loading
+        )
+    }
+
+    @Test("confirmed empty stays distinct from unavailable")
+    func confirmedEmptyStaysDistinct() {
+        #expect(
+            ConvectiveOutlookPresentationState.resolve(
+                dtos: [],
+                refreshStatus: .success(hasContent: false)
+            ) == .empty
+        )
+    }
+
+    @Test("failed refresh without cached content is unavailable")
+    func failedRefreshWithoutContentIsUnavailable() {
+        #expect(
+            ConvectiveOutlookPresentationState.resolve(
+                dtos: [],
+                refreshStatus: .failed
+            ) == .unavailable
+        )
+    }
+
+    @Test("non-empty content stays populated")
+    func nonEmptyContentIsPopulated() {
+        #expect(
+            ConvectiveOutlookPresentationState.resolve(
+                dtos: [ConvectiveOutlook.sampleOutlookDtos[0]],
+                refreshStatus: .failed
+            ) == .populated
+        )
     }
 }

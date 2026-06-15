@@ -36,7 +36,7 @@ decisions from Git history.
 | 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Completed | Removed the outer Risk Snapshot surface so Current Conditions stays distinct while the hero tiles, rails, and supporting cards keep their own domain chrome. |
 | 19 | AN-19 | [#235](https://github.com/justinrooks/project-arcus/issues/235) | Move Settings to native Form structure | Not started | |
 | 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Completed | Alerts now use native `List`/`Section` structure with `NavigationLink` rows, warning-first ordering is preserved, and the mixed warning/watch/meso smoke path is covered in UI tests. |
-| 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Not started | |
+| 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Completed | Outlooks now use native `List`/`Section` structure with `NavigationLink` rows, explicit loading/empty/unavailable/populated states, preserved provider attribution, and focused navigation/UI smoke coverage. |
 | 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Completed | Map scenes now carry explicit loading, resolving, current, confirmed-empty, stale, and unavailable presentation states so failed refreshes do not collapse to confirmed no-risk language. |
 | 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Completed | Legend rows now derive from the rendered warning overlays, dedupe by displayed warning type, and keep the warning-state legend truthful when overlay visibility or stale map state changes. |
 | 24 | AN-24 | [#240](https://github.com/justinrooks/project-arcus/issues/240) | Replace the map layer sheet with a native current-state menu | Completed | Native `Menu` trigger now shows the current layer and semantic symbol, keeps warning overlays in a separate menu section, and preserves the existing selection / haptic / availability paths. |
@@ -989,6 +989,63 @@ Model used: gpt-5.4-mini / high
 - Preserve the meso identifier if future smoke tests need direct row targeting.
 - AN-27 should treat this screen as already native-structured; only spacing and polish should be left.
 - AN-28 should verify light/dark, accessibility sizes, and empty-state wording against the native list baseline rather than re-litigating structure.
+
+### AN-21 / GitHub #237 - Native-align the Outlooks list structure
+
+Status: Completed
+Date: 2026-06-15
+Model used: gpt-5.4-mini / medium
+
+#### Scope
+
+- Replaced the Outlooks `ScrollView`/card stack with native `List` and `Section` structure.
+- Switched Outlook detail entry points to native `NavigationLink` rows while keeping the existing `NavigationStack` ownership in place.
+- Preserved the Outlook row payload, provider attribution, risk graphics, canonical copy, and optional metadata rules.
+- Added explicit presentation-state handling so loading, confirmed empty, unavailable, and populated Outlooks stay visually distinct.
+- Tuned row spacing and padding to match the Alert migration baseline, including the same 12-point row content gap and 16-point horizontal padding pattern.
+- Added a focused presentation-state unit test suite and two navigation smoke tests, including an accessibility-text-size path.
+
+#### Files Changed
+
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookPresentationState.swift`
+- `Sources/Features/ConvectiveOutlookView/ConvectiveOutlookView.swift`
+- `Sources/Features/ConvectiveOutlookView/OutlookRowView.swift`
+- `Sources/App/HomeRefreshPipeline.swift`
+- `Sources/App/HomeView.swift`
+- `Tests/UnitTests/ConvectiveOutlookRepoTests.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+- `tasks/lessons.md`
+
+#### Behavior Preserved
+
+- Ingestion, decoding, classification, sorting, persistence, refresh, and provider behavior were unchanged.
+- Canonical user-facing terminology from AN-09 remained intact.
+- Optional day and valid-until metadata from AN-10 still stays omitted when missing instead of being fabricated.
+- Proportional narrative typography from AN-11 remained in place.
+- The opt-in Liquid Glass policy from AN-17 still keeps ordinary Outlook list content on stable card backgrounds.
+- Existing navigation ownership stayed with the app-level `NavigationStack`.
+- Existing row identifiers were preserved for the latest outlook path.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/ConvectiveOutlookViewPresentationStateTests -only-testing:SkyAwareTests/ConvectiveOutlookViewCopyTests test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testOutlookDetailOpensFromTheLatestOutlookRow -only-testing:SkyAwareUITests/testOutlookDetailOpensFromTheLatestOutlookRowAtAccessibilityTextSize test`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+- Simulator screenshot review of the existing SkyAware home surface in `/private/tmp/skyaware-sim-after-ui-test.png` and `/private/tmp/skyaware_contact_sheet.png` as a fallback visual reference for the broader app chrome.
+- The fresh Outlook smoke screenshots could not be recovered from XCTest attachments in this environment, so the Outlook-specific validation here rests on the passing UI smoke tests plus the compiled view structure.
+
+#### Deferred Work
+
+- AN-27 still owns the remaining cross-screen spacing polish pass.
+- AN-28 still owns the full native acceptance matrix sweep.
+- A manual VoiceOver pass on the Outlook list would still be useful if someone wants human confirmation beyond XCTest's accessibility assertions.
+
+#### Handoff Notes
+
+- AN-27 should treat the Alert row padding/inset pattern as the baseline for any final spacing polish; do not introduce a second row rhythm unless the other native lists also change.
+- AN-28 should verify Outlook loading, confirmed empty, unavailable, populated, and accessibility-size states using the native list baseline rather than rechecking the old card-stack behavior.
+- If future Outlook work changes the row title format, keep the accessibility label/value split explicit so VoiceOver still announces product identity, known metadata, and navigation purpose in order.
 
 ### AN-22 / GitHub #238 - Distinguish map unavailable, stale, and confirmed-empty states
 
