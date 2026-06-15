@@ -107,7 +107,7 @@ struct ConvectiveOutlookView: View {
                     } header: {
                         outlookSectionHeader(
                             title: "Latest Outlook",
-                            subtitle: "SPC discussion",
+                            subtitle: nil,
                             symbol: "sparkles.rectangle.stack.fill"
                         )
                     }
@@ -153,14 +153,14 @@ struct ConvectiveOutlookView: View {
             Label(overviewTitle, systemImage: overviewSymbol)
                 .sectionLabel()
 
-            if let overviewProviderText {
-                Text(overviewProviderText)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
-            }
+//            if let overviewProviderText {
+//                Text(overviewProviderText)
+//                    .font(.caption.weight(.medium))
+//                    .foregroundStyle(.secondary)
+//                    .padding(.horizontal, 10)
+//                    .padding(.vertical, 5)
+//                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+//            }
 
             Text(overviewMessage)
                 .font(.subheadline)
@@ -234,25 +234,36 @@ struct ConvectiveOutlookView: View {
 
     private func outlookSectionHeader(
         title: String,
-        subtitle: String,
+        subtitle: String?,
         symbol: String
     ) -> some View {
         Group {
             if adaptiveLayout.usesAccessibilityLayout {
-                Label(title, systemImage: symbol)
-                    .font(.headline.weight(.semibold))
-                    .textCase(nil)
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: symbol)
+                    Text(title)
+                }
+                .font(.headline.weight(.semibold))
+                .textCase(nil)
+//                Label(title, systemImage: symbol)
+//                    .font(.headline.weight(.semibold))
+//                    .textCase(nil)
             } else {
                 HStack {
-                    Label(title, systemImage: symbol)
-                        .font(.headline.weight(.semibold))
+                    HStack(alignment: .center, spacing: 6) {
+                        Image(systemName: symbol)
+                        Text(title)
+                    }
+                    .font(.headline.weight(.semibold))
                     Spacer()
-                    Text(subtitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+                    }
                 }
                 .textCase(nil)
             }

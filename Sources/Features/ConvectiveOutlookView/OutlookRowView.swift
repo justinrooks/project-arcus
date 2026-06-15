@@ -21,11 +21,11 @@ struct OutlookRowView: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "pencil.and.list.clipboard")
-                .foregroundColor(.skyAwareAccent)
-                .font(.headline.weight(.semibold))
-                .frame(width: 40, height: 40)
-                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
+//            Image(systemName: "pencil.and.list.clipboard")
+//                .foregroundColor(.skyAwareAccent)
+//                .font(.headline.weight(.semibold))
+//                .frame(width: 40, height: 40)
+//                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
 
             VStack(alignment: .leading, spacing: 4) {
                 titleBlock
