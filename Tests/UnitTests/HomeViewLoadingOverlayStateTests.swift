@@ -647,6 +647,19 @@ struct SummaryViewRiskPlaceholderPresentationTests {
         )
     }
 
+    @Test("nil risk keeps the resolving placeholder visible while a refresh batch is still active")
+    func riskPlaceholder_nilRiskDuringActiveRefreshBatch() {
+        #expect(
+            SummaryView.showsRiskResolvingPlaceholder(
+                hasRiskValue: false,
+                readinessState: .ready,
+                isSectionResolving: false,
+                showsOfflineToken: false,
+                isRefreshing: true
+            )
+        )
+    }
+
     @Test("nil risk does not show resolving placeholder after completed local data attempt")
     func riskPlaceholder_nilRiskWhenReadyAfterCompletedAttempt() {
         #expect(
@@ -668,6 +681,66 @@ struct SummaryViewRiskPlaceholderPresentationTests {
                 isSectionResolving: true,
                 showsOfflineToken: true
             ) == false
+        )
+    }
+}
+
+@Suite("Summary Content Presentation State")
+@MainActor
+struct SummaryContentPresentationStateTests {
+    @Test("online content stays current")
+    func presentationState_onlineContentIsCurrent() {
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: false,
+                hasContent: true,
+                isResolving: false
+            ) == .current
+        )
+    }
+
+    @Test("offline content becomes stale")
+    func presentationState_offlineContentIsStale() {
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: true,
+                isResolving: false
+            ) == .stale
+        )
+    }
+
+    @Test("resolving content remains resolving while online and empty")
+    func presentationState_resolvingContentIsResolving() {
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: false,
+                hasContent: false,
+                isResolving: true
+            ) == .resolving
+        )
+    }
+
+    @Test("offline without content is unavailable")
+    func presentationState_offlineWithoutContentIsUnavailable() {
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: false,
+                isResolving: true
+            ) == .unavailable
+        )
+    }
+
+    @Test("confirmed empty beats unavailable when the latest successful result is empty")
+    func presentationState_confirmedEmptyWins() {
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: false,
+                hasContent: false,
+                isResolving: false,
+                isConfirmedEmpty: true
+            ) == .confirmedEmpty
         )
     }
 }

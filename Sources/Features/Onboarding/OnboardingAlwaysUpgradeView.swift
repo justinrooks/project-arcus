@@ -13,60 +13,54 @@ struct OnboardingAlwaysUpgradeView: View {
     let onEnableAlways: () -> Void
     let onSkip: () -> Void
 
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
+    @ScaledMetric(relativeTo: .largeTitle)
+    private var symbolSize: CGFloat = 80
 
+    var body: some View {
+        OnboardingStepShell {
             Image(systemName: "bell.badge.waveform.fill")
-                .font(.system(size: 80))
+                .font(.system(size: symbolSize))
                 .foregroundColor(.skyAwareAccent)
 
             Text("More Reliable Alerts")
                 .font(.largeTitle)
                 .fontWeight(.bold)
 
-            Text("SkyAware can send more reliable severe-weather alerts when it can refresh your location in the background.")
+            Text("SkyAware can keep severe-weather alerts current when it can refresh your location in the background.")
                 .font(.body)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
 
-            Text("Enable Always to improve background alert reliability. You can continue now and change this later in Settings.")
+            Text("Enable Always to help keep alerts current. You can continue now and change this later in Settings.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+        } footer: {
+            VStack(spacing: 12) {
+                if let statusMessage {
+                    ProgressView(statusMessage)
+                        .font(.subheadline)
+                        .tint(.skyAwareAccent)
+                }
 
-            Spacer()
-
-            if let statusMessage {
-                ProgressView(statusMessage)
-                    .font(.subheadline)
-                    .tint(.skyAwareAccent)
-            }
-
-            Button(action: onEnableAlways) {
-                Text("Enable Always")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                            .fill(Color.skyAwareAccent)
-                    )
-            }
-            .padding(.horizontal, 32)
-            .disabled(isWorking)
-
-            Button("Not Now", action: onSkip)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+                Button(action: onEnableAlways) {
+                    Text("Enable Always")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
+                                .fill(Color.skyAwareAccent)
+                        )
+                }
                 .disabled(isWorking)
 
-            Spacer()
+                Button("Not Now", action: onSkip)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .disabled(isWorking)
+            }
         }
-        .padding()
-        .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
 }
 
@@ -77,4 +71,17 @@ struct OnboardingAlwaysUpgradeView: View {
         onEnableAlways: {},
         onSkip: {}
     )
+}
+
+private struct OnboardingAlwaysUpgradeViewAX5Preview: PreviewProvider {
+    static var previews: some View {
+        OnboardingAlwaysUpgradeView(
+            isWorking: false,
+            statusMessage: nil,
+            onEnableAlways: {},
+            onSkip: {}
+        )
+        .previewDevice("iPhone SE (3rd generation)")
+        .environment(\.dynamicTypeSize, .accessibility5)
+    }
 }

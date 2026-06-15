@@ -1,4 +1,5 @@
 import SwiftUI
+import MapKit
 import UIKit
 
 struct MapLegend: View {
@@ -10,29 +11,33 @@ struct MapLegend: View {
         VStack(alignment: .leading, spacing: 10) {
             switch state.layer {
             case .categorical:
-                Text("Severe Risk")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
                 ForEach(Array(StormRiskLevel.allCases.reversed().dropLast()), id: \.self) { level in
                     CategoricalLegendRow(risk: level)
                 }
 
             case .meso:
-                Text("Legend")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
                 MesoLegendRow(risk: state.layer.key.capitalized) // MESO
             
             case .fire:
                 let risks = state.fireItems
-                Text(risks.isEmpty ? "No fire risk" : "Fire Risk")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
                 ForEach(risks) { risk in
                     FireLegendRow(risk: risk)
                 }
 
             case .tornado, .hail, .wind:
                 let risks = state.severeItems
-                Text(risks.isEmpty ? "No \(state.layer.title.lowercased()) risk" : "\(state.layer.title) Risk")
+                Text(state.headlineText)
                     .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state.voiceOverText)
 
                 ForEach(risks) { risk in
                     SevereLegendRow(layer: state.layer, risk: risk)
@@ -63,7 +68,7 @@ struct MapLegend: View {
                 }
             }
         }
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .frame(minWidth: 144, maxWidth: 260, alignment: .leading)
         .fixedSize(horizontal: true, vertical: false)
         .cardBackground(
@@ -77,22 +82,33 @@ struct MapLegend: View {
 
 struct CompactMapLegendTrigger: View {
     let label: String
+    let subtitle: String?
+    let accessibilityValue: String
     let onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 8) {
-                Text(label)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+            VStack(alignment: .leading, spacing: subtitle == nil ? 0 : 2) {
+                HStack(spacing: SkyAwareSpacing.compact) {
+                    Text(label)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
 
-                Image(systemName: "chevron.up")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    Image(systemName: "chevron.up")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(minHeight: 40)
+            .padding(.horizontal, SkyAwareSpacing.standard)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -105,16 +121,13 @@ struct CompactMapLegendTrigger: View {
             shadowY: 4
         )
         .accessibilityLabel("Map legend")
+        .accessibilityValue(accessibilityValue)
         .accessibilityHint("Opens the full map legend.")
     }
 }
 
 struct WarningLegend: View {
-    private let items: [WarningLegendItem] = [
-        .init(event: "Tornado Warning", title: "Tornado"),
-        .init(event: "Severe Thunderstorm Warning", title: "Severe Thunderstorm"),
-        .init(event: "Flash Flood Warning", title: "Flash Flood")
-    ]
+    let items: [WarningLegendItem]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -125,7 +138,7 @@ struct WarningLegend: View {
                 WarningLegendRow(item: item)
             }
         }
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .frame(width: 160, alignment: .leading)
         .cardBackground(
             cornerRadius: SkyAwareRadius.row,
@@ -136,24 +149,125 @@ struct WarningLegend: View {
     }
 }
 
-private struct WarningLegendItem: Identifiable {
-    let event: String
-    let title: String
+struct WarningLegendItem: Identifiable {
+    private enum Kind {
+        case recognized(WarningPolygonKind)
+        case fallback(event: String)
+    }
 
-    var id: String { event }
+    private let kind: Kind
+    let title: String
+    let accessibilityLabel: String
+    let fill: UIColor
+    let stroke: UIColor
+
+    var id: String {
+        switch kind {
+        case .recognized(let warningKind):
+            return "recognized-\(warningKind.rawValue)"
+        case .fallback(let event):
+            return "fallback-\(event.lowercased())"
+        }
+    }
+
+    init?(overlay: MapOverlayEntry) {
+        guard overlay.key.hasPrefix("warn|"),
+              let polygon = overlay.overlay as? MKPolygon,
+              let rawEvent = polygon.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              rawEvent.isEmpty == false else {
+            return nil
+        }
+
+        if let warningKind = WarningPolygonKind(event: rawEvent) {
+            kind = .recognized(warningKind)
+            title = warningKind.displayTitle
+            accessibilityLabel = warningKind.accessibilityLabel
+            let style = warningKind.style()
+            fill = style.fill
+            stroke = style.stroke
+            return
+        }
+
+        kind = .fallback(event: rawEvent)
+        title = rawEvent
+        accessibilityLabel = rawEvent
+        let fallbackStyle = warningPolygonStyle(for: rawEvent).map {
+            (fill: $0.fill, stroke: $0.stroke)
+        } ?? RiskPolygonStyleResolver.probabilityStyle(for: polygon)
+        fill = fallbackStyle.fill
+        stroke = fallbackStyle.stroke
+    }
+
+    static func rendered(from overlays: [MapOverlayEntry]) -> [WarningLegendItem] {
+        var deduped: [WarningLegendItem] = []
+        var seen = Set<String>()
+
+        for item in overlays.compactMap(WarningLegendItem.init) {
+            guard seen.insert(item.id).inserted else { continue }
+            deduped.append(item)
+        }
+
+        return deduped.sorted {
+            let lhsRank = $0.sortRank
+            let rhsRank = $1.sortRank
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
+            }
+
+            return $0.title.localizedStandardCompare($1.title) == .orderedAscending
+        }
+    }
+
+    private var sortRank: Int {
+        switch kind {
+        case .recognized(let warningKind):
+            return warningKind.rawValue
+        case .fallback:
+            return 3
+        }
+    }
+}
+
+struct MapLegendAccessibilityContract: Equatable, Sendable {
+    let label: String
+    let value: String
+}
+
+enum MapLegendAccessibility {
+    static func categorical(risk: StormRiskLevel) -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Severe Risk", value: risk.message)
+    }
+
+    static func meso() -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Mesoscale", value: "Displayed area")
+    }
+
+    static func severe(layer: MapLayer, probability: ThreatProbability) -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(
+            label: layer.accessibilityLegendTitle,
+            value: probability.accessibilityDescription
+        )
+    }
+
+    static func fire(riskLabel: String) -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Fire Risk", value: riskLabel)
+    }
+
+    static func hatch() -> MapLegendAccessibilityContract {
+        MapLegendAccessibilityContract(label: "Hatching", value: "Stronger storms possible")
+    }
 }
 
 private struct WarningLegendRow: View {
     let item: WarningLegendItem
 
     var body: some View {
-        let style = warningPolygonStyle(for: item.event)
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color(style?.fill ?? UIColor.secondaryLabel))
+                .fill(Color(item.fill))
                 .overlay(
                     RoundedRectangle(cornerRadius: 4, style: .continuous)
-                        .stroke(Color(style?.stroke ?? UIColor.secondaryLabel), lineWidth: 1.15)
+                        .stroke(Color(item.stroke), lineWidth: 1.15)
                 )
                 .frame(width: 14, height: 14)
 
@@ -165,7 +279,7 @@ private struct WarningLegendRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(item.title)
+        .accessibilityLabel(item.accessibilityLabel)
     }
 }
 
@@ -199,16 +313,18 @@ private struct CategoricalLegendRow: View {
     var body: some View {
         let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk.abbreviation.uppercased(), probability: "0%")
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: MapOverlayDifferentiationStyle.categorical(risk)
+            )
             Text(risk.message.split(separator: " ")[0])
                 .font(.caption)
                 .fontWeight(["HIGH", "MDT", "ENH"].contains(risk.abbreviation.uppercased()) ? .semibold : .regular)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MapLegendAccessibility.categorical(risk: risk).label)
+        .accessibilityValue(MapLegendAccessibility.categorical(risk: risk).value)
     }
 }
 
@@ -218,16 +334,18 @@ private struct MesoLegendRow: View {
     var body: some View {
         let (fill, stroke) = PolygonStyleProvider.getPolygonStyleForLegend(risk: risk, probability: "0%")
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: .mesoscale
+            )
             Text(risk)
                 .font(.caption)
                 .fontWeight(.regular)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MapLegendAccessibility.meso().label)
+        .accessibilityValue(MapLegendAccessibility.meso().value)
     }
 }
 
@@ -244,12 +362,11 @@ private struct SevereLegendRow: View {
             spcStrokeHex: risk.strokeHex
         )
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: MapOverlayDifferentiationStyle.severe(probability: probability)
+            )
             switch probability {
             case .significant:
                 Text(probability.description)
@@ -260,6 +377,9 @@ private struct SevereLegendRow: View {
                     .font(.caption)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MapLegendAccessibility.severe(layer: layer, probability: probability).label)
+        .accessibilityValue(MapLegendAccessibility.severe(layer: layer, probability: probability).value)
     }
 }
 
@@ -274,16 +394,18 @@ private struct FireLegendRow: View {
             spcStrokeHex: risk.strokeHex
         )
         HStack {
-            Circle()
-                .fill(Color(fill))
-                .overlay(
-                    Circle().stroke(Color(stroke), lineWidth: 1.15)
-                )
-                .frame(width: 14, height: 14)
+            LegendCircleSwatch(
+                fill: fill,
+                stroke: stroke,
+                differentiationStyle: MapOverlayDifferentiationStyle.fire(riskLevel: risk.riskLevel)
+            )
             Text(riskLabel)
                 .font(.caption)
                 .fontWeight(risk.riskLevel >= 8 ? .semibold : .regular)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MapLegendAccessibility.fire(riskLabel: riskLabel).label)
+        .accessibilityValue(MapLegendAccessibility.fire(riskLabel: riskLabel).value)
     }
 
     private var riskLabel: String {
@@ -304,7 +426,7 @@ private struct HatchLegendRow: View {
     let hatchStyles: [HatchStyle]
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HatchSwatchView(styles: hatchStyles)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -314,10 +436,17 @@ private struct HatchLegendRow: View {
                 Text("Stronger storms possible")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
             }
         }
+        .frame(maxWidth: 128, alignment: .leading)
+        .padding(.vertical, 8)
+        .frame(minHeight: 44, alignment: .leading)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Hatching. Stronger storms possible.")
+        .accessibilityLabel(MapLegendAccessibility.hatch().label)
+        .accessibilityValue(MapLegendAccessibility.hatch().value)
     }
 }
 
@@ -369,16 +498,44 @@ private struct HatchSwatchView: View {
     }
 }
 
+private struct LegendCircleSwatch: View {
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    let fill: UIColor
+    let stroke: UIColor
+    let differentiationStyle: MapOverlayDifferentiationStyle?
+
+    var body: some View {
+        let strokeStyle = differentiationStyle?.strokeStyle(
+            differentiateWithoutColor: differentiateWithoutColor
+        )
+
+        Circle()
+            .fill(Color(fill))
+            .overlay(
+                Circle().stroke(
+                    Color(stroke),
+                    style: StrokeStyle(
+                        lineWidth: 1.15 * (strokeStyle?.lineWidthMultiplier ?? 1.0),
+                        dash: strokeStyle?.dashPattern ?? []
+                    )
+                )
+            )
+            .frame(width: 14, height: 14)
+    }
+}
+
 // MARK: - Previews
 
 #Preview("Categorical") {
-    MapLegend(state: .empty(for: .categorical))
+    MapLegend(state: .loading(for: .categorical))
         .padding()
         .background(.thinMaterial)
 }
 
 #Preview("Tornado 10% + SIGN") {
     MapLegend(state: MapLegendState(
+        presentationState: .current,
         layer: .tornado,
         severeItems: [
             SevereLegendItem(id: "10%", probability: .percent(0.10), fillHex: nil, strokeHex: nil),
@@ -392,13 +549,50 @@ private struct HatchSwatchView: View {
 }
 
 #Preview("Meso") {
-    MapLegend(state: .empty(for: .meso))
+    MapLegend(state: .confirmedEmpty(for: .meso))
         .padding()
         .background(.thinMaterial)
 }
 
-#Preview("Warnings") {
-    WarningLegend()
+#Preview("Warning styles") {
+    WarningLegend(items: [
+        .init(
+            overlay: {
+                let polygon = MKPolygon(
+                    coordinates: [
+                        CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+                        CLLocationCoordinate2D(latitude: 35.1, longitude: -96.9),
+                        CLLocationCoordinate2D(latitude: 35.2, longitude: -97.1)
+                    ],
+                    count: 3
+                )
+                polygon.title = "Tornado Warning"
+                return MapOverlayEntry(
+                    key: "warn|demo|rev-demo|tornado|0|demo",
+                    overlay: polygon,
+                    signature: 1
+                )
+            }()
+        )!,
+        .init(
+            overlay: {
+                let polygon = MKPolygon(
+                    coordinates: [
+                        CLLocationCoordinate2D(latitude: 35.2, longitude: -96.8),
+                        CLLocationCoordinate2D(latitude: 35.3, longitude: -96.7),
+                        CLLocationCoordinate2D(latitude: 35.4, longitude: -96.9)
+                    ],
+                    count: 3
+                )
+                polygon.title = "Flash Flood Warning"
+                return MapOverlayEntry(
+                    key: "warn|demo|rev-demo|flashFlood|0|demo",
+                    overlay: polygon,
+                    signature: 2
+                )
+            }()
+        )!
+    ])
         .padding()
         .background(.thinMaterial)
 }

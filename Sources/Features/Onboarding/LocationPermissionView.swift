@@ -12,65 +12,60 @@ struct LocationPermissionView: View {
     let statusMessage: String?
     let onEnable: () -> Void
     let onSkip: () -> Void
-    
-    var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
 
+    @ScaledMetric(relativeTo: .largeTitle)
+    private var symbolSize: CGFloat = 80
+
+    var body: some View {
+        OnboardingStepShell {
             Image(systemName: "location.fill")
-                .font(.system(size: 80))
+                .font(.system(size: symbolSize))
                 .foregroundColor(.skyAwareAccent)
-            
+
             Text("Location Access")
                 .font(.largeTitle)
                 .fontWeight(.bold)
-            
+
             Text("SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.")
                 .font(.body)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
 
-            Text("To support timely location-based notifications, SkyAware may send derived location information such as your county, fire zone, and a coarse geographic index to the server.")
+            Text("To support timely location-based alerts, SkyAware may share an approximate location with the alert service, such as your county, fire zone, or a coarse geographic index.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
 
             Text("SkyAware does not sell your data, use it for advertising, or track you across apps or websites.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Spacer()
+        } footer: {
+            VStack(spacing: 12) {
+                if let statusMessage {
+                    ProgressView(statusMessage)
+                        .font(.subheadline)
+                        .tint(.skyAwareAccent)
+                }
 
-            if let statusMessage {
-                ProgressView(statusMessage)
+                Button(action: onEnable) {
+                    Text("Enable Location")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(
+                            RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
+                                .fill(Color.skyAwareAccent)
+                        )
+                }
+                .disabled(isWorking)
+
+                Button("Skip for Now", action: onSkip)
                     .font(.subheadline)
-                    .tint(.skyAwareAccent)
+                    .foregroundColor(.secondary)
+                    .disabled(isWorking)
             }
-            Button(action: onEnable) {
-                Text("Enable Location")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: SkyAwareRadius.chip)
-                            .fill(Color.skyAwareAccent)
-                    )
-            }
-            .padding(.horizontal, 32)
-            .disabled(isWorking)
-            
-            Button("Skip for Now", action: onSkip)
-            .font(.subheadline)
-            .foregroundColor(.secondary)
-            .disabled(isWorking)
-            
-            Spacer()
         }
-        .padding()
-        .background(Color(.skyAwareBackground).ignoresSafeArea())
     }
 }
 
@@ -81,4 +76,17 @@ struct LocationPermissionView: View {
         onEnable: {},
         onSkip: {}
     )
+}
+
+private struct LocationPermissionViewAX5Preview: PreviewProvider {
+    static var previews: some View {
+        LocationPermissionView(
+            isWorking: false,
+            statusMessage: nil,
+            onEnable: {},
+            onSkip: {}
+        )
+        .previewDevice("iPhone SE (3rd generation)")
+        .environment(\.dynamicTypeSize, .accessibility5)
+    }
 }

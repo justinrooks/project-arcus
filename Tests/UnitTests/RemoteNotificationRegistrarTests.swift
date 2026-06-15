@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UserNotifications
 @testable import SkyAware
 
 @Suite("RemoteNotificationRegistrar")
@@ -168,5 +169,94 @@ struct RemoteNotificationRegistrarTests {
         #expect(first == second)
         #expect(snapshot.writes.count == 1)
         #expect(snapshot.storedValue == first)
+    }
+}
+
+@Suite("Notification preference state")
+struct NotificationPreferenceStateTests {
+    @Test("denied keeps stored preferences and exposes an Open Settings recovery action")
+    func denied_keepsStoredPreferencesAndRecoveryAction() {
+        let state = NotificationPreferenceState(
+            authorizationStatus: .denied,
+            morningSummariesEnabled: true,
+            mesoNotificationsEnabled: true,
+            serverNotificationsEnabled: true
+        )
+
+        #expect(state.authorizationStatusTitle == "Off")
+        #expect(state.allowsNotificationDelivery == false)
+        #expect(state.effectiveMorningSummariesEnabled == false)
+        #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.effectiveServerNotificationsEnabled == false)
+        #expect(state.recoveryActionTitle == "Open Settings")
+        #expect(state.systemAvailabilityCopy.contains("preserved"))
+    }
+
+    @Test("provisional notifications remain effectively available without a recovery action")
+    func provisional_remainsAvailable() {
+        let state = NotificationPreferenceState(
+            authorizationStatus: .provisional,
+            morningSummariesEnabled: true,
+            mesoNotificationsEnabled: false,
+            serverNotificationsEnabled: true
+        )
+
+        #expect(state.authorizationStatusTitle == "Quiet")
+        #expect(state.allowsNotificationDelivery == true)
+        #expect(state.effectiveMorningSummariesEnabled == true)
+        #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.effectiveServerNotificationsEnabled == true)
+        #expect(state.recoveryActionTitle == nil)
+        #expect(state.systemAvailabilityCopy.contains("quietly"))
+    }
+
+    @Test("ephemeral notifications remain effectively available without a recovery action")
+    func ephemeral_remainsAvailable() {
+        let state = NotificationPreferenceState(
+            authorizationStatus: .ephemeral,
+            morningSummariesEnabled: false,
+            mesoNotificationsEnabled: true,
+            serverNotificationsEnabled: false
+        )
+
+        #expect(state.authorizationStatusTitle == "Temporary")
+        #expect(state.allowsNotificationDelivery == true)
+        #expect(state.effectiveMorningSummariesEnabled == false)
+        #expect(state.effectiveMesoNotificationsEnabled == true)
+        #expect(state.effectiveServerNotificationsEnabled == false)
+        #expect(state.recoveryActionTitle == nil)
+        #expect(state.systemAvailabilityCopy.contains("temporarily"))
+    }
+
+    @Test("not determined keeps stored preferences but marks delivery unavailable")
+    func notDetermined_marksDeliveryUnavailable() {
+        let state = NotificationPreferenceState(
+            authorizationStatus: .notDetermined,
+            morningSummariesEnabled: true,
+            mesoNotificationsEnabled: true,
+            serverNotificationsEnabled: false
+        )
+
+        #expect(state.authorizationStatusTitle == "Not Set")
+        #expect(state.allowsNotificationDelivery == false)
+        #expect(state.effectiveMorningSummariesEnabled == false)
+        #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.effectiveServerNotificationsEnabled == false)
+        #expect(state.recoveryActionTitle == nil)
+        #expect(state.systemAvailabilityCopy.contains("saved now"))
+    }
+}
+
+@Suite("Settings diagnostics support")
+struct SettingsDiagnosticsSupportTests {
+    @Test("production support copy remains redacted")
+    func productionSupportCopyRemainsRedacted() {
+        let summary = SettingsSupportSummary(version: "1.2.3 (45)")
+
+        #expect(summary.copyText.contains("1.2.3 (45)"))
+        #expect(summary.copyText.contains("redacted"))
+        #expect(!summary.copyText.localizedCaseInsensitiveContains("installation"))
+        #expect(!summary.copyText.localizedCaseInsensitiveContains("apns"))
+        #expect(!summary.copyText.localizedCaseInsensitiveContains("h3"))
     }
 }

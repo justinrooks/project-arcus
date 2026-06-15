@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import OSLog
 
 // MARK: - Domain
 
@@ -61,273 +60,138 @@ enum MapLayer: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-// MARK: - Tile
-
-struct LayerTile: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    let layer: MapLayer
+struct MapLayerMenuAccessibilityState: Equatable, Sendable {
+    let label: String
     let isSelected: Bool
-    let action: () -> Void
-
-    private var adaptiveLayout: SkyAwareAdaptiveLayout {
-        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
-    }
-
-    private var displayTitle: String {
-        guard dynamicTypeSize == .xxxLarge else { return layer.title }
-        switch layer {
-        case .categorical:
-            return "Severe"
-        case .meso:
-            return "Meso"
-        default:
-            return layer.title
-        }
-    }
-
-    private var tint: Color {
-        switch layer {
-        case .categorical: return .riskThunderstorm.opacity(0.20)
-        case .wind: return .windTeal.opacity(0.20)
-        case .hail: return .hailBlue.opacity(0.20)
-        case .tornado: return .tornadoRed.opacity(0.20)
-        case .meso: return .mesoPurple.opacity(0.20)
-        case .fire: return .fireWeather.opacity(0.20)
-        }
-    }
-
-    var body: some View {
-        Button(action: {
-            action()
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        }) {
-            Group {
-                if adaptiveLayout.usesAccessibilityLayout {
-                    HStack(spacing: 12) {
-                        layerIcon
-                        Text(displayTitle)
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(3)
-
-                        Spacer(minLength: 8)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
-                } else {
-                    VStack(spacing: 10) {
-                        layerIcon
-
-                        Text(displayTitle)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.primary)
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .frame(minHeight: 34, alignment: .top)
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-            .padding(.vertical, 4)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(displayTitle + (isSelected ? ", selected" : ""))
-        }
-        .buttonStyle(.plain)
-        .animation(SkyAwareMotion.layerChange(reduceMotion), value: isSelected)
-    }
-
-    private var layerIcon: some View {
-        RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-            .fill(layer.gradient(for: scheme))
-            .overlay(
-                Image(systemName: layer.symbol).formatBadgeImage()
-            )
-            .frame(width: 74, height: 74)
-            .skyAwareSurface(
-                cornerRadius: SkyAwareRadius.medium,
-                tint: tint,
-                interactive: true,
-                shadowOpacity: scheme == .dark ? 0.20 : 0.10,
-                shadowRadius: 5,
-                shadowY: 2
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: SkyAwareRadius.medium, style: .continuous)
-                    .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
-            }
-            .scaleEffect(isSelected ? 1.02 : 1)
-    }
 }
 
-// MARK: - Sheet
+// MARK: - Menu
 
-struct LayerPickerSheet: View {
-    /// Use a Set for multi-select; for single-select pass allowsMultipleSelection = false
+struct MapLayerMenu: View {
     @Binding var selection: MapLayer
     @Binding var showsWarningGeometry: Bool
-    var title: String = "Map Layers"
-    var triggerNamespace: Namespace.ID? = nil
 
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Menu {
+            Picker("Map layer", selection: $selection) {
+                ForEach(MapLayer.allCases) { layer in
+                    let accessibilityState = Self.accessibilityState(for: layer, selection: selection)
+
+                    Label(layer.title, systemImage: layer.symbol)
+                        .tag(layer)
+                        .accessibilityLabel(accessibilityState.label)
+                        .accessibilityAddTraits(accessibilityState.isSelected ? .isSelected : [])
+                }
+            }
+
+            Divider()
+
+            Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
+        } label: {
+            MapLayerMenuLabel(layer: selection)
+                .transaction { transaction in
+                    transaction.animation = nil
+                }
+        }
+        .accessibilityLabel("Map layers")
+        .accessibilityValue(selection.title)
+        .accessibilityHint("Opens a menu to choose the map layer or toggle active alerts.")
+        .modifier(MapLayerPickerButtonStyle())
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    static func shouldUpdateSelection(current: MapLayer, to candidate: MapLayer) -> Bool {
+        current != candidate
+    }
+
+    static func showsWarningGeometryTogglePolicy(dynamicTypeSize _: DynamicTypeSize) -> Bool {
+        true
+    }
+
+    static func accessibilityState(for layer: MapLayer, selection: MapLayer) -> MapLayerMenuAccessibilityState {
+        MapLayerMenuAccessibilityState(label: layer.title, isSelected: layer == selection)
+    }
+}
+
+private struct MapLayerPickerButtonStyle: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content
+                .buttonStyle(.glass)
+        } else {
+            content
+                .buttonStyle(.plain)
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.section,
+                    tint: .skyAwareAccent.opacity(0.18),
+                    interactive: true,
+                    shadowOpacity: 0.16,
+                    shadowRadius: 10,
+                    shadowY: 6
+                )
+        }
+    }
+}
+
+private struct MapLayerMenuLabel: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    
-    private let columns = [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 14)]
+
+    let layer: MapLayer
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
-    private var isAccessibilityListLayout: Bool {
-        Self.usesAccessibilityListLayoutPolicy(dynamicTypeSize: dynamicTypeSize)
-    }
-
-    private var shouldShowWarningGeometryToggle: Bool {
-        Self.showsWarningGeometryTogglePolicy(dynamicTypeSize: dynamicTypeSize)
-    }
-
     var body: some View {
-        VStack(spacing: 14) {
-            HStack {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.2.layers.3d.top.filled")
-                        .font(.caption.weight(.bold))
-                        .frame(width: 26, height: 26)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .skyAwareAccent.opacity(0.18))
-                        .modifier(LayerPickerMorph(namespace: triggerNamespace))
-                    Text(title)
-                        .font(.title3.weight(.semibold))
-                }
-                Spacer(minLength: 6)
-                DismissButton()
-            }
-            .padding()
-
-            ScrollView {
-                if isAccessibilityListLayout {
-                    VStack(spacing: 10) {
-                        ForEach(MapLayer.allCases) { layer in
-                            LayerTile(layer: layer, isSelected: selection == layer) {
-                                toggle(layer)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 2)
-                    .padding(.bottom, 14)
-                } else {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(MapLayer.allCases) { layer in
-                            LayerTile(layer: layer, isSelected: selection == layer) {
-                                toggle(layer)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.top, 2)
-                    .padding(.bottom, 14)
-                }
-            }
-
-            Text("Choose a layer")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 4)
-
-            if shouldShowWarningGeometryToggle {
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Show Active Alerts", isOn: $showsWarningGeometry)
-                        .toggleStyle(.switch)
-
-                    Text("Show active alerts on the map.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal)
-                .padding(.bottom, 10)
-            }
-        }
-        .padding(.top, 8)
-        .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .presentationDetents([.height(510), .large])
-        .interactiveDismissDisabled(false)
+        labelBody(title: layer.title)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .contentShape(Capsule())
     }
-
-    private func toggle(_ layer: MapLayer) {
-        withAnimation(SkyAwareMotion.press(reduceMotion)) {
-            selection = layer
-        }
-        dismiss()
-    }
-
-    static func usesAccessibilityListLayoutPolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
-        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout
-    }
-
-    static func showsWarningGeometryTogglePolicy(dynamicTypeSize: DynamicTypeSize) -> Bool {
-        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesAccessibilityLayout == false
-    }
-}
-
-// MARK: - Convenience close button (X)
-
-private struct DismissButton: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        Button {
-            dismiss()
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(.headline.weight(.bold))
-                .frame(width: 34, height: 34)
-                .accessibilityLabel("Close")
-        }
-        .buttonStyle(.plain)
-        .skyAwareChip(cornerRadius: SkyAwareRadius.circularButton, tint: .white.opacity(0.1), interactive: true)
-        .contentShape(.rect)
-    }
-}
-
-private struct LayerPickerMorph: ViewModifier {
-    let namespace: Namespace.ID?
 
     @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *), let namespace {
-            content.glassEffectID("map-layer-button", in: namespace)
-        } else {
-            content
+    private func labelBody(title: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: layer.symbol)
+                .imageScale(.medium)
+                .fontWeight(.semibold)
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            Text(title)
+                .font(adaptiveLayout.usesAccessibilityLayout ? .headline.weight(.semibold) : .subheadline.weight(.semibold))
+                .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
+                .minimumScaleFactor(0.85)
+                .layoutPriority(1)
+
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 12)
         }
     }
 }
 
 // MARK: - Preview
 
-#Preview("Layer Picker - Normal Grid") {
-    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+#Preview("Map Layer Menu - Normal") {
+    MapLayerMenu(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
 }
 
-#Preview("Layer Picker - XXXL Grid") {
-    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
-        .environment(\.dynamicTypeSize, .xxxLarge)
-}
-
-#Preview("Layer Picker - AX1 Vertical List") {
-    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
-        .environment(\.dynamicTypeSize, .accessibility1)
-}
-
-#Preview("Layer Picker - AX3 Vertical List") {
-    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+#Preview("Map Layer Menu - AX3") {
+    MapLayerMenu(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
         .environment(\.dynamicTypeSize, .accessibility3)
 }
 
-#Preview("Layer Picker - AX3 Small iPhone") {
-    LayerPickerSheet(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
+#Preview("Map Layer Menu - Dark") {
+    MapLayerMenu(selection: .constant(.tornado), showsWarningGeometry: .constant(true))
+        .environment(\.colorScheme, .dark)
+}
+
+#Preview("Map Layer Menu - AX3 Small iPhone") {
+    MapLayerMenu(selection: .constant(.categorical), showsWarningGeometry: .constant(true))
         .environment(\.dynamicTypeSize, .accessibility3)
         .frame(width: 320, height: 568)
 }

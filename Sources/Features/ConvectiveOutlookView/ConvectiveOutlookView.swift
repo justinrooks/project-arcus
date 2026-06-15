@@ -12,12 +12,7 @@ struct ConvectiveOutlookView: View {
 
     let dtos: [ConvectiveOutlookDTO]
     let onRefresh: (() async -> Void)?
-    
-    @State private var selectedOutlook: ConvectiveOutlookDTO?
-
-    private var hasNoOutlooks: Bool {
-        dtos.isEmpty
-    }
+    let presentationState: ConvectiveOutlookPresentationState
 
     private var sortedOutlooks: [ConvectiveOutlookDTO] {
         dtos.sorted { lhs, rhs in
@@ -41,146 +36,360 @@ struct ConvectiveOutlookView: View {
 
     init(
         dtos: [ConvectiveOutlookDTO],
+        refreshStatus: ConvectiveOutlookRefreshStatus? = nil,
         onRefresh: (() async -> Void)? = nil
     ) {
         self.dtos = dtos
         self.onRefresh = onRefresh
+        self.presentationState = ConvectiveOutlookPresentationState.resolve(
+            dtos: dtos,
+            refreshStatus: refreshStatus ?? (dtos.isEmpty ? .loading : .success(hasContent: true))
+        )
     }
-    
+
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+        List {
+            Section {
                 overviewCard
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                if hasNoOutlooks {
-                    emptyCard
-                } else {
-                    if let latestOutlook {
-                        outlookSection(
-                            title: "Latest Outlook",
-                            subtitle: "Newest SPC product",
-                            symbol: "sparkles.rectangle.stack.fill"
+            switch presentationState {
+            case .loading:
+                Section {
+                    stateCard(
+                        title: "Outlooks pending",
+                        message: "Latest outlooks from SPC will appear here once they are ready.",
+                        symbol: "clock.arrow.circlepath"
+                    )
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+
+            case .unavailable:
+                Section {
+                    stateCard(
+                        title: "Outlooks unavailable",
+                        message: "SkyAware could not load the latest SPC outlooks right now. Severe-weather risk can still exist even when this feed is unavailable.",
+                        symbol: "cloud.slash"
+                    )
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+
+            case .empty:
+                Section {
+                    stateCard(
+                        title: "No outlooks returned",
+                        message: "The latest SPC refresh did not return any convective outlooks.",
+                        symbol: "cloud.sun.fill"
+                    )
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                }
+
+            case .populated:
+                if let latestOutlook {
+                    Section {
+                        outlookNavigationRow(
+                            identifier: "outlook-latest-row",
+                            destination: {
+                                ConvectiveOutlookDetailView(outlook: latestOutlook)
+                            }
                         ) {
-                            outlookButton(for: latestOutlook)
+                            OutlookRowView(outlook: latestOutlook)
                         }
+                    } header: {
+                        outlookSectionHeader(
+                            title: "Latest Outlook",
+                            subtitle: nil,
+                            symbol: "sparkles.rectangle.stack.fill"
+                        )
                     }
+                }
 
-                    if earlierOutlooks.isEmpty == false {
-                        outlookSection(
+                if earlierOutlooks.isEmpty == false {
+                    Section {
+                        ForEach(Array(earlierOutlooks.enumerated()), id: \.element.id) { index, dto in
+                            outlookNavigationRow(
+                                identifier: "outlook-earlier-row-\(index)",
+                                destination: {
+                                    ConvectiveOutlookDetailView(outlook: dto)
+                                }
+                            ) {
+                                OutlookRowView(outlook: dto)
+                            }
+                        }
+                    } header: {
+                        outlookSectionHeader(
                             title: "Earlier Outlooks",
                             subtitle: "\(earlierOutlooks.count) more",
                             symbol: "clock.arrow.trianglehead.counterclockwise.rotate.90"
-                        ) {
-                            VStack(spacing: 10) {
-                                ForEach(earlierOutlooks) { dto in
-                                    outlookButton(for: dto)
-                                }
-                            }
-                        }
+                        )
                     }
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 24)
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(15)
+        .scrollContentBackground(.hidden)
+        .navigationLinkIndicatorVisibility(.hidden)
         .refreshable {
             guard let onRefresh else { return }
             await onRefresh()
         }
         .scrollIndicators(.hidden)
+        .contentMargins(.top, 0, for: .scrollContent)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .navigationDestination(item: $selectedOutlook) { outlook in
-            ConvectiveOutlookDetailView(outlook: outlook)
-        }
     }
 
     private var overviewCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(hasNoOutlooks ? "Outlooks pending" : "Forecast Discussions")
-                .font(.headline.weight(.semibold))
+        VStack(alignment: .leading, spacing: 8) {
+            Label(overviewTitle, systemImage: overviewSymbol)
+                .sectionLabel()
+
+//            if let overviewProviderText {
+//                Text(overviewProviderText)
+//                    .font(.caption.weight(.medium))
+//                    .foregroundStyle(.secondary)
+//                    .padding(.horizontal, 10)
+//                    .padding(.vertical, 5)
+//                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+//            }
+
             Text(overviewMessage)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 
-    private var emptyCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("No convective outlooks found", systemImage: "cloud.sun.fill")
-                .font(.headline.weight(.semibold))
-            Text("There are no convective outlooks available.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+    private var overviewTitle: String {
+        switch presentationState {
+        case .loading:
+            "Outlooks pending"
+        case .unavailable:
+            "Outlooks unavailable"
+        case .empty, .populated:
+            "Forecast Discussions"
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+    }
+
+    private var overviewSymbol: String {
+        switch presentationState {
+        case .loading:
+            "clock.arrow.circlepath"
+        case .unavailable:
+            "cloud.slash"
+        case .empty:
+            "cloud.sun.fill"
+        case .populated:
+            "sparkles.rectangle.stack.fill"
+        }
+    }
+
+    private var overviewProviderText: String? {
+        guard presentationState == .populated, latestOutlook != nil else {
+            return nil
+        }
+        return "SPC discussion"
     }
 
     private var overviewMessage: String {
-        if let latestOutlook {
-            return "Open the latest SPC discussion first, then work backward if you want earlier issuances for comparison. Most recent update: \((latestOutlook.issued ?? latestOutlook.published).relativeDate())."
+        switch presentationState {
+        case .loading:
+            Self.overviewMessage(for: nil)
+        case .unavailable:
+            "SkyAware could not load the latest SPC outlooks right now. Severe-weather risk can still exist even when this feed is unavailable."
+        case .empty:
+            "The latest SPC refresh did not return any convective outlooks."
+        case .populated:
+            Self.overviewMessage(for: latestOutlook)
         }
-
-        return "Latest convective outlook products from SPC will appear here once sync completes."
     }
 
-    private func outlookSection<Content: View>(
+    private func stateCard(
         title: String,
-        subtitle: String,
-        symbol: String,
-        @ViewBuilder content: () -> Content
+        message: String,
+        symbol: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if adaptiveLayout.usesAccessibilityLayout {
-                Label(title, systemImage: symbol)
-                    .font(.headline.weight(.semibold))
-            } else {
-                HStack {
-                    Label(title, systemImage: symbol)
-                        .font(.headline.weight(.semibold))
-                    Spacer()
-                    Text(subtitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
-                }
-            }
-
-            content()
+        VStack(alignment: .leading, spacing: 8) {
+            Label(title, systemImage: symbol)
+                .sectionLabel()
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
 
-    private func outlookButton(for outlook: ConvectiveOutlookDTO) -> some View {
-        Button {
-            selectedOutlook = outlook
-        } label: {
-            OutlookRowView(outlook: outlook)
+    private func outlookSectionHeader(
+        title: String,
+        subtitle: String?,
+        symbol: String
+    ) -> some View {
+        Group {
+            if adaptiveLayout.usesAccessibilityLayout {
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: symbol)
+                    Text(title)
+                }
+                .font(.headline.weight(.semibold))
+                .textCase(nil)
+//                Label(title, systemImage: symbol)
+//                    .font(.headline.weight(.semibold))
+//                    .textCase(nil)
+            } else {
+                HStack {
+                    HStack(alignment: .center, spacing: 6) {
+                        Image(systemName: symbol)
+                        Text(title)
+                    }
+                    .font(.headline.weight(.semibold))
+                    Spacer()
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+                    }
+                }
+                .textCase(nil)
+            }
+        }
+    }
+
+    private func outlookNavigationRow<Destination: View, RowContent: View>(
+        identifier: String,
+        @ViewBuilder destination: @escaping () -> Destination,
+        @ViewBuilder label: () -> RowContent
+    ) -> some View {
+        NavigationLink(destination: destination) {
+            label()
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(
-            SkyAwarePressableButtonStyle(
-                cornerRadius: SkyAwareRadius.row,
-                pressedScale: 0.988,
-                pressedOverlayOpacity: 0.06
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .cardRowBackground(
+            cornerRadius: SkyAwareRadius.row,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
+        )
+        .listRowInsets(
+            EdgeInsets(
+                top: 6,
+                leading: SkyAwareSpacing.contentInset,
+                bottom: 6,
+                trailing: SkyAwareSpacing.contentInset
             )
         )
+    }
+}
+
+extension ConvectiveOutlookView {
+    static func overviewMessage(for latestOutlook: ConvectiveOutlookDTO?) -> String {
+        if let latestOutlook {
+            return "Open the latest SPC outlook first, then work backward if you want earlier issuances for comparison. Most recent update: \((latestOutlook.issued ?? latestOutlook.published).relativeDate())."
+        }
+
+        return "Latest outlooks from SPC will appear here once they are ready."
     }
 }
 
 #Preview {
     NavigationStack {
         ConvectiveOutlookView(dtos: ConvectiveOutlook.sampleOutlookDtos)
+            .navigationTitle("Convective Outlooks")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Empty") {
+    NavigationStack {
+        ConvectiveOutlookView(
+            dtos: [],
+            refreshStatus: .success(hasContent: false)
+        )
+        .navigationTitle("Convective Outlooks")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Unavailable") {
+    NavigationStack {
+        ConvectiveOutlookView(
+            dtos: [],
+            refreshStatus: .failed
+        )
+        .navigationTitle("Convective Outlooks")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Loading") {
+    NavigationStack {
+        ConvectiveOutlookView(
+            dtos: [],
+            refreshStatus: .loading
+        )
+        .navigationTitle("Convective Outlooks")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("AX5") {
+    NavigationStack {
+        ConvectiveOutlookView(dtos: ConvectiveOutlook.sampleOutlookDtos, refreshStatus: .success(hasContent: true))
+            .environment(\.dynamicTypeSize, .accessibility5)
             .navigationTitle("Convective Outlooks")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.visible, for: .navigationBar)

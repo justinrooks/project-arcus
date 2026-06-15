@@ -8,6 +8,13 @@
 import Foundation
 import SwiftUI
 
+struct FireRiskSupportingPresentation: Equatable, Sendable {
+    let title: String
+    let detail: String
+    let iconScale: CGFloat
+    let isSubdued: Bool
+}
+
 enum FireRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
     case clear = 0
     case elevated = 5
@@ -65,6 +72,39 @@ enum FireRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
         case .elevated: return Color.orange.tileGradient(for: colorScheme)
         case .critical: return Color.red.tileGradient(for: colorScheme)
         case .extreme:return Color.pink.tileGradient(for: colorScheme)
+        }
+    }
+
+    func supportingPresentation() -> FireRiskSupportingPresentation {
+        switch self {
+        case .clear:
+            return FireRiskSupportingPresentation(
+                title: "No Fire Risk",
+                detail: "No elevated fire weather risk",
+                iconScale: 0.82,
+                isSubdued: true
+            )
+        case .elevated:
+            return FireRiskSupportingPresentation(
+                title: "Elevated Fire Risk",
+                detail: message,
+                iconScale: 1.0,
+                isSubdued: false
+            )
+        case .critical:
+            return FireRiskSupportingPresentation(
+                title: "Critical Fire Risk",
+                detail: message,
+                iconScale: 1.0,
+                isSubdued: false
+            )
+        case .extreme:
+            return FireRiskSupportingPresentation(
+                title: "Extreme Fire Risk",
+                detail: message,
+                iconScale: 1.0,
+                isSubdued: false
+            )
         }
     }
 }

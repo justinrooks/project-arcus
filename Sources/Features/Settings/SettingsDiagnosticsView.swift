@@ -9,6 +9,7 @@ import SwiftUI
 import UIKit
 
 struct SettingsDiagnosticsView: View {
+#if DEBUG
     @Environment(LocationSession.self) private var locationSession
 
     @AppStorage(
@@ -27,13 +28,154 @@ struct SettingsDiagnosticsView: View {
     ) private var apnsDeviceToken: String = ""
 
     @State private var installationId: String = ""
-    private let isDebugBuild: Bool = {
-#if DEBUG
-        true
-#else
-        false
 #endif
-    }()
+
+    private var screenTitle: String {
+#if DEBUG
+        "Diagnostics"
+#else
+        "Support"
+#endif
+    }
+
+    private var screenSymbol: String {
+#if DEBUG
+        "stethoscope"
+#else
+        "questionmark.circle"
+#endif
+    }
+
+    private var supportSummary: SettingsSupportSummary {
+        SettingsSupportSummary(version: Bundle.main.fullVersion)
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+#if DEBUG
+                diagnosticsContent
+#else
+                sectionCard(title: screenTitle, symbol: screenSymbol, accent: .primary) {
+                    supportContent
+                }
+#endif
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 24)
+        }
+        .scrollIndicators(.hidden)
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+#if DEBUG
+        .task {
+            await loadInstallationId()
+        }
+#endif
+    }
+
+#if DEBUG
+    private var diagnosticsContent: some View {
+        Group {
+            sectionCard(title: "Diagnostics", symbol: "stethoscope", accent: .primary) {
+                NavigationLink {
+                    BgHealthDiagnosticsView()
+                        .navigationTitle("Background Refresh History")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                } label: {
+                    settingsNavRow("Background Refresh History", systemImage: "waveform.path.ecg")
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+
+                NavigationLink {
+                    DiagnosticsView()
+                        .navigationTitle("Ingestion Diagnostics")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                } label: {
+                    settingsNavRow("Ingestion Diagnostics", systemImage: "stethoscope")
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+
+                NavigationLink {
+                    LogViewerView()
+                        .navigationTitle("Log Viewer")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                } label: {
+                    settingsNavRow("Log Viewer", systemImage: "doc.text.magnifyingglass")
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+
+            sectionCard(title: "Location Diagnostics", symbol: "iphone.badge.location", accent: .primary) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Installation ID")
+                        .font(.subheadline.weight(.semibold))
+                    Text(installationIdDisplay)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("APNs Device Token")
+                        .font(.subheadline.weight(.semibold))
+                    if apnsDeviceToken.isEmpty {
+                        Text("Not registered yet")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Button {
+                            UIPasteboard.general.string = apnsDeviceToken
+                        } label: {
+                            Text(apnsDeviceToken)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("APNs Device Token")
+                        .accessibilityValue(apnsDeviceToken)
+                        .accessibilityHint("Copies the token to the clipboard.")
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Current H3 Cell (Res 8)")
+                        .font(.subheadline.weight(.semibold))
+                    Text(h3CellDisplay)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
+
+            sectionCard(title: "Onboarding Debug", symbol: "ladybug", accent: .primary) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Onboarding flow complete", isOn: $onboardingComplete)
+                    Text("Marks onboarding as completed so the app skips first-run onboarding screens on launch.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+                infoRow("Disclaimer Accepted Version", "\(disclaimerVersion)")
+                Button("Reset disclaimer") {
+                    UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
+                    UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
+                }
+                .skyAwareGlassButtonStyle()
+            }
+        }
+    }
 
     private var h3CellDisplay: String {
         guard let h3Cell = locationSession.currentSnapshot?.h3Cell else {
@@ -46,131 +188,31 @@ struct SettingsDiagnosticsView: View {
         installationId.isEmpty ? "Not available yet" : installationId
     }
 
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
-                sectionCard(title: "Diagnostics", symbol: "stethoscope", accent: .orange) {
-                    NavigationLink {
-                        BgHealthDiagnosticsView()
-                            .navigationTitle("Background Refresh History")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    } label: {
-                        settingsNavRow("Background Refresh History", systemImage: "waveform.path.ecg")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-
-                    NavigationLink {
-                        DiagnosticsView()
-                            .navigationTitle("Ingestion Diagnostics")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    } label: {
-                        settingsNavRow("Ingestion Diagnostics", systemImage: "stethoscope")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-
-                    NavigationLink {
-                        LogViewerView()
-                            .navigationTitle("Log Viewer")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    } label: {
-                        settingsNavRow("Log Viewer", systemImage: "doc.text.magnifyingglass")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-
-                sectionCard(title: "Location Diagnostics", symbol: "iphone.badge.location", accent: .orange) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Installation ID")
-                            .font(.subheadline.weight(.semibold))
-                        Text(installationIdDisplay)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("APNs Device Token")
-                            .font(.subheadline.weight(.semibold))
-                        if apnsDeviceToken.isEmpty {
-                            Text("Not registered yet")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Button {
-                                UIPasteboard.general.string = apnsDeviceToken
-                            } label: {
-                                Text(apnsDeviceToken)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("APNs Device Token")
-                            .accessibilityValue(apnsDeviceToken)
-                            .accessibilityHint("Copies the token to the clipboard.")
-                        }
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Current H3 Cell (Res 8)")
-                            .font(.subheadline.weight(.semibold))
-                        Text(h3CellDisplay)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                }
-
-                sectionCard(title: "Onboarding Debug", symbol: "ladybug", accent: .orange) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Onboarding flow complete", isOn: $onboardingComplete)
-                        Text("Marks onboarding as completed so the app skips first-run onboarding screens on launch.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    infoRow("Disclaimer Accepted Version", "\(disclaimerVersion)")
-                    Button("Reset disclaimer") {
-                        UserDefaults.shared?.removeObject(forKey: "onboardingCompleted")
-                        UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
-                    }
-                    .skyAwareGlassButtonStyle()
-
-                    if !isDebugBuild {
-                        Text("Read-only outside Debug builds.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(!isDebugBuild)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 24)
-        }
-        .scrollIndicators(.hidden)
-        .background(Color(.skyAwareBackground).ignoresSafeArea())
-        .task {
-            await loadInstallationId()
-        }
-    }
-
     private func loadInstallationId() async {
         let value = await InstallationIdentityStore.shared.installationId()
         await MainActor.run {
             installationId = value
         }
     }
+#else
+    private var supportContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Production builds redact installation IDs, APNs tokens, and location hashes.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+            infoRow("Version", Bundle.main.fullVersion)
+
+            Button("Copy Support Details") {
+                UIPasteboard.general.string = supportSummary.copyText
+            }
+            .buttonStyle(.borderedProminent)
+            .font(.subheadline.weight(.semibold))
+            .accessibilityHint("Copies a redacted support summary to the clipboard.")
+        }
+    }
+#endif
 
     private func sectionCard<Content: View>(
         title: String,
@@ -218,6 +260,18 @@ struct SettingsDiagnosticsView: View {
     }
 }
 
+struct SettingsSupportSummary {
+    let version: String
+
+    var copyText: String {
+        """
+        SkyAware \(version)
+        Production build support details are redacted.
+        """
+    }
+}
+
+#if DEBUG
 #Preview {
     NavigationStack {
         SettingsDiagnosticsView()
@@ -226,3 +280,4 @@ struct SettingsDiagnosticsView: View {
     }
     .environment(LocationSession.preview)
 }
+#endif

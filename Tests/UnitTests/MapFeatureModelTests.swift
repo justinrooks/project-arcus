@@ -55,6 +55,530 @@ struct MapFeatureModelTests {
         #expect(scene.canvasState.overlayRevision != 0)
     }
 
+    @Test("active scene starts in loading state before the first reload")
+    func activeScene_startsLoadingState() {
+        let model = MapFeatureModel()
+
+        #expect(model.activeScene.legendState.presentationState == .loading)
+        #expect(model.activeScene.legendState.headlineText == "Getting severe risk…")
+        #expect(model.activeScene.legendState.voiceOverText.contains("Loading"))
+    }
+
+    @Test("successful polygon response renders the current state")
+    func reload_successfulPolygonResponseRendersCurrentState() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                SevereRiskShapeDTO(
+                    type: .tornado,
+                    probabilities: .percent(0.10),
+                    stroke: "#654321",
+                    fill: "#FEDCBA",
+                    polygons: [makeGeoPolygon(title: "10% Tornado Risk")]
+                )
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.headlineText == "Tornado Risk")
+        #expect(model.activeScene.legendState.voiceOverText.contains("loaded"))
+        #expect(model.activeScene.canvasState.overlays.count == 1)
+    }
+
+    @Test("successful empty response renders the confirmed-empty state")
+    func reload_successfulEmptyResponseRendersConfirmedEmptyState() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
+        #expect(model.activeScene.legendState.headlineText == "No tornado risk")
+        #expect(model.activeScene.legendState.voiceOverText.contains("confirmed empty"))
+        #expect(model.activeScene.canvasState.overlays.isEmpty)
+    }
+
+    @Test("failed response without saved data renders unavailable state")
+    func reload_failedResponseWithoutSavedDataRendersUnavailableState() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .failure(StubError()),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .unavailable)
+        #expect(model.activeScene.legendState.headlineText.contains("unavailable"))
+        #expect(model.activeScene.legendState.voiceOverText.contains("No saved"))
+    }
+
+    @Test("failed refresh with saved data keeps the rendered scene visible and marks it stale")
+    func reload_failedRefreshWithSavedDataKeepsRenderedSceneVisibleAndMarksItStale() async {
+        let model = MapFeatureModel()
+        let service = MutableResultSpcMapData(
+            store: MutableResultMapDataStore(
+                severeRisks: .success([
+                    makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+                ]),
+                stormRisk: .success([]),
+                mesos: .success([]),
+                fireRisk: .success([])
+            )
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+        await service.store.replace(severeRisks: .failure(StubError()))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(model.activeScene.legendState.headlineText.contains("saved locally"))
+        #expect(model.activeScene.legendState.voiceOverText.contains("saved locally"))
+        #expect(overlayTitles(in: model.activeScene) == ["10% Tornado Risk"])
+    }
+
+    @Test("loading summary identifies the selected layer and loading state")
+    func accessibilitySummary_loadingState() {
+        let scene = MapLayerScene.placeholder(for: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: scene,
+            locationCoordinate: nil,
+            showsWarningGeometry: true
+        )
+
+        #expect(summary.label == "Map summary")
+        #expect(
+            summary.value ==
+            "Getting tornado risk. Loading. Local relationship unavailable. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("unavailable summary distinguishes missing data without inventing local risk")
+    func accessibilitySummary_unavailableState() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .failure(StubError()),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk unavailable. No saved data. Local relationship unknown. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("stale summary preserves saved-data truthfulness")
+    func accessibilitySummary_staleState() async {
+        let model = MapFeatureModel()
+        let service = MutableResultSpcMapData(
+            store: MutableResultMapDataStore(
+                severeRisks: .success([
+                    makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+                ]),
+                stormRisk: .success([]),
+                mesos: .success([]),
+                fireRisk: .success([])
+            )
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+        await service.store.replace(severeRisks: .failure(StubError()))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk saved locally. Refresh failed. Your location is inside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("current summary reports when the user's location intersects the displayed risk")
+    func accessibilitySummary_insideDisplayedRisk() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("current summary reports when the user's location is outside the displayed risk")
+    func accessibilitySummary_outsideDisplayedRisk() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 40.0, longitude: -100.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk loaded. Your location is outside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("summary leaves local relationship explicit when location is unavailable")
+    func accessibilitySummary_unknownLocalRelationship() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: nil,
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk loaded. Local relationship unavailable. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("confirmed-empty summary stays truthful without inventing a local comparison")
+    func accessibilitySummary_confirmedEmpty() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "No tornado risk. Successfully loaded and confirmed empty. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("summary describes rendered warning overlays when the warning toggle is on")
+    func accessibilitySummary_warningOverlayWithRenderedWarnings() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Active warnings overlay on. Displaying tornado warning overlays."
+        )
+    }
+
+    @Test("summary distinguishes the warning toggle being on without rendered warnings")
+    func accessibilitySummary_warningOverlayWithoutRenderedWarnings() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let summary = MapAccessibilitySummary.make(
+            scene: model.activeScene,
+            locationCoordinate: CLLocationCoordinate2D(latitude: 35.1, longitude: -97.0),
+            showsWarningGeometry: true
+        )
+
+        #expect(
+            summary.value ==
+            "Tornado Risk loaded. Your location is inside the displayed tornado risk area. Active warnings overlay on. No active warning areas are displayed."
+        )
+    }
+
+    @Test("differentiate-without-color styles stay dormant until requested")
+    func differentiateWithoutColorStyle_defaultState() {
+        let style = MapOverlayDifferentiationStyle.severe(probability: .percent(0.10))
+
+        #expect(style.strokeStyle(differentiateWithoutColor: false) == nil)
+        #expect(style.strokeStyle(differentiateWithoutColor: true)?.dashPattern == [6, 4])
+    }
+
+    @Test("differentiate-without-color styles provide distinct map patterns")
+    func differentiateWithoutColorStyle_enabled() {
+        let categorical = MapOverlayDifferentiationStyle.categorical(.enhanced)
+        let fire = MapOverlayDifferentiationStyle.fire(riskLevel: 8)
+        let meso = MapOverlayDifferentiationStyle.mesoscale
+
+        #expect(categorical.strokeStyle(differentiateWithoutColor: true)?.dashPattern == [10, 4])
+        #expect(fire.strokeStyle(differentiateWithoutColor: true)?.dashPattern == [10, 4, 2, 4])
+        #expect(meso.strokeStyle(differentiateWithoutColor: true)?.dashPattern == [6, 4])
+    }
+
+    @Test("saved offline data remains visible when the layer is revisited")
+    func reload_savedOfflineDataRemainsVisibleWhenLayerIsRevisited() async {
+        let model = MapFeatureModel()
+        let service = MutableResultSpcMapData(
+            store: MutableResultMapDataStore(
+                severeRisks: .success([
+                    makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+                ]),
+                stormRisk: .success([]),
+                mesos: .success([]),
+                fireRisk: .success([
+                    FireRiskDTO(
+                        product: "WindRH",
+                        issued: now,
+                        expires: now.addingTimeInterval(3_600),
+                        valid: now,
+                        riskLevel: 5,
+                        riskLevelDescription: "Elevated",
+                        label: "Elevated Fire Weather Area",
+                        stroke: nil,
+                        fill: nil,
+                        polygons: [makeGeoPolygon(title: "Elevated Fire Weather Area")]
+                    )
+                ])
+            )
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+        await service.store.replace(severeRisks: .failure(StubError()))
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+        model.selectLayer(.fire)
+        model.selectLayer(.tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(overlayTitles(in: model.activeScene) == ["10% Tornado Risk"])
+        #expect(model.activeScene.legendState.voiceOverText.contains("saved locally"))
+    }
+
+    @Test("refreshing saved data enters resolving state before the new response arrives")
+    func reload_refreshingSavedDataEntersResolvingStateBeforeResponse() async {
+        let gate = ReloadGate()
+        let counter = MapDataCallCounter()
+        let firstService = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let gatedService = QueuedReloadSpcMapData(
+            gate: gate,
+            counter: counter,
+            firstStormRisk: [makeStormRisk(level: .slight, title: "SLGT")],
+            secondStormRisk: [makeStormRisk(level: .enhanced, title: "ENH")]
+        )
+        let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: firstService, warningSource: warnings, selectedLayer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .current)
+
+        let secondReload = Task { @MainActor in
+            await model.reload(using: gatedService, warningSource: warnings, selectedLayer: .categorical)
+        }
+
+        await gate.waitUntilFirstStormFetchStarts()
+
+        #expect(model.activeScene.legendState.presentationState == .resolving)
+        #expect(overlayTitles(in: model.activeScene) == ["SLGT"])
+
+        await gate.releaseFirstStormFetch()
+        await secondReload.value
+    }
+
+    @Test("successful refresh replaces previously stale data")
+    func reload_successfulRefreshReplacesPreviouslyStaleData() async {
+        let model = MapFeatureModel()
+        let store = MutableResultMapDataStore(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let mapped = MutableResultSpcMapData(store: store)
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+        await store.replace(severeRisks: .failure(StubError()))
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+        #expect(model.activeScene.legendState.presentationState == .stale)
+
+        await store.replace(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.15), title: "15% Tornado Risk")
+            ])
+        )
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.headlineText == "Tornado Risk")
+        #expect(overlayTitles(in: model.activeScene) == ["15% Tornado Risk"])
+    }
+
+    @Test("failed refresh preserves the previously rendered overlays")
+    func reload_failedRefreshPreservesPreviouslyRenderedOverlays() async {
+        let model = MapFeatureModel()
+        let store = MutableResultMapDataStore(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let mapped = MutableResultSpcMapData(store: store)
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+        let baselineOverlays = overlayTitles(in: model.activeScene)
+
+        await store.replace(severeRisks: .failure(StubError()))
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(overlayTitles(in: model.activeScene) == baselineOverlays)
+    }
+
+    @Test("switching between layers preserves independent availability states")
+    func layerSelection_preservesIndependentAvailabilityStates() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .failure(StubError()),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([
+                FireRiskDTO(
+                    product: "WindRH",
+                    issued: now,
+                    expires: now.addingTimeInterval(3_600),
+                    valid: now,
+                    riskLevel: 8,
+                    riskLevelDescription: "Critical",
+                    label: "Critical Fire Weather Area",
+                    stroke: nil,
+                    fill: nil,
+                    polygons: [makeGeoPolygon(title: "Critical Fire Weather Area")]
+                )
+            ])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        #expect(model.activeScene.legendState.presentationState == .current)
+
+        model.selectLayer(.fire)
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.headlineText == "Fire Risk")
+
+        model.selectLayer(.tornado)
+        #expect(model.activeScene.legendState.presentationState == .unavailable)
+        #expect(model.activeScene.legendState.voiceOverText.contains("No saved"))
+
+        model.selectLayer(.categorical)
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.headlineText == "Severe Risk")
+    }
+
     @Test("reload preserves successful layers when one feed fails")
     func reload_preservesPartialResults() async {
         let model = MapFeatureModel()
@@ -403,6 +927,216 @@ struct MapFeatureModelTests {
         #expect(restoredKeys.last?.contains("warn|") == true)
     }
 
+    @Test("warning legend stays hidden when warning geometry is disabled")
+    func warningLegend_staysHiddenWhenGeometryIsDisabled() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+
+        model.setWarningGeometryVisible(false)
+
+        #expect(warningLegendItems(in: model.activeScene).isEmpty)
+        #expect(model.activeScene.canvasState.overlays.count == 1)
+        #expect(model.activeScene.canvasState.overlays.allSatisfy { $0.key.contains("warn|") == false })
+    }
+
+    @Test("warning legend stays empty when no warnings are rendered")
+    func warningLegend_staysEmptyWhenNoWarningsAreRendered() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(warningLegendItems(in: model.activeScene).isEmpty)
+    }
+
+    @Test("warning legend renders one tornado row")
+    func warningLegend_rendersOneTornadoRow() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Tornado"])
+        #expect(items.map(\.accessibilityLabel) == ["Tornado warning"])
+    }
+
+    @Test("warning legend renders one severe thunderstorm row")
+    func warningLegend_rendersOneSevereThunderstormRow() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Severe Thunderstorm Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Severe Thunderstorm"])
+        #expect(items.map(\.accessibilityLabel) == ["Severe Thunderstorm warning"])
+    }
+
+    @Test("warning legend renders one flash flood row")
+    func warningLegend_rendersOneFlashFloodRow() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Flash Flood Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Flash Flood"])
+        #expect(items.map(\.accessibilityLabel) == ["Flash Flood warning"])
+    }
+
+    @Test("warning legend deduplicates repeated warning types")
+    func warningLegend_deduplicatesRepeatedWarningTypes() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1"),
+                makeWarning(event: " Tornado Warning ", id: "warning-2", messageId: "msg-2"),
+                makeWarning(event: "TORNADO WARNING", id: "warning-3", messageId: "msg-3")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.count == 1)
+        #expect(items.map(\.title) == ["Tornado"])
+    }
+
+    @Test("warning legend orders mixed warning types deterministically")
+    func warningLegend_ordersMixedWarningTypesDeterministically() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Flash Flood Warning", id: "warning-1", messageId: "msg-1"),
+                makeWarning(event: "Tornado Warning", id: "warning-2", messageId: "msg-2"),
+                makeWarning(event: "Severe Thunderstorm Warning", id: "warning-3", messageId: "msg-3")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == [
+            "Tornado",
+            "Severe Thunderstorm",
+            "Flash Flood"
+        ])
+    }
+
+    @Test("warning legend preserves unknown warning events without fabricating a category")
+    func warningLegend_preservesUnknownWarningEventsWithoutFabricatingACategory() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Special Weather Statement", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: service, warningSource: warnings, selectedLayer: .tornado)
+
+        let items = warningLegendItems(in: model.activeScene)
+        #expect(items.map(\.title) == ["Special Weather Statement"])
+        #expect(items.map(\.accessibilityLabel) == ["Special Weather Statement"])
+    }
+
+    @Test("stale warning scenes keep the rendered warning legend")
+    func warningLegend_keepsRenderedWarningsWhenSceneBecomesStale() async {
+        let model = MapFeatureModel()
+        let store = MutableResultMapDataStore(
+            severeRisks: .success([
+                makeSevereRisk(type: .tornado, probability: .percent(0.10), title: "10% Tornado Risk")
+            ]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let mapped = MutableResultSpcMapData(store: store)
+        let warnings = StubArcusAlertQuerying(
+            activeWarnings: .success([
+                makeWarning(event: "Tornado Warning", id: "warning-1", messageId: "msg-1")
+            ])
+        )
+
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+
+        await store.replace(severeRisks: .failure(StubError()))
+        await model.reload(using: mapped, warningSource: warnings, selectedLayer: .tornado)
+
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+    }
+
     @Test("offline cached warning geometry renders from query data and toggle hides and shows it")
     func offlineWarningGeometry_rendersAndToggles() async throws {
         let model = MapFeatureModel()
@@ -570,6 +1304,8 @@ struct MapFeatureModelTests {
 
     private func makeWarning(
         event: String,
+        id: String = "warn-1",
+        messageId: String? = "msg-1",
         geometry: DeviceAlertGeometry = .polygon(
             rings: [[
                 DeviceAlertCoordinate(longitude: -97.0, latitude: 35.0),
@@ -579,8 +1315,8 @@ struct MapFeatureModelTests {
         )
     ) -> ActiveWarningGeometry {
         ActiveWarningGeometry(
-            id: "warn-1",
-            messageId: "msg-1",
+            id: id,
+            messageId: messageId,
             currentRevisionSent: now,
             event: event,
             issued: now,
@@ -609,6 +1345,10 @@ struct MapFeatureModelTests {
 
     private func overlayKeys(in scene: MapLayerScene) -> [String] {
         scene.canvasState.overlays.map(\.key)
+    }
+
+    private func warningLegendItems(in scene: MapLayerScene) -> [WarningLegendItem] {
+        WarningLegendItem.rendered(from: scene.canvasState.overlays)
     }
 
     private func singleWarningPolygonCoordinates(in scene: MapLayerScene) -> [CLLocationCoordinate2D]? {
@@ -745,6 +1485,42 @@ private actor MutableMapDataStore {
     }
 }
 
+private actor MutableResultMapDataStore {
+    private var severeRisks: Result<[SevereRiskShapeDTO], Error>
+    private var stormRisk: Result<[StormRiskDTO], Error>
+    private var mesos: Result<[MdDTO], Error>
+    private var fireRisk: Result<[FireRiskDTO], Error>
+
+    init(
+        severeRisks: Result<[SevereRiskShapeDTO], Error>,
+        stormRisk: Result<[StormRiskDTO], Error>,
+        mesos: Result<[MdDTO], Error>,
+        fireRisk: Result<[FireRiskDTO], Error>
+    ) {
+        self.severeRisks = severeRisks
+        self.stormRisk = stormRisk
+        self.mesos = mesos
+        self.fireRisk = fireRisk
+    }
+
+    func currentSevereRisks() -> Result<[SevereRiskShapeDTO], Error> { severeRisks }
+    func currentStormRisk() -> Result<[StormRiskDTO], Error> { stormRisk }
+    func currentMesos() -> Result<[MdDTO], Error> { mesos }
+    func currentFireRisk() -> Result<[FireRiskDTO], Error> { fireRisk }
+
+    func replace(
+        severeRisks: Result<[SevereRiskShapeDTO], Error>? = nil,
+        stormRisk: Result<[StormRiskDTO], Error>? = nil,
+        mesos: Result<[MdDTO], Error>? = nil,
+        fireRisk: Result<[FireRiskDTO], Error>? = nil
+    ) {
+        if let severeRisks { self.severeRisks = severeRisks }
+        if let stormRisk { self.stormRisk = stormRisk }
+        if let mesos { self.mesos = mesos }
+        if let fireRisk { self.fireRisk = fireRisk }
+    }
+}
+
 private struct MutableSpcMapData: SpcMapData {
     let store: MutableMapDataStore
 
@@ -762,6 +1538,26 @@ private struct MutableSpcMapData: SpcMapData {
 
     func getFireRisk() async throws -> [FireRiskDTO] {
         await store.currentFireRisk()
+    }
+}
+
+private struct MutableResultSpcMapData: SpcMapData {
+    let store: MutableResultMapDataStore
+
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] {
+        try await store.currentSevereRisks().get()
+    }
+
+    func getStormRiskMapData() async throws -> [StormRiskDTO] {
+        try await store.currentStormRisk().get()
+    }
+
+    func getMesoMapData() async throws -> [MdDTO] {
+        try await store.currentMesos().get()
+    }
+
+    func getFireRisk() async throws -> [FireRiskDTO] {
+        try await store.currentFireRisk().get()
     }
 }
 

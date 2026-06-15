@@ -70,8 +70,9 @@ struct MesoscaleDiscussionContent: View {
                     .font(.headline)
                     .frame(maxWidth: .infinity, alignment: .leading)) {
                         Text(meso.summary)
-                            .font(.callout.monospaced())
+                            .font(.callout)
                             .foregroundStyle(.secondary)
+                            .monospacedDigit()
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 12)
@@ -103,6 +104,7 @@ struct MesoscaleDiscussionContent: View {
                 Text(trimmedSummary)
                     .font(summaryFont)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
                     .lineSpacing(summaryLineSpacing)
                     .lineLimit(lineLimit)
                     .truncationMode(.tail)
@@ -122,6 +124,7 @@ struct MesoscaleDiscussionContent: View {
     private func contextNote(_ text: String) -> some View {
         Text(text)
             .font(.callout)
+            .monospacedDigit()
             .padding(.vertical, 8)
             .padding(.horizontal, 6)
             .skyAwareChip(cornerRadius: SkyAwareRadius.small, tint: .white.opacity(0.08))
@@ -138,6 +141,7 @@ struct MesoscaleDiscussionContent: View {
                 if watchInt > 0 {
                     Text("\(watchInt)%")
                         .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
                 } else {
                     Text("—")
                         .font(.subheadline)
@@ -158,6 +162,7 @@ struct MesoscaleDiscussionContent: View {
                 HStack {
                     Text(label)
                         .font(.footnote.weight(.semibold))
+                        .monospacedDigit()
                         .lineLimit(1)
                     Spacer()
                 }
@@ -171,17 +176,20 @@ struct MesoscaleDiscussionContent: View {
                         Text("Wind:").labelStyle()
                         Text(meso.threats?.peakWindMPH.map { "Up to \($0) mph" } ?? "—")
                             .valueStyle()
+                            .monospacedDigit()
                     }
                     GridRow {
                         Text("Hail:").labelStyle()
                         Text(meso.threats?.hailRangeInches.map {
                             String(format: "Up to %.2g in", $0)
                         } ?? "—").valueStyle()
+                            .monospacedDigit()
                     }
                     GridRow {
                         Text("Tornado:").labelStyle()
                         Text(meso.threats?.tornadoStrength ?? "Not expected")
                             .valueStyle()
+                            .monospacedDigit()
                     }
                 }
             }
@@ -252,5 +260,12 @@ extension MesoscaleDiscussionContent {
 #Preview("Sheet View") {
     NavigationStack {
         MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .sheet)
+    }
+}
+
+#Preview("Sheet View AX5") {
+    NavigationStack {
+        MesoscaleDiscussionCard(meso: MD.sampleDiscussionDTOs[1], layout: .sheet)
+            .environment(\.dynamicTypeSize, .accessibility5)
     }
 }

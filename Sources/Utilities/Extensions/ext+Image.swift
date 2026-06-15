@@ -8,11 +8,13 @@
 import SwiftUI
 
 extension Image {
-    func formatBadgeImage() -> some View {
+    func formatBadgeImage(size: CGFloat = 35, colorScheme: ColorScheme? = nil) -> some View {
         self.resizable()
             .scaledToFit()
-            .frame(width: 35, height: 35)
+            .frame(width: size, height: size)
             .font(.largeTitle)
-            .foregroundColor(.primary)
+            .foregroundColor(
+                colorScheme.map { RiskBadgeVisualStyle.iconForeground(for: $0) } ?? .primary
+            )
     }
 }

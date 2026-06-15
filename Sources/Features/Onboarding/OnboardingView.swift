@@ -12,6 +12,7 @@ import UserNotifications
 
 @MainActor
 struct OnboardingView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(LocationSession.self) private var locationSession
 
     private let logger = Logger.appMain
@@ -28,7 +29,7 @@ struct OnboardingView: View {
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
 
-    @State private var currentPage = 0
+    @State private var currentStep: OnboardingStep = .welcome
     @State private var locationStepState: PermissionStepState = .idle
     @State private var alwaysUpgradeStepState: PermissionStepState = .idle
     @State private var notificationStepState: PermissionStepState = .idle
@@ -38,21 +39,17 @@ struct OnboardingView: View {
     }
 
     var body: some View {
-        TabView(selection: $currentPage) {
+        TabView(selection: $currentStep) {
             WelcomeView {
-                withAnimation {
-                    currentPage = 1
-                }
+                advance(to: .disclaimer)
             }
-            .tag(0)
+            .tag(OnboardingStep.welcome)
 
             DisclaimerView {
                 disclaimerVersion = currentDisclaimerVersion
-                withAnimation {
-                    currentPage = 2
-                }
+                advance(to: .locationPermission)
             }
-            .tag(1)
+            .tag(OnboardingStep.disclaimer)
 
             LocationPermissionView(
                 isWorking: locationStepState.isWorking,
@@ -60,7 +57,7 @@ struct OnboardingView: View {
                 onEnable: requestLocationPermission,
                 onSkip: skipLocationPermissionStep
             )
-            .tag(2)
+            .tag(OnboardingStep.locationPermission)
 
             OnboardingAlwaysUpgradeView(
                 isWorking: alwaysUpgradeStepState.isWorking,
@@ -68,7 +65,7 @@ struct OnboardingView: View {
                 onEnableAlways: requestAlwaysUpgradeDuringOnboarding,
                 onSkip: skipAlwaysUpgradeStep
             )
-            .tag(3)
+            .tag(OnboardingStep.alwaysUpgrade)
 
             NotificationPermissionView(
                 isWorking: notificationStepState.isWorking,
@@ -76,10 +73,14 @@ struct OnboardingView: View {
                 onEnable: requestNotificationPermission,
                 onSkip: completeOnboarding
             )
-            .tag(4)
+            .tag(OnboardingStep.notificationPermission)
         }
         .tabViewStyle(.page)
         .indexViewStyle(.page(backgroundDisplayMode: .always))
+        .overlay {
+            OnboardingPagerSwipeBlocker()
+                .allowsHitTesting(false)
+        }
         .background(.skyAwareBackground)
     }
 
@@ -96,13 +97,13 @@ struct OnboardingView: View {
             if locationSession.authorizationStatus == .authorizedWhenInUse {
                 locationStepState = .idle
                 locationReliabilityLogger.notice("Onboarding routed to the Always upgrade page after While Using authorization")
-                advanceToAlwaysUpgradePage()
+                advance(to: .alwaysUpgrade)
                 return
             }
 
             locationReliabilityLogger.info("Onboarding continued past the location step without While Using authorization")
             locationStepState = .idle
-            advanceToNotificationPage()
+            advance(to: .notificationPermission)
         }
     }
 
@@ -110,7 +111,7 @@ struct OnboardingView: View {
         guard !alwaysUpgradeStepState.isWorking else { return }
 
         Task { @MainActor in
-            alwaysUpgradeStepState = .working("Requesting Always for more reliable background alerts...")
+            alwaysUpgradeStepState = .working("Getting alerts ready...")
             try? await Task.sleep(for: .milliseconds(300))
             let didRequestUpgrade = locationSession.requestAlwaysAuthorizationUpgradeIfNeeded()
             if didRequestUpgrade {
@@ -119,18 +120,18 @@ struct OnboardingView: View {
                 locationReliabilityLogger.info("Onboarding could not submit the native Always upgrade request; continuing to notifications")
             }
             alwaysUpgradeStepState = .idle
-            advanceToNotificationPage()
+            advance(to: .notificationPermission)
         }
     }
 
     private func skipLocationPermissionStep() {
         locationReliabilityLogger.info("Onboarding skipped the location permission step")
-        advanceToNotificationPage()
+        advance(to: .notificationPermission)
     }
 
     private func skipAlwaysUpgradeStep() {
         locationReliabilityLogger.info("Onboarding skipped the Always upgrade step")
-        advanceToNotificationPage()
+        advance(to: .notificationPermission)
     }
 
     private func requestNotificationPermission() {
@@ -143,7 +144,7 @@ struct OnboardingView: View {
 
     @MainActor
     private func finalizeNotificationOnboarding() async {
-        notificationStepState = .working("Requesting notification access...")
+        notificationStepState = .working("Getting alerts ready...")
         let status = await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
 
         guard status.isRemoteRegistrationEligible else {
@@ -158,7 +159,7 @@ struct OnboardingView: View {
             return
         }
 
-        notificationStepState = .working("Finalizing device registration...")
+        notificationStepState = .working("Getting alerts ready...")
         guard await RemoteNotificationRegistrar.shared.waitForDeviceToken() != nil else {
             logger.notice("Continuing onboarding without APNs token; token not received before timeout")
             notificationStepState = .idle
@@ -168,7 +169,7 @@ struct OnboardingView: View {
 
         let canCaptureFreshSnapshot = locationSession.authorizationStatus.isAuthorizedForOnboardingLocation
         if canCaptureFreshSnapshot {
-            notificationStepState = .working("Capturing your first location context...")
+            notificationStepState = .working("Adding your approximate location for alerts...")
             let context = await locationSession.prepareCurrentLocationContext(
                 requiresFreshLocation: true,
                 showsAuthorizationPrompt: false,
@@ -190,22 +191,43 @@ struct OnboardingView: View {
     }
 
     @MainActor
-    private func advanceToNotificationPage() {
-        withAnimation {
-            currentPage = 4
-        }
-    }
-
-    @MainActor
-    private func advanceToAlwaysUpgradePage() {
-        withAnimation {
-            currentPage = 3
+    private func advance(to step: OnboardingStep) {
+        withAnimation(SkyAwareMotion.onboardingStep(reduceMotion)) {
+            currentStep = step
         }
     }
 
     @MainActor
     private func completeOnboarding() {
         onboardingComplete = true
+    }
+}
+
+enum OnboardingStep: Int, CaseIterable, Identifiable {
+    case welcome
+    case disclaimer
+    case locationPermission
+    case alwaysUpgrade
+    case notificationPermission
+
+    var id: Int { rawValue }
+
+    func nextStep(locationAuthorizationStatus: CLAuthorizationStatus? = nil) -> OnboardingStep? {
+        switch self {
+        case .welcome:
+            return .disclaimer
+        case .disclaimer:
+            return .locationPermission
+        case .locationPermission:
+            if locationAuthorizationStatus == .authorizedWhenInUse {
+                return .alwaysUpgrade
+            }
+            return .notificationPermission
+        case .alwaysUpgrade:
+            return .notificationPermission
+        case .notificationPermission:
+            return nil
+        }
     }
 }
 

@@ -267,6 +267,7 @@ struct HomeView: View {
                     NavigationStack {
                         ConvectiveOutlookView(
                             dtos: displayedOutlooks,
+                            refreshStatus: refreshPipeline.outlookRefreshStatus,
                             onRefresh: {
                                 logger.notice("Manual convective outlook refresh requested")
                                 await refreshPipeline.refreshOutlooksManually(environment: refreshEnvironment)

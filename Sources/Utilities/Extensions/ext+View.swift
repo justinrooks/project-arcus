@@ -117,34 +117,54 @@ extension View {
         }
     }
 
-    func railStyle(background: LinearGradient) -> some View {
+    func railStyle(
+        background: LinearGradient,
+        minHeight: CGFloat = 84,
+        shadowOpacity: Double = 0.18,
+        shadowRadius: CGFloat = 8,
+        shadowY: CGFloat = 4
+    ) -> some View {
         self
-            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .leading)
             .padding([.leading, .trailing], 15)
             .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
             .skyAwareSurface(
                 cornerRadius: SkyAwareRadius.large,
                 tint: .white.opacity(0.08),
-                shadowOpacity: 0.18,
-                shadowRadius: 8,
-                shadowY: 4
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
             )
     }
     
-    func badgeStyle(background: LinearGradient) -> some View {
-        self
-            .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
-                   minHeight: 150, idealHeight: 150, maxHeight: 160)
-            .aspectRatio(1, contentMode: .fit)
-            .padding()
-            .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
-            .skyAwareSurface(
-                cornerRadius: SkyAwareRadius.large,
-                tint: .white.opacity(0.08),
-                shadowOpacity: 0.18,
-                shadowRadius: 8,
-                shadowY: 4
-            )
+    @ViewBuilder
+    func badgeStyle(background: LinearGradient, allowsVerticalGrowth: Bool = false) -> some View {
+        if allowsVerticalGrowth {
+            self
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+                .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.large,
+                    tint: .white.opacity(0.08),
+                    shadowOpacity: 0.18,
+                    shadowRadius: 8,
+                    shadowY: 4
+                )
+        } else {
+            self
+                .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
+                       minHeight: 150, idealHeight: 150)
+                .padding()
+                .background(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous).fill(background))
+                .skyAwareSurface(
+                    cornerRadius: SkyAwareRadius.large,
+                    tint: .white.opacity(0.08),
+                    shadowOpacity: 0.18,
+                    shadowRadius: 8,
+                    shadowY: 4
+                )
+        }
     }
     
     
@@ -162,9 +182,17 @@ extension View {
         shadowOpacity: Double = 0.10,
         shadowRadius: CGFloat = 10,
         shadowY: CGFloat = 4,
-        allowsGlass: Bool = true
+        allowsGlass: Bool = false
     ) -> some View {
-        if #available(iOS 26, *), allowsGlass == false {
+        if #available(iOS 26, *), allowsGlass {
+            self.skyAwareSurface(
+                cornerRadius: cornerRadius,
+                tint: .white.opacity(0.10),
+                shadowOpacity: shadowOpacity,
+                shadowRadius: shadowRadius,
+                shadowY: shadowY
+            )
+        } else {
             self.background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.cardBackground)
@@ -175,15 +203,23 @@ extension View {
                     }
                     .shadow(color: .black.opacity(shadowOpacity), radius: shadowRadius, x: 0, y: shadowY)
             )
-        } else {
-            self.skyAwareSurface(
-                cornerRadius: cornerRadius,
-                tint: .white.opacity(0.10),
-                shadowOpacity: shadowOpacity,
-                shadowRadius: shadowRadius,
-                shadowY: shadowY
-            )
         }
+    }
+
+    @ViewBuilder
+    func glassCardBackground(
+        cornerRadius: CGFloat = SkyAwareRadius.hero,
+        shadowOpacity: Double = 0.10,
+        shadowRadius: CGFloat = 10,
+        shadowY: CGFloat = 4
+    ) -> some View {
+        self.cardBackground(
+            cornerRadius: cornerRadius,
+            shadowOpacity: shadowOpacity,
+            shadowRadius: shadowRadius,
+            shadowY: shadowY,
+            allowsGlass: true
+        )
     }
     
     func cardRowBackground(

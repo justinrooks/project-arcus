@@ -131,8 +131,8 @@ struct AlertDetailView: View {
                     .font(.body)
                     .fontWeight(.medium)
                     .foregroundStyle(.primary)
+                    .monospacedDigit()
                     .lineSpacing(4)
-                    .accessibilityLabel("Instructions")
             }
 
             SpcProductFooter(link: alert.link, validEnd: alert.validEnd)
@@ -181,6 +181,7 @@ struct AlertDetailView: View {
                 Text(alert.areaSummary)
                     .font(summaryAreaFont)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
                     .lineLimit(areaLineLimit)
             }
 
@@ -188,8 +189,8 @@ struct AlertDetailView: View {
                 Text(summaryLead)
                     .font(summaryLeadFont)
                     .foregroundStyle(.primary)
+                    .monospacedDigit()
                     .lineSpacing(summaryLeadLineSpacing)
-                    .accessibilityLabel("Summary")
                     .lineLimit(leadLineLimit)
                     .truncationMode(.tail)
             }
@@ -198,12 +199,14 @@ struct AlertDetailView: View {
                 Text(summaryBody)
                     .font(summaryBodyFont)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
                     .lineSpacing(summaryBodyLineSpacing)
                     .lineLimit(bodyLineLimit)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: bodyLineLimit == nil)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func detailSection(title: String, text: String, areTags: Bool = false) -> some View {
@@ -212,10 +215,12 @@ struct AlertDetailView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(text)
-                .font(areTags ? .subheadline.weight(.semibold)  : .callout.monospaced())
+                .font(areTags ? .subheadline.weight(.semibold) : .callout)
                 .foregroundStyle(areTags ? Color.tornadoRed  : .secondary)
+                .monospacedDigit()
         }
         .padding()
+        .accessibilityElement(children: .combine)
         .cardBackground(cornerRadius: SkyAwareRadius.content, shadowOpacity: 0.1, shadowRadius: 12, shadowY: 6)
     }
 }
@@ -242,6 +247,20 @@ struct AlertDetailView: View {
                 .toolbarBackground(.skyAwareBackground, for: .navigationBar)
                 .scrollContentBackground(.hidden)
                 .background(.skyAwareBackground)
+        }
+    }
+}
+
+#Preview("Tornado Watch AX5") {
+    NavigationStack {
+        ScrollView {
+            AlertDetailView(alert: Watch.sampleWatchRows.last!, layout: .full)
+                .navigationTitle("Weather Alert")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                .scrollContentBackground(.hidden)
+                .background(.skyAwareBackground)
+                .environment(\.dynamicTypeSize, .accessibility5)
         }
     }
 }

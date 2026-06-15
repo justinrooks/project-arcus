@@ -8,40 +8,84 @@
 import SwiftUI
 
 struct SevereWeatherBadgeView: View {
-    let threat: SevereWeatherThreat
+    let threat: SevereWeatherThreat?
     var isOffline: Bool = false
     var isResolving: Bool = false
     var showsResolvingPlaceholder: Bool = false
 
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         Group {
-            if isOffline {
-                offlineContent
-            } else if showsResolvingPlaceholder {
+            switch presentationState {
+            case .resolving:
                 resolvingContent
-            } else {
-                resolvedContent
+            case .current, .stale:
+                if let threat {
+                    resolvedContent(threat: threat)
+                } else {
+                    unavailableContent
+                }
+            case .unavailable, .confirmedEmpty:
+                unavailableContent
             }
         }
     }
 
-    private var resolvedContent: some View {
-        VStack(spacing: 4) {
-            Image(systemName: threat.iconName)
-                .formatBadgeImage()
-                .contentTransition(.opacity)
-            Text(threat.message)
-                .formatMessageText()
-                .contentTransition(.opacity)
-            Text(threat.dynamicSummary != "" ? threat.dynamicSummary : threat.summary)
-                .formatSummaryText(for: colorScheme)
-                .monospacedDigit()
-                .contentTransition(.opacity)
+    private var presentationState: SummaryContentPresentationState {
+        SummaryContentPresentationState.from(
+            isOffline: isOffline,
+            hasContent: threat != nil,
+            isResolving: showsResolvingPlaceholder
+        )
+    }
+
+    @ViewBuilder
+    private func resolvedContent(threat: SevereWeatherThreat) -> some View {
+        let valueText = threat.dynamicSummary.isEmpty ? threat.summary : threat.dynamicSummary
+
+        VStack(alignment: .leading, spacing: badgeHeaderSpacing) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("Severe Risk")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+
+                Spacer(minLength: 0)
+
+                if isOffline {
+                    SummaryAvailabilityBadge(state: .stale)
+                }
+            }
+
+            VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
+                Image(systemName: threat.iconName)
+                    .formatBadgeImage(colorScheme: colorScheme)
+                    .contentTransition(.opacity)
+
+                Text(threat.message)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .lineLimit(badgeLineLimit)
+                    .multilineTextAlignment(badgeTextAlignment)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+
+                Text(valueText)
+                    .formatSummaryText(for: colorScheme)
+                    .monospacedDigit()
+                    .lineLimit(badgeSummaryLineLimit)
+                    .multilineTextAlignment(badgeTextAlignment)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+            }
+            .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         }
-        .badgeStyle(background: threat.iconColor(for: colorScheme))
+        .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
+        .badgeStyle(background: threat.iconColor(for: colorScheme), allowsVerticalGrowth: usesAccessibilityLayout)
         .animation(SkyAwareMotion.settle(reduceMotion), value: threat.message)
         .animation(SkyAwareMotion.settle(reduceMotion), value: threat.dynamicSummary)
     }
@@ -49,10 +93,10 @@ struct SevereWeatherBadgeView: View {
     private var resolvingContent: some View {
         VStack(spacing: 4) {
             Image(systemName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90")
-                .formatBadgeImage()
+                .formatBadgeImage(colorScheme: colorScheme)
                 .opacity(0.92)
             Text("Severe Risk")
-                .formatMessageText()
+                .formatMessageText(for: colorScheme)
             Text("Getting severe risk…")
                 .formatSummaryText(for: colorScheme)
         }
@@ -70,11 +114,11 @@ struct SevereWeatherBadgeView: View {
         return LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private var offlineContent: some View {
+    private var unavailableContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
+            Label("Unavailable", systemImage: "exclamationmark.circle")
                 .sectionLabel()
-            Text("SkyAware is showing saved local data. Severe risk details will update when your connection returns.")
+            Text("No saved severe risk data is available offline.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
@@ -82,7 +126,39 @@ struct SevereWeatherBadgeView: View {
         .frame(minWidth: 130, idealWidth: 145, maxWidth: 145,
                minHeight: 150, idealHeight: 150, maxHeight: 160)
         .padding()
-        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
+        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4)
+    }
+
+    private var usesAccessibilityLayout: Bool {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize).usesStackedHeroTiles
+    }
+
+    private var badgeAlignment: HorizontalAlignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeTextAlignment: TextAlignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeFrameAlignment: Alignment {
+        usesAccessibilityLayout ? .leading : .center
+    }
+
+    private var badgeSpacing: CGFloat {
+        usesAccessibilityLayout ? 6 : 4
+    }
+
+    private var badgeHeaderSpacing: CGFloat {
+        usesAccessibilityLayout ? 10 : 8
+    }
+
+    private var badgeLineLimit: Int {
+        2
+    }
+
+    private var badgeSummaryLineLimit: Int? {
+        nil
     }
 }
 
@@ -100,6 +176,16 @@ struct SevereWeatherBadgeView: View {
         HStack {
             SevereWeatherBadgeView(threat: .allClear, isResolving: true, showsResolvingPlaceholder: true)
             SevereWeatherBadgeView(threat: .wind(probability: 0.15), isResolving: true)
+        }
+        HStack {
+            SevereWeatherBadgeView(threat: .tornado(probability: 0.05), isOffline: true)
+            SevereWeatherBadgeView(threat: nil, isOffline: true)
+        }
+        HStack {
+            SevereWeatherBadgeView(threat: .tornado(probability: 0.25))
+                .environment(\.dynamicTypeSize, .accessibility5)
+            SevereWeatherBadgeView(threat: .wind(probability: 0.45))
+                .environment(\.dynamicTypeSize, .accessibility5)
         }
     }
     .background(.skyAwareBackground)

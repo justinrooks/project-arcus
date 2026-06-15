@@ -341,7 +341,7 @@ private struct SummaryOfflineToken: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private var tint: Color {
-        .fireWeather
+        .semanticMetadata
     }
 
     var body: some View {
@@ -356,12 +356,12 @@ private struct SummaryOfflineToken: View {
         .padding(.vertical, 5)
         .skyAwareChip(
             cornerRadius: SkyAwareRadius.chipCompact,
-            tint: tint.opacity(colorScheme == .dark ? 0.20 : 0.12)
+            tint: Color.semanticMetadataSurface.opacity(colorScheme == .dark ? 0.24 : 0.16)
         )
         .overlay {
             RoundedRectangle(cornerRadius: SkyAwareRadius.chipCompact, style: .continuous)
                 .stroke(
-                    tint.opacity(colorScheme == .dark ? 0.34 : 0.22),
+                    tint.opacity(colorScheme == .dark ? 0.32 : 0.22),
                     lineWidth: 1
                 )
         }

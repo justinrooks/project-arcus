@@ -100,20 +100,26 @@ struct SettingsView: View {
         )
     }
 
-    private var notificationsAreDenied: Bool {
-        notificationAuthorizationStatus == .denied
+    private var notificationPreferenceState: NotificationPreferenceState {
+        .init(
+            authorizationStatus: notificationAuthorizationStatus,
+            morningSummariesEnabled: morningSummaryEnabled,
+            mesoNotificationsEnabled: mesoNotificationEnabled,
+            serverNotificationsEnabled: serverNotificationEnabled
+        )
     }
     
     var body: some View {
+        let notificationState = notificationPreferenceState
+
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 18) {
-                sectionCard(title: "Notification Preferences", symbol: "bell.badge", accent: .orange) {
+                sectionCard(title: "Notification Preferences", symbol: "bell.badge", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Morning Summaries", isOn: $morningSummaryEnabled)
                             .onChange(of: morningSummaryEnabled) { _, newValue in
                                 handleNotificationToggle(newValue, for: "Morning Summaries")
                             }
-                            .disabled(notificationsAreDenied)
                         Text("Get a daily morning update with a concise overview of local weather hazards and outlook conditions.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -121,11 +127,10 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Meso Notifications", isOn: $mesoNotificationEnabled)
+                        Toggle("Mesoscale Discussion Alerts", isOn: $mesoNotificationEnabled)
                             .onChange(of: mesoNotificationEnabled) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Meso Notifications")
+                                handleNotificationToggle(newValue, for: "Mesoscale Discussion Alerts")
                             }
-                            .disabled(notificationsAreDenied)
                         Text("Receive alerts when new mesoscale discussions are issued for your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -133,9 +138,9 @@ struct SettingsView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 6) {
-                        Toggle("Subscribe to Server Notifications", isOn: $serverNotificationEnabled)
+                        Toggle("Local Severe-Weather Alerts", isOn: $serverNotificationEnabled)
                             .onChange(of: serverNotificationEnabled) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Server Notifications")
+                                handleNotificationToggle(newValue, for: "Local Severe-Weather Alerts")
                                 if suppressNextServerNotificationSync {
                                     suppressNextServerNotificationSync = false
                                     return
@@ -148,26 +153,40 @@ struct SettingsView: View {
                                     await locationSession.syncNotificationPreference(enabled: newValue)
                                 }
                             }
-                            .disabled(notificationsAreDenied)
-                        Text("Subscribe this device to server-driven push alerts.")
+                        Text("Get local severe-weather alerts relevant to your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
 
-                    if notificationsAreDenied {
-                        Text("Notifications are disabled for SkyAware in iOS Settings. Enable notifications to edit these preferences.")
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text("iOS Notification Access")
+                            Spacer()
+                            Text(notificationState.authorizationStatusTitle)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Text(notificationState.systemAvailabilityCopy)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                    }
+
+                    if let actionTitle = notificationState.recoveryActionTitle {
+                        Button(actionTitle) {
+                            locationSession.openSettings()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .font(.subheadline.weight(.semibold))
                     }
                 }
 
-                sectionCard(title: "Location", symbol: "iphone.badge.location", accent: .orange) {
+                sectionCard(title: "Location", symbol: "location", accent: .primary) {
                     VStack() {
-                        Toggle("Share Location with Signal", isOn: $sendL8nToSignal)
+                        Toggle("Share Approximate Location for Alerts", isOn: $sendL8nToSignal)
                             .onChange(of: sendL8nToSignal) { _, newValue in
-                                handleNotificationToggle(newValue, for: "Send Location to Signal")
+                                handleNotificationToggle(newValue, for: "Share Approximate Location for Alerts")
                                 if newValue {
                                     Task {
                                         await locationSession.updateLocationSharingPreference(enabled: true)
@@ -184,14 +203,14 @@ struct SettingsView: View {
                                     }
                                 }
                             }
-                        Text("Share your approximate location information with the alert server. This allows SkyAware to send you notifications relevant to your current location.")
+                        Text("Share an approximate location so SkyAware can match alerts to your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                     }
                 }
 
-                sectionCard(title: "Alerts / Location Reliability", symbol: "checkmark.circle", accent: .orange) {
+                sectionCard(title: "Alerts / Location Reliability", symbol: "checkmark.circle", accent: .primary) {
                     let reliability = locationSession.reliabilityState
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
@@ -224,7 +243,7 @@ struct SettingsView: View {
                     }
                 }
 
-                sectionCard(title: "Map", symbol: "map", accent: .orange) {
+                sectionCard(title: "Map", symbol: "map", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Show Active Alerts on Map", isOn: $mapWarningGeometryVisible)
                         Text("Controls whether active warning geometry is shown on the map.")
@@ -234,9 +253,10 @@ struct SettingsView: View {
                     }
                 }
                 
-                sectionCard(title: "About", symbol: "info.circle", accent: .orange) {
+                sectionCard(title: "About", symbol: "info.circle", accent: .primary) {
                     infoRow("Version", Bundle.main.fullVersion)
                     infoRow("Disclaimer", "\(disclaimerVersion)")
+#if DEBUG
                     NavigationLink("Diagnostics") {
                         SettingsDiagnosticsView()
                             .navigationTitle("Diagnostics")
@@ -247,6 +267,18 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
                     .font(.subheadline.weight(.medium))
+#else
+                    NavigationLink("Support") {
+                        SettingsDiagnosticsView()
+                            .navigationTitle("Support")
+                            .navigationBarTitleDisplayMode(.inline)
+                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                    .font(.subheadline.weight(.medium))
+#endif
                 }
             }
             .padding(.horizontal, 16)
@@ -274,6 +306,7 @@ struct SettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(title, systemImage: symbol)
+                .symbolVariant(.fill)
                 .font(.headline.weight(.semibold))
                 .foregroundStyle(accent)
 
@@ -300,20 +333,7 @@ struct SettingsView: View {
 extension SettingsView {
     @MainActor
     func refreshNotificationAuthorizationStatus() async {
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        notificationAuthorizationStatus = settings.authorizationStatus
-
-        guard notificationAuthorizationStatus == .denied else { return }
-
-        if morningSummaryEnabled {
-            morningSummaryEnabled = false
-        }
-        if mesoNotificationEnabled {
-            mesoNotificationEnabled = false
-        }
-        if serverNotificationEnabled {
-            serverNotificationEnabled = false
-        }
+        notificationAuthorizationStatus = await Self.currentNotificationAuthorizationStatus()
     }
 
     func handleNotificationToggle(_ enabled: Bool, for notificationType: String) {
@@ -340,6 +360,131 @@ extension SettingsView {
             locationSession.openSettings()
         case .none:
             return
+        }
+    }
+}
+
+struct NotificationPreferenceState: Equatable {
+    let authorizationStatus: UNAuthorizationStatus
+    let morningSummariesEnabled: Bool
+    let mesoNotificationsEnabled: Bool
+    let serverNotificationsEnabled: Bool
+
+    var allowsNotificationDelivery: Bool {
+        authorizationStatus.allowsNotificationDelivery
+    }
+
+    var effectiveMorningSummariesEnabled: Bool {
+        morningSummariesEnabled && allowsNotificationDelivery
+    }
+
+    var effectiveMesoNotificationsEnabled: Bool {
+        mesoNotificationsEnabled && allowsNotificationDelivery
+    }
+
+    var effectiveServerNotificationsEnabled: Bool {
+        serverNotificationsEnabled && allowsNotificationDelivery
+    }
+
+    var authorizationStatusTitle: String {
+        authorizationStatus.skyAwareTitle
+    }
+
+    var systemAvailabilityCopy: String {
+        authorizationStatus.skyAwareAvailabilityCopy
+    }
+
+    var recoveryActionTitle: String? {
+        authorizationStatus.skyAwareRecoveryActionTitle
+    }
+}
+
+private extension SettingsView {
+    static func currentNotificationAuthorizationStatus() async -> UNAuthorizationStatus {
+        if let override = notificationAuthorizationOverride {
+            return override
+        }
+
+        let settings = await UNUserNotificationCenter.current().notificationSettings()
+        return settings.authorizationStatus
+    }
+
+    static var notificationAuthorizationOverride: UNAuthorizationStatus? {
+        guard let rawValue = ProcessInfo.processInfo.environment["UI_TESTS_NOTIFICATION_AUTH_MODE"] else {
+            return nil
+        }
+
+        switch rawValue {
+        case "authorized":
+            return .authorized
+        case "provisional":
+            return .provisional
+        case "ephemeral":
+            return .ephemeral
+        case "denied":
+            return .denied
+        case "notDetermined":
+            return .notDetermined
+        default:
+            return nil
+        }
+    }
+}
+
+private extension UNAuthorizationStatus {
+    var allowsNotificationDelivery: Bool {
+        switch self {
+        case .authorized, .provisional, .ephemeral:
+            return true
+        case .denied, .notDetermined:
+            return false
+        @unknown default:
+            return false
+        }
+    }
+
+    var skyAwareTitle: String {
+        switch self {
+        case .authorized:
+            return "Allowed"
+        case .provisional:
+            return "Quiet"
+        case .ephemeral:
+            return "Temporary"
+        case .denied:
+            return "Off"
+        case .notDetermined:
+            return "Not Set"
+        @unknown default:
+            return "Unknown"
+        }
+    }
+
+    var skyAwareAvailabilityCopy: String {
+        switch self {
+        case .authorized:
+            return "iOS can deliver SkyAware notifications normally."
+        case .provisional:
+            return "iOS can deliver SkyAware notifications quietly until you promote them in Settings."
+        case .ephemeral:
+            return "iOS can deliver SkyAware notifications temporarily for this app session."
+        case .denied:
+            return "Notifications are disabled for SkyAware in iOS Settings. Your preferences are preserved and will apply again if you re-enable notifications."
+        case .notDetermined:
+            return "SkyAware can ask iOS for notification access. Your preferences are saved now and will apply if you allow notifications."
+        @unknown default:
+            return "SkyAware cannot determine notification availability right now."
+        }
+    }
+
+    var skyAwareRecoveryActionTitle: String? {
+        switch self {
+        case .denied:
+            return "Open Settings"
+        case .authorized, .provisional, .ephemeral, .notDetermined:
+            return nil
+        @unknown default:
+            return nil
         }
     }
 }

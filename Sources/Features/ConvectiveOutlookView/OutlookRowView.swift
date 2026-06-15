@@ -20,43 +20,37 @@ struct OutlookRowView: View {
     }
 
     var body: some View {
-        Group {
-            if adaptiveLayout.usesAccessibilityLayout {
-                VStack(alignment: .leading, spacing: 10) {
-                    titleBlock
-                    metadataLine
-                }
-            } else {
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "pencil.and.list.clipboard")
-                        .foregroundColor(.skyAwareAccent)
-                        .font(.headline.weight(.semibold))
-                        .frame(width: 40, height: 40)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
+        HStack(alignment: .center, spacing: SkyAwareSpacing.standard) {
+//            Image(systemName: "pencil.and.list.clipboard")
+//                .foregroundColor(.skyAwareAccent)
+//                .font(.headline.weight(.semibold))
+//                .frame(width: 40, height: 40)
+//                .skyAwareChip(cornerRadius: SkyAwareRadius.iconChip, tint: Color.skyAwareAccent.opacity(0.18))
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        titleBlock
-                        metadataLine
-                    }
-
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.tertiary)
-                }
+            VStack(alignment: .leading, spacing: 4) {
+                titleBlock
+                metadataLine
             }
+
+            Spacer()
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-        .padding(14)
+        .padding(.horizontal, SkyAwareSpacing.contentInset)
+        .padding(.vertical, SkyAwareSpacing.compact)
         .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint("Opens full outlook details.")
     }
 
     private var titleBlock: some View {
         Text(simplifyOutlookTitle(outlook.title) ?? outlook.title)
             .font(.headline.weight(.semibold))
-            .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 3 : 2)
+            .lineLimit(adaptiveLayout.usesAccessibilityLayout ? nil : 2)
             .minimumScaleFactor(adaptiveLayout.usesAccessibilityLayout ? 1 : 0.9)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private var metadataLine: some View {
@@ -70,6 +64,29 @@ struct OutlookRowView: View {
         .font(.caption.weight(.medium))
         .foregroundColor(.secondary)
         .lineLimit(adaptiveLayout.usesAccessibilityLayout ? 2 : 1)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var accessibilityTitle: String {
+        outlook.title
+    }
+
+    private var accessibilityValue: String {
+        var parts: [String] = ["SPC discussion"]
+
+        if let issued = outlook.issued {
+            parts.append("Issued \(issued.shorten())")
+        } else {
+            parts.append("Published \(outlook.published.relativeDate())")
+        }
+
+        if let riskLevel = outlook.riskLevel?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           riskLevel.isEmpty == false {
+            parts.append("Risk \(ConvectiveOutlookDetailPresentation.sentenceCaseRiskLevel(riskLevel))")
+        }
+
+        return parts.joined(separator: ". ")
     }
 }
 
@@ -95,4 +112,29 @@ extension OutlookRowView {
 
 #Preview {
     OutlookRowView(outlook: ConvectiveOutlook.sampleOutlookDtos.last!)
+}
+
+#Preview("Long Title") {
+    let outlook = ConvectiveOutlookDTO(
+        title: "SPC Jun 15, 2026 1630 UTC Day 1 Convective Outlook With A Very Long Descriptive Title For Wrapping",
+        link: URL(string: "https://www.spc.noaa.gov/products/outlook/day1otlk.html")!,
+        published: Date(),
+        summary: "Summary",
+        fullText: "Full text",
+        day: nil,
+        riskLevel: "SLGT",
+        issued: nil,
+        validUntil: nil
+    )
+
+    return OutlookRowView(outlook: outlook)
+        .padding()
+        .background(Color(.skyAwareBackground))
+}
+
+#Preview("AX5") {
+    OutlookRowView(outlook: ConvectiveOutlook.sampleOutlookDtos[0])
+        .environment(\.dynamicTypeSize, .accessibility5)
+        .padding()
+        .background(Color(.skyAwareBackground))
 }

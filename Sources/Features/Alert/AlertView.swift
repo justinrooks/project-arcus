@@ -17,27 +17,18 @@ struct AlertView: View {
     let onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)?
     
     @State private var selectedAlert: AlertDTO?
+    @State private var activeTip: MesoscaleDiscussionTip?
     
     private var hasNoAlerts: Bool {
         alerts.isEmpty && mesos.isEmpty
     }
     
     private var sortedAlerts: [AlertDTO] {
-        alerts.sorted { lhs, rhs in
-            if lhs.ends != rhs.ends {
-                return lhs.ends < rhs.ends
-            }
-            return lhs.issued > rhs.issued
-        }
+        AlertPresentationOrdering.ordered(alerts, endDate: \.ends)
     }
     
     private var sortedMesos: [MdDTO] {
-        mesos.sorted { lhs, rhs in
-            if lhs.validEnd != rhs.validEnd {
-                return lhs.validEnd < rhs.validEnd
-            }
-            return lhs.issued > rhs.issued
-        }
+        AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
     }
     
     private var latestIssued: Date? {
@@ -71,65 +62,67 @@ struct AlertView: View {
     }
     
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+        List {
+            Section {
                 overviewCard
-                
-                if sortedAlerts.isEmpty == false {
-                    alertSection(
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: SkyAwareSpacing.compact,
+                            leading: SkyAwareSpacing.contentInset,
+                            bottom: SkyAwareSpacing.compact,
+                            trailing: SkyAwareSpacing.contentInset
+                        )
+                    )
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
+            if sortedAlerts.isEmpty == false {
+                Section {
+                    ForEach(sortedAlerts) { alert in
+                        alertNavigationRow(
+                            identifier: "alert-center-watch-row-\(alert.id)",
+                            destination: {
+                                alertDetail(for: alert)
+                            }
+                        ) {
+                            AlertRowView(alert: alert)
+                        }
+                    }
+                } header: {
+                    alertSectionHeader(
                         title: "Alerts",
                         subtitle: "\(alerts.count) active",
                         symbol: "exclamationmark.triangle.fill"
-                    ) {
-                        ForEach(sortedAlerts) { alert in
-                            NavigationLink {
-                                alertDetail(for: alert)
-                            } label: {
-                                AlertRowView(alert: alert)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
+                    )
+                }
+            }
+
+            if sortedMesos.isEmpty == false {
+                Section {
+                    ForEach(sortedMesos) { meso in
+                        alertNavigationRow(
+                            identifier: "alert-center-meso-row-\(meso.id)",
+                            destination: {
+                                mesoDetail(for: meso)
                             }
-                            .buttonStyle(
-                                SkyAwarePressableButtonStyle(
-                                    cornerRadius: SkyAwareRadius.row,
-                                    pressedScale: 0.988,
-                                    pressedOverlayOpacity: 0.06
-                                )
-                            )
-                            .accessibilityIdentifier("alert-center-watch-row-\(alert.id)")
+                        ) {
+                            AlertRowView(alert: meso)
                         }
                     }
-                }
-                
-                if sortedMesos.isEmpty == false {
-                    alertSection(
+                } header: {
+                    mesoscaleSectionHeader(
                         title: "Mesoscale Discussions",
                         subtitle: "\(mesos.count) active",
                         symbol: "waveform.path.ecg"
-                    ) {
-                        ForEach(sortedMesos) { meso in
-                            NavigationLink {
-                                mesoDetail(for: meso)
-                            } label: {
-                                AlertRowView(alert: meso)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(
-                                SkyAwarePressableButtonStyle(
-                                    cornerRadius: SkyAwareRadius.row,
-                                    pressedScale: 0.988,
-                                    pressedOverlayOpacity: 0.06
-                                )
-                            )
-                        }
-                    }
+                    )
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 24)
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(15)
+        .scrollContentBackground(.hidden)
+        .navigationLinkIndicatorVisibility(.hidden)
         .refreshable {
             guard let onRefresh else { return }
             await onRefresh()
@@ -140,16 +133,43 @@ struct AlertView: View {
             onFocusedAlertRequestHandled?(focusedAlertRequest.id)
         }
         .scrollIndicators(.hidden)
+        .contentMargins(.top, 0, for: .scrollContent)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationDestination(item: $selectedAlert) { alert in
             alertDetail(for: alert)
         }
     }
 
+    private func alertNavigationRow<Destination: View, RowContent: View>(
+        identifier: String,
+        @ViewBuilder destination: @escaping () -> Destination,
+        @ViewBuilder label: () -> RowContent
+    ) -> some View {
+        NavigationLink(destination: destination) {
+            label()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .cardRowBackground(
+            cornerRadius: SkyAwareRadius.row,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
+        )
+        .listRowInsets(
+            EdgeInsets(
+                top: 6,
+                leading: SkyAwareSpacing.contentInset,
+                bottom: 6,
+                trailing: SkyAwareSpacing.contentInset
+            )
+        )
+    }
+
     private func alertDetail(for alert: AlertDTO) -> some View {
         ScrollView {
             AlertDetailView(alert: alert, layout: .full)
-                .padding(.top, 8)
+                .padding(.top, SkyAwareSpacing.compact)
                 .padding(.bottom, 24)
         }
         .accessibilityIdentifier("alert-center-watch-detail-view")
@@ -163,7 +183,7 @@ struct AlertView: View {
     private func mesoDetail(for meso: MdDTO) -> some View {
         ScrollView {
             MesoscaleDiscussionCard(meso: meso, layout: .full)
-                .padding(.top, 8)
+                .padding(.top, SkyAwareSpacing.compact)
                 .padding(.bottom, 24)
         }
         .scrollContentBackground(.hidden)
@@ -176,9 +196,10 @@ struct AlertView: View {
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(
-                hasNoAlerts ? "Quiet right now" : activeLocalAlertLabel,
-                systemImage: hasNoAlerts ? "checkmark.shield" : "bolt.badge.clock"
+                hasNoAlerts ? "No active alerts" : activeLocalAlertLabel,
+                systemImage: hasNoAlerts ? "bell" : "bolt.badge.clock"
             )
+            .symbolVariant(.fill)
             .font(.headline.weight(.semibold))
             
             Text(overviewMessage)
@@ -195,7 +216,7 @@ struct AlertView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
+        .padding(SkyAwareSpacing.contentInset)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
     
@@ -212,56 +233,141 @@ struct AlertView: View {
             return "Weather alerts are active for your area. Open one to check timing, affected counties, and official instructions."
         }
         
-        return "Open any alert for timing, impacted areas, and the full official product. Items that end sooner are surfaced first."
+        return "Warnings are shown before watches, then mesoscale discussions. Within each group, items that end sooner are surfaced first."
     }
-    
-    private func alertSection<Content: View>(
+
+    @ViewBuilder
+    private func alertSectionHeader(
         title: String,
         subtitle: String,
-        symbol: String,
-        @ViewBuilder content: () -> Content
+        symbol: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if adaptiveLayout.usesAccessibilityLayout {
-                Label(title, systemImage: symbol)
-                    .font(.headline.weight(.semibold))
-            } else {
-                HStack {
-                    Label(title, systemImage: symbol)
-                        .font(.headline.weight(.semibold))
-                    Spacer()
-                    Text(subtitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+        if adaptiveLayout.usesAccessibilityLayout {
+            HStack(alignment: .center, spacing: 6) {
+                Image(systemName: symbol)
+                Text(title)
+            }
+            .font(.headline.weight(.semibold))
+            .textCase(nil)
+        } else {
+            HStack {
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: symbol)
+                    Text(title)
+                }
+                .font(.headline.weight(.semibold))
+                Spacer()
+                Text(subtitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+            }
+            .textCase(nil)
+        }
+    }
+
+    @ViewBuilder
+    private func mesoscaleSectionHeader(
+        title: String,
+        subtitle: String,
+        symbol: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: symbol)
+            Text(title)
+//            Label(title, systemImage: symbol)
+//                .font(.headline.weight(.semibold))
+//                .textCase(nil)
+
+            Button {
+                activeTip = activeTip == .mesoscaleDiscussion ? nil : .mesoscaleDiscussion
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44, alignment: .center)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("alert-center-meso-info-button")
+            .accessibilityLabel("What is a mesoscale discussion?")
+            .accessibilityHint("Shows a short explanation.")
+            .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
+                switch tip {
+                case .mesoscaleDiscussion:
+                    MesoscaleDiscussionTipView()
+                        .presentationCompactAdaptation(.popover)
                 }
             }
-            
-            content()
-        }
-        .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-    }
-    
-    private func emptySectionCard(title: String, subtitle: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
+            .font(.headline.weight(.semibold))
+
+            Spacer()
+
             Text(subtitle)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+        }
+        .textCase(nil)
+    }
+}
+
+private enum MesoscaleDiscussionTip: String, Identifiable {
+    case mesoscaleDiscussion
+
+    var id: String { rawValue }
+}
+
+private struct MesoscaleDiscussionTipView: View {
+    private var bodyCopy: String {
+        "A mesoscale discussion is a short forecast from the National Weather Service. It highlights where severe weather may become more likely, so you can keep a closer eye on that area. It is not a warning, but it can be an early heads-up."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Mesoscale Discussion")
+                .font(.headline.weight(.semibold))
+
+            Text(bodyCopy)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("alert-center-meso-tip-body")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
+        .frame(width: 360, alignment: .leading)
     }
 }
 
 #Preview {
     NavigationStack {
         AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+            .navigationTitle("Active Alerts")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Empty") {
+    NavigationStack {
+        AlertView(mesos: [], alerts: [])
+            .navigationTitle("Active Alerts")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Accessibility") {
+    NavigationStack {
+        AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+            .environment(\.dynamicTypeSize, .accessibility3)
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.visible, for: .navigationBar)

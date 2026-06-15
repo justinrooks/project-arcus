@@ -13,6 +13,7 @@ import UIKit
 final class MapCoordinator: NSObject, MKMapViewDelegate {
     var lastCenteredCoordinate: CLLocationCoordinate2D?
     var lastAppliedOverlayRevision: Int?
+    var differentiateWithoutColor = false
     private var overlayByKey: [String: MKOverlay] = [:]
     private var keyByOverlayIdentifier: [ObjectIdentifier: String] = [:]
     private var signatureByKey: [String: OverlaySignature] = [:]
@@ -98,7 +99,10 @@ final class MapCoordinator: NSObject, MKMapViewDelegate {
 
     func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
         if let riskOverlay = overlay as? RiskPolygonOverlay {
-            return RiskPolygonRenderer(riskOverlay: riskOverlay)
+            return RiskPolygonRenderer(
+                riskOverlay: riskOverlay,
+                differentiateWithoutColor: differentiateWithoutColor
+            )
         }
 
         if let polygon = overlay as? MKPolygon {

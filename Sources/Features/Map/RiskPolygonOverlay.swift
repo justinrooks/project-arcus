@@ -20,6 +20,7 @@ final class RiskPolygonOverlay: NSObject, MKOverlay {
     let strokeColor: UIColor
     let fillColor: UIColor
     let hatchStyle: HatchStyle?
+    let differentiateWithoutColorStyle: MapOverlayDifferentiationStyle?
 
     var coordinate: CLLocationCoordinate2D { polygon.coordinate }
     var boundingMapRect: MKMapRect { polygon.boundingMapRect }
@@ -29,23 +30,28 @@ final class RiskPolygonOverlay: NSObject, MKOverlay {
         kind: RiskPolygonKind,
         strokeColor: UIColor,
         fillColor: UIColor,
-        hatchStyle: HatchStyle? = nil
+        hatchStyle: HatchStyle? = nil,
+        differentiateWithoutColorStyle: MapOverlayDifferentiationStyle? = nil
     ) {
         self.polygon = polygon
         self.kind = kind
         self.strokeColor = strokeColor
         self.fillColor = fillColor
         self.hatchStyle = hatchStyle
+        self.differentiateWithoutColorStyle = differentiateWithoutColorStyle
         super.init()
     }
 
-    static func probability(from polygon: MKPolygon) -> RiskPolygonOverlay {
+    static func probability(from polygon: MKPolygon, overlayKey: String? = nil) -> RiskPolygonOverlay {
         let style = RiskPolygonStyleResolver.probabilityStyle(for: polygon)
         return RiskPolygonOverlay(
             polygon: polygon,
             kind: .probability,
             strokeColor: style.stroke,
-            fillColor: style.fill
+            fillColor: style.fill,
+            differentiateWithoutColorStyle: overlayKey.flatMap {
+                MapOverlayDifferentiationStyle.overlayStyle(for: $0, kind: .probability)
+            }
         )
     }
 
@@ -54,14 +60,18 @@ final class RiskPolygonOverlay: NSObject, MKOverlay {
         level: Int,
         strokeColor: UIColor,
         fillColor: UIColor,
-        hatchStyle: HatchStyle = .default
+        hatchStyle: HatchStyle = .default,
+        overlayKey: String? = nil
     ) -> RiskPolygonOverlay {
         RiskPolygonOverlay(
             polygon: polygon,
             kind: .intensity(level: level),
             strokeColor: strokeColor,
             fillColor: fillColor,
-            hatchStyle: hatchStyle.adjusted(forIntensityLevel: level)
+            hatchStyle: hatchStyle.adjusted(forIntensityLevel: level),
+            differentiateWithoutColorStyle: overlayKey.flatMap {
+                MapOverlayDifferentiationStyle.overlayStyle(for: $0, kind: .intensity(level: level))
+            }
         )
     }
 }

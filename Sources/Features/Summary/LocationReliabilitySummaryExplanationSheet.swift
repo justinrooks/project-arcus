@@ -76,7 +76,6 @@ struct LocationReliabilitySummaryExplanationSheet: View {
             shadowOpacity: 0.05,
             shadowRadius: 4,
             shadowY: 2,
-            allowsGlass: false
         )
     }
 }

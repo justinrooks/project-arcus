@@ -9,36 +9,33 @@ import SwiftUI
 
 struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
-    let level: FireRiskLevel
+    let level: FireRiskLevel?
     var isOffline: Bool = false
     var showsResolvingPlaceholder: Bool = false
-    var label: String {
-        switch level {
-        case .clear: return "No"
-        default: return level.status
-        }
-    }
 
     var body: some View {
         Group {
-            if isOffline {
-                offlineContent
-            } else if showsResolvingPlaceholder {
+            switch presentationState {
+            case .resolving:
                 resolvingContent
-            } else {
-                HStack(spacing: 12) {
-                    Image(systemName: level.symbol)
-                        .formatBadgeImage()
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("\(label) Fire Risk")
-                            .formatMessageText()
-                        Text(level.message)
-                            .formatSummaryText(for: colorScheme)
-                    }
+            case .current, .stale:
+                if let level {
+                    resolvedContent(level: level)
+                } else {
+                    unavailableContent
                 }
-                .railStyle(background: level.iconColor(for: colorScheme))
+            case .unavailable, .confirmedEmpty:
+                unavailableContent
             }
         }
+    }
+
+    private var presentationState: SummaryContentPresentationState {
+        SummaryContentPresentationState.from(
+            isOffline: isOffline,
+            hasContent: level != nil,
+            isResolving: showsResolvingPlaceholder
+        )
     }
 
     private var resolvingBackground: LinearGradient {
@@ -51,13 +48,45 @@ struct FireWeatherRailView: View {
         return LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
+    @ViewBuilder
+    private func resolvedContent(level: FireRiskLevel) -> some View {
+        let presentation = level.supportingPresentation()
+
+        HStack(spacing: 12) {
+            Image(systemName: level.symbol)
+                .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(presentation.title)
+                    .formatMessageText(for: colorScheme)
+                Text(presentation.detail)
+                    .formatSummaryText(for: colorScheme)
+            }
+        }
+        .railStyle(
+            background: presentation.isSubdued
+                ? RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
+                : level.iconColor(for: colorScheme),
+            minHeight: presentation.isSubdued ? 76 : 84,
+            shadowOpacity: presentation.isSubdued ? 0.10 : 0.18,
+            shadowRadius: presentation.isSubdued ? 6 : 8,
+            shadowY: presentation.isSubdued ? 3 : 4
+        )
+        .overlay(alignment: .topTrailing) {
+            if isOffline {
+                SummaryAvailabilityBadge(state: .stale)
+                    .padding(.trailing, 12)
+                    .padding(.top, 8)
+            }
+        }
+    }
+
     private var resolvingContent: some View {
         HStack(spacing: 12) {
             Image(systemName: "flame")
-                .formatBadgeImage()
+                .formatBadgeImage(colorScheme: colorScheme)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Fire Risk")
-                    .formatMessageText()
+                    .formatMessageText(for: colorScheme)
                 Text("Getting fire risk…")
                     .formatSummaryText(for: colorScheme)
             }
@@ -65,29 +94,38 @@ struct FireWeatherRailView: View {
         .railStyle(background: resolvingBackground)
     }
 
-    private var offlineContent: some View {
+    private var unavailableContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
+            Label("Unavailable", systemImage: "exclamationmark.circle")
                 .sectionLabel()
-            Text("SkyAware is showing saved local data. Fire risk will update when your connection returns.")
+            Text("No saved fire risk data is available offline.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
         .padding([.leading, .trailing], 15)
-        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4, allowsGlass: false)
+        .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4)
     }
 }
 
 #Preview {
     VStack {
         FireWeatherRailView(level: .clear)
-        FireWeatherRailView(level: .clear, showsResolvingPlaceholder: true)
+        FireWeatherRailView(level: .clear, isOffline: true)
         FireWeatherRailView(level: .elevated)
-        FireWeatherRailView(level: .critical)
-        FireWeatherRailView(level: .extreme)
+        FireWeatherRailView(level: .elevated, isOffline: true)
     }
+}
+
+#Preview("Fire Weather Rail Dark") {
+    VStack {
+        FireWeatherRailView(level: .clear)
+        FireWeatherRailView(level: .clear, isOffline: true)
+        FireWeatherRailView(level: .elevated)
+        FireWeatherRailView(level: .elevated, isOffline: true)
+    }
+    .preferredColorScheme(.dark)
 }
 
 //    private var fireRiskState: FireRiskLevel {

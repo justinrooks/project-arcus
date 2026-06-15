@@ -7,6 +7,7 @@
 
 import SwiftUI
 import CoreLocation
+import MapKit
 
 struct MapScreenView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -20,8 +21,6 @@ struct MapScreenView: View {
     @Binding private var selected: MapLayer
     @State private var model = MapFeatureModel()
     @State private var reloadTask: Task<Void, Never>?
-    @State private var showLayerPicker = false
-    @Namespace private var layerNamespace
 
     init(selectedLayer: Binding<MapLayer> = .constant(.categorical)) {
         _selected = selectedLayer
@@ -35,10 +34,9 @@ struct MapScreenView: View {
     var body: some View {
         MapScreenContent(
             selected: $selected,
-            showLayerPicker: $showLayerPicker,
             showsWarningGeometry: $showsWarningGeometry,
             scene: model.activeScene,
-            layerNamespace: layerNamespace
+            locationCoordinate: locationSession.currentSnapshot?.coordinates
         )
         .onChange(of: selected, initial: true) { _, newValue in
             model.selectLayer(newValue)
@@ -62,16 +60,16 @@ struct MapScreenView: View {
     }
     
     @MainActor
-        private func scheduleReload() {
-            reloadTask?.cancel()
-            reloadTask = Task {
-                await model.reload(
-                    using: dependencies.spcMapData,
-                    warningSource: dependencies.arcusProvider,
-                    selectedLayer: selected
-                )
-            }
+    private func scheduleReload() {
+        reloadTask?.cancel()
+        reloadTask = Task {
+            await model.reload(
+                using: dependencies.spcMapData,
+                warningSource: dependencies.arcusProvider,
+                selectedLayer: selected
+            )
         }
+    }
 }
 
 private struct MapScreenContent: View {
@@ -79,11 +77,10 @@ private struct MapScreenContent: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     @Binding var selected: MapLayer
-    @Binding var showLayerPicker: Bool
     @Binding var showsWarningGeometry: Bool
 
     let scene: MapLayerScene
-    let layerNamespace: Namespace.ID
+    let locationCoordinate: CLLocationCoordinate2D?
 
     @State private var showsLegendSheet = false
 
@@ -91,42 +88,30 @@ private struct MapScreenContent: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
+    private var accessibilitySummary: MapAccessibilitySummary {
+        MapAccessibilitySummary.make(
+            scene: scene,
+            locationCoordinate: locationCoordinate,
+            showsWarningGeometry: showsWarningGeometry
+        )
+    }
+
     var body: some View {
         ZStack {
             MapCanvasView(state: scene.canvasState)
                 .ignoresSafeArea()
 
+            MapAccessibilitySummaryElement(summary: accessibilitySummary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.top, 8)
+                .padding(.leading, 8)
+                .zIndex(1)
+
             VStack(alignment: .trailing) {
-                HStack(spacing: 10) {
-                    Button {
-                        showLayerPicker = true
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "square.2.layers.3d.top.filled")
-                                .imageScale(.medium)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.secondary)
-                            Text(selected.title)
-                                .font(.subheadline.weight(.semibold))
-                                .lineLimit(1)
-                                .contentTransition(.opacity)
-                            Image(systemName: "chevron.down")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(minHeight: 40)
-                        .contentShape(Capsule())
-                    }
-                    .accessibilityLabel("Map layers")
-                    .accessibilityValue(selected.title)
-                    .scaleEffect(showLayerPicker ? 0.98 : 1)
-                    .animation(SkyAwareMotion.press(reduceMotion), value: showLayerPicker)
-                    .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
-                    .modifier(MapLayerPickerButtonStyle())
-                    .modifier(MapLayerButtonMorph(namespace: layerNamespace))
-                }
+                MapLayerMenu(
+                    selection: $selected,
+                    showsWarningGeometry: $showsWarningGeometry
+                )
                 .padding(.horizontal, 18)
                 .padding(.top, 14)
                 Spacer()
@@ -136,67 +121,118 @@ private struct MapScreenContent: View {
 
             VStack {
                 Spacer()
-                HStack(alignment: .bottom, spacing: 10) {
-                    if showsWarningLegend && adaptiveLayout.mapLegendMode == .inline {
-                        WarningLegend()
-                            .transition(.opacity)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    mapLegendControl
-                }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
+                legendControls
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(legendAllowsHitTesting)
         }
-        .sheet(isPresented: $showLayerPicker) {
-            LayerPickerSheet(
-                selection: $selected,
-                showsWarningGeometry: $showsWarningGeometry,
-                title: "Map Layers",
-                triggerNamespace: layerNamespace
-            )
-        }
         .sheet(isPresented: $showsLegendSheet) {
-            MapLegendSheet(showWarnings: showsWarningLegend, legendState: scene.legendState)
+            MapLegendSheet(
+                warningItems: warningLegendItems,
+                legendState: scene.legendState
+            )
             .presentationDetents([.medium, .large])
         }
     }
 
     private var showsWarningLegend: Bool {
-        scene.canvasState.overlays.contains { $0.key.hasPrefix("warn|") }
+        warningLegendItems.isEmpty == false
+    }
+
+    private var warningLegendItems: [WarningLegendItem] {
+        WarningLegendItem.rendered(from: scene.canvasState.overlays)
     }
 
     @ViewBuilder
-    private var mapLegendControl: some View {
+    private var legendControls: some View {
+        HStack(alignment: .bottom) {
+            Spacer(minLength: 0)
+            legendControlsContent
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 14)
+    }
+
+    @ViewBuilder
+    private var legendControlsContent: some View {
         switch adaptiveLayout.mapLegendMode {
         case .inline:
+            ViewThatFits(in: .horizontal) {
+                inlineLegendRow
+                ViewThatFits(in: .vertical) {
+                    stackedLegendColumn
+                    compactLegendTrigger
+                }
+            }
+        case .compactTrigger, .sheetOnly:
+            compactLegendTrigger
+        }
+    }
+
+    @ViewBuilder
+    private var inlineLegendRow: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            if showsWarningLegend {
+                WarningLegend(items: warningLegendItems)
+                    .transition(.opacity)
+            }
+
+            Spacer(minLength: 8)
+
             MapLegend(state: scene.legendState)
                 .transition(.opacity)
                 .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
-        case .compactTrigger, .sheetOnly:
-            CompactMapLegendTrigger(label: compactLegendLabel) {
-                showsLegendSheet = true
-            }
-            .transition(.opacity)
-            .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
         }
+    }
+
+    @ViewBuilder
+    private var stackedLegendColumn: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            if showsWarningLegend {
+                WarningLegend(items: warningLegendItems)
+                    .transition(.opacity)
+            }
+
+            MapLegend(state: scene.legendState)
+                .transition(.opacity)
+                .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
+        }
+    }
+
+    private var compactLegendTrigger: some View {
+        CompactMapLegendTrigger(
+            label: compactLegendLabel,
+            subtitle: compactLegendSubtitle,
+            accessibilityValue: scene.legendState.voiceOverText
+        ) {
+            showsLegendSheet = true
+        }
+        .transition(.opacity)
+        .animation(SkyAwareMotion.layerChange(reduceMotion), value: selected)
     }
 
     private var compactLegendLabel: String {
         "Legend · \(scene.legendState.layer.title)"
     }
 
-    private var legendAllowsHitTesting: Bool {
-        switch adaptiveLayout.mapLegendMode {
-        case .inline:
-            return scene.legendState.allowsInteraction
-        case .compactTrigger, .sheetOnly:
-            return true
+    private var compactLegendSubtitle: String? {
+        guard showsWarningLegend else { return nil }
+
+        let warningTitles = warningLegendItems.map(\.title)
+        switch warningTitles.count {
+        case 0:
+            return nil
+        case 1:
+            return "\(warningTitles[0]) warning"
+        case 2:
+            return "\(warningTitles[0]) and \(warningTitles[1]) warnings"
+        default:
+            return "\(warningTitles.count) warning types"
         }
+    }
+
+    private var legendAllowsHitTesting: Bool {
+        true
     }
 }
 
@@ -213,50 +249,18 @@ private struct ViewportCoordinate: Equatable {
     }
 }
 
-private struct MapLayerPickerButtonStyle: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content
-                .buttonStyle(.glass)
-        } else {
-            content
-                .buttonStyle(.plain)
-                .skyAwareSurface(
-                    cornerRadius: SkyAwareRadius.section,
-                    tint: .skyAwareAccent.opacity(0.18),
-                    interactive: true,
-                    shadowOpacity: 0.16,
-                    shadowRadius: 10,
-                    shadowY: 6
-                )
-        }
-    }
-}
-
-private struct MapLayerButtonMorph: ViewModifier {
-    let namespace: Namespace.ID
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content.glassEffectID("map-layer-button", in: namespace)
-        } else {
-            content
-        }
-    }
-}
-
 private struct MapLegendSheet: View {
-    let showWarnings: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    let warningItems: [WarningLegendItem]
     let legendState: MapLegendState
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if showWarnings {
-                        WarningLegend()
+                    if warningItems.isEmpty == false {
+                        WarningLegend(items: warningItems)
                             .fixedSize(horizontal: false, vertical: false)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -269,40 +273,69 @@ private struct MapLegendSheet: View {
             }
             .navigationTitle("Legend")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close", role: .cancel) {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
 
 private struct MapScreenContentPreview: View {
-    @Namespace private var layerNamespace
-
     let legendState: MapLegendState
     let selectedLayer: MapLayer
+    let warningOverlays: [MapOverlayEntry]
 
     init(
-        legendState: MapLegendState = .empty(for: .categorical),
-        selectedLayer: MapLayer = .categorical
+        legendState: MapLegendState = .loading(for: .categorical),
+        selectedLayer: MapLayer = .categorical,
+        warningOverlays: [MapOverlayEntry] = []
     ) {
         self.legendState = legendState
         self.selectedLayer = selectedLayer
+        self.warningOverlays = warningOverlays
     }
 
     var body: some View {
         MapScreenContent(
             selected: .constant(selectedLayer),
-            showLayerPicker: .constant(false),
             showsWarningGeometry: .constant(true),
             scene: MapLayerScene(
-                canvasState: MapCanvasState(overlays: [], overlayRevision: 0, initialCenterCoordinate: nil),
+                canvasState: MapCanvasState(
+                    overlays: warningOverlays,
+                    overlayRevision: warningOverlays.count,
+                    initialCenterCoordinate: nil
+                ),
                 legendState: legendState
             ),
-            layerNamespace: layerNamespace
+            locationCoordinate: CLLocationCoordinate2D(latitude: 39.75, longitude: -104.44)
         )
+    }
+}
+
+private struct MapAccessibilitySummaryElement: View {
+    let summary: MapAccessibilitySummary
+
+    var body: some View {
+        Text(summary.value)
+            .font(.caption2)
+            .foregroundStyle(.clear)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: 260, alignment: .leading)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(summary.label)
+            .accessibilityValue(summary.value)
+            .accessibilityHint("Summarizes the selected layer, map status, local relationship, and active warnings overlay.")
+            .allowsHitTesting(false)
     }
 }
 
 private enum MapScreenPreviewLegendState {
     static let severeWithHatching = MapLegendState(
+        presentationState: .current,
         layer: .tornado,
         severeItems: [
             SevereLegendItem(id: "5%", probability: .percent(0.05), fillHex: nil, strokeHex: nil),
@@ -315,6 +348,7 @@ private enum MapScreenPreviewLegendState {
     )
 
     static let severeWithoutHatching = MapLegendState(
+        presentationState: .current,
         layer: .tornado,
         severeItems: [
             SevereLegendItem(id: "5%", probability: .percent(0.05), fillHex: nil, strokeHex: nil),
@@ -328,6 +362,26 @@ private enum MapScreenPreviewLegendState {
 #Preview("Map Legend - Normal Inline") {
     MapScreenContentPreview()
         .environment(\.dynamicTypeSize, .large)
+}
+
+#Preview("Map Legend - Warning Inline Wide") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .large)
+    .frame(width: 430, height: 430)
+}
+
+#Preview("Map Legend - Warning Stacked Narrow") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .large)
+    .frame(width: 320, height: 568)
 }
 
 #Preview("Map Legend - XXXL Inline") {
@@ -346,14 +400,25 @@ private enum MapScreenPreviewLegendState {
 #Preview("Map Legend - AX3 Compact Trigger") {
     MapScreenContentPreview(
         legendState: MapScreenPreviewLegendState.severeWithHatching,
-        selectedLayer: .tornado
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
     )
     .environment(\.dynamicTypeSize, .accessibility3)
 }
 
+#Preview("Map Screen - Warning Compact Trigger") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+    .frame(width: 320, height: 568)
+}
+
 #Preview("Map Legend Sheet - AX3 Small iPhone") {
     MapLegendSheet(
-        showWarnings: true,
+        warningItems: MapScreenPreviewWarningLegend.items,
         legendState: MapScreenPreviewLegendState.severeWithHatching
     )
     .environment(\.dynamicTypeSize, .accessibility3)
@@ -364,4 +429,46 @@ private enum MapScreenPreviewLegendState {
     MapLegend(state: MapScreenPreviewLegendState.severeWithoutHatching)
         .padding()
         .background(.thinMaterial)
+}
+
+#Preview("Map Screen - AX5 Summary") {
+    MapScreenContentPreview(
+        legendState: MapScreenPreviewLegendState.severeWithHatching,
+        selectedLayer: .tornado,
+        warningOverlays: MapScreenPreviewWarningLegend.overlays
+    )
+    .environment(\.dynamicTypeSize, .accessibility5)
+}
+
+private enum MapScreenPreviewWarningLegend {
+    @MainActor
+    static let overlays: [MapOverlayEntry] = [
+        MapOverlayEntry(
+            key: "warn|demo|rev-demo|tornado|0|demo",
+            overlay: previewPolygon(title: "Tornado Warning"),
+            signature: 1
+        ),
+        MapOverlayEntry(
+            key: "warn|demo|rev-demo|flashFlood|0|demo",
+            overlay: previewPolygon(title: "Flash Flood Warning"),
+            signature: 2
+        )
+    ]
+
+    @MainActor
+    static let items: [WarningLegendItem] = WarningLegendItem.rendered(from: overlays)
+
+    @MainActor
+    private static func previewPolygon(title: String) -> MKPolygon {
+        let polygon = MKPolygon(
+            coordinates: [
+                CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+                CLLocationCoordinate2D(latitude: 35.1, longitude: -96.9),
+                CLLocationCoordinate2D(latitude: 35.2, longitude: -97.1)
+            ],
+            count: 3
+        )
+        polygon.title = title
+        return polygon
+    }
 }

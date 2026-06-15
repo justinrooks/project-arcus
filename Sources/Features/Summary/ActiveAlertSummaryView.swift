@@ -14,7 +14,6 @@ struct ActiveAlertSummaryView: View {
         case loading
         case empty
         case alerts
-        case offline
     }
 
     private enum HeightPhase: Equatable {
@@ -49,8 +48,8 @@ struct ActiveAlertSummaryView: View {
         self.isLoading = isLoading
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
-        self.sortedMesos = mesos.sorted { $0.validEnd < $1.validEnd }
-        self.sortedAlerts = alerts.sorted { $0.expires < $1.expires }
+        self.sortedMesos = AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
+        self.sortedAlerts = AlertPresentationOrdering.ordered(alerts, endDate: \.expires)
     }
 
     private var hasRenderableAlerts: Bool {
@@ -58,9 +57,6 @@ struct ActiveAlertSummaryView: View {
     }
 
     private var contentState: ContentState {
-        if isOffline {
-            return .offline
-        }
         if isLoading {
             return .loading
         }
@@ -152,6 +148,13 @@ struct ActiveAlertSummaryView: View {
                 }
             }
 
+            if isOffline {
+                Label("Offline. Showing saved local alerts when available.", systemImage: "wifi.slash")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Offline. Showing saved local alerts when available.")
+            }
+
             innerContent
                 .animation(SkyAwareMotion.layerChange(reduceMotion), value: contentState)
         }
@@ -161,7 +164,6 @@ struct ActiveAlertSummaryView: View {
             shadowOpacity: 0.08,
             shadowRadius: 8,
             shadowY: 3,
-            allowsGlass: false
         )
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
@@ -219,8 +221,6 @@ struct ActiveAlertSummaryView: View {
     @ViewBuilder
     private var contentStateView: some View {
         switch contentState {
-        case .offline:
-            offlineContent
         case .loading:
             loadingContent
         case .alerts:
@@ -230,22 +230,13 @@ struct ActiveAlertSummaryView: View {
         }
     }
 
-    private var offlineContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Offline", systemImage: "wifi.slash")
-                .sectionLabel()
-            Text("SkyAware is showing saved local data. Local alerts will update when your connection returns.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(2)
-        .accessibilityElement(children: .combine)
-    }
-
     private var emptyContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("No Active Alerts", systemImage: "checkmark.shield")
+//            Label("No Active Alerts", systemImage: "checkmark.shield")
+//                .symbolVariant(.fill)
+//                .sectionLabel()
+            Label("No Active Alerts", systemImage: "")
+                .labelStyle(.titleOnly)
                 .sectionLabel()
             Text("Your local area currently has no active alerts or mesoscale discussions.")
                 .font(.subheadline)
