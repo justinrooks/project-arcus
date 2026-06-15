@@ -8,7 +8,13 @@
 import SwiftUI
 
 struct AlertRowView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     let alert: any AlertItem
+
+    private var adaptiveLayout: SkyAwareAdaptiveLayout {
+        SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
+    }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
@@ -32,34 +38,60 @@ struct AlertRowView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(alert.title)
                     .font(.headline.weight(.semibold))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.85)
+                    .lineLimit(adaptiveLayout.usesAccessibilityLayout ? nil : 2)
+                    .minimumScaleFactor(adaptiveLayout.usesAccessibilityLayout ? 1 : 0.85)
+                    .fixedSize(horizontal: false, vertical: true)
                 
                 Text("Issued \(relativeDate(alert.issued))")
                     .font(.caption.weight(.medium))
                     .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
                 
-//                if alert.alertType == .watch {
-                    if let sevTags = alert.severeRiskTags {
-                        Text(sevTags)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.tornadoRed)
-                    }
-//                }
+                if let sevTags = alert.severeRiskTags {
+                    Text(sevTags)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.tornadoRed)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-        .padding(14)
-        .cardBackground(cornerRadius: SkyAwareRadius.row, shadowOpacity: 0.04, shadowRadius: 4, shadowY: 1)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityTitle)
+        .accessibilityValue(accessibilityValue)
+        .accessibilityHint(accessibilityHint)
     }
 
     // MARK: - Helpers
+
+    private var accessibilityTitle: String {
+        switch alert.alertType {
+        case .mesoscale:
+            return "Mesoscale Discussion \(alert.number)"
+        case .watch:
+            return alert.title
+        }
+    }
+
+    private var accessibilityValue: String {
+        var parts: [String] = ["Issued \(relativeDate(alert.issued))"]
+
+        if let sevTags = alert.severeRiskTags?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           sevTags.isEmpty == false {
+            parts.append(sevTags.replacingOccurrences(of: "\n", with: ", "))
+        }
+
+        return parts.joined(separator: ". ")
+    }
+
+    private var accessibilityHint: String {
+        "Opens \(alert.alertType == .mesoscale ? "mesoscale discussion" : "weather alert") details."
+    }
     
     private func relativeDate(_ date: Date) -> String {
         Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
@@ -67,9 +99,33 @@ struct AlertRowView: View {
 }
 
 #Preview {
-    if let sample = MD.sampleDiscussionDTOs.first {
-        AlertRowView(alert: sample)
+    VStack(spacing: 12) {
+        if let sample = MD.sampleDiscussionDTOs.first {
+            AlertRowView(alert: sample)
+                .cardBackground(
+                    cornerRadius: SkyAwareRadius.row,
+                    shadowOpacity: 0.04,
+                    shadowRadius: 4,
+                    shadowY: 1
+                )
+        }
+
+        AlertRowView(alert: Watch.sampleWatchRows.last ?? Watch.sampleWatchRows[0])
+            .cardBackground(
+                cornerRadius: SkyAwareRadius.row,
+                shadowOpacity: 0.04,
+                shadowRadius: 4,
+                shadowY: 1
+            )
+
+        AlertRowView(alert: Watch.sampleWatchRows[3])
+            .cardBackground(
+                cornerRadius: SkyAwareRadius.row,
+                shadowOpacity: 0.04,
+                shadowRadius: 4,
+                shadowY: 1
+            )
     }
-    AlertRowView(alert: Watch.sampleWatchRows.last ?? Watch.sampleWatchRows[0])
-    AlertRowView(alert: Watch.sampleWatchRows[3])
+    .padding()
+    .background(Color(.skyAwareBackground))
 }

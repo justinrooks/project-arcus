@@ -192,7 +192,10 @@ private extension SkyAwareApp {
     @ViewBuilder
     var currentHomeView: some View {
         if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
-            HomeView(initialAlerts: Self.uiTestSeedWatches)
+            HomeView(
+                initialMesos: Self.uiTestSeedMesos,
+                initialAlerts: Self.uiTestSeedWatches
+            )
         } else {
             HomeView()
         }
@@ -307,15 +310,45 @@ private extension SkyAwareApp {
     }
 
     static var uiTestSeedWatches: [AlertDTO] {
+        let warningIssued = Date().addingTimeInterval(-900)
         let issued = Date().addingTimeInterval(-1_800)
         let olderIssued = Date().addingTimeInterval(-2_400)
         let ends = Date().addingTimeInterval(7_200)
         return [
             AlertDTO(
+                id: "ui-test-warning-001",
+                messageId: "ui-test-warning-message-001",
+                currentRevisionSent: warningIssued,
+                title: "UI Test Severe Thunderstorm Warning",
+                headline: "UI Test Severe Thunderstorm Warning Headline",
+                issued: warningIssued,
+                expires: ends,
+                ends: ends,
+                messageType: "Alert",
+                sender: "NWS Test Office",
+                severity: "Extreme",
+                urgency: "Immediate",
+                certainty: "Likely",
+                description: "UI test warning description for list ordering and accessibility validation. This longer warning title is used to exercise wrapping at accessibility text sizes.",
+                instruction: "Seek shelter immediately and stay away from windows.",
+                response: "Execute",
+                areaSummary: "Tulsa Metro",
+                geometryData: nil,
+                tornadoDetection: nil,
+                tornadoDamageThreat: nil,
+                maxWindGust: "70",
+                maxHailSize: "2.00",
+                windThreat: nil,
+                hailThreat: nil,
+                thunderstormDamageThreat: "Destructive",
+                flashFloodDetection: nil,
+                flashFloodDamageThreat: nil
+            ),
+            AlertDTO(
                 id: "ui-test-watch-001",
                 messageId: "ui-test-watch-message-001",
                 currentRevisionSent: issued,
-                title: "UI Test Tornado Watch",
+                title: "Tornado Watch",
                 headline: "UI Test Tornado Watch Headline",
                 issued: issued,
                 expires: ends,
@@ -370,6 +403,10 @@ private extension SkyAwareApp {
                 flashFloodDamageThreat: nil
             )
         ]
+    }
+
+    static var uiTestSeedMesos: [MdDTO] {
+        MD.sampleDiscussionDTOs
     }
 }
 

@@ -35,7 +35,7 @@ decisions from Git history.
 | 17 | AN-17 | [#233](https://github.com/justinrooks/project-arcus/issues/233) | Make Liquid Glass opt-in | Completed | Glass is now opt-in on shared card backgrounds; ordinary content surfaces fall back to stable cards by default. |
 | 18 | AN-18 | [#234](https://github.com/justinrooks/project-arcus/issues/234) | Reduce nested Summary surface chrome | Completed | Removed the outer Risk Snapshot surface so Current Conditions stays distinct while the hero tiles, rails, and supporting cards keep their own domain chrome. |
 | 19 | AN-19 | [#235](https://github.com/justinrooks/project-arcus/issues/235) | Move Settings to native Form structure | Not started | |
-| 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Not started | |
+| 20 | AN-20 | [#236](https://github.com/justinrooks/project-arcus/issues/236) | Native-align the Alerts list structure | Completed | Alerts now use native `List`/`Section` structure with `NavigationLink` rows, warning-first ordering is preserved, and the mixed warning/watch/meso smoke path is covered in UI tests. |
 | 21 | AN-21 | [#237](https://github.com/justinrooks/project-arcus/issues/237) | Native-align the Outlooks list structure | Not started | |
 | 22 | AN-22 | [#238](https://github.com/justinrooks/project-arcus/issues/238) | Distinguish map unavailable, stale, and confirmed-empty states | Completed | Map scenes now carry explicit loading, resolving, current, confirmed-empty, stale, and unavailable presentation states so failed refreshes do not collapse to confirmed no-risk language. |
 | 23 | AN-23 | [#239](https://github.com/justinrooks/project-arcus/issues/239) | Build the warning legend from rendered warnings | Completed | Legend rows now derive from the rendered warning overlays, dedupe by displayed warning type, and keep the warning-state legend truthful when overlay visibility or stale map state changes. |
@@ -887,7 +887,6 @@ Model used: gpt-5.4 / medium
 #### Deferred Work
 
 - AN-19 still owns the native Settings structure migration.
-- AN-20 still owns the native Alerts list structure.
 - AN-21 still owns the native Outlooks list structure.
 - Any future card that genuinely needs glass should use the explicit `allowsGlass: true` opt-in or the new `glassCardBackground(...)` helper rather than relying on a shared default.
 
@@ -895,7 +894,7 @@ Model used: gpt-5.4 / medium
 
 - The shared policy is now content-first. If a surface does not need hierarchy or interaction, it should not ask for glass.
 - Keep using `skyAwareSurface` and `.glass` button styles for navigation chrome and floating interactive controls; those are intentionally separate from content cards.
-- AN-19 through AN-21 should inherit the stable card default rather than reintroducing glass as a visual crutch while moving to native structure.
+- AN-19 and AN-21 should inherit the stable card default rather than reintroducing glass as a visual crutch while moving to native structure.
 - Residual risk: the XcodeBuildMCP test result summary did not report per-test counts even when the invoked smoke tests completed successfully, so future validation should still inspect the bundle or run additional targeted checks if exact per-test accounting matters.
 
 ### AN-18 / GitHub #234 - Reduce nested Summary surface chrome
@@ -931,7 +930,6 @@ Model used: gpt-5.4 / medium
 #### Deferred Work
 
 - AN-19 still owns the native Settings structure migration.
-- AN-20 still owns the native Alerts list structure.
 - AN-21 still owns the native Outlooks list structure.
 - AN-27 still owns the final spacing-scale polish pass once the remaining native-structure issues land.
 
@@ -940,6 +938,57 @@ Model used: gpt-5.4 / medium
 - Keep `Current Conditions` as the only top-level Summary card; any future Summary hierarchy work should trim within the remaining content stack rather than adding another wrapper around the risk snapshot.
 - The risk tiles and rails should continue to own their own identity through typography, spacing, and semantic color instead of extra chrome.
 - AN-27 should treat this as the baseline: hierarchy first, spacing second, and no new decorative surface layers.
+
+### AN-20 / GitHub #236 - Native-align the Alerts list structure
+
+Status: Completed
+Date: 2026-06-15
+Model used: gpt-5.4-mini / high
+
+#### Scope
+
+- Replaced the Alerts screen's custom `ScrollView`/`LazyVStack` stack with native `List` and `Section` structure.
+- Kept the overview card, warning-first ordering, and detail destinations intact while moving alert rows onto native `NavigationLink` rows.
+- Preserved the existing alert row visual language and severity cues, but removed the manual chevron so the link affordance comes from native navigation.
+- Added a dedicated meso row identifier so mixed Alerts UI smoke coverage can target both alert and mesoscale rows directly.
+- Seeded UI-test static home with a warning, the existing two watches, and mesoscale discussions so the Alerts tab can validate mixed ordering and list sections.
+
+#### Files Changed
+
+- `Sources/Features/Alert/AlertView.swift`
+- `Sources/Features/Alert/AlertRowView.swift`
+- `Sources/App/SkyAwareApp.swift`
+- `Tests/UITests/SkyAwareUITests.swift`
+- `docs/plans/apple-native-ui-alignment-progress.md`
+
+#### Behavior Preserved
+
+- Alert ingestion, classification, filtering, ordering, persistence, expiration, refresh, and notification behavior were unchanged.
+- The warning-first ordering contract from AN-01 stayed intact.
+- Alert Detail retained the full VoiceOver content from AN-02.
+- Existing alert row identifiers were preserved; only a new meso row identifier was added for direct smoke coverage.
+- No new alert groupings, hazard semantics, or visual color meanings were introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/AlertPresentationOrderingTests test -resultBundlePath /private/tmp/AN20-alert-ordering.xcresult`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareUITests/testAlertCenterOrdersWarningsBeforeWatchesAndMesoscaleDiscussions -only-testing:SkyAwareUITests/testAlertCenterRowsRemainReadableAtAccessibilityTextSizes -only-testing:SkyAwareUITests/testAlertDetailVoiceOverKeepsFullInstructionAndSummaryText -only-testing:SkyAwareUITests/testAlertCenterSecondAlertTapPushesExpectedDetailAndBackReturnsToList test -resultBundlePath /private/tmp/AN20-alert-ui.xcresult`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build -resultBundlePath /private/tmp/AN20-alert-build.xcresult`
+- `xcrun xccov view --report /private/tmp/AN20-alert-ui.xcresult`
+
+#### Deferred Work
+
+- The Alerts screen still does not model a distinct loading versus unavailable presentation state.
+- AN-21 still owns the native Outlooks list structure.
+- AN-27 still owns the final spacing-scale polish pass once the remaining native-structure issues land.
+
+#### Handoff Notes
+
+- Keep Alerts on `List`/`Section`; do not reintroduce the old card-stack scroll container.
+- Keep the alert row label/view split: the row content owns the visual layout, while the list row wrapper owns native navigation and list styling.
+- Preserve the meso identifier if future smoke tests need direct row targeting.
+- AN-27 should treat this screen as already native-structured; only spacing and polish should be left.
+- AN-28 should verify light/dark, accessibility sizes, and empty-state wording against the native list baseline rather than re-litigating structure.
 
 ### AN-22 / GitHub #238 - Distinguish map unavailable, stale, and confirmed-empty states
 

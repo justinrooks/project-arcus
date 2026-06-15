@@ -61,65 +61,60 @@ struct AlertView: View {
     }
     
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 18) {
+        List {
+            Section {
                 overviewCard
-                
-                if sortedAlerts.isEmpty == false {
-                    alertSection(
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
+
+            if sortedAlerts.isEmpty == false {
+                Section {
+                    ForEach(sortedAlerts) { alert in
+                        alertNavigationRow(
+                            identifier: "alert-center-watch-row-\(alert.id)",
+                            destination: {
+                                alertDetail(for: alert)
+                            }
+                        ) {
+                            AlertRowView(alert: alert)
+                        }
+                    }
+                } header: {
+                    alertSectionHeader(
                         title: "Alerts",
                         subtitle: "\(alerts.count) active",
                         symbol: "exclamationmark.triangle.fill"
-                    ) {
-                        ForEach(sortedAlerts) { alert in
-                            NavigationLink {
-                                alertDetail(for: alert)
-                            } label: {
-                                AlertRowView(alert: alert)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
+                    )
+                }
+            }
+
+            if sortedMesos.isEmpty == false {
+                Section {
+                    ForEach(sortedMesos) { meso in
+                        alertNavigationRow(
+                            identifier: "alert-center-meso-row-\(meso.id)",
+                            destination: {
+                                mesoDetail(for: meso)
                             }
-                            .buttonStyle(
-                                SkyAwarePressableButtonStyle(
-                                    cornerRadius: SkyAwareRadius.row,
-                                    pressedScale: 0.988,
-                                    pressedOverlayOpacity: 0.06
-                                )
-                            )
-                            .accessibilityIdentifier("alert-center-watch-row-\(alert.id)")
+                        ) {
+                            AlertRowView(alert: meso)
                         }
                     }
-                }
-                
-                if sortedMesos.isEmpty == false {
-                    alertSection(
+                } header: {
+                    alertSectionHeader(
                         title: "Mesoscale Discussions",
                         subtitle: "\(mesos.count) active",
                         symbol: "waveform.path.ecg"
-                    ) {
-                        ForEach(sortedMesos) { meso in
-                            NavigationLink {
-                                mesoDetail(for: meso)
-                            } label: {
-                                AlertRowView(alert: meso)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(
-                                SkyAwarePressableButtonStyle(
-                                    cornerRadius: SkyAwareRadius.row,
-                                    pressedScale: 0.988,
-                                    pressedOverlayOpacity: 0.06
-                                )
-                            )
-                        }
-                    }
+                    )
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-            .padding(.bottom, 24)
         }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(15)
+        .scrollContentBackground(.hidden)
+        .navigationLinkIndicatorVisibility(.hidden)
         .refreshable {
             guard let onRefresh else { return }
             await onRefresh()
@@ -130,10 +125,30 @@ struct AlertView: View {
             onFocusedAlertRequestHandled?(focusedAlertRequest.id)
         }
         .scrollIndicators(.hidden)
+        .contentMargins(.top, 0, for: .scrollContent)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .navigationDestination(item: $selectedAlert) { alert in
             alertDetail(for: alert)
         }
+    }
+
+    private func alertNavigationRow<Destination: View, RowContent: View>(
+        identifier: String,
+        @ViewBuilder destination: @escaping () -> Destination,
+        @ViewBuilder label: () -> RowContent
+    ) -> some View {
+        NavigationLink(destination: destination) {
+            label()
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+        .cardRowBackground(
+            cornerRadius: SkyAwareRadius.row,
+            shadowOpacity: 0.04,
+            shadowRadius: 4,
+            shadowY: 1
+        )
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
     }
 
     private func alertDetail(for alert: AlertDTO) -> some View {
@@ -166,8 +181,8 @@ struct AlertView: View {
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(
-                hasNoAlerts ? "Quiet right now" : activeLocalAlertLabel,
-                systemImage: hasNoAlerts ? "checkmark.shield" : "bolt.badge.clock"
+                hasNoAlerts ? "No active alerts" : activeLocalAlertLabel,
+                systemImage: hasNoAlerts ? "bell" : "bolt.badge.clock"
             )
             .symbolVariant(.fill)
             .font(.headline.weight(.semibold))
@@ -205,54 +220,58 @@ struct AlertView: View {
         
         return "Warnings are shown before watches, then mesoscale discussions. Within each group, items that end sooner are surfaced first."
     }
-    
-    private func alertSection<Content: View>(
+
+    @ViewBuilder
+    private func alertSectionHeader(
         title: String,
         subtitle: String,
-        symbol: String,
-        @ViewBuilder content: () -> Content
+        symbol: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if adaptiveLayout.usesAccessibilityLayout {
-                Label(title, systemImage: symbol)
-                    .font(.headline.weight(.semibold))
-            } else {
-                HStack {
-                    Label(title, systemImage: symbol)
-                        .font(.headline.weight(.semibold))
-                    Spacer()
-                    Text(subtitle)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
-                }
-            }
-            
-            content()
-        }
-        .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-    }
-    
-    private func emptySectionCard(title: String, subtitle: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        if adaptiveLayout.usesAccessibilityLayout {
             Label(title, systemImage: symbol)
                 .font(.headline.weight(.semibold))
-            Text(subtitle)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .textCase(nil)
+        } else {
+            HStack {
+                Label(title, systemImage: symbol)
+                    .font(.headline.weight(.semibold))
+                Spacer()
+                Text(subtitle)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+            }
+            .textCase(nil)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .cardBackground(cornerRadius: SkyAwareRadius.section, shadowOpacity: 0.06, shadowRadius: 6, shadowY: 2)
     }
 }
 
 #Preview {
     NavigationStack {
         AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+            .navigationTitle("Active Alerts")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Empty") {
+    NavigationStack {
+        AlertView(mesos: [], alerts: [])
+            .navigationTitle("Active Alerts")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+    }
+}
+
+#Preview("Accessibility") {
+    NavigationStack {
+        AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+            .environment(\.dynamicTypeSize, .accessibility3)
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.visible, for: .navigationBar)

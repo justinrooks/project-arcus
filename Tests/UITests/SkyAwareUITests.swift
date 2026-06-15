@@ -542,6 +542,72 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testAlertCenterOrdersWarningsBeforeWatchesAndMesoscaleDiscussions() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
+        alertsTab.tap()
+
+        let warningRow = app.buttons["alert-center-watch-row-ui-test-warning-001"]
+        let watchRow = app.buttons["alert-center-watch-row-ui-test-watch-001"]
+        let mesoRow = app.buttons["alert-center-meso-row-1893"]
+
+        XCTAssertTrue(warningRow.waitForExistence(timeout: 10), "Expected seeded warning row to appear.")
+        XCTAssertTrue(watchRow.waitForExistence(timeout: 10), "Expected seeded watch row to appear.")
+        XCTAssertTrue(mesoRow.waitForExistence(timeout: 10), "Expected seeded mesoscale row to appear.")
+
+        XCTAssertLessThan(warningRow.frame.minY, watchRow.frame.minY, "Expected warnings to appear before watches.")
+        XCTAssertLessThan(watchRow.frame.minY, mesoRow.frame.minY, "Expected watches to appear before mesoscale discussions.")
+
+        XCTAssertTrue(
+            warningRow.label.contains("Severe Thunderstorm Warning for the Tulsa Metro Area and Surrounding Counties"),
+            "Expected the long warning title to remain part of the accessibility label."
+        )
+        XCTAssertTrue(
+            mesoRow.label.contains("Mesoscale Discussion 1893"),
+            "Expected the mesoscale row label to identify the discussion type."
+        )
+
+        warningRow.tap()
+        XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected warning row tap to push detail.")
+
+        let backButton = app.navigationBars["Weather Alert"].buttons["Active Alerts"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 10), "Expected back button to return to the alert list.")
+        backButton.tap()
+
+        XCTAssertTrue(app.navigationBars["Active Alerts"].waitForExistence(timeout: 10), "Expected back navigation to return to the alert list.")
+    }
+
+    @MainActor
+    func testAlertCenterRowsRemainReadableAtAccessibilityTextSizes() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
+        alertsTab.tap()
+
+        let warningRow = app.buttons["alert-center-watch-row-ui-test-warning-001"]
+        XCTAssertTrue(warningRow.waitForExistence(timeout: 10), "Expected seeded warning row to appear at accessibility text sizes.")
+        XCTAssertGreaterThanOrEqual(warningRow.frame.size.height, 44, "Expected warning row touch target to meet the 44-point minimum.")
+
+        let mesoRow = app.buttons["alert-center-meso-row-1893"]
+        XCTAssertTrue(mesoRow.waitForExistence(timeout: 10), "Expected seeded mesoscale row to remain reachable at accessibility text sizes.")
+        XCTAssertGreaterThanOrEqual(mesoRow.frame.size.height, 44, "Expected mesoscale row touch target to meet the 44-point minimum.")
+    }
+
+    @MainActor
     func testAlertCenterSecondAlertTapPushesExpectedDetailAndBackReturnsToList() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
