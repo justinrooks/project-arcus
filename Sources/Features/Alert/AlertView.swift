@@ -17,6 +17,7 @@ struct AlertView: View {
     let onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)?
     
     @State private var selectedAlert: AlertDTO?
+    @State private var activeTip: MesoscaleDiscussionTip?
     
     private var hasNoAlerts: Bool {
         alerts.isEmpty && mesos.isEmpty
@@ -103,7 +104,7 @@ struct AlertView: View {
                         }
                     }
                 } header: {
-                    alertSectionHeader(
+                    mesoscaleSectionHeader(
                         title: "Mesoscale Discussions",
                         subtitle: "\(mesos.count) active",
                         symbol: "waveform.path.ecg"
@@ -228,13 +229,19 @@ struct AlertView: View {
         symbol: String
     ) -> some View {
         if adaptiveLayout.usesAccessibilityLayout {
-            Label(title, systemImage: symbol)
-                .font(.headline.weight(.semibold))
-                .textCase(nil)
+            HStack(alignment: .center, spacing: 6) {
+                Image(systemName: symbol)
+                Text(title)
+            }
+            .font(.headline.weight(.semibold))
+            .textCase(nil)
         } else {
             HStack {
-                Label(title, systemImage: symbol)
-                    .font(.headline.weight(.semibold))
+                HStack(alignment: .center, spacing: 6) {
+                    Image(systemName: symbol)
+                    Text(title)
+                }
+                .font(.headline.weight(.semibold))
                 Spacer()
                 Text(subtitle)
                     .font(.caption.weight(.medium))
@@ -245,6 +252,81 @@ struct AlertView: View {
             }
             .textCase(nil)
         }
+    }
+
+    @ViewBuilder
+    private func mesoscaleSectionHeader(
+        title: String,
+        subtitle: String,
+        symbol: String
+    ) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            Image(systemName: symbol)
+            Text(title)
+//            Label(title, systemImage: symbol)
+//                .font(.headline.weight(.semibold))
+//                .textCase(nil)
+
+            Button {
+                activeTip = activeTip == .mesoscaleDiscussion ? nil : .mesoscaleDiscussion
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 44, height: 44, alignment: .center)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("alert-center-meso-info-button")
+            .accessibilityLabel("What is a mesoscale discussion?")
+            .accessibilityHint("Shows a short explanation.")
+            .popover(item: $activeTip, attachmentAnchor: .rect(.bounds), arrowEdge: .top) { tip in
+                switch tip {
+                case .mesoscaleDiscussion:
+                    MesoscaleDiscussionTipView()
+                        .presentationCompactAdaptation(.popover)
+                }
+            }
+            .font(.headline.weight(.semibold))
+
+            Spacer()
+
+            Text(subtitle)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .skyAwareChip(cornerRadius: SkyAwareRadius.chip, tint: .white.opacity(0.08))
+        }
+        .textCase(nil)
+    }
+}
+
+private enum MesoscaleDiscussionTip: String, Identifiable {
+    case mesoscaleDiscussion
+
+    var id: String { rawValue }
+}
+
+private struct MesoscaleDiscussionTipView: View {
+    private var bodyCopy: String {
+        "A mesoscale discussion is a short forecast from the National Weather Service. It highlights where severe weather may become more likely, so you can keep a closer eye on that area. It is not a warning, but it can be an early heads-up."
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Mesoscale Discussion")
+                .font(.headline.weight(.semibold))
+
+            Text(bodyCopy)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("alert-center-meso-tip-body")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .frame(width: 360, alignment: .leading)
     }
 }
 

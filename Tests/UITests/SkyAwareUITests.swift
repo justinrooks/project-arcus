@@ -632,6 +632,34 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testAlertCenterMesoscaleInfoBubbleOpensExplanationPopover() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launch()
+
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
+        alertsTab.tap()
+
+        let infoButton = app.buttons["alert-center-meso-info-button"]
+        XCTAssertTrue(infoButton.waitForExistence(timeout: 10), "Expected mesoscale info bubble button to appear.")
+        XCTAssertGreaterThanOrEqual(infoButton.frame.size.width, 44, "Expected mesoscale info bubble touch target to meet the 44-point minimum.")
+        XCTAssertGreaterThanOrEqual(infoButton.frame.size.height, 44, "Expected mesoscale info bubble touch target to meet the 44-point minimum.")
+
+        infoButton.tap()
+
+        let explanation = app.staticTexts["alert-center-meso-tip-body"]
+        XCTAssertTrue(explanation.waitForExistence(timeout: 10), "Expected mesoscale explanation popover to appear.")
+        XCTAssertTrue(
+            explanation.label.contains("A mesoscale discussion is a short forecast from the National Weather Service."),
+            "Expected the popover to show the friendly mesoscale explanation."
+        )
+    }
+
+    @MainActor
     func testAlertCenterSecondAlertTapPushesExpectedDetailAndBackReturnsToList() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
