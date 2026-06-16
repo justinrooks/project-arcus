@@ -694,7 +694,223 @@ private extension AnyTransition {
     }
 }
 
+#Preview("Summary – No Cache Resolving") {
+    NavigationStack {
+        SummaryPreviewContent(
+            snap: nil,
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            weather: nil,
+            todayContentState: .noCacheResolving,
+            readinessState: .loadingLocalData,
+            outlook: nil,
+            mesos: [],
+            alerts: [],
+            hasCachedProjectionForAlerts: false,
+            lastHotAlertsLoadAt: nil
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Valid Cache Current") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .extreme,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Composite") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .moderate,
+            severeRisk: .hail(probability: 0.20),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            resolutionState: SummaryPreviewData.calmRefreshState()
+        )
+        .environment(\.colorScheme, .dark)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Empty Local Alerts") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: [],
+            alerts: [],
+            resolutionState: SummaryPreviewData.calmRefreshState(primaryTask: .alerts)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Stale Cache") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .degraded,
+            showsOfflineToken: true,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows
+        )
+        .environment(\.colorScheme, .light)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Stale Refreshing") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .moderate,
+            severeRisk: .hail(probability: 0.15),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .staleRefreshing,
+            showsOfflineToken: true,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: [],
+            alerts: [],
+            resolutionState: SummaryPreviewData.calmRefreshState(primaryTask: .weather)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Degraded With Useful Cached Content") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .high,
+            severeRisk: .tornado(probability: 0.20),
+            fireRisk: .extreme,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .degraded,
+            showsOfflineToken: true,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Unavailable No Useful Data") {
+    NavigationStack {
+        SummaryPreviewContent(
+            snap: nil,
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            weather: nil,
+            todayContentState: .unavailable,
+            readinessState: .ready,
+            outlook: nil,
+            mesos: [],
+            alerts: [],
+            hasCachedProjectionForAlerts: false,
+            lastHotAlertsLoadAt: nil
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Partial Data Available") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .moderate,
+            severeRisk: nil,
+            fireRisk: nil,
+            weather: nil,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: [MD.sampleDiscussionDTOs[0]],
+            alerts: [],
+            hasCachedProjectionForAlerts: true,
+            lastHotAlertsLoadAt: .now
+        )
+        .environment(\.dynamicTypeSize, .accessibility3)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Current Weather Retained During Refresh") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            resolutionState: SummaryPreviewData.calmRefreshState(primaryTask: .weather)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Atmospheric Values Retained During Refresh") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            resolutionState: SummaryPreviewData.calmRefreshState(primaryTask: .weather)
+        )
+        .environment(\.colorScheme, .dark)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Local Alerts Update Present") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            resolutionState: SummaryPreviewData.calmRefreshState(primaryTask: .alerts)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 private struct SummaryPreviewContent: View {
+    let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
@@ -705,8 +921,14 @@ private struct SummaryPreviewContent: View {
     let outlook: ConvectiveOutlookDTO?
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
+    let resolutionState: SummaryResolutionState
+    let localAlertsDisplayState: LocalAlertsDisplayState?
+    let hasCachedProjectionForAlerts: Bool
+    let lastHotAlertsLoadAt: Date?
+    let isCurrentContextResolvedInPipeline: Bool
 
     init(
+        snap: LocationSnapshot? = SummaryPreviewData.snapshot,
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
         fireRisk: FireRiskLevel? = .extreme,
@@ -716,8 +938,14 @@ private struct SummaryPreviewContent: View {
         showsOfflineToken: Bool = false,
         outlook: ConvectiveOutlookDTO? = ConvectiveOutlook.sampleOutlookDtos.first,
         mesos: [MdDTO] = MD.sampleDiscussionDTOs,
-        alerts: [AlertDTO] = Watch.sampleWatchRows
+        alerts: [AlertDTO] = Watch.sampleWatchRows,
+        resolutionState: SummaryResolutionState = SummaryResolutionState(),
+        localAlertsDisplayState: LocalAlertsDisplayState? = nil,
+        hasCachedProjectionForAlerts: Bool = true,
+        lastHotAlertsLoadAt: Date? = .now,
+        isCurrentContextResolvedInPipeline: Bool = false
     ) {
+        self.snap = snap
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
@@ -728,25 +956,25 @@ private struct SummaryPreviewContent: View {
         self.outlook = outlook
         self.mesos = mesos
         self.alerts = alerts
+        self.resolutionState = resolutionState
+        self.localAlertsDisplayState = localAlertsDisplayState
+        self.hasCachedProjectionForAlerts = hasCachedProjectionForAlerts
+        self.lastHotAlertsLoadAt = lastHotAlertsLoadAt
+        self.isCurrentContextResolvedInPipeline = isCurrentContextResolvedInPipeline
     }
 
     var body: some View {
-        let localAlertsDisplayState = LocalAlertsDisplayState.from(
+        let localAlertsDisplayState = localAlertsDisplayState ?? LocalAlertsDisplayState.from(
             todayContentState: todayContentState,
-            hasCachedProjection: true,
-            isCurrentContextResolvedInPipeline: false,
-            lastHotAlertsLoadAt: .now,
+            hasCachedProjection: hasCachedProjectionForAlerts,
+            isCurrentContextResolvedInPipeline: isCurrentContextResolvedInPipeline,
+            lastHotAlertsLoadAt: lastHotAlertsLoadAt,
             hasActiveAlerts: !mesos.isEmpty || !alerts.isEmpty,
             isLocationUnavailable: readinessState == .locationUnavailable
         )
 
         SummaryView(
-            snap: .init(
-                coordinates: .init(latitude: 39.75, longitude: -104.44),
-                timestamp: .now,
-                accuracy: 20,
-                placemarkSummary: "Bennett, CO"
-            ),
+            snap: snap,
             stormRisk: stormRisk,
             severeRisk: severeRisk,
             fireRisk: fireRisk,
@@ -757,7 +985,7 @@ private struct SummaryPreviewContent: View {
             todayContentState: todayContentState,
             localAlertsDisplayState: localAlertsDisplayState,
             readinessState: readinessState,
-            resolutionState: SummaryResolutionState(),
+            resolutionState: resolutionState,
             showsOfflineToken: showsOfflineToken,
             headerCondenseProgress: 0,
             locationReliabilityRailState: .init(onOpen: {}, onDismiss: {}),
@@ -769,6 +997,13 @@ private struct SummaryPreviewContent: View {
 }
 
 private enum SummaryPreviewData {
+    static let snapshot = LocationSnapshot(
+        coordinates: .init(latitude: 39.75, longitude: -104.44),
+        timestamp: .now,
+        accuracy: 20,
+        placemarkSummary: "Bennett, CO"
+    )
+
     static let weather = SummaryWeather(
         temperature: Measurement(value: 82.0, unit: .fahrenheit),
         symbolName: "sun.max.fill",
@@ -782,4 +1017,10 @@ private enum SummaryPreviewData {
         pressure: Measurement(value: 29.78, unit: .inchesOfMercury),
         pressureTrend: "falling"
     )
+
+    static func calmRefreshState(primaryTask: SummaryProviderTask = .weather) -> SummaryResolutionState {
+        var state = SummaryResolutionState()
+        state.begin(task: primaryTask, sections: [.conditions, .atmosphere, .alerts, .outlook])
+        return state
+    }
 }

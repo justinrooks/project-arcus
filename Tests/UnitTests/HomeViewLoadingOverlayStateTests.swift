@@ -1083,6 +1083,218 @@ struct TodayContentStateTests {
     }
 }
 
+@Suite("Today Surface State Flow")
+@MainActor
+struct TodaySurfaceStateFlowTests {
+    private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+    @Test("first launch without cache keeps the calm resolving surface")
+    func firstLaunchWithoutCache_keepsCalmResolvingSurface() {
+        let state = TodayContentState.from(
+            readinessState: .loadingLocalData,
+            hasCachedContent: false,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: false
+        )
+
+        #expect(state == .noCacheResolving)
+        #expect(state.showsResolvingSurface)
+        #expect(state.showsCalmUpdatingCue == false)
+        #expect(state.allowsSectionResolvingTreatment)
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .loadingLocalData,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: false,
+                isLocationUnavailable: false
+            )
+        )
+    }
+
+    @Test("valid cached launch stays on content and avoids resolving theater")
+    func validCachedLaunch_avoidsResolvingTheater() {
+        let state = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: false
+        )
+
+        #expect(state == .current)
+        #expect(state.showsResolvingSurface == false)
+        #expect(state.showsCalmUpdatingCue == false)
+        #expect(state.suppressesRoutineRefreshMotion == false)
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .ready,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: true,
+                isLocationUnavailable: false
+            ) == false
+        )
+    }
+
+    @Test("cached refresh keeps the page calm and suppresses full-content transitions")
+    func cachedRefresh_keepsThePageCalm() {
+        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
+        #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
+        #expect(TodayContentState.cachedRefreshing.showsResolvingSurface == false)
+        #expect(TodayContentState.staleRefreshing.suppressesRoutineRefreshMotion == false)
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .ready,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: true,
+                isLocationUnavailable: false
+            ) == false
+        )
+    }
+
+    @Test("stale cache keeps useful content visible during offline refresh")
+    func staleCache_keepsUsefulContentVisible() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: true
+            ) == .staleRefreshing
+        )
+        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.staleRefreshing.showsResolvingSurface == false)
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: true,
+                isResolving: false
+            ) == .stale
+        )
+
+        let localAlertsState = LocalAlertsDisplayState.from(
+            todayContentState: .staleRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(localAlertsState == .staleOrDegraded(content: .empty))
+        #expect(localAlertsState.presentationState == .empty)
+        #expect(localAlertsState.showsOfflineStatusCopy == false)
+    }
+
+    @Test("degraded cache keeps useful content visible when refresh is idle offline")
+    func degradedCache_keepsUsefulContentVisible() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: true
+            ) == .degraded
+        )
+        #expect(TodayContentState.degraded.showsCalmUpdatingCue == false)
+        #expect(TodayContentState.degraded.showsResolvingSurface == false)
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: true,
+                isResolving: false
+            ) == .stale
+        )
+
+        let localAlertsState = LocalAlertsDisplayState.from(
+            todayContentState: .degraded,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(localAlertsState == .staleOrDegraded(content: .populated))
+        #expect(localAlertsState.presentationState == .alerts)
+        #expect(localAlertsState.showsOfflineStatusCopy)
+    }
+
+    @Test("unavailable only appears when no useful data exists")
+    func unavailable_requiresNoUsefulData() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .unavailable
+        )
+        #expect(TodayContentState.unavailable.showsCalmUpdatingCue == false)
+        #expect(TodayContentState.unavailable.showsResolvingSurface == false)
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: false,
+                isResolving: true
+            ) == .unavailable
+        )
+
+        let localAlertsState = LocalAlertsDisplayState.from(
+            todayContentState: .unavailable,
+            hasCachedProjection: false,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: nil,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(localAlertsState == .unavailable(reason: .noUsefulAlertState))
+        #expect(localAlertsState.presentationState == .unavailable)
+    }
+
+    @Test("foreground-return weather retention stays aligned at the Today level")
+    func foregroundReturn_weatherRetentionStaysAligned() {
+        let weather = SummaryWeather(
+            temperature: Measurement(value: 76, unit: .fahrenheit),
+            symbolName: "sun.max.fill",
+            conditionText: "Clear",
+            asOf: .now,
+            dewPoint: Measurement(value: 50, unit: .fahrenheit),
+            humidity: 0.35,
+            windSpeed: Measurement(value: 8, unit: .milesPerHour),
+            windGust: nil,
+            windDirection: "NW",
+            pressure: Measurement(value: 29.92, unit: .inchesOfMercury),
+            pressureTrend: "steady"
+        )
+        let identity = SummaryWeatherLocationIdentity(
+            snapshot: .init(
+                coordinates: .init(latitude: 39.7392, longitude: -104.9903),
+                timestamp: .now,
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: nil
+            )
+        )
+
+        let retained = TodayVisibleWeatherState.resolve(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: identity,
+            weatherLocationIdentity: identity
+        )
+
+        #expect(retained.weather == weather)
+        #expect(retained.locationIdentity == identity)
+    }
+}
+
 @Suite("HomeView Outlook Display")
 @MainActor
 struct HomeViewOutlookDisplayTests {

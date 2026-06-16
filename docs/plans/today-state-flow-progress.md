@@ -23,7 +23,7 @@ deliberately left alone, and what the next session should know.
 | 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Complete | Canonical Today state now drives the lone calm update cue; section resolving treatment is suppressed during cached refresh. |
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Complete | Narrowed Today motion scope so cached-refreshing no longer rekeys alert content or participates in broad stack transitions. |
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Complete | Provider progress now gates orchestration only; Today keeps cached content visible until coherent snapshot commit, and empty-success outlooks preserve cached values explicitly. |
-| 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Not started | Final validation/support issue after TV-01 through TV-06. |
+| 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Complete | Final validation/support issue after TV-01 through TV-06. |
 | 8 | LA-01 | [#256](https://github.com/justinrooks/project-arcus/issues/256) | Define Local Alerts display state with cache provenance | `gpt-5.4-mini / high` | Complete | Alert-specific state semantics now preserve live vs cached provenance, cached refresh, stale/degraded, and true unavailable boundaries. |
 | 9 | LA-02 | [#257](https://github.com/justinrooks/project-arcus/issues/257) | Make Local Alerts refresh treatment calm and non-duplicative | `gpt-5.4-mini / medium` | Complete | Local Alerts now derives refresh treatment from `LocalAlertsDisplayState` so cached refreshes stay steady and only useful offline status copy remains. |
 | 10 | LA-03 | [#258](https://github.com/justinrooks/project-arcus/issues/258) | Stabilize ActiveAlertSummaryView transitions and height behavior | `gpt-5.4-mini / high` | Not started | Alert card local state/height mechanics. Depends on LA-01/LA-02. |
@@ -578,11 +578,10 @@ Model used: `gpt-5.4-mini / high`
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests`
   - Passed.
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" build`
-  - Pending at the time of this ledger update; rerun required before final signoff.
+  - Passed.
 
 #### Deferred Work
 
-- TV-07 remains open for Today previews and transition mapping tests.
 - Provider-side sequencing and cadence work remain out of scope.
 - Any broader Outlook tab behavior beyond explicit empty-success preservation is deferred.
 
@@ -594,7 +593,74 @@ Model used: `gpt-5.4-mini / high`
   “first live array entry wins.”
 - If the next issue wants more visual polish, it should build on this stable display boundary instead of reintroducing
   raw progress-driven section resets.
-- #255 should focus on preview and transition coverage, not on more display-state mechanics.
+- #255 has now closed the preview and transition coverage gap for the composed Today surface.
+
+### TV-07 / GitHub #255 - Add Today state-flow previews and transition mapping tests
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / medium`
+
+#### Scope
+
+- Added a focused Today surface state-flow suite covering:
+  - first launch with no cache
+  - valid cached launch
+  - cached-refreshing transition policy
+  - stale cache
+  - degraded cache
+  - unavailable/no useful data
+  - foreground-return visible-weather retention
+- Kept the Local Alerts matrix out of this issue beyond composed Today representation.
+- Expanded `SummaryView` preview fixtures so the Today surface can be previewed in self-contained states without live
+  services.
+- Added explicit previews for:
+  - no-cache resolving
+  - valid cache/current
+  - cached-refreshing composite
+  - cached-refreshing with empty Local Alerts
+  - stale cache
+  - stale refreshing
+  - degraded with useful cached content
+  - unavailable/no useful data
+  - partial data available
+  - current weather retained during refresh
+  - atmospheric values retained during refresh
+  - Local Alerts update present
+  - light mode, dark mode, and Large Dynamic Type coverage
+
+#### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering preserved.
+- Provider and refresh cadence behavior unchanged.
+- Local Alerts section-specific provenance and transition details were not re-opened here.
+- Weather, risk, and outlook semantics were not changed.
+- No live network dependencies were introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" build`
+  - Passed.
+
+#### Deferred Work
+
+- Local Alerts detailed transition cleanup remains in #259.
+- No smoke UI test was needed because the unit tests and previews covered the requested Today-level acceptance matrix.
+
+#### Handoff Notes
+
+- The Today surface now has durable page-level validation for cache roll-forward behavior.
+- Local Alerts is represented in composed Today scenarios, but the finer alert-card microscope remains with #259.
+- If a future regression appears in page motion or top-level cue count, start with the Today state-flow tests in
+  `HomeViewLoadingOverlayStateTests.swift` and the new Summary previews.
 
 ### LA-00 / GitHub #248 - Local Alerts Section State-Flow Follow-Up Audit
 
