@@ -1,3 +1,14 @@
+SkyAware Unreleased makes Today open with cached content immediately, keeps useful content visible during refresh, and calms Local Alerts transitions.
+
+Highlights:
+- Today now avoids resolving/loading flashes when cached content is already available.
+- Cached refreshes keep visible weather in place while section updates complete coherently.
+- Local Alerts transitions stay calmer and more stable during refresh.
+- Deterministic coverage and previews were added for Today state-flow behavior across cached, stale, degraded, unavailable, partial, light, dark, and Large Dynamic Type states.
+
+Maintenance:
+- The Today state-flow runbook and progress ledger were updated with validation notes.
+
 SkyAware v1.0.1(72) makes the APNs device token easier to copy in Settings diagnostics and hardens alert handling for legacy payload shapes.
 
 Highlights:

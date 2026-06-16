@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Overview
+This build makes Today open with cached content immediately, keeps useful content visible during refresh, and smooths Local Alerts presentation during refresh.
+
+### Highlights
+- Today now keeps cached content visible during refresh instead of flashing the resolving surface when useful content already exists.
+- Local Alerts refreshes more calmly with provenance-aware display and stabilized transitions.
+- Visible weather and section updates stay coherent through refresh completion.
+- Deterministic coverage and previews were expanded for cached, stale, degraded, unavailable, partial, light, dark, and Large Dynamic Type states.
+
+### Maintenance
+- The Today state-flow runbook and progress ledger were updated with validation notes.
+
 ## v1.0.1(72)
 
 ### Overview

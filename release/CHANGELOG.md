@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### UI / UX
+- Today now renders cached content immediately and keeps useful content visible during refresh, avoiding loading-flash theater on the landing surface.
+<!-- evidence: 38a0b29 -->
+- Local Alerts stays calmer during refresh with provenance-aware presentation and stabilized card transitions.
+<!-- evidence: 38a0b29 -->
+
+### Reliability
+- Cached refreshes preserve visible weather and complete their section updates coherently before refresh finishes.
+<!-- evidence: 38a0b29 -->
+
+### Tests / QA
+- Added deterministic coverage and previews for Today and Local Alerts state-flow behavior across cached, stale, degraded, unavailable, partial, light, dark, and Large Dynamic Type states.
+<!-- evidence: 38a0b29 -->
+
+### Maintenance / Cleanup
+- Updated the Today state-flow runbook and progress ledger with validation and handoff notes.
+<!-- evidence: 38a0b29 -->
+
 ## v1.0.1(72)
 
 ### UI / UX
