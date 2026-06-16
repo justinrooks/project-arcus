@@ -9,6 +9,7 @@ deliberately left alone, and what the next session should know.
 
 - Parent epic: [#248](https://github.com/justinrooks/project-arcus/issues/248)
 - Sub-issues created 2026-06-15: #249 through #255
+- Local Alerts follow-up sub-issues created 2026-06-16: #256 through #259
 - Runbook: `docs/plans/today-state-flow-runbook.md`
 
 ## Current Status
@@ -23,6 +24,10 @@ deliberately left alone, and what the next session should know.
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Complete | Narrowed Today motion scope so cached-refreshing no longer rekeys alert content or participates in broad stack transitions. |
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Complete | Provider progress now gates orchestration only; Today keeps cached content visible until coherent snapshot commit, and empty-success outlooks preserve cached values explicitly. |
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Not started | Final validation/support issue after TV-01 through TV-06. |
+| 8 | LA-01 | [#256](https://github.com/justinrooks/project-arcus/issues/256) | Define Local Alerts display state with cache provenance | `gpt-5.4-mini / high` | Complete | Alert-specific state semantics now preserve live vs cached provenance, cached refresh, stale/degraded, and true unavailable boundaries. |
+| 9 | LA-02 | [#257](https://github.com/justinrooks/project-arcus/issues/257) | Make Local Alerts refresh treatment calm and non-duplicative | `gpt-5.4-mini / medium` | Not started | Depends on LA-01 and the page-level calm cue from TV-04. |
+| 10 | LA-03 | [#258](https://github.com/justinrooks/project-arcus/issues/258) | Stabilize ActiveAlertSummaryView transitions and height behavior | `gpt-5.4-mini / high` | Not started | Alert card local state/height mechanics. Depends on LA-01/LA-02. |
+| 11 | LA-04 | [#259](https://github.com/justinrooks/project-arcus/issues/259) | Add Local Alerts state-flow previews and tests | `gpt-5.4-mini / medium` | Not started | Final alert-specific validation support after LA-01 through LA-03. |
 
 ## Global Constraints
 
@@ -101,6 +106,22 @@ deliberately left alone, and what the next session should know.
 - Risk and awareness placeholders are selected locally and can diverge from the desired page-level behavior.
 - Refresh indicators and animations are duplicated across sections.
 
+### Local Alerts Follow-Up Findings
+
+- `SummaryView.LocalAlertsPresentationState` currently has only `.unavailable`, `.loading`, `.alerts`, and `.empty`,
+  which does not preserve alert-specific provenance such as unknown/no-cache, known empty, stale, or degraded.
+- `SummaryView` derives Local Alerts state from page state, location availability, and array emptiness, while
+  `HomeProjection` separately stores `activeAlerts`, `activeMesos`, and `lastHotAlertsLoadAt`.
+- `HomeView.displayedMesos` and `HomeView.displayedAlerts` switch independently between pipeline arrays and cached
+  projection arrays; the Local Alerts section does not receive one stable display model describing why those arrays are
+  empty or populated.
+- `SummaryView.appliesLocalAlertsResolving` still allows whole-card resolving treatment for settled `.alerts` and
+  `.empty` states when alert resolution is active.
+- `ActiveAlertSummaryView` owns local `ContentState`, `HeightPhase`, and a delayed main-actor height reset task. Those
+  mechanics can still create Local Alerts-specific churn unless constrained by an alert display-state policy.
+- Existing Local Alerts tests cover several helper outcomes, but not the complete alert-specific state/provenance,
+  refresh-treatment, transition, and preview matrix.
+
 ## Target State
 
 The implementation should converge on a small layered model:
@@ -125,6 +146,13 @@ decision made.
   retained-weather, multi-section stability, and async snapshot sequencing work. Use `/medium` for coordination,
   indicators, animation scope, previews, tests, and docs. If an issue starts crossing these boundaries, split it rather
   than expanding the implementation pass.
+- 2026-06-16, Local Alerts audit: the broad Today fixes have landed through TV-06, but Local Alerts still needs a
+  section-specific display-state/provenance layer and card-level transition cleanup. Track this as LA-01 through LA-04
+  under parent issue #248, with `/high` for provenance and height/transition semantics and `/medium` for presentation
+  treatment and validation.
+- 2026-06-16, LA-01 implementation: Local Alerts presentation should now be driven from `LocalAlertsDisplayState`
+  instead of raw array emptiness or page-level state alone. Preserve that boundary for LA-02 through LA-04 so refresh
+  treatment and height/transition cleanup do not reintroduce provenance drift.
 
 ## Issue Log Template
 
@@ -567,3 +595,114 @@ Model used: `gpt-5.4-mini / high`
 - If the next issue wants more visual polish, it should build on this stable display boundary instead of reintroducing
   raw progress-driven section resets.
 - #255 should focus on preview and transition coverage, not on more display-state mechanics.
+
+### LA-00 / GitHub #248 - Local Alerts Section State-Flow Follow-Up Audit
+
+Status: Complete
+Date: 2026-06-16
+Model used: GPT-5 Codex
+
+#### Scope
+
+- Re-audited the Local Alerts section after the broader Today state-flow work had landed through TV-06.
+- Focused on `SummaryView.LocalAlertsPresentationState`, `ActiveAlertSummaryView`, `SummaryResolutionState` alert
+  progress copy, cached alert provenance in `HomeProjection`, and Local Alerts-focused tests.
+- Created Local Alerts follow-up issues #256 through #259 under parent #248.
+- Updated #248, this progress ledger, and the runbook with the Local Alerts issue sequence and model guidance.
+
+#### Files Changed
+
+- `docs/plans/today-state-flow-runbook.md`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- No production source files changed.
+- No tests changed.
+- No providers, refresh orchestration, persistence, UI layout, or SwiftUI components changed.
+- No branch, commit, or PR created.
+
+#### Validation
+
+- Source-backed investigation only.
+- GitHub issues #256 through #259 created through the GitHub connector.
+- Parent issue #248 updated through the GitHub connector.
+- No build or test run was required because no production or test code changed.
+
+#### Deferred Work
+
+- Implement LA-01 / #256 first so Local Alerts has explicit cache provenance before presentation/motion cleanup.
+- LA-02 / #257 should remove redundant/dimming refresh treatment only after LA-01 lands.
+- LA-03 / #258 should constrain `ActiveAlertSummaryView` local height/transition behavior after the alert display state
+  is authoritative.
+- LA-04 / #259 should add previews/tests after LA-01 through LA-03.
+
+#### Handoff Notes
+
+- Do not fold LA-01 through LA-03 into #255; #255 is page-level Today validation, while #256 through #259 are
+  alert-section correctness and polish.
+- The most important pre-LA-01 evidence was that `HomeProjection` tracks `lastHotAlertsLoadAt`, but `SummaryView`
+  previously only saw array emptiness plus `TodayContentState` when choosing the Local Alerts surface.
+- Keep provider cadence and hot-alert delivery semantics out of these issues unless new source evidence proves they are
+  the root cause.
+
+### LA-01 / GitHub #256 - Define Local Alerts display state with cache provenance
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / high`
+
+#### Scope
+
+- Added `LocalAlertsDisplayState` as the narrow display boundary for Local Alerts provenance.
+- Distinguished:
+  - no-cache resolving
+  - current live empty/populated
+  - current cached empty/populated
+  - cached refreshing empty/populated
+  - offline stale/degraded empty/populated
+  - location unavailable
+  - true unavailable / no useful alert state
+- Wired `HomeView` to derive the display state from the rendered alert source, cached projection presence, and
+  `lastHotAlertsLoadAt`.
+- Wired `SummaryView` to derive `LocalAlertsPresentationState` from the display state before choosing the existing
+  `ActiveAlertSummaryView` branches.
+- Kept `ActiveAlertSummaryView` visuals and behavior unchanged.
+
+#### Files Changed
+
+- `Sources/App/HomeView.swift`
+- `Sources/Features/Summary/LocalAlertsDisplayState.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering was preserved.
+- `HomeRefreshPipeline` behavior, cadence, and provider orchestration were left alone.
+- `ActiveAlertSummaryView` visuals, row layout, height mechanics, and transition behavior were not changed.
+- Refresh cadence, notification delivery, and alert filtering semantics were not changed.
+- No new provider, persistence, or data-mutation paths were added.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests/LocalAlertsDisplayStateTests -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests/SummaryViewLocalAlertsTests -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests/TodayContentStateTests`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`
+  - Passed.
+
+#### Deferred Work
+
+- #257 should refine alert refresh treatment now that the provenance boundary exists.
+- #258 should stabilize `ActiveAlertSummaryView` transitions and height behavior on top of the new display state.
+- #259 should add preview coverage for the new alert display-state matrix and any residual presentation edge cases.
+
+#### Handoff Notes
+
+- `LocalAlertsDisplayState` is the new boundary for alert provenance. Use it instead of rebuilding truth from raw array
+  emptiness or `TodayContentState` alone.
+- `SummaryView` now treats Local Alerts presentation as derived display state, which keeps later refresh-treatment and
+  transition work isolated.
+- `HomeRefreshPipeline` did not change, so any remaining alert churn should be addressed in #257 or #258, not by
+  reopening provider cadence or refresh sequencing here.

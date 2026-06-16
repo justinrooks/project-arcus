@@ -138,6 +138,17 @@ struct HomeView: View {
         )
     }
 
+    private var localAlertsDisplayState: LocalAlertsDisplayState {
+        LocalAlertsDisplayState.from(
+            todayContentState: todayContentState,
+            hasCachedProjection: displayedProjection != nil,
+            isCurrentContextResolvedInPipeline: isCurrentContextResolvedInPipeline,
+            lastHotAlertsLoadAt: displayedProjection?.lastHotAlertsLoadAt,
+            hasActiveAlerts: !displayedMesos.isEmpty || !displayedAlerts.isEmpty,
+            isLocationUnavailable: readinessState == .locationUnavailable
+        )
+    }
+
     private var todayContentState: TodayContentState {
         TodayContentState.from(
             readinessState: readinessState,
@@ -217,6 +228,7 @@ struct HomeView: View {
                         outlook: displayedOutlook,
                         weather: displayedWeather,
                         todayContentState: todayContentState,
+                        localAlertsDisplayState: localAlertsDisplayState,
                         readinessState: readinessState,
                         resolutionState: refreshPipeline.resolutionState,
                         isRefreshInFlight: refreshPipeline.isRefreshInFlight,
@@ -618,6 +630,7 @@ private struct TodayTabView: View {
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
     let todayContentState: TodayContentState
+    let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
@@ -663,6 +676,7 @@ private struct TodayTabView: View {
                     outlook: outlook,
                     weather: visibleWeather,
                     todayContentState: todayContentState,
+                    localAlertsDisplayState: localAlertsDisplayState,
                     readinessState: readinessState,
                     resolutionState: resolutionState,
                     showsOfflineToken: showsOfflineToken,

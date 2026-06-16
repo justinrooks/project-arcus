@@ -124,13 +124,6 @@ struct SummaryView: View {
         let onDismiss: () -> Void
     }
 
-    enum LocalAlertsPresentationState: Equatable {
-        case unavailable
-        case loading
-        case alerts
-        case empty
-    }
-
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -140,6 +133,7 @@ struct SummaryView: View {
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
     let todayContentState: TodayContentState
+    let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
@@ -148,10 +142,6 @@ struct SummaryView: View {
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
-
-    private var hasActiveAlerts: Bool {
-        !mesos.isEmpty || !alerts.isEmpty
-    }
 
     private var isWeatherLoading: Bool {
         weather == nil
@@ -168,12 +158,12 @@ struct SummaryView: View {
         readinessState == .locationUnavailable
     }
 
+    private var hasActiveAlerts: Bool {
+        !mesos.isEmpty || !alerts.isEmpty
+    }
+
     private var localAlertsPresentationState: LocalAlertsPresentationState {
-        Self.localAlertsPresentationState(
-            todayContentState: todayContentState,
-            hasActiveAlerts: hasActiveAlerts,
-            isLocationUnavailable: isLocationUnavailable
-        )
+        localAlertsDisplayState.presentationState
     }
 
     private var hasMeaningfulContent: Bool {
@@ -463,24 +453,6 @@ struct SummaryView: View {
         emptySectionCard(title: title, message: message, symbol: symbol)
     }
 
-    static func localAlertsPresentationState(
-        todayContentState: TodayContentState,
-        hasActiveAlerts: Bool,
-        isLocationUnavailable: Bool
-    ) -> LocalAlertsPresentationState {
-        if isLocationUnavailable {
-            return .unavailable
-        }
-        if hasActiveAlerts {
-            return .alerts
-        }
-        if todayContentState.showsResolvingSurface {
-            return .loading
-        }
-
-        return .empty
-    }
-
     static func appliesLocalAlertsResolving(
         presentationState: LocalAlertsPresentationState,
         resolutionState: SummaryResolutionState,
@@ -764,6 +736,15 @@ private struct SummaryPreviewContent: View {
     }
 
     var body: some View {
+        let localAlertsDisplayState = LocalAlertsDisplayState.from(
+            todayContentState: todayContentState,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: .now,
+            hasActiveAlerts: !mesos.isEmpty || !alerts.isEmpty,
+            isLocationUnavailable: readinessState == .locationUnavailable
+        )
+
         SummaryView(
             snap: .init(
                 coordinates: .init(latitude: 39.75, longitude: -104.44),
@@ -779,6 +760,7 @@ private struct SummaryPreviewContent: View {
             outlook: outlook,
             weather: weather,
             todayContentState: todayContentState,
+            localAlertsDisplayState: localAlertsDisplayState,
             readinessState: readinessState,
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: showsOfflineToken,

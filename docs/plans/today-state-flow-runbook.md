@@ -165,6 +165,9 @@ This issue set is intentionally scoped so `gpt-5.4-mini` can execute it in seque
 - Do not escalate scope just because a thread can see a tempting adjacent fix. Split the work at the issue boundary.
 - Stop and re-plan if a chunk starts changing provider cadence, serializing refresh work, redesigning card layout, or
   rewriting broad `HomeRefreshPipeline` behavior.
+- Use the Local Alerts follow-up issues (#256 through #259) for alert-specific provenance, refresh treatment,
+  `ActiveAlertSummaryView` transition behavior, and alert-specific validation. Do not reopen broad Today issues for
+  those narrower cleanup passes.
 
 ## Ordered Work Items
 
@@ -178,6 +181,10 @@ This issue set is intentionally scoped so `gpt-5.4-mini` can execute it in seque
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | P1 | S/M | TV-01, TV-02, TV-04 |
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | P1 | M | TV-01 |
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | P2/P3 | M | TV-01 through TV-06 |
+| 8 | LA-01 | [#256](https://github.com/justinrooks/project-arcus/issues/256) | Define Local Alerts display state with cache provenance | `gpt-5.4-mini / high` | P1 | M | TV-01, TV-02, TV-06 |
+| 9 | LA-02 | [#257](https://github.com/justinrooks/project-arcus/issues/257) | Make Local Alerts refresh treatment calm and non-duplicative | `gpt-5.4-mini / medium` | P1 | S/M | TV-04, LA-01 |
+| 10 | LA-03 | [#258](https://github.com/justinrooks/project-arcus/issues/258) | Stabilize ActiveAlertSummaryView transitions and height behavior | `gpt-5.4-mini / high` | P1 | M | TV-05, LA-01, LA-02 |
+| 11 | LA-04 | [#259](https://github.com/justinrooks/project-arcus/issues/259) | Add Local Alerts state-flow previews and tests | `gpt-5.4-mini / medium` | P2/P3 | M | LA-01 through LA-03 |
 
 ## Work Item Contracts
 
@@ -298,6 +305,75 @@ Mini-sized chunks:
 
 Likely files: `HomeViewLoadingOverlayStateTests.swift`, `HomeRefreshPipelineTests.swift`, `SummaryView.swift`, any new
 Today display-model test file.
+
+### LA-01: Local Alerts Display State With Cache Provenance
+
+Introduce a small alert-section display state that distinguishes unknown/no-cache, known empty, populated,
+stale/degraded with cached content, no local context, and true unavailable.
+
+Recommended model: `gpt-5.4-mini / high`.
+
+Mini-sized chunks:
+
+1. Add mapping tests for no-cache resolving, known empty cache, populated cache, cached refreshing, offline
+   stale/degraded, and location unavailable.
+2. Introduce the smallest Local Alerts display-state type needed for those tests.
+3. Wire `SummaryView` to derive Local Alerts presentation from that display state while preserving existing visuals.
+4. Run focused Local Alerts mapping tests and app build.
+
+Likely files: `HomeView.swift`, `SummaryView.swift`, `HomeProjection.swift`, `HomeViewLoadingOverlayStateTests.swift`.
+
+### LA-02: Local Alerts Refresh Treatment
+
+Keep Local Alerts visually calm during ordinary cached refresh. Suppress alert-card resolving/dimming and redundant
+status copy when useful cached or known-empty alert state exists.
+
+Recommended model: `gpt-5.4-mini / medium`.
+
+Mini-sized chunks:
+
+1. Test Local Alerts refresh treatment for cached populated, known empty, no-cache resolving, offline, and degraded
+   states.
+2. Replace or adjust `appliesLocalAlertsResolving` with display-state-derived policy.
+3. Suppress card-level resolving/dimming for ordinary cached-refreshing Local Alerts states.
+4. Keep first-load/no-cache feedback available where no useful alert state exists.
+
+Likely files: `SummaryView.swift`, `SummaryResolving.swift`, `ActiveAlertSummaryView.swift`,
+`HomeViewLoadingOverlayStateTests.swift`.
+
+### LA-03: Active Alert Transitions And Height
+
+Make `ActiveAlertSummaryView` render the parent Local Alerts display state without reintroducing local branch churn.
+Keep interaction state local; keep business/display state owned by the parent boundary.
+
+Recommended model: `gpt-5.4-mini / high`.
+
+Mini-sized chunks:
+
+1. Add tests for alert transition policy across cached-refreshing populated, cached-refreshing known-empty, no-cache
+   resolving, and genuine alerts-to-empty transitions.
+2. Replace or constrain local `ContentState` derivation so parent Local Alerts display state is authoritative.
+3. Suppress routine refresh animation/height changes while preserving meaningful alerts-to-empty smoothing.
+4. Verify `Task.sleep` height reset remains main-actor, cancelable, and not triggered by routine cached-refreshing.
+
+Likely files: `ActiveAlertSummaryView.swift`, `SummaryView.swift`, `HomeViewLoadingOverlayStateTests.swift`.
+
+### LA-04: Local Alerts Previews And Tests
+
+Add durable section-specific validation for the Local Alerts state matrix after LA-01 through LA-03 land.
+
+Recommended model: `gpt-5.4-mini / medium`.
+
+Mini-sized chunks:
+
+1. Add unit tests for no-cache resolving, known empty, populated, cached-refreshing empty, cached-refreshing populated,
+   offline cached, degraded cached, location unavailable, and true unavailable.
+2. Add tests for refresh-treatment policy and transition policy where practical.
+3. Add preview fixtures for populated alerts, known empty, no-cache resolving, cached-refreshing populated,
+   cached-refreshing known-empty, offline cached, degraded cached, light/dark, and Large Dynamic Type.
+4. Record validation results in the progress ledger.
+
+Likely files: `HomeViewLoadingOverlayStateTests.swift`, `SummaryView.swift`, `ActiveAlertSummaryView.swift`.
 
 ## Validation Expectations
 
