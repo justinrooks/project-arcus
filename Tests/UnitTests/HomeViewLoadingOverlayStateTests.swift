@@ -187,21 +187,21 @@ struct HomeViewProjectionLaunchTests {
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .loadingLocalData,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: false
             )
         )
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .loadingLocalData,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: true
             ) == false
         )
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .locationUnavailable,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: false
             ) == false
         )
@@ -209,13 +209,10 @@ struct HomeViewProjectionLaunchTests {
 
     @Test("bootstrap loading remains visible with no cache during active refresh even when readiness is ready")
     func bootstrapLoading_noCacheActiveRefresh() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .weather, sections: [.conditions])
-
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .ready,
-                resolutionState: resolutionState,
+                isRefreshInFlight: true,
                 hasProjection: false
             )
         )
@@ -226,7 +223,7 @@ struct HomeViewProjectionLaunchTests {
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .ready,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: false
             ) == false
         )
@@ -234,13 +231,10 @@ struct HomeViewProjectionLaunchTests {
 
     @Test("bootstrap loading stays hidden while cached projection is available during active refresh")
     func bootstrapLoading_cacheActiveRefresh() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .loadingLocalData,
-                resolutionState: resolutionState,
+                isRefreshInFlight: true,
                 hasProjection: true
             ) == false
         )
@@ -347,217 +341,425 @@ struct HomeViewProjectionLaunchTests {
 @Suite("SummaryView Local Alerts")
 @MainActor
 struct SummaryViewLocalAlertsTests {
-    @Test("shows empty state when no local alerts are available after context resolution")
-    func localAlertsPresentationState_showsEmptyStateWithoutAlerts() {
+    private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+    @Test("display states map to presentation states")
+    func localAlertsPresentationState_mapsDisplayStates() {
         #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .loadingLocalData,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
-            ) == .empty
+            LocalAlertsDisplayState.noCacheResolving.presentationState == .loading
+        )
+        #expect(LocalAlertsDisplayState.noCacheResolving.showsLoadingCopy)
+        #expect(LocalAlertsDisplayState.noCacheResolving.usesSummaryResolvingTreatment == false)
+        #expect(
+            LocalAlertsDisplayState.current(content: .empty, source: .live).presentationState == .empty
         )
         #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .ready,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
-            ) == .empty
+            LocalAlertsDisplayState.cachedRefreshing(content: .populated).presentationState == .alerts
+        )
+        #expect(
+            LocalAlertsDisplayState.cachedRefreshing(content: .empty).presentationState == .empty
+        )
+        #expect(
+            LocalAlertsDisplayState.current(content: .populated, source: .cached).presentationState == .alerts
+        )
+        #expect(
+            LocalAlertsDisplayState.unavailable(reason: .locationUnavailable).presentationState == .unavailable
         )
     }
 
-    @Test("keeps placeholder only while location context is still loading")
-    func localAlertsPresentationState_limitsPlaceholderToLocationResolution() {
+    @Test("existing alerts stay visible when loading arrives transiently")
+    func localAlerts_existingAlertsOverrideTransientLoading() {
         #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .loadingLocation,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
-            ) == .loading
-        )
-        #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .resolvingLocalContext,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
-            ) == .loading
-        )
-    }
-
-    @Test("location unavailable always wins local alerts presentation")
-    func localAlertsPresentationState_locationUnavailableWins() {
-        #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .ready,
-                hasActiveAlerts: false,
-                isLocationUnavailable: true,
-                isAlertsResolving: false
-            ) == .unavailable
-        )
-    }
-
-    @Test("active alerts are shown even while readiness is loading")
-    func localAlertsPresentationState_activeAlertsWhileLoading() {
-        #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .loadingLocation,
-                hasActiveAlerts: true,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
-            ) == .alerts
-        )
-        #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .resolvingLocalContext,
-                hasActiveAlerts: true,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
+            ActiveAlertSummaryView.contentState(
+                for: .noCacheResolving,
+                hasRenderableAlerts: true
             ) == .alerts
         )
     }
 
-    @Test("empty local alerts state is used after local data loading completes")
-    func localAlertsPresentationState_emptyAfterLocalDataLoad() {
-        #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .loadingLocalData,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: false
-            ) == .empty
-        )
-    }
-
-    @Test("resolving alerts keeps the local alerts placeholder visible")
-    func localAlertsPresentationState_alertsResolvingShowsLoading() {
-        #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .ready,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: true
-            ) == .loading
-        )
-    }
-
-    @Test("loading local alerts resolve to empty when alerts finish with no watches or mesos")
-    func localAlertsPresentationState_loadingToEmptySequence() {
-        let resolving = SummaryView.localAlertsPresentationState(
-            readinessState: .loadingLocalData,
-            hasActiveAlerts: false,
-            isLocationUnavailable: false,
-            isAlertsResolving: true
-        )
-        let resolved = SummaryView.localAlertsPresentationState(
-            readinessState: .loadingLocalData,
-            hasActiveAlerts: false,
-            isLocationUnavailable: false,
-            isAlertsResolving: false
-        )
-
-        #expect(resolving == .loading)
-        #expect(resolved == .empty)
-    }
-
-    @Test("loading local alerts resolve to alerts when watches or mesos become available")
-    func localAlertsPresentationState_loadingToPopulatedSequence() {
-        let resolving = SummaryView.localAlertsPresentationState(
-            readinessState: .loadingLocalData,
-            hasActiveAlerts: false,
-            isLocationUnavailable: false,
-            isAlertsResolving: true
-        )
-        let resolvedWithAlerts = SummaryView.localAlertsPresentationState(
-            readinessState: .loadingLocalData,
+    @Test("cached populated alerts stay calm during refresh")
+    func localAlerts_refreshTreatment_cachedPopulated() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .cachedRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
             hasActiveAlerts: true,
-            isLocationUnavailable: false,
-            isAlertsResolving: false
+            isLocationUnavailable: false
         )
 
-        #expect(resolving == .loading)
-        #expect(resolvedWithAlerts == .alerts)
+        #expect(state == .cachedRefreshing(content: .populated))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
     }
 
-    @Test("cached active alerts remain in alerts state while alerts are resolving")
-    func localAlertsPresentationState_cachedContentWhileResolvingStaysPopulated() {
+    @Test("cached refreshing populated alerts never fall back to loading")
+    func localAlerts_refreshTreatment_cachedRefreshingPopulatedNeverLoads() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .cachedRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(state.presentationState == .alerts)
         #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .ready,
-                hasActiveAlerts: true,
-                isLocationUnavailable: false,
-                isAlertsResolving: true
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: true
             ) == .alerts
         )
     }
 
-    @Test("empty cached projection while alerts are resolving remains loading")
-    func localAlertsPresentationState_emptyCachedProjectionWhileResolvingStaysLoading() {
+    @Test("cached refreshing populated alerts stay alerts in the card")
+    func localAlerts_cardState_cachedRefreshingPopulated() {
         #expect(
-            SummaryView.localAlertsPresentationState(
-                readinessState: .ready,
-                hasActiveAlerts: false,
-                isLocationUnavailable: false,
-                isAlertsResolving: true
+            ActiveAlertSummaryView.contentState(
+                for: .cachedRefreshing(content: .populated),
+                hasRenderableAlerts: true
+            ) == .alerts
+        )
+    }
+
+    @Test("cached refreshing known empty alerts stay empty in the card")
+    func localAlerts_cardState_cachedRefreshingEmpty() {
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: .cachedRefreshing(content: .empty),
+                hasRenderableAlerts: false
+            ) == .empty
+        )
+    }
+
+    @Test("no-cache resolving without useful content can still show loading")
+    func localAlerts_cardState_noCacheResolvingWithoutContent() {
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: .noCacheResolving,
+                hasRenderableAlerts: false
             ) == .loading
         )
     }
 
-    @Test("loading local alerts do not receive whole-card resolving treatment")
-    func localAlertsResolvingTreatment_suppressesLoadingCardOpacity() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
+    @Test("alerts-to-empty transitions keep flexible height smoothing")
+    func localAlerts_heightPolicy_alertsToEmpty() {
         #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .loading,
-                resolutionState: resolutionState,
-                showsOfflineToken: false
-            ) == false
-        )
-    }
-
-    @Test("active or empty local alerts keep whole-card resolving treatment during refresh")
-    func localAlertsResolvingTreatment_preservesSettledCardOpacity() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .alerts,
-                resolutionState: resolutionState,
-                showsOfflineToken: false
-            )
-        )
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .empty,
-                resolutionState: resolutionState,
-                showsOfflineToken: false
+            ActiveAlertSummaryView.usesFlexibleAlertHeight(
+                currentState: .empty,
+                isLeavingAlerts: true
             )
         )
     }
 
-    @Test("local alerts resolving treatment stays off when alerts are not resolving or offline")
-    func localAlertsResolvingTreatment_requiresResolvingOnlineAlerts() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
+    @Test("routine cached refresh stays on the alerts height path")
+    func localAlerts_heightPolicy_cachedRefreshingPopulatedStaysOnAlertsHeightPath() {
         #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .alerts,
-                resolutionState: SummaryResolutionState(),
-                showsOfflineToken: false
-            ) == false
+            ActiveAlertSummaryView.usesFlexibleAlertHeight(
+                currentState: .alerts,
+                isLeavingAlerts: false
+            )
         )
         #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .alerts,
-                resolutionState: resolutionState,
-                showsOfflineToken: true
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .alerts,
+                to: .alerts,
+                suppressesRoutineRefreshMotion: true
             ) == false
+        )
+    }
+
+    @Test("loading to alerts does not animate the card branch")
+    func localAlerts_animationPolicy_loadingToAlertsDoesNotAnimate() {
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .loading,
+                to: .alerts,
+                suppressesRoutineRefreshMotion: false
+            ) == false
+        )
+    }
+
+    @Test("empty to alerts can still animate the card branch")
+    func localAlerts_animationPolicy_emptyToAlertsCanAnimate() {
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .empty,
+                to: .alerts,
+                suppressesRoutineRefreshMotion: false
+            )
+        )
+    }
+
+    @Test("known empty alerts stay calm during refresh")
+    func localAlerts_refreshTreatment_cachedEmpty() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .cachedRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .cachedRefreshing(content: .empty))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: false
+            ) == .empty
+        )
+    }
+
+    @Test("no-cache resolving preserves first-load feedback")
+    func localAlerts_refreshTreatment_noCacheResolving() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .noCacheResolving,
+            hasCachedProjection: false,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: nil,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .noCacheResolving)
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy)
+        #expect(state.showsOfflineStatusCopy == false)
+    }
+
+    @Test("offline cached populated alerts stay visible without duplicate treatment")
+    func localAlerts_refreshTreatment_offlineCachedPopulated() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .staleRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .staleOrDegraded(content: .populated))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy)
+    }
+
+    @Test("offline known empty alerts stay calm without duplicate treatment")
+    func localAlerts_refreshTreatment_offlineCachedEmpty() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .staleRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .staleOrDegraded(content: .empty))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: false
+            ) == .empty
+        )
+    }
+
+    @Test("degraded cached populated alerts stay visible without duplicate treatment")
+    func localAlerts_refreshTreatment_degradedCachedPopulated() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .degraded,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .staleOrDegraded(content: .populated))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy)
+    }
+
+    @Test("degraded known empty alerts stay calm without duplicate treatment")
+    func localAlerts_refreshTreatment_degradedCachedEmpty() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .degraded,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .staleOrDegraded(content: .empty))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: false
+            ) == .empty
+        )
+    }
+}
+
+@Suite("Local Alerts Display State")
+@MainActor
+struct LocalAlertsDisplayStateTests {
+    private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+    @Test("no-cache resolving stays calm")
+    func noCacheResolving_staysCalm() {
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .noCacheResolving,
+                hasCachedProjection: false,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .noCacheResolving
+        )
+    }
+
+    @Test("current live empty and populated states stay distinct")
+    func currentLiveStates_stayDistinct() {
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: false,
+                isCurrentContextResolvedInPipeline: true,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .current(content: .empty, source: .live)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: false,
+                isCurrentContextResolvedInPipeline: true,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .current(content: .populated, source: .live)
+        )
+    }
+
+    @Test("cached empty and populated states stay explicit")
+    func cachedStates_stayExplicit() {
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .current(content: .empty, source: .cached)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .current(content: .populated, source: .cached)
+        )
+    }
+
+    @Test("cached refreshing states stay explicit while refresh is active")
+    func cachedRefreshingStates_stayExplicit() {
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .cachedRefreshing,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .cachedRefreshing(content: .empty)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .cachedRefreshing,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .cachedRefreshing(content: .populated)
+        )
+    }
+
+    @Test("offline stale and degraded states retain cached content")
+    func staleOrDegradedStates_retainCachedContent() {
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .degraded,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .staleOrDegraded(content: .empty)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .staleRefreshing,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .staleOrDegraded(content: .populated)
+        )
+    }
+
+    @Test("location unavailable and true unavailable states stay distinct")
+    func unavailableStates_stayDistinct() {
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: false,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: false,
+                isLocationUnavailable: true
+            ) == .unavailable(reason: .locationUnavailable)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .unavailable(reason: .noUsefulAlertState)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .unavailable,
+                hasCachedProjection: false,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .unavailable(reason: .noUsefulAlertState)
         )
     }
 }
@@ -623,40 +825,25 @@ struct SummaryViewEmptyResolvingTests {
 @Suite("SummaryView Risk Placeholder Presentation")
 @MainActor
 struct SummaryViewRiskPlaceholderPresentationTests {
-    @Test("nil risk shows resolving placeholder while section is actively resolving")
-    func riskPlaceholder_nilRiskWhileSectionResolving() {
+    @Test("nil risk shows resolving placeholder only during no-cache resolving")
+    func riskPlaceholder_nilRiskWhileNoCacheResolving() {
         #expect(
             SummaryView.showsRiskResolvingPlaceholder(
                 hasRiskValue: false,
-                readinessState: .ready,
-                isSectionResolving: true,
+                todayContentState: .noCacheResolving,
                 showsOfflineToken: false
             )
         )
     }
 
-    @Test("nil risk allows resolving placeholder during local data loading")
-    func riskPlaceholder_nilRiskDuringLoadingLocalData() {
+    @Test("nil risk stays hidden during cached refreshes")
+    func riskPlaceholder_nilRiskDuringCachedRefresh() {
         #expect(
             SummaryView.showsRiskResolvingPlaceholder(
                 hasRiskValue: false,
-                readinessState: .loadingLocalData,
-                isSectionResolving: false,
-                showsOfflineToken: false
-            )
-        )
-    }
-
-    @Test("nil risk keeps the resolving placeholder visible while a refresh batch is still active")
-    func riskPlaceholder_nilRiskDuringActiveRefreshBatch() {
-        #expect(
-            SummaryView.showsRiskResolvingPlaceholder(
-                hasRiskValue: false,
-                readinessState: .ready,
-                isSectionResolving: false,
+                todayContentState: .cachedRefreshing,
                 showsOfflineToken: false,
-                isRefreshing: true
-            )
+            ) == false
         )
     }
 
@@ -665,8 +852,7 @@ struct SummaryViewRiskPlaceholderPresentationTests {
         #expect(
             SummaryView.showsRiskResolvingPlaceholder(
                 hasRiskValue: false,
-                readinessState: .ready,
-                isSectionResolving: false,
+                todayContentState: .current,
                 showsOfflineToken: false
             ) == false
         )
@@ -677,8 +863,7 @@ struct SummaryViewRiskPlaceholderPresentationTests {
         #expect(
             SummaryView.showsRiskResolvingPlaceholder(
                 hasRiskValue: false,
-                readinessState: .loadingLocalData,
-                isSectionResolving: true,
+                todayContentState: .noCacheResolving,
                 showsOfflineToken: true
             ) == false
         )
@@ -741,6 +926,415 @@ struct SummaryContentPresentationStateTests {
                 isResolving: false,
                 isConfirmedEmpty: true
             ) == .confirmedEmpty
+        )
+    }
+}
+
+@Suite("Today Content State")
+@MainActor
+struct TodayContentStateTests {
+    @Test("cached refreshing exposes the calm page cue and suppresses section loading branches")
+    func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
+        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
+        #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
+        #expect(TodayContentState.noCacheResolving.suppressesRoutineRefreshMotion == false)
+
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .cachedRefreshing,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: Date(timeIntervalSince1970: 1_000),
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ).presentationState == .empty
+        )
+
+        #expect(
+            SummaryAwarenessPrimaryState.resolve(
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil,
+                alerts: [],
+                todayContentState: .cachedRefreshing,
+                isStormRiskResolving: true,
+                isSevereRiskResolving: true,
+                isFireRiskResolving: true,
+                isOffline: false
+            ) == .quiet
+        )
+
+        #expect(
+            OutlookSummaryCard.outlookSummaryText(
+                outlook: nil,
+                todayContentState: .cachedRefreshing,
+                isLoading: false,
+                isPending: true
+            ) == "Outlook details will appear here when available."
+        )
+    }
+
+    @Test("no cache while resolving maps to the resolving state")
+    func noCacheResolving_mapsToResolvingState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .noCacheResolving
+        )
+    }
+
+    @Test("cached content refreshes while online")
+    func cachedContentRefreshing_mapsToCachedRefreshingState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: false
+            ) == .cachedRefreshing
+        )
+    }
+
+    @Test("cached content remains current while idle and online")
+    func cachedContentIdle_mapsToCurrentState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .current
+        )
+    }
+
+    @Test("live fallback content without cache is still current when idle")
+    func liveFallbackContentIdle_mapsToCurrentState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: false,
+                hasLiveContent: true,
+                isRefreshing: false,
+                isOffline: false
+            ) == .current
+        )
+    }
+
+    @Test("cached content becomes stale while refreshing offline")
+    func cachedContentRefreshingOffline_mapsToStaleRefreshingState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: true
+            ) == .staleRefreshing
+        )
+    }
+
+    @Test("cached content becomes degraded while offline and idle")
+    func cachedContentOfflineIdle_mapsToDegradedState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: true
+            ) == .degraded
+        )
+    }
+
+    @Test("stale refreshing keeps cached content visible instead of collapsing to unavailable")
+    func staleRefreshing_keepsCachedContentVisible() {
+        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.staleRefreshing.showsResolvingSurface == false)
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .staleRefreshing,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: Date(timeIntervalSince1970: 1_000),
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ).presentationState == .empty
+        )
+    }
+
+    @Test("no cache and no content maps to unavailable")
+    func noCacheNoContent_mapsToUnavailableState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .unavailable
+        )
+    }
+}
+
+@Suite("Today Surface State Flow")
+@MainActor
+struct TodaySurfaceStateFlowTests {
+    private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+    @Test("first launch without cache keeps the calm resolving surface")
+    func firstLaunchWithoutCache_keepsCalmResolvingSurface() {
+        let state = TodayContentState.from(
+            readinessState: .loadingLocalData,
+            hasCachedContent: false,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: false
+        )
+
+        #expect(state == .noCacheResolving)
+        #expect(state.showsResolvingSurface)
+        #expect(state.showsCalmUpdatingCue == false)
+        #expect(state.allowsSectionResolvingTreatment)
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .loadingLocalData,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: false,
+                isLocationUnavailable: false
+            )
+        )
+    }
+
+    @Test("valid cached launch stays on content and avoids resolving theater")
+    func validCachedLaunch_avoidsResolvingTheater() {
+        let state = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: false
+        )
+
+        #expect(state == .current)
+        #expect(state.showsResolvingSurface == false)
+        #expect(state.showsCalmUpdatingCue == false)
+        #expect(state.suppressesRoutineRefreshMotion == false)
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .ready,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: true,
+                isLocationUnavailable: false
+            ) == false
+        )
+    }
+
+    @Test("cached refresh keeps the page calm and suppresses full-content transitions")
+    func cachedRefresh_keepsThePageCalm() {
+        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
+        #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
+        #expect(TodayContentState.cachedRefreshing.showsResolvingSurface == false)
+        #expect(TodayContentState.staleRefreshing.suppressesRoutineRefreshMotion == false)
+        #expect(
+            SummaryView.showsEmptyResolving(
+                readinessState: .ready,
+                resolutionState: SummaryResolutionState(),
+                hasMeaningfulContent: true,
+                isLocationUnavailable: false
+            ) == false
+        )
+    }
+
+    @Test("stale cache keeps useful content visible during offline refresh")
+    func staleCache_keepsUsefulContentVisible() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: true
+            ) == .staleRefreshing
+        )
+        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.staleRefreshing.showsResolvingSurface == false)
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: true,
+                isResolving: false
+            ) == .stale
+        )
+
+        let localAlertsState = LocalAlertsDisplayState.from(
+            todayContentState: .staleRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(localAlertsState == .staleOrDegraded(content: .empty))
+        #expect(localAlertsState.presentationState == .empty)
+        #expect(localAlertsState.showsOfflineStatusCopy == false)
+    }
+
+    @Test("degraded cache keeps useful content visible when refresh is idle offline")
+    func degradedCache_keepsUsefulContentVisible() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: true
+            ) == .degraded
+        )
+        #expect(TodayContentState.degraded.showsCalmUpdatingCue == false)
+        #expect(TodayContentState.degraded.showsResolvingSurface == false)
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: true,
+                isResolving: false
+            ) == .stale
+        )
+
+        let localAlertsState = LocalAlertsDisplayState.from(
+            todayContentState: .degraded,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(localAlertsState == .staleOrDegraded(content: .populated))
+        #expect(localAlertsState.presentationState == .alerts)
+        #expect(localAlertsState.showsOfflineStatusCopy)
+    }
+
+    @Test("unavailable only appears when no useful data exists")
+    func unavailable_requiresNoUsefulData() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .unavailable
+        )
+        #expect(TodayContentState.unavailable.showsCalmUpdatingCue == false)
+        #expect(TodayContentState.unavailable.showsResolvingSurface == false)
+        #expect(
+            SummaryContentPresentationState.from(
+                isOffline: true,
+                hasContent: false,
+                isResolving: true
+            ) == .unavailable
+        )
+
+        let localAlertsState = LocalAlertsDisplayState.from(
+            todayContentState: .unavailable,
+            hasCachedProjection: false,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: nil,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(localAlertsState == .unavailable(reason: .noUsefulAlertState))
+        #expect(localAlertsState.presentationState == .unavailable)
+    }
+
+    @Test("foreground-return weather retention stays aligned at the Today level")
+    func foregroundReturn_weatherRetentionStaysAligned() {
+        let weather = SummaryWeather(
+            temperature: Measurement(value: 76, unit: .fahrenheit),
+            symbolName: "sun.max.fill",
+            conditionText: "Clear",
+            asOf: .now,
+            dewPoint: Measurement(value: 50, unit: .fahrenheit),
+            humidity: 0.35,
+            windSpeed: Measurement(value: 8, unit: .milesPerHour),
+            windGust: nil,
+            windDirection: "NW",
+            pressure: Measurement(value: 29.92, unit: .inchesOfMercury),
+            pressureTrend: "steady"
+        )
+        let identity = SummaryWeatherLocationIdentity(
+            snapshot: .init(
+                coordinates: .init(latitude: 39.7392, longitude: -104.9903),
+                timestamp: .now,
+                accuracy: 20,
+                placemarkSummary: "Denver, CO",
+                h3Cell: nil
+            )
+        )
+
+        let retained = TodayVisibleWeatherState.resolve(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: true,
+            displayedWeatherLocationIdentity: identity,
+            weatherLocationIdentity: identity
+        )
+
+        #expect(retained.weather == weather)
+        #expect(retained.locationIdentity == identity)
+    }
+}
+
+@Suite("HomeView Outlook Display")
+@MainActor
+struct HomeViewOutlookDisplayTests {
+    @Test("cached outlooks stay visible when a fresh snapshot returns no outlooks")
+    func cachedOutlooks_stayVisibleWhenLiveResultsAreEmpty() {
+        let cachedOutlooks = [
+            makeOutlook(title: "Cached Outlook A"),
+            makeOutlook(title: "Cached Outlook B")
+        ]
+
+        #expect(
+            HomeView.preferredOutlooks(
+                cachedOutlooks: cachedOutlooks,
+                liveOutlooks: []
+            ) == cachedOutlooks
+        )
+        #expect(
+            HomeView.preferredOutlook(
+                cachedOutlook: cachedOutlooks.first,
+                liveOutlooks: [],
+                liveOutlook: nil
+            ) == cachedOutlooks.first
+        )
+    }
+
+    private func makeOutlook(title: String) -> ConvectiveOutlookDTO {
+        guard let url = URL(string: "https://www.weather.gov") else {
+            preconditionFailure("Invalid outlook URL")
+        }
+
+        return ConvectiveOutlookDTO(
+            title: title,
+            link: url,
+            published: Date(timeIntervalSince1970: 1_000),
+            summary: "Summary for \(title)",
+            fullText: "Full text for \(title)",
+            day: 1,
+            riskLevel: "SLGT",
+            issued: Date(timeIntervalSince1970: 900),
+            validUntil: Date(timeIntervalSince1970: 2_000)
         )
     }
 }
@@ -925,14 +1519,14 @@ struct WeatherKitRefreshPolicyTests {
     }
 }
 
-@Suite("SummaryStatus Weather Retention")
-struct SummaryStatusWeatherRetentionTests {
+@Suite("Today Visible Weather State")
+struct TodayVisibleWeatherStateTests {
     @Test("keeps displayed weather during refresh when location identity is unchanged")
     func keepsDisplayedWeather_sameIdentityRefreshing() {
         let weather = makeWeather()
         let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: weather,
             isRefreshing: true,
@@ -950,7 +1544,7 @@ struct SummaryStatusWeatherRetentionTests {
         let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
         let newIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: weather,
             isRefreshing: true,
@@ -967,7 +1561,7 @@ struct SummaryStatusWeatherRetentionTests {
         let weather = makeWeather()
         let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: weather,
             isRefreshing: false,
@@ -986,7 +1580,7 @@ struct SummaryStatusWeatherRetentionTests {
         let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
         let currentIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: liveWeather,
             displayedWeather: previousWeather,
             isRefreshing: true,
@@ -1004,7 +1598,7 @@ struct SummaryStatusWeatherRetentionTests {
         let oldIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
         let newIdentity = makeIdentity(latitude: 47.6062, longitude: -122.3321, placemark: "Seattle, WA")
 
-        let rendered = SummaryStatus.resolveDisplayedWeather(
+        let rendered = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: retainedWeather,
             isRefreshing: true,

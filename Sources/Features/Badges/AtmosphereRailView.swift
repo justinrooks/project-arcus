@@ -421,7 +421,7 @@ private struct AtmosphericMetricRow: View {
     AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
 }
 
-#Preview("Atmospheric Conditions - Missing Values") {
+#Preview("Atmospheric Conditions - Unavailable Weather") {
     AtmosphericConditionsCard(weather: nil)
 }
 

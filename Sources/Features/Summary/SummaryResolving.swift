@@ -206,21 +206,31 @@ private struct SummaryResolvingModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let isResolving: Bool
+    let todayContentState: TodayContentState
     let style: SummaryResolveForwardStyle
 
     func body(content: Content) -> some View {
+        let shouldApplyResolving = isResolving && todayContentState.allowsSectionResolvingTreatment
+
         content
-            .blur(radius: isResolving && reduceMotion == false ? style.blur : 0)
-            .opacity(isResolving ? style.opacity : 1)
-            .animation(SkyAwareMotion.resolve(reduceMotion), value: isResolving)
+            .blur(radius: shouldApplyResolving && reduceMotion == false ? style.blur : 0)
+            .opacity(shouldApplyResolving ? style.opacity : 1)
+            .animation(SkyAwareMotion.resolve(reduceMotion), value: shouldApplyResolving)
     }
 }
 
 extension View {
     func summaryResolving(
         _ isResolving: Bool,
+        todayContentState: TodayContentState,
         style: SummaryResolveForwardStyle = .blurLift
     ) -> some View {
-        modifier(SummaryResolvingModifier(isResolving: isResolving, style: style))
+        modifier(
+            SummaryResolvingModifier(
+                isResolving: isResolving,
+                todayContentState: todayContentState,
+                style: style
+            )
+        )
     }
 }

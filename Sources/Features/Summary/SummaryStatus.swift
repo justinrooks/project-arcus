@@ -34,13 +34,11 @@ struct SummaryStatus: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsOfflineExplanation = false
-    @State private var displayedWeather: SummaryWeather?
-    @State private var displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity?
 
     let statusText: String
     let weather: SummaryWeather?
-    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
     let resolutionState: SummaryResolutionState
+    let todayContentState: TodayContentState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
     let condenseProgress: CGFloat
@@ -52,13 +50,7 @@ struct SummaryStatus: View {
     }()
 
     private var visibleWeather: SummaryWeather? {
-        Self.resolveDisplayedWeather(
-            liveWeather: weather,
-            displayedWeather: displayedWeather,
-            isRefreshing: resolutionState.isRefreshing,
-            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
-            weatherLocationIdentity: weatherLocationIdentity
-        ).weather
+        weather
     }
 
     private var formattedTemperature: String? {
@@ -132,9 +124,6 @@ struct SummaryStatus: View {
             shadowY: cardShadowY
         )
         .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
-        .task(id: weatherTaskState) {
-            updateDisplayedWeather()
-        }
     }
 
     private var locationUnavailableCard: some View {
@@ -214,7 +203,13 @@ struct SummaryStatus: View {
                 .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(
-                resolutionState: resolutionState
+                message: todayContentState.showsCalmUpdatingCue
+                    ? resolutionState.primaryActiveMessage ?? resolutionState.recentCompletedMessage
+                    : nil,
+                recentCompletedDeadline: todayContentState.showsCalmUpdatingCue
+                    && resolutionState.primaryActiveMessage == nil
+                    ? resolutionState.recentCompletedDeadline
+                    : nil
             )
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
@@ -247,7 +242,7 @@ struct SummaryStatus: View {
             Group {
                 SummarySettledConditionLine(
                     conditionText: visibleWeather?.conditionText,
-                    isRefreshing: resolutionState.isRefreshing
+                    isRefreshing: todayContentState.showsCalmUpdatingCue
                 )
             }
             .font(.footnote)
@@ -268,50 +263,8 @@ struct SummaryStatus: View {
         .animation(SkyAwareMotion.message(reduceMotion), value: visibleWeather?.conditionText)
     }
 
-    private var weatherTaskState: WeatherTaskState {
-        WeatherTaskState(
-            liveWeather: weather,
-            isRefreshing: resolutionState.isRefreshing,
-            weatherLocationIdentity: weatherLocationIdentity
-        )
-    }
-
-    private func updateDisplayedWeather() {
-        let updatedWeather = Self.resolveDisplayedWeather(
-            liveWeather: weather,
-            displayedWeather: displayedWeather,
-            isRefreshing: resolutionState.isRefreshing,
-            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
-            weatherLocationIdentity: weatherLocationIdentity
-        )
-        displayedWeather = updatedWeather.weather
-        displayedWeatherLocationIdentity = updatedWeather.locationIdentity
-    }
-
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
         Self.temperatureFormatter.string(from: temperature)
-    }
-}
-
-extension SummaryStatus {
-    static func resolveDisplayedWeather(
-        liveWeather: SummaryWeather?,
-        displayedWeather: SummaryWeather?,
-        isRefreshing: Bool,
-        displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity?,
-        weatherLocationIdentity: SummaryWeatherLocationIdentity?
-    ) -> (weather: SummaryWeather?, locationIdentity: SummaryWeatherLocationIdentity?) {
-        if let liveWeather {
-            return (liveWeather, weatherLocationIdentity)
-        }
-
-        guard isRefreshing,
-              displayedWeather != nil,
-              displayedWeatherLocationIdentity == weatherLocationIdentity else {
-            return (nil, nil)
-        }
-
-        return (displayedWeather, displayedWeatherLocationIdentity)
     }
 }
 
@@ -373,8 +326,14 @@ private struct SummaryOfflineToken: View {
 private struct SummaryStatusSecondaryLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    let resolutionState: SummaryResolutionState
+    let message: String?
+    let recentCompletedDeadline: Date?
     @State private var displayedMessage: String?
+
+    private struct TaskIdentity: Equatable {
+        let message: String?
+        let recentCompletedDeadline: Date?
+    }
 
     private var messageTransition: AnyTransition {
         if reduceMotion {
@@ -408,58 +367,43 @@ private struct SummaryStatusSecondaryLine: View {
         .frame(minHeight: 18, alignment: .leading)
         .clipped()
         .animation(SkyAwareMotion.message(reduceMotion), value: displayedMessage)
-        .task(id: taskState) {
-            await updateDisplayedMessage()
+        .task(id: taskIdentity) {
+            await setDisplayedMessage(message)
         }
     }
 
-    private var taskState: SecondaryLineTaskState {
-        SecondaryLineTaskState(
-            activeMessages: resolutionState.activeMessages,
-            recentCompletedMessage: resolutionState.recentCompletedMessage,
-            recentCompletedDeadline: resolutionState.recentCompletedDeadline
-        )
+    private var taskIdentity: TaskIdentity {
+        TaskIdentity(message: message, recentCompletedDeadline: recentCompletedDeadline)
     }
 
     @MainActor
-    private func updateDisplayedMessage() async {
-        if let primaryActiveMessage = resolutionState.primaryActiveMessage {
-            setDisplayedMessage(primaryActiveMessage)
-            return
-        }
-
-        if let recentCompletedMessage = resolutionState.recentCompletedMessage {
-            setDisplayedMessage(recentCompletedMessage)
-
-            if let recentCompletedDeadline = resolutionState.recentCompletedDeadline {
-                let remainingMilliseconds = max(
-                    Int((recentCompletedDeadline.timeIntervalSinceNow * 1_000).rounded(.up)),
-                    0
-                )
-
-                if remainingMilliseconds > 0 {
-                    try? await Task.sleep(for: .milliseconds(remainingMilliseconds))
-                }
-            }
-
-            if Task.isCancelled { return }
-        }
-
-        setDisplayedMessage(nil)
-    }
-
-    @MainActor
-    private func setDisplayedMessage(_ message: String?) {
+    private func setDisplayedMessage(_ message: String?) async {
         withAnimation(SkyAwareMotion.message(reduceMotion)) {
             displayedMessage = message
         }
-    }
-}
 
-private struct SecondaryLineTaskState: Equatable {
-    let activeMessages: [String]
-    let recentCompletedMessage: String?
-    let recentCompletedDeadline: Date?
+        guard message != nil, let recentCompletedDeadline else { return }
+
+        let remaining = recentCompletedDeadline.timeIntervalSinceNow
+        guard remaining > 0 else {
+            withAnimation(SkyAwareMotion.message(reduceMotion)) {
+                displayedMessage = nil
+            }
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(Int64((remaining * 1_000).rounded(.up))))
+        } catch {
+            return
+        }
+
+        guard Task.isCancelled == false else { return }
+
+        withAnimation(SkyAwareMotion.message(reduceMotion)) {
+            displayedMessage = nil
+        }
+    }
 }
 
 private struct SummarySettledConditionLine: View {
@@ -486,12 +430,6 @@ private struct SummarySettledConditionLine: View {
     }
 }
 
-private struct WeatherTaskState: Equatable {
-    let liveWeather: SummaryWeather?
-    let isRefreshing: Bool
-    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
-}
-
 #Preview {
     VStack {
         SummaryStatus(
@@ -515,16 +453,8 @@ private struct WeatherTaskState: Equatable {
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "climbing"
             ),
-            weatherLocationIdentity: .init(
-                snapshot: .init(
-                    coordinates: .init(latitude: 39.7392, longitude: -104.9903),
-                    timestamp: .now,
-                    accuracy: 20,
-                    placemarkSummary: "Denver, CO",
-                    h3Cell: nil
-                )
-            ),
             resolutionState: SummaryResolutionState(),
+            todayContentState: .current,
             showsOfflineToken: false,
             isLocationUnavailable: false,
             condenseProgress: 0
@@ -550,16 +480,8 @@ private struct WeatherTaskState: Equatable {
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "falling"
             ),
-            weatherLocationIdentity: .init(
-                snapshot: .init(
-                    coordinates: .init(latitude: 39.0473, longitude: -95.6752),
-                    timestamp: .now,
-                    accuracy: 20,
-                    placemarkSummary: "Topeka, KS",
-                    h3Cell: nil
-                )
-            ),
             resolutionState: SummaryResolutionState(),
+            todayContentState: .current,
             showsOfflineToken: true,
             isLocationUnavailable: false,
             condenseProgress: 0.75
@@ -567,8 +489,8 @@ private struct WeatherTaskState: Equatable {
         SummaryStatus(
             statusText: "Location not available",
             weather: nil,
-            weatherLocationIdentity: nil,
             resolutionState: SummaryResolutionState(),
+            todayContentState: .noCacheResolving,
             showsOfflineToken: false,
             isLocationUnavailable: true,
             condenseProgress: 0.75

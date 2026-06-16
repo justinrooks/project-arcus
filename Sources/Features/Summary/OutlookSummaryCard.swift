@@ -13,6 +13,7 @@ struct OutlookSummaryCard: View {
     let outlook: ConvectiveOutlookDTO?
     let isLoading: Bool
     let isPending: Bool
+    let todayContentState: TodayContentState
     let onBrowseAllOutlooks: (() -> Void)?
     
     @State private var navigateToFull = false
@@ -21,11 +22,13 @@ struct OutlookSummaryCard: View {
         outlook: ConvectiveOutlookDTO?,
         isLoading: Bool = false,
         isPending: Bool = false,
+        todayContentState: TodayContentState = .current,
         onBrowseAllOutlooks: (() -> Void)? = nil
     ) {
         self.outlook = outlook
         self.isLoading = isLoading
         self.isPending = isPending
+        self.todayContentState = todayContentState
         self.onBrowseAllOutlooks = onBrowseAllOutlooks
     }
 
@@ -34,13 +37,24 @@ struct OutlookSummaryCard: View {
     }
 
     private var summaryText: String {
-        if let summary = outlook?.summary {
-            return summary
+        Self.outlookSummaryText(
+            outlook: outlook,
+            todayContentState: todayContentState,
+            isLoading: isLoading,
+            isPending: isPending
+        )
+    }
+
+    private var headerSymbolName: String {
+        if outlook != nil {
+            return "sun.max.fill"
         }
-        if isPending {
-            return "Getting outlook details…"
+
+        if todayContentState.showsResolvingSurface {
+            return "sun.horizon.fill"
         }
-        return "Getting outlook details…"
+
+        return "sun.max.fill"
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -74,7 +88,7 @@ struct OutlookSummaryCard: View {
         }
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-        .placeholder(isLoading, animated: true)
+        .placeholder(isLoading && todayContentState.showsResolvingSurface, animated: true)
         .navigationDestination(isPresented: $navigateToFull) {
             if let outlook {
                 ConvectiveOutlookDetailView(outlook: outlook)
@@ -84,7 +98,7 @@ struct OutlookSummaryCard: View {
 
     private var headerRow: some View {
         HStack(alignment: .center, spacing: 12) {
-            Label(titleText, systemImage: isPending ? "sun.horizon.fill" : "sun.max.fill")
+            Label(titleText, systemImage: headerSymbolName)
                 .sectionLabel()
 
             Spacer(minLength: 12)
@@ -116,6 +130,23 @@ struct OutlookSummaryCard: View {
             }
         }
     }
+
+    static func outlookSummaryText(
+        outlook: ConvectiveOutlookDTO?,
+        todayContentState: TodayContentState,
+        isLoading: Bool,
+        isPending: Bool
+    ) -> String {
+        if let summary = outlook?.summary {
+            return summary
+        }
+
+        if isLoading && todayContentState.showsResolvingSurface {
+            return "Getting outlook details…"
+        }
+
+        return "Outlook details will appear here when available."
+    }
 }
 
 #Preview {
@@ -145,7 +176,7 @@ struct OutlookSummaryCard: View {
 
 #Preview("Outlook Summary - Initial Resolve") {
     NavigationStack {
-        OutlookSummaryCard(outlook: nil, isLoading: true)
+        OutlookSummaryCard(outlook: nil, isLoading: true, todayContentState: .noCacheResolving)
             .padding()
     }
 }

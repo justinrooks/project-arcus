@@ -124,14 +124,41 @@ struct HomeView: View {
     }
 
     private var displayedOutlook: ConvectiveOutlookDTO? {
-        refreshPipeline.outlooks.first ?? cachedOutlooks.first?.dto ?? refreshPipeline.outlook
+        Self.preferredOutlook(
+            cachedOutlook: cachedOutlooks.first?.dto,
+            liveOutlooks: refreshPipeline.outlooks,
+            liveOutlook: refreshPipeline.outlook
+        )
     }
 
     private var displayedOutlooks: [ConvectiveOutlookDTO] {
-        if refreshPipeline.outlooks.isEmpty == false {
-            return refreshPipeline.outlooks
-        }
-        return cachedOutlookDTOs
+        Self.preferredOutlooks(
+            cachedOutlooks: cachedOutlookDTOs,
+            liveOutlooks: refreshPipeline.outlooks
+        )
+    }
+
+    private var localAlertsDisplayState: LocalAlertsDisplayState {
+        LocalAlertsDisplayState.from(
+            todayContentState: todayContentState,
+            hasCachedProjection: displayedProjection != nil,
+            isCurrentContextResolvedInPipeline: isCurrentContextResolvedInPipeline,
+            lastHotAlertsLoadAt: displayedProjection?.lastHotAlertsLoadAt,
+            hasActiveAlerts: !displayedMesos.isEmpty || !displayedAlerts.isEmpty,
+            isLocationUnavailable: readinessState == .locationUnavailable
+        )
+    }
+
+    private var todayContentState: TodayContentState {
+        TodayContentState.from(
+            readinessState: readinessState,
+            hasCachedContent: displayedProjection != nil,
+            hasLiveContent: usesPipelineSummaryFallback || (
+                isUITestStaticMode && (!refreshPipeline.mesos.isEmpty || !refreshPipeline.alerts.isEmpty)
+            ),
+            isRefreshing: refreshPipeline.isRefreshInFlight,
+            isOffline: runtimeConnectivityState.isOffline
+        )
     }
 
     private var readinessState: SummaryReadinessState {
@@ -149,16 +176,8 @@ struct HomeView: View {
         )
     }
 
-    private var hasMeaningfulSummaryContent: Bool {
-        displayedProjection != nil || usesPipelineSummaryFallback
-    }
-
     private var isEmptyResolvingSummary: Bool {
-        Self.showsBootstrapLoading(
-            readinessState: readinessState,
-            resolutionState: refreshPipeline.resolutionState,
-            hasProjection: hasMeaningfulSummaryContent
-        )
+        todayContentState.showsResolvingSurface
     }
 
     init(
@@ -210,8 +229,11 @@ struct HomeView: View {
                         alerts: displayedAlerts,
                         outlook: displayedOutlook,
                         weather: displayedWeather,
+                        todayContentState: todayContentState,
+                        localAlertsDisplayState: localAlertsDisplayState,
                         readinessState: readinessState,
                         resolutionState: refreshPipeline.resolutionState,
+                        isRefreshInFlight: refreshPipeline.isRefreshInFlight,
                         showsOfflineToken: runtimeConnectivityState.isOffline,
                         locationReliabilityRailState: showsLocationReliabilityRail
                             ? SummaryView.LocationReliabilityRailState(
@@ -309,7 +331,6 @@ struct HomeView: View {
                     .transition(.opacity)
             }
         }
-        .transition(.opacity)
         .tint(.skyAwareAccent)
         .task {
             if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
@@ -425,12 +446,12 @@ extension HomeView {
 
     static func showsBootstrapLoading(
         readinessState: SummaryReadinessState,
-        resolutionState: SummaryResolutionState,
+        isRefreshInFlight: Bool,
         hasProjection: Bool
     ) -> Bool {
         readinessState != .locationUnavailable &&
         hasProjection == false &&
-        (resolutionState.isRefreshing || readinessState != .ready)
+        (isRefreshInFlight || readinessState != .ready)
     }
 
     static func preferredSummaryValue<T>(
@@ -442,6 +463,21 @@ extension HomeView {
             return pipelineValue ?? projectionValue
         }
         return projectionValue ?? pipelineValue
+    }
+
+    static func preferredOutlooks(
+        cachedOutlooks: [ConvectiveOutlookDTO],
+        liveOutlooks: [ConvectiveOutlookDTO]
+    ) -> [ConvectiveOutlookDTO] {
+        liveOutlooks.isEmpty ? cachedOutlooks : liveOutlooks
+    }
+
+    static func preferredOutlook(
+        cachedOutlook: ConvectiveOutlookDTO?,
+        liveOutlooks: [ConvectiveOutlookDTO],
+        liveOutlook: ConvectiveOutlookDTO?
+    ) -> ConvectiveOutlookDTO? {
+        liveOutlooks.first ?? cachedOutlook ?? liveOutlook
     }
 
     struct LocationReliabilityRailState: Equatable {
@@ -585,6 +621,7 @@ extension HomeView {
 
 private struct TodayTabView: View {
     @State private var headerCondenseProgress: CGFloat = 0
+    @State private var visibleWeatherState = TodayVisibleWeatherState()
 
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
@@ -594,14 +631,39 @@ private struct TodayTabView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let todayContentState: TodayContentState
+    let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
+    let isRefreshInFlight: Bool
     let showsOfflineToken: Bool
     let locationReliabilityRailState: SummaryView.LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
     let refreshAction: () async -> Void
+
+    private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
+        SummaryWeatherLocationIdentity(snapshot: snap)
+    }
+
+    private var visibleWeather: SummaryWeather? {
+        TodayVisibleWeatherState.resolve(
+            liveWeather: weather,
+            displayedWeather: visibleWeatherState.weather,
+            isRefreshing: isRefreshInFlight,
+            displayedWeatherLocationIdentity: visibleWeatherState.locationIdentity,
+            weatherLocationIdentity: weatherLocationIdentity
+        ).weather
+    }
+
+    private var visibleWeatherTaskState: TodayVisibleWeatherStateTaskState {
+        TodayVisibleWeatherStateTaskState(
+            liveWeather: weather,
+            isRefreshing: isRefreshInFlight,
+            weatherLocationIdentity: weatherLocationIdentity
+        )
+    }
 
     var body: some View {
         NavigationStack {
@@ -614,7 +676,9 @@ private struct TodayTabView: View {
                     mesos: mesos,
                     alerts: alerts,
                     outlook: outlook,
-                    weather: weather,
+                    weather: visibleWeather,
+                    todayContentState: todayContentState,
+                    localAlertsDisplayState: localAlertsDisplayState,
                     readinessState: readinessState,
                     resolutionState: resolutionState,
                     showsOfflineToken: showsOfflineToken,
@@ -641,7 +705,22 @@ private struct TodayTabView: View {
             }
         }
         .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .task(id: visibleWeatherTaskState) {
+            visibleWeatherState = TodayVisibleWeatherState.resolve(
+                liveWeather: weather,
+                displayedWeather: visibleWeatherState.weather,
+                isRefreshing: isRefreshInFlight,
+                displayedWeatherLocationIdentity: visibleWeatherState.locationIdentity,
+                weatherLocationIdentity: weatherLocationIdentity
+            )
+        }
     }
+}
+
+private struct TodayVisibleWeatherStateTaskState: Equatable {
+    let liveWeather: SummaryWeather?
+    let isRefreshing: Bool
+    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
 }
 
 #Preview("Home") {

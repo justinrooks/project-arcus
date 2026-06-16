@@ -303,6 +303,126 @@ struct HomeRefreshPipelineTests {
         }
     }
 
+    @Test("progress started keeps cached Today display state steady until snapshot commit")
+    func progressStarted_keepsCachedTodayDisplayStateSteady() async {
+        let context = makeContext()
+        let weather = sampleWeather()
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            runGate: gate,
+            progressEvents: [
+                .started(.lane(.weather))
+            ]
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: .slight,
+            initialSevereRisk: .wind(probability: 0.15),
+            initialFireRisk: .critical,
+            initialMesos: [MD.sampleDiscussionDTOs[0]],
+            initialAlerts: [Watch.sampleWatchRows[0]]
+        )
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
+        }
+
+        let started = await waitUntil(timeout: .seconds(5)) {
+            pipeline.resolutionState.isResolving(.conditions)
+        }
+        #expect(started)
+        #expect(pipeline.isRefreshInFlight)
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: pipeline.isRefreshInFlight,
+                isOffline: false
+            ) == .cachedRefreshing
+        )
+
+        let weatherState = TodayVisibleWeatherState.resolve(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: pipeline.isRefreshInFlight,
+            displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity(snapshot: context.snapshot),
+            weatherLocationIdentity: SummaryWeatherLocationIdentity(snapshot: context.snapshot)
+        )
+        #expect(weatherState.weather == weather)
+
+        await gate.open()
+        await refreshTask.value
+    }
+
+    @Test("progress completion before snapshot commit does not clear cached Today display state")
+    func progressCompleted_beforeSnapshotCommitKeepsCachedTodayDisplayState() async {
+        let context = makeContext()
+        let weather = sampleWeather()
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            runGate: gate,
+            progressEvents: [
+                .started(.lane(.weather)),
+                .completed(.lane(.weather))
+            ]
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: .slight,
+            initialSevereRisk: .wind(probability: 0.15),
+            initialFireRisk: .critical,
+            initialMesos: [MD.sampleDiscussionDTOs[0]],
+            initialAlerts: [Watch.sampleWatchRows[0]]
+        )
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
+        }
+
+        let progressCompleted = await waitUntil(timeout: .seconds(5)) {
+            pipeline.resolutionState.isResolving(.conditions) == false && pipeline.isRefreshInFlight
+        }
+        #expect(progressCompleted)
+        #expect(pipeline.resolutionState.isResolving(.conditions) == false)
+        #expect(pipeline.isRefreshInFlight)
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: pipeline.isRefreshInFlight,
+                isOffline: false
+            ) == .cachedRefreshing
+        )
+
+        let weatherState = TodayVisibleWeatherState.resolve(
+            liveWeather: nil,
+            displayedWeather: weather,
+            isRefreshing: pipeline.isRefreshInFlight,
+            displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity(snapshot: context.snapshot),
+            weatherLocationIdentity: SummaryWeatherLocationIdentity(snapshot: context.snapshot)
+        )
+        #expect(weatherState.weather == weather)
+
+        await gate.open()
+        await refreshTask.value
+    }
+
     @Test("completed progress clears mapped sections before refresh completion")
     func completedProgress_clearsMappedSectionsBeforeRefreshCompletion() async {
         let gate = AsyncGate()
@@ -326,10 +446,11 @@ struct HomeRefreshPipelineTests {
             )
         }
 
-        let refreshStillActive = await waitUntil(timeout: .seconds(5)) {
-            pipeline.resolutionState.isRefreshing
+        let completedProgressObserved = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.progressHistory().contains(.completed(.lane(.hotAlerts)))
         }
-        #expect(refreshStillActive)
+        #expect(completedProgressObserved)
+        #expect(pipeline.resolutionState.isRefreshing)
         #expect(pipeline.resolutionState.isResolving(.alerts) == false)
 
         await gate.open()
@@ -1134,6 +1255,7 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let runGate: AsyncGate?
     private let progressEvents: [HomeIngestionProgressEvent]
     private var submittedRequests: [HomeIngestionRequest] = []
+    private var recordedProgressEvents: [HomeIngestionProgressEvent] = []
 
     init(
         snapshot: HomeSnapshot = .empty,
@@ -1188,6 +1310,7 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     ) async throws -> HomeSnapshot {
         submittedRequests.append(request)
         for event in progressEvents {
+            recordedProgressEvents.append(event)
             await progress?(event)
         }
         if let runGate {
@@ -1206,6 +1329,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+
+    func progressHistory() -> [HomeIngestionProgressEvent] {
+        recordedProgressEvents
     }
 }
 

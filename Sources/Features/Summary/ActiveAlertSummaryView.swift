@@ -10,7 +10,7 @@ import SwiftUI
 struct ActiveAlertSummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum ContentState: Equatable {
+    enum ContentState: Equatable {
         case loading
         case empty
         case alerts
@@ -24,7 +24,8 @@ struct ActiveAlertSummaryView: View {
 
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
-    let isLoading: Bool
+    let localAlertsDisplayState: LocalAlertsDisplayState
+    let todayContentState: TodayContentState
     let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
     private let sortedMesos: [MdDTO]
@@ -39,13 +40,15 @@ struct ActiveAlertSummaryView: View {
     init(
         mesos: [MdDTO],
         alerts: [AlertDTO],
-        isLoading: Bool = false,
+        localAlertsDisplayState: LocalAlertsDisplayState = .current(content: .populated, source: .cached),
+        todayContentState: TodayContentState = .current,
         isOffline: Bool = false,
         onOpenAlertCenter: (() -> Void)? = nil
     ) {
         self.mesos = mesos
         self.alerts = alerts
-        self.isLoading = isLoading
+        self.localAlertsDisplayState = localAlertsDisplayState
+        self.todayContentState = todayContentState
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
         self.sortedMesos = AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
@@ -57,13 +60,10 @@ struct ActiveAlertSummaryView: View {
     }
 
     private var contentState: ContentState {
-        if isLoading {
-            return .loading
-        }
-        if hasRenderableAlerts {
-            return .alerts
-        }
-        return .empty
+        return Self.contentState(
+            for: localAlertsDisplayState,
+            hasRenderableAlerts: hasRenderableAlerts
+        )
     }
 
     private var isLeavingAlertsTransition: Bool {
@@ -77,6 +77,33 @@ struct ActiveAlertSummaryView: View {
 
     private var usesFlexibleAlertHeight: Bool {
         Self.usesFlexibleAlertHeight(currentState: contentState, isLeavingAlerts: isLeavingAlertsTransition)
+    }
+
+    private var contentStateAnimation: Animation? {
+        guard let previousState = previousStableContentState else {
+            return nil
+        }
+
+        guard Self.shouldAnimateContentStateTransition(
+            from: previousState,
+            to: contentState,
+            suppressesRoutineRefreshMotion: todayContentState.suppressesRoutineRefreshMotion
+        ) else {
+            return nil
+        }
+
+        return SkyAwareMotion.layerChange(reduceMotion)
+    }
+
+    private var previousStableContentState: ContentState? {
+        switch heightPhase {
+        case .stable(let state):
+            return state
+        case .leavingAlerts:
+            return .alerts
+        case .uninitialized:
+            return nil
+        }
     }
 
     private var transitionHoldDurationNanoseconds: UInt64 {
@@ -122,7 +149,7 @@ struct ActiveAlertSummaryView: View {
 
                 Spacer(minLength: 12)
 
-                if let onOpenAlertCenter, isLoading == false, (hasRenderableAlerts || isOffline) {
+                if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
                     Button {
                         onOpenAlertCenter()
                     } label: {
@@ -156,7 +183,6 @@ struct ActiveAlertSummaryView: View {
             }
 
             innerContent
-                .animation(SkyAwareMotion.layerChange(reduceMotion), value: contentState)
         }
         .padding(18)
         .cardBackground(
@@ -208,9 +234,8 @@ struct ActiveAlertSummaryView: View {
     private var contentStateContainer: some View {
         ZStack(alignment: .topLeading) {
             contentStateView
-                .id(contentState)
-                .transition(.opacity)
         }
+        .animation(contentStateAnimation, value: contentState)
         .frame(
             maxWidth: .infinity,
             minHeight: usesFlexibleAlertHeight ? nil : 72,
@@ -309,8 +334,41 @@ struct ActiveAlertSummaryView: View {
         }
     }
 
-    private static func usesFlexibleAlertHeight(currentState: ContentState, isLeavingAlerts: Bool) -> Bool {
+    static func usesFlexibleAlertHeight(currentState: ContentState, isLeavingAlerts: Bool) -> Bool {
         currentState == .alerts || isLeavingAlerts
+    }
+
+    static func shouldAnimateContentStateTransition(
+        from oldState: ContentState,
+        to newState: ContentState,
+        suppressesRoutineRefreshMotion: Bool
+    ) -> Bool {
+        guard suppressesRoutineRefreshMotion == false else {
+            return false
+        }
+
+        guard oldState != .loading, newState != .loading else {
+            return false
+        }
+
+        return oldState != newState
+    }
+
+    // Keep visible alerts ahead of transient loading/empty bookkeeping so cached refreshes stay calm.
+    static func contentState(
+        for displayState: LocalAlertsDisplayState,
+        hasRenderableAlerts: Bool
+    ) -> ContentState {
+        if hasRenderableAlerts {
+            return .alerts
+        }
+
+        switch displayState.presentationState {
+        case .loading:
+            return .loading
+        case .alerts, .empty, .unavailable:
+            return .empty
+        }
     }
 }
 
@@ -483,9 +541,157 @@ private struct WatchRowView: View {
 
 #Preview {
     NavigationStack {
-        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
-            .toolbar(.hidden, for: .navigationBar)
-            .background(.skyAwareBackground)
-            .environment(\.dependencies, Dependencies.unconfigured)
+        ActiveAlertPreviewContainer(
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            localAlertsDisplayState: .current(content: .populated, source: .cached),
+            todayContentState: .current
+        )
+        .toolbar(.hidden, for: .navigationBar)
+        .background(.skyAwareBackground)
+        .environment(\.dependencies, Dependencies.unconfigured)
+    }
+}
+
+#Preview("Local Alerts - Populated Alerts") {
+    ActiveAlertPreviewContainer(
+        alerts: Watch.sampleWatchRows,
+        localAlertsDisplayState: .current(content: .populated, source: .cached)
+    )
+}
+
+#Preview("Local Alerts - Populated Mesos") {
+    ActiveAlertPreviewContainer(
+        mesos: MD.sampleDiscussionDTOs,
+        localAlertsDisplayState: .current(content: .populated, source: .cached)
+    )
+}
+
+#Preview("Local Alerts - Mixed Alert and Meso") {
+    ActiveAlertPreviewContainer(
+        mesos: [MD.sampleDiscussionDTOs[0]],
+        alerts: [Watch.sampleWatchRows[0]],
+        localAlertsDisplayState: .current(content: .populated, source: .cached)
+    )
+}
+
+#Preview("Local Alerts - Known Empty") {
+    ActiveAlertPreviewContainer(
+        mesos: [],
+        alerts: [],
+        localAlertsDisplayState: .current(content: .empty, source: .cached)
+    )
+}
+
+#Preview("Local Alerts - No Cache Resolving") {
+    ActiveAlertPreviewContainer(
+        mesos: [],
+        alerts: [],
+        localAlertsDisplayState: .noCacheResolving,
+        todayContentState: .noCacheResolving
+    )
+}
+
+#Preview("Local Alerts - Cached Refreshing Populated") {
+    ActiveAlertPreviewContainer(
+        mesos: MD.sampleDiscussionDTOs,
+        alerts: Watch.sampleWatchRows,
+        localAlertsDisplayState: .cachedRefreshing(content: .populated),
+        todayContentState: .cachedRefreshing
+    )
+}
+
+#Preview("Local Alerts - Cached Refreshing Empty") {
+    ActiveAlertPreviewContainer(
+        mesos: [],
+        alerts: [],
+        localAlertsDisplayState: .cachedRefreshing(content: .empty),
+        todayContentState: .cachedRefreshing
+    )
+}
+
+#Preview("Local Alerts - Offline Cached Populated") {
+    ActiveAlertPreviewContainer(
+        mesos: MD.sampleDiscussionDTOs,
+        alerts: Watch.sampleWatchRows,
+        localAlertsDisplayState: .staleOrDegraded(content: .populated),
+        todayContentState: .staleRefreshing,
+        isOffline: true
+    )
+    .environment(\.colorScheme, .dark)
+}
+
+#Preview("Local Alerts - Offline Cached Empty") {
+    ActiveAlertPreviewContainer(
+        mesos: [],
+        alerts: [],
+        localAlertsDisplayState: .staleOrDegraded(content: .empty),
+        todayContentState: .staleRefreshing,
+        isOffline: true
+    )
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Local Alerts - Degraded Cached Populated") {
+    ActiveAlertPreviewContainer(
+        mesos: MD.sampleDiscussionDTOs,
+        alerts: Watch.sampleWatchRows,
+        localAlertsDisplayState: .staleOrDegraded(content: .populated),
+        todayContentState: .degraded,
+        isOffline: true
+    )
+}
+
+#Preview("Local Alerts - Degraded Cached Empty") {
+    ActiveAlertPreviewContainer(
+        mesos: [],
+        alerts: [],
+        localAlertsDisplayState: .staleOrDegraded(content: .empty),
+        todayContentState: .degraded,
+        isOffline: true
+    )
+}
+
+#Preview("Local Alerts - AX Large Type") {
+    ActiveAlertPreviewContainer(
+        mesos: MD.sampleDiscussionDTOs,
+        alerts: Watch.sampleWatchRows,
+        localAlertsDisplayState: .cachedRefreshing(content: .populated),
+        todayContentState: .cachedRefreshing
+    )
+    .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+private struct ActiveAlertPreviewContainer: View {
+    let mesos: [MdDTO]
+    let alerts: [AlertDTO]
+    let localAlertsDisplayState: LocalAlertsDisplayState
+    let todayContentState: TodayContentState
+    let isOffline: Bool
+
+    init(
+        mesos: [MdDTO] = [],
+        alerts: [AlertDTO] = [],
+        localAlertsDisplayState: LocalAlertsDisplayState,
+        todayContentState: TodayContentState = .current,
+        isOffline: Bool = false
+    ) {
+        self.mesos = mesos
+        self.alerts = alerts
+        self.localAlertsDisplayState = localAlertsDisplayState
+        self.todayContentState = todayContentState
+        self.isOffline = isOffline
+    }
+
+    var body: some View {
+        ActiveAlertSummaryView(
+            mesos: mesos,
+            alerts: alerts,
+            localAlertsDisplayState: localAlertsDisplayState,
+            todayContentState: todayContentState,
+            isOffline: isOffline
+        )
+        .padding()
+        .background(.skyAwareBackground)
     }
 }
