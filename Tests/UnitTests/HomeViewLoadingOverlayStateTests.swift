@@ -650,6 +650,8 @@ struct TodayContentStateTests {
     func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
         #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
         #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
+        #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
+        #expect(TodayContentState.noCacheResolving.suppressesRoutineRefreshMotion == false)
 
         #expect(
             SummaryView.localAlertsPresentationState(

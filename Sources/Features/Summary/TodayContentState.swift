@@ -64,4 +64,8 @@ enum TodayContentState: Sendable, Equatable {
     var allowsSectionResolvingTreatment: Bool {
         self != .cachedRefreshing
     }
+
+    var suppressesRoutineRefreshMotion: Bool {
+        self == .cachedRefreshing
+    }
 }

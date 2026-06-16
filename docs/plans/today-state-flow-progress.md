@@ -20,7 +20,7 @@ deliberately left alone, and what the next session should know.
 | 2 | TV-02 | [#250](https://github.com/justinrooks/project-arcus/issues/250) | Keep Today section content stable during resolving refreshes | `gpt-5.4-mini / high` | Complete | Canonical Today state now stabilizes Local Alerts, Today's Awareness, and risk placeholders during cached refreshes. |
 | 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Complete | Today boundary now owns visible-weather retention so Current Conditions and Atmospheric Conditions stay aligned during same-location refresh. |
 | 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Complete | Canonical Today state now drives the lone calm update cue; section resolving treatment is suppressed during cached refresh. |
-| 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Not started | Depends on TV-01, TV-02, and TV-04. |
+| 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Complete | Narrowed Today motion scope so cached-refreshing no longer rekeys alert content or participates in broad stack transitions. |
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Keep provider progress internal. |
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Not started | Final validation/support issue after TV-01 through TV-06. |
 
@@ -451,3 +451,62 @@ Model used: `gpt-5.4-mini / medium`
 - Outlook now uses neutral copy instead of "Getting outlook details…" outside true no-cache resolving.
 - Keep the remaining noisy Summary Awareness accessibility tests out of this thread; they are not part of the calm
   update fix.
+
+### TV-05 / GitHub #253 - Tighten Today animation and transition scope during refresh
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / medium`
+
+#### Scope
+
+- Added `TodayContentState.suppressesRoutineRefreshMotion` so cached-refreshing can explicitly opt out of routine
+  branch animation.
+- Removed the root `HomeView` ZStack transition so the Today stack no longer participates in an unnecessary full-screen
+  fade.
+- Removed `ActiveAlertSummaryView` content identity swapping and branch transition behavior, then gated its content
+  animation so cached-refreshing updates stay anchored instead of crossfading empty/loading/populated branches.
+- Added display-state coverage proving cached-refreshing suppresses routine refresh motion while no-cache resolving
+  remains the state that is allowed to drive page entrance motion.
+
+#### Files Changed
+
+- `Sources/App/HomeView.swift`
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Sources/Features/Summary/TodayContentState.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering preserved.
+- True no-cache resolving still uses the calm loading surface and its existing entrance transition.
+- Section resolving treatment still stays suppressed for cached-refreshing via the canonical Today state.
+- Provider behavior, refresh cadence, and snapshot sequencing were not changed.
+- Reduce Motion checks remain in the existing SwiftUI branches; no new motion policy was introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" build`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests/TodayContentStateTests`
+  - First attempt failed because it collided with the concurrent build database lock.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" -derivedDataPath /private/tmp/skyaware-tv253-test test -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests/TodayContentStateTests`
+  - Passed.
+- `git diff --check -- Sources/App/HomeView.swift Sources/Features/Summary/ActiveAlertSummaryView.swift Sources/Features/Summary/TodayContentState.swift Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+  - Passed.
+
+#### Deferred Work
+
+- Simulator-level motion observation for cached-refreshing with Reduce Motion on/off remains a good follow-up sanity
+  check, but the code paths now explicitly suppress the routine branch animation source.
+- Refresh sequencing and partial-arrival stabilization remain deferred to #254.
+- Preview/test expansion for the full transition matrix remains deferred to #255.
+
+#### Handoff Notes
+
+- The important motion fix is in `ActiveAlertSummaryView`: stop rekeying the alert card on `contentState` changes and
+  keep cached-refreshing out of the branch animation path.
+- `TodayContentState.suppressesRoutineRefreshMotion` is the narrow motion hint now available for follow-up work.
+- If future motion work needs to reintroduce a broader page transition, it should be done from the canonical Today
+  state boundary, not from per-card identity churn.

@@ -159,7 +159,6 @@ struct ActiveAlertSummaryView: View {
             }
 
             innerContent
-                .animation(SkyAwareMotion.layerChange(reduceMotion), value: contentState)
         }
         .padding(18)
         .cardBackground(
@@ -211,9 +210,11 @@ struct ActiveAlertSummaryView: View {
     private var contentStateContainer: some View {
         ZStack(alignment: .topLeading) {
             contentStateView
-                .id(contentState)
-                .transition(.opacity)
         }
+        .animation(
+            todayContentState.suppressesRoutineRefreshMotion ? nil : SkyAwareMotion.layerChange(reduceMotion),
+            value: contentState
+        )
         .frame(
             maxWidth: .infinity,
             minHeight: usesFlexibleAlertHeight ? nil : 72,
