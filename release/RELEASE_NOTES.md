@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.0.1(75)
+
 ### Overview
 This build makes Today open with cached content immediately, keeps useful content visible during refresh, and smooths Local Alerts presentation during refresh.
 
