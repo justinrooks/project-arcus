@@ -205,6 +205,10 @@ struct SummaryStatus: View {
             SummaryStatusSecondaryLine(
                 message: todayContentState.showsCalmUpdatingCue
                     ? resolutionState.primaryActiveMessage ?? resolutionState.recentCompletedMessage
+                    : nil,
+                recentCompletedDeadline: todayContentState.showsCalmUpdatingCue
+                    && resolutionState.primaryActiveMessage == nil
+                    ? resolutionState.recentCompletedDeadline
                     : nil
             )
         }
@@ -323,7 +327,13 @@ private struct SummaryStatusSecondaryLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let message: String?
+    let recentCompletedDeadline: Date?
     @State private var displayedMessage: String?
+
+    private struct TaskIdentity: Equatable {
+        let message: String?
+        let recentCompletedDeadline: Date?
+    }
 
     private var messageTransition: AnyTransition {
         if reduceMotion {
@@ -357,15 +367,41 @@ private struct SummaryStatusSecondaryLine: View {
         .frame(minHeight: 18, alignment: .leading)
         .clipped()
         .animation(SkyAwareMotion.message(reduceMotion), value: displayedMessage)
-        .task(id: message) {
-            setDisplayedMessage(message)
+        .task(id: taskIdentity) {
+            await setDisplayedMessage(message)
         }
     }
 
+    private var taskIdentity: TaskIdentity {
+        TaskIdentity(message: message, recentCompletedDeadline: recentCompletedDeadline)
+    }
+
     @MainActor
-    private func setDisplayedMessage(_ message: String?) {
+    private func setDisplayedMessage(_ message: String?) async {
         withAnimation(SkyAwareMotion.message(reduceMotion)) {
             displayedMessage = message
+        }
+
+        guard message != nil, let recentCompletedDeadline else { return }
+
+        let remaining = recentCompletedDeadline.timeIntervalSinceNow
+        guard remaining > 0 else {
+            withAnimation(SkyAwareMotion.message(reduceMotion)) {
+                displayedMessage = nil
+            }
+            return
+        }
+
+        do {
+            try await Task.sleep(for: .milliseconds(Int64((remaining * 1_000).rounded(.up))))
+        } catch {
+            return
+        }
+
+        guard Task.isCancelled == false else { return }
+
+        withAnimation(SkyAwareMotion.message(reduceMotion)) {
+            displayedMessage = nil
         }
     }
 }

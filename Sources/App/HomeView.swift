@@ -153,7 +153,9 @@ struct HomeView: View {
         TodayContentState.from(
             readinessState: readinessState,
             hasCachedContent: displayedProjection != nil,
-            hasLiveContent: usesPipelineSummaryFallback,
+            hasLiveContent: usesPipelineSummaryFallback || (
+                isUITestStaticMode && (!refreshPipeline.mesos.isEmpty || !refreshPipeline.alerts.isEmpty)
+            ),
             isRefreshing: refreshPipeline.isRefreshInFlight,
             isOffline: runtimeConnectivityState.isOffline
         )
