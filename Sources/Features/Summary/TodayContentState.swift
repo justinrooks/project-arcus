@@ -51,4 +51,17 @@ enum TodayContentState: Sendable, Equatable {
     var showsResolvingSurface: Bool {
         self == .noCacheResolving
     }
+
+    var showsCalmUpdatingCue: Bool {
+        switch self {
+        case .cachedRefreshing, .staleRefreshing:
+            true
+        case .noCacheResolving, .current, .degraded, .unavailable:
+            false
+        }
+    }
+
+    var allowsSectionResolvingTreatment: Bool {
+        self != .cachedRefreshing
+    }
 }

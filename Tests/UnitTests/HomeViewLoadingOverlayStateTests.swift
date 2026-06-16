@@ -646,6 +646,43 @@ struct SummaryContentPresentationStateTests {
 @Suite("Today Content State")
 @MainActor
 struct TodayContentStateTests {
+    @Test("cached refreshing exposes the calm page cue and suppresses section loading branches")
+    func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
+        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
+
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                todayContentState: .cachedRefreshing,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+
+        #expect(
+            SummaryAwarenessPrimaryState.resolve(
+                stormRisk: nil,
+                severeRisk: nil,
+                fireRisk: nil,
+                alerts: [],
+                todayContentState: .cachedRefreshing,
+                isStormRiskResolving: true,
+                isSevereRiskResolving: true,
+                isFireRiskResolving: true,
+                isOffline: false
+            ) == .quiet
+        )
+
+        #expect(
+            OutlookSummaryCard.outlookSummaryText(
+                outlook: nil,
+                todayContentState: .cachedRefreshing,
+                isLoading: false,
+                isPending: true
+            ) == "Outlook details will appear here when available."
+        )
+    }
+
     @Test("no cache while resolving maps to the resolving state")
     func noCacheResolving_mapsToResolvingState() {
         #expect(

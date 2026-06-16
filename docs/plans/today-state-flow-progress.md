@@ -19,7 +19,7 @@ deliberately left alone, and what the next session should know.
 | 1 | TV-01 | [#249](https://github.com/justinrooks/project-arcus/issues/249) | Introduce canonical Today content state for cache roll-forward rendering | `gpt-5.4-mini / high` | Complete | Foundation boundary added; `HomeView` and `SummaryView` now share `TodayContentState`. |
 | 2 | TV-02 | [#250](https://github.com/justinrooks/project-arcus/issues/250) | Keep Today section content stable during resolving refreshes | `gpt-5.4-mini / high` | Complete | Canonical Today state now stabilizes Local Alerts, Today's Awareness, and risk placeholders during cached refreshes. |
 | 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Complete | Today boundary now owns visible-weather retention so Current Conditions and Atmospheric Conditions stay aligned during same-location refresh. |
-| 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Not started | Depends on TV-01 and TV-02. |
+| 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Complete | Canonical Today state now drives the lone calm update cue; section resolving treatment is suppressed during cached refresh. |
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Not started | Depends on TV-01, TV-02, and TV-04. |
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Keep provider progress internal. |
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Not started | Final validation/support issue after TV-01 through TV-06. |
@@ -388,3 +388,66 @@ Model used: `gpt-5.4-mini / high`
   is likely coming from refresh indicator policy or transition scope, not weather data flow.
 - Keep the current boundary narrow when working on #252 and #253; they should build on this shared weather input rather
   than reopening card-level retention logic.
+
+### TV-04 / GitHub #252 - Consolidate Today refresh indicators into one calm updating state
+
+Status: Complete
+Date: 2026-06-15
+Model used: `gpt-5.4-mini / medium`
+
+#### Scope
+
+- Added calm cached-refresh cue helpers on `TodayContentState`.
+- Routed the Current Conditions secondary line to the canonical Today cue instead of animating completed messages.
+- Suppressed section-level resolving treatment during cached-refreshing so cached content stays visible without multiple
+  simultaneous blur/opacity treatments.
+- Suppressed local loading copy in alerts, awareness, and outlook during cached-refreshing when stable cached or
+  known-empty content already exists.
+- Added a focused display-model test proving cached-refreshing exposes one calm page cue and suppresses local loading
+  branches.
+- Added cached-refreshing and no-cache resolving previews for the Today surface.
+
+#### Files Changed
+
+- `Sources/Features/Summary/TodayContentState.swift`
+- `Sources/Features/Summary/SummaryResolving.swift`
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Sources/Features/Summary/OutlookSummaryCard.swift`
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering remained intact.
+- First-load no-cache resolving still shows the full-screen loading surface.
+- Offline/degraded content remains visible and meaningful.
+- Provider cadence, refresh sequencing, and snapshot application logic were not changed.
+- The Today layout and card hierarchy were left alone.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" test -only-testing:SkyAwareTests/TodayContentStateTests`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" test -only-testing:SkyAwareTests/SummaryAwarenessPanelTests`
+  - Failed on pre-existing accessibility contract assertions unrelated to this issue:
+    - `stormHeroAccessibilityContract_separatesCategoryValueAndHint()`
+    - `fireHeroAccessibilityContract_keepsTheFireValueReadable()`
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`
+  - Passed.
+
+#### Deferred Work
+
+- TV-05 and TV-06 remain untouched.
+- The unrelated Summary Awareness accessibility-contract failures should be handled separately.
+
+#### Handoff Notes
+
+- `TodayContentState` now owns the calm cached-refresh cue via `showsCalmUpdatingCue`.
+- `summaryResolving` now suppresses section-level resolving treatment for cached refreshes; TV-05 should tighten any
+  remaining animation scope rather than reintroducing local loading branches.
+- Outlook now uses neutral copy instead of "Getting outlook details…" outside true no-cache resolving.
+- Keep the remaining noisy Summary Awareness accessibility tests out of this thread; they are not part of the calm
+  update fix.

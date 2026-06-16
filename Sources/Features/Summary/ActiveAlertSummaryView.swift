@@ -25,6 +25,7 @@ struct ActiveAlertSummaryView: View {
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
     let isLoading: Bool
+    let todayContentState: TodayContentState
     let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
     private let sortedMesos: [MdDTO]
@@ -40,12 +41,14 @@ struct ActiveAlertSummaryView: View {
         mesos: [MdDTO],
         alerts: [AlertDTO],
         isLoading: Bool = false,
+        todayContentState: TodayContentState = .current,
         isOffline: Bool = false,
         onOpenAlertCenter: (() -> Void)? = nil
     ) {
         self.mesos = mesos
         self.alerts = alerts
         self.isLoading = isLoading
+        self.todayContentState = todayContentState
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
         self.sortedMesos = AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
@@ -222,7 +225,11 @@ struct ActiveAlertSummaryView: View {
     private var contentStateView: some View {
         switch contentState {
         case .loading:
-            loadingContent
+            if todayContentState.showsResolvingSurface {
+                loadingContent
+            } else {
+                emptyContent
+            }
         case .alerts:
             alertsContent
         case .empty:

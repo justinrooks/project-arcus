@@ -532,7 +532,7 @@ struct PrimaryAwarenessPanel: View {
                 onOpenMapLayer(.categorical)
             }
         )
-        .summaryResolving(stormResolving, style: .subtle)
+        .summaryResolving(stormResolving, todayContentState: todayContentState, style: .subtle)
         .accessibilityHint("Opens the storm risk map.")
     }
 
@@ -547,7 +547,7 @@ struct PrimaryAwarenessPanel: View {
                 onOpenMapLayer(severeMapLayer)
             }
         )
-        .summaryResolving(severeResolving, style: .subtle)
+        .summaryResolving(severeResolving, todayContentState: todayContentState, style: .subtle)
         .accessibilityHint("Opens the highlighted severe threat map.")
     }
 
@@ -563,7 +563,7 @@ struct PrimaryAwarenessPanel: View {
                 onOpenMapLayer(.fire)
             }
         )
-        .summaryResolving(fireResolving, style: .subtle)
+        .summaryResolving(fireResolving, todayContentState: todayContentState, style: .subtle)
         .accessibilityHint("Opens the fire risk map.")
     }
 

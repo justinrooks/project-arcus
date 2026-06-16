@@ -257,6 +257,7 @@ struct SummaryView: View {
         )
         .summaryResolving(
             resolutionState.isResolving(.stormRisk) && stormRiskShowsResolvingPlaceholder == false && showsOfflineToken == false,
+            todayContentState: todayContentState,
             style: .subtle
         )
         .accessibilityHint("Opens the severe risk map.")
@@ -289,6 +290,7 @@ struct SummaryView: View {
         )
         .summaryResolving(
             resolutionState.isResolving(.severeRisk) && severeRiskShowsResolvingPlaceholder == false && showsOfflineToken == false,
+            todayContentState: todayContentState,
             style: .subtle
         )
         .accessibilityHint("Opens the highlighted severe threat map.")
@@ -318,6 +320,7 @@ struct SummaryView: View {
         )
         .summaryResolving(
             resolutionState.isResolving(.fireRisk) && fireRisk != nil && showsOfflineToken == false,
+            todayContentState: todayContentState,
             style: .subtle
         )
         .accessibilityHint("Opens the fire risk map.")
@@ -346,6 +349,7 @@ struct SummaryView: View {
             statusText: statusText,
             weather: weather,
             resolutionState: resolutionState,
+            todayContentState: todayContentState,
             showsOfflineToken: showsOfflineToken,
             isLocationUnavailable: isLocationUnavailable,
             condenseProgress: headerCondenseProgress
@@ -365,6 +369,7 @@ struct SummaryView: View {
                 .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
                 .summaryResolving(
                     resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                    todayContentState: todayContentState,
                     style: .subtle
                 )
         }
@@ -388,6 +393,7 @@ struct SummaryView: View {
                 mesos: mesos,
                 alerts: alerts,
                 isLoading: localAlertsPresentationState == .loading,
+                todayContentState: todayContentState,
                 isOffline: showsOfflineToken,
                 onOpenAlertCenter: onOpenAlerts
             )
@@ -397,6 +403,7 @@ struct SummaryView: View {
                     resolutionState: resolutionState,
                     showsOfflineToken: showsOfflineToken
                 ),
+                todayContentState: todayContentState,
                 style: .subtle
             )
         }
@@ -405,9 +412,14 @@ struct SummaryView: View {
             outlook: outlook,
             isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
             isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+            todayContentState: todayContentState,
             onBrowseAllOutlooks: onOpenOutlooks
         )
-        .summaryResolving(resolutionState.isResolving(.outlook), style: .subtle)
+        .summaryResolving(
+            resolutionState.isResolving(.outlook),
+            todayContentState: todayContentState,
+            style: .subtle
+        )
 
         AttributionView()
     }
@@ -628,6 +640,38 @@ private extension AnyTransition {
             weather: SummaryPreviewData.weather,
             todayContentState: .cachedRefreshing,
             outlook: nil,
+            mesos: [],
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Complete") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .moderate,
+            severeRisk: .hail(probability: 0.20),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Empty Alerts") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
             mesos: [],
             alerts: []
         )

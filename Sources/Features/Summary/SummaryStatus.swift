@@ -38,6 +38,7 @@ struct SummaryStatus: View {
     let statusText: String
     let weather: SummaryWeather?
     let resolutionState: SummaryResolutionState
+    let todayContentState: TodayContentState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
     let condenseProgress: CGFloat
@@ -202,7 +203,7 @@ struct SummaryStatus: View {
                 .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(
-                resolutionState: resolutionState
+                message: todayContentState.showsCalmUpdatingCue ? resolutionState.primaryActiveMessage : nil
             )
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
@@ -319,7 +320,7 @@ private struct SummaryOfflineToken: View {
 private struct SummaryStatusSecondaryLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    let resolutionState: SummaryResolutionState
+    let message: String?
     @State private var displayedMessage: String?
 
     private var messageTransition: AnyTransition {
@@ -354,44 +355,9 @@ private struct SummaryStatusSecondaryLine: View {
         .frame(minHeight: 18, alignment: .leading)
         .clipped()
         .animation(SkyAwareMotion.message(reduceMotion), value: displayedMessage)
-        .task(id: taskState) {
-            await updateDisplayedMessage()
+        .task(id: message) {
+            setDisplayedMessage(message)
         }
-    }
-
-    private var taskState: SecondaryLineTaskState {
-        SecondaryLineTaskState(
-            activeMessages: resolutionState.activeMessages,
-            recentCompletedMessage: resolutionState.recentCompletedMessage,
-            recentCompletedDeadline: resolutionState.recentCompletedDeadline
-        )
-    }
-
-    @MainActor
-    private func updateDisplayedMessage() async {
-        if let primaryActiveMessage = resolutionState.primaryActiveMessage {
-            setDisplayedMessage(primaryActiveMessage)
-            return
-        }
-
-        if let recentCompletedMessage = resolutionState.recentCompletedMessage {
-            setDisplayedMessage(recentCompletedMessage)
-
-            if let recentCompletedDeadline = resolutionState.recentCompletedDeadline {
-                let remainingMilliseconds = max(
-                    Int((recentCompletedDeadline.timeIntervalSinceNow * 1_000).rounded(.up)),
-                    0
-                )
-
-                if remainingMilliseconds > 0 {
-                    try? await Task.sleep(for: .milliseconds(remainingMilliseconds))
-                }
-            }
-
-            if Task.isCancelled { return }
-        }
-
-        setDisplayedMessage(nil)
     }
 
     @MainActor
@@ -400,12 +366,6 @@ private struct SummaryStatusSecondaryLine: View {
             displayedMessage = message
         }
     }
-}
-
-private struct SecondaryLineTaskState: Equatable {
-    let activeMessages: [String]
-    let recentCompletedMessage: String?
-    let recentCompletedDeadline: Date?
 }
 
 private struct SummarySettledConditionLine: View {
@@ -456,6 +416,7 @@ private struct SummarySettledConditionLine: View {
                 pressureTrend: "climbing"
             ),
             resolutionState: SummaryResolutionState(),
+            todayContentState: .current,
             showsOfflineToken: false,
             isLocationUnavailable: false,
             condenseProgress: 0
@@ -482,6 +443,7 @@ private struct SummarySettledConditionLine: View {
                 pressureTrend: "falling"
             ),
             resolutionState: SummaryResolutionState(),
+            todayContentState: .current,
             showsOfflineToken: true,
             isLocationUnavailable: false,
             condenseProgress: 0.75
@@ -490,6 +452,7 @@ private struct SummarySettledConditionLine: View {
             statusText: "Location not available",
             weather: nil,
             resolutionState: SummaryResolutionState(),
+            todayContentState: .noCacheResolving,
             showsOfflineToken: false,
             isLocationUnavailable: true,
             condenseProgress: 0.75
