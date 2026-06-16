@@ -446,10 +446,11 @@ struct HomeRefreshPipelineTests {
             )
         }
 
-        let refreshStillActive = await waitUntil(timeout: .seconds(5)) {
-            pipeline.resolutionState.isRefreshing
+        let completedProgressObserved = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.progressHistory().contains(.completed(.lane(.hotAlerts)))
         }
-        #expect(refreshStillActive)
+        #expect(completedProgressObserved)
+        #expect(pipeline.resolutionState.isRefreshing)
         #expect(pipeline.resolutionState.isResolving(.alerts) == false)
 
         await gate.open()
@@ -1254,6 +1255,7 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let runGate: AsyncGate?
     private let progressEvents: [HomeIngestionProgressEvent]
     private var submittedRequests: [HomeIngestionRequest] = []
+    private var recordedProgressEvents: [HomeIngestionProgressEvent] = []
 
     init(
         snapshot: HomeSnapshot = .empty,
@@ -1308,6 +1310,7 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     ) async throws -> HomeSnapshot {
         submittedRequests.append(request)
         for event in progressEvents {
+            recordedProgressEvents.append(event)
             await progress?(event)
         }
         if let runGate {
@@ -1326,6 +1329,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+
+    func progressHistory() -> [HomeIngestionProgressEvent] {
+        recordedProgressEvents
     }
 }
 

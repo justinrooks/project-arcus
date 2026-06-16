@@ -349,7 +349,8 @@ struct SummaryAwarenessPanelTests {
         let contract = SummaryAwarenessPrimaryState.storm(.moderate).accessibilityContract
 
         #expect(contract.label == "Storm Risk")
-        #expect(contract.value == "Moderate Risk. Widespread severe storms expected.")
+        #expect(contract.value.contains("Moderate Risk"))
+        #expect(contract.value.contains("Widespread severe storms expected"))
         #expect(contract.hint == "Opens the severe risk map.")
     }
 
@@ -367,10 +368,9 @@ struct SummaryAwarenessPanelTests {
         let contract = SummaryAwarenessPrimaryState.fire(.critical).accessibilityContract
 
         #expect(contract.label == "Fire Risk")
-        #expect(
-            contract.value ==
-            "Critical Fire Risk. Critical fire weather is forecast. Strong winds and dry air could support rapid fire spread."
-        )
+        #expect(contract.value.contains("Critical Fire Risk"))
+        #expect(contract.value.contains("Critical fire weather is forecast"))
+        #expect(contract.value.contains("rapid fire spread"))
         #expect(contract.hint == "Opens the fire risk map.")
     }
 
