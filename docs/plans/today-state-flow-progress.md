@@ -17,7 +17,7 @@ deliberately left alone, and what the next session should know.
 |---:|---|---|---|---|---|---|
 | 0 | TV-00 | [#248](https://github.com/justinrooks/project-arcus/issues/248) | Audit Today View State Flow | `gpt-5.4-mini / medium` | Planned | Parent tracking issue created from source-backed investigation. |
 | 1 | TV-01 | [#249](https://github.com/justinrooks/project-arcus/issues/249) | Introduce canonical Today content state for cache roll-forward rendering | `gpt-5.4-mini / high` | Complete | Foundation boundary added; `HomeView` and `SummaryView` now share `TodayContentState`. |
-| 2 | TV-02 | [#250](https://github.com/justinrooks/project-arcus/issues/250) | Keep Today section content stable during resolving refreshes | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Highest visible flicker risk. |
+| 2 | TV-02 | [#250](https://github.com/justinrooks/project-arcus/issues/250) | Keep Today section content stable during resolving refreshes | `gpt-5.4-mini / high` | Complete | Canonical Today state now stabilizes Local Alerts, Today's Awareness, and risk placeholders during cached refreshes. |
 | 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Header/weather split is source-backed. |
 | 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Not started | Depends on TV-01 and TV-02. |
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Not started | Depends on TV-01, TV-02, and TV-04. |
@@ -272,3 +272,59 @@ Model used: GPT-5 Codex
   needed.
 - `HomeRefreshPipeline` did not change, so any remaining flicker or card-by-card churn is still coming from section
   presentation logic, not the new boundary.
+
+### TV-02 / GitHub #250 - Keep Today section content stable during resolving refreshes
+
+Status: Complete
+Date: 2026-06-15
+Model used: `gpt-5.4-mini / high`
+
+#### Scope
+
+- Kept Local Alerts on stable surfaces during cached refreshes by driving the section from the canonical
+  `TodayContentState`.
+- Kept Today’s Awareness and the storm/severe/fire resolving placeholders calm during cached refreshes by gating the
+  placeholder branches on the canonical Today state instead of raw refresh progress.
+- Preserved true no-cache resolving behavior so the first-load loading surface still appears when Today has no useful
+  content yet.
+- Updated focused previews to show cached-refreshing empty alerts, cached-refreshing populated alerts, and
+  cached-refreshing risk content.
+
+#### Files Changed
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `Tests/UnitTests/SummaryAwarenessPanelTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering remained intact.
+- `HomeRefreshPipeline` behavior, cadence, and provider orchestration were left alone.
+- True no-cache resolving still uses the calm loading surface.
+- Whole-page resolving and refresh cadence policy were not redesigned.
+- Weather roll-forward behavior, page-level refresh indicators, and animation policy were intentionally left for later
+  issues.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" -only-testing:SkyAwareTests/SummaryViewLocalAlertsTests -only-testing:SkyAwareTests/SummaryViewRiskPlaceholderPresentationTests -only-testing:SkyAwareTests/SummaryAwarenessPanelTests/cachedRefreshingWithoutResolvedRisk_keepsPrimaryHeroCalm -only-testing:SkyAwareTests/SummaryAwarenessPanelTests/noCacheResolving_showsPrimaryLoading test`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" build`
+  - Passed.
+
+#### Deferred Work
+
+- Weather roll-forward consistency across Current Conditions and Atmospheric Conditions is deferred to #251.
+- Consolidated Today update indicators are deferred to #252.
+- Global animation and transition scope cleanup is deferred to #253.
+- `HomeRefreshPipeline` restructuring and partial-arrival snapshot stabilization are deferred to #254.
+
+#### Handoff Notes
+
+- The next issue should keep using `TodayContentState` as the boundary and focus on weather retention rather than
+  re-opening section content branching.
+- Local Alerts and the Today awareness/risk surfaces now stay visually stable during cached refreshes, so any new
+  churn will likely come from weather-specific value retention or page-level indicator changes.
+- Do not widen this into refresh-indicator policy or animation cleanup; those belong to #252 and #253.

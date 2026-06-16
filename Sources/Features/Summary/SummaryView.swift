@@ -175,10 +175,9 @@ struct SummaryView: View {
 
     private var localAlertsPresentationState: LocalAlertsPresentationState {
         Self.localAlertsPresentationState(
-            readinessState: readinessState,
+            todayContentState: todayContentState,
             hasActiveAlerts: hasActiveAlerts,
-            isLocationUnavailable: isLocationUnavailable,
-            isAlertsResolving: resolutionState.isResolving(.alerts)
+            isLocationUnavailable: isLocationUnavailable
         )
     }
 
@@ -239,10 +238,8 @@ struct SummaryView: View {
     private var stormRiskButton: some View {
         let stormRiskShowsResolvingPlaceholder = Self.showsRiskResolvingPlaceholder(
             hasRiskValue: stormRisk != nil,
-            readinessState: readinessState,
-            isSectionResolving: resolutionState.isResolving(.stormRisk),
-            showsOfflineToken: showsOfflineToken,
-            isRefreshing: resolutionState.isRefreshing
+            todayContentState: todayContentState,
+            showsOfflineToken: showsOfflineToken
         )
 
         return Button {
@@ -273,10 +270,8 @@ struct SummaryView: View {
     private var severeRiskButton: some View {
         let severeRiskShowsResolvingPlaceholder = Self.showsRiskResolvingPlaceholder(
             hasRiskValue: severeRisk != nil,
-            readinessState: readinessState,
-            isSectionResolving: resolutionState.isResolving(.severeRisk),
-            showsOfflineToken: showsOfflineToken,
-            isRefreshing: resolutionState.isRefreshing
+            todayContentState: todayContentState,
+            showsOfflineToken: showsOfflineToken
         )
 
         return Button {
@@ -308,17 +303,15 @@ struct SummaryView: View {
         Button {
             onOpenMapLayer(.fire)
         } label: {
-            FireWeatherRailView(
-                level: fireRisk,
-                isOffline: showsOfflineToken,
-                showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
-                    hasRiskValue: fireRisk != nil,
-                    readinessState: readinessState,
-                    isSectionResolving: resolutionState.isResolving(.fireRisk),
-                    showsOfflineToken: showsOfflineToken,
-                    isRefreshing: resolutionState.isRefreshing
+                FireWeatherRailView(
+                    level: fireRisk,
+                    isOffline: showsOfflineToken,
+                    showsResolvingPlaceholder: Self.showsRiskResolvingPlaceholder(
+                        hasRiskValue: fireRisk != nil,
+                        todayContentState: todayContentState,
+                        showsOfflineToken: showsOfflineToken
+                    )
                 )
-            )
             .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         }
         .buttonStyle(
@@ -343,7 +336,7 @@ struct SummaryView: View {
                 severeRisk: severeRisk,
                 fireRisk: fireRisk,
                 alerts: alerts,
-                readinessState: readinessState,
+                todayContentState: todayContentState,
                 resolutionState: resolutionState,
                 showsOfflineToken: showsOfflineToken,
                 onOpenMapLayer: onOpenMapLayer,
@@ -465,10 +458,9 @@ struct SummaryView: View {
     }
 
     static func localAlertsPresentationState(
-        readinessState: SummaryReadinessState,
+        todayContentState: TodayContentState,
         hasActiveAlerts: Bool,
-        isLocationUnavailable: Bool,
-        isAlertsResolving: Bool
+        isLocationUnavailable: Bool
     ) -> LocalAlertsPresentationState {
         if isLocationUnavailable {
             return .unavailable
@@ -476,16 +468,11 @@ struct SummaryView: View {
         if hasActiveAlerts {
             return .alerts
         }
-        if isAlertsResolving {
+        if todayContentState.showsResolvingSurface {
             return .loading
         }
 
-        switch readinessState {
-        case .loadingLocation, .resolvingLocalContext:
-            return .loading
-        case .loadingLocalData, .ready, .locationUnavailable:
-            return .empty
-        }
+        return .empty
     }
 
     static func appliesLocalAlertsResolving(
@@ -519,29 +506,13 @@ struct SummaryView: View {
 
     static func showsRiskResolvingPlaceholder(
         hasRiskValue: Bool,
-        readinessState: SummaryReadinessState,
-        isSectionResolving: Bool,
-        showsOfflineToken: Bool,
-        isRefreshing: Bool = false
+        todayContentState: TodayContentState,
+        showsOfflineToken: Bool
     ) -> Bool {
         guard showsOfflineToken == false, hasRiskValue == false else {
             return false
         }
-
-        if isRefreshing {
-            return true
-        }
-
-        if isSectionResolving {
-            return true
-        }
-
-        switch readinessState {
-        case .loadingLocation, .resolvingLocalContext, .loadingLocalData:
-            return true
-        case .ready, .locationUnavailable:
-            return false
-        }
+        return todayContentState.showsResolvingSurface
     }
 }
 
@@ -647,6 +618,51 @@ private extension AnyTransition {
             readinessState: .loadingLocalData,
             showsOfflineToken: true,
             outlook: nil,
+            mesos: [],
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Empty Alerts") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            mesos: [],
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Populated Alerts") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Cached Refreshing Risk") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .high,
+            severeRisk: .tornado(probability: 0.20),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .cachedRefreshing,
             mesos: [],
             alerts: []
         )

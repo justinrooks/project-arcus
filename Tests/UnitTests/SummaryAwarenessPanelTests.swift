@@ -17,6 +17,7 @@ struct SummaryAwarenessPanelTests {
                     headline: "A tornado warning is active for your area."
                 )
             ],
+            todayContentState: .current,
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
@@ -43,6 +44,7 @@ struct SummaryAwarenessPanelTests {
             severeRisk: .hail(probability: 0.20),
             fireRisk: .extreme,
             alerts: [alert],
+            todayContentState: .current,
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
@@ -134,21 +136,44 @@ struct SummaryAwarenessPanelTests {
         #expect(subtitle.contains("NWS Chicago IL") == false)
     }
 
-    @Test("refreshing without a resolved risk keeps the primary hero calm")
-    func refreshWithoutResolvedRisk_keepsPrimaryHeroCalm() {
+    @Test("cached refreshing without a resolved risk keeps the primary hero calm")
+    func cachedRefreshingWithoutResolvedRisk_keepsPrimaryHeroCalm() {
         let selected = SummaryAwarenessPrimaryState.resolve(
             stormRisk: nil,
             severeRisk: nil,
             fireRisk: nil,
             alerts: [],
-            isStormRiskResolving: false,
+            todayContentState: .cachedRefreshing,
+            isStormRiskResolving: true,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
-            isOffline: false,
-            isRefreshing: true
+            isOffline: false
         )
 
         #expect(selected == .quiet)
+    }
+
+    @Test("no-cache resolving still shows the primary loading hero")
+    func noCacheResolving_showsPrimaryLoading() {
+        let selected = SummaryAwarenessPrimaryState.resolve(
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            alerts: [],
+            todayContentState: .noCacheResolving,
+            isStormRiskResolving: true,
+            isSevereRiskResolving: false,
+            isFireRiskResolving: false,
+            isOffline: false
+        )
+
+        #expect(
+            selected == .loading(
+                title: "Storm Risk",
+                detail: "Getting storm risk…",
+                symbolName: "clock.arrow.trianglehead.2.counterclockwise.rotate.90"
+            )
+        )
     }
 
     @Test("tornado outranks hail and wind within severe risk")
@@ -158,6 +183,7 @@ struct SummaryAwarenessPanelTests {
             severeRisk: .tornado(probability: 0.05),
             fireRisk: .clear,
             alerts: [],
+            todayContentState: .current,
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
@@ -174,6 +200,7 @@ struct SummaryAwarenessPanelTests {
             severeRisk: .allClear,
             fireRisk: .critical,
             alerts: [],
+            todayContentState: .current,
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
@@ -190,6 +217,7 @@ struct SummaryAwarenessPanelTests {
             severeRisk: .allClear,
             fireRisk: .critical,
             alerts: [],
+            todayContentState: .current,
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,
@@ -206,6 +234,7 @@ struct SummaryAwarenessPanelTests {
             severeRisk: .allClear,
             fireRisk: .clear,
             alerts: [],
+            todayContentState: .current,
             isStormRiskResolving: false,
             isSevereRiskResolving: false,
             isFireRiskResolving: false,

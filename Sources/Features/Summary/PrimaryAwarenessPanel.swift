@@ -44,11 +44,11 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
         severeRisk: SevereWeatherThreat?,
         fireRisk: FireRiskLevel?,
         alerts: [AlertDTO],
+        todayContentState: TodayContentState,
         isStormRiskResolving: Bool,
         isSevereRiskResolving: Bool,
         isFireRiskResolving: Bool,
-        isOffline: Bool,
-        isRefreshing: Bool = false
+        isOffline: Bool
     ) -> SummaryAwarenessPrimaryState {
         if let alert = Self.activeAlert(from: alerts) {
             return .alert(title: alert.title, detail: alert.detail)
@@ -66,7 +66,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
             return .fire(fireRisk)
         }
 
-        if isOffline == false {
+        if isOffline == false, todayContentState.showsResolvingSurface {
             if isSevereRiskResolving {
                 return .loading(
                     title: "Severe Risk",
@@ -468,7 +468,7 @@ struct PrimaryAwarenessPanel: View {
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
     let alerts: [AlertDTO]
-    let readinessState: SummaryReadinessState
+    let todayContentState: TodayContentState
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
     let onOpenMapLayer: (MapLayer) -> Void
@@ -480,11 +480,11 @@ struct PrimaryAwarenessPanel: View {
             severeRisk: severeRisk,
             fireRisk: fireRisk,
             alerts: alerts,
+            todayContentState: todayContentState,
             isStormRiskResolving: resolutionState.isResolving(.stormRisk),
             isSevereRiskResolving: resolutionState.isResolving(.severeRisk),
             isFireRiskResolving: resolutionState.isResolving(.fireRisk),
-            isOffline: showsOfflineToken,
-            isRefreshing: resolutionState.isRefreshing
+            isOffline: showsOfflineToken
         )
     }
 
@@ -601,30 +601,24 @@ struct PrimaryAwarenessPanel: View {
     private var stormResolving: Bool {
         SummaryView.showsRiskResolvingPlaceholder(
             hasRiskValue: stormRisk != nil,
-            readinessState: readinessState,
-            isSectionResolving: resolutionState.isResolving(.stormRisk),
-            showsOfflineToken: showsOfflineToken,
-            isRefreshing: resolutionState.isRefreshing
+            todayContentState: todayContentState,
+            showsOfflineToken: showsOfflineToken
         )
     }
 
     private var severeResolving: Bool {
         SummaryView.showsRiskResolvingPlaceholder(
             hasRiskValue: severeRisk != nil,
-            readinessState: readinessState,
-            isSectionResolving: resolutionState.isResolving(.severeRisk),
-            showsOfflineToken: showsOfflineToken,
-            isRefreshing: resolutionState.isRefreshing
+            todayContentState: todayContentState,
+            showsOfflineToken: showsOfflineToken
         )
     }
 
     private var fireResolving: Bool {
         SummaryView.showsRiskResolvingPlaceholder(
             hasRiskValue: fireRisk != nil,
-            readinessState: readinessState,
-            isSectionResolving: resolutionState.isResolving(.fireRisk),
-            showsOfflineToken: showsOfflineToken,
-            isRefreshing: resolutionState.isRefreshing
+            todayContentState: todayContentState,
+            showsOfflineToken: showsOfflineToken
         )
     }
 
@@ -1203,6 +1197,15 @@ private extension View {
             )
 
             PrimaryAwarenessPanelPreviewCard(
+                title: "Cached Refreshing Risk",
+                stormRisk: .moderate,
+                severeRisk: .allClear,
+                fireRisk: .clear,
+                todayContentState: .cachedRefreshing,
+                colorScheme: .light
+            )
+
+            PrimaryAwarenessPanelPreviewCard(
                 title: "Quiet Weather - Light",
                 stormRisk: .allClear,
                 severeRisk: .allClear,
@@ -1289,6 +1292,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
     let severeRisk: SevereWeatherThreat
     let fireRisk: FireRiskLevel
     var alerts: [AlertDTO] = []
+    var todayContentState: TodayContentState = .current
     var colorScheme: ColorScheme? = nil
     var dynamicTypeSize: DynamicTypeSize? = nil
 
@@ -1305,7 +1309,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
                 severeRisk: severeRisk,
                 fireRisk: fireRisk,
                 alerts: alerts,
-                readinessState: .ready,
+                todayContentState: todayContentState,
                 resolutionState: resolutionState,
                 showsOfflineToken: false,
                 onOpenMapLayer: { _ in },
