@@ -34,12 +34,9 @@ struct SummaryStatus: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showsOfflineExplanation = false
-    @State private var displayedWeather: SummaryWeather?
-    @State private var displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity?
 
     let statusText: String
     let weather: SummaryWeather?
-    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
@@ -52,13 +49,7 @@ struct SummaryStatus: View {
     }()
 
     private var visibleWeather: SummaryWeather? {
-        Self.resolveDisplayedWeather(
-            liveWeather: weather,
-            displayedWeather: displayedWeather,
-            isRefreshing: resolutionState.isRefreshing,
-            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
-            weatherLocationIdentity: weatherLocationIdentity
-        ).weather
+        weather
     }
 
     private var formattedTemperature: String? {
@@ -132,9 +123,6 @@ struct SummaryStatus: View {
             shadowY: cardShadowY
         )
         .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
-        .task(id: weatherTaskState) {
-            updateDisplayedWeather()
-        }
     }
 
     private var locationUnavailableCard: some View {
@@ -268,50 +256,8 @@ struct SummaryStatus: View {
         .animation(SkyAwareMotion.message(reduceMotion), value: visibleWeather?.conditionText)
     }
 
-    private var weatherTaskState: WeatherTaskState {
-        WeatherTaskState(
-            liveWeather: weather,
-            isRefreshing: resolutionState.isRefreshing,
-            weatherLocationIdentity: weatherLocationIdentity
-        )
-    }
-
-    private func updateDisplayedWeather() {
-        let updatedWeather = Self.resolveDisplayedWeather(
-            liveWeather: weather,
-            displayedWeather: displayedWeather,
-            isRefreshing: resolutionState.isRefreshing,
-            displayedWeatherLocationIdentity: displayedWeatherLocationIdentity,
-            weatherLocationIdentity: weatherLocationIdentity
-        )
-        displayedWeather = updatedWeather.weather
-        displayedWeatherLocationIdentity = updatedWeather.locationIdentity
-    }
-
     private func formatTemperature(_ temperature: Measurement<UnitTemperature>) -> String {
         Self.temperatureFormatter.string(from: temperature)
-    }
-}
-
-extension SummaryStatus {
-    static func resolveDisplayedWeather(
-        liveWeather: SummaryWeather?,
-        displayedWeather: SummaryWeather?,
-        isRefreshing: Bool,
-        displayedWeatherLocationIdentity: SummaryWeatherLocationIdentity?,
-        weatherLocationIdentity: SummaryWeatherLocationIdentity?
-    ) -> (weather: SummaryWeather?, locationIdentity: SummaryWeatherLocationIdentity?) {
-        if let liveWeather {
-            return (liveWeather, weatherLocationIdentity)
-        }
-
-        guard isRefreshing,
-              displayedWeather != nil,
-              displayedWeatherLocationIdentity == weatherLocationIdentity else {
-            return (nil, nil)
-        }
-
-        return (displayedWeather, displayedWeatherLocationIdentity)
     }
 }
 
@@ -486,12 +432,6 @@ private struct SummarySettledConditionLine: View {
     }
 }
 
-private struct WeatherTaskState: Equatable {
-    let liveWeather: SummaryWeather?
-    let isRefreshing: Bool
-    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
-}
-
 #Preview {
     VStack {
         SummaryStatus(
@@ -514,15 +454,6 @@ private struct WeatherTaskState: Equatable {
                 windDirection: "NNW",
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "climbing"
-            ),
-            weatherLocationIdentity: .init(
-                snapshot: .init(
-                    coordinates: .init(latitude: 39.7392, longitude: -104.9903),
-                    timestamp: .now,
-                    accuracy: 20,
-                    placemarkSummary: "Denver, CO",
-                    h3Cell: nil
-                )
             ),
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
@@ -550,15 +481,6 @@ private struct WeatherTaskState: Equatable {
                 pressure: .init(value: 0.25, unit: .inchesOfMercury),
                 pressureTrend: "falling"
             ),
-            weatherLocationIdentity: .init(
-                snapshot: .init(
-                    coordinates: .init(latitude: 39.0473, longitude: -95.6752),
-                    timestamp: .now,
-                    accuracy: 20,
-                    placemarkSummary: "Topeka, KS",
-                    h3Cell: nil
-                )
-            ),
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: true,
             isLocationUnavailable: false,
@@ -567,7 +489,6 @@ private struct WeatherTaskState: Equatable {
         SummaryStatus(
             statusText: "Location not available",
             weather: nil,
-            weatherLocationIdentity: nil,
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: false,
             isLocationUnavailable: true,

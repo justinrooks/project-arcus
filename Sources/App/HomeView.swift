@@ -588,6 +588,7 @@ extension HomeView {
 
 private struct TodayTabView: View {
     @State private var headerCondenseProgress: CGFloat = 0
+    @State private var visibleWeatherState = TodayVisibleWeatherState()
 
     let snap: LocationSnapshot?
     let stormRisk: StormRiskLevel?
@@ -607,6 +608,28 @@ private struct TodayTabView: View {
     let onOpenOutlooks: () -> Void
     let refreshAction: () async -> Void
 
+    private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
+        SummaryWeatherLocationIdentity(snapshot: snap)
+    }
+
+    private var visibleWeather: SummaryWeather? {
+        TodayVisibleWeatherState.resolve(
+            liveWeather: weather,
+            displayedWeather: visibleWeatherState.weather,
+            isRefreshing: resolutionState.isRefreshing,
+            displayedWeatherLocationIdentity: visibleWeatherState.locationIdentity,
+            weatherLocationIdentity: weatherLocationIdentity
+        ).weather
+    }
+
+    private var visibleWeatherTaskState: TodayVisibleWeatherStateTaskState {
+        TodayVisibleWeatherStateTaskState(
+            liveWeather: weather,
+            isRefreshing: resolutionState.isRefreshing,
+            weatherLocationIdentity: weatherLocationIdentity
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -618,7 +641,7 @@ private struct TodayTabView: View {
                     mesos: mesos,
                     alerts: alerts,
                     outlook: outlook,
-                    weather: weather,
+                    weather: visibleWeather,
                     todayContentState: todayContentState,
                     readinessState: readinessState,
                     resolutionState: resolutionState,
@@ -646,7 +669,22 @@ private struct TodayTabView: View {
             }
         }
         .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .task(id: visibleWeatherTaskState) {
+            visibleWeatherState = TodayVisibleWeatherState.resolve(
+                liveWeather: weather,
+                displayedWeather: visibleWeatherState.weather,
+                isRefreshing: resolutionState.isRefreshing,
+                displayedWeatherLocationIdentity: visibleWeatherState.locationIdentity,
+                weatherLocationIdentity: weatherLocationIdentity
+            )
+        }
     }
+}
+
+private struct TodayVisibleWeatherStateTaskState: Equatable {
+    let liveWeather: SummaryWeather?
+    let isRefreshing: Bool
+    let weatherLocationIdentity: SummaryWeatherLocationIdentity?
 }
 
 #Preview("Home") {

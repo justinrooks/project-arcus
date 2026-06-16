@@ -918,14 +918,14 @@ struct WeatherKitRefreshPolicyTests {
     }
 }
 
-@Suite("SummaryStatus Weather Retention")
-struct SummaryStatusWeatherRetentionTests {
+@Suite("Today Visible Weather State")
+struct TodayVisibleWeatherStateTests {
     @Test("keeps displayed weather during refresh when location identity is unchanged")
     func keepsDisplayedWeather_sameIdentityRefreshing() {
         let weather = makeWeather()
         let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: weather,
             isRefreshing: true,
@@ -943,7 +943,7 @@ struct SummaryStatusWeatherRetentionTests {
         let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
         let newIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: weather,
             isRefreshing: true,
@@ -960,7 +960,7 @@ struct SummaryStatusWeatherRetentionTests {
         let weather = makeWeather()
         let identity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: weather,
             isRefreshing: false,
@@ -979,7 +979,7 @@ struct SummaryStatusWeatherRetentionTests {
         let previousIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
         let currentIdentity = makeIdentity(latitude: 34.0522, longitude: -118.2437, placemark: "Los Angeles, CA")
 
-        let resolved = SummaryStatus.resolveDisplayedWeather(
+        let resolved = TodayVisibleWeatherState.resolve(
             liveWeather: liveWeather,
             displayedWeather: previousWeather,
             isRefreshing: true,
@@ -997,7 +997,7 @@ struct SummaryStatusWeatherRetentionTests {
         let oldIdentity = makeIdentity(latitude: 39.7392, longitude: -104.9903, placemark: "Denver, CO")
         let newIdentity = makeIdentity(latitude: 47.6062, longitude: -122.3321, placemark: "Seattle, WA")
 
-        let rendered = SummaryStatus.resolveDisplayedWeather(
+        let rendered = TodayVisibleWeatherState.resolve(
             liveWeather: nil,
             displayedWeather: retainedWeather,
             isRefreshing: true,

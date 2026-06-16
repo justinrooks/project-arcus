@@ -168,11 +168,6 @@ struct SummaryView: View {
         readinessState == .locationUnavailable
     }
 
-    private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
-        guard let snap else { return nil }
-        return SummaryWeatherLocationIdentity(snapshot: snap)
-    }
-
     private var localAlertsPresentationState: LocalAlertsPresentationState {
         Self.localAlertsPresentationState(
             todayContentState: todayContentState,
@@ -350,7 +345,6 @@ struct SummaryView: View {
         SummaryStatus(
             statusText: statusText,
             weather: weather,
-            weatherLocationIdentity: weatherLocationIdentity,
             resolutionState: resolutionState,
             showsOfflineToken: showsOfflineToken,
             isLocationUnavailable: isLocationUnavailable,
@@ -607,7 +601,7 @@ private extension AnyTransition {
     }
 }
 
-#Preview("Summary – Loading") {
+#Preview("Summary – No Cache Resolving Weather") {
     NavigationStack {
         SummaryPreviewContent(
             stormRisk: nil,
@@ -616,7 +610,7 @@ private extension AnyTransition {
             weather: nil,
             todayContentState: .noCacheResolving,
             readinessState: .loadingLocalData,
-            showsOfflineToken: true,
+            showsOfflineToken: false,
             outlook: nil,
             mesos: [],
             alerts: []
@@ -625,7 +619,7 @@ private extension AnyTransition {
     }
 }
 
-#Preview("Summary – Cached Refreshing Empty Alerts") {
+#Preview("Summary – Cached Refreshing Weather") {
     NavigationStack {
         SummaryPreviewContent(
             stormRisk: .allClear,
@@ -633,6 +627,25 @@ private extension AnyTransition {
             fireRisk: .clear,
             weather: SummaryPreviewData.weather,
             todayContentState: .cachedRefreshing,
+            outlook: nil,
+            mesos: [],
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Unavailable Weather") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: nil,
+            severeRisk: nil,
+            fireRisk: nil,
+            weather: nil,
+            todayContentState: .unavailable,
+            readinessState: .ready,
+            showsOfflineToken: false,
+            outlook: nil,
             mesos: [],
             alerts: []
         )

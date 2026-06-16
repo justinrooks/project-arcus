@@ -18,7 +18,7 @@ deliberately left alone, and what the next session should know.
 | 0 | TV-00 | [#248](https://github.com/justinrooks/project-arcus/issues/248) | Audit Today View State Flow | `gpt-5.4-mini / medium` | Planned | Parent tracking issue created from source-backed investigation. |
 | 1 | TV-01 | [#249](https://github.com/justinrooks/project-arcus/issues/249) | Introduce canonical Today content state for cache roll-forward rendering | `gpt-5.4-mini / high` | Complete | Foundation boundary added; `HomeView` and `SummaryView` now share `TodayContentState`. |
 | 2 | TV-02 | [#250](https://github.com/justinrooks/project-arcus/issues/250) | Keep Today section content stable during resolving refreshes | `gpt-5.4-mini / high` | Complete | Canonical Today state now stabilizes Local Alerts, Today's Awareness, and risk placeholders during cached refreshes. |
-| 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Header/weather split is source-backed. |
+| 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Complete | Today boundary now owns visible-weather retention so Current Conditions and Atmospheric Conditions stay aligned during same-location refresh. |
 | 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Not started | Depends on TV-01 and TV-02. |
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Not started | Depends on TV-01, TV-02, and TV-04. |
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Keep provider progress internal. |
@@ -328,3 +328,63 @@ Model used: `gpt-5.4-mini / high`
 - Local Alerts and the Today awareness/risk surfaces now stay visually stable during cached refreshes, so any new
   churn will likely come from weather-specific value retention or page-level indicator changes.
 - Do not widen this into refresh-indicator policy or animation cleanup; those belong to #252 and #253.
+
+### TV-03 / GitHub #251 - Align Current Conditions and Atmospheric Conditions weather roll-forward behavior
+
+Status: Complete
+Date: 2026-06-15
+Model used: `gpt-5.4-mini / high`
+
+#### Scope
+
+- Added `TodayVisibleWeatherState` as the Today display-boundary model for retained visible weather.
+- Moved same-location visible-weather retention to `TodayTabView` so the Today surface resolves one visible weather
+  value before rendering both weather-dependent cards.
+- Passed the retained visible weather into `SummaryView`, which in turn feeds both `SummaryStatus` and
+  `AtmosphericConditionsCard` from the same input.
+- Removed the weather-retention state and helper from `SummaryStatus` so Current Conditions no longer owns a separate
+  retention path.
+- Added focused previews for:
+  - cached-refreshing weather
+  - no-cache resolving weather
+  - unavailable weather
+- Added unit coverage for same-location refresh retention and location-identity clearing.
+
+#### Files Changed
+
+- `Sources/App/HomeView.swift`
+- `Sources/Features/Badges/AtmosphereRailView.swift`
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Summary/TodayVisibleWeatherState.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering remained intact.
+- Weather providers, refresh cadence, and location-resolution policy were not changed.
+- The Today layout and card design were not redesigned.
+- Existing cached-first and resolve-forward Today behavior was preserved.
+- No broad refresh-indicator consolidation or animation-scope work was introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" test -only-testing:SkyAwareTests/TodayVisibleWeatherStateTests`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`
+  - Passed.
+
+#### Deferred Work
+
+- Refresh-indicator consolidation is deferred to #252.
+- Animation and transition scope cleanup is deferred to #253.
+
+#### Handoff Notes
+
+- The visible-weather decision now lives at the Today boundary; later issues should not reintroduce section-local weather
+  retention.
+- Atmospheric Conditions now receives the same retained weather as Current Conditions, so any remaining churn in Today
+  is likely coming from refresh indicator policy or transition scope, not weather data flow.
+- Keep the current boundary narrow when working on #252 and #253; they should build on this shared weather input rather
+  than reopening card-level retention logic.
