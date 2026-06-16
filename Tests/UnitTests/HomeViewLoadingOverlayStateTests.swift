@@ -745,6 +745,101 @@ struct SummaryContentPresentationStateTests {
     }
 }
 
+@Suite("Today Content State")
+@MainActor
+struct TodayContentStateTests {
+    @Test("no cache while resolving maps to the resolving state")
+    func noCacheResolving_mapsToResolvingState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .noCacheResolving
+        )
+    }
+
+    @Test("cached content refreshes while online")
+    func cachedContentRefreshing_mapsToCachedRefreshingState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: false
+            ) == .cachedRefreshing
+        )
+    }
+
+    @Test("cached content remains current while idle and online")
+    func cachedContentIdle_mapsToCurrentState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .current
+        )
+    }
+
+    @Test("live fallback content without cache is still current when idle")
+    func liveFallbackContentIdle_mapsToCurrentState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: false,
+                hasLiveContent: true,
+                isRefreshing: false,
+                isOffline: false
+            ) == .current
+        )
+    }
+
+    @Test("cached content becomes stale while refreshing offline")
+    func cachedContentRefreshingOffline_mapsToStaleRefreshingState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: true
+            ) == .staleRefreshing
+        )
+    }
+
+    @Test("cached content becomes degraded while offline and idle")
+    func cachedContentOfflineIdle_mapsToDegradedState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: true
+            ) == .degraded
+        )
+    }
+
+    @Test("no cache and no content maps to unavailable")
+    func noCacheNoContent_mapsToUnavailableState() {
+        #expect(
+            TodayContentState.from(
+                readinessState: .ready,
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ) == .unavailable
+        )
+    }
+}
+
 @Suite("Foreground Refresh Policies")
 struct ForegroundRefreshPolicyTests {
     private let alertPolicy = AlertRefreshPolicy(minimumSyncInterval: 120)

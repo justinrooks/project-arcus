@@ -134,6 +134,16 @@ struct HomeView: View {
         return cachedOutlookDTOs
     }
 
+    private var todayContentState: TodayContentState {
+        TodayContentState.from(
+            readinessState: readinessState,
+            hasCachedContent: displayedProjection != nil,
+            hasLiveContent: usesPipelineSummaryFallback,
+            isRefreshing: refreshPipeline.resolutionState.isRefreshing,
+            isOffline: runtimeConnectivityState.isOffline
+        )
+    }
+
     private var readinessState: SummaryReadinessState {
         if locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted {
             return .locationUnavailable
@@ -149,16 +159,8 @@ struct HomeView: View {
         )
     }
 
-    private var hasMeaningfulSummaryContent: Bool {
-        displayedProjection != nil || usesPipelineSummaryFallback
-    }
-
     private var isEmptyResolvingSummary: Bool {
-        Self.showsBootstrapLoading(
-            readinessState: readinessState,
-            resolutionState: refreshPipeline.resolutionState,
-            hasProjection: hasMeaningfulSummaryContent
-        )
+        todayContentState.showsResolvingSurface
     }
 
     init(
@@ -210,6 +212,7 @@ struct HomeView: View {
                         alerts: displayedAlerts,
                         outlook: displayedOutlook,
                         weather: displayedWeather,
+                        todayContentState: todayContentState,
                         readinessState: readinessState,
                         resolutionState: refreshPipeline.resolutionState,
                         showsOfflineToken: runtimeConnectivityState.isOffline,
@@ -594,6 +597,7 @@ private struct TodayTabView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let todayContentState: TodayContentState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
@@ -615,6 +619,7 @@ private struct TodayTabView: View {
                     alerts: alerts,
                     outlook: outlook,
                     weather: weather,
+                    todayContentState: todayContentState,
                     readinessState: readinessState,
                     resolutionState: resolutionState,
                     showsOfflineToken: showsOfflineToken,

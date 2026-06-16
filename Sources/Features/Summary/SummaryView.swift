@@ -139,6 +139,7 @@ struct SummaryView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let todayContentState: TodayContentState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let showsOfflineToken: Bool
@@ -154,15 +155,6 @@ struct SummaryView: View {
 
     private var isWeatherLoading: Bool {
         weather == nil
-    }
-
-    private var isSummaryLoading: Bool {
-        switch readinessState {
-        case .loadingLocation, .resolvingLocalContext, .loadingLocalData:
-            true
-        case .ready, .locationUnavailable:
-            false
-        }
     }
 
     private var statusText: String {
@@ -435,7 +427,7 @@ struct SummaryView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            if showsEmptyResolving {
+            if todayContentState.showsResolvingSurface {
                 LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
             } else {
                 summaryContent
@@ -447,7 +439,7 @@ struct SummaryView: View {
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 20)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: showsEmptyResolving)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: todayContentState.showsResolvingSurface)
     }
 
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
@@ -651,6 +643,7 @@ private extension AnyTransition {
             severeRisk: nil,
             fireRisk: nil,
             weather: nil,
+            todayContentState: .noCacheResolving,
             readinessState: .loadingLocalData,
             showsOfflineToken: true,
             outlook: nil,
@@ -666,6 +659,7 @@ private struct SummaryPreviewContent: View {
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
     let weather: SummaryWeather?
+    let todayContentState: TodayContentState
     let readinessState: SummaryReadinessState
     let showsOfflineToken: Bool
     let outlook: ConvectiveOutlookDTO?
@@ -677,6 +671,7 @@ private struct SummaryPreviewContent: View {
         severeRisk: SevereWeatherThreat?,
         fireRisk: FireRiskLevel? = .extreme,
         weather: SummaryWeather?,
+        todayContentState: TodayContentState = .current,
         readinessState: SummaryReadinessState = .ready,
         showsOfflineToken: Bool = false,
         outlook: ConvectiveOutlookDTO? = ConvectiveOutlook.sampleOutlookDtos.first,
@@ -687,6 +682,7 @@ private struct SummaryPreviewContent: View {
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
         self.weather = weather
+        self.todayContentState = todayContentState
         self.readinessState = readinessState
         self.showsOfflineToken = showsOfflineToken
         self.outlook = outlook
@@ -709,6 +705,7 @@ private struct SummaryPreviewContent: View {
             alerts: alerts,
             outlook: outlook,
             weather: weather,
+            todayContentState: todayContentState,
             readinessState: readinessState,
             resolutionState: SummaryResolutionState(),
             showsOfflineToken: showsOfflineToken,
