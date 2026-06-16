@@ -124,14 +124,18 @@ struct HomeView: View {
     }
 
     private var displayedOutlook: ConvectiveOutlookDTO? {
-        refreshPipeline.outlooks.first ?? cachedOutlooks.first?.dto ?? refreshPipeline.outlook
+        Self.preferredOutlook(
+            cachedOutlook: cachedOutlooks.first?.dto,
+            liveOutlooks: refreshPipeline.outlooks,
+            liveOutlook: refreshPipeline.outlook
+        )
     }
 
     private var displayedOutlooks: [ConvectiveOutlookDTO] {
-        if refreshPipeline.outlooks.isEmpty == false {
-            return refreshPipeline.outlooks
-        }
-        return cachedOutlookDTOs
+        Self.preferredOutlooks(
+            cachedOutlooks: cachedOutlookDTOs,
+            liveOutlooks: refreshPipeline.outlooks
+        )
     }
 
     private var todayContentState: TodayContentState {
@@ -139,7 +143,7 @@ struct HomeView: View {
             readinessState: readinessState,
             hasCachedContent: displayedProjection != nil,
             hasLiveContent: usesPipelineSummaryFallback,
-            isRefreshing: refreshPipeline.resolutionState.isRefreshing,
+            isRefreshing: refreshPipeline.isRefreshInFlight,
             isOffline: runtimeConnectivityState.isOffline
         )
     }
@@ -215,6 +219,7 @@ struct HomeView: View {
                         todayContentState: todayContentState,
                         readinessState: readinessState,
                         resolutionState: refreshPipeline.resolutionState,
+                        isRefreshInFlight: refreshPipeline.isRefreshInFlight,
                         showsOfflineToken: runtimeConnectivityState.isOffline,
                         locationReliabilityRailState: showsLocationReliabilityRail
                             ? SummaryView.LocationReliabilityRailState(
@@ -427,12 +432,12 @@ extension HomeView {
 
     static func showsBootstrapLoading(
         readinessState: SummaryReadinessState,
-        resolutionState: SummaryResolutionState,
+        isRefreshInFlight: Bool,
         hasProjection: Bool
     ) -> Bool {
         readinessState != .locationUnavailable &&
         hasProjection == false &&
-        (resolutionState.isRefreshing || readinessState != .ready)
+        (isRefreshInFlight || readinessState != .ready)
     }
 
     static func preferredSummaryValue<T>(
@@ -444,6 +449,21 @@ extension HomeView {
             return pipelineValue ?? projectionValue
         }
         return projectionValue ?? pipelineValue
+    }
+
+    static func preferredOutlooks(
+        cachedOutlooks: [ConvectiveOutlookDTO],
+        liveOutlooks: [ConvectiveOutlookDTO]
+    ) -> [ConvectiveOutlookDTO] {
+        liveOutlooks.isEmpty ? cachedOutlooks : liveOutlooks
+    }
+
+    static func preferredOutlook(
+        cachedOutlook: ConvectiveOutlookDTO?,
+        liveOutlooks: [ConvectiveOutlookDTO],
+        liveOutlook: ConvectiveOutlookDTO?
+    ) -> ConvectiveOutlookDTO? {
+        liveOutlooks.first ?? cachedOutlook ?? liveOutlook
     }
 
     struct LocationReliabilityRailState: Equatable {
@@ -600,6 +620,7 @@ private struct TodayTabView: View {
     let todayContentState: TodayContentState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
+    let isRefreshInFlight: Bool
     let showsOfflineToken: Bool
     let locationReliabilityRailState: SummaryView.LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
@@ -615,7 +636,7 @@ private struct TodayTabView: View {
         TodayVisibleWeatherState.resolve(
             liveWeather: weather,
             displayedWeather: visibleWeatherState.weather,
-            isRefreshing: resolutionState.isRefreshing,
+            isRefreshing: isRefreshInFlight,
             displayedWeatherLocationIdentity: visibleWeatherState.locationIdentity,
             weatherLocationIdentity: weatherLocationIdentity
         ).weather
@@ -624,7 +645,7 @@ private struct TodayTabView: View {
     private var visibleWeatherTaskState: TodayVisibleWeatherStateTaskState {
         TodayVisibleWeatherStateTaskState(
             liveWeather: weather,
-            isRefreshing: resolutionState.isRefreshing,
+            isRefreshing: isRefreshInFlight,
             weatherLocationIdentity: weatherLocationIdentity
         )
     }
@@ -672,7 +693,7 @@ private struct TodayTabView: View {
             visibleWeatherState = TodayVisibleWeatherState.resolve(
                 liveWeather: weather,
                 displayedWeather: visibleWeatherState.weather,
-                isRefreshing: resolutionState.isRefreshing,
+                isRefreshing: isRefreshInFlight,
                 displayedWeatherLocationIdentity: visibleWeatherState.locationIdentity,
                 weatherLocationIdentity: weatherLocationIdentity
             )

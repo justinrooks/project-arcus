@@ -21,7 +21,7 @@ deliberately left alone, and what the next session should know.
 | 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Complete | Today boundary now owns visible-weather retention so Current Conditions and Atmospheric Conditions stay aligned during same-location refresh. |
 | 4 | TV-04 | [#252](https://github.com/justinrooks/project-arcus/issues/252) | Consolidate Today refresh indicators into one calm updating state | `gpt-5.4-mini / medium` | Complete | Canonical Today state now drives the lone calm update cue; section resolving treatment is suppressed during cached refresh. |
 | 5 | TV-05 | [#253](https://github.com/justinrooks/project-arcus/issues/253) | Tighten Today animation and transition scope during refresh | `gpt-5.4-mini / medium` | Complete | Narrowed Today motion scope so cached-refreshing no longer rekeys alert content or participates in broad stack transitions. |
-| 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Not started | Depends on TV-01. Keep provider progress internal. |
+| 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Complete | Provider progress now gates orchestration only; Today keeps cached content visible until coherent snapshot commit, and empty-success outlooks preserve cached values explicitly. |
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Not started | Final validation/support issue after TV-01 through TV-06. |
 
 ## Global Constraints
@@ -510,3 +510,60 @@ Model used: `gpt-5.4-mini / medium`
 - `TodayContentState.suppressesRoutineRefreshMotion` is the narrow motion hint now available for follow-up work.
 - If future motion work needs to reintroduce a broader page transition, it should be done from the canonical Today
   state boundary, not from per-card identity churn.
+
+### TV-06 / GitHub #254 - Stabilize Today snapshot application and display-model updates during partial data arrival
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / high`
+
+#### Scope
+
+- Separated provider progress from destructive Today display changes by using refresh-in-flight state as the
+  user-visible gating signal.
+- Kept cached Today content visible while progress starts and completes before the final snapshot commit.
+- Preserved cached outlook content explicitly when a fresh snapshot returns empty outlook values.
+- Added degraded-state coverage so stale refreshing stays calm and useful instead of collapsing into unavailable.
+- Kept the ingestion executor, provider cadence, and network/data semantics untouched.
+
+#### Files Changed
+
+- `Sources/App/HomeRefreshPipeline.swift`
+- `Sources/App/HomeView.swift`
+- `Sources/Features/Summary/SummaryStatus.swift`
+- `Tests/UnitTests/HomeRefreshPipelineTests.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering preserved.
+- Provider progress observability preserved internally.
+- Refresh cadence preserved.
+- Hot-alert and other live content remain eligible to appear as soon as their snapshot data is ready.
+- No provider rewrite, serialization change, or broad Today redesign was introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeRefreshPipelineTests`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" test -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,name=iPhone 17" build`
+  - Pending at the time of this ledger update; rerun required before final signoff.
+
+#### Deferred Work
+
+- TV-07 remains open for Today previews and transition mapping tests.
+- Provider-side sequencing and cadence work remain out of scope.
+- Any broader Outlook tab behavior beyond explicit empty-success preservation is deferred.
+
+#### Handoff Notes
+
+- `HomeRefreshPipeline.isRefreshInFlight` is now the narrow signal for whether Today should keep cached display state
+  steady while final snapshot values are still pending.
+- `HomeView` now chooses cached outlooks explicitly when live refresh output is empty; do not regress that back to
+  “first live array entry wins.”
+- If the next issue wants more visual polish, it should build on this stable display boundary instead of reintroducing
+  raw progress-driven section resets.
+- #255 should focus on preview and transition coverage, not on more display-state mechanics.

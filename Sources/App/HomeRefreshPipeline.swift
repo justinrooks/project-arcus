@@ -86,6 +86,9 @@ final class HomeRefreshPipeline {
     var alerts: [AlertDTO] { alertSnapshot.alerts }
     var outlooks: [ConvectiveOutlookDTO] { outlookSnapshot.outlooks }
     var outlook: ConvectiveOutlookDTO? { outlookSnapshot.outlook }
+    var isRefreshInFlight: Bool {
+        activeRefreshCount > 0 || followUpRefreshCount > 0
+    }
 
     init(
         initialSnap: LocationSnapshot? = nil,
@@ -185,7 +188,7 @@ final class HomeRefreshPipeline {
         updateEnvironment(environment)
         guard scenePhase == .active, let newKey else { return }
 
-        if isForegroundRefreshInFlight {
+        if isRefreshInFlight {
             environment.logger.debug(
                 "Deferring foreground refresh trigger=\(HomeRefreshTrigger.foregroundLocationChange.logName, privacy: .public) while activeRefreshCount=\(self.activeRefreshCount, privacy: .public) followUpRefreshCount=\(self.followUpRefreshCount, privacy: .public)"
             )
@@ -325,10 +328,6 @@ final class HomeRefreshPipeline {
         guard activeRefreshCount > 0 else { return }
         activeRefreshCount -= 1
         finalizeForegroundRefreshIfNeeded()
-    }
-
-    private var isForegroundRefreshInFlight: Bool {
-        activeRefreshCount > 0 || followUpRefreshCount > 0
     }
 
     private func handleIngestionProgress(_ event: HomeIngestionProgressEvent) async {

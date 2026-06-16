@@ -187,21 +187,21 @@ struct HomeViewProjectionLaunchTests {
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .loadingLocalData,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: false
             )
         )
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .loadingLocalData,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: true
             ) == false
         )
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .locationUnavailable,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: false
             ) == false
         )
@@ -209,13 +209,10 @@ struct HomeViewProjectionLaunchTests {
 
     @Test("bootstrap loading remains visible with no cache during active refresh even when readiness is ready")
     func bootstrapLoading_noCacheActiveRefresh() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .weather, sections: [.conditions])
-
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .ready,
-                resolutionState: resolutionState,
+                isRefreshInFlight: true,
                 hasProjection: false
             )
         )
@@ -226,7 +223,7 @@ struct HomeViewProjectionLaunchTests {
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .ready,
-                resolutionState: SummaryResolutionState(),
+                isRefreshInFlight: false,
                 hasProjection: false
             ) == false
         )
@@ -234,13 +231,10 @@ struct HomeViewProjectionLaunchTests {
 
     @Test("bootstrap loading stays hidden while cached projection is available during active refresh")
     func bootstrapLoading_cacheActiveRefresh() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
         #expect(
             HomeView.showsBootstrapLoading(
                 readinessState: .loadingLocalData,
-                resolutionState: resolutionState,
+                isRefreshInFlight: true,
                 hasProjection: true
             ) == false
         )
@@ -763,6 +757,19 @@ struct TodayContentStateTests {
         )
     }
 
+    @Test("stale refreshing keeps cached content visible instead of collapsing to unavailable")
+    func staleRefreshing_keepsCachedContentVisible() {
+        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.staleRefreshing.showsResolvingSurface == false)
+        #expect(
+            SummaryView.localAlertsPresentationState(
+                todayContentState: .staleRefreshing,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .empty
+        )
+    }
+
     @Test("no cache and no content maps to unavailable")
     func noCacheNoContent_mapsToUnavailableState() {
         #expect(
@@ -773,6 +780,50 @@ struct TodayContentStateTests {
                 isRefreshing: false,
                 isOffline: false
             ) == .unavailable
+        )
+    }
+}
+
+@Suite("HomeView Outlook Display")
+@MainActor
+struct HomeViewOutlookDisplayTests {
+    @Test("cached outlooks stay visible when a fresh snapshot returns no outlooks")
+    func cachedOutlooks_stayVisibleWhenLiveResultsAreEmpty() {
+        let cachedOutlooks = [
+            makeOutlook(title: "Cached Outlook A"),
+            makeOutlook(title: "Cached Outlook B")
+        ]
+
+        #expect(
+            HomeView.preferredOutlooks(
+                cachedOutlooks: cachedOutlooks,
+                liveOutlooks: []
+            ) == cachedOutlooks
+        )
+        #expect(
+            HomeView.preferredOutlook(
+                cachedOutlook: cachedOutlooks.first,
+                liveOutlooks: [],
+                liveOutlook: nil
+            ) == cachedOutlooks.first
+        )
+    }
+
+    private func makeOutlook(title: String) -> ConvectiveOutlookDTO {
+        guard let url = URL(string: "https://www.weather.gov") else {
+            preconditionFailure("Invalid outlook URL")
+        }
+
+        return ConvectiveOutlookDTO(
+            title: title,
+            link: url,
+            published: Date(timeIntervalSince1970: 1_000),
+            summary: "Summary for \(title)",
+            fullText: "Full text for \(title)",
+            day: 1,
+            riskLevel: "SLGT",
+            issued: Date(timeIntervalSince1970: 900),
+            validUntil: Date(timeIntervalSince1970: 2_000)
         )
     }
 }

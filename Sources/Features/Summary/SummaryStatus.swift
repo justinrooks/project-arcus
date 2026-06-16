@@ -203,7 +203,9 @@ struct SummaryStatus: View {
                 .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(
-                message: todayContentState.showsCalmUpdatingCue ? resolutionState.primaryActiveMessage : nil
+                message: todayContentState.showsCalmUpdatingCue
+                    ? resolutionState.primaryActiveMessage ?? resolutionState.recentCompletedMessage
+                    : nil
             )
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: statusText)
@@ -236,7 +238,7 @@ struct SummaryStatus: View {
             Group {
                 SummarySettledConditionLine(
                     conditionText: visibleWeather?.conditionText,
-                    isRefreshing: resolutionState.isRefreshing
+                    isRefreshing: todayContentState.showsCalmUpdatingCue
                 )
             }
             .font(.footnote)
