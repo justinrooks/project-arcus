@@ -1,4 +1,4 @@
-SkyAware Unreleased makes Today open with cached content immediately, keeps useful content visible during refresh, and calms Local Alerts transitions.
+SkyAware v1.0.1(75) makes Today open with cached content immediately, keeps useful content visible during refresh, and calms Local Alerts transitions.
 
 Highlights:
 - Today now avoids resolving/loading flashes when cached content is already available.
