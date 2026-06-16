@@ -823,3 +823,70 @@ Model used: `gpt-5.4-mini / high`
 - The card now suppresses loading-to-content branch animation, so startup refreshes should no longer visibly flip.
 - The remaining Local Alerts validation work should focus on visual preview coverage, not another state-machine rewrite.
 - If a future flash appears again, check for upstream clearing of alert arrays before changing the card logic.
+
+### LA-04 / GitHub #259 - Add Local Alerts state-flow previews and tests
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / medium`
+
+#### Scope
+
+- Expanded `HomeViewLoadingOverlayStateTests` with the final Local Alerts state-flow cases that were still missing:
+  - cached-refreshing populated maps to alerts and never regresses to loading
+  - cached-refreshing known-empty stays empty and never regresses to loading
+  - no-cache resolving remains the only loading-first path
+  - offline cached populated/empty states remain calm and non-duplicative
+  - degraded cached populated/empty states remain calm and non-duplicative
+  - location-unavailable remains distinct from true no-useful-data unavailable
+  - genuine no-useful-data cached states map to the unavailable fallback
+  - cached refresh height behavior does not reintroduce leaving-alerts churn
+  - genuine alerts-to-empty still preserves the intended flexible-height policy
+- Added Local Alerts preview fixtures directly on `ActiveAlertSummaryView` for:
+  - populated alerts
+  - populated mesos
+  - mixed alert + meso
+  - known empty
+  - no-cache resolving
+  - cached-refreshing populated
+  - cached-refreshing empty
+  - offline cached populated
+  - offline cached empty
+  - degraded cached populated
+  - degraded cached empty
+  - large Dynamic Type
+- Added a Summary preview for the Local Alerts location-unavailable case so the composed card replacement remains visible in the matrix.
+
+#### Files Changed
+
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Local Alerts display-state provenance from #256 stayed intact.
+- Calmer cached-refresh treatment from #257 stayed intact.
+- Existing alert content still wins over transient loading input.
+- ActiveAlertSummaryView height smoothing from #258 stayed intact.
+- No live network dependencies were introduced.
+- Alert sorting, filtering, row layout, navigation, and detail-sheet behavior were not changed.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2" -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests test`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  - Passed.
+
+#### Deferred Work
+
+- None for Local Alerts state-flow coverage.
+- No separate follow-up issue is required for the work in #259.
+
+#### Handoff Notes
+
+- Local Alerts now has deterministic test coverage for the full alert-state matrix requested in #259.
+- The previews intentionally live at the section boundary, because that is where the regressions have been showing up.
+- The worktree still contains unrelated dirty audit docs that were not touched.

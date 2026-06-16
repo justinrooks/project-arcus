@@ -354,6 +354,12 @@ struct SummaryViewLocalAlertsTests {
             LocalAlertsDisplayState.current(content: .empty, source: .live).presentationState == .empty
         )
         #expect(
+            LocalAlertsDisplayState.cachedRefreshing(content: .populated).presentationState == .alerts
+        )
+        #expect(
+            LocalAlertsDisplayState.cachedRefreshing(content: .empty).presentationState == .empty
+        )
+        #expect(
             LocalAlertsDisplayState.current(content: .populated, source: .cached).presentationState == .alerts
         )
         #expect(
@@ -386,6 +392,26 @@ struct SummaryViewLocalAlertsTests {
         #expect(state.usesSummaryResolvingTreatment == false)
         #expect(state.showsLoadingCopy == false)
         #expect(state.showsOfflineStatusCopy == false)
+    }
+
+    @Test("cached refreshing populated alerts never fall back to loading")
+    func localAlerts_refreshTreatment_cachedRefreshingPopulatedNeverLoads() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .cachedRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(state.presentationState == .alerts)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: true
+            ) == .alerts
+        )
     }
 
     @Test("cached refreshing populated alerts stay alerts in the card")
@@ -428,6 +454,23 @@ struct SummaryViewLocalAlertsTests {
         )
     }
 
+    @Test("routine cached refresh stays on the alerts height path")
+    func localAlerts_heightPolicy_cachedRefreshingPopulatedStaysOnAlertsHeightPath() {
+        #expect(
+            ActiveAlertSummaryView.usesFlexibleAlertHeight(
+                currentState: .alerts,
+                isLeavingAlerts: false
+            )
+        )
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .alerts,
+                to: .alerts,
+                suppressesRoutineRefreshMotion: true
+            ) == false
+        )
+    }
+
     @Test("loading to alerts does not animate the card branch")
     func localAlerts_animationPolicy_loadingToAlertsDoesNotAnimate() {
         #expect(
@@ -465,6 +508,12 @@ struct SummaryViewLocalAlertsTests {
         #expect(state.usesSummaryResolvingTreatment == false)
         #expect(state.showsLoadingCopy == false)
         #expect(state.showsOfflineStatusCopy == false)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: false
+            ) == .empty
+        )
     }
 
     @Test("no-cache resolving preserves first-load feedback")
@@ -516,6 +565,12 @@ struct SummaryViewLocalAlertsTests {
         #expect(state.usesSummaryResolvingTreatment == false)
         #expect(state.showsLoadingCopy == false)
         #expect(state.showsOfflineStatusCopy == false)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: false
+            ) == .empty
+        )
     }
 
     @Test("degraded cached populated alerts stay visible without duplicate treatment")
@@ -550,6 +605,12 @@ struct SummaryViewLocalAlertsTests {
         #expect(state.usesSummaryResolvingTreatment == false)
         #expect(state.showsLoadingCopy == false)
         #expect(state.showsOfflineStatusCopy == false)
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: state,
+                hasRenderableAlerts: false
+            ) == .empty
+        )
     }
 }
 
@@ -679,6 +740,16 @@ struct LocalAlertsDisplayStateTests {
                 hasActiveAlerts: false,
                 isLocationUnavailable: true
             ) == .unavailable(reason: .locationUnavailable)
+        )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .unavailable(reason: .noUsefulAlertState)
         )
         #expect(
             LocalAlertsDisplayState.from(

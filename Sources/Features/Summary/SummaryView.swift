@@ -679,6 +679,21 @@ private extension AnyTransition {
     }
 }
 
+#Preview("Summary – Local Alerts Location Unavailable") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            readinessState: .locationUnavailable,
+            mesos: [],
+            alerts: []
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 private struct SummaryPreviewContent: View {
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
