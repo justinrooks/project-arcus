@@ -100,4 +100,25 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
             .unavailable
         }
     }
+
+    var showsLoadingCopy: Bool {
+        self == .noCacheResolving
+    }
+
+    var showsOfflineStatusCopy: Bool {
+        switch self {
+        case .staleOrDegraded(content: .populated):
+            true
+        case .noCacheResolving,
+            .current,
+            .cachedRefreshing,
+            .staleOrDegraded(content: .empty),
+            .unavailable:
+            false
+        }
+    }
+
+    var usesSummaryResolvingTreatment: Bool {
+        false
+    }
 }

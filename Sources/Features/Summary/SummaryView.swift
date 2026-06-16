@@ -382,17 +382,14 @@ struct SummaryView: View {
             ActiveAlertSummaryView(
                 mesos: mesos,
                 alerts: alerts,
-                isLoading: localAlertsPresentationState == .loading,
+                isLoading: localAlertsDisplayState.showsLoadingCopy,
                 todayContentState: todayContentState,
-                isOffline: showsOfflineToken,
+                isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
                 onOpenAlertCenter: onOpenAlerts
             )
             .summaryResolving(
-                Self.appliesLocalAlertsResolving(
-                    presentationState: localAlertsPresentationState,
-                    resolutionState: resolutionState,
-                    showsOfflineToken: showsOfflineToken
-                ),
+                localAlertsDisplayState.usesSummaryResolvingTreatment &&
+                resolutionState.isResolving(.alerts),
                 todayContentState: todayContentState,
                 style: .subtle
             )
@@ -451,23 +448,6 @@ struct SummaryView: View {
 
     private func unavailableCard(title: String, message: String, symbol: String) -> some View {
         emptySectionCard(title: title, message: message, symbol: symbol)
-    }
-
-    static func appliesLocalAlertsResolving(
-        presentationState: LocalAlertsPresentationState,
-        resolutionState: SummaryResolutionState,
-        showsOfflineToken: Bool
-    ) -> Bool {
-        guard showsOfflineToken == false, resolutionState.isResolving(.alerts) else {
-            return false
-        }
-
-        switch presentationState {
-        case .alerts, .empty:
-            return true
-        case .loading, .unavailable:
-            return false
-        }
     }
 
     static func showsEmptyResolving(

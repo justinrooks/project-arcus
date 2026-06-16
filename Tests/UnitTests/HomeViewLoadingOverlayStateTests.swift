@@ -341,11 +341,15 @@ struct HomeViewProjectionLaunchTests {
 @Suite("SummaryView Local Alerts")
 @MainActor
 struct SummaryViewLocalAlertsTests {
+    private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
     @Test("display states map to presentation states")
     func localAlertsPresentationState_mapsDisplayStates() {
         #expect(
             LocalAlertsDisplayState.noCacheResolving.presentationState == .loading
         )
+        #expect(LocalAlertsDisplayState.noCacheResolving.showsLoadingCopy)
+        #expect(LocalAlertsDisplayState.noCacheResolving.usesSummaryResolvingTreatment == false)
         #expect(
             LocalAlertsDisplayState.current(content: .empty, source: .live).presentationState == .empty
         )
@@ -357,60 +361,123 @@ struct SummaryViewLocalAlertsTests {
         )
     }
 
-    @Test("loading local alerts do not receive whole-card resolving treatment")
-    func localAlertsResolvingTreatment_suppressesLoadingCardOpacity() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .loading,
-                resolutionState: resolutionState,
-                showsOfflineToken: false
-            ) == false
+    @Test("cached populated alerts stay calm during refresh")
+    func localAlerts_refreshTreatment_cachedPopulated() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .cachedRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
         )
+
+        #expect(state == .cachedRefreshing(content: .populated))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
     }
 
-    @Test("active or empty local alerts keep whole-card resolving treatment during refresh")
-    func localAlertsResolvingTreatment_preservesSettledCardOpacity() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
+    @Test("known empty alerts stay calm during refresh")
+    func localAlerts_refreshTreatment_cachedEmpty() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .cachedRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
 
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .alerts,
-                resolutionState: resolutionState,
-                showsOfflineToken: false
-            )
-        )
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .empty,
-                resolutionState: resolutionState,
-                showsOfflineToken: false
-            )
-        )
+        #expect(state == .cachedRefreshing(content: .empty))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
     }
 
-    @Test("local alerts resolving treatment stays off when alerts are not resolving or offline")
-    func localAlertsResolvingTreatment_requiresResolvingOnlineAlerts() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
+    @Test("no-cache resolving preserves first-load feedback")
+    func localAlerts_refreshTreatment_noCacheResolving() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .noCacheResolving,
+            hasCachedProjection: false,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: nil,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
 
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .alerts,
-                resolutionState: SummaryResolutionState(),
-                showsOfflineToken: false
-            ) == false
+        #expect(state == .noCacheResolving)
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy)
+        #expect(state.showsOfflineStatusCopy == false)
+    }
+
+    @Test("offline cached populated alerts stay visible without duplicate treatment")
+    func localAlerts_refreshTreatment_offlineCachedPopulated() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .staleRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
         )
-        #expect(
-            SummaryView.appliesLocalAlertsResolving(
-                presentationState: .alerts,
-                resolutionState: resolutionState,
-                showsOfflineToken: true
-            ) == false
+
+        #expect(state == .staleOrDegraded(content: .populated))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy)
+    }
+
+    @Test("offline known empty alerts stay calm without duplicate treatment")
+    func localAlerts_refreshTreatment_offlineCachedEmpty() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .staleRefreshing,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
         )
+
+        #expect(state == .staleOrDegraded(content: .empty))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
+    }
+
+    @Test("degraded cached populated alerts stay visible without duplicate treatment")
+    func localAlerts_refreshTreatment_degradedCachedPopulated() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .degraded,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .staleOrDegraded(content: .populated))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy)
+    }
+
+    @Test("degraded known empty alerts stay calm without duplicate treatment")
+    func localAlerts_refreshTreatment_degradedCachedEmpty() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .degraded,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: false,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(state == .staleOrDegraded(content: .empty))
+        #expect(state.usesSummaryResolvingTreatment == false)
+        #expect(state.showsLoadingCopy == false)
+        #expect(state.showsOfflineStatusCopy == false)
     }
 }
 

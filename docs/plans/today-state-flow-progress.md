@@ -25,7 +25,7 @@ deliberately left alone, and what the next session should know.
 | 6 | TV-06 | [#254](https://github.com/justinrooks/project-arcus/issues/254) | Stabilize Today snapshot application and display-model updates during partial data arrival | `gpt-5.4-mini / high` | Complete | Provider progress now gates orchestration only; Today keeps cached content visible until coherent snapshot commit, and empty-success outlooks preserve cached values explicitly. |
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Not started | Final validation/support issue after TV-01 through TV-06. |
 | 8 | LA-01 | [#256](https://github.com/justinrooks/project-arcus/issues/256) | Define Local Alerts display state with cache provenance | `gpt-5.4-mini / high` | Complete | Alert-specific state semantics now preserve live vs cached provenance, cached refresh, stale/degraded, and true unavailable boundaries. |
-| 9 | LA-02 | [#257](https://github.com/justinrooks/project-arcus/issues/257) | Make Local Alerts refresh treatment calm and non-duplicative | `gpt-5.4-mini / medium` | Not started | Depends on LA-01 and the page-level calm cue from TV-04. |
+| 9 | LA-02 | [#257](https://github.com/justinrooks/project-arcus/issues/257) | Make Local Alerts refresh treatment calm and non-duplicative | `gpt-5.4-mini / medium` | Complete | Local Alerts now derives refresh treatment from `LocalAlertsDisplayState` so cached refreshes stay steady and only useful offline status copy remains. |
 | 10 | LA-03 | [#258](https://github.com/justinrooks/project-arcus/issues/258) | Stabilize ActiveAlertSummaryView transitions and height behavior | `gpt-5.4-mini / high` | Not started | Alert card local state/height mechanics. Depends on LA-01/LA-02. |
 | 11 | LA-04 | [#259](https://github.com/justinrooks/project-arcus/issues/259) | Add Local Alerts state-flow previews and tests | `gpt-5.4-mini / medium` | Not started | Final alert-specific validation support after LA-01 through LA-03. |
 
@@ -706,3 +706,60 @@ Model used: `gpt-5.4-mini / high`
   transition work isolated.
 - `HomeRefreshPipeline` did not change, so any remaining alert churn should be addressed in #257 or #258, not by
   reopening provider cadence or refresh sequencing here.
+
+### LA-02 / GitHub #257 - Make Local Alerts refresh treatment calm and non-duplicative
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / medium`
+
+#### Scope
+
+- Added display-state-derived refresh treatment helpers to `LocalAlertsDisplayState`:
+  - `showsLoadingCopy`
+  - `showsOfflineStatusCopy`
+  - `usesSummaryResolvingTreatment`
+- Suppressed Local Alerts card-level resolving treatment for ordinary cached refresh states, including populated and
+  known-empty content.
+- Kept calm first-load/no-cache behavior available through the display state boundary.
+- Constrained offline copy so only cached offline content with useful alerts/mesos surfaces the offline note.
+- Updated Local Alerts tests to cover the cached populated, known-empty, no-cache resolving, offline cached populated,
+  offline known-empty, degraded cached populated, and degraded known-empty scenarios.
+
+#### Files Changed
+
+- `Sources/Features/Summary/LocalAlertsDisplayState.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached-first Today rendering stayed intact.
+- Alert provider behavior, cadence, and payload semantics were not changed.
+- Local Alerts row layout, transition mechanics, and height behavior were not changed.
+- Today-level calm update cue from #252 remained the only routine refresh cue for cached Local Alerts.
+- No provider, persistence, or notification delivery changes were introduced.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/SummaryViewLocalAlertsTests -only-testing:SkyAwareTests/LocalAlertsDisplayStateTests test`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  - Passed.
+- `xcrun xccov view --report /Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.06.16_13-25-20--0600.xcresult`
+  - Succeeded; overall app coverage reported as 19.50% in the generated report.
+
+#### Deferred Work
+
+- #258 should stabilize `ActiveAlertSummaryView` transition/height behavior on top of the now-stable alert display
+  policy.
+- #259 should add alert-focused previews and remaining presentation validation after the transition/height pass lands.
+
+#### Handoff Notes
+
+- The new alert refresh policy is intentionally conservative: cached populated and known-empty content should not add
+  a second resolving cue while Today already provides the calm page-level update state.
+- `showsOfflineStatusCopy` is intentionally narrower than `isOffline`; it only surfaces the offline note when cached
+  alerts/mesos are actually useful.
+- Do not reintroduce card-level dimming here unless #258 exposes a specific transition bug that genuinely requires it.
