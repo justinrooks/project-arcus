@@ -10,7 +10,7 @@ import SwiftUI
 struct ActiveAlertSummaryView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private enum ContentState: Equatable {
+    enum ContentState: Equatable {
         case loading
         case empty
         case alerts
@@ -24,7 +24,7 @@ struct ActiveAlertSummaryView: View {
 
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
-    let isLoading: Bool
+    let localAlertsDisplayState: LocalAlertsDisplayState
     let todayContentState: TodayContentState
     let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
@@ -40,14 +40,14 @@ struct ActiveAlertSummaryView: View {
     init(
         mesos: [MdDTO],
         alerts: [AlertDTO],
-        isLoading: Bool = false,
+        localAlertsDisplayState: LocalAlertsDisplayState = .current(content: .populated, source: .cached),
         todayContentState: TodayContentState = .current,
         isOffline: Bool = false,
         onOpenAlertCenter: (() -> Void)? = nil
     ) {
         self.mesos = mesos
         self.alerts = alerts
-        self.isLoading = isLoading
+        self.localAlertsDisplayState = localAlertsDisplayState
         self.todayContentState = todayContentState
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
@@ -60,13 +60,10 @@ struct ActiveAlertSummaryView: View {
     }
 
     private var contentState: ContentState {
-        if isLoading {
-            return .loading
-        }
-        if hasRenderableAlerts {
-            return .alerts
-        }
-        return .empty
+        return Self.contentState(
+            for: localAlertsDisplayState,
+            hasRenderableAlerts: hasRenderableAlerts
+        )
     }
 
     private var isLeavingAlertsTransition: Bool {
@@ -80,6 +77,33 @@ struct ActiveAlertSummaryView: View {
 
     private var usesFlexibleAlertHeight: Bool {
         Self.usesFlexibleAlertHeight(currentState: contentState, isLeavingAlerts: isLeavingAlertsTransition)
+    }
+
+    private var contentStateAnimation: Animation? {
+        guard let previousState = previousStableContentState else {
+            return nil
+        }
+
+        guard Self.shouldAnimateContentStateTransition(
+            from: previousState,
+            to: contentState,
+            suppressesRoutineRefreshMotion: todayContentState.suppressesRoutineRefreshMotion
+        ) else {
+            return nil
+        }
+
+        return SkyAwareMotion.layerChange(reduceMotion)
+    }
+
+    private var previousStableContentState: ContentState? {
+        switch heightPhase {
+        case .stable(let state):
+            return state
+        case .leavingAlerts:
+            return .alerts
+        case .uninitialized:
+            return nil
+        }
     }
 
     private var transitionHoldDurationNanoseconds: UInt64 {
@@ -125,7 +149,7 @@ struct ActiveAlertSummaryView: View {
 
                 Spacer(minLength: 12)
 
-                if let onOpenAlertCenter, isLoading == false, (hasRenderableAlerts || isOffline) {
+                if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
                     Button {
                         onOpenAlertCenter()
                     } label: {
@@ -211,10 +235,7 @@ struct ActiveAlertSummaryView: View {
         ZStack(alignment: .topLeading) {
             contentStateView
         }
-        .animation(
-            todayContentState.suppressesRoutineRefreshMotion ? nil : SkyAwareMotion.layerChange(reduceMotion),
-            value: contentState
-        )
+        .animation(contentStateAnimation, value: contentState)
         .frame(
             maxWidth: .infinity,
             minHeight: usesFlexibleAlertHeight ? nil : 72,
@@ -226,11 +247,7 @@ struct ActiveAlertSummaryView: View {
     private var contentStateView: some View {
         switch contentState {
         case .loading:
-            if todayContentState.showsResolvingSurface {
-                loadingContent
-            } else {
-                emptyContent
-            }
+            loadingContent
         case .alerts:
             alertsContent
         case .empty:
@@ -317,8 +334,41 @@ struct ActiveAlertSummaryView: View {
         }
     }
 
-    private static func usesFlexibleAlertHeight(currentState: ContentState, isLeavingAlerts: Bool) -> Bool {
+    static func usesFlexibleAlertHeight(currentState: ContentState, isLeavingAlerts: Bool) -> Bool {
         currentState == .alerts || isLeavingAlerts
+    }
+
+    static func shouldAnimateContentStateTransition(
+        from oldState: ContentState,
+        to newState: ContentState,
+        suppressesRoutineRefreshMotion: Bool
+    ) -> Bool {
+        guard suppressesRoutineRefreshMotion == false else {
+            return false
+        }
+
+        guard oldState != .loading, newState != .loading else {
+            return false
+        }
+
+        return oldState != newState
+    }
+
+    // Keep visible alerts ahead of transient loading/empty bookkeeping so cached refreshes stay calm.
+    static func contentState(
+        for displayState: LocalAlertsDisplayState,
+        hasRenderableAlerts: Bool
+    ) -> ContentState {
+        if hasRenderableAlerts {
+            return .alerts
+        }
+
+        switch displayState.presentationState {
+        case .loading:
+            return .loading
+        case .alerts, .empty, .unavailable:
+            return .empty
+        }
     }
 }
 
@@ -491,7 +541,10 @@ private struct WatchRowView: View {
 
 #Preview {
     NavigationStack {
-        ActiveAlertSummaryView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+        ActiveAlertSummaryView(
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows
+        )
             .toolbar(.hidden, for: .navigationBar)
             .background(.skyAwareBackground)
             .environment(\.dependencies, Dependencies.unconfigured)

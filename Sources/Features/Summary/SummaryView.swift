@@ -382,7 +382,7 @@ struct SummaryView: View {
             ActiveAlertSummaryView(
                 mesos: mesos,
                 alerts: alerts,
-                isLoading: localAlertsDisplayState.showsLoadingCopy,
+                localAlertsDisplayState: localAlertsDisplayState,
                 todayContentState: todayContentState,
                 isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
                 onOpenAlertCenter: onOpenAlerts

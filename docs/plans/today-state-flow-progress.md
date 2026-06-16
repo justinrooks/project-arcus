@@ -763,3 +763,63 @@ Model used: `gpt-5.4-mini / medium`
 - `showsOfflineStatusCopy` is intentionally narrower than `isOffline`; it only surfaces the offline note when cached
   alerts/mesos are actually useful.
 - Do not reintroduce card-level dimming here unless #258 exposes a specific transition bug that genuinely requires it.
+
+### LA-03 / GitHub #258 - Stabilize ActiveAlertSummaryView transitions and height behavior
+
+Status: Complete
+Date: 2026-06-16
+Model used: `gpt-5.4-mini / high`
+
+#### Scope
+
+- Reproduced the visible startup flip from the screen recording: the card was still animating a transient
+  loading-to-alerts branch swap on initial load, which made the Local Alerts section visibly flip at the bottom edge.
+- Replaced the child card's loading boolean with the authoritative `LocalAlertsDisplayState` from `SummaryView`.
+- Made the card's content selection prefer existing renderable alerts over transient loading or empty bookkeeping.
+- Kept first-load no-cache loading available when the Local Alerts display state truly has no useful alert content.
+- Suppressed non-essential branch animation when loading is part of the transition, so populated alerts can replace a
+  transient loading branch without crossfading.
+- Preserved the existing flexible-height hold for genuine alerts-to-empty transitions.
+- Added regression tests covering:
+  - existing alerts with transient loading input
+  - cached-refreshing populated alerts
+  - cached-refreshing known-empty alerts
+  - no-cache resolving without useful content
+  - alerts-to-empty height smoothing
+  - loading-to-alerts branch animation suppression
+  - empty-to-alerts branch animation allowance
+
+#### Files Changed
+
+- `Sources/Features/Summary/ActiveAlertSummaryView.swift`
+- `Sources/Features/Summary/SummaryView.swift`
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift`
+- `docs/plans/today-state-flow-progress.md`
+
+#### Behavior Preserved
+
+- Cached populated alerts remain visible during routine refresh.
+- Cached known-empty alerts remain empty during routine refresh.
+- Sheet selection and Alert Center navigation continue to work.
+- Reduce Motion still suppresses non-essential motion.
+- Provider cadence, alert semantics, and refresh orchestration were not changed.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/SummaryViewLocalAlertsTests test`
+  - Passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  - Passed.
+
+#### Deferred Work
+
+- #259 should add the remaining Local Alerts preview matrix and any visual validation needed for the alert-card state
+  transitions.
+- No provider, cadence, or notification follow-up was required for this issue.
+
+#### Handoff Notes
+
+- The important boundary now lives in `LocalAlertsDisplayState` and the card consumes that state directly.
+- The card now suppresses loading-to-content branch animation, so startup refreshes should no longer visibly flip.
+- The remaining Local Alerts validation work should focus on visual preview coverage, not another state-machine rewrite.
+- If a future flash appears again, check for upstream clearing of alert arrays before changing the card logic.

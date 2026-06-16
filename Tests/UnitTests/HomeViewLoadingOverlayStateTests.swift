@@ -361,6 +361,16 @@ struct SummaryViewLocalAlertsTests {
         )
     }
 
+    @Test("existing alerts stay visible when loading arrives transiently")
+    func localAlerts_existingAlertsOverrideTransientLoading() {
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: .noCacheResolving,
+                hasRenderableAlerts: true
+            ) == .alerts
+        )
+    }
+
     @Test("cached populated alerts stay calm during refresh")
     func localAlerts_refreshTreatment_cachedPopulated() {
         let state = LocalAlertsDisplayState.from(
@@ -376,6 +386,68 @@ struct SummaryViewLocalAlertsTests {
         #expect(state.usesSummaryResolvingTreatment == false)
         #expect(state.showsLoadingCopy == false)
         #expect(state.showsOfflineStatusCopy == false)
+    }
+
+    @Test("cached refreshing populated alerts stay alerts in the card")
+    func localAlerts_cardState_cachedRefreshingPopulated() {
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: .cachedRefreshing(content: .populated),
+                hasRenderableAlerts: true
+            ) == .alerts
+        )
+    }
+
+    @Test("cached refreshing known empty alerts stay empty in the card")
+    func localAlerts_cardState_cachedRefreshingEmpty() {
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: .cachedRefreshing(content: .empty),
+                hasRenderableAlerts: false
+            ) == .empty
+        )
+    }
+
+    @Test("no-cache resolving without useful content can still show loading")
+    func localAlerts_cardState_noCacheResolvingWithoutContent() {
+        #expect(
+            ActiveAlertSummaryView.contentState(
+                for: .noCacheResolving,
+                hasRenderableAlerts: false
+            ) == .loading
+        )
+    }
+
+    @Test("alerts-to-empty transitions keep flexible height smoothing")
+    func localAlerts_heightPolicy_alertsToEmpty() {
+        #expect(
+            ActiveAlertSummaryView.usesFlexibleAlertHeight(
+                currentState: .empty,
+                isLeavingAlerts: true
+            )
+        )
+    }
+
+    @Test("loading to alerts does not animate the card branch")
+    func localAlerts_animationPolicy_loadingToAlertsDoesNotAnimate() {
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .loading,
+                to: .alerts,
+                suppressesRoutineRefreshMotion: false
+            ) == false
+        )
+    }
+
+    @Test("empty to alerts can still animate the card branch")
+    func localAlerts_animationPolicy_emptyToAlertsCanAnimate() {
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .empty,
+                to: .alerts,
+                suppressesRoutineRefreshMotion: false
+            )
+        )
     }
 
     @Test("known empty alerts stay calm during refresh")
