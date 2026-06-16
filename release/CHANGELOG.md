@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.0.1(75)
+
 ### UI / UX
 - Today now renders cached content immediately and keeps useful content visible during refresh, avoiding loading-flash theater on the landing surface.
 <!-- evidence: 38a0b29 -->
