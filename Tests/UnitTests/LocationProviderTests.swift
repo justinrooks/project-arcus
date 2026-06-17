@@ -1704,7 +1704,14 @@ struct LocationProviderTests {
         let snap = try #require(next)
         #expect(snap.placemarkSummary == "Denver, CO")
 
-        try await Task.sleep(for: .milliseconds(20))
+        let afterReady = await waitUntilLocationSnapshot(timeout: .seconds(1)) {
+            if let snapshot = await provider.snapshot() {
+                snapshot.placemarkSummary == "Denver, CO"
+            } else {
+                false
+            }
+        }
+        #expect(afterReady == true)
         let after = await provider.snapshot()
         #expect(after?.placemarkSummary == "Denver, CO")
     }
@@ -1715,7 +1722,14 @@ struct LocationProviderTests {
         let t0 = Date()
         await provider.send(update: makeUpdate(lat: 40.0, lon: -105.0, timestamp: t0, accuracy: 50))
 
-        try await Task.sleep(for: .milliseconds(20))
+        let snapshotReady = await waitUntilLocationSnapshot(timeout: .seconds(1)) {
+            if let snapshot = await provider.snapshot() {
+                snapshot.placemarkSummary == nil
+            } else {
+                false
+            }
+        }
+        #expect(snapshotReady == true)
         let snap = await provider.snapshot()
         #expect(snap?.placemarkSummary == nil)
     }
@@ -1754,22 +1768,52 @@ struct LocationProviderTests {
         let t1 = t0.addingTimeInterval(70)
 
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t0, accuracy: 50))
-        try await Task.sleep(for: .milliseconds(10))
 
         await provider.send(update: makeUpdate(lat: 39.0, lon: -104.0, timestamp: t1, accuracy: 50))
-        try await Task.sleep(for: .milliseconds(20))
+
+        let afterSecondReady = await waitUntilLocationSnapshot(timeout: .seconds(1)) {
+            if let snapshot = await provider.snapshot() {
+                snapshot.timestamp == t1 && snapshot.placemarkSummary == "Latest City"
+            } else {
+                false
+            }
+        }
+        #expect(afterSecondReady == true)
 
         let afterSecond = try #require(await provider.snapshot())
         #expect(afterSecond.timestamp == t1)
         #expect(afterSecond.placemarkSummary == "Latest City")
 
         await geocoder.resolveFirst(with: "Old City")
-        try await Task.sleep(for: .milliseconds(20))
+
+        let finalReady = await waitUntilLocationSnapshot(timeout: .seconds(1)) {
+            if let snapshot = await provider.snapshot() {
+                snapshot.timestamp == t1 && snapshot.placemarkSummary == "Latest City"
+            } else {
+                false
+            }
+        }
+        #expect(finalReady == true)
 
         let final = try #require(await provider.snapshot())
         #expect(final.timestamp == t1)
         #expect(final.placemarkSummary == "Latest City")
     }
+}
+
+private func waitUntilLocationSnapshot(
+    timeout: Duration = .seconds(1),
+    interval: Duration = .milliseconds(10),
+    _ condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: interval)
+    }
+    return await condition()
 }
 
 @Suite("LocationContextResolver", .serialized)
@@ -1796,6 +1840,18 @@ struct LocationContextResolverTests {
         }
     }
 
+    private actor AuthorizationRequestState {
+        private var requested = false
+
+        func markRequested() {
+            requested = true
+        }
+
+        func wasRequested() -> Bool {
+            requested
+        }
+    }
+
     private struct TestGeocoder: LocationGeocoding {
         let result: Result<String, TestError>
 
@@ -1818,6 +1874,21 @@ struct LocationContextResolverTests {
             }
             return h3Cell
         }
+    }
+
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        interval: Duration = .milliseconds(10),
+        _ condition: @escaping @Sendable () async -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() {
+                return true
+            }
+            try? await Task.sleep(for: interval)
+        }
+        return await condition()
     }
 
     private actor RefreshRequestTracker {
@@ -1896,6 +1967,7 @@ struct LocationContextResolverTests {
     @Test("waits for authorization result before preparing a ready context")
     func waitsForAuthorizationResult() async throws {
         let authorizationState = AuthorizationState(status: .notDetermined)
+        let requestState = AuthorizationRequestState()
         let locationProvider = LocationProvider(
             geocoder: TestGeocoder(result: .success("Norman, OK")),
             hasher: TestHasher(h3Cell: sampleH3Cell)
@@ -1914,9 +1986,7 @@ struct LocationContextResolverTests {
             gridPointProvider: gridPointProvider,
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in
-                Task {
-                    await authorizationState.set(.authorizedWhenInUse)
-                }
+                await requestState.markRequested()
             },
             refreshCurrentLocation: { _ in
                 await locationProvider.send(update: .init(
@@ -1929,14 +1999,25 @@ struct LocationContextResolverTests {
             }
         )
 
-        let context = try await resolver.prepareCurrentContext(
-            requiresFreshLocation: true,
-            showsAuthorizationPrompt: true,
-            authorizationTimeout: 3,
-            locationTimeout: 2,
-            maximumAcceptedLocationAge: 300,
-            placemarkTimeout: 0.1
-        )
+        let contextTask = Task {
+            try await resolver.prepareCurrentContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: true,
+                authorizationTimeout: 3,
+                locationTimeout: 2,
+                maximumAcceptedLocationAge: 300,
+                placemarkTimeout: 0.1
+            )
+        }
+
+        let authorizationRequested = await waitUntil(timeout: .seconds(1)) {
+            await requestState.wasRequested()
+        }
+        #expect(authorizationRequested)
+
+        await authorizationState.set(.authorizedWhenInUse)
+
+        let context = try await contextTask.value
 
         #expect(context.h3Cell == sampleH3Cell)
         #expect(context.grid.countyCode == "OKC109")

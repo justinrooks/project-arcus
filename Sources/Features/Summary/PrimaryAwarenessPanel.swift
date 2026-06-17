@@ -16,11 +16,15 @@ enum SummaryAwarenessDestination: Equatable, Sendable {
     var accessibilityHint: String? {
         switch self {
         case .alerts:
-            "Opens the alert center."
+            return "Opens the alert center."
         case .map(let layer):
-            "Opens the \(layer.title.lowercased()) map."
+            if layer == .fire {
+                return "Opens the fire risk map."
+            }
+
+            return "Opens the \(layer.title.lowercased()) map."
         case .none:
-            nil
+            return nil
         }
     }
 }

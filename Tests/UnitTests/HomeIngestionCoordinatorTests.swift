@@ -198,7 +198,7 @@ struct HomeIngestionCoordinatorTests {
             )
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
         #expect(await executor.startedPlanCount() == 1)
 
         await gate.open()
@@ -243,7 +243,7 @@ struct HomeIngestionCoordinatorTests {
             )
         }
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
         #expect(await executor.startedPlanCount() == 1)
 
         await gate.open()

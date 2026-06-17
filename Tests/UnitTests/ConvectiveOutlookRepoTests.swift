@@ -263,9 +263,9 @@ struct ConvectiveOutlookRepoTests {
         try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
         let ctx = container.mainContext
 
-        let now = Date()
-        let oldDate = Calendar.current.date(byAdding: .day, value: -3, to: now)!
-        let recentDate = Calendar.current.date(byAdding: .day, value: -1, to: now)!
+        let now = utcDate(2026, 6, 15, 12)
+        let oldDate = utcDate(2026, 6, 12, 12)
+        let recentDate = utcDate(2026, 6, 14, 12)
 
         let oldItem = ConvectiveOutlook(title: "Old Day 1 Convective Outlook",
                                         link: URL(string: "https://example.com/old")!,
@@ -295,6 +295,21 @@ struct ConvectiveOutlookRepoTests {
         let remaining = try await repo.fetchConvectiveOutlooks(for: 1)
         #expect(remaining.count == 1)
         #expect(remaining[0].title.contains("Recent"))
+    }
+
+    private func utcDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let components = DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        )
+        return calendar.date(from: components)!
     }
 }
 

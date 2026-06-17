@@ -101,7 +101,7 @@ struct RemoteNotificationRegistrarTests {
             await sut.waitForDeviceToken(timeout: .seconds(1))
         }
 
-        try await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
         sut.storeDeviceToken(Data([0x00, 0xAB, 0x10]))
 
         let token = await tokenTask.value

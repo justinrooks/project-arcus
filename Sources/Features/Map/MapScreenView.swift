@@ -140,7 +140,7 @@ private struct MapScreenContent: View {
     }
 
     private var warningLegendItems: [WarningLegendItem] {
-        WarningLegendItem.rendered(from: scene.canvasState.overlays)
+        scene.warningLegendItems
     }
 
     @ViewBuilder
@@ -309,7 +309,8 @@ private struct MapScreenContentPreview: View {
                     overlayRevision: warningOverlays.count,
                     initialCenterCoordinate: nil
                 ),
-                legendState: legendState
+                legendState: legendState,
+                warningLegendItems: WarningLegendItem.rendered(from: warningOverlays)
             ),
             locationCoordinate: CLLocationCoordinate2D(latitude: 39.75, longitude: -104.44)
         )

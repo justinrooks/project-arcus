@@ -36,16 +36,35 @@ struct LocationManagerTests {
     }
 
     @MainActor
+    private func waitUntil(
+        timeout: Duration = .seconds(1),
+        interval: Duration = .milliseconds(10),
+        _ condition: @escaping @MainActor () -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if condition() {
+                return true
+            }
+            try? await Task.sleep(for: interval)
+        }
+        return condition()
+    }
+
+    @MainActor
     @Test("authorization callback updates cached authStatus")
     func locationManagerDidChangeAuthorization_updatesAuthStatus() async throws {
-        let sut = LocationManager(onUpdate: { _ in })
+        let manager = StubAuthorizationManager(status: .notDetermined)
+        let sut = LocationManager(manager: manager, onUpdate: { _ in })
         #expect(sut.authStatus == .notDetermined)
 
-        let manager = StubAuthorizationManager(status: .authorizedAlways)
+        manager.stubStatus = .authorizedAlways
         sut.locationManagerDidChangeAuthorization(manager)
-        try await Task.sleep(for: .milliseconds(20))
 
-        #expect(sut.authStatus == .authorizedAlways)
+        let updated = await waitUntil {
+            sut.authStatus == .authorizedAlways
+        }
+        #expect(updated == true)
     }
 
     @MainActor
@@ -57,9 +76,11 @@ struct LocationManagerTests {
 
         manager.stubAccuracy = .reducedAccuracy
         sut.locationManagerDidChangeAuthorization(manager)
-        try await Task.sleep(for: .milliseconds(20))
 
-        #expect(sut.accuracyAuthorization == .reducedAccuracy)
+        let updated = await waitUntil {
+            sut.accuracyAuthorization == .reducedAccuracy
+        }
+        #expect(updated == true)
     }
 
     @MainActor

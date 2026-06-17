@@ -212,13 +212,13 @@ actor LocationContextResolver: LocationContextResolving {
     }
 
     private func waitForAuthorizationResolution(timeout: Double) async throws -> CLAuthorizationStatus {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
+        let deadline = ContinuousClock.now + .seconds(timeout)
+        while ContinuousClock.now < deadline {
             let status = await authorizationStatusProvider()
             if status != .notDetermined {
                 return status
             }
-            try? await Task.sleep(for: .milliseconds(100))
+            try? await Task.sleep(for: .milliseconds(50))
         }
 
         logger.notice("Timed out waiting for location authorization to resolve")

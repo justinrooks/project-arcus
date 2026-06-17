@@ -331,6 +331,7 @@ final class MapFeatureModel {
 struct MapLayerScene {
     let canvasState: MapCanvasState
     let legendState: MapLegendState
+    let warningLegendItems: [WarningLegendItem]
 
     static func placeholder(
         for layer: MapLayer,
@@ -342,7 +343,8 @@ struct MapLayerScene {
                 overlayRevision: 0,
                 initialCenterCoordinate: initialCenterCoordinate
             ),
-            legendState: .loading(for: layer)
+            legendState: .loading(for: layer),
+            warningLegendItems: []
         )
     }
 
@@ -350,14 +352,16 @@ struct MapLayerScene {
         guard canvasState.initialCenterCoordinate == nil else { return self }
         return MapLayerScene(
             canvasState: canvasState.withInitialCenterCoordinate(coordinate),
-            legendState: legendState
+            legendState: legendState,
+            warningLegendItems: warningLegendItems
         )
     }
 
     func withPresentationState(_ presentationState: MapLegendPresentationState) -> MapLayerScene {
         MapLayerScene(
             canvasState: canvasState,
-            legendState: legendState.withPresentationState(presentationState)
+            legendState: legendState.withPresentationState(presentationState),
+            warningLegendItems: warningLegendItems
         )
     }
 }
@@ -675,7 +679,8 @@ private enum MapSceneMaterializer {
                 overlayRevision: overlayRevision(for: overlays),
                 initialCenterCoordinate: initialCenterCoordinate
             ),
-            legendState: plan.legendState
+            legendState: plan.legendState,
+            warningLegendItems: WarningLegendItem.rendered(from: overlays)
         )
     }
 
