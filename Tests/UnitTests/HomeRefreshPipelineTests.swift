@@ -92,7 +92,7 @@ struct HomeRefreshPipelineTests {
             environment: environment
         )
 
-        try? await Task.sleep(for: .milliseconds(50))
+        await Task.yield()
         #expect(await coordinator.requestCount() == 1)
 
         await gate.open()

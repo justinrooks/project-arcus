@@ -43,7 +43,7 @@ struct LocationManagerTests {
 
         let manager = StubAuthorizationManager(status: .authorizedAlways)
         sut.locationManagerDidChangeAuthorization(manager)
-        try await Task.sleep(for: .milliseconds(20))
+        await Task.yield()
 
         #expect(sut.authStatus == .authorizedAlways)
     }
@@ -57,7 +57,7 @@ struct LocationManagerTests {
 
         manager.stubAccuracy = .reducedAccuracy
         sut.locationManagerDidChangeAuthorization(manager)
-        try await Task.sleep(for: .milliseconds(20))
+        await Task.yield()
 
         #expect(sut.accuracyAuthorization == .reducedAccuracy)
     }
