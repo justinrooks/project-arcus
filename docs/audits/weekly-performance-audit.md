@@ -36,3 +36,24 @@
 - implementation notes:
   - Moved Today scroll-condense state into a dedicated `TodayTabView` subtree in `HomeView`.
   - Kept the visible behavior intact while preventing scroll progress from invalidating the full five-tab shell.
+
+## 2026-06-14
+- workflow reviewed: Layered Risk Map
+- files inspected:
+  - Sources/Features/Map/MapScreenView.swift
+  - Sources/Features/Map/MapAccessibilitySupport.swift
+  - Sources/Features/Map/MapLegendView.swift
+  - Sources/Features/Map/MapFeatureModel.swift
+  - Sources/Features/Map/MapCanvasView.swift
+  - Sources/Features/Map/MapPolygonMapper.swift
+  - Sources/Features/Map/MapCoordinator.swift
+  - Sources/Features/Map/RiskPolygonRenderer.swift
+- top finding: `MapScreenContent` recomputes warning legend items and accessibility summary data from the same overlay array multiple times per render, which adds avoidable overlay parsing and dedup work to the map tab's hottest SwiftUI body.
+- best next fix: hoist `WarningLegendItem.rendered(from:)` and the derived accessibility summary inputs into a single precomputed value per `scene` update, then thread that value through the legend sheet and summary element so the overlay array is walked once instead of several times.
+- measurement gap: profile `MapScreenContent` body recomputation count and overlay-derived item generation while toggling warning geometry and changing layers to confirm the duplicate work is visible in Instruments.
+- implementation recommended: yes
+- implementation status: completed on 2026-06-17
+- implementation notes:
+  - Added `warningLegendItems` to `MapLayerScene` and materialized it once per scene update.
+  - Swapped `MapScreenContent` and `MapAccessibilitySummary` to the precomputed scene data.
+  - Ran targeted `MapFeatureModelTests` and `MapLegendAccessibilityTests` in the iPhone 17 simulator destination; both passed.

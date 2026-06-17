@@ -1371,7 +1371,7 @@ struct MapFeatureModelTests {
     }
 
     private func warningLegendItems(in scene: MapLayerScene) -> [WarningLegendItem] {
-        WarningLegendItem.rendered(from: scene.canvasState.overlays)
+        scene.warningLegendItems
     }
 
     private func singleWarningPolygonCoordinates(in scene: MapLayerScene) -> [CLLocationCoordinate2D]? {

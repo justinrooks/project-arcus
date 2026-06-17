@@ -56,7 +56,7 @@ struct MapAccessibilitySummary: Equatable {
             return "Active warnings overlay hidden."
         }
 
-        let warningItems = WarningLegendItem.rendered(from: scene.canvasState.overlays)
+        let warningItems = scene.warningLegendItems
         guard warningItems.isEmpty == false else {
             return "Active warnings overlay on. No active warning areas are displayed."
         }
