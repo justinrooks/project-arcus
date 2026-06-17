@@ -14,13 +14,6 @@
   "testTargets" : [
     {
       "parallelizable" : true,
-      "skippedTests" : {
-        "suites" : [
-          {
-            "name" : "LocationManagerTests"
-          }
-        ]
-      },
       "target" : {
         "containerPath" : "container:SkyAware.xcodeproj",
         "identifier" : "D095EFB12E16F56A0074F867",

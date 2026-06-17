@@ -15,12 +15,8 @@ final class SkyAwareUITests: XCTestCase {
     private let reliabilitySuppressedDayKey = "fb016.locationReliability.lastSuppressedQualifyingDay"
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
+        resetSharedLaunchState()
     }
 
     override func tearDownWithError() throws {
@@ -885,6 +881,16 @@ final class SkyAwareUITests: XCTestCase {
         defaults.removeObject(forKey: reliabilityLastCountedDayKey)
         defaults.removeObject(forKey: reliabilitySuppressedDayKey)
         defaults.synchronize()
+    }
+
+    private func resetSharedLaunchState() {
+        guard let defaults = UserDefaults(suiteName: sharedDefaultsSuiteName) else { return }
+        defaults.removePersistentDomain(forName: sharedDefaultsSuiteName)
+        defaults.synchronize()
+        UserDefaults.standard.removeObject(forKey: "onboardingComplete")
+        UserDefaults.standard.removeObject(forKey: "disclaimerAcceptedVersion")
+        UserDefaults.standard.synchronize()
+        resetReliabilityLedgerDefaults()
     }
 
     private func configureLaunchDefaults(onboardingComplete: Bool, disclaimerAcceptedVersion: Int) {
