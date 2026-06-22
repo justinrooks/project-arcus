@@ -11,6 +11,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var locationSnapshot: LocationSnapshot?
     var refreshKey: LocationContext.RefreshKey?
     var weather: SummaryWeather?
+    var weatherWasRefreshed: Bool
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -24,6 +25,7 @@ struct HomeSnapshot: Sendable, Equatable {
         locationSnapshot: LocationSnapshot? = nil,
         refreshKey: LocationContext.RefreshKey? = nil,
         weather: SummaryWeather? = nil,
+        weatherWasRefreshed: Bool = false,
         stormRisk: StormRiskLevel? = nil,
         severeRisk: SevereWeatherThreat? = nil,
         fireRisk: FireRiskLevel? = nil,
@@ -36,6 +38,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.locationSnapshot = locationSnapshot
         self.refreshKey = refreshKey
         self.weather = weather
+        self.weatherWasRefreshed = weatherWasRefreshed
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk

@@ -12,6 +12,9 @@ struct AlertView: View {
 
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
+    private let sortedAlerts: [AlertDTO]
+    private let sortedMesos: [MdDTO]
+    private let latestIssued: Date?
     let focusedAlertRequest: RemoteAlertFocusRequest?
     let onRefresh: (() async -> Void)?
     let onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)?
@@ -22,19 +25,7 @@ struct AlertView: View {
     private var hasNoAlerts: Bool {
         alerts.isEmpty && mesos.isEmpty
     }
-    
-    private var sortedAlerts: [AlertDTO] {
-        AlertPresentationOrdering.ordered(alerts, endDate: \.ends)
-    }
-    
-    private var sortedMesos: [MdDTO] {
-        AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
-    }
-    
-    private var latestIssued: Date? {
-        (alerts.map(\.issued) + mesos.map(\.issued)).max()
-    }
-    
+
     private var totalAlertCount: Int {
         alerts.count + mesos.count
     }
@@ -56,6 +47,9 @@ struct AlertView: View {
     ) {
         self.mesos = mesos
         self.alerts = alerts
+        self.sortedAlerts = AlertPresentationOrdering.ordered(alerts, endDate: \.ends)
+        self.sortedMesos = AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
+        self.latestIssued = AlertView.latestIssued(alerts: alerts, mesos: mesos)
         self.focusedAlertRequest = focusedAlertRequest
         self.onRefresh = onRefresh
         self.onFocusedAlertRequestHandled = onFocusedAlertRequestHandled
@@ -138,6 +132,11 @@ struct AlertView: View {
         .navigationDestination(item: $selectedAlert) { alert in
             alertDetail(for: alert)
         }
+    }
+
+    private static func latestIssued(alerts: [AlertDTO], mesos: [MdDTO]) -> Date? {
+        let issuedDates = alerts.map(\.issued) + mesos.map(\.issued)
+        return issuedDates.max()
     }
 
     private func alertNavigationRow<Destination: View, RowContent: View>(

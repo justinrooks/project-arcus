@@ -481,6 +481,61 @@ struct HomeRefreshPipelineTests {
         }
     }
 
+    @Test("visible refresh clears stale weather when snapshot omits weather")
+    func visibleRefresh_clearsStaleWeatherWhenSnapshotOmitsWeather() async {
+        let context = makeContext()
+        let staleWeather = sampleWeather()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                weather: nil,
+                weatherWasRefreshed: true
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+        pipeline.summaryWeather = staleWeather
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.summaryWeather == nil)
+    }
+
+    @Test("timer refresh preserves stale weather when weather lane is skipped")
+    func timerRefresh_preservesStaleWeatherWhenWeatherLaneIsSkipped() async {
+        let context = makeContext()
+        let staleWeather = sampleWeather()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                weather: nil,
+                weatherWasRefreshed: false
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+        pipeline.summaryWeather = staleWeather
+
+        await pipeline.enqueueRefresh(
+            .timer,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.summaryWeather == staleWeather)
+    }
+
     @Test("timer refresh keeps sync work on the hot-alert lane")
     func timerRefresh_syncsHotFeedsOnly() async {
         let context = makeContext()

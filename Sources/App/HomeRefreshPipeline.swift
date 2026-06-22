@@ -487,8 +487,8 @@ final class HomeRefreshPipeline {
             )
         }
 
-        if let weather = snapshot.weather {
-            summaryWeather = weather
+        if snapshot.weatherWasRefreshed {
+            summaryWeather = snapshot.weather
         }
 
         outlookSnapshot = HomeOutlookSnapshot(
