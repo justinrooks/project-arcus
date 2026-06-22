@@ -489,7 +489,8 @@ struct HomeRefreshPipelineTests {
             snapshot: HomeSnapshot(
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
-                weather: nil
+                weather: nil,
+                weatherWasRefreshed: true
             )
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
@@ -505,6 +506,34 @@ struct HomeRefreshPipelineTests {
         )
 
         #expect(pipeline.summaryWeather == nil)
+    }
+
+    @Test("timer refresh preserves stale weather when weather lane is skipped")
+    func timerRefresh_preservesStaleWeatherWhenWeatherLaneIsSkipped() async {
+        let context = makeContext()
+        let staleWeather = sampleWeather()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                weather: nil,
+                weatherWasRefreshed: false
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+        pipeline.summaryWeather = staleWeather
+
+        await pipeline.enqueueRefresh(
+            .timer,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.summaryWeather == staleWeather)
     }
 
     @Test("timer refresh keeps sync work on the hot-alert lane")

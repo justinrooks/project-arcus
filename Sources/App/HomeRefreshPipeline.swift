@@ -487,7 +487,9 @@ final class HomeRefreshPipeline {
             )
         }
 
-        summaryWeather = snapshot.weather
+        if snapshot.weatherWasRefreshed {
+            summaryWeather = snapshot.weather
+        }
 
         outlookSnapshot = HomeOutlookSnapshot(
             outlooks: snapshot.outlooks,
