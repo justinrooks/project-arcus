@@ -57,3 +57,21 @@
   - Added `warningLegendItems` to `MapLayerScene` and materialized it once per scene update.
   - Swapped `MapScreenContent` and `MapAccessibilitySummary` to the precomputed scene data.
   - Ran targeted `MapFeatureModelTests` and `MapLegendAccessibilityTests` in the iPhone 17 simulator destination; both passed.
+
+## 2026-06-21
+- workflow reviewed: Alerts workflow
+- files inspected:
+  - Sources/App/HomeView.swift
+  - Sources/Features/Alert/AlertView.swift
+  - Sources/Features/Alert/AlertPresentationOrdering.swift
+  - Sources/Features/Alert/AlertRowView.swift
+  - Sources/Features/Alert/AlertDetailView.swift
+  - Sources/Features/Summary/ActiveAlertSummaryView.swift
+- top finding: `AlertView` recomputes sorted alert and mesoscale arrays multiple times per render, and also recomputes latest-issued summary data from the same inputs, so the Alerts tab repeats presentation ordering work instead of paying for it once when the data changes.
+- best next fix: hoist sorted alerts, sorted mesos, and the latest-issued timestamp into stored values initialized from the input arrays, matching the precompute pattern already used by `ActiveAlertSummaryView`.
+- measurement gap: profile `AlertView` body recomputation count and `AlertPresentationOrdering.ordered` call frequency while refreshing alerts or handling a focused-alert handoff to quantify how often the duplicate work fires.
+- implementation recommended: yes
+- implementation status: completed on 2026-06-22
+- implementation notes:
+  - Hoisted sorted alerts, sorted mesos, and latest-issued derivation into stored values in `AlertView`.
+  - Verified the change with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`.
