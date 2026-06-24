@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## v1.0.1(79)
+
+### UI / UX
+- Home now clears stale weather on visible refreshes when the refreshed snapshot does not include weather, so old conditions do not linger on the Today surface.
+<!-- evidence: e54ae26 -->
+- Alerts now precompute sorted alert and mesoscale presentation data, including latest-issued metadata, instead of repeating that work during render.
+<!-- evidence: e54ae26 -->
+- Map warning legend data is now precomputed once per scene and reused by both the map UI and accessibility summary, and the fire-map hint now says "fire risk map."
+<!-- evidence: 6e5327e -->
+
+### Reliability
+- Location authorization waiting now uses `ContinuousClock` with a shorter retry interval to make timing-sensitive authorization flows more consistent.
+<!-- evidence: 6e5327e -->
+
+### Tests / QA
+- Added regression coverage for nil-weather visible refreshes, timer refresh weather preservation, precomputed map warning legend access, and location timing behavior; shared UI-test launch state is reset before each run.
+<!-- evidence: e54ae26, 6e5327e -->
+
+### Maintenance / Cleanup
+- Updated the weekly bug-scan and performance audit notes with the latest validation and handoff notes.
+<!-- evidence: e54ae26, 6e5327e -->
+
 ## v1.0.1(75)
 
 ### UI / UX

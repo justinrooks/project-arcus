@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v1.0.1(79)
+
+### Overview
+This update keeps Home from holding onto stale weather after visible refreshes, reduces repeated work in Alerts and map legend rendering, and makes location authorization timing more consistent.
+
+### Highlights
+- Home now clears stale weather on visible refreshes when the refreshed snapshot does not include weather.
+- Alerts now reuse precomputed sort order and latest-issued metadata instead of recomputing it during render.
+- Map warning legend data is now precomputed once per scene and reused in the map UI and accessibility summary.
+- The fire map accessibility hint is now more specific.
+- Location authorization waiting now uses `ContinuousClock` with a shorter retry interval.
+- Regression coverage was added for nil-weather refreshes, timer refresh weather preservation, precomputed map warning legend access, and location timing behavior.
+
+### Maintenance
+- Weekly bug-scan and performance audit notes were updated with the latest validation and handoff notes.
+
 ## v1.0.1(75)
 
 ### Overview
