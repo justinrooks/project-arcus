@@ -78,3 +78,28 @@
   - Updated `HomeRefreshPipeline.apply(_:, commitsVisibleSnapshot:)` to assign `summaryWeather = snapshot.weather` unconditionally on visible commits.
   - Added a regression test proving a successful visible refresh with `weather: nil` clears stale cached weather.
 - out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore
+
+## 2026-06-25T16:12:18Z
+- date: 2026-06-25T16:12:18Z
+- repository reviewed: project-arcus
+- workflow reviewed: Weekly bug scan (audit-only)
+- commit window inspected: 2026-06-18T16:11:44Z through 2026-06-24T15:36:35Z
+- files inspected:
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshPipeline.swift
+  - /Users/justin/Code/project-arcus/Sources/Clients/WeatherClient.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeSnapshot.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Alert/AlertView.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Alert/AlertPresentationOrdering.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeSnapshotStore.swift
+  - /Users/justin/Code/project-arcus/docs/codebase/skyaware-app-summary.md
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeRefreshPipelineTests.swift
+- top finding: `WeatherClient.currentWeather(for:)` collapses WeatherKit failures into `nil`, but `HomeIngestionExecutor.refreshWeatherIfNeeded` still marks the lane refreshed and `HomeRefreshPipeline.apply(_:, commitsVisibleSnapshot:)` clears `summaryWeather` on any refreshed nil payload, so a transient WeatherKit error wipes the visible current-conditions card instead of preserving the last known reading.
+- best next fix: Carry explicit weather refresh success/failure state through the ingestion snapshot, and only clear `summaryWeather` when WeatherKit returns a successful empty result; keep the prior value on transport or API failure.
+- implementation is recommended: Yes
+- implementation status: completed on 2026-07-01
+- implementation notes:
+  - Introduced `HomeWeatherRefreshResult` to distinguish skipped, success, and failure outcomes.
+  - Updated the ingestion pipeline and `HomeRefreshPipeline` to preserve stale weather on failure while still clearing on successful empty refreshes.
+  - Added regression coverage for success, skipped, and failure paths.
+- out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore

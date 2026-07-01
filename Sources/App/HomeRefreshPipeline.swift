@@ -12,7 +12,20 @@ import SwiftUI
 import ArcusCore
 
 protocol HomeWeatherQuerying: Sendable {
-    func currentWeather(for location: CLLocation) async -> SummaryWeather?
+    func currentWeather(for location: CLLocation) async -> HomeWeatherRefreshResult
+}
+
+enum HomeWeatherRefreshResult: Sendable, Equatable {
+    case skipped
+    case success(SummaryWeather?)
+    case failure
+
+    var weather: SummaryWeather? {
+        if case .success(let weather) = self {
+            return weather
+        }
+        return nil
+    }
 }
 
 @MainActor
@@ -487,8 +500,11 @@ final class HomeRefreshPipeline {
             )
         }
 
-        if snapshot.weatherWasRefreshed {
-            summaryWeather = snapshot.weather
+        switch snapshot.weatherRefreshResult {
+        case .success(let weather):
+            summaryWeather = weather
+        case .skipped, .failure:
+            break
         }
 
         outlookSnapshot = HomeOutlookSnapshot(

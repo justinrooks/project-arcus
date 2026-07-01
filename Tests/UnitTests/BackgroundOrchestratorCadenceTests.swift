@@ -565,8 +565,8 @@ private final class FakeLocationSession: HomeContextPreparing {
 }
 
 private actor FakeWeatherClient: HomeWeatherQuerying {
-    func currentWeather(for location: CLLocation) async -> SummaryWeather? {
-        nil
+    func currentWeather(for location: CLLocation) async -> HomeWeatherRefreshResult {
+        .success(nil)
     }
 }
 

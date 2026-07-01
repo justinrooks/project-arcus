@@ -490,7 +490,7 @@ struct HomeRefreshPipelineTests {
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
                 weather: nil,
-                weatherWasRefreshed: true
+                weatherRefreshResult: .success(nil)
             )
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
@@ -517,7 +517,7 @@ struct HomeRefreshPipelineTests {
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
                 weather: nil,
-                weatherWasRefreshed: false
+                weatherRefreshResult: .skipped
             )
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
@@ -534,6 +534,27 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
 
         #expect(pipeline.summaryWeather == staleWeather)
+    }
+
+    @Test("visible refresh preserves stale weather when weather fetch fails")
+    func visibleRefresh_preservesStaleWeatherWhenWeatherFetchFails() async {
+        let context = makeContext()
+        let staleWeather = sampleWeather()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let weather = FakeWeatherClient(result: .failure)
+        let pipeline = HomeRefreshPipeline()
+        pipeline.summaryWeather = staleWeather
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                weather: weather,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.summaryWeather == staleWeather)
+        #expect(await weather.callCount() == 1)
     }
 
     @Test("timer refresh keeps sync work on the hot-alert lane")
@@ -1549,16 +1570,20 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
 }
 
 private actor FakeWeatherClient: HomeWeatherQuerying {
-    private let weather: SummaryWeather?
+    private let result: HomeWeatherRefreshResult
     private var calls: [CLLocation] = []
 
     init(weather: SummaryWeather? = nil) {
-        self.weather = weather
+        self.result = .success(weather)
     }
 
-    func currentWeather(for location: CLLocation) async -> SummaryWeather? {
+    init(result: HomeWeatherRefreshResult) {
+        self.result = result
+    }
+
+    func currentWeather(for location: CLLocation) async -> HomeWeatherRefreshResult {
         calls.append(location)
-        return weather
+        return result
     }
 
     func callCount() -> Int {
