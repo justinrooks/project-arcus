@@ -86,6 +86,10 @@ struct SettingsView: View {
     @AppStorage("aiBrevity", store: UserDefaults.shared) private var brevityIndex: Int = 0
     @AppStorage("aiAudience", store: UserDefaults.shared) private var audienceIndex: Int = 0
     
+    // MARK: Storm Setup
+    @AppStorage("stormSetupEnabled", store: UserDefaults.shared) private var stormSetupEnabled: Bool = false
+    @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared) private var detailedIngredientsEnabled: Bool = false
+    
     private var brevityBinding: Binding<BrevityLevel> {
         Binding(
             get: { BrevityLevel(rawValue: brevityIndex) ?? .essential },
@@ -179,6 +183,25 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .font(.subheadline.weight(.semibold))
+                    }
+                }
+
+                sectionCard(title: "Storm Setup", symbol: "cloud.bolt", accent: .primary) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Storm Setup", isOn: $stormSetupEnabled)
+                        Text("Turns on storm-focused setup guidance.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Detailed Ingredients", isOn: $detailedIngredientsEnabled)
+                            .disabled(stormSetupEnabled == false)
+                        Text(stormSetupEnabled ? "Adds more ingredient detail when Storm Setup is on." : "Turn on Storm Setup to use this setting.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
                     }
                 }
 

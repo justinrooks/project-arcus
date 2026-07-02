@@ -108,6 +108,7 @@
 				UnitTests/SkyAwareMotionTests.swift,
 				UnitTests/StormSetupHTTPClientTests.swift,
 				UnitTests/StormSetupMappingTests.swift,
+				UnitTests/StormSetupPolicyTests.swift,
 				UnitTests/SummaryAwarenessPanelTests.swift,
 				UnitTests/TestStore.swift,
 				UnitTests/WatchRowDTOTests.swift,
