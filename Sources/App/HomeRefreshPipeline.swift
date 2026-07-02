@@ -486,6 +486,10 @@ final class HomeRefreshPipeline {
             return
         }
 
+        let locationChanged = snapshot.locationSnapshot != nil
+            && lastResolvedLocationScopedRefreshKey != nil
+            && snapshot.refreshKey != lastResolvedLocationScopedRefreshKey
+
         if let locationSnapshot = snapshot.locationSnapshot {
             snap = locationSnapshot
             lastResolvedLocationScopedRefreshKey = snapshot.refreshKey
@@ -504,6 +508,9 @@ final class HomeRefreshPipeline {
         case .success(let weather):
             summaryWeather = weather
         case .skipped, .failure:
+            if locationChanged {
+                summaryWeather = nil
+            }
             break
         }
 
