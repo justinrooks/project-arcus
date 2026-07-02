@@ -106,6 +106,7 @@
 				UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift,
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/SkyAwareMotionTests.swift,
+				UnitTests/StormSetupMappingTests.swift,
 				UnitTests/SummaryAwarenessPanelTests.swift,
 				UnitTests/TestStore.swift,
 				UnitTests/WatchRowDTOTests.swift,

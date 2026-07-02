@@ -22,3 +22,9 @@
 ## 2026-06-15
 
 - When a native list migration has an immediately preceding sibling migration, mirror that sibling's row padding and inset baseline first; spacing drift is not a design system, it's just inconsistency with extra steps.
+
+## 2026-07-02
+
+- When planning a new Today data feed, state cache-forward behavior, SwiftData persistence, background participation,
+  and expected endpoint latency explicitly. Naming the unified ingestion path is not enough; each lifecycle guarantee
+  needs its own acceptance criteria and failure tests.
