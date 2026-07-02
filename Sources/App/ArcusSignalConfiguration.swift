@@ -9,9 +9,11 @@ import Foundation
 
 enum ArcusSignalConfiguration {
     static let defaultBaseURL = URL(string: "https://skyaware.bennettbunker.com")!
+    static let stormSetupBaseURL = URL(string: "https://api.skyaware.app")!
     static let alertsPath = "/api/v2/alerts"
     static let locationSnapshotsPath = "/api/v1/devices/location-snapshots"
     static let devicePreferencesPath = "/api/v1/devices/preferences"
+    static let stormSetupCurrentPath = "/api/v1/storm-setup/current"
 
     private static let infoDictionaryKey = "ArcusSignalURL"
 
