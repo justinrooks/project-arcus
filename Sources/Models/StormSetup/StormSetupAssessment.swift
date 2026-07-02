@@ -18,6 +18,29 @@ enum StormSetupSignal: String, Codable, Sendable, Equatable {
     }
 }
 
+enum StormSetupConfidence: String, Codable, Sendable, Equatable {
+    case low, medium, high, unknown
+
+    init(normalized value: String?) {
+        switch value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "low": self = .low
+        case "medium": self = .medium
+        case "high": self = .high
+        default: self = .unknown
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        self = .init(normalized: try? container.decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 struct StormSetupAssessment: Codable, Sendable, Equatable {
     let h3Cell: Int64
     let freshness: Freshness
@@ -127,7 +150,7 @@ extension StormSetupAssessment {
 
     struct ReadableAssessment: Codable, Sendable, Equatable {
         let overall: StormSetupSignal
-        let summary: StormSetupSignal
+        let summary: String?
         let instability: StormSetupSignal
         let moisture: StormSetupSignal
         let lowLevelRotation: StormSetupSignal
@@ -135,7 +158,7 @@ extension StormSetupAssessment {
         let cloudBase: StormSetupSignal
         let capInhibition: StormSetupSignal
         let limitingFactors: [String]
-        let confidence: StormSetupSignal
+        let confidence: StormSetupConfidence
         let primaryDrivers: [String]
         let stormMode: StormSetupSignal
         let stormModeHint: StormSetupSignal
@@ -144,7 +167,7 @@ extension StormSetupAssessment {
 
         init(dto: StormSetupDTO.Assessment) {
             overall = .init(normalized: dto.overall)
-            summary = .init(normalized: dto.summary)
+            summary = dto.summary?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
             instability = .init(normalized: dto.instability)
             moisture = .init(normalized: dto.moisture)
             lowLevelRotation = .init(normalized: dto.lowLevelRotation)
@@ -197,5 +220,11 @@ extension StormSetupAssessment {
             qualityProfileLevelCount = dto.qualityProfileLevelCount
             warnings = dto.warnings ?? []
         }
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

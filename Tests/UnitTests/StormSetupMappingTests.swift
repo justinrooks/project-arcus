@@ -16,8 +16,9 @@ struct StormSetupMappingTests {
         #expect(dto.source.primaryDownloadURL == "https://example.invalid/storm-setup")
         #expect(dto.raw.mlcapeJkg == 1_850)
         #expect(dto.raw.tempDewPtDeltaF == 4.5)
+        #expect(assessment.assessment.summary == "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.")
         #expect(assessment.assessment.overall == .strong)
-        #expect(assessment.assessment.summary == .supportive)
+        #expect(assessment.assessment.confidence == .high)
         #expect(assessment.assessment.lowLevelRotation == .conditional)
         #expect(assessment.assessment.deepShear == .strong)
         #expect(assessment.assessment.cloudBase == .weak)
@@ -64,6 +65,61 @@ struct StormSetupMappingTests {
         #expect(assessment.assessment.overall == .unknown)
         #expect(assessment.assessment.stormMode == .unknown)
         #expect(assessment.assessment.trend == .unknown)
+    }
+
+    @Test("mixed-case confidence normalizes to high")
+    func mixedCaseConfidenceMapsToHigh() throws {
+        let dto = try decodeDTO(completeJSON.replacingOccurrences(
+            of: "\"confidence\": \"high\"",
+            with: "\"confidence\": \" High \""
+        ))
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(assessment.assessment.confidence == .high)
+    }
+
+    @Test("missing summary decodes as nil")
+    func missingSummaryDecodesAsNil() throws {
+        let dto = try decodeDTO(completeJSON.replacingOccurrences(
+            of: "    \"summary\": \"The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.\",\n",
+            with: ""
+        ))
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(assessment.assessment.summary == nil)
+    }
+
+    @Test("whitespace-only summary decodes as nil")
+    func whitespaceOnlySummaryDecodesAsNil() throws {
+        let dto = try decodeDTO(completeJSON.replacingOccurrences(
+            of: "\"summary\": \"The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.\"",
+            with: "\"summary\": \"   \""
+        ))
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(assessment.assessment.summary == nil)
+    }
+
+    @Test("missing confidence decodes as unknown")
+    func missingConfidenceDecodesAsUnknown() throws {
+        let dto = try decodeDTO(completeJSON.replacingOccurrences(
+            of: "    \"confidence\": \"high\",\n",
+            with: ""
+        ))
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(assessment.assessment.confidence == .unknown)
+    }
+
+    @Test("future confidence decodes as unknown")
+    func futureConfidenceDecodesAsUnknown() throws {
+        let dto = try decodeDTO(completeJSON.replacingOccurrences(
+            of: "\"confidence\": \"high\"",
+            with: "\"confidence\": \"exceptional-new-value\""
+        ))
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(assessment.assessment.confidence == .unknown)
     }
 
     @Test("transport-only keys do not reach the domain model")
@@ -135,7 +191,7 @@ private let completeJSON = #"""
   },
   "assessment": {
     "overall": " strong ",
-    "summary": " supportive ",
+    "summary": "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.",
     "instability": "supportive",
     "moisture": "supportive",
     "lowLevelRotation": " conditional ",
@@ -145,7 +201,7 @@ private let completeJSON = #"""
     "limitingFactors": [
       "capping"
     ],
-    "confidence": "supportive",
+    "confidence": "high",
     "primaryDrivers": [
       "instability",
       "shear"

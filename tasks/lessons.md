@@ -28,3 +28,6 @@
 - When planning a new Today data feed, state cache-forward behavior, SwiftData persistence, background participation,
   and expected endpoint latency explicitly. Naming the unified ingestion path is not enough; each lifecycle guarantee
   needs its own acceptance criteria and failure tests.
+- When a server field carries prose or confidence semantics, preserve the text boundary explicitly instead of routing
+  it through a generic ingredient signal enum. Valid domain meaning should not be collapsed into `.unknown` just
+  because the token family differs from the other assessment rows.
