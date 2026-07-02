@@ -8,7 +8,7 @@
 import Foundation
 
 struct ConvectiveOutlookDTO: Sendable, Identifiable, Hashable {
-    let id: UUID               // usually the GUID or derived from it
+    let id: String             // stable feed-backed identity for SwiftUI diffing
     let title: String          // e.g., "Day 1 Convective Outlook"
     let link: URL              // link to full outlook page
     let published: Date        // pubDate
@@ -20,7 +20,7 @@ struct ConvectiveOutlookDTO: Sendable, Identifiable, Hashable {
     let validUntil: Date?
     
     init(title: String, link: URL, published: Date, summary: String, fullText: String, day: Int?, riskLevel: String?, issued: Date?, validUntil: Date?) {
-        self.id = UUID()
+        self.id = link.absoluteString
         self.title = title
         self.link = link
         self.published = published

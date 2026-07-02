@@ -14,13 +14,13 @@ actor WeatherClient {
     private let logger = Logger.providersWeatherKit
     private let service = WeatherService.shared
 
-    func currentWeather(for location: CLLocation) async -> SummaryWeather? {
+    func currentWeather(for location: CLLocation) async -> HomeWeatherRefreshResult {
         do {
             logger.info("WeatherKit request started mode=\(HTTPExecutionMode.current.logName, privacy: .public)")
             let currentWeather = try await self.service.weather(for: location, including: .current)
             logger.info("WeatherKit request completed result=success")
             
-            return .init(
+            return .success(.init(
                 temperature: currentWeather.temperature,
                 symbolName: currentWeather.symbolName,
                 conditionText: currentWeather.condition.description,
@@ -32,10 +32,10 @@ actor WeatherClient {
                 windDirection: currentWeather.wind.compassDirection.abbreviation,
                 pressure: currentWeather.pressure,
                 pressureTrend: currentWeather.pressureTrend.description
-            )
+            ))
         } catch {
             logger.error("WeatherKit request completed result=failure error=\(error, privacy: .public)")
-            return nil
+            return .failure
         }
     }
     

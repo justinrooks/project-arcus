@@ -490,7 +490,7 @@ struct HomeRefreshPipelineTests {
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
                 weather: nil,
-                weatherWasRefreshed: true
+                weatherRefreshResult: .success(nil)
             )
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
@@ -517,7 +517,7 @@ struct HomeRefreshPipelineTests {
                 locationSnapshot: context.snapshot,
                 refreshKey: context.refreshKey,
                 weather: nil,
-                weatherWasRefreshed: false
+                weatherRefreshResult: .skipped
             )
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
@@ -534,6 +534,81 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
 
         #expect(pipeline.summaryWeather == staleWeather)
+    }
+
+    @Test("visible refresh preserves stale weather when weather fetch fails")
+    func visibleRefresh_preservesStaleWeatherWhenWeatherFetchFails() async {
+        let context = makeContext()
+        let staleWeather = sampleWeather()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let weather = FakeWeatherClient(result: .failure)
+        let pipeline = HomeRefreshPipeline()
+        pipeline.summaryWeather = staleWeather
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                weather: weather,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.summaryWeather == staleWeather)
+        #expect(await weather.callCount() == 1)
+    }
+
+    @Test("visible refresh clears stale weather after a location change when weather fetch fails")
+    func visibleRefresh_clearsStaleWeatherAfterLocationChangeWhenWeatherFetchFails() async {
+        let oldContext = makeContext()
+        let newContext = makeContext(
+            latitude: 39.93,
+            longitude: -104.61,
+            h3Cell: 222_222,
+            timestamp: 200
+        )
+        let staleWeather = sampleWeather()
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: [
+                HomeSnapshot(
+                    locationSnapshot: oldContext.snapshot,
+                    refreshKey: oldContext.refreshKey,
+                    weather: staleWeather,
+                    weatherRefreshResult: .success(staleWeather)
+                ),
+                HomeSnapshot(
+                    locationSnapshot: newContext.snapshot,
+                    refreshKey: newContext.refreshKey,
+                    weather: nil,
+                    weatherRefreshResult: .failure
+                )
+            ],
+            gates: []
+        )
+        let locationSession = FakeLocationSession(currentContext: oldContext, preparedContext: oldContext)
+        let pipeline = HomeRefreshPipeline()
+        pipeline.summaryWeather = staleWeather
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        locationSession.currentContext = newContext
+        locationSession.preparedContext = newContext
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.summaryWeather == nil)
+        #expect(await coordinator.requestCount() == 2)
     }
 
     @Test("timer refresh keeps sync work on the hot-alert lane")
@@ -1228,13 +1303,18 @@ struct HomeRefreshPipelineTests {
         return HomeIngestionCoordinator(executor: executor)
     }
 
-    private func makeContext(timestamp: TimeInterval = 100) -> LocationContext {
+    private func makeContext(
+        latitude: Double = 39.75,
+        longitude: Double = -104.44,
+        h3Cell: Int64 = 123_456,
+        timestamp: TimeInterval = 100
+    ) -> LocationContext {
         let snapshot = LocationSnapshot(
-            coordinates: .init(latitude: 39.75, longitude: -104.44),
+            coordinates: .init(latitude: latitude, longitude: longitude),
             timestamp: Date(timeIntervalSince1970: timestamp),
             accuracy: 25,
             placemarkSummary: "Bennett, CO",
-            h3Cell: 123_456
+            h3Cell: h3Cell
         )
         let grid = GridPointSnapshot(
             nwsId: "BOU/10,20",
@@ -1549,16 +1629,20 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
 }
 
 private actor FakeWeatherClient: HomeWeatherQuerying {
-    private let weather: SummaryWeather?
+    private let result: HomeWeatherRefreshResult
     private var calls: [CLLocation] = []
 
     init(weather: SummaryWeather? = nil) {
-        self.weather = weather
+        self.result = .success(weather)
     }
 
-    func currentWeather(for location: CLLocation) async -> SummaryWeather? {
+    init(result: HomeWeatherRefreshResult) {
+        self.result = result
+    }
+
+    func currentWeather(for location: CLLocation) async -> HomeWeatherRefreshResult {
         calls.append(location)
-        return weather
+        return result
     }
 
     func callCount() -> Int {

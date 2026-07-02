@@ -65,11 +65,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let shouldRefreshRiskWidgets: Bool
     }
 
-    private struct WeatherRefreshOutcome: Sendable {
-        let weather: SummaryWeather?
-        let wasRefreshed: Bool
-    }
-
     struct Environment: Sendable {
         let logger: Logger
         let spcSync: any SpcSyncing
@@ -166,7 +161,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             weather: weatherRefresh.weather,
             freshness: freshness
         )
-        snapshot.weatherWasRefreshed = weatherRefresh.wasRefreshed
+        snapshot.weatherRefreshResult = weatherRefresh
 
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(
@@ -177,7 +172,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 for: plan,
                 context: context,
                 snapshot: snapshot,
-                weather: weatherRefresh.weather,
+                weatherRefreshResult: weatherRefresh,
                 loadedAt: now,
                 slowProductDecision: slowProductDecision
             )
@@ -355,15 +350,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         context: LocationContext?,
         now: Date,
         progress: HomeIngestionRunProgress
-    ) async -> WeatherRefreshOutcome {
+    ) async -> HomeWeatherRefreshResult {
         guard plan.lanes.contains(.weather) else {
             environment.logger.debug("Skipping home ingestion weather refresh reason=lane-not-requested")
-            return .init(weather: nil, wasRefreshed: false)
+            return .skipped
         }
         guard let context else {
             await progress.report(.skipped(.lane(.weather)))
             environment.logger.debug("Skipping home ingestion weather refresh reason=no-location-context")
-            return .init(weather: nil, wasRefreshed: false)
+            return .skipped
         }
         guard weatherKitRefreshPolicy.shouldSync(
             now: now,
@@ -372,7 +367,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         ) else {
             await progress.report(.skipped(.lane(.weather)))
             environment.logger.debug("Skipping home ingestion weather refresh reason=freshness")
-            return .init(weather: nil, wasRefreshed: false)
+            return .skipped
         }
 
         let location = CLLocation(
@@ -381,34 +376,46 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
         await progress.report(.started(.lane(.weather)))
         environment.logger.info("Running home ingestion weather refresh")
-        let weather = await environment.weatherClient.currentWeather(for: location)
-        if weather != nil {
+        let weatherResult = await environment.weatherClient.currentWeather(for: location)
+        switch weatherResult {
+        case .success(let weather):
             freshness.lastWeatherSyncAt = now
-            environment.logger.debug("Finished home ingestion weather refresh result=success")
-        } else {
-            environment.logger.debug("Finished home ingestion weather refresh result=empty")
+            if weather != nil {
+                environment.logger.debug("Finished home ingestion weather refresh result=success")
+            } else {
+                environment.logger.debug("Finished home ingestion weather refresh result=empty")
+            }
+        case .failure:
+            environment.logger.debug("Finished home ingestion weather refresh result=failure")
+        case .skipped:
+            environment.logger.debug("Finished home ingestion weather refresh result=skipped")
         }
         await progress.report(.completed(.lane(.weather)))
-        return .init(weather: weather, wasRefreshed: true)
+        return weatherResult
     }
 
     private func persistProjection(
         for plan: HomeIngestionPlan,
         context: LocationContext,
         snapshot: HomeSnapshot,
-        weather: SummaryWeather?,
+        weatherRefreshResult: HomeWeatherRefreshResult,
         loadedAt: Date,
         slowProductDecision: SlowProductPersistenceDecision
     ) async {
         guard let projectionStore = environment.projectionStore else { return }
 
         do {
-            if plan.lanes.contains(.weather), let weather {
-                _ = try await projectionStore.updateWeather(
-                    weather,
-                    for: context,
-                    loadedAt: loadedAt
-                )
+            if plan.lanes.contains(.weather) {
+                switch weatherRefreshResult {
+                case .success(let weather):
+                    _ = try await projectionStore.updateWeather(
+                        weather,
+                        for: context,
+                        loadedAt: loadedAt
+                    )
+                case .skipped, .failure:
+                    break
+                }
             }
 
             if slowProductDecision.shouldUpdateProjection {

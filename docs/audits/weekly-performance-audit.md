@@ -75,3 +75,26 @@
 - implementation notes:
   - Hoisted sorted alerts, sorted mesos, and latest-issued derivation into stored values in `AlertView`.
   - Verified the change with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`.
+
+## 2026-06-28
+- workflow reviewed: Convective Outlooks workflow
+- files inspected:
+  - docs/codebase/skyaware-app-summary.md
+  - Sources/App/HomeView.swift
+  - Sources/App/HomeRefreshPipeline.swift
+  - Sources/App/HomeRefreshV2/HomeSnapshotStore.swift
+  - Sources/Features/ConvectiveOutlookView/ConvectiveOutlookView.swift
+  - Sources/Features/ConvectiveOutlookView/ConvectiveOutlookDetailView.swift
+  - Sources/Features/ConvectiveOutlookView/OutlookRowView.swift
+  - Sources/Features/Summary/OutlookSummaryCard.swift
+  - Sources/Features/Summary/OutlookView.swift
+  - Sources/Models/Convective/ConvectiveOutlookDTO.swift
+  - Sources/Repos/ConvectiveOutlookRepo.swift
+- top finding: `ConvectiveOutlookDTO` assigns a fresh `UUID()` in its initializer, so the same SPC outlook becomes a brand-new identity on every refresh or snapshot load, which forces SwiftUI to treat unchanged rows as replacements instead of updates.
+- best next fix: derive the DTO identity from a stable feed-backed key such as `link` or the canonical outlook title/published tuple, so `ConvectiveOutlookView` and any summary surfaces can preserve row identity across refreshes.
+- measurement gap: profile Outlooks-tab row diff churn and `OutlookRowView` body recomputation count across a manual refresh to confirm how much identity instability is visible in Instruments.
+- implementation recommended: yes
+- implementation status: completed on 2026-07-01
+- implementation notes:
+  - Changed `ConvectiveOutlookDTO.id` to use `link.absoluteString` instead of a fresh `UUID()`.
+  - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAware-PerformanceAudit build`.
