@@ -39,6 +39,19 @@ actor HomeProjectionStore {
         return projection.record
     }
 
+    func updateStormSetup(
+        _ stormSetup: StormSetupDTO,
+        for context: LocationContext,
+        loadedAt: Date = .now
+    ) throws -> HomeProjectionRecord {
+        let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
+        projection.stormSetupPayload = stormSetup
+        projection.lastStormSetupLoadAt = loadedAt
+        projection.updatedAt = loadedAt
+        try modelContext.save()
+        return projection.record
+    }
+
     func updateSlowProducts(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,

@@ -41,6 +41,223 @@ struct HomeProjectionStoreTests {
         #expect(count == 1)
     }
 
+    @Test("new projections start with nil Storm Setup fields")
+    func fetchOrCreate_newProjectionStartsWithNilStormSetup() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        let projection = try await store.fetchOrCreateProjection(for: context)
+
+        #expect(projection.stormSetup == nil)
+        #expect(projection.lastStormSetupLoadAt == nil)
+    }
+
+    @Test("updating Storm Setup stores the payload and load timestamp")
+    func updateStormSetup_persistsPayloadAndLoadTimestamp() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let loadedAt = Date(timeIntervalSince1970: 600)
+        let dto = makeStormSetupDTO()
+
+        let updated = try await store.updateStormSetup(dto, for: context, loadedAt: loadedAt)
+
+        #expect(updated.stormSetup == dto)
+        #expect(updated.lastStormSetupLoadAt == loadedAt)
+        #expect(updated.updatedAt == loadedAt)
+
+        let persisted = try #require(await store.projection(for: context))
+        #expect(persisted.stormSetup == dto)
+        #expect(persisted.lastStormSetupLoadAt == loadedAt)
+    }
+
+    @Test("updating Storm Setup preserves weather, risks, alerts, mesos, and timestamps")
+    func updateStormSetup_preservesExistingSlicesAndTimestamps() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let weather = makeWeather()
+        let alert = Watch.sampleWatchRows[0]
+        let meso = MD.sampleDiscussionDTOs[0]
+        let stormLoadedAt = Date(timeIntervalSince1970: 650)
+        let dto = makeStormSetupDTO()
+
+        _ = try await store.updateWeather(weather, for: context, loadedAt: Date(timeIntervalSince1970: 300))
+        _ = try await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 400)
+        )
+        _ = try await store.updateHotAlerts(
+            alerts: [alert],
+            mesos: [meso],
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        let updated = try await store.updateStormSetup(dto, for: context, loadedAt: stormLoadedAt)
+
+        #expect(updated.weather == weather)
+        #expect(updated.stormRisk == StormRiskLevel.slight)
+        #expect(updated.severeRisk == SevereWeatherThreat.tornado(probability: 0.10))
+        #expect(updated.fireRisk == FireRiskLevel.critical)
+        #expect(updated.activeAlerts == [alert])
+        #expect(updated.activeMesos == [meso])
+        #expect(updated.stormSetup == dto)
+        #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
+        #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 400))
+        #expect(updated.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(updated.lastStormSetupLoadAt == stormLoadedAt)
+    }
+
+    @Test("weather, slow products, and hot alerts preserve Storm Setup")
+    func updateNonStormSetupSlices_preserveStormSetup() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let dto = makeStormSetupDTO()
+        let stormLoadedAt = Date(timeIntervalSince1970: 700)
+        let weatherLoadedAt = Date(timeIntervalSince1970: 710)
+        let slowLoadedAt = Date(timeIntervalSince1970: 720)
+        let hotLoadedAt = Date(timeIntervalSince1970: 730)
+        let alert = Watch.sampleWatchRows[1]
+        let meso = MD.sampleDiscussionDTOs[1]
+
+        _ = try await store.updateStormSetup(dto, for: context, loadedAt: stormLoadedAt)
+
+        let weatherUpdated = try await store.updateWeather(
+            makeWeather(temperature: 68, asOf: 900),
+            for: context,
+            loadedAt: weatherLoadedAt
+        )
+        let slowUpdated = try await store.updateSlowProducts(
+            stormRisk: .moderate,
+            severeRisk: .wind(probability: 0.20),
+            fireRisk: .elevated,
+            for: context,
+            loadedAt: slowLoadedAt
+        )
+        let hotUpdated = try await store.updateHotAlerts(
+            alerts: [alert],
+            mesos: [meso],
+            for: context,
+            loadedAt: hotLoadedAt
+        )
+
+        #expect(weatherUpdated.stormSetup == dto)
+        #expect(weatherUpdated.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(slowUpdated.stormSetup == dto)
+        #expect(slowUpdated.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(hotUpdated.stormSetup == dto)
+        #expect(hotUpdated.lastStormSetupLoadAt == stormLoadedAt)
+    }
+
+    @Test("different projection keys keep independent Storm Setup payloads")
+    func updateStormSetup_keepsProjectionKeysIndependent() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let firstContext = makeContext(
+            latitude: 39.75,
+            longitude: -104.44,
+            timestamp: 100,
+            placemarkSummary: "Bennett, CO",
+            countyCode: "COC005",
+            forecastZone: "COZ038",
+            fireZone: "COZ214",
+            h3Cell: 123_456
+        )
+        let secondContext = makeContext(
+            latitude: 40.02,
+            longitude: -104.87,
+            timestamp: 120,
+            placemarkSummary: "Brighton, CO",
+            countyCode: "COC007",
+            forecastZone: "COZ041",
+            fireZone: "COZ217",
+            h3Cell: 654_321
+        )
+        let firstDTO = makeStormSetupDTO(h3Cell: 123_456, surfaceHeightMslM: 1_100)
+        let secondDTO = makeStormSetupDTO(
+            h3Cell: 654_321,
+            surfaceHeightMslM: 1_240,
+            summary: "Second location"
+        )
+
+        _ = try await store.updateStormSetup(
+            firstDTO,
+            for: firstContext,
+            loadedAt: Date(timeIntervalSince1970: 800)
+        )
+        _ = try await store.updateStormSetup(
+            secondDTO,
+            for: secondContext,
+            loadedAt: Date(timeIntervalSince1970: 900)
+        )
+
+        let firstProjection = try #require(await store.projection(for: firstContext))
+        let secondProjection = try #require(await store.projection(for: secondContext))
+
+        #expect(firstProjection.projectionKey == HomeProjection.projectionKey(for: firstContext))
+        #expect(secondProjection.projectionKey == HomeProjection.projectionKey(for: secondContext))
+        #expect(firstProjection.stormSetup == firstDTO)
+        #expect(secondProjection.stormSetup == secondDTO)
+        #expect(firstProjection.stormSetup != secondProjection.stormSetup)
+    }
+
+    @Test("a new store over the same container reads persisted Storm Setup")
+    func updateStormSetup_newStoreReadsPersistedPayload() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let context = makeContext()
+        let dto = makeStormSetupDTO()
+        let loadedAt = Date(timeIntervalSince1970: 950)
+
+        do {
+            let store = HomeProjectionStore(modelContainer: container)
+            _ = try await store.updateStormSetup(dto, for: context, loadedAt: loadedAt)
+        }
+
+        let reopenedStore = HomeProjectionStore(modelContainer: container)
+        let persisted = try #require(await reopenedStore.projection(for: context))
+
+        #expect(persisted.stormSetup == dto)
+        #expect(persisted.lastStormSetupLoadAt == loadedAt)
+    }
+
+    @Test("an on-disk container survives reopen with Storm Setup intact")
+    func updateStormSetup_diskContainerRetainsPayloadAfterReopen() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let schema = Schema([HomeProjection.self])
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: storeURL
+        )
+        let context = makeContext()
+        let dto = makeStormSetupDTO()
+        let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let store = HomeProjectionStore(modelContainer: container)
+            _ = try await store.updateStormSetup(dto, for: context, loadedAt: loadedAt)
+        }
+
+        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
+        let persisted = try #require(await reopenedStore.projection(for: context))
+
+        #expect(persisted.stormSetup == dto)
+        #expect(persisted.lastStormSetupLoadAt == loadedAt)
+    }
+
     @Test("updating slow products keeps existing weather and alert slices")
     func updateSlowProducts_preservesExistingWeatherAndAlerts() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -356,6 +573,85 @@ struct HomeProjectionStoreTests {
             windDirection: "NW",
             pressure: .init(value: 29.92, unit: .inchesOfMercury),
             pressureTrend: "steady"
+        )
+    }
+
+    private func makeStormSetupDTO(
+        h3Cell: Int64 = 123_456,
+        surfaceHeightMslM: Double = 1_132.4,
+        summary: String = "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation."
+    ) -> StormSetupDTO {
+        StormSetupDTO(
+            h3Cell: h3Cell,
+            freshness: .init(
+                isStale: false,
+                isDegraded: false,
+                modelRunTime: Date(timeIntervalSince1970: 1_717_270_400),
+                sourceValidTime: Date(timeIntervalSince1970: 1_717_281_600),
+                forecastHour: 3,
+                fetchedAt: Date(timeIntervalSince1970: 1_717_281_780),
+                expiresAt: Date(timeIntervalSince1970: 1_717_284_000)
+            ),
+            source: .init(
+                model: "HRRR",
+                product: "Storm Setup",
+                domain: "severe",
+                fieldSetVersion: "1",
+                sourceKind: "production",
+                runTime: Date(timeIntervalSince1970: 1_717_270_400),
+                validTime: Date(timeIntervalSince1970: 1_717_281_600),
+                forecastHour: 3,
+                bbox: .init(
+                    toplat: 41.5,
+                    leftlon: -104.3,
+                    rightlon: -96.2,
+                    bottomlat: 36.8
+                ),
+                primaryDownloadURL: "https://example.invalid/storm-setup"
+            ),
+            raw: .init(
+                mlcapeJkg: 1_850,
+                mucapeJkg: 2_200.5,
+                sbcapeJkg: 1_700,
+                mlcinJkg: -42,
+                srh01kmM2s2: 125.5,
+                srh03kmM2s2: 175,
+                shear06kmKt: 42,
+                mllclM: 980,
+                tempDewPtDeltaF: 4.5,
+                threeCapeJkg: 95
+            ),
+            assessment: .init(
+                overall: "strong",
+                summary: summary,
+                instability: "supportive",
+                moisture: "supportive",
+                lowLevelRotation: "conditional",
+                deepShear: "strong",
+                cloudBase: "weak",
+                capInhibition: "weak",
+                limitingFactors: ["capping"],
+                confidence: "high",
+                primaryDrivers: ["instability", "shear"],
+                stormMode: "supportive",
+                stormModeHint: "supportive",
+                trend: "conditional",
+                compositeSignal: "strong"
+            ),
+            anvilEvidence: .init(
+                status: "available",
+                scp: .init(support: "supportive"),
+                stp: .init(support: "conditional"),
+                ship: .init(support: "weak"),
+                diagnostics: .init(
+                    hasEffectiveLayer: true,
+                    hasStormMotion: false,
+                    qualityProfileLevelCount: 3,
+                    warnings: ["watch heating"]
+                )
+            ),
+            centroid: .init(latitude: 39.5, longitude: -100.0),
+            surfaceHeightMslM: surfaceHeightMslM
         )
     }
 }
