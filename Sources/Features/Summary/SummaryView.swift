@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Foundation
 
 enum SummaryReadinessState: Equatable {
     case loadingLocation
@@ -125,6 +126,8 @@ struct SummaryView: View {
     }
 
     let snap: LocationSnapshot?
+    let stormSetup: StormSetupDTO?
+    let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
@@ -132,6 +135,7 @@ struct SummaryView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
     let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
@@ -142,6 +146,52 @@ struct SummaryView: View {
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
+
+    init(
+        snap: LocationSnapshot? = nil,
+        stormSetup: StormSetupDTO? = nil,
+        stormSetupPreferences: StormSetupPreferences = StormSetupPreferences(),
+        stormRisk: StormRiskLevel? = nil,
+        severeRisk: SevereWeatherThreat? = nil,
+        fireRisk: FireRiskLevel? = nil,
+        mesos: [MdDTO] = [],
+        alerts: [AlertDTO] = [],
+        outlook: ConvectiveOutlookDTO? = nil,
+        weather: SummaryWeather? = nil,
+        locationTimeZone: TimeZone = .autoupdatingCurrent,
+        todayContentState: TodayContentState,
+        localAlertsDisplayState: LocalAlertsDisplayState,
+        readinessState: SummaryReadinessState,
+        resolutionState: SummaryResolutionState,
+        showsOfflineToken: Bool,
+        headerCondenseProgress: CGFloat,
+        locationReliabilityRailState: LocationReliabilityRailState? = nil,
+        onOpenMapLayer: @escaping (MapLayer) -> Void,
+        onOpenAlerts: @escaping () -> Void,
+        onOpenOutlooks: @escaping () -> Void
+    ) {
+        self.snap = snap
+        self.stormSetup = stormSetup
+        self.stormSetupPreferences = stormSetupPreferences
+        self.stormRisk = stormRisk
+        self.severeRisk = severeRisk
+        self.fireRisk = fireRisk
+        self.mesos = mesos
+        self.alerts = alerts
+        self.outlook = outlook
+        self.weather = weather
+        self.locationTimeZone = locationTimeZone
+        self.todayContentState = todayContentState
+        self.localAlertsDisplayState = localAlertsDisplayState
+        self.readinessState = readinessState
+        self.resolutionState = resolutionState
+        self.showsOfflineToken = showsOfflineToken
+        self.headerCondenseProgress = headerCondenseProgress
+        self.locationReliabilityRailState = locationReliabilityRailState
+        self.onOpenMapLayer = onOpenMapLayer
+        self.onOpenAlerts = onOpenAlerts
+        self.onOpenOutlooks = onOpenOutlooks
+    }
 
     private var isWeatherLoading: Bool {
         weather == nil

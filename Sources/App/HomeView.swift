@@ -8,6 +8,7 @@
 import SwiftUI
 import OSLog
 import SwiftData
+import Foundation
 
 struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -16,6 +17,12 @@ struct HomeView: View {
     @Environment(LocationSession.self) private var locationSession
     @Environment(RemoteAlertPresentationState.self) private var remoteAlertPresentationState
     @Environment(RuntimeConnectivityState.self) private var runtimeConnectivityState
+
+    @AppStorage("stormSetupEnabled", store: UserDefaults.shared)
+    private var stormSetupEnabled: Bool = false
+
+    @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared)
+    private var detailedIngredientsEnabled: Bool = false
 
     @Query(sort: [SortDescriptor(\HomeProjection.updatedAt, order: .reverse)])
     private var cachedProjections: [HomeProjection]
@@ -33,6 +40,7 @@ struct HomeView: View {
     @State private var locationReliabilityRailQualifyingDay: String?
     @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
     @State private var showsLocationReliabilitySheet: Bool = false
+    @State private var lastStormSetupPreferences: StormSetupPreferences?
 
     private var isUITestStaticMode: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
@@ -40,6 +48,10 @@ struct HomeView: View {
 
     private var isUITestForceReliabilityRail: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_FORCE_RELIABILITY_RAIL"] == "1"
+    }
+
+    private var isPreviewMode: Bool {
+        ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
     }
 
     private var currentContextRefreshKey: LocationContext.RefreshKey? {
@@ -52,6 +64,35 @@ struct HomeView: View {
 
     private var displayedProjection: HomeProjectionRecord? {
         Self.selectProjection(from: cachedProjections, currentContext: locationSession.currentContext)?.record
+    }
+
+    private var newestCachedProjection: HomeProjectionRecord? {
+        cachedProjections.first?.record
+    }
+
+    private var stormSetupPreferences: StormSetupPreferences {
+        StormSetupPreferences(
+            stormSetupEnabled: stormSetupEnabled,
+            detailedIngredientsEnabled: detailedIngredientsEnabled
+        )
+    }
+
+    private var displayedStormSetup: StormSetupDTO? {
+        Self.selectStormSetup(
+            projection: displayedProjection,
+            currentContext: locationSession.currentContext,
+            pipelineValue: refreshPipeline.stormSetup,
+            pipelineRefreshKey: refreshPipeline.stormSetupRefreshKey,
+            now: Date()
+        )
+    }
+
+    private var resolvedLocationTimeZone: TimeZone {
+        Self.resolveLocationTimeZone(
+            selectedProjection: displayedProjection,
+            currentContext: locationSession.currentContext,
+            newestStartupProjection: newestCachedProjection
+        )
     }
 
     private var isCurrentContextResolvedInPipeline: Bool {
@@ -222,6 +263,8 @@ struct HomeView: View {
                 Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted", value: .today) {
                     TodayTabView(
                         snap: displayedLocationSnapshot,
+                        stormSetup: displayedStormSetup,
+                        stormSetupPreferences: stormSetupPreferences,
                         stormRisk: displayedStormRisk,
                         severeRisk: displayedSevereRisk,
                         fireRisk: displayedFireRisk,
@@ -229,6 +272,7 @@ struct HomeView: View {
                         alerts: displayedAlerts,
                         outlook: displayedOutlook,
                         weather: displayedWeather,
+                        locationTimeZone: resolvedLocationTimeZone,
                         todayContentState: todayContentState,
                         localAlertsDisplayState: localAlertsDisplayState,
                         readinessState: readinessState,
@@ -333,7 +377,7 @@ struct HomeView: View {
         }
         .tint(.skyAwareAccent)
         .task {
-            if ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1" { return }
+            if isPreviewMode { return }
             if isUITestStaticMode { return }
             refreshPipeline.updateEnvironment(refreshEnvironment)
             await refreshPipeline.handleScenePhaseChange(scenePhase, environment: refreshEnvironment)
@@ -353,6 +397,12 @@ struct HomeView: View {
                     environment: refreshEnvironment
                 )
             }
+        }
+        .onChange(of: stormSetupEnabled) { _, _ in
+            scheduleStormSetupSettingsRefreshIfNeeded()
+        }
+        .onChange(of: detailedIngredientsEnabled) { _, _ in
+            scheduleStormSetupSettingsRefreshIfNeeded()
         }
         .onChange(of: remoteAlertPresentationState.focusRequest?.id) { _, newValue in
             guard newValue != nil else { return }
@@ -383,6 +433,26 @@ struct HomeView: View {
             }
 
             selectedTab = tab
+        }
+    }
+
+    private func scheduleStormSetupSettingsRefreshIfNeeded() {
+        guard isPreviewMode == false, isUITestStaticMode == false else {
+            return
+        }
+
+        let currentPreferences = stormSetupPreferences
+        guard Self.shouldRefreshStormSetupSettings(
+            previousPreferences: lastStormSetupPreferences,
+            currentPreferences: currentPreferences
+        ) else {
+            return
+        }
+
+        lastStormSetupPreferences = currentPreferences
+        refreshPipeline.updateEnvironment(refreshEnvironment)
+        Task {
+            await refreshPipeline.enqueueRefresh(.timer, environment: refreshEnvironment)
         }
     }
 }
@@ -432,6 +502,67 @@ extension HomeView {
         return projections.max(by: { $0.updatedAt < $1.updatedAt })
     }
 
+    static func selectStormSetup(
+        projection: HomeProjectionRecord?,
+        currentContext: LocationContext?,
+        pipelineValue: StormSetupDTO?,
+        pipelineRefreshKey: LocationContext.RefreshKey?,
+        now: Date
+    ) -> StormSetupDTO? {
+        if let currentContext {
+            let currentRefreshKey = currentContext.refreshKey
+            if pipelineRefreshKey == currentRefreshKey,
+               let pipelineValue,
+               pipelineValue.freshness.expiresAt > now,
+               pipelineValue.h3Cell == currentContext.h3Cell {
+                return pipelineValue
+            }
+
+            guard let projection,
+                  projection.projectionKey == HomeProjection.projectionKey(for: currentContext),
+                  let stormSetup = projection.stormSetup,
+                  stormSetup.freshness.expiresAt > now,
+                  stormSetup.h3Cell == currentContext.h3Cell else {
+                return nil
+            }
+
+            return stormSetup
+        }
+
+        guard let stormSetup = projection?.stormSetup,
+              stormSetup.freshness.expiresAt > now else {
+            return nil
+        }
+
+        return stormSetup
+    }
+
+    static func resolveLocationTimeZone(
+        selectedProjection: HomeProjectionRecord?,
+        currentContext: LocationContext?,
+        newestStartupProjection: HomeProjectionRecord?,
+        fallback: TimeZone = .autoupdatingCurrent
+    ) -> TimeZone {
+        if let timeZoneIdentifier = selectedProjection?.timeZoneId,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            return timeZone
+        }
+
+        if let currentContext,
+           let timeZoneIdentifier = currentContext.grid.timeZoneId,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            return timeZone
+        }
+
+        if currentContext == nil,
+           let timeZoneIdentifier = newestStartupProjection?.timeZoneId,
+           let timeZone = TimeZone(identifier: timeZoneIdentifier) {
+            return timeZone
+        }
+
+        return fallback
+    }
+
     static func selectProjection(
         from projections: [HomeProjection],
         currentContext: LocationContext?
@@ -463,6 +594,13 @@ extension HomeView {
             return pipelineValue ?? projectionValue
         }
         return projectionValue ?? pipelineValue
+    }
+
+    static func shouldRefreshStormSetupSettings(
+        previousPreferences: StormSetupPreferences?,
+        currentPreferences: StormSetupPreferences
+    ) -> Bool {
+        previousPreferences != currentPreferences
     }
 
     static func preferredOutlooks(
@@ -624,6 +762,8 @@ private struct TodayTabView: View {
     @State private var visibleWeatherState = TodayVisibleWeatherState()
 
     let snap: LocationSnapshot?
+    let stormSetup: StormSetupDTO?
+    let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
@@ -631,6 +771,7 @@ private struct TodayTabView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
     let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
@@ -670,6 +811,8 @@ private struct TodayTabView: View {
             ScrollView {
                 SummaryView(
                     snap: snap,
+                    stormSetup: stormSetup,
+                    stormSetupPreferences: stormSetupPreferences,
                     stormRisk: stormRisk,
                     severeRisk: severeRisk,
                     fireRisk: fireRisk,
@@ -677,6 +820,7 @@ private struct TodayTabView: View {
                     alerts: alerts,
                     outlook: outlook,
                     weather: visibleWeather,
+                    locationTimeZone: locationTimeZone,
                     todayContentState: todayContentState,
                     localAlertsDisplayState: localAlertsDisplayState,
                     readinessState: readinessState,
