@@ -56,3 +56,175 @@
   - `arcus-signal` now uses a dedicated APNs request encoder with `dateEncodingStrategy = .iso8601` for both sandbox and production containers.
   - Added a focused App test that encodes `HotAlertAPNsPayload` through the shared APNs request encoder and verifies `revisionSent` emits ISO-8601.
   - This keeps `HotAlertAPNsPayload` aligned with the ArcusCore shared decode contract and removes the server-side date encoding drift.
+
+## 2026-06-15
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- SkyAware: reliable prior marker `4bea901`; inspected commits dated 2026-06-09 through 2026-06-14 on the current `uiRefresh` branch through `3a5f738`, plus current uncommitted changes. The prior marker is not an ancestor of the current branch, so the date window and changed contract-relevant files were used rather than claiming a linear range.
+- arcus-signal: `12a69c1..dd6e743` (2026-06-09 merge commit, including Storm Setup contract and interpreter changes).
+- ArcusCore: `ebd690e..de86f50` (2026-06-09 test-only commit).
+
+### Contract surfaces inspected
+- Storm Setup response DTOs, assessment enums, interpretation rules, freshness fields, H3 cache keys, persisted snapshot encoding, and rules-version invalidation.
+- Device location snapshot request source enum, server validation, database constraint, endpoint tests, shared enum Codable behavior, and endpoint documentation.
+- APNs `HotAlertAPNsPayload` identifier/date encoding and SkyAware decoding.
+- Remote-alert revision handling, targeted alert lookup, alert lifecycle ordering, location-context refresh authority, map warning-geometry stale/failure behavior, optional SPC metadata presentation, and device preference synchronization.
+
+### Highest-risk areas
+- Storm Setup cache invalidation because persisted assessments can outlive a deployment while interpretation semantics change.
+- Location source enums because client fallback behavior, server validation, persistence constraints, and public API documentation must agree.
+- APNs revision timestamps because date-format drift can break notification-driven alert refresh and deduplication.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Storm Setup interpretation changes reuse the V1 persisted cache namespace | arcus-signal | Persistence schema/cache key → response builder | Persisted `TornadoIngredientSnapshot` → `GET /api/v1/storm-setup/current` | Commit `7905842` changed CAPE, CIN, shear, SRH, cloud-base, scoring, and limiting-factor thresholds in `Sources/App/StormSetup/TornadoIngredientInterpreter.swift`. `Sources/App/StormSetup/StormSetupRulesVersion.swift` still sets `current = .tornadoIngredientV1`. `DefaultStormSetupProvider.loadSnapshot` builds `StormSetupSnapshotCacheKey` with `.current`; `StormSetupSnapshotCache.loadSnapshot` returns a fresh matching record directly. `StormSetupSnapshotCacheTests.differentRulesVersionsMissTheCache` proves the rules version is the intended semantic invalidation boundary. | A deployment can return a pre-change V1 assessment calculated with obsolete thresholds while current code advertises the new semantics. This can overstate or understate tornado-ingredient support until the retained snapshot expires, normally within the 90-minute freshness window. Unfixed blast radius is the Storm Setup endpoint for H3/source combinations with persisted cache records. Proposed-change blast radius is limited to cache namespace invalidation and recomputation. | High | Change `StormSetupRulesVersion.current` to `.tornadoIngredientV2`; keep V1 decode support for old records. Expected files: `StormSetupRulesVersion.swift` and one focused cache/provider test. Estimated churn: under 20 lines. Regression risk: Low; first request after deployment recomputes affected snapshots. | Cache contract test: store a V1 snapshot, request using `.current`, and assert a miss after current becomes V2. Provider test: verify stale-version records are not returned. Manual: preserve a V1 cache directory across deploy and confirm a V2 path is written. |
+| Location snapshot endpoint documentation omits accepted shared `source` values | SkyAware, arcus-signal, ArcusCore | Device presence/location freshness request enum | Shared model/app encoder → server validator/persistence/documentation | ArcusCore `LocationUploadSource` defines nine values and commit `de86f50` added `locationUploadSourceRoundTripsAllCasesThroughCodable`. SkyAware emits expanded values including `foregroundPrime`, `foregroundLocationChange`, `onboarding`, and `settingsPreference`. arcus-signal `DeviceController.create` validates with the shared enum; `UpdateDevicePresenceSourceConstraintForExpandedLocationUploadSources` permits the expanded set; `DeviceControllerTests.createPersistsExpandedSourceValues` proves `foregroundPrime` and `settingsPreference` persist. `docs/api-endpoints.md` still documents only `foreground|backgroundRefresh|significantChange|manual|unknown`. | Integrators following the endpoint contract may reject valid values locally, send legacy values, or incorrectly assume current app payloads receive `400`. Runtime app/server behavior currently aligns; the drift is in the published local contract. Unfixed blast radius is documentation consumers and fixtures. Proposed-change blast radius is documentation only. | High | Update only the `source` enum list in `arcus-signal/docs/api-endpoints.md`, retaining a note that legacy values remain accepted. | Documentation review against `LocationUploadSource.all cases`; optional contract test or generated-doc check that compares documented values with the shared enum. |
+
+### Top recommended fix
+- Bump `StormSetupRulesVersion.current` to `.tornadoIngredientV2`.
+- This matters first because current code can serve cached severe-weather assessments calculated under obsolete interpretation thresholds.
+- Expected files touched: `arcus-signal/Sources/App/StormSetup/StormSetupRulesVersion.swift` and `arcus-signal/Tests/AppTests/StormSetupSnapshotCacheTests.swift` or `StormSetupProviderTests.swift`.
+- Estimated churn: under 20 lines.
+- Regression risk: Low; the operational cost is a one-time cache miss and recomputation per active key.
+
+### Watchlist
+- SkyAware `HomeRefreshPipeline` commit `fefe943` can advance `lastResolvedLocationScopedRefreshKey` after a prime refresh while intentionally withholding that prime snapshot from visible state. This may allow prior-context pipeline values to be treated as current until the follow-up commits. Keep as app-local watchlist, not confirmed cross-repo drift. Promote with a deterministic test showing a changed H3 context renders the previous context's severe-weather data as resolved.
+- SkyAware `MapFeatureModel` commit `b27e62b` maps active-warning query failure to an empty warning list while preserving stale thematic layers. This may remove saved warning geometry during transient query failure. Keep as app-local watchlist. Promote with a test proving previously rendered warning geometry disappears after a failed warning refresh and a documented requirement that warning geometry must retain stale state.
+- Alert Center orders alerts by `ends`, while Summary surfaces order by `expires`. Keep as lifecycle-semantics watchlist until a product rule or fixture with differing `expires` and `ends` establishes which field is authoritative for presentation ordering.
+- `GET /api/v1/storm-setup/current?h3=` still has no SkyAware consumer or ArcusCore shared DTO. Promote any response-shape concern only when a client decoder/shared contract exists.
+- APNs ISO-8601 drift is resolved: arcus-signal now uses `makeAPNSRequestEncoder()` for sandbox and production, ArcusCore tests the ISO-8601 wire contract, and SkyAware decodes it with `.iso8601`.
+
+### Files inspected
+- SkyAware: `Sources/App/HomeRefreshPipeline.swift`, `Sources/App/HomeView.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Clients/ArcusClient.swift`, `Sources/Features/Alert/AlertPresentationOrdering.swift`, `Sources/Features/Alert/AlertView.swift`, `Sources/Features/Summary/ActiveAlertSummaryView.swift`, `Sources/Features/Map/MapFeatureModel.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `Tests/UnitTests/HomeRefreshPipelineTests.swift`, `Tests/UnitTests/MapFeatureModelTests.swift`, `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`, `Tests/UnitTests/LocationProviderTests.swift`.
+- arcus-signal: `Sources/App/StormSetup/StormSetupRulesVersion.swift`, `StormSetupProvider.swift`, `StormSetupSnapshotCache.swift`, `StormSetupSnapshotCacheKey.swift`, `StormSetupModels.swift`, `TornadoIngredientAssessment.swift`, `TornadoIngredientInterpreter.swift`, `IngredientFreshness.swift`, `Sources/App/Controllers/StormSetupController.swift`, `Sources/App/Controllers/DeviceController.swift`, `Sources/App/Migrations/UpdateDevicePresenceSourceConstraintForExpandedLocationUploadSources.swift`, `Sources/App/configure.swift`, `Tests/AppTests/StormSetupSnapshotCacheTests.swift`, `StormSetupProviderTests.swift`, `StormSetupControllerTests.swift`, `DeviceControllerTests.swift`, `AppTests.swift`, `docs/api-endpoints.md`.
+- ArcusCore: `Sources/ArcusCore/LocationUploadSource.swift`, `LocationSnapshotPushPayload.swift`, `DevicePreferenceSyncPayload.swift`, `HotAlertAPNsPayload.swift`, `Tests/ArcusCoreTests/ArcusCoreTests.swift`.
+
+### Out-of-scope and recommendation status
+- No repositories outside SkyAware, arcus-signal, and ArcusCore were inspected.
+- No SkyAware/ArcusCore Storm Setup consumer contract exists, so that cross-repo response side was unavailable.
+- Findings: 2 High, 0 Medium, 0 Low. Watchlist: 4 active concerns; APNs recorded as resolved.
+- Implementation recommended: Yes, first for Storm Setup rules-version invalidation, then for the location-source documentation correction.
+- No implementation, tests, branches, commits, pushes, PRs, or GitHub issues were created by this audit.
+
+## 2026-06-22
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- SkyAware: the prior `3a5f738` checkout marker is not an ancestor of current `main`; inspected contract-relevant commits dated after the 2026-06-15 automation run through `6e5327e` (`f4632e5` through `6e5327e`) rather than claiming a linear range.
+- arcus-signal: `dd6e743..origin/main` contains no commits, so inspected the current default branch at `dd6e743` for the three highest-risk established surfaces: Storm Setup rules-version invalidation, device location-source contracts, and APNs revision payload encoding. The current `newIngredientParams` checkout (`d23f2c..ff40ad1`) was also inspected as unmerged supplemental evidence because it introduces Anvil/HRRR DTOs.
+- ArcusCore: `de86f50..HEAD` contains no commits. The local checkout is one test-only commit ahead of `origin/main` (`ebd690e`); inspected current shared APNs and location contracts as reference for the same three high-risk surfaces.
+
+### Contract surfaces inspected
+- Storm Setup persisted snapshot cache keys, `StormSetupRulesVersion`, `TornadoIngredientSnapshot`, and newly added raw-parameter fields.
+- New Anvil profile request/preview DTOs, H3 location fields, ISO-8601 dates, pressure-profile fixtures, route/controller, and request builder.
+- Device location snapshot source enums across SkyAware upload call sites, ArcusCore shared types, arcus-signal validation/persistence, and endpoint documentation.
+- APNs hot-alert identifiers, `revisionSent` encoding/decoding, targeted refresh handling, and ArcusCore package pins.
+- Alert lifecycle `expires`/`ends` presentation and the new SkyAware cached/stale Local Alerts display-state flow.
+
+### Highest-risk areas
+- Storm Setup cache versioning remains safety-sensitive because persisted severe-weather assessments can survive a deployment.
+- Anvil profile DTOs are a new server-side wire boundary carrying H3, pressure-level, and date/time semantics.
+- APNs revision timestamps and location-source enums remain established multi-repository contracts with direct notification and freshness impact.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| No new confirmed contract drift | SkyAware, arcus-signal, ArcusCore | Changed and highest-risk current contract surfaces | Producer ↔ consumer and shared model → app/server | Both sides were inspected for APNs and location payloads. New Anvil/HRRR DTOs exist only in the unmerged arcus-signal branch, so no second scoped contract side is available. Prior unresolved Storm Setup rules-version and location-source documentation findings have no materially new evidence and were not duplicated. | No newly evidenced runtime or user-visible contract break was established in this window. | — | No new contract fix recommended. Preserve the prior unresolved recommendations separately. | Continue focused encoding/decoding and cache-version contract tests when the Anvil consumer or shared model becomes available. |
+
+### Top recommended fix
+- No new contract fix recommended.
+- The prior 2026-06-15 recommendations remain unresolved and unchanged: bump the Storm Setup rules version when interpretation semantics change, then correct the documented location upload source values. They are not re-added as new findings because this run found no new evidence, higher severity, or materially better fix.
+
+### Watchlist
+- arcus-signal commit `d23f2c` introduces `AnvilAnalyzeProfileRequest` with required `runTime`, `forecastHour`, `validTime`, `location`, and `profile` fields, plus an ISO-8601 fixture; `1367779` exposes the assembled request through a debug-only preview route. No Anvil consumer schema, generated client, SkyAware decoder, or ArcusCore shared model exists in the scoped repositories. Promote only after the producer-facing Anvil schema/decoder is available and field names, units, optionality, H3 representation, and date encoding can be compared directly.
+- The unmerged arcus-signal branch adds optional `tempDewPtDeltaF` and `threeCapeJkg` fields to `TornadoRawParameters`. No SkyAware or ArcusCore Storm Setup consumer exists. Promote only if a scoped client/shared DTO appears and its decoder does not tolerate the additive fields or requires different names/units.
+- SkyAware still presents alert ordering with `ends` in Alert Center and `expires` in Summary surfaces. No new lifecycle contract evidence resolved which timestamp is authoritative. Promote only with an explicit product contract or a fixture where the fields differ and the expected active/order behavior is specified.
+
+### Files inspected
+- SkyAware: `Sources/App/HomeRefreshPipeline.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Clients/ArcusClient.swift`, `Sources/Features/Alert/AlertPresentationOrdering.swift`, `Sources/Features/Alert/AlertView.swift`, `Sources/Features/Summary/ActiveAlertSummaryView.swift`, `Sources/Features/Summary/LocalAlertsDisplayState.swift`, `Sources/Features/Summary/TodayContentState.swift`, `Sources/Features/Summary/TodayVisibleWeatherState.swift`, `Sources/Infrastructure/Location/HTTPLocationSnapshotUploader.swift`, `Sources/Infrastructure/Location/LocationContextResolver.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `Sources/Models/Watches/AlertDTO.swift`, and focused unit tests changed in the window.
+- arcus-signal default branch: `Sources/App/configure.swift`, `Sources/App/Controllers/DeviceController.swift`, `Sources/App/StormSetup/StormSetupProvider.swift`, `Sources/App/StormSetup/StormSetupRulesVersion.swift`, `Sources/App/StormSetup/StormSetupSnapshotCache.swift`, `Tests/AppTests/AppTests.swift`, `Tests/AppTests/DeviceControllerTests.swift`, and `docs/api-endpoints.md`.
+- arcus-signal unmerged supplemental branch: `Sources/App/Models/API/AnvilAnalyzeProfileRequest.swift`, `Sources/App/Models/API/AnvilAnalyzeProfilePreviewResponse.swift`, `Sources/App/Controllers/AnvilProfilePreviewController.swift`, `Sources/App/StormSetup/AnvilProfileRequestBuilder.swift`, `Sources/App/StormSetup/AnvilProfilePreviewProvider.swift`, `Sources/App/StormSetup/StormSetupModels.swift`, `Tests/AppTests/AnvilAnalyzeProfileDTOTests.swift`, and `Tests/AppTests/Fixtures/AnvilAnalyzeProfileRequest.json`.
+- ArcusCore: `Sources/ArcusCore/HotAlertAPNsPayload.swift`, `Sources/ArcusCore/LocationSnapshotPushPayload.swift`, `Sources/ArcusCore/LocationUploadSource.swift`, and `Tests/ArcusCoreTests/ArcusCoreTests.swift`.
+
+### Out-of-scope and recommendation status
+- No repositories outside SkyAware, arcus-signal, and ArcusCore were inspected.
+- The actual Anvil consumer contract is unavailable in the scoped repositories; no cross-repo claim was made for that boundary.
+- Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 3.
+- No new implementation is recommended from this run. Prior unresolved recommendations remain valid.
+- No implementation, tests, branches, commits, pushes, PRs, or GitHub issues were created by this audit.
+
+## 2026-06-29
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- SkyAware: commits after the 2026-06-22 automation run through `0b76556`; contract-relevant code change was `e54ae26` (`Fix stale weather refreshes and precompute alert ordering (#262)`). `0b76556` was release-doc-only and did not change code contracts.
+- arcus-signal: commits after the 2026-06-22 automation run through `386dd9f` on the current `newIngredientParams` checkout, including Anvil request/response DTOs, Storm Setup pressure-artifact consumption, sampled snapshot cache behavior, pressure artifact catalog/readiness dashboard fields, and cancellation behavior. Current working-tree edits in `Sources/App/StormSetup/StormSetupProvider.swift` and `Tests/AppTests/PressureArtifactDiagnosticsTests.swift` were present and inspected as current-state evidence, but no source files were modified by this audit.
+- ArcusCore: no commits in the window; current `main` shared APNs, alert, and location contracts were inspected as reference.
+
+### Contract surfaces inspected
+- Storm Setup sampled snapshot cache key/versioning, `StormSetupRulesVersion`, `StormSetupSnapshotCache`, `TornadoRawParameters`, `TornadoIngredientNormalizer`, `TornadoIngredientInterpreter`, and `GET /api/v1/storm-setup/current` response composition.
+- Anvil profile analysis request/response DTOs, frozen fixtures, HTTP client encoder/decoder, debug profile routes, Postman collection, pressure-level request builder, and pressure artifact stale/exact selection.
+- Pressure artifact catalog persistence and operator dashboard response DTOs, including `PressureArtifactReadinessSelectionOutcome`, `PressureArtifactCatalogStatus`, `byteSize`, `fieldSetVersion`, dates, and stale fallback fields.
+- Device location snapshot upload sources across SkyAware, ArcusCore, arcus-signal validation/persistence/docs, and Postman fixtures.
+- APNs hot-alert payload identifiers and `revisionSent` date encoding/decoding across arcus-signal, SkyAware, and ArcusCore.
+- Alert lifecycle fields (`expires`, `ends`, revision identifiers) and SkyAware stale-weather/local-alert display behavior changed by `e54ae26`.
+
+### Highest-risk areas
+- Storm Setup sampled snapshot cache versioning because cached raw parameter payloads can survive code deployments and directly shape severe-weather assessment semantics.
+- Anvil and HRRR pressure-profile contracts because they are new, date-heavy, H3/geospatial payloads with required arrays and external service assumptions.
+- APNs/location contracts because they remain direct cross-repo notification and freshness boundaries with prior drift history.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Storm Setup raw-parameter and assessment semantics changed while sampled snapshot cache still uses V1 namespace | arcus-signal | Storm Setup sampled snapshot persistence/cache key and response builder | Normalizer/interpreter semantics -> persisted sampled snapshot cache -> `GET /api/v1/storm-setup/current` response | Commit `674c2c7` keeps the new `TornadoRawParameters.tempDewPtDeltaF` spelling and `threeCapeJkg` field in `Sources/App/StormSetup/StormSetupModels.swift`; `TornadoIngredientNormalizer` now populates those fields from 2m temperature/dewpoint and 3CAPE samples; `TornadoIngredientInterpreter.moistureScore` and `cloudBaseScore` consume `tempDewPtDeltaF`. `Sources/App/StormSetup/StormSetupRulesVersion.swift` still declares `.tornadoIngredientV2` but sets `current = .tornadoIngredientV1`. `DefaultStormSetupProvider.loadSnapshot` builds `StormSetupSnapshotCacheKey(... rulesVersion: .current)`, and `StormSetupSnapshotCache.loadSnapshot` returns a fresh matching record after recomputing only the baseline assessment from the cached raw payload. `StormSetupSnapshotCacheTests.differentRulesVersionsMissTheCache` proves rules version is the intended invalidation boundary. | Existing fresh V1 sampled snapshots can bypass resampling after deployment, so the endpoint can return assessments computed from cached raw payloads that lack the newly available `tempDewPtDeltaF` and `threeCapeJkg` inputs until cache expiry. That can understate or overstate moisture/cloud-base support and user-facing tornado-ingredient confidence for affected H3/source keys. Unfixed blast radius is Storm Setup current responses served from sampled snapshot cache. Proposed-change blast radius is limited to cache namespace invalidation and one-time recomputation. | High | Bump `StormSetupRulesVersion.current` to `.tornadoIngredientV2`; keep V1 decode support for existing records. Add a focused regression proving a V1 cached record misses after the current version changes, and preferably a provider test showing a cached V1 raw payload without new fields is not served under current semantics. | Unit: cache key/version miss test for V1-to-current. Provider: seed V1 sampled snapshot lacking `tempDewPtDeltaF`, call current provider, assert resampling occurs. Manual: deploy with existing sampled cache and confirm new V2 cache paths are written. |
+
+### Top recommended fix
+- Bump `StormSetupRulesVersion.current` to `.tornadoIngredientV2`.
+- This matters because Storm Setup now has new raw inputs and assessment evidence paths, while the sampled snapshot cache still advertises the old semantic namespace.
+- Expected files touched: `arcus-signal/Sources/App/StormSetup/StormSetupRulesVersion.swift` and one focused cache/provider test in `arcus-signal/Tests/AppTests/StormSetupSnapshotCacheTests.swift` or `StormSetupProviderTests.swift`.
+- Estimated churn: under 25 lines.
+- Regression risk: Low; affected keys miss the sampled snapshot cache once and recompute under current semantics.
+
+### Watchlist
+- Anvil profile analysis remains partly out-of-scope as a cross-repo contract. arcus-signal now has `AnvilAnalyzeProfileRequest`, `AnvilAnalyzeProfileResponse`, frozen JSON fixtures, a Postman `v1/analyze-profile` request, and client tests. The actual Anvil service schema/decoder is not in the scoped repositories, and SkyAware/ArcusCore do not consume these DTOs. Promote only when the external producer contract is in scope or a generated/shared schema appears.
+- Location snapshot documentation and Postman examples still show stale source values (`foreground`, `significantChange`) while ArcusCore and server validation use the expanded `LocationUploadSource` set. This is the unresolved 2026-06-15 documentation-contract finding with no materially better evidence this week; do not duplicate it as a new finding.
+- SkyAware still has presentation paths that order or describe alerts by different lifecycle fields (`AlertView` orders by `ends`; Summary active-alert copy uses `expires`). No new producer-side lifecycle contract changed this week, so keep this as a semantics watchlist until a fixture/spec declares the authoritative user-facing timestamp.
+
+### Files inspected
+- SkyAware: `Sources/App/HomeRefreshPipeline.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshV2/HomeSnapshot.swift`, `Sources/Features/Alert/AlertPresentationOrdering.swift`, `Sources/Features/Alert/AlertView.swift`, `Sources/Features/Summary/PrimaryAwarenessPanel.swift`, `Sources/Clients/ArcusClient.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Infrastructure/Location/HTTPLocationSnapshotUploader.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `Tests/UnitTests/HomeRefreshPipelineTests.swift`, `Tests/UnitTests/RemoteHotAlertHandlerTests.swift`, and `SkyAware.xcodeproj/project.pbxproj`.
+- arcus-signal: `Sources/App/StormSetup/StormSetupModels.swift`, `StormSetupRulesVersion.swift`, `StormSetupSnapshotCache.swift`, `StormSetupProvider.swift`, `TornadoIngredientNormalizer.swift`, `TornadoIngredientInterpreter.swift`, `AnvilIngredientEvidence.swift`, `AnvilProfileClient.swift`, `AnvilProfileAnalysisProvider.swift`, `AnvilProfileRequestBuilder.swift`, `PressureArtifactCatalogLookupService.swift`, `Sources/App/Models/API/AnvilAnalyzeProfileRequest.swift`, `AnvilAnalyzeProfileResponse.swift`, `AnvilAnalyzeProfileAnalysisResponse.swift`, `AnvilAnalyzeProfilePreviewResponse.swift`, `OperatorDashboardSnapshotResponse.swift`, `Sources/App/Models/Data/PressureArtifactCatalogModel.swift`, `Sources/App/Migrations/CreatePressureArtifactCatalog.swift`, `AddClaimFencingToPressureArtifactCatalog.swift`, `Sources/App/lib/OperatorDashboardSnapshotRefresher.swift`, `OperatorDashboardPageRenderer.swift`, `Sources/App/Controllers/StormSetupController.swift`, `AnvilProfileAnalysisController.swift`, `AnvilProfilePreviewController.swift`, `Sources/App/configure.swift`, `Sources/App/Jobs/NotificationSendJob.swift`, `Tests/AppTests/StormSetupSnapshotCacheTests.swift`, `StormSetupProviderTests.swift`, `StormSetupControllerTests.swift`, `AnvilAnalyzeProfileDTOTests.swift`, `AnvilAnalyzeProfileResponseDTOTests.swift`, `AnvilProfileClientTests.swift`, `AnvilProfileRequestBuilderTests.swift`, `OperatorDashboardPressureArtifactTests.swift`, `Tests/AppTests/Fixtures/AnvilAnalyzeProfileRequest.json`, `Tests/AppTests/Fixtures/AnvilAnalyzeProfileResponse.json`, `docs/api-endpoints.md`, and Anvil/Device Postman request YAML files.
+- ArcusCore: `Sources/ArcusCore/HotAlertAPNsPayload.swift`, `Sources/ArcusCore/LocationUploadSource.swift`, `Sources/ArcusCore/LocationSnapshotPushPayload.swift`, `Sources/ArcusCore/DeviceAlertPayload.swift`, and `Tests/ArcusCoreTests/ArcusCoreTests.swift`.
+
+### Out-of-scope and recommendation status
+- No repositories outside SkyAware, arcus-signal, and ArcusCore were inspected.
+- The actual Anvil service repository/schema was not inspected because it is outside this automation scope; no confirmed drift claim was made for that external boundary.
+- Findings: 1 High, 0 Medium, 0 Low. Watchlist: 3.
+- Implementation recommended: Yes, for Storm Setup rules-version invalidation.
+- No implementation, tests, branches, commits, pushes, PRs, or GitHub issues were created by this audit.

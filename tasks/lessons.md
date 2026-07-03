@@ -31,3 +31,11 @@
 - When a server field carries prose or confidence semantics, preserve the text boundary explicitly instead of routing
   it through a generic ingredient signal enum. Valid domain meaning should not be collapsed into `.unknown` just
   because the token family differs from the other assessment rows.
+- When a broad eligibility test depends on async request startup, keep the default foreground timeout close to the
+  production shape and override only the deliberate timeout cases. A 50 ms default is a flake generator, not a test.
+
+## 2026-07-03
+
+- When a new async test suite mirrors an existing serialized suite, copy its task and polling pattern exactly before
+  blaming production code. Detached `Task {}` bodies, throwing spin-loop wait helpers, and timeout gates left closed
+  after assertions can poison a full Xcode run even when an isolated test looks fine.

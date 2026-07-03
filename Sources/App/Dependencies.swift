@@ -333,6 +333,10 @@ final class Dependencies: Sendable {
             http: httpClient,
             reachabilityReporter: arcusReachabilityTracker
         )
+        let stormSetupClient = StormSetupHTTPClient(
+            baseURL: ArcusSignalConfiguration.stormSetupBaseURL,
+            http: httpClient
+        )
         let metadataRepo = NwsMetadataRepo()
 
         let locationUploadCoordinator: any LocationUploadCoordinating
@@ -461,6 +465,15 @@ final class Dependencies: Sendable {
         let weatherClient = WeatherClient()
         logger.debug("WeatherKit client initialized")
 
+        let stormSetupPreferencesReader: @Sendable () async -> StormSetupPreferences = {
+            await MainActor.run {
+                StormSetupPreferences(
+                    stormSetupEnabled: UserDefaults.shared?.object(forKey: "stormSetupEnabled") as? Bool ?? false,
+                    detailedIngredientsEnabled: UserDefaults.shared?.object(forKey: "detailedIngredientsEnabled") as? Bool ?? false
+                )
+            }
+        }
+
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
@@ -482,7 +495,9 @@ final class Dependencies: Sendable {
                 locationSession: locationSession,
                 snapshotStore: homeSnapshotStore,
                 projectionStore: homeProjectionStore,
-                widgetSnapshotRefresher: widgetSnapshotRefresher
+                widgetSnapshotRefresher: widgetSnapshotRefresher,
+                stormSetupQuerying: stormSetupClient,
+                stormSetupPreferencesReader: stormSetupPreferencesReader
             )
         )
         let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)

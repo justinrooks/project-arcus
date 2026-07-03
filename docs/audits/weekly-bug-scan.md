@@ -103,3 +103,21 @@
   - Updated the ingestion pipeline and `HomeRefreshPipeline` to preserve stale weather on failure while still clearing on successful empty refreshes.
   - Added regression coverage for success, skipped, and failure paths.
 - out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore
+
+## 2026-07-02T16:10:07Z
+- date: 2026-07-02T16:10:07Z
+- repository reviewed: project-arcus
+- workflow reviewed: Weekly bug scan (audit-only)
+- commit window inspected: 2026-06-25T16:12:18Z through 2026-07-02T15:12:24Z
+- files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Models/Convective/ConvectiveOutlookDTO.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/ConvectiveOutlookRepo.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/ConvectiveOutlookView/ConvectiveOutlookView.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/ConvectiveOutlookRepoTests.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshPipeline.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift
+  - /Users/justin/Code/project-arcus/Sources/Clients/WeatherClient.swift
+- top finding: `ConvectiveOutlookDTO.id` now uses `link.absoluteString`, but the repo persists multiple historical outlook rows and the list view keys earlier rows by that id, so distinct revisions that share SPC’s generic day URL collide and SwiftUI can merge or hide them.
+- best next fix: Derive DTO identity from an issue-specific key such as the feed GUID or a `title + published` composite, then add a regression test that loads two same-day outlooks with the same link but different publication times and verifies both remain visible.
+- implementation is recommended: Yes
+- out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore

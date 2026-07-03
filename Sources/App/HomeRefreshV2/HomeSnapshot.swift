@@ -7,11 +7,22 @@
 
 import Foundation
 
+enum HomeStormSetupRefreshResult: Sendable, Equatable {
+    case skipped
+    case success
+    case failure
+    case timeout
+    case cancelled
+    case h3Mismatch
+}
+
 struct HomeSnapshot: Sendable, Equatable {
     var locationSnapshot: LocationSnapshot?
     var refreshKey: LocationContext.RefreshKey?
     var weather: SummaryWeather?
     var weatherRefreshResult: HomeWeatherRefreshResult
+    var stormSetup: StormSetupDTO?
+    var stormSetupRefreshResult: HomeStormSetupRefreshResult
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -26,6 +37,8 @@ struct HomeSnapshot: Sendable, Equatable {
         refreshKey: LocationContext.RefreshKey? = nil,
         weather: SummaryWeather? = nil,
         weatherRefreshResult: HomeWeatherRefreshResult = .skipped,
+        stormSetup: StormSetupDTO? = nil,
+        stormSetupRefreshResult: HomeStormSetupRefreshResult = .skipped,
         stormRisk: StormRiskLevel? = nil,
         severeRisk: SevereWeatherThreat? = nil,
         fireRisk: FireRiskLevel? = nil,
@@ -39,6 +52,8 @@ struct HomeSnapshot: Sendable, Equatable {
         self.refreshKey = refreshKey
         self.weather = weather
         self.weatherRefreshResult = weatherRefreshResult
+        self.stormSetup = stormSetup
+        self.stormSetupRefreshResult = stormSetupRefreshResult
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
