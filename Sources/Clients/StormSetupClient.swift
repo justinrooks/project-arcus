@@ -14,7 +14,7 @@ struct StormSetupHTTPClient: StormSetupQuerying {
     private let logger = Logger.providersArcusClient
 
     init(
-        baseURL: URL = ArcusSignalConfiguration.stormSetupBaseURL,
+        baseURL: URL = ArcusSignalConfiguration.baseURL(),
         http: HTTPClient = URLSessionHTTPClient()
     ) {
         self.baseURL = baseURL

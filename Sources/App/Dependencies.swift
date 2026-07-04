@@ -296,6 +296,7 @@ final class Dependencies: Sendable {
     ) -> Dependencies {
         let logger = Logger.appDependencies
         let appRefreshID = "com.skyaware.app.refresh"
+        let isUITestStaticHome = ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
         
         // Shared SwiftData context
         let schema = Schema([
@@ -308,7 +309,9 @@ final class Dependencies: Sendable {
             FireRisk.self,
             HomeProjection.self
         ])
-        let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
+        let config = isUITestStaticHome
+            ? ModelConfiguration(isStoredInMemoryOnly: true)
+            : ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         let container: ModelContainer
         do {
             container = try ModelContainer(for: schema, configurations: config)
@@ -327,14 +330,14 @@ final class Dependencies: Sendable {
         let httpClient = URLSessionHTTPClient(observer: responseObserver)
         let nwsClient = NwsHttpClient(http: httpClient)
         let spcClient = SpcHttpClient(http: httpClient)
-        let arcusBaseURL = ArcusSignalConfiguration.resolvedBaseURL()
+        let arcusBaseURL = ArcusSignalConfiguration.baseURL()
         let arcusClient = ArcusHttpClient(
             baseURL: arcusBaseURL,
             http: httpClient,
             reachabilityReporter: arcusReachabilityTracker
         )
         let stormSetupClient = StormSetupHTTPClient(
-            baseURL: ArcusSignalConfiguration.stormSetupBaseURL,
+            baseURL: arcusBaseURL,
             http: httpClient
         )
         let metadataRepo = NwsMetadataRepo()

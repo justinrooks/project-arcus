@@ -189,6 +189,9 @@ struct SettingsView: View {
                 sectionCard(title: "Storm Setup", symbol: "cloud.bolt", accent: .primary) {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Storm Setup", isOn: $stormSetupEnabled)
+                            .accessibilityIdentifier("settings-storm-setup-toggle")
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
                         Text("Turns on storm-focused setup guidance.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -197,7 +200,10 @@ struct SettingsView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Detailed Ingredients", isOn: $detailedIngredientsEnabled)
+                            .accessibilityIdentifier("settings-detailed-ingredients-toggle")
                             .disabled(stormSetupEnabled == false)
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
                         Text(stormSetupEnabled ? "Adds more ingredient detail when Storm Setup is on." : "Turn on Storm Setup to use this setting.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -308,6 +314,7 @@ struct SettingsView: View {
             .padding(.top, 10)
             .padding(.bottom, 24)
         }
+        .accessibilityIdentifier("settings-scroll")
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .task {

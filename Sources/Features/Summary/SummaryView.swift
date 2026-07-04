@@ -474,15 +474,19 @@ struct SummaryView: View {
             localAlertsSection
 
         case .stormSetup:
-            if isLocationUnavailable == false,
-               let presentation = stormSetupDetailPresentation {
-                NavigationLink {
-                    StormSetupDetailView(presentation: presentation)
-                } label: {
-                    StormSetupSummaryCard(presentation: presentation.summaryPresentation)
+                if isLocationUnavailable == false,
+                   let presentation = stormSetupDetailPresentation {
+                    NavigationLink {
+                        StormSetupDetailView(presentation: presentation)
+                    } label: {
+                        StormSetupSummaryCard(presentation: presentation.summaryPresentation)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("summary-storm-setup-card")
                 }
-                .buttonStyle(.plain)
-            }
 
         case .atmosphericConditions:
             if isLocationUnavailable == false {

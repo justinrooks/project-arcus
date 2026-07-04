@@ -21,7 +21,7 @@ struct ArcusHttpClient: ArcusClient {
     // https://api.skyaware.app/api/v2/alerts?county=COC001&fire=COZ245&forecast=COZ045&h3=613167714648719359
     
     init(
-        baseURL: URL = ArcusSignalConfiguration.defaultBaseURL,
+        baseURL: URL = ArcusSignalConfiguration.baseURL(),
         http: HTTPClient = URLSessionHTTPClient(),
         reachabilityReporter: any ArcusSignalReachabilityReporting = NoOpArcusSignalReachabilityReporter()
     ) {

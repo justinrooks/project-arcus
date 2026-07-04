@@ -55,6 +55,8 @@ struct StormSetupSummaryCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
+        .frame(minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
         .cardBackground(
             cornerRadius: SkyAwareRadius.section,
             shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,

@@ -42,6 +42,7 @@ struct StormSetupDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
+        .accessibilityIdentifier("storm-setup-detail")
         .scrollIndicators(.hidden)
         .scrollContentBackground(.hidden)
         .background(.skyAwareBackground)
@@ -59,6 +60,7 @@ struct StormSetupDetailView: View {
                 }
                 .accessibilityLabel(presentation.modelGuidanceTitle)
                 .accessibilityHint("Explains how Storm Setup guidance is derived.")
+                .accessibilityIdentifier("storm-setup-guidance-info")
             }
         }
         .sheet(isPresented: $showsGuidanceSheet) {
@@ -156,6 +158,7 @@ struct StormSetupDetailView: View {
                 }
             }
         }
+        .accessibilityIdentifier("storm-setup-advanced-details")
     }
 
     private func textCard(title: String, values: [String]) -> some View {
@@ -255,6 +258,7 @@ private struct StormSetupGuidanceSheet: View {
                 }
                 .padding(16)
             }
+            .accessibilityIdentifier("storm-setup-guidance-sheet")
             .scrollIndicators(.hidden)
             .scrollContentBackground(.hidden)
             .background(.skyAwareBackground)

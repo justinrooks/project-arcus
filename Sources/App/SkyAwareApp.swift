@@ -31,6 +31,10 @@ struct SkyAwareApp: App {
     @State private var didBootstrapBGRefresh = false
     @State private var launchPresentation: LaunchPresentationState?
     private let currentDisclaimerVersion = 1
+
+    private var isUITestStaticHome: Bool {
+        ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
+    }
     
     // App Storage
     @AppStorage(
@@ -62,6 +66,7 @@ struct SkyAwareApp: App {
         _runtimeConnectivityState = State(initialValue: runtimeConnectivityState)
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
         Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
+        Self.applyUITestStormSetupFixtureIfNeeded(locationSession: deps.locationSession)
         _locationSession = State(initialValue: deps.locationSession)
         let remoteAlertWidgetSnapshotRefreshDriver: RemoteAlertWidgetSnapshotRefreshDriver? = {
             guard let widgetSnapshotStore = try? WidgetSnapshotStore() else {
@@ -89,9 +94,11 @@ struct SkyAwareApp: App {
     var body: some Scene {
         WindowGroup {
             rootContent
+                .preferredColorScheme(Self.uiTestPreferredColorScheme)
                 .environment(remoteAlertPresentationState)
                 .environment(runtimeConnectivityState)
                 .onAppear {
+                    guard isUITestStaticHome == false else { return }
                     locationSession.handleScenePhaseChange(scenePhase)
                 }
         }
@@ -106,6 +113,7 @@ struct SkyAwareApp: App {
             logger.notice("Scheduled next app refresh at: \(result.next, privacy: .public)")
         }
         .onChange(of: scenePhase) { _, newPhase in
+            guard isUITestStaticHome == false else { return }
             logger.debug("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
             locationSession.handleScenePhaseChange(newPhase)
             
@@ -192,10 +200,19 @@ private extension SkyAwareApp {
     @ViewBuilder
     var currentHomeView: some View {
         if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
-            HomeView(
-                initialMesos: Self.uiTestSeedMesos,
-                initialAlerts: Self.uiTestSeedWatches
-            )
+            if let fixture = Self.uiTestStormSetupFixture {
+                HomeView(
+                    initialStormSetup: fixture.stormSetup,
+                    initialStormSetupRefreshKey: fixture.context.refreshKey,
+                    initialMesos: Self.uiTestSeedMesos,
+                    initialAlerts: Self.uiTestSeedWatches
+                )
+            } else {
+                HomeView(
+                    initialMesos: Self.uiTestSeedMesos,
+                    initialAlerts: Self.uiTestSeedWatches
+                )
+            }
         } else {
             HomeView()
         }
@@ -290,6 +307,17 @@ private extension SkyAwareApp {
 
         sharedDefaults.synchronize()
         UserDefaults.standard.synchronize()
+
+        applyUITestBooleanOverride(
+            env["UI_TESTS_STORM_SETUP_ENABLED"],
+            forKey: "stormSetupEnabled",
+            in: sharedDefaults
+        )
+        applyUITestBooleanOverride(
+            env["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"],
+            forKey: "detailedIngredientsEnabled",
+            in: sharedDefaults
+        )
     }
 
     @MainActor
@@ -307,6 +335,16 @@ private extension SkyAwareApp {
         default:
             break
         }
+    }
+
+    @MainActor
+    static func applyUITestStormSetupFixtureIfNeeded(locationSession: LocationSession) {
+        guard let fixture = uiTestStormSetupFixture else { return }
+        guard locationSession.authorizationStatus.isLocationAuthorized else { return }
+
+        locationSession.currentSnapshot = fixture.context.snapshot
+        locationSession.currentContext = fixture.context
+        locationSession.startupState = .ready
     }
 
     static var uiTestSeedWatches: [AlertDTO] {
@@ -408,6 +446,162 @@ private extension SkyAwareApp {
     static var uiTestSeedMesos: [MdDTO] {
         MD.sampleDiscussionDTOs
     }
+
+    static var uiTestPreferredColorScheme: ColorScheme? {
+        guard ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" else {
+            return nil
+        }
+
+        switch ProcessInfo.processInfo.environment["UI_TESTS_COLOR_SCHEME"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "dark":
+            return .dark
+        case "light":
+            return .light
+        default:
+            return nil
+        }
+    }
+
+    private static var uiTestStormSetupFixture: UITestStormSetupFixture? {
+        guard ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" else {
+            return nil
+        }
+
+        guard ProcessInfo.processInfo.environment["UI_TESTS_STORM_SETUP_FIXTURE"] == "supportive" else {
+            return nil
+        }
+
+        return .supportive
+    }
+
+    private static func applyUITestBooleanOverride(
+        _ rawValue: String?,
+        forKey key: String,
+        in defaults: UserDefaults
+    ) {
+        guard let rawValue else { return }
+
+        switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "1":
+            defaults.set(true, forKey: key)
+        case "0":
+            defaults.set(false, forKey: key)
+        default:
+            break
+        }
+    }
+}
+
+private struct UITestStormSetupFixture {
+    let context: LocationContext
+    let stormSetup: StormSetupDTO
+
+    static let supportive = UITestStormSetupFixture(
+        context: .init(
+            snapshot: .init(
+                coordinates: .init(latitude: 39.75, longitude: -104.44),
+                timestamp: uiTestDate("2026-07-03T18:00:00Z"),
+                accuracy: 20,
+                placemarkSummary: "Bennett, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: .init(
+                nwsId: "https://api.weather.gov/points/39.75,-104.44",
+                latitude: 39.75,
+                longitude: -104.44,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Bennett",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC005",
+                fireZone: "COZ246",
+                countyLabel: "Arapahoe County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        ),
+        stormSetup: .init(
+            h3Cell: 0x882681b485fffff,
+            freshness: .init(
+                isStale: false,
+                isDegraded: false,
+                modelRunTime: uiTestDate("2026-07-03T12:00:00Z"),
+                sourceValidTime: uiTestDate("2026-07-03T18:00:00Z"),
+                forecastHour: 6,
+                fetchedAt: uiTestDate("2026-07-03T18:04:00Z"),
+                expiresAt: uiTestDate("2026-08-03T18:00:00Z")
+            ),
+            source: .init(
+                model: "HRRR",
+                product: "Storm Setup",
+                domain: "severe",
+                fieldSetVersion: "1",
+                sourceKind: "production",
+                runTime: uiTestDate("2026-07-03T12:00:00Z"),
+                validTime: uiTestDate("2026-07-03T18:00:00Z"),
+                forecastHour: 6,
+                bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+                primaryDownloadURL: "https://example.invalid/storm-setup"
+            ),
+            raw: .init(
+                mlcapeJkg: 1825,
+                mucapeJkg: 2210,
+                sbcapeJkg: 1680,
+                mlcinJkg: -38,
+                srh01kmM2s2: 142,
+                srh03kmM2s2: 198,
+                shear06kmKt: 44,
+                mllclM: 965,
+                tempDewPtDeltaF: 4.5,
+                threeCapeJkg: 101
+            ),
+            assessment: .init(
+                overall: "supportive",
+                summary: "The setup is supportive with several ingredients lining up for a short-term severe-weather threat.",
+                instability: "supportive",
+                moisture: "supportive",
+                lowLevelRotation: "supportive",
+                deepShear: "strong",
+                cloudBase: "supportive",
+                capInhibition: "weak",
+                limitingFactors: ["Capping may slow initiation"],
+                confidence: "high",
+                primaryDrivers: ["deep shear", "low-level rotation", "moisture"],
+                stormMode: "supportive",
+                stormModeHint: "supportive",
+                trend: "conditional",
+                compositeSignal: "supportive"
+            ),
+            anvilEvidence: .init(
+                status: "available",
+                scp: .init(support: "supportive"),
+                stp: .init(support: "strong"),
+                ship: .init(support: "conditional"),
+                diagnostics: .init(
+                    hasEffectiveLayer: true,
+                    hasStormMotion: true,
+                    qualityProfileLevelCount: 12,
+                    warnings: ["pressure-level diagnostics trimmed"]
+                )
+            ),
+            centroid: .init(latitude: 39.6, longitude: -104.0),
+            surfaceHeightMslM: 1600
+        )
+    )
+}
+
+private func uiTestDate(_ value: String) -> Date {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)!
 }
 
 enum LaunchPresentationState: Identifiable, Equatable {

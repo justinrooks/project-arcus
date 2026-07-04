@@ -226,6 +226,8 @@ struct HomeView: View {
         initialStormRisk: StormRiskLevel? = nil,
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
+        initialStormSetup: StormSetupDTO? = nil,
+        initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
         initialMesos: [MdDTO] = [],
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -237,6 +239,8 @@ struct HomeView: View {
                 initialStormRisk: initialStormRisk,
                 initialSevereRisk: initialSevereRisk,
                 initialFireRisk: initialFireRisk,
+                initialStormSetup: initialStormSetup,
+                initialStormSetupRefreshKey: initialStormSetupRefreshKey,
                 initialMesos: initialMesos,
                 initialAlerts: initialAlerts,
                 initialOutlooks: initialOutlooks,
@@ -835,6 +839,7 @@ private struct TodayTabView: View {
                     .toolbar(.hidden, for: .navigationBar)
                     .background(.skyAwareBackground)
             }
+            .accessibilityIdentifier("summary-scroll")
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, newValue in

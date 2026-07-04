@@ -59,6 +59,7 @@ struct AtmosphericConditionsCard: View {
             shadowRadius: colorScheme == .dark ? 8 : 10,
             shadowY: colorScheme == .dark ? 3 : 4
         )
+        .accessibilityIdentifier("summary-atmospheric-conditions")
     }
 
     private var header: some View {
