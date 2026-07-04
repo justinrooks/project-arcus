@@ -138,6 +138,22 @@ struct StormSetupMappingTests {
         #expect(source["primaryDownloadURL"] == nil)
         #expect(raw["diagnostics"] == nil)
     }
+
+    @Test("partial anvil evidence tolerates omitted support blocks")
+    func partialAnvilEvidenceToleratesOmittedSupportBlocks() throws {
+        let dto = try decodeDTO(partialAnvilEvidenceJSON)
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(dto.anvilEvidence?.scp == nil)
+        #expect(dto.anvilEvidence?.stp == nil)
+        #expect(dto.anvilEvidence?.ship?.support == "weak")
+        #expect(assessment.anvilEvidence?.scp.support == .unknown)
+        #expect(assessment.anvilEvidence?.stp.support == .unknown)
+        #expect(assessment.anvilEvidence?.ship.support == .weak)
+        #expect(assessment.anvilEvidence?.diagnostics.warnings == [
+            "storm-motion calculation unavailable"
+        ])
+    }
 }
 
 private let completeJSON = #"""
@@ -273,6 +289,91 @@ private let partialJSON = #"""
   "assessment": {
     "limitingFactors": [],
     "primaryDrivers": []
+  },
+  "surfaceHeightMslM": 1132.4
+}
+"""#
+
+private let partialAnvilEvidenceJSON = #"""
+{
+  "h3Cell": 8623451234567890,
+  "freshness": {
+    "isStale": false,
+    "isDegraded": false,
+    "modelRunTime": "2026-06-01T18:00:00Z",
+    "sourceValidTime": "2026-06-01T21:00:00Z",
+    "forecastHour": 3,
+    "fetchedAt": "2026-06-01T21:03:00Z",
+    "expiresAt": "2026-06-01T22:00:00Z"
+  },
+  "source": {
+    "model": "HRRR",
+    "product": "Storm Setup",
+    "domain": "severe",
+    "fieldSetVersion": "1",
+    "sourceKind": "production",
+    "runTime": "2026-06-01T18:00:00Z",
+    "validTime": "2026-06-01T21:00:00Z",
+    "forecastHour": 3,
+    "bbox": {
+      "toplat": 41.5,
+      "leftlon": -104.3,
+      "rightlon": -96.2,
+      "bottomlat": 36.8
+    },
+    "primaryDownloadURL": "https://example.invalid/storm-setup"
+  },
+  "raw": {
+    "mlcapeJkg": 1850,
+    "mucapeJkg": 2200.5,
+    "sbcapeJkg": 1700,
+    "mlcinJkg": -42,
+    "srh01kmM2s2": 125.5,
+    "srh03kmM2s2": 175,
+    "shear06kmKt": 42,
+    "mllclM": 980,
+    "tempDewPtDeltaF": 4.5,
+    "threeCapeJkg": 95
+  },
+  "assessment": {
+    "overall": "strong",
+    "summary": "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.",
+    "instability": "supportive",
+    "moisture": "supportive",
+    "lowLevelRotation": "conditional",
+    "deepShear": "strong",
+    "cloudBase": "weak",
+    "capInhibition": "weak",
+    "limitingFactors": [
+      "capping"
+    ],
+    "confidence": "high",
+    "primaryDrivers": [
+      "instability",
+      "shear"
+    ],
+    "stormMode": "supportive",
+    "stormModeHint": "supportive",
+    "trend": "conditional",
+    "compositeSignal": "strong"
+  },
+  "anvilEvidence": {
+    "status": "degraded",
+    "ship": {
+      "support": "weak"
+    },
+    "diagnostics": {
+      "hasEffectiveLayer": false,
+      "hasStormMotion": false,
+      "qualityProfileLevelCount": 36,
+      "warnings": [
+        "storm-motion calculation unavailable"
+      ]
+    }
+  },
+  "centroid": {
+    "latitude": 39.5,
+    "longitude": -100.0
   },
   "surfaceHeightMslM": 1132.4
 }

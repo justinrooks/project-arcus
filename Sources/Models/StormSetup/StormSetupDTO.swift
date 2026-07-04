@@ -77,10 +77,10 @@ extension StormSetupDTO {
 
     struct AnvilEvidence: Codable, Sendable, Equatable {
         let status: String?
-        let scp: Support
-        let stp: Support
-        let ship: Support
-        let diagnostics: Diagnostics
+        let scp: Support?
+        let stp: Support?
+        let ship: Support?
+        let diagnostics: Diagnostics?
 
         struct Support: Codable, Sendable, Equatable {
             let support: String?

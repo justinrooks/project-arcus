@@ -193,10 +193,15 @@ extension StormSetupAssessment {
 
         init(dto: StormSetupDTO.AnvilEvidence) {
             status = dto.status?.trimmingCharacters(in: .whitespacesAndNewlines)
-            scp = .init(dto: dto.scp)
-            stp = .init(dto: dto.stp)
-            ship = .init(dto: dto.ship)
-            diagnostics = .init(dto: dto.diagnostics)
+            scp = .init(dto: dto.scp ?? .init(support: nil))
+            stp = .init(dto: dto.stp ?? .init(support: nil))
+            ship = .init(dto: dto.ship ?? .init(support: nil))
+            diagnostics = .init(dto: dto.diagnostics ?? .init(
+                hasEffectiveLayer: nil,
+                hasStormMotion: nil,
+                qualityProfileLevelCount: nil,
+                warnings: nil
+            ))
         }
     }
 

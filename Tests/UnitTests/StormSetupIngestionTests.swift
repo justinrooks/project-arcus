@@ -296,8 +296,8 @@ struct StormSetupIngestionTests {
         #expect(persisted.lastStormSetupLoadAt == nil)
     }
 
-    @Test("failed attempt backoff suppresses a second automatic request")
-    func failedAttemptBackoffSuppressesSecondAutomaticRequest() async throws {
+    @Test("failed attempt backoff suppresses a second session tick request")
+    func failedAttemptBackoffSuppressesSecondSessionTickRequest() async throws {
         let context = makeContext()
         let dateProvider = MutableDateProvider(fixedNow)
         let query = StormSetupQueryingFake(response: .failure(TestError.failed))
@@ -309,13 +309,35 @@ struct StormSetupIngestionTests {
         )
 
         _ = try await harness.executor.run(
-            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+        _ = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+
+        #expect(await query.requestCount() == 1)
+    }
+
+    @Test("foreground refresh bypasses failed-attempt backoff")
+    func foregroundRefreshBypassesFailedAttemptBackoff() async throws {
+        let context = makeContext()
+        let dateProvider = MutableDateProvider(fixedNow)
+        let query = StormSetupQueryingFake(response: .failure(TestError.failed))
+        let harness = try makeHarness(
+            context: context,
+            query: query,
+            dateProvider: dateProvider,
+            stormSetupFailedAttemptBackoff: 300
+        )
+
+        _ = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
         )
         _ = try await harness.executor.run(
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await query.requestCount() == 1)
+        #expect(await query.requestCount() == 2)
     }
 
     @Test("backoff for location A does not suppress location B")
@@ -498,7 +520,7 @@ struct StormSetupIngestionTests {
         severeRisk: SevereWeatherThreat = .hail(probability: 0.30),
         activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
         activeMesos: [MdDTO] = [MD.sampleDiscussionDTOs[0]],
-        stormSetupForegroundTimeout: TimeInterval = 4.5,
+        stormSetupForegroundTimeout: TimeInterval = 5,
         stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
     ) throws -> StormSetupHarness {
         let container = try TestStore.container(for: [HomeProjection.self])

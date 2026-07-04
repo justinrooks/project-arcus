@@ -106,7 +106,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             stormSetupQuerying: (any StormSetupQuerying)? = nil,
             stormSetupPreferencesReader: @escaping @Sendable () async -> StormSetupPreferences = { StormSetupPreferences() },
             stormSetupCurrentDate: @escaping @Sendable () -> Date = { Date() },
-            stormSetupForegroundTimeout: TimeInterval = 4.5,
+            stormSetupForegroundTimeout: TimeInterval = 5,
             stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
         ) {
             self.logger = logger
@@ -215,6 +215,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let stormSetupRefresh = await refreshStormSetupIfNeeded(
             context: context,
             snapshot: snapshot,
+            plan: plan,
             executionMode: executionMode
         )
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
@@ -454,6 +455,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private func refreshStormSetupIfNeeded(
         context: LocationContext?,
         snapshot: HomeSnapshot,
+        plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode
     ) async -> StormSetupRefreshDecision {
         let startedAt = Date()
@@ -516,7 +518,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return .init(result: .skipped, stormSetup: nil)
         }
 
-        if shouldBackOffStormSetup(for: projectionKey, now: now) {
+        if shouldBackOffStormSetup(for: projectionKey, plan: plan, now: now) {
             logStormSetupOutcome(
                 outcome: "skipped",
                 reason: "backoff",
@@ -737,8 +739,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private func shouldBackOffStormSetup(
         for projectionKey: String,
+        plan: HomeIngestionPlan,
         now: Date
     ) -> Bool {
+        guard plan.provenance.contains(.background) || plan.provenance.contains(.sessionTick) else {
+            return false
+        }
+
         guard let state = stormSetupRefreshStates[projectionKey],
               state.lastAttemptFailed,
               let lastAttemptAt = state.lastAttemptAt else {
