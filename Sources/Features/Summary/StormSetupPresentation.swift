@@ -136,7 +136,7 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         accessibilityHint = "Opens Storm Setup details."
     }
 
-    private static func readableTitle(for signal: StormSetupSignal) -> String {
+    static func readableTitle(for signal: StormSetupSignal) -> String {
         switch signal {
         case .supportive:
             "Supportive Setup"
@@ -151,7 +151,7 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         }
     }
 
-    private static func readableSignal(_ signal: StormSetupSignal) -> String {
+    static func readableSignal(_ signal: StormSetupSignal) -> String {
         switch signal {
         case .supportive:
             "Supportive"
@@ -166,7 +166,7 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         }
     }
 
-    private static func readableCloudBase(_ signal: StormSetupSignal) -> String {
+    static func readableCloudBase(_ signal: StormSetupSignal) -> String {
         switch signal {
         case .supportive, .strong:
             "Low"

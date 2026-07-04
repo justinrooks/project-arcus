@@ -12,7 +12,6 @@ struct StormSetupSummaryCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let presentation: StormSetupSummaryPresentation
-    let onOpen: () -> Void
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -33,45 +32,35 @@ struct StormSetupSummaryCard: View {
     }
 
     var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 10) {
-                header
+        VStack(alignment: .leading, spacing: 10) {
+            header
 
-                if let summaryProse = presentation.summaryProse {
-                    Text(summaryProse)
-                        .font(.body)
-                        .lineSpacing(4)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    Text("Guidance summary unavailable.")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .lineSpacing(4)
-                        .lineLimit(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                detailSurface
+            if let summaryProse = presentation.summaryProse {
+                Text(summaryProse)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Guidance summary unavailable.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(4)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 12)
-            .cardBackground(
-                cornerRadius: SkyAwareRadius.section,
-                shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
-                shadowRadius: colorScheme == .dark ? 8 : 10,
-                shadowY: colorScheme == .dark ? 3 : 4
-            )
+
+            detailSurface
         }
-        .buttonStyle(
-            SkyAwarePressableButtonStyle(
-                cornerRadius: SkyAwareRadius.section,
-                pressedScale: 0.992,
-                pressedOverlayOpacity: 0.06
-            )
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.section,
+            shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
+            shadowRadius: colorScheme == .dark ? 8 : 10,
+            shadowY: colorScheme == .dark ? 3 : 4
         )
-        .contentShape(RoundedRectangle(cornerRadius: SkyAwareRadius.section, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
         .accessibilityValue(presentation.accessibilityValue)
@@ -188,8 +177,7 @@ struct StormSetupSummaryCard: View {
                     dto: StormSetupPreviewData.supportiveDTO,
                     timeZone: .current,
                     now: StormSetupPreviewData.now
-                ),
-                onOpen: {}
+                )
             )
             .padding()
         }
@@ -205,8 +193,7 @@ struct StormSetupSummaryCard: View {
                     dto: StormSetupPreviewData.strongDTO,
                     timeZone: TimeZone(identifier: "America/Denver")!,
                     now: StormSetupPreviewData.now
-                ),
-                onOpen: {}
+                )
             )
             .preferredColorScheme(.dark)
             .padding()
@@ -223,8 +210,7 @@ struct StormSetupSummaryCard: View {
                     dto: StormSetupPreviewData.staleDTO,
                     timeZone: TimeZone(identifier: "America/Denver")!,
                     now: StormSetupPreviewData.now
-                ),
-                onOpen: {}
+                )
             )
             .padding()
         }
@@ -240,8 +226,7 @@ struct StormSetupSummaryCard: View {
                     dto: StormSetupPreviewData.degradedDTO,
                     timeZone: TimeZone(identifier: "America/Denver")!,
                     now: StormSetupPreviewData.now
-                ),
-                onOpen: {}
+                )
             )
             .preferredColorScheme(.dark)
             .padding()
@@ -258,8 +243,7 @@ struct StormSetupSummaryCard: View {
                     dto: StormSetupPreviewData.limiterAbsentDTO,
                     timeZone: TimeZone(identifier: "America/Denver")!,
                     now: StormSetupPreviewData.now
-                ),
-                onOpen: {}
+                )
             )
             .padding()
         }
@@ -275,8 +259,7 @@ struct StormSetupSummaryCard: View {
                     dto: StormSetupPreviewData.unknownDTO,
                     timeZone: TimeZone(identifier: "America/Denver")!,
                     now: StormSetupPreviewData.now
-                ),
-                onOpen: {}
+                )
             )
             .environment(\.dynamicTypeSize, .accessibility1)
             .padding()

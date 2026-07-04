@@ -146,7 +146,6 @@ struct SummaryView: View {
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
-    let onOpenStormSetup: () -> Void
 
 #if DEBUG
     @AppStorage("stormSetupForceDisplay", store: UserDefaults.shared)
@@ -174,8 +173,7 @@ struct SummaryView: View {
         locationReliabilityRailState: LocationReliabilityRailState? = nil,
         onOpenMapLayer: @escaping (MapLayer) -> Void,
         onOpenAlerts: @escaping () -> Void,
-        onOpenOutlooks: @escaping () -> Void,
-        onOpenStormSetup: @escaping () -> Void = {}
+        onOpenOutlooks: @escaping () -> Void
     ) {
         self.snap = snap
         self.stormSetup = stormSetup
@@ -198,7 +196,6 @@ struct SummaryView: View {
         self.onOpenMapLayer = onOpenMapLayer
         self.onOpenAlerts = onOpenAlerts
         self.onOpenOutlooks = onOpenOutlooks
-        self.onOpenStormSetup = onOpenStormSetup
     }
 
     private var isWeatherLoading: Bool {
@@ -393,15 +390,15 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func summaryContent(now: Date) -> some View {
-        let stormSetupPresentation = stormSetupPresentation(now: now)
+        let stormSetupDetailPresentation = stormSetupDetailPresentation(now: now)
         let sectionPlan = Self.sectionPlan(
             localAlertsDisplayState: localAlertsDisplayState,
-            showsStormSetup: stormSetupPresentation != nil,
+            showsStormSetup: stormSetupDetailPresentation != nil,
             hasLocationReliabilityRail: locationReliabilityRailState != nil
         )
 
         ForEach(sectionPlan.sections) { section in
-            sectionView(for: section, stormSetupPresentation: stormSetupPresentation)
+            sectionView(for: section, stormSetupDetailPresentation: stormSetupDetailPresentation)
         }
     }
 
@@ -448,7 +445,7 @@ struct SummaryView: View {
     @ViewBuilder
     private func sectionView(
         for section: SummarySectionKind,
-        stormSetupPresentation: StormSetupSummaryPresentation?
+        stormSetupDetailPresentation: StormSetupDetailPresentation?
     ) -> some View {
         switch section {
         case .currentConditions:
@@ -478,11 +475,13 @@ struct SummaryView: View {
 
         case .stormSetup:
             if isLocationUnavailable == false,
-               let presentation = stormSetupPresentation {
-                StormSetupSummaryCard(
-                    presentation: presentation,
-                    onOpen: onOpenStormSetup
-                )
+               let presentation = stormSetupDetailPresentation {
+                NavigationLink {
+                    StormSetupDetailView(presentation: presentation)
+                } label: {
+                    StormSetupSummaryCard(presentation: presentation.summaryPresentation)
+                }
+                .buttonStyle(.plain)
             }
 
         case .atmosphericConditions:
@@ -552,14 +551,19 @@ struct SummaryView: View {
         }
     }
 
-    private func stormSetupPresentation(now: Date) -> StormSetupSummaryPresentation? {
+    private func stormSetupDetailPresentation(now: Date) -> StormSetupDetailPresentation? {
         guard let stormSetup else {
             return nil
         }
 
 #if DEBUG
         if stormSetupForceDisplay {
-            return StormSetupSummaryPresentation(dto: stormSetup, timeZone: locationTimeZone, now: now)
+            return StormSetupDetailPresentation(
+                dto: stormSetup,
+                preferences: stormSetupPreferences,
+                forecastLocationTimeZone: locationTimeZone,
+                now: now
+            )
         }
 #endif
 
@@ -578,7 +582,12 @@ struct SummaryView: View {
             return nil
         }
 
-        return StormSetupSummaryPresentation(dto: stormSetup, timeZone: locationTimeZone, now: now)
+        return StormSetupDetailPresentation(
+            dto: stormSetup,
+            preferences: stormSetupPreferences,
+            forecastLocationTimeZone: locationTimeZone,
+            now: now
+        )
     }
 
     private static func sectionPlan(
