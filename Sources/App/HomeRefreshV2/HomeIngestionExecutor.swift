@@ -551,6 +551,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 stormSetup,
                 context: context,
                 projectionKey: projectionKey,
+                cachedStormSetup: cachedStormSetup,
                 freshCachedStormSetup: freshCachedStormSetup,
                 now: now,
                 startedAt: startedAt,
@@ -666,6 +667,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         _ stormSetup: StormSetupDTO,
         context: LocationContext,
         projectionKey: String,
+        cachedStormSetup: StormSetupDTO?,
         freshCachedStormSetup: StormSetupDTO?,
         now: Date,
         startedAt: Date,
@@ -701,40 +703,71 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return .init(result: .failure, stormSetup: freshCachedStormSetup)
         }
 
-        do {
-            _ = try await projectionStore.updateStormSetup(
-                stormSetup,
-                for: context,
-                loadedAt: now
-            )
-            markStormSetupAttemptSucceeded(
-                for: projectionKey,
-                refreshKey: context.refreshKey,
-                now: now
-            )
+        let shouldPersist = cachedStormSetup.map { Self.isStormSetupNewer(stormSetup, than: $0) } ?? true
 
-            logStormSetupOutcome(
-                outcome: "success",
-                reason: nil,
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            let resolvedStormSetup = stormSetup.freshness.expiresAt > now ? stormSetup : freshCachedStormSetup
-            return .init(result: .success, stormSetup: resolvedStormSetup)
-        } catch {
-            markStormSetupAttemptFailed(
-                for: projectionKey,
-                refreshKey: context.refreshKey,
-                now: now
-            )
-            logStormSetupOutcome(
-                outcome: "failure",
-                reason: "persistence",
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return .init(result: .failure, stormSetup: freshCachedStormSetup)
+        if shouldPersist {
+            do {
+                _ = try await projectionStore.updateStormSetup(
+                    stormSetup,
+                    for: context,
+                    loadedAt: now
+                )
+                markStormSetupAttemptSucceeded(
+                    for: projectionKey,
+                    refreshKey: context.refreshKey,
+                    now: now
+                )
+
+                logStormSetupOutcome(
+                    outcome: "success",
+                    reason: nil,
+                    startedAt: startedAt,
+                    executionMode: executionMode
+                )
+                let resolvedStormSetup = stormSetup.freshness.expiresAt > now ? stormSetup : freshCachedStormSetup
+                return .init(result: .success, stormSetup: resolvedStormSetup)
+            } catch {
+                markStormSetupAttemptFailed(
+                    for: projectionKey,
+                    refreshKey: context.refreshKey,
+                    now: now
+                )
+                logStormSetupOutcome(
+                    outcome: "failure",
+                    reason: "persistence",
+                    startedAt: startedAt,
+                    executionMode: executionMode
+                )
+                return .init(result: .failure, stormSetup: freshCachedStormSetup)
+            }
         }
+
+        markStormSetupAttemptSucceeded(
+            for: projectionKey,
+            refreshKey: context.refreshKey,
+            now: now
+        )
+        logStormSetupOutcome(
+            outcome: "success",
+            reason: "stale-response",
+            startedAt: startedAt,
+            executionMode: executionMode
+        )
+        return .init(result: .success, stormSetup: freshCachedStormSetup)
+    }
+
+    private static func isStormSetupNewer(_ candidate: StormSetupDTO, than cached: StormSetupDTO) -> Bool {
+        let candidateFreshness = candidate.freshness
+        let cachedFreshness = cached.freshness
+        return (
+            candidateFreshness.modelRunTime,
+            candidateFreshness.sourceValidTime,
+            candidateFreshness.fetchedAt
+        ) > (
+            cachedFreshness.modelRunTime,
+            cachedFreshness.sourceValidTime,
+            cachedFreshness.fetchedAt
+        )
     }
 
     private func shouldBackOffStormSetup(

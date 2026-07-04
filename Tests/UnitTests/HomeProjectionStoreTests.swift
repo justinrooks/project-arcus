@@ -226,36 +226,48 @@ struct HomeProjectionStoreTests {
         #expect(persisted.lastStormSetupLoadAt == loadedAt)
     }
 
-    @Test("an on-disk container survives reopen with Storm Setup intact")
-    func updateStormSetup_diskContainerRetainsPayloadAfterReopen() async throws {
+    @Test("an on-disk pre-Storm-Setup container migrates and retains existing data")
+    func updateStormSetup_diskContainerMigratesFromPreStormSetupSchema() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let schema = Schema([HomeProjection.self])
+        let legacySchema = Schema(versionedSchema: HomeProjectionSchemaV1.self)
+        let currentSchema = Schema([HomeProjection.self])
         let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
-        let configuration = ModelConfiguration(
+        let legacyConfiguration = ModelConfiguration(
             "SkyAware_Data",
-            schema: schema,
+            schema: legacySchema,
+            url: storeURL
+        )
+        let currentConfiguration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: currentSchema,
             url: storeURL
         )
         let context = makeContext()
-        let dto = makeStormSetupDTO()
         let loadedAt = Date(timeIntervalSince1970: 1_000)
 
         do {
-            let container = try ModelContainer(for: schema, configurations: configuration)
-            let store = HomeProjectionStore(modelContainer: container)
-            _ = try await store.updateStormSetup(dto, for: context, loadedAt: loadedAt)
+            let container = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
+            let modelContext = ModelContext(container)
+            let projection = HomeProjectionSchemaV1.HomeProjection(context: context, createdAt: loadedAt, lastViewedAt: nil)
+            modelContext.insert(projection)
+            try modelContext.save()
         }
 
-        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let reopenedContainer = try ModelContainer(for: currentSchema, configurations: currentConfiguration)
         let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
         let persisted = try #require(await reopenedStore.projection(for: context))
 
-        #expect(persisted.stormSetup == dto)
-        #expect(persisted.lastStormSetupLoadAt == loadedAt)
+        #expect(persisted.projectionKey == HomeProjection.projectionKey(for: context))
+        #expect(persisted.locationTimestamp == context.snapshot.timestamp)
+        #expect(persisted.createdAt == loadedAt)
+        #expect(persisted.updatedAt == loadedAt)
+        #expect(persisted.weather == nil)
+        #expect(persisted.stormSetup == nil)
+        #expect(persisted.lastStormSetupLoadAt == nil)
     }
 
     @Test("updating slow products keeps existing weather and alert slices")
@@ -576,7 +588,7 @@ struct HomeProjectionStoreTests {
         )
     }
 
-    private func makeStormSetupDTO(
+private func makeStormSetupDTO(
         h3Cell: Int64 = 123_456,
         surfaceHeightMslM: Double = 1_132.4,
         summary: String = "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation."
@@ -652,6 +664,69 @@ struct HomeProjectionStoreTests {
             ),
             centroid: .init(latitude: 39.5, longitude: -100.0),
             surfaceHeightMslM: surfaceHeightMslM
-        )
+    )
+}
+
+enum HomeProjectionSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
+
+    static var models: [any PersistentModel.Type] { [HomeProjection.self] }
+
+    @Model
+    final class HomeProjection {
+        var id: UUID
+        var projectionKey: String
+
+        var latitude: Double
+        var longitude: Double
+        var h3Cell: Int64
+        var countyCode: String
+        var forecastZone: String?
+        var fireZone: String
+        var placemarkSummary: String?
+        var timeZoneId: String?
+
+        var locationTimestamp: Date
+        var createdAt: Date
+        var updatedAt: Date
+        var lastViewedAt: Date?
+
+        var weatherPayload: HomeProjectionWeatherPayload?
+        var stormRisk: StormRiskLevel?
+        var severeRisk: SevereWeatherThreat?
+        var fireRisk: FireRiskLevel?
+        var activeAlerts: [AlertDTO]
+        var activeMesos: [MdDTO]
+
+        var lastHotAlertsLoadAt: Date?
+        var lastSlowProductsLoadAt: Date?
+        var lastWeatherLoadAt: Date?
+
+        init(context: LocationContext, createdAt: Date = .now, lastViewedAt: Date? = nil) {
+            id = UUID()
+            projectionKey = SkyAware.HomeProjection.projectionKey(for: context)
+            latitude = context.snapshot.coordinates.latitude
+            longitude = context.snapshot.coordinates.longitude
+            h3Cell = context.h3Cell
+            countyCode = context.grid.countyCode ?? ""
+            forecastZone = context.grid.forecastZone
+            fireZone = context.grid.fireZone ?? ""
+            placemarkSummary = context.snapshot.placemarkSummary
+            timeZoneId = context.grid.timeZoneId
+            locationTimestamp = context.snapshot.timestamp
+            self.createdAt = createdAt
+            updatedAt = createdAt
+            self.lastViewedAt = lastViewedAt
+            weatherPayload = nil
+            stormRisk = nil
+            severeRisk = nil
+            fireRisk = nil
+            activeAlerts = []
+            activeMesos = []
+            lastHotAlertsLoadAt = nil
+            lastSlowProductsLoadAt = nil
+            lastWeatherLoadAt = nil
+        }
     }
+}
 }

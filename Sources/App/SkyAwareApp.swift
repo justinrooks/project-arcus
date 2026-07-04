@@ -537,7 +537,7 @@ private struct UITestStormSetupFixture {
                 sourceValidTime: uiTestDate("2026-07-03T18:00:00Z"),
                 forecastHour: 6,
                 fetchedAt: uiTestDate("2026-07-03T18:04:00Z"),
-                expiresAt: uiTestDate("2026-08-03T18:00:00Z")
+                expiresAt: .distantFuture
             ),
             source: .init(
                 model: "HRRR",

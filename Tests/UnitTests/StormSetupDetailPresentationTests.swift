@@ -52,20 +52,30 @@ struct StormSetupDetailPresentationTests {
     @Test("metadata formatting respects UTC run time and local valid time")
     func metadataFormattingRespectsUTCAndLocalTime() {
         let mountainTime = TimeZone(identifier: "America/Denver")!
+        let originalTimeZone = NSTimeZone.default
+        NSTimeZone.default = mountainTime
+        defer { NSTimeZone.default = originalTimeZone }
+
         let presentation = StormSetupDetailPresentation(
             dto: makeDTO(
-                modelRunTime: date("2026-06-01T17:00:00Z"),
-                validTime: date("2026-06-01T18:00:00Z"),
-                fetchedAt: date("2026-06-01T18:41:00Z"),
+                modelRunTime: date("2026-07-01T17:00:00Z"),
+                validTime: date("2026-07-01T18:00:00Z"),
+                fetchedAt: date("2026-07-01T18:41:00Z"),
                 forecastHour: 1
             ),
             preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
             forecastLocationTimeZone: mountainTime,
-            now: date("2026-06-01T19:00:00Z")
+            now: date("2026-07-01T19:00:00Z")
         )
 
-        #expect(presentation.provenanceHeadline == "HRRR forecast model · 17Z run · f01 · valid 12 PM MDT")
-        #expect(presentation.updatedText == "Updated 12:41 PM")
+        #expect(
+            presentation.provenanceHeadline.replacingOccurrences(of: "\u{202F}", with: " ")
+                == "HRRR forecast model · 17Z run · f01 · valid 12 PM MDT"
+        )
+        #expect(
+            presentation.updatedText.replacingOccurrences(of: "\u{202F}", with: " ")
+                == "Updated 12:41 PM"
+        )
         #expect(presentation.freshnessText == nil)
     }
 
@@ -73,19 +83,19 @@ struct StormSetupDetailPresentationTests {
     func crossDayMetadataIncludesDateAndPadsForecastHours() {
         let timeZone = TimeZone(identifier: "America/Denver")!
         let oneHour = StormSetupDetailPresentation(
-            dto: makeDTO(forecastHour: 1, validTime: date("2026-06-01T18:00:00Z")),
+            dto: makeDTO(validTime: date("2026-06-01T18:00:00Z"), forecastHour: 1),
             preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
             forecastLocationTimeZone: timeZone,
             now: date("2026-06-02T18:00:00Z")
         )
         let twelveHours = StormSetupDetailPresentation(
-            dto: makeDTO(forecastHour: 12, validTime: date("2026-06-01T18:00:00Z")),
+            dto: makeDTO(validTime: date("2026-06-01T18:00:00Z"), forecastHour: 12),
             preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
             forecastLocationTimeZone: timeZone,
             now: date("2026-06-02T18:00:00Z")
         )
         let hundredHours = StormSetupDetailPresentation(
-            dto: makeDTO(forecastHour: 100, validTime: date("2026-06-01T18:00:00Z")),
+            dto: makeDTO(validTime: date("2026-06-01T18:00:00Z"), forecastHour: 100),
             preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
             forecastLocationTimeZone: timeZone,
             now: date("2026-06-02T18:00:00Z")

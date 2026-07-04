@@ -52,11 +52,37 @@ struct StormSetupPolicyTests {
             ("weak stays hidden", makeInput(assessmentOverall: .weak, payloadExpiresAt: future), false),
             ("conditional stays hidden", makeInput(assessmentOverall: .conditional, payloadExpiresAt: future), false),
             ("unknown stays hidden", makeInput(assessmentOverall: .unknown, payloadExpiresAt: future), false),
-            ("alert qualifies", makeInput(assessmentOverall: .unknown, hasActiveAlert: true, payloadExpiresAt: future), true),
-            ("meso qualifies", makeInput(assessmentOverall: .weak, hasActiveMeso: true, payloadExpiresAt: future), true),
-            ("override qualifies", makeInput(assessmentOverall: .conditional, preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true), payloadExpiresAt: future), true),
-            ("missing assessment stays hidden", makeInput(assessmentOverall: nil, hasActiveAlert: true, preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true), payloadExpiresAt: future), false),
-            ("expired assessment stays hidden", makeInput(assessmentOverall: .strong, hasActiveAlert: true, preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true), payloadExpiresAt: past), false)
+            ("alert qualifies", makeInput(hasActiveAlert: true, assessmentOverall: .unknown, payloadExpiresAt: future), true),
+            ("meso qualifies", makeInput(hasActiveMeso: true, assessmentOverall: .weak, payloadExpiresAt: future), true),
+            (
+                "override qualifies",
+                makeInput(
+                    preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                    assessmentOverall: .conditional,
+                    payloadExpiresAt: future
+                ),
+                true
+            ),
+            (
+                "missing assessment stays hidden",
+                makeInput(
+                    preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                    hasActiveAlert: true,
+                    assessmentOverall: nil,
+                    payloadExpiresAt: future
+                ),
+                false
+            ),
+            (
+                "expired assessment stays hidden",
+                makeInput(
+                    preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                    hasActiveAlert: true,
+                    assessmentOverall: .strong,
+                    payloadExpiresAt: past
+                ),
+                false
+            )
         ]
 
         for (label, input, expected) in cases {

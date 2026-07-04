@@ -123,6 +123,50 @@ struct StormSetupIngestionTests {
         #expect(persisted.lastStormSetupLoadAt == fixedNow)
     }
 
+    @Test("older successful response does not overwrite newer cached guidance")
+    func olderSuccessfulResponseDoesNotOverwriteNewerCachedGuidance() async throws {
+        let context = makeContext()
+        let dateProvider = MutableDateProvider(fixedNow)
+        let cached = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(-30),
+            modelRunTime: fixedNow.addingTimeInterval(-20),
+            sourceValidTime: fixedNow.addingTimeInterval(-15),
+            fetchedAt: fixedNow.addingTimeInterval(-10),
+            summary: "cached guidance"
+        )
+        let olderReplay = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(3600),
+            modelRunTime: fixedNow.addingTimeInterval(-120),
+            sourceValidTime: fixedNow.addingTimeInterval(-110),
+            fetchedAt: fixedNow.addingTimeInterval(10),
+            summary: "replayed guidance"
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(olderReplay)),
+            dateProvider: dateProvider
+        )
+
+        _ = try await harness.projectionStore.updateStormSetup(
+            cached,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-600)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        #expect(await harness.query.requestCount() == 1)
+        #expect(snapshot.stormSetup == nil)
+        #expect(snapshot.stormSetupRefreshResult == .success)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormSetup == cached)
+        #expect(persisted.lastStormSetupLoadAt == fixedNow.addingTimeInterval(-600))
+    }
+
     @Test("fresh cache suppresses a failed refresh attempt and preserves timestamp")
     func freshCacheSuppressesFailedRefreshAttemptAndPreservesTimestamp() async throws {
         let context = makeContext()
@@ -608,17 +652,24 @@ struct StormSetupIngestionTests {
     private func makeStormSetupDTO(
         h3Cell: Int64,
         expiresAt: Date,
+        modelRunTime: Date? = nil,
+        sourceValidTime: Date? = nil,
+        fetchedAt: Date? = nil,
         summary: String? = "The setup is strongly supportive."
     ) -> StormSetupDTO {
-        StormSetupDTO(
+        let resolvedModelRunTime = modelRunTime ?? fixedNow.addingTimeInterval(-3600)
+        let resolvedSourceValidTime = sourceValidTime ?? fixedNow
+        let resolvedFetchedAt = fetchedAt ?? fixedNow
+
+        return StormSetupDTO(
             h3Cell: h3Cell,
             freshness: .init(
                 isStale: false,
                 isDegraded: false,
-                modelRunTime: fixedNow.addingTimeInterval(-3600),
-                sourceValidTime: fixedNow,
+                modelRunTime: resolvedModelRunTime,
+                sourceValidTime: resolvedSourceValidTime,
                 forecastHour: 3,
-                fetchedAt: fixedNow,
+                fetchedAt: resolvedFetchedAt,
                 expiresAt: expiresAt
             ),
             source: .init(
@@ -627,8 +678,8 @@ struct StormSetupIngestionTests {
                 domain: "severe",
                 fieldSetVersion: "1",
                 sourceKind: "production",
-                runTime: fixedNow.addingTimeInterval(-3600),
-                validTime: fixedNow,
+                runTime: resolvedModelRunTime,
+                validTime: resolvedSourceValidTime,
                 forecastHour: 3,
                 bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
                 primaryDownloadURL: "https://example.invalid/storm-setup"

@@ -219,7 +219,8 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
     }
 
     private static func formattedUTCModelRun(_ date: Date) -> String {
-        let calendar = Calendar(identifier: .gregorian)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         let hour = calendar.component(.hour, from: date)
         return "\(hour)Z"
     }

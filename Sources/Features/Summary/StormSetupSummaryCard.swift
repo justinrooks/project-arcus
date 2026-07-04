@@ -35,20 +35,7 @@ struct StormSetupSummaryCard: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            if let summaryProse = presentation.summaryProse {
-                Text(summaryProse)
-                    .font(.body)
-                    .lineSpacing(4)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("Guidance summary unavailable.")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(4)
-                    .lineLimit(4)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            summaryCopy
 
             detailSurface
         }
@@ -73,6 +60,31 @@ struct StormSetupSummaryCard: View {
         Label("Storm Setup", systemImage: "cloud.bolt.fill")
             .symbolVariant(.fill)
             .sectionLabel()
+    }
+
+    private var summaryCopy: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(presentation.overallTitle)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let summaryProse = presentation.summaryProse {
+                Text(summaryProse)
+                    .font(.body)
+                    .lineSpacing(4)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Guidance summary unavailable.")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(4)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private var detailSurface: some View {
@@ -165,9 +177,16 @@ struct StormSetupSummaryCard: View {
             Text(row.value)
                 .font(.body.weight(.semibold))
                 .foregroundStyle(.primary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    static func summaryCopyLines(for presentation: StormSetupSummaryPresentation) -> [String] {
+        [
+            presentation.overallTitle,
+            presentation.summaryProse ?? "Guidance summary unavailable."
+        ]
     }
 }
 

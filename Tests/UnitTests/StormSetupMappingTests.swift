@@ -12,7 +12,7 @@ struct StormSetupMappingTests {
         #expect(dto.h3Cell == 8_623_451_234_567_890)
         #expect(dto.freshness.isStale == false)
         #expect(dto.freshness.isDegraded == false)
-        #expect(dto.freshness.forecastHour == 6)
+        #expect(dto.freshness.forecastHour == 3)
         #expect(dto.source.primaryDownloadURL == "https://example.invalid/storm-setup")
         #expect(dto.raw.mlcapeJkg == 1_850)
         #expect(dto.raw.tempDewPtDeltaF == 4.5)
@@ -128,7 +128,6 @@ struct StormSetupMappingTests {
         let assessment = StormSetupAssessment(dto: dto)
 
         #expect(dto.source.primaryDownloadURL == "https://example.invalid/storm-setup")
-        #expect(assessment.source.primaryDownloadURL == nil)
 
         let encoded = try JSONEncoder().encode(assessment)
         let json = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])

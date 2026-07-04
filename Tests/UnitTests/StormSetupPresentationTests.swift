@@ -62,7 +62,10 @@ struct StormSetupPresentationTests {
             now: date("2026-06-01T19:00:00Z")
         )
 
-        #expect(presentation.sourceLine == "HRRR guidance · valid near 12 PM")
+        #expect(
+            presentation.sourceLine.replacingOccurrences(of: "\u{202F}", with: " ")
+                == "HRRR guidance · valid near 12 PM"
+        )
     }
 
     @Test("freshness copy stays calm for stale degraded and combined guidance")
@@ -102,9 +105,31 @@ struct StormSetupPresentationTests {
         #expect(presentation.accessibilityValue.contains("debug") == false)
         #expect(presentation.accessibilityValue.contains("https://") == false)
     }
+
+    @Test("summary card puts the overall assessment before fallback prose")
+    @MainActor
+    func summaryCard_putsOverallAssessmentBeforeFallbackProse() {
+        let presentation = StormSetupSummaryPresentation(
+            dto: makeDTO(
+                summary: nil,
+                overall: "weak",
+                instability: "supportive",
+                rotation: "supportive",
+                cloudBase: "strong"
+            ),
+            timeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T18:00:00Z")
+        )
+
+        #expect(StormSetupSummaryCard.summaryCopyLines(for: presentation) == [
+            "Weak Setup",
+            "Guidance summary unavailable."
+        ])
+    }
 }
 
 private func makeDTO(
+    summary: String? = "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.",
     overall: String = "strong",
     instability: String = "supportive",
     rotation: String = "conditional",
@@ -151,7 +176,7 @@ private func makeDTO(
         ),
         assessment: .init(
             overall: overall,
-            summary: "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.",
+            summary: summary,
             instability: instability,
             moisture: "supportive",
             lowLevelRotation: rotation,
