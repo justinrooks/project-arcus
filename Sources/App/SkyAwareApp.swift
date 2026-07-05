@@ -46,6 +46,11 @@ struct SkyAwareApp: App {
         "disclaimerAcceptedVersion",
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
+
+    @AppStorage(
+        "activationCleanupLastRunAt",
+        store: UserDefaults.shared
+    ) private var activationCleanupLastRunAt: Double = 0
     
     @MainActor
     init() {
@@ -153,22 +158,9 @@ struct SkyAwareApp: App {
                 // latest data.
                 // Going to rely on the summary view to get most of the data since its the heart
                 // of the app and what gets accessed first.
-                // TODO: Need to gate this so it only happens every hour or so, doesn't need
-                //       to happen on every single activation.
+                // Gate cleanup so activation does not repeatedly contend with foreground refresh.
                 if onboardingComplete {
-                    Task {
-                        logger.notice("Starting activation cleanup")
-                        try? await deps.healthStore.purge()
-                        logger.notice("Starting SPC cleanup")
-                        await deps.spcProvider.cleanup()
-                        logger.info("SPC cleanup finished")
-                        await deps.arcusProvider.cleanup()
-                        logger.info("Arcus alert cleanup finished")
-                        
-                        // HomeView owns foreground startup refresh and map product sync.
-                        // Keep app-level activation work focused on cleanup/scheduling.
-                        logger.info("Activation cleanup finished; HomeView will drive foreground data refresh")
-                    }
+                    scheduleActivationCleanupIfNeeded()
                 }
             @unknown default:
                 logger.warning("Phase transition error. Unknown phase")
@@ -276,6 +268,37 @@ private extension SkyAwareApp {
             authorizationStatus: locationSession.authorizationStatus,
             suppressLocationRestrictedSheet: ProcessInfo.processInfo.environment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] == "1"
         )
+    }
+
+    static let activationCleanupMinimumInterval: TimeInterval = 60 * 60
+
+    func scheduleActivationCleanupIfNeeded(now: Date = .now) {
+        guard shouldRunActivationCleanup(now: now) else {
+            logger.debug("Skipping activation cleanup; last run was within the minimum interval")
+            return
+        }
+
+        activationCleanupLastRunAt = now.timeIntervalSinceReferenceDate
+
+        Task(priority: .utility) {
+            logger.notice("Starting activation cleanup")
+            try? await deps.healthStore.purge()
+            logger.notice("Starting SPC cleanup")
+            await deps.spcProvider.cleanup()
+            logger.info("SPC cleanup finished")
+            await deps.arcusProvider.cleanup()
+            logger.info("Arcus alert cleanup finished")
+
+            // HomeView owns foreground startup refresh and map product sync.
+            // Keep app-level activation work focused on cleanup/scheduling.
+            logger.info("Activation cleanup finished; HomeView will drive foreground data refresh")
+        }
+    }
+
+    func shouldRunActivationCleanup(now: Date) -> Bool {
+        guard activationCleanupLastRunAt > 0 else { return true }
+        let lastRun = Date(timeIntervalSinceReferenceDate: activationCleanupLastRunAt)
+        return now.timeIntervalSince(lastRun) >= Self.activationCleanupMinimumInterval
     }
 
     @MainActor

@@ -98,3 +98,27 @@
 - implementation notes:
   - Changed `ConvectiveOutlookDTO.id` to use `link.absoluteString` instead of a fresh `UUID()`.
   - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /private/tmp/SkyAware-PerformanceAudit build`.
+
+## 2026-07-05
+- workflow reviewed: App Launch and Composition
+- files inspected:
+  - docs/codebase/skyaware-app-summary.md
+  - Sources/App/SkyAwareApp.swift
+  - Sources/App/HomeView.swift
+  - Sources/App/HomeRefreshPipeline.swift
+  - Sources/Models/Health/BgHealthStore.swift
+  - Sources/Providers/SPC/SpcProvider+Cleanup.swift
+  - Sources/Providers/ArcusAlertProvider.swift
+  - Sources/Repos/AlertRepo.swift
+  - Sources/Repos/MesoRepo.swift
+  - Sources/Repos/StormRiskRepo.swift
+  - Sources/Repos/SevereRiskRepo.swift
+- top finding: `SkyAwareApp` kicks off activation cleanup on every `.active` transition, and that task fans out into `BgHealthStore.purge()`, `SpcProvider.cleanup()`, and `ArcusAlertProvider.cleanup()` while `HomeView` also starts the foreground refresh pipeline, so the app pays repeated datastore cleanup cost exactly when it is trying to become interactive.
+- best next fix: gate activation cleanup behind a last-run timestamp so the purge passes run at most hourly instead of on every activation.
+- measurement gap: profile activation-to-first-interactive latency and per-repo cleanup duration on a real data set to confirm how much foreground contention the cleanup chain adds.
+- implementation recommended: yes
+- implementation status: completed on 2026-07-05
+- implementation notes:
+  - Added `activationCleanupLastRunAt` persistence to `SkyAwareApp`.
+  - Gated activation cleanup to once per hour before launching the existing cleanup task.
+  - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone 17" build`.
