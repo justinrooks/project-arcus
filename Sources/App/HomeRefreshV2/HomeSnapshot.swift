@@ -16,6 +16,15 @@ enum HomeStormSetupRefreshResult: Sendable, Equatable {
     case h3Mismatch
 }
 
+enum HomeStormSetupProfileAnalysisRefreshResult: Sendable, Equatable {
+    case skipped
+    case success
+    case failure
+    case timeout
+    case cancelled
+    case mismatch
+}
+
 struct HomeSnapshot: Sendable, Equatable {
     var locationSnapshot: LocationSnapshot?
     var refreshKey: LocationContext.RefreshKey?
@@ -23,6 +32,8 @@ struct HomeSnapshot: Sendable, Equatable {
     var weatherRefreshResult: HomeWeatherRefreshResult
     var stormSetup: StormSetupDTO?
     var stormSetupRefreshResult: HomeStormSetupRefreshResult
+    var stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
+    var stormSetupProfileAnalysisRefreshResult: HomeStormSetupProfileAnalysisRefreshResult
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -39,6 +50,8 @@ struct HomeSnapshot: Sendable, Equatable {
         weatherRefreshResult: HomeWeatherRefreshResult = .skipped,
         stormSetup: StormSetupDTO? = nil,
         stormSetupRefreshResult: HomeStormSetupRefreshResult = .skipped,
+        stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
+        stormSetupProfileAnalysisRefreshResult: HomeStormSetupProfileAnalysisRefreshResult = .skipped,
         stormRisk: StormRiskLevel? = nil,
         severeRisk: SevereWeatherThreat? = nil,
         fireRisk: FireRiskLevel? = nil,
@@ -54,6 +67,8 @@ struct HomeSnapshot: Sendable, Equatable {
         self.weatherRefreshResult = weatherRefreshResult
         self.stormSetup = stormSetup
         self.stormSetupRefreshResult = stormSetupRefreshResult
+        self.stormSetupProfileAnalysisPayload = stormSetupProfileAnalysisPayload
+        self.stormSetupProfileAnalysisRefreshResult = stormSetupProfileAnalysisRefreshResult
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk

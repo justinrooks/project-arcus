@@ -32,8 +32,31 @@ struct StormSetupIngestionTests {
                 plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
             )
 
-            #expect(await harness.query.requestCount() == 0, "\(testCase.0)")
+            let requestCount = await harness.query.requestCount()
+            #expect(requestCount == 0, "\(testCase.0)")
             #expect(snapshot.stormSetup == nil, "\(testCase.0)")
+        }
+    }
+
+    @Test("detailed ingredients off makes zero profile-analysis requests in foreground and background")
+    func detailedIngredientsOffMakesZeroProfileAnalysisRequestsInForegroundAndBackground() async throws {
+        let cases: [HomeRefreshTrigger] = [.foregroundActivate, .backgroundRefresh]
+
+        for trigger in cases {
+            let context = makeContext()
+            let harness = try makeHarness(
+                context: context,
+                profileQuery: StormSetupProfileAnalysisQueryingFake(
+                    response: .success(makeStormSetupProfileAnalysisDTO(primary: makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))))
+                ),
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false)
+            )
+
+            _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: trigger)))
+
+            let profileQuery = try #require(harness.profileQuery)
+            let profileRequestCount = await profileQuery.requestCount()
+            #expect(profileRequestCount == 0)
         }
     }
 
@@ -66,8 +89,10 @@ struct StormSetupIngestionTests {
                 plan: HomeIngestionPlan(request: .init(trigger: testCase.1))
             )
 
-            #expect(await query.requestCount() == 1, "\(testCase.0)")
-            #expect(await query.executionModes() == [testCase.2], "\(testCase.0)")
+            let requestCount = await query.requestCount()
+            let executionModes = await query.executionModes()
+            #expect(requestCount == 1, "\(testCase.0)")
+            #expect(executionModes == [testCase.2], "\(testCase.0)")
         }
     }
 
@@ -92,7 +117,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await harness.query.requestCount() == 0)
+        let requestCount = await harness.query.requestCount()
+        #expect(requestCount == 0)
         #expect(snapshot.stormSetup == cached)
         #expect(snapshot.stormSetupRefreshResult == .skipped)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
@@ -115,7 +141,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await harness.query.requestCount() == 1)
+        let requestCount = await harness.query.requestCount()
+        #expect(requestCount == 1)
         #expect(snapshot.stormSetup == dto)
         #expect(snapshot.stormSetupRefreshResult == .success)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
@@ -159,7 +186,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await harness.query.requestCount() == 1)
+        let requestCount = await harness.query.requestCount()
+        #expect(requestCount == 1)
         #expect(snapshot.stormSetup == nil)
         #expect(snapshot.stormSetupRefreshResult == .success)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
@@ -192,7 +220,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await harness.query.requestCount() == 0)
+        let requestCount = await harness.query.requestCount()
+        #expect(requestCount == 0)
         #expect(snapshot.stormSetup == cached)
         #expect(snapshot.stormSetupRefreshResult == .skipped)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
@@ -229,7 +258,8 @@ struct StormSetupIngestionTests {
         )
         await gate.open()
 
-        #expect(await query.requestCount() == 1)
+        let requestCount = await query.requestCount()
+        #expect(requestCount == 1)
         #expect(snapshot.stormSetup == nil)
         #expect(snapshot.stormSetupRefreshResult == .timeout)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
@@ -268,7 +298,8 @@ struct StormSetupIngestionTests {
         }
 
         let requestStarted = await waitUntil(timeout: 5) {
-            await query.requestCount() == 1
+            let requestCount = await query.requestCount()
+            return requestCount == 1
         }
         #expect(requestStarted)
         task.cancel()
@@ -359,7 +390,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
         )
 
-        #expect(await query.requestCount() == 1)
+        let requestCount = await query.requestCount()
+        #expect(requestCount == 1)
     }
 
     @Test("foreground refresh bypasses failed-attempt backoff")
@@ -381,7 +413,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await query.requestCount() == 2)
+        let requestCountAfterReplay = await query.requestCount()
+        #expect(requestCountAfterReplay == 2)
     }
 
     @Test("backoff for location A does not suppress location B")
@@ -416,7 +449,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await query.requestCount() == 2)
+        let requestCountAfterSessionTick = await query.requestCount()
+        #expect(requestCountAfterSessionTick == 2)
     }
 
     @Test("successful refresh clears the failed-attempt condition")
@@ -446,7 +480,8 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
         )
 
-        #expect(await query.requestCount() == 3)
+        let requestCount = await query.requestCount()
+        #expect(requestCount == 3)
     }
 
     @Test("stale replay preserves failed-attempt backoff")
@@ -491,13 +526,15 @@ struct StormSetupIngestionTests {
 
         #expect(staleSnapshot.stormSetupRefreshResult == .success)
         #expect(staleSnapshot.stormSetup == nil)
-        #expect(await query.requestCount() == 2)
+        let requestCountAfterReplay = await query.requestCount()
+        #expect(requestCountAfterReplay == 2)
 
         _ = try await harness.executor.run(
             plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
         )
 
-        #expect(await query.requestCount() == 2)
+        let requestCountAfterSessionTick = await query.requestCount()
+        #expect(requestCountAfterSessionTick == 2)
     }
 
     @Test("suspended request leaves persistence unchanged while in flight")
@@ -531,7 +568,8 @@ struct StormSetupIngestionTests {
         }
 
         let requestStarted = await waitUntil(timeout: 5) {
-            await query.requestCount() == 1
+            let requestCount = await query.requestCount()
+            return requestCount == 1
         }
         #expect(requestStarted)
 
@@ -568,7 +606,8 @@ struct StormSetupIngestionTests {
         #expect(snapshot.mesos.isEmpty == false)
         #expect(snapshot.stormSetup == nil)
         #expect(snapshot.stormSetupRefreshResult == .failure)
-        #expect(await weather.callCount() == 1)
+        let callCount = await weather.callCount()
+        #expect(callCount == 1)
     }
 
     @Test("storm setup timeout does not block weather, risks, alerts, or mesos")
@@ -599,12 +638,390 @@ struct StormSetupIngestionTests {
         #expect(snapshot.mesos.isEmpty == false)
         #expect(snapshot.stormSetup == nil)
         #expect(snapshot.stormSetupRefreshResult == .timeout)
-        #expect(await weather.callCount() == 1)
+        let callCount = await weather.callCount()
+        #expect(callCount == 1)
+    }
+
+    @Test("missing profile client safely skips profile-analysis refresh")
+    func missingProfileClientSafelySkipsProfileAnalysisRefresh() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        let requestCount = await harness.query.requestCount()
+        #expect(requestCount == 1)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == nil)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .skipped)
+    }
+
+    @Test("fresh matched profile cache suppresses request and is returned")
+    func freshMatchedProfileCacheSuppressesRequestAndIsReturned() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let cachedProfile = try #require(makeStormSetupProfileAnalysisPayload(primary: primary, fetchedAt: fixedNow))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(
+            response: .success(makeStormSetupProfileAnalysisDTO(primary: primary))
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        _ = try await harness.projectionStore.updateStormSetup(primary, for: context, loadedAt: fixedNow.addingTimeInterval(-60))
+        _ = try await harness.projectionStore.updateStormSetupProfileAnalysis(cachedProfile, for: context, loadedAt: fixedNow.addingTimeInterval(-45))
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 0)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == cachedProfile)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .skipped)
+    }
+
+    @Test("primary and profile requests start before either gate releases")
+    func primaryAndProfileRequestsStartBeforeEitherGateReleases() async throws {
+        let context = makeContext()
+        let primaryGate = CancellationGate()
+        let profileGate = CancellationGate()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let profile = makeStormSetupProfileAnalysisDTO(primary: primary)
+        let primaryQuery = StormSetupQueryingFake(response: .success(primary), gate: primaryGate)
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .success(profile), gate: profileGate)
+        let harness = try makeHarness(
+            context: context,
+            query: primaryQuery,
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+        let task = Task { @MainActor in
+            try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)))
+        }
+
+        defer {
+            Task {
+                await primaryGate.open()
+                await profileGate.open()
+            }
+        }
+
+        let started = await waitUntil(timeout: 5) {
+            let primaryCount = await primaryQuery.requestCount()
+            let profileCount = await profileQuery.requestCount()
+            return primaryCount == 1 && profileCount == 1
+        }
+        #expect(started)
+        let primaryRequestCount = await primaryQuery.requestCount()
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(primaryRequestCount == 1)
+        #expect(profileRequestCount == 1)
+
+        await primaryGate.open()
+        await profileGate.open()
+        _ = try await task.value
+    }
+
+    @Test("concurrent success persists matched profile-analysis and returns the envelope")
+    func concurrentSuccessPersistsMatchedProfileAnalysisAndReturnsTheEnvelope() async throws {
+        let context = makeContext()
+        let primaryGate = CancellationGate()
+        let profileGate = CancellationGate()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let profile = makeStormSetupProfileAnalysisDTO(primary: primary)
+        let cachedProfile = try #require(makeStormSetupProfileAnalysisPayload(primary: primary, fetchedAt: fixedNow.addingTimeInterval(-120)))
+        let primaryQuery = StormSetupQueryingFake(response: .success(primary), gate: primaryGate)
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .success(profile), gate: profileGate)
+        let harness = try makeHarness(
+            context: context,
+            query: primaryQuery,
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        _ = try await harness.projectionStore.updateStormSetupProfileAnalysis(
+            cachedProfile,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-120)
+        )
+
+        let task = Task { @MainActor in
+            try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)))
+        }
+
+        defer {
+            Task {
+                await primaryGate.open()
+                await profileGate.open()
+            }
+        }
+
+        let started = await waitUntil(timeout: 5) {
+            let primaryCount = await primaryQuery.requestCount()
+            let profileCount = await profileQuery.requestCount()
+            return primaryCount == 1 && profileCount == 1
+        }
+        #expect(started)
+
+        await primaryGate.open()
+        await profileGate.open()
+        let snapshot = try await task.value
+
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        let expected = try #require(makeStormSetupProfileAnalysisPayload(primary: primary, fetchedAt: fixedNow))
+        #expect(snapshot.stormSetup == primary)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == expected)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .success)
+        #expect(persisted.stormSetupProfileAnalysisPayload == expected)
+    }
+
+    @Test("sparse matching profile-analysis success remains valid")
+    func sparseMatchingProfileAnalysisSuccessRemainsValid() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let sparse = makeStormSetupProfileAnalysisDTO(primary: primary, response: makeStormSetupProfileAnalysisResponse(sparse: true))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .success(sparse))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        let expected = try #require(makeStormSetupProfileAnalysisPayload(primary: primary, response: makeStormSetupProfileAnalysisResponse(sparse: true)))
+        #expect(snapshot.stormSetupProfileAnalysisPayload == expected)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .success)
+        #expect(persisted.stormSetupProfileAnalysisPayload == expected)
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 1)
+    }
+
+    @Test("mismatched profile-analysis response is not persisted or returned")
+    func mismatchedProfileAnalysisResponseIsNotPersistedOrReturned() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let mismatchedPrimary = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(3600),
+            modelRunTime: fixedNow.addingTimeInterval(-7_200),
+            sourceValidTime: fixedNow.addingTimeInterval(-1_800)
+        )
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(
+            response: .success(makeStormSetupProfileAnalysisDTO(primary: mismatchedPrimary))
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(snapshot.stormSetupProfileAnalysisPayload == nil)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .mismatch)
+        #expect(persisted.stormSetupProfileAnalysisPayload == nil)
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 1)
+    }
+
+    @Test("profile-analysis failure preserves only cache usable against the resolved primary")
+    func profileAnalysisFailurePreservesOnlyCacheUsableAgainstResolvedPrimary() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let cachedProfile = try #require(makeStormSetupProfileAnalysisPayload(primary: primary, fetchedAt: fixedNow.addingTimeInterval(-60)))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .failure(TestError.failed))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        _ = try await harness.projectionStore.updateStormSetupProfileAnalysis(
+            cachedProfile,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-60)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(snapshot.stormSetup == primary)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == cachedProfile)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .failure)
+        #expect(snapshot.stormRisk == .enhanced)
+        #expect(snapshot.severeRisk == .hail(probability: 0.30))
+        #expect(snapshot.alerts == [Watch.sampleWatchRows[0]])
+        #expect(snapshot.mesos.isEmpty == false)
+        #expect(persisted.stormSetupProfileAnalysisPayload == cachedProfile)
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 1)
+    }
+
+    @Test("foreground timeout preserves profile-analysis cache and does not fail ingestion")
+    func foregroundTimeoutPreservesProfileAnalysisCacheAndDoesNotFailIngestion() async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let cachedProfile = try #require(makeStormSetupProfileAnalysisPayload(primary: primary, fetchedAt: fixedNow.addingTimeInterval(-60)))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(
+            response: .success(makeStormSetupProfileAnalysisDTO(primary: primary)),
+            gate: gate
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            stormSetupForegroundTimeout: 1.0,
+            stormSetupProfileAnalysisForegroundTimeout: 0.05
+        )
+
+        _ = try await harness.projectionStore.updateStormSetupProfileAnalysis(
+            cachedProfile,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-60)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+        await gate.open()
+
+        #expect(snapshot.stormSetupProfileAnalysisPayload == cachedProfile)
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .timeout)
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 1)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormSetupProfileAnalysisPayload == cachedProfile)
+    }
+
+    @Test("profile-analysis cancellation does not partially persist")
+    func profileAnalysisCancellationDoesNotPartiallyPersist() async throws {
+        let context = makeContext()
+        let primaryGate = CancellationGate()
+        let profileGate = CancellationGate()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let profile = makeStormSetupProfileAnalysisDTO(primary: primary)
+        let primaryQuery = StormSetupQueryingFake(response: .success(primary), gate: primaryGate)
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .success(profile), gate: profileGate)
+        let harness = try makeHarness(
+            context: context,
+            query: primaryQuery,
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            stormSetupForegroundTimeout: 1.0
+        )
+
+        let task = Task { @MainActor in
+            try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)))
+        }
+
+        let started = await waitUntil(timeout: 5) {
+            let primaryCount = await primaryQuery.requestCount()
+            let profileCount = await profileQuery.requestCount()
+            return primaryCount == 1 && profileCount == 1
+        }
+        #expect(started)
+
+        task.cancel()
+        await primaryGate.open()
+        await profileGate.open()
+
+        let snapshot = try await task.value
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .cancelled)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == nil)
+        #expect(persisted.stormSetupProfileAnalysisPayload == nil)
+    }
+
+    @Test("background profile-analysis requests use background HTTP execution mode")
+    func backgroundProfileAnalysisRequestsUseBackgroundHTTPExecutionMode() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(
+            response: .success(makeStormSetupProfileAnalysisDTO(primary: primary))
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        )
+
+        _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)))
+
+        let executionModes = await profileQuery.executionModes()
+        #expect(executionModes == [.background])
+    }
+
+    @Test("failed-attempt backoff suppresses profile-analysis retries for session ticks and background runs")
+    func failedAttemptBackoffSuppressesProfileAnalysisRetriesForSessionTicksAndBackgroundRuns() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .failure(TestError.failed))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            stormSetupForegroundTimeout: 1.0,
+            stormSetupFailedAttemptBackoff: 300
+        )
+
+        _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .sessionTick)))
+        _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .sessionTick)))
+        _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)))
+
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 1)
+    }
+
+    @Test("foreground refresh bypasses profile-analysis backoff consistently")
+    func foregroundRefreshBypassesProfileAnalysisBackoffConsistently() async throws {
+        let context = makeContext()
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let profileQuery = StormSetupProfileAnalysisQueryingFake(response: .failure(TestError.failed))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary)),
+            profileQuery: profileQuery,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            stormSetupFailedAttemptBackoff: 300
+        )
+
+        _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .sessionTick)))
+        _ = try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)))
+
+        let profileRequestCount = await profileQuery.requestCount()
+        #expect(profileRequestCount == 2)
     }
 
     private func makeHarness(
         context: LocationContext,
         query: StormSetupQueryingFake? = nil,
+        profileQuery: StormSetupProfileAnalysisQueryingFake? = nil,
         weather: FakeWeatherClient = FakeWeatherClient(result: .success(sampleWeather())),
         spc: StormSetupTestSpcProvider = StormSetupTestSpcProvider(),
         alerts: StormSetupTestArcusProvider = StormSetupTestArcusProvider(),
@@ -616,7 +1033,9 @@ struct StormSetupIngestionTests {
         activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
         activeMesos: [MdDTO] = [MD.sampleDiscussionDTOs[0]],
         stormSetupForegroundTimeout: TimeInterval = 5,
-        stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
+        stormSetupProfileAnalysisForegroundTimeout: TimeInterval = 5,
+        stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60,
+        stormSetupProfileAnalysisFailedAttemptBackoff: TimeInterval = 5 * 60
     ) throws -> StormSetupHarness {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
@@ -630,6 +1049,7 @@ struct StormSetupIngestionTests {
         let stormSetupQuery = query ?? StormSetupQueryingFake(
             response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)))
         )
+        let stormSetupProfileAnalysisQuery = profileQuery
         let preferencesReader: @Sendable () async -> StormSetupPreferences = { preferences }
         let executor = HomeIngestionExecutor(
             environment: .init(
@@ -646,10 +1066,13 @@ struct StormSetupIngestionTests {
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil,
                 stormSetupQuerying: stormSetupQuery,
+                stormSetupProfileAnalysisQuerying: stormSetupProfileAnalysisQuery,
                 stormSetupPreferencesReader: preferencesReader,
                 stormSetupCurrentDate: { dateProvider.date },
                 stormSetupForegroundTimeout: stormSetupForegroundTimeout,
-                stormSetupFailedAttemptBackoff: stormSetupFailedAttemptBackoff
+                stormSetupProfileAnalysisForegroundTimeout: stormSetupProfileAnalysisForegroundTimeout,
+                stormSetupFailedAttemptBackoff: stormSetupFailedAttemptBackoff,
+                stormSetupProfileAnalysisFailedAttemptBackoff: stormSetupProfileAnalysisFailedAttemptBackoff
             )
         )
 
@@ -657,6 +1080,7 @@ struct StormSetupIngestionTests {
             executor: executor,
             projectionStore: projectionStore,
             query: stormSetupQuery,
+            profileQuery: stormSetupProfileAnalysisQuery,
             weather: weather,
             locationSession: session,
             dateProvider: dateProvider
@@ -780,12 +1204,125 @@ struct StormSetupIngestionTests {
             surfaceHeightMslM: 1132.4
         )
     }
+
+    private func makeStormSetupProfileAnalysisDTO(
+        primary: StormSetupDTO,
+        response: StormSetupProfileAnalysisDTO.Response? = nil
+    ) -> StormSetupProfileAnalysisDTO {
+        StormSetupProfileAnalysisDTO(
+            request: .init(
+                runTime: primary.source.runTime,
+                validTime: primary.source.validTime,
+                forecastHour: primary.source.forecastHour
+            ),
+            response: response ?? makeStormSetupProfileAnalysisResponse()
+        )
+    }
+
+    private func makeStormSetupProfileAnalysisPayload(
+        primary: StormSetupDTO,
+        response: StormSetupProfileAnalysisDTO.Response? = nil,
+        fetchedAt: Date = fixedNow
+    ) -> HomeProjectionStormSetupProfileAnalysisPayload? {
+        StormSetupProfileAnalysisPolicy.makePersistedPayload(
+            from: makeStormSetupProfileAnalysisDTO(primary: primary, response: response),
+            primary: primary,
+            fetchedAt: fetchedAt
+        )
+    }
+
+    private func makeStormSetupProfileAnalysisResponse(
+        sparse: Bool = false
+    ) -> StormSetupProfileAnalysisDTO.Response {
+        if sparse {
+            return .init(
+                mlcape: nil,
+                mucape: nil,
+                mlcin: nil,
+                mllclMetersAgl: nil,
+                scp: nil,
+                stpFixed: nil,
+                stpCin: nil,
+                ship: nil,
+                effectiveSrh: nil,
+                effectiveBulkShearMs: nil,
+                effectiveLayer: .init(
+                    status: "notFound",
+                    basePressureMb: nil,
+                    topPressureMb: nil,
+                    baseMetersAgl: nil,
+                    topMetersAgl: nil
+                ),
+                stormMotion: .init(
+                    status: nil,
+                    bunkersRight: .init(
+                        uMs: nil,
+                        vMs: nil,
+                        speedMs: nil,
+                        uKt: nil,
+                        vKt: nil,
+                        speedKt: nil,
+                        directionTowardDeg: nil
+                    ),
+                    uMs: nil,
+                    vMs: nil,
+                    speedMs: nil,
+                    uKt: nil,
+                    vKt: nil,
+                    speedKt: nil,
+                    directionTowardDeg: nil
+                ),
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            )
+        }
+
+        return .init(
+            mlcape: 1_850,
+            mucape: 2_200.5,
+            mlcin: -42,
+            mllclMetersAgl: -0.0,
+            scp: 0.7,
+            stpFixed: 1.2,
+            stpCin: 0.9,
+            ship: 2.1,
+            effectiveSrh: 135,
+            effectiveBulkShearMs: 24.5,
+            effectiveLayer: .init(
+                status: "available",
+                basePressureMb: 915,
+                topPressureMb: 750,
+                baseMetersAgl: 850,
+                topMetersAgl: 1_800
+            ),
+            stormMotion: .init(
+                status: "available",
+                bunkersRight: .init(
+                    uMs: 8.4,
+                    vMs: -4.2,
+                    speedMs: 9.4,
+                    uKt: 16.3,
+                    vKt: -8.2,
+                    speedKt: 18.3,
+                    directionTowardDeg: 215
+                ),
+                uMs: 6.2,
+                vMs: -2.4,
+                speedMs: 6.6,
+                uKt: 12.1,
+                vKt: -4.7,
+                speedKt: 12.8,
+                directionTowardDeg: 201
+            ),
+            quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
+        )
+    }
 }
 
 private struct StormSetupHarness {
     let executor: HomeIngestionExecutor
     let projectionStore: HomeProjectionStore
     let query: StormSetupQueryingFake
+    let profileQuery: StormSetupProfileAnalysisQueryingFake?
     let weather: FakeWeatherClient
     let locationSession: FakeLocationSession
     let dateProvider: MutableDateProvider
@@ -835,6 +1372,53 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
         switch response {
         case .success(let stormSetup):
             return stormSetup
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    func requestCount() -> Int {
+        requests.count
+    }
+
+    func executionModes() -> [HTTPExecutionMode] {
+        requests.map(\.executionMode)
+    }
+
+    func setResponse(_ response: Response) {
+        self.response = response
+    }
+}
+
+private actor StormSetupProfileAnalysisQueryingFake: StormSetupProfileAnalysisQuerying {
+    enum Response {
+        case success(StormSetupProfileAnalysisDTO)
+        case failure(Error)
+    }
+
+    private var response: Response
+    private let gate: CancellationGate?
+    private var requests: [QueryRecord] = []
+
+    struct QueryRecord: Sendable, Equatable {
+        let h3Cell: Int64
+        let executionMode: HTTPExecutionMode
+    }
+
+    init(response: Response, gate: CancellationGate? = nil) {
+        self.response = response
+        self.gate = gate
+    }
+
+    func fetchProfileAnalysis(h3Cell: Int64) async throws -> StormSetupProfileAnalysisDTO {
+        requests.append(.init(h3Cell: h3Cell, executionMode: HTTPExecutionMode.current))
+        if let gate {
+            try await gate.wait()
+        }
+
+        switch response {
+        case .success(let profileAnalysis):
+            return profileAnalysis
         case .failure(let error):
             throw error
         }
