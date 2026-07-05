@@ -50,6 +50,7 @@ struct HomeProjectionStoreTests {
         let projection = try await store.fetchOrCreateProjection(for: context)
 
         #expect(projection.stormSetup == nil)
+        #expect(projection.stormSetupProfileAnalysisPayload == nil)
         #expect(projection.lastStormSetupLoadAt == nil)
     }
 
@@ -72,6 +73,36 @@ struct HomeProjectionStoreTests {
         #expect(persisted.lastStormSetupLoadAt == loadedAt)
     }
 
+    @Test("updating Storm Setup profile analysis stores the envelope and touch time")
+    func updateStormSetupProfileAnalysis_persistsEnvelopeAndUpdatedAt() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let loadedAt = Date(timeIntervalSince1970: 610)
+        let envelope = makeStormSetupProfileAnalysisPayload()
+
+        let updated = try await store.updateStormSetupProfileAnalysis(
+            envelope,
+            for: context,
+            loadedAt: loadedAt
+        )
+
+        #expect(updated.stormSetupProfileAnalysisPayload == envelope)
+        #expect(updated.updatedAt == loadedAt)
+
+        let persisted = try #require(await store.projection(for: context))
+        #expect(persisted.stormSetupProfileAnalysisPayload == envelope)
+        #expect(persisted.updatedAt == loadedAt)
+        #expect(envelopeFieldLabels(persisted.stormSetupProfileAnalysisPayload) == [
+            "response",
+            "modelRunTime",
+            "validTime",
+            "forecastHour",
+            "fetchedAt",
+            "expiresAt"
+        ])
+    }
+
     @Test("updating Storm Setup preserves weather, risks, alerts, mesos, and timestamps")
     func updateStormSetup_preservesExistingSlicesAndTimestamps() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -82,6 +113,7 @@ struct HomeProjectionStoreTests {
         let meso = MD.sampleDiscussionDTOs[0]
         let stormLoadedAt = Date(timeIntervalSince1970: 650)
         let dto = makeStormSetupDTO()
+        let profileAnalysis = makeStormSetupProfileAnalysisPayload()
 
         _ = try await store.updateWeather(weather, for: context, loadedAt: Date(timeIntervalSince1970: 300))
         _ = try await store.updateSlowProducts(
@@ -97,6 +129,11 @@ struct HomeProjectionStoreTests {
             for: context,
             loadedAt: Date(timeIntervalSince1970: 500)
         )
+        _ = try await store.updateStormSetupProfileAnalysis(
+            profileAnalysis,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 525)
+        )
 
         let updated = try await store.updateStormSetup(dto, for: context, loadedAt: stormLoadedAt)
 
@@ -107,19 +144,23 @@ struct HomeProjectionStoreTests {
         #expect(updated.activeAlerts == [alert])
         #expect(updated.activeMesos == [meso])
         #expect(updated.stormSetup == dto)
+        #expect(updated.stormSetupProfileAnalysisPayload == profileAnalysis)
         #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 400))
         #expect(updated.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(updated.updatedAt == stormLoadedAt)
         #expect(updated.lastStormSetupLoadAt == stormLoadedAt)
     }
 
-    @Test("weather, slow products, and hot alerts preserve Storm Setup")
-    func updateNonStormSetupSlices_preserveStormSetup() async throws {
+    @Test("weather, slow products, and hot alerts preserve Storm Setup profile analysis")
+    func updateNonStormSetupSlices_preserveStormSetupProfileAnalysis() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let store = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
         let dto = makeStormSetupDTO()
+        let profileAnalysis = makeStormSetupProfileAnalysisPayload()
         let stormLoadedAt = Date(timeIntervalSince1970: 700)
+        let analysisLoadedAt = Date(timeIntervalSince1970: 705)
         let weatherLoadedAt = Date(timeIntervalSince1970: 710)
         let slowLoadedAt = Date(timeIntervalSince1970: 720)
         let hotLoadedAt = Date(timeIntervalSince1970: 730)
@@ -127,6 +168,11 @@ struct HomeProjectionStoreTests {
         let meso = MD.sampleDiscussionDTOs[1]
 
         _ = try await store.updateStormSetup(dto, for: context, loadedAt: stormLoadedAt)
+        _ = try await store.updateStormSetupProfileAnalysis(
+            profileAnalysis,
+            for: context,
+            loadedAt: analysisLoadedAt
+        )
 
         let weatherUpdated = try await store.updateWeather(
             makeWeather(temperature: 68, asOf: 900),
@@ -148,11 +194,138 @@ struct HomeProjectionStoreTests {
         )
 
         #expect(weatherUpdated.stormSetup == dto)
+        #expect(weatherUpdated.stormSetupProfileAnalysisPayload == profileAnalysis)
         #expect(weatherUpdated.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(weatherUpdated.updatedAt == weatherLoadedAt)
         #expect(slowUpdated.stormSetup == dto)
+        #expect(slowUpdated.stormSetupProfileAnalysisPayload == profileAnalysis)
         #expect(slowUpdated.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(slowUpdated.updatedAt == slowLoadedAt)
         #expect(hotUpdated.stormSetup == dto)
+        #expect(hotUpdated.stormSetupProfileAnalysisPayload == profileAnalysis)
         #expect(hotUpdated.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(hotUpdated.updatedAt == hotLoadedAt)
+    }
+
+    @Test("profile analysis updates preserve weather, risks, alerts, mesos, and Storm Setup")
+    func updateStormSetupProfileAnalysis_preservesExistingSlices() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let weather = makeWeather()
+        let alert = Watch.sampleWatchRows[0]
+        let meso = MD.sampleDiscussionDTOs[0]
+        let stormSetup = makeStormSetupDTO()
+        let firstEnvelope = makeStormSetupProfileAnalysisPayload(
+            fetchedAt: Date(timeIntervalSince1970: 810),
+            expiresAt: Date(timeIntervalSince1970: 900)
+        )
+        let secondEnvelope = makeStormSetupProfileAnalysisPayload(
+            response: .init(
+                mlcape: 2_100,
+                mucape: 2_400,
+                mlcin: -35,
+                mllclMetersAgl: 900,
+                scp: 4.4,
+                stpFixed: 1.7,
+                stpCin: 2.1,
+                ship: 1.2,
+                effectiveSrh: 170,
+                effectiveBulkShearMs: 18,
+                effectiveLayer: .init(
+                    status: "available",
+                    basePressureMb: 875,
+                    topPressureMb: 712,
+                    baseMetersAgl: 550,
+                    topMetersAgl: 5_500
+                ),
+                stormMotion: .init(
+                    status: "available",
+                    bunkersRight: .init(
+                        uMs: 5.5,
+                        vMs: 2.0,
+                        speedMs: 5.9,
+                        uKt: 10.7,
+                        vKt: 3.9,
+                        speedKt: 11.5,
+                        directionTowardDeg: 67
+                    ),
+                    uMs: 5.5,
+                    vMs: 2.0,
+                    speedMs: 5.9,
+                    uKt: 10.7,
+                    vKt: 3.9,
+                    speedKt: 11.5,
+                    directionTowardDeg: 67
+                ),
+                quality: .init(profileLevelCount: 5, warnings: ["sample"])
+            ),
+            modelRunTime: Date(timeIntervalSince1970: 820),
+            validTime: Date(timeIntervalSince1970: 830),
+            forecastHour: 4,
+            fetchedAt: Date(timeIntervalSince1970: 840),
+            expiresAt: Date(timeIntervalSince1970: 930)
+        )
+
+        _ = try await store.updateWeather(weather, for: context, loadedAt: Date(timeIntervalSince1970: 300))
+        _ = try await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 400)
+        )
+        _ = try await store.updateHotAlerts(
+            alerts: [alert],
+            mesos: [meso],
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+        _ = try await store.updateStormSetup(
+            stormSetup,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 600)
+        )
+        let updated = try await store.updateStormSetupProfileAnalysis(
+            firstEnvelope,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 700)
+        )
+
+        #expect(updated.weather == weather)
+        #expect(updated.stormRisk == .slight)
+        #expect(updated.severeRisk == .tornado(probability: 0.10))
+        #expect(updated.fireRisk == .critical)
+        #expect(updated.activeAlerts == [alert])
+        #expect(updated.activeMesos == [meso])
+        #expect(updated.stormSetup == stormSetup)
+        #expect(updated.stormSetupProfileAnalysisPayload == firstEnvelope)
+        #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
+        #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 400))
+        #expect(updated.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(updated.lastStormSetupLoadAt == Date(timeIntervalSince1970: 600))
+
+        let reopened = try #require(await store.projection(for: context))
+        #expect(reopened.stormSetupProfileAnalysisPayload == firstEnvelope)
+
+        let refreshed = try await store.updateStormSetupProfileAnalysis(
+            secondEnvelope,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 710)
+        )
+
+        #expect(refreshed.weather == weather)
+        #expect(refreshed.stormRisk == .slight)
+        #expect(refreshed.severeRisk == .tornado(probability: 0.10))
+        #expect(refreshed.fireRisk == .critical)
+        #expect(refreshed.activeAlerts == [alert])
+        #expect(refreshed.activeMesos == [meso])
+        #expect(refreshed.stormSetup == stormSetup)
+        #expect(refreshed.stormSetupProfileAnalysisPayload == secondEnvelope)
+        #expect(refreshed.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
+        #expect(refreshed.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 400))
+        #expect(refreshed.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(refreshed.lastStormSetupLoadAt == Date(timeIntervalSince1970: 600))
     }
 
     @Test("different projection keys keep independent Storm Setup payloads")
@@ -185,6 +358,53 @@ struct HomeProjectionStoreTests {
             surfaceHeightMslM: 1_240,
             summary: "Second location"
         )
+        let firstProfileAnalysis = makeStormSetupProfileAnalysisPayload(
+            fetchedAt: Date(timeIntervalSince1970: 805),
+            expiresAt: Date(timeIntervalSince1970: 905)
+        )
+        let secondProfileAnalysis = makeStormSetupProfileAnalysisPayload(
+            response: .init(
+                mlcape: 1_420,
+                mucape: 1_760,
+                mlcin: -31,
+                mllclMetersAgl: 1_050,
+                scp: 2.4,
+                stpFixed: 0.9,
+                stpCin: 1.2,
+                ship: 0.6,
+                effectiveSrh: 98,
+                effectiveBulkShearMs: 17,
+                effectiveLayer: .init(
+                    status: "available",
+                    basePressureMb: 892,
+                    topPressureMb: 726,
+                    baseMetersAgl: 680,
+                    topMetersAgl: 4_980
+                ),
+                stormMotion: .init(
+                    status: "available",
+                    bunkersRight: .init(
+                        uMs: 4.1,
+                        vMs: 1.2,
+                        speedMs: 4.3,
+                        uKt: 8.0,
+                        vKt: 2.3,
+                        speedKt: 8.4,
+                        directionTowardDeg: 72
+                    ),
+                    uMs: 4.1,
+                    vMs: 1.2,
+                    speedMs: 4.3,
+                    uKt: 8.0,
+                    vKt: 2.3,
+                    speedKt: 8.4,
+                    directionTowardDeg: 72
+                ),
+                quality: .init(profileLevelCount: 2, warnings: ["second"])
+            ),
+            fetchedAt: Date(timeIntervalSince1970: 905),
+            expiresAt: Date(timeIntervalSince1970: 1_005)
+        )
 
         _ = try await store.updateStormSetup(
             firstDTO,
@@ -196,6 +416,16 @@ struct HomeProjectionStoreTests {
             for: secondContext,
             loadedAt: Date(timeIntervalSince1970: 900)
         )
+        _ = try await store.updateStormSetupProfileAnalysis(
+            firstProfileAnalysis,
+            for: firstContext,
+            loadedAt: Date(timeIntervalSince1970: 810)
+        )
+        _ = try await store.updateStormSetupProfileAnalysis(
+            secondProfileAnalysis,
+            for: secondContext,
+            loadedAt: Date(timeIntervalSince1970: 910)
+        )
 
         let firstProjection = try #require(await store.projection(for: firstContext))
         let secondProjection = try #require(await store.projection(for: secondContext))
@@ -205,6 +435,9 @@ struct HomeProjectionStoreTests {
         #expect(firstProjection.stormSetup == firstDTO)
         #expect(secondProjection.stormSetup == secondDTO)
         #expect(firstProjection.stormSetup != secondProjection.stormSetup)
+        #expect(firstProjection.stormSetupProfileAnalysisPayload == firstProfileAnalysis)
+        #expect(secondProjection.stormSetupProfileAnalysisPayload == secondProfileAnalysis)
+        #expect(firstProjection.stormSetupProfileAnalysisPayload != secondProjection.stormSetupProfileAnalysisPayload)
     }
 
     @Test("a new store over the same container reads persisted Storm Setup")
@@ -213,16 +446,23 @@ struct HomeProjectionStoreTests {
         let context = makeContext()
         let dto = makeStormSetupDTO()
         let loadedAt = Date(timeIntervalSince1970: 950)
+        let profileAnalysis = makeStormSetupProfileAnalysisPayload()
 
         do {
             let store = HomeProjectionStore(modelContainer: container)
             _ = try await store.updateStormSetup(dto, for: context, loadedAt: loadedAt)
+            _ = try await store.updateStormSetupProfileAnalysis(
+                profileAnalysis,
+                for: context,
+                loadedAt: Date(timeIntervalSince1970: 960)
+            )
         }
 
         let reopenedStore = HomeProjectionStore(modelContainer: container)
         let persisted = try #require(await reopenedStore.projection(for: context))
 
         #expect(persisted.stormSetup == dto)
+        #expect(persisted.stormSetupProfileAnalysisPayload == profileAnalysis)
         #expect(persisted.lastStormSetupLoadAt == loadedAt)
     }
 
@@ -267,6 +507,7 @@ struct HomeProjectionStoreTests {
         #expect(persisted.updatedAt == loadedAt)
         #expect(persisted.weather == nil)
         #expect(persisted.stormSetup == nil)
+        #expect(persisted.stormSetupProfileAnalysisPayload == nil)
         #expect(persisted.lastStormSetupLoadAt == nil)
     }
 
@@ -588,7 +829,75 @@ struct HomeProjectionStoreTests {
         )
     }
 
-private func makeStormSetupDTO(
+    private func makeStormSetupProfileAnalysisPayload(
+        response: StormSetupProfileAnalysisDTO.Response? = nil,
+        modelRunTime: Date = Date(timeIntervalSince1970: 1_717_270_400),
+        validTime: Date = Date(timeIntervalSince1970: 1_717_281_600),
+        forecastHour: Int = 3,
+        fetchedAt: Date = Date(timeIntervalSince1970: 1_717_281_780),
+        expiresAt: Date = Date(timeIntervalSince1970: 1_717_284_000)
+    ) -> HomeProjectionStormSetupProfileAnalysisPayload {
+        let resolvedResponse = response ?? .init(
+            mlcape: 1_850,
+            mucape: 2_200.5,
+            mlcin: -42,
+            mllclMetersAgl: 980,
+            scp: 3.2,
+            stpFixed: 1.4,
+            stpCin: 1.8,
+            ship: 0.9,
+            effectiveSrh: 125.5,
+            effectiveBulkShearMs: 21.5,
+            effectiveLayer: .init(
+                status: "available",
+                basePressureMb: 887,
+                topPressureMb: 715,
+                baseMetersAgl: 600,
+                topMetersAgl: 5_100
+            ),
+            stormMotion: .init(
+                status: "available",
+                bunkersRight: .init(
+                    uMs: 4.8,
+                    vMs: 1.6,
+                    speedMs: 5.1,
+                    uKt: 9.3,
+                    vKt: 3.1,
+                    speedKt: 9.9,
+                    directionTowardDeg: 65
+                ),
+                uMs: 4.8,
+                vMs: 1.6,
+                speedMs: 5.1,
+                uKt: 9.3,
+                vKt: 3.1,
+                speedKt: 9.9,
+                directionTowardDeg: 65
+            ),
+            quality: .init(profileLevelCount: 4, warnings: ["sample"])
+        )
+
+        return HomeProjectionStormSetupProfileAnalysisPayload(
+            response: resolvedResponse,
+            modelRunTime: modelRunTime,
+            validTime: validTime,
+            forecastHour: forecastHour,
+            fetchedAt: fetchedAt,
+            expiresAt: expiresAt
+        )
+    }
+
+    private func envelopeFieldLabels(
+        _ envelope: HomeProjectionStormSetupProfileAnalysisPayload?
+    ) -> [String] {
+        guard let envelope else {
+            return []
+        }
+
+        return Mirror(reflecting: envelope).children.compactMap(\.label)
+    }
+
+    private func makeStormSetupDTO(
         h3Cell: Int64 = 123_456,
         surfaceHeightMslM: Double = 1_132.4,
         summary: String = "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation."
@@ -664,8 +973,8 @@ private func makeStormSetupDTO(
             ),
             centroid: .init(latitude: 39.5, longitude: -100.0),
             surfaceHeightMslM: surfaceHeightMslM
-    )
-}
+        )
+    }
 
 enum HomeProjectionSchemaV1: VersionedSchema {
     static var versionIdentifier: Schema.Version { .init(1, 0, 0) }

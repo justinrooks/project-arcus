@@ -52,6 +52,15 @@ struct HomeProjectionWeatherPayload: Sendable, Codable, Equatable {
     }
 }
 
+struct HomeProjectionStormSetupProfileAnalysisPayload: Sendable, Codable, Equatable {
+    let response: StormSetupProfileAnalysisDTO.Response
+    let modelRunTime: Date
+    let validTime: Date
+    let forecastHour: Int
+    let fetchedAt: Date
+    let expiresAt: Date
+}
+
 struct HomeProjectionRecord: Sendable, Equatable {
     let id: UUID
     let projectionKey: String
@@ -74,6 +83,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let activeAlerts: [AlertDTO]
     let activeMesos: [MdDTO]
     let stormSetup: StormSetupDTO?
+    let stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     let lastHotAlertsLoadAt: Date?
     let lastSlowProductsLoadAt: Date?
     let lastWeatherLoadAt: Date?
@@ -104,6 +114,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
         lastSlowProductsLoadAt: Date?,
         lastWeatherLoadAt: Date?,
         stormSetup: StormSetupDTO? = nil,
+        stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         lastStormSetupLoadAt: Date? = nil
     ) {
         self.id = id
@@ -127,6 +138,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
         self.activeAlerts = activeAlerts
         self.activeMesos = activeMesos
         self.stormSetup = stormSetup
+        self.stormSetupProfileAnalysisPayload = stormSetupProfileAnalysisPayload
         self.lastHotAlertsLoadAt = lastHotAlertsLoadAt
         self.lastSlowProductsLoadAt = lastSlowProductsLoadAt
         self.lastWeatherLoadAt = lastWeatherLoadAt
@@ -167,6 +179,7 @@ final class HomeProjection {
 
     var weatherPayload: HomeProjectionWeatherPayload?
     var stormSetupPayload: StormSetupDTO?
+    var stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -199,6 +212,7 @@ final class HomeProjection {
         self.lastViewedAt = lastViewedAt
         weatherPayload = nil
         stormSetupPayload = nil
+        stormSetupProfileAnalysisPayload = nil
         stormRisk = nil
         severeRisk = nil
         fireRisk = nil
@@ -248,6 +262,7 @@ extension HomeProjection {
             lastSlowProductsLoadAt: lastSlowProductsLoadAt,
             lastWeatherLoadAt: lastWeatherLoadAt,
             stormSetup: stormSetupPayload,
+            stormSetupProfileAnalysisPayload: stormSetupProfileAnalysisPayload,
             lastStormSetupLoadAt: lastStormSetupLoadAt
         )
     }
