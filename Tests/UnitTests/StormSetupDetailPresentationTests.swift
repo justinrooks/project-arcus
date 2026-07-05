@@ -52,9 +52,6 @@ struct StormSetupDetailPresentationTests {
     @Test("metadata formatting respects UTC run time and local valid time")
     func metadataFormattingRespectsUTCAndLocalTime() {
         let mountainTime = TimeZone(identifier: "America/Denver")!
-        let originalTimeZone = NSTimeZone.default
-        NSTimeZone.default = mountainTime
-        defer { NSTimeZone.default = originalTimeZone }
 
         let presentation = StormSetupDetailPresentation(
             dto: makeDTO(
