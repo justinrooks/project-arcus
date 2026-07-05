@@ -465,14 +465,18 @@ Use `Advanced Details` as the v1 section label.
 
 Do not make a production summary depend on a dev endpoint.
 
-If the main Storm Setup response already contains `anvilEvidence`, render its optional support and diagnostics in
-advanced detail. If a separate Anvil/dev call is needed, implement it as a later optional supplement with these rules:
+The dev route is an explicit Detailed Ingredients-only exception. If the main Storm Setup response already contains
+`anvilEvidence`, render its optional support and diagnostics in advanced detail. If a separate Anvil/dev call is
+needed, implement it as a later optional supplement with these rules:
 
-- match responses by model run and valid time before merging
-- never overwrite readable assessment fields
-- never block or degrade the summary card
+- supplemental data never affects Summary or readable assessment
+- only `response` values are product data
+- minimal request identity exists solely for matching
+- match requires model run, valid time, and forecast hour
+- a matched supplement inherits the primary Storm Setup expiry
+- missing, stale, mismatched, or failed supplementation is non-fatal
+- profile/debug data is never modeled, persisted, logged, or displayed
 - hide debug-only pressure-level data
-- discard unmatched or stale supplemental data
 - keep the client behind explicit configuration until the endpoint is production-supported
 
 ## Alternatives Considered
