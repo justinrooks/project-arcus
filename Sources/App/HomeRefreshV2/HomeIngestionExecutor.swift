@@ -742,7 +742,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             }
         }
 
-        markStormSetupAttemptSucceeded(
+        markStormSetupAttemptFailed(
             for: projectionKey,
             refreshKey: context.refreshKey,
             now: now

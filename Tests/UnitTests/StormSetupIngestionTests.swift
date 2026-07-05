@@ -449,6 +449,57 @@ struct StormSetupIngestionTests {
         #expect(await query.requestCount() == 3)
     }
 
+    @Test("stale replay preserves failed-attempt backoff")
+    func staleReplayPreservesFailedAttemptBackoff() async throws {
+        let context = makeContext()
+        let dateProvider = MutableDateProvider(fixedNow)
+        let cached = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(-60),
+            modelRunTime: fixedNow.addingTimeInterval(-300),
+            sourceValidTime: fixedNow.addingTimeInterval(-300),
+            fetchedAt: fixedNow.addingTimeInterval(-300),
+            summary: "cached guidance"
+        )
+        let staleResponse = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(3600)
+        )
+        let query = StormSetupQueryingFake(response: .failure(TestError.failed))
+        let harness = try makeHarness(
+            context: context,
+            query: query,
+            dateProvider: dateProvider,
+            stormSetupFailedAttemptBackoff: 300
+        )
+
+        _ = try await harness.projectionStore.updateStormSetup(
+            cached,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-600)
+        )
+
+        _ = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+
+        await query.setResponse(.success(staleResponse))
+
+        let staleSnapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        #expect(staleSnapshot.stormSetupRefreshResult == .success)
+        #expect(staleSnapshot.stormSetup == nil)
+        #expect(await query.requestCount() == 2)
+
+        _ = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+
+        #expect(await query.requestCount() == 2)
+    }
+
     @Test("suspended request leaves persistence unchanged while in flight")
     func suspendedRequestLeavesPersistenceUnchangedWhileInFlight() async throws {
         let context = makeContext()
