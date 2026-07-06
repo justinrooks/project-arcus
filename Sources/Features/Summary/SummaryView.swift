@@ -127,6 +127,7 @@ struct SummaryView: View {
 
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?
+    let stormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response?
     let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -155,6 +156,7 @@ struct SummaryView: View {
     init(
         snap: LocationSnapshot? = nil,
         stormSetup: StormSetupDTO? = nil,
+        stormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? = nil,
         stormSetupPreferences: StormSetupPreferences = StormSetupPreferences(),
         stormRisk: StormRiskLevel? = nil,
         severeRisk: SevereWeatherThreat? = nil,
@@ -177,6 +179,7 @@ struct SummaryView: View {
     ) {
         self.snap = snap
         self.stormSetup = stormSetup
+        self.stormSetupProfileAnalysisResponse = stormSetupProfileAnalysisResponse
         self.stormSetupPreferences = stormSetupPreferences
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
@@ -566,6 +569,7 @@ struct SummaryView: View {
                 dto: stormSetup,
                 preferences: stormSetupPreferences,
                 forecastLocationTimeZone: locationTimeZone,
+                profileAnalysisResponse: stormSetupProfileAnalysisResponse,
                 now: now
             )
         }
@@ -590,6 +594,7 @@ struct SummaryView: View {
             dto: stormSetup,
             preferences: stormSetupPreferences,
             forecastLocationTimeZone: locationTimeZone,
+            profileAnalysisResponse: stormSetupProfileAnalysisResponse,
             now: now
         )
     }

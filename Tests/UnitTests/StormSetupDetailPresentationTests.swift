@@ -210,6 +210,54 @@ struct StormSetupDetailPresentationTests {
         #expect(enabled.diagnosticsNoteText == "Some advanced diagnostics are limited.")
     }
 
+    @Test("enabled Detailed Ingredients retains the supplied profile analysis response")
+    func enabledDetailedIngredientsRetainsSuppliedProfileAnalysisResponse() {
+        let response = makeProfileAnalysisResponse()
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: response,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisResponse == response)
+    }
+
+    @Test("disabled Detailed Ingredients suppresses the supplied profile analysis response")
+    func disabledDetailedIngredientsSuppressesSuppliedProfileAnalysisResponse() {
+        let response = makeProfileAnalysisResponse()
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: response,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisResponse == nil)
+    }
+
+    @Test("summary presentation is identical with and without supplemental data")
+    func summaryPresentationIsIdenticalWithAndWithoutSupplementalData() {
+        let response = makeProfileAnalysisResponse()
+        let withoutSupplementalData = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T19:00:00Z")
+        )
+        let withSupplementalData = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: response,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(withoutSupplementalData.summaryPresentation == withSupplementalData.summaryPresentation)
+    }
+
     @Test("presentation omits raw transport details and warning strings")
     func presentationOmitsRawTransportDetails() {
         let presentation = StormSetupDetailPresentation(
@@ -334,6 +382,50 @@ private func makeDTO(
         anvilEvidence: anvilEvidence,
         centroid: .init(latitude: 39.5, longitude: -100.0),
         surfaceHeightMslM: 1132.4
+    )
+}
+
+private func makeProfileAnalysisResponse(
+    mlcape: Double? = 1_850
+) -> StormSetupProfileAnalysisDTO.Response {
+    StormSetupProfileAnalysisDTO.Response(
+        mlcape: mlcape,
+        mucape: 2_200.5,
+        mlcin: -42,
+        mllclMetersAgl: 980,
+        scp: 0.7,
+        stpFixed: 1.2,
+        stpCin: 0.9,
+        ship: 2.1,
+        effectiveSrh: 135,
+        effectiveBulkShearMs: 24.5,
+        effectiveLayer: .init(
+            status: "available",
+            basePressureMb: 915,
+            topPressureMb: 750,
+            baseMetersAgl: 850,
+            topMetersAgl: 1_800
+        ),
+        stormMotion: .init(
+            status: "available",
+            bunkersRight: .init(
+                uMs: 8.4,
+                vMs: -4.2,
+                speedMs: 9.4,
+                uKt: 16.3,
+                vKt: -8.2,
+                speedKt: 18.3,
+                directionTowardDeg: 215
+            ),
+            uMs: 6.2,
+            vMs: -2.4,
+            speedMs: 6.6,
+            uKt: 12.1,
+            vKt: -4.7,
+            speedKt: 12.8,
+            directionTowardDeg: 201
+        ),
+        quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
     )
 }
 

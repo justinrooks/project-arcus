@@ -87,6 +87,18 @@ struct HomeView: View {
         )
     }
 
+    private var displayedStormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? {
+        Self.selectStormSetupProfileAnalysisResponse(
+            selectedProjection: displayedProjection,
+            currentContext: locationSession.currentContext,
+            selectedPrimary: displayedStormSetup,
+            preferences: stormSetupPreferences,
+            pipelinePayload: refreshPipeline.stormSetupProfileAnalysisPayload,
+            pipelineRefreshKey: refreshPipeline.stormSetupProfileAnalysisRefreshKey,
+            now: Date()
+        )
+    }
+
     private var resolvedLocationTimeZone: TimeZone {
         Self.resolveLocationTimeZone(
             selectedProjection: displayedProjection,
@@ -268,6 +280,7 @@ struct HomeView: View {
                     TodayTabView(
                         snap: displayedLocationSnapshot,
                         stormSetup: displayedStormSetup,
+                        stormSetupProfileAnalysisResponse: displayedStormSetupProfileAnalysisResponse,
                         stormSetupPreferences: stormSetupPreferences,
                         stormRisk: displayedStormRisk,
                         severeRisk: displayedSevereRisk,
@@ -541,6 +554,53 @@ extension HomeView {
         return stormSetup
     }
 
+    static func selectStormSetupProfileAnalysisResponse(
+        selectedProjection: HomeProjectionRecord?,
+        currentContext: LocationContext?,
+        selectedPrimary: StormSetupDTO?,
+        preferences: StormSetupPreferences,
+        pipelinePayload: HomeProjectionStormSetupProfileAnalysisPayload?,
+        pipelineRefreshKey: LocationContext.RefreshKey?,
+        now: Date
+    ) -> StormSetupProfileAnalysisDTO.Response? {
+        if let currentContext {
+            let currentRefreshKey = currentContext.refreshKey
+            if pipelineRefreshKey == currentRefreshKey,
+               let usablePipelinePayload = StormSetupProfileAnalysisPolicy.usableCachedPayload(
+                preferences: preferences,
+                primary: selectedPrimary,
+                cachedPayload: pipelinePayload,
+                now: now
+               ) {
+                return usablePipelinePayload.response
+            }
+
+            guard let selectedProjection,
+                  selectedProjection.projectionKey == HomeProjection.projectionKey(for: currentContext),
+                  let usableProjectionPayload = StormSetupProfileAnalysisPolicy.usableCachedPayload(
+                    preferences: preferences,
+                    primary: selectedPrimary,
+                    cachedPayload: selectedProjection.stormSetupProfileAnalysisPayload,
+                    now: now
+                  ) else {
+                return nil
+            }
+
+            return usableProjectionPayload.response
+        }
+
+        guard let usableProjectionPayload = StormSetupProfileAnalysisPolicy.usableCachedPayload(
+            preferences: preferences,
+            primary: selectedPrimary,
+            cachedPayload: selectedProjection?.stormSetupProfileAnalysisPayload,
+            now: now
+        ) else {
+            return nil
+        }
+
+        return usableProjectionPayload.response
+    }
+
     static func resolveLocationTimeZone(
         selectedProjection: HomeProjectionRecord?,
         currentContext: LocationContext?,
@@ -767,6 +827,7 @@ private struct TodayTabView: View {
 
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?
+    let stormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response?
     let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -816,6 +877,7 @@ private struct TodayTabView: View {
                 SummaryView(
                     snap: snap,
                     stormSetup: stormSetup,
+                    stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
                     stormSetupPreferences: stormSetupPreferences,
                     stormRisk: stormRisk,
                     severeRisk: severeRisk,

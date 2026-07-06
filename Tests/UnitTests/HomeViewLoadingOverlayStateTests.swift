@@ -436,6 +436,248 @@ struct HomeViewProjectionLaunchTests {
         )
     }
 
+    @Test("profile analysis selection prefers matching pipeline data over projection data")
+    func profileAnalysisSelection_prefersMatchingPipelineData() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let primary = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let projectionResponse = makeProfileAnalysisResponse(mlcape: 1_600)
+        let pipelineResponse = makeProfileAnalysisResponse(mlcape: 2_100)
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: primary,
+            profileAnalysisPayload: makeProfileAnalysisPayload(response: projectionResponse)
+        )
+
+        let selected = HomeView.selectStormSetupProfileAnalysisResponse(
+            selectedProjection: projection,
+            currentContext: currentContext,
+            selectedPrimary: primary,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            pipelinePayload: makeProfileAnalysisPayload(response: pipelineResponse),
+            pipelineRefreshKey: currentContext.refreshKey,
+            now: Date(timeIntervalSince1970: 200)
+        )
+
+        #expect(selected == pipelineResponse)
+    }
+
+    @Test("profile analysis selection falls back to the projection when same-location pipeline payload is unusable")
+    func profileAnalysisSelection_fallsBackToProjectionWhenPipelinePayloadUnusable() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let primary = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let projectionResponse = makeProfileAnalysisResponse(mlcape: 1_600)
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: primary,
+            profileAnalysisPayload: makeProfileAnalysisPayload(response: projectionResponse)
+        )
+
+        let selected = HomeView.selectStormSetupProfileAnalysisResponse(
+            selectedProjection: projection,
+            currentContext: currentContext,
+            selectedPrimary: primary,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            pipelinePayload: nil,
+            pipelineRefreshKey: currentContext.refreshKey,
+            now: Date(timeIntervalSince1970: 200)
+        )
+
+        #expect(selected == projectionResponse)
+    }
+
+    @Test("profile analysis selection rejects wrong refresh keys and mismatched projection locations")
+    func profileAnalysisSelection_rejectsWrongRefreshKeyAndProjectionLocation() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let otherContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
+        let primary = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: primary,
+            profileAnalysisPayload: makeProfileAnalysisPayload()
+        )
+        let otherProjection = makeProjectionRecord(
+            context: otherContext,
+            updatedAt: Date(timeIntervalSince1970: 200),
+            stormSetup: primary,
+            profileAnalysisPayload: makeProfileAnalysisPayload(response: makeProfileAnalysisResponse(mlcape: 1_900))
+        )
+
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: projection,
+                currentContext: currentContext,
+                selectedPrimary: primary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: makeProfileAnalysisPayload(response: makeProfileAnalysisResponse(mlcape: 2_000)),
+                pipelineRefreshKey: otherContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == projection.stormSetupProfileAnalysisPayload?.response
+        )
+
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: otherProjection,
+                currentContext: currentContext,
+                selectedPrimary: primary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: nil,
+                pipelineRefreshKey: nil,
+                now: Date(timeIntervalSince1970: 200)
+            ) == nil
+        )
+    }
+
+    @Test("profile analysis selection rejects run-time, valid-time, forecast-hour, and expiry mismatches")
+    func profileAnalysisSelection_rejectsIdentityAndFreshnessMismatches() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let primary = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let projectionResponse = makeProfileAnalysisResponse(mlcape: 1_600)
+        let mismatchedResponse = makeProfileAnalysisResponse(mlcape: 2_000)
+        let basePayload = makeProfileAnalysisPayload(response: projectionResponse)
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: primary,
+            profileAnalysisPayload: basePayload
+        )
+
+        let mismatchedRunTime = HomeProjectionStormSetupProfileAnalysisPayload(
+            response: mismatchedResponse,
+            modelRunTime: Date(timeIntervalSince1970: 120),
+            validTime: basePayload.validTime,
+            forecastHour: basePayload.forecastHour,
+            fetchedAt: basePayload.fetchedAt,
+            expiresAt: basePayload.expiresAt
+        )
+        let mismatchedValidTime = HomeProjectionStormSetupProfileAnalysisPayload(
+            response: mismatchedResponse,
+            modelRunTime: basePayload.modelRunTime,
+            validTime: Date(timeIntervalSince1970: 130),
+            forecastHour: basePayload.forecastHour,
+            fetchedAt: basePayload.fetchedAt,
+            expiresAt: basePayload.expiresAt
+        )
+        let mismatchedForecastHour = HomeProjectionStormSetupProfileAnalysisPayload(
+            response: mismatchedResponse,
+            modelRunTime: basePayload.modelRunTime,
+            validTime: basePayload.validTime,
+            forecastHour: basePayload.forecastHour + 1,
+            fetchedAt: basePayload.fetchedAt,
+            expiresAt: basePayload.expiresAt
+        )
+        let expiredPayload = HomeProjectionStormSetupProfileAnalysisPayload(
+            response: mismatchedResponse,
+            modelRunTime: basePayload.modelRunTime,
+            validTime: basePayload.validTime,
+            forecastHour: basePayload.forecastHour,
+            fetchedAt: basePayload.fetchedAt,
+            expiresAt: Date(timeIntervalSince1970: 150)
+        )
+        let expiredPrimary = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 150))
+
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: projection,
+                currentContext: currentContext,
+                selectedPrimary: primary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: mismatchedRunTime,
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == projectionResponse
+        )
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: projection,
+                currentContext: currentContext,
+                selectedPrimary: primary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: mismatchedValidTime,
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == projectionResponse
+        )
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: projection,
+                currentContext: currentContext,
+                selectedPrimary: primary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: mismatchedForecastHour,
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == projectionResponse
+        )
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: makeProjectionRecord(
+                    context: currentContext,
+                    updatedAt: Date(timeIntervalSince1970: 100),
+                    stormSetup: expiredPrimary,
+                    profileAnalysisPayload: expiredPayload
+                ),
+                currentContext: currentContext,
+                selectedPrimary: expiredPrimary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: expiredPayload,
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == nil
+        )
+    }
+
+    @Test("profile analysis selection respects Detailed Ingredients gating and startup context rules")
+    func profileAnalysisSelection_respectsDetailedIngredientsAndStartupRules() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let primary = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let newestProjection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 200),
+            stormSetup: primary,
+            profileAnalysisPayload: makeProfileAnalysisPayload()
+        )
+        let disabledPreferences = StormSetupPreferences(stormSetupEnabled: true, detailedIngredientsEnabled: false)
+
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: newestProjection,
+                currentContext: currentContext,
+                selectedPrimary: primary,
+                preferences: disabledPreferences,
+                pipelinePayload: makeProfileAnalysisPayload(response: makeProfileAnalysisResponse(mlcape: 2_000)),
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == nil
+        )
+        #expect(newestProjection.stormSetupProfileAnalysisPayload == makeProfileAnalysisPayload())
+
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: newestProjection,
+                currentContext: nil,
+                selectedPrimary: primary,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: makeProfileAnalysisPayload(response: makeProfileAnalysisResponse(mlcape: 2_000)),
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == newestProjection.stormSetupProfileAnalysisPayload?.response
+        )
+        #expect(
+            HomeView.selectStormSetupProfileAnalysisResponse(
+                selectedProjection: newestProjection,
+                currentContext: nil,
+                selectedPrimary: nil,
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                pipelinePayload: nil,
+                pipelineRefreshKey: nil,
+                now: Date(timeIntervalSince1970: 200)
+            ) == nil
+        )
+    }
+
     @Test("location time zone resolution falls back deterministically")
     func locationTimeZoneResolution_fallsBackDeterministically() {
         let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
@@ -530,6 +772,7 @@ struct HomeViewProjectionLaunchTests {
         context: LocationContext,
         updatedAt: Date,
         stormSetup: StormSetupDTO? = nil,
+        profileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         timeZoneId: String? = nil
     ) -> HomeProjectionRecord {
         HomeProjectionRecord(
@@ -557,7 +800,70 @@ struct HomeViewProjectionLaunchTests {
             lastSlowProductsLoadAt: nil,
             lastWeatherLoadAt: nil,
             stormSetup: stormSetup,
+            stormSetupProfileAnalysisPayload: profileAnalysisPayload,
             lastStormSetupLoadAt: stormSetup == nil ? nil : updatedAt
+        )
+    }
+
+    private func makeProfileAnalysisPayload(
+        response: StormSetupProfileAnalysisDTO.Response? = nil,
+        modelRunTime: Date = Date(timeIntervalSince1970: 100),
+        validTime: Date = Date(timeIntervalSince1970: 100),
+        forecastHour: Int = 1,
+        fetchedAt: Date = Date(timeIntervalSince1970: 100),
+        expiresAt: Date = Date(timeIntervalSince1970: 500)
+    ) -> HomeProjectionStormSetupProfileAnalysisPayload {
+        HomeProjectionStormSetupProfileAnalysisPayload(
+            response: response ?? makeProfileAnalysisResponse(),
+            modelRunTime: modelRunTime,
+            validTime: validTime,
+            forecastHour: forecastHour,
+            fetchedAt: fetchedAt,
+            expiresAt: expiresAt
+        )
+    }
+
+    private func makeProfileAnalysisResponse(
+        mlcape: Double? = 1_850
+    ) -> StormSetupProfileAnalysisDTO.Response {
+        StormSetupProfileAnalysisDTO.Response(
+            mlcape: mlcape,
+            mucape: 2_200.5,
+            mlcin: -42,
+            mllclMetersAgl: 980,
+            scp: 0.7,
+            stpFixed: 1.2,
+            stpCin: 0.9,
+            ship: 2.1,
+            effectiveSrh: 135,
+            effectiveBulkShearMs: 24.5,
+            effectiveLayer: .init(
+                status: "available",
+                basePressureMb: 915,
+                topPressureMb: 750,
+                baseMetersAgl: 850,
+                topMetersAgl: 1_800
+            ),
+            stormMotion: .init(
+                status: "available",
+                bunkersRight: .init(
+                    uMs: 8.4,
+                    vMs: -4.2,
+                    speedMs: 9.4,
+                    uKt: 16.3,
+                    vKt: -8.2,
+                    speedKt: 18.3,
+                    directionTowardDeg: 215
+                ),
+                uMs: 6.2,
+                vMs: -2.4,
+                speedMs: 6.6,
+                uKt: 12.1,
+                vKt: -4.7,
+                speedKt: 12.8,
+                directionTowardDeg: 201
+            ),
+            quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
         )
     }
 

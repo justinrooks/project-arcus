@@ -17,6 +17,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
     }
 
     let summaryPresentation: StormSetupSummaryPresentation
+    let profileAnalysisResponse: StormSetupProfileAnalysisDTO.Response?
     let assessmentTitle: String
     let summaryText: String?
     let confidenceText: String?
@@ -35,6 +36,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         dto: StormSetupDTO,
         preferences: StormSetupPreferences,
         forecastLocationTimeZone: TimeZone,
+        profileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? = nil,
         now: Date = .now
     ) {
         let assessment = StormSetupAssessment(dto: dto)
@@ -44,6 +46,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
             timeZone: forecastLocationTimeZone,
             now: now
         )
+        self.profileAnalysisResponse = preferences.effectiveDetailedIngredientsEnabled ? profileAnalysisResponse : nil
         assessmentTitle = StormSetupSummaryPresentation.readableTitle(for: assessment.assessment.overall)
         summaryText = assessment.assessment.summary?.trimmedNonEmpty
         confidenceText = Self.confidenceText(for: assessment.assessment.confidence)
