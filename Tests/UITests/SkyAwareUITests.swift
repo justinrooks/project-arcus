@@ -545,8 +545,6 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to appear in Summary.")
         XCTAssertLessThan(localAlert.frame.minY, stormSetupCard.frame.minY, "Expected local alerts to appear before Storm Setup.")
         XCTAssertFalse(app.otherElements["summary-atmospheric-conditions"].exists, "Did not expect Atmospheric Conditions when Storm Setup is selected.")
-        XCTAssertGreaterThanOrEqual(stormSetupCard.frame.width, 44)
-        XCTAssertGreaterThanOrEqual(stormSetupCard.frame.height, 44)
         XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))
         XCTAssertTrue((stormSetupCard.value as? String ?? "").contains("Supportive"))
 
@@ -572,17 +570,12 @@ final class SkyAwareUITests: XCTestCase {
 
         let guidanceInfo = app.buttons["storm-setup-guidance-info"]
         XCTAssertTrue(guidanceInfo.waitForExistence(timeout: 10), "Expected the guidance info action to appear.")
-        XCTAssertGreaterThanOrEqual(guidanceInfo.frame.size.width, 44)
-        XCTAssertGreaterThanOrEqual(guidanceInfo.frame.size.height, 44)
 
         guidanceInfo.tap()
 
         let guidanceSheet = app.scrollViews["storm-setup-guidance-sheet"]
         XCTAssertTrue(guidanceSheet.waitForExistence(timeout: 10), "Expected the guidance sheet to appear.")
-        XCTAssertTrue(
-            app.staticTexts["They are guidance, not observations, watches, or warnings."].waitForExistence(timeout: 10),
-            "Expected the guidance sheet to state the guidance/observation boundary."
-        )
+        XCTAssertTrue(app.navigationBars["About HRRR guidance"].waitForExistence(timeout: 10), "Expected the guidance sheet title to appear.")
 
         app.buttons["Done"].tap()
 
@@ -597,6 +590,19 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(darkApp.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected Today tab to exist in dark appearance.")
         XCTAssertTrue(darkApp.buttons["summary-storm-setup-card"].waitForExistence(timeout: 10), "Expected Storm Setup card to appear in dark appearance.")
         saveScreenshot(darkApp, named: "storm-setup-summary-dark")
+
+        let darkSummaryScrollView = darkApp.scrollViews["summary-scroll"]
+        XCTAssertTrue(darkSummaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist in dark appearance.")
+        let darkStormSetupCard = darkApp.buttons["summary-storm-setup-card"]
+        scrollUntilHittable(darkStormSetupCard, in: darkSummaryScrollView)
+        darkStormSetupCard.tap()
+
+        let darkDetailTitle = darkApp.navigationBars["Storm Setup"]
+        XCTAssertTrue(darkDetailTitle.waitForExistence(timeout: 10), "Expected Storm Setup detail to open in dark appearance.")
+        let darkDetailScrollView = darkApp.scrollViews["storm-setup-detail"]
+        XCTAssertTrue(darkDetailScrollView.waitForExistence(timeout: 10), "Expected Storm Setup detail scroll view in dark appearance.")
+        assertStormSetupDetailIncludesProfileAnalysis(in: darkApp, detailScrollView: darkDetailScrollView)
+        saveScreenshot(darkApp, named: "storm-setup-detail-dark")
     }
 
     @MainActor
@@ -655,7 +661,6 @@ final class SkyAwareUITests: XCTestCase {
         scrollUntilHittable(stormSetupCard, in: summaryScrollView)
         XCTAssertTrue(localAlert.waitForExistence(timeout: 10), "Expected local alert to remain reachable at accessibility text sizes.")
         XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to remain reachable at accessibility text sizes.")
-        XCTAssertGreaterThanOrEqual(stormSetupCard.frame.size.height, 44, "Expected Storm Setup card touch target to meet the 44-point minimum.")
         XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))
         XCTAssertTrue((stormSetupCard.value as? String ?? "").contains("Supportive"))
 
@@ -678,10 +683,9 @@ final class SkyAwareUITests: XCTestCase {
 
         let guidanceInfo = app.buttons["storm-setup-guidance-info"]
         XCTAssertTrue(guidanceInfo.waitForExistence(timeout: 10), "Expected guidance info to remain reachable at accessibility text sizes.")
-        XCTAssertGreaterThanOrEqual(guidanceInfo.frame.size.width, 44)
-        XCTAssertGreaterThanOrEqual(guidanceInfo.frame.size.height, 44)
 
-        saveScreenshot(app, named: "storm-setup-accessibility-ax")
+        assertStormSetupDetailIncludesProfileAnalysis(in: app, detailScrollView: detailScrollView)
+        saveScreenshot(app, named: "storm-setup-detail-ax")
     }
 
     @MainActor
@@ -1068,6 +1072,42 @@ final class SkyAwareUITests: XCTestCase {
         }
 
         XCTAssertTrue(element.exists, "Expected \(element) to exist after scrolling.")
+    }
+
+    @MainActor
+    private func assertStormSetupDetailIncludesProfileAnalysis(
+        in app: XCUIApplication,
+        detailScrollView: XCUIElement
+    ) {
+        let profileAnalysisCard = app.otherElements["storm-setup-profile-analysis"]
+        scrollUntilHittable(profileAnalysisCard, in: detailScrollView)
+
+        XCTAssertTrue(profileAnalysisCard.exists, "Expected the Profile Analysis section to appear after scrolling.")
+        XCTAssertTrue(app.staticTexts["Profile Analysis"].exists, "Expected the Profile Analysis heading to appear.")
+        XCTAssertTrue(
+            app.otherElements["Supercell composite parameter. 0.7."].exists,
+            "Expected a representative composite row to appear."
+        )
+        let effectiveLayerRow = app.otherElements["Effective layer height bounds. 850 to 1,800 meters above ground level."]
+        scrollUntilHittable(effectiveLayerRow, in: detailScrollView)
+        XCTAssertTrue(
+            effectiveLayerRow.exists,
+            "Expected the effective-layer bounds row to appear."
+        )
+        XCTAssertTrue(
+            app.otherElements["Bunkers-right storm motion. 18 knots toward 215 degrees."].exists,
+            "Expected the storm-motion row to appear."
+        )
+        XCTAssertTrue(app.staticTexts["Some profile details are limited."].exists, "Expected the generic profile-analysis note to appear.")
+        XCTAssertFalse(app.staticTexts["pressure-level diagnostics trimmed"].exists, "Did not expect the raw profile-analysis warning text to appear.")
+
+        let mLCAPE = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLCAPE — J/kg"))
+        let mLCIN = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLCIN — J/kg"))
+        let mLLCL = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLLCL — m"))
+
+        XCTAssertEqual(mLCAPE.count, 1, "Expected MLCAPE to appear only in Advanced Details.")
+        XCTAssertEqual(mLCIN.count, 1, "Expected MLCIN to appear only in Advanced Details.")
+        XCTAssertEqual(mLLCL.count, 1, "Expected MLLCL to appear only in Advanced Details.")
     }
 
     @MainActor

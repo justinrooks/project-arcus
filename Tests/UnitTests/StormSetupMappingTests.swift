@@ -14,6 +14,7 @@ struct StormSetupMappingTests {
         #expect(dto.freshness.isDegraded == false)
         #expect(dto.freshness.forecastHour == 3)
         #expect(dto.source.primaryDownloadURL == "https://example.invalid/storm-setup")
+        #expect(dto.surfaceHeightMslM == 1132.4)
         #expect(dto.raw.mlcapeJkg == 1_850)
         #expect(dto.raw.tempDewPtDeltaF == 4.5)
         #expect(assessment.assessment.summary == "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.")
@@ -41,6 +42,40 @@ struct StormSetupMappingTests {
         #expect(assessment.assessment.overall == .unknown)
         #expect(assessment.assessment.limitingFactors.isEmpty)
         #expect(assessment.assessment.primaryDrivers.isEmpty)
+    }
+
+    @Test("degraded response tolerates absent producer-optional metadata")
+    func degradedResponseToleratesAbsentProducerOptionalMetadata() throws {
+        let dto = try decodeDTO(degradedOptionalMetadataJSON)
+        let assessment = StormSetupAssessment(dto: dto)
+
+        #expect(dto.surfaceHeightMslM == nil)
+        #expect(dto.freshness.modelRunTime == nil)
+        #expect(dto.freshness.sourceValidTime == nil)
+        #expect(dto.freshness.forecastHour == nil)
+        #expect(dto.source.model == nil)
+        #expect(dto.source.product == nil)
+        #expect(dto.source.domain == nil)
+        #expect(dto.source.fieldSetVersion == nil)
+        #expect(dto.source.runTime == nil)
+        #expect(dto.source.validTime == nil)
+        #expect(dto.source.forecastHour == nil)
+        #expect(dto.source.bbox == nil)
+        #expect(assessment.freshness.modelRunTime == nil)
+        #expect(assessment.freshness.sourceValidTime == nil)
+        #expect(assessment.freshness.forecastHour == nil)
+        #expect(assessment.source.model == nil)
+        #expect(assessment.source.product == nil)
+        #expect(assessment.source.domain == nil)
+        #expect(assessment.source.fieldSetVersion == nil)
+        #expect(assessment.source.runTime == nil)
+        #expect(assessment.source.validTime == nil)
+        #expect(assessment.source.forecastHour == nil)
+        #expect(assessment.source.bbox == nil)
+        #expect(assessment.assessment.overall == .supportive)
+        #expect(assessment.assessment.summary == "The setup is still useful even with degraded metadata.")
+        #expect(assessment.assessment.limitingFactors == ["capping"])
+        #expect(assessment.assessment.primaryDrivers == ["instability"])
     }
 
     @Test("freshness flags and timestamps are preserved")
@@ -290,6 +325,35 @@ private let partialJSON = #"""
     "primaryDrivers": []
   },
   "surfaceHeightMslM": 1132.4
+}
+"""#
+
+private let degradedOptionalMetadataJSON = #"""
+{
+  "h3Cell": 8623451234567890,
+  "freshness": {
+    "isStale": false,
+    "isDegraded": true,
+    "modelRunTime": null,
+    "fetchedAt": "2026-06-01T21:03:00Z",
+    "expiresAt": "2026-06-01T22:00:00Z"
+  },
+  "source": {
+    "sourceKind": "production"
+  },
+  "raw": {
+    "mlcapeJkg": 1200
+  },
+  "assessment": {
+    "overall": "supportive",
+    "summary": "The setup is still useful even with degraded metadata.",
+    "limitingFactors": [
+      "capping"
+    ],
+    "primaryDrivers": [
+      "instability"
+    ]
+  }
 }
 """#
 

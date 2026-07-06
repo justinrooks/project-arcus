@@ -264,24 +264,38 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
     }
 
     private static func provenanceHeadline(
-        model: String,
-        runTime: Date,
-        validTime: Date,
-        forecastHour: Int,
+        model: String?,
+        runTime: Date?,
+        validTime: Date?,
+        forecastHour: Int?,
         timeZone: TimeZone,
         now: Date
     ) -> String {
-        let trimmedModel = model.trimmedNonEmpty ?? "Forecast"
-        let runText = formattedUTCModelRun(runTime)
-        let forecastHourText = formattedForecastHour(forecastHour)
-        let validText = formattedLocationTime(
-            validTime,
-            timeZone: timeZone,
-            now: now,
-            includeMinutes: false,
-            includeZone: true
-        )
-        return "\(trimmedModel) forecast model · \(runText) run · \(forecastHourText) · valid \(validText)"
+        let modelText = model?.trimmedNonEmpty.map { "\($0) forecast model" } ?? "Forecast"
+        var components: [String] = [modelText]
+
+        if let runTime {
+            components.append("\(formattedUTCModelRun(runTime)) run")
+        }
+
+        if let forecastHour {
+            components.append(formattedForecastHour(forecastHour))
+        }
+
+        if let validTime {
+            let validText = formattedLocationTime(
+                validTime,
+                timeZone: timeZone,
+                now: now,
+                includeMinutes: false,
+                includeZone: true
+            )
+            components.append(
+                "valid \(validText)"
+            )
+        }
+
+        return components.joined(separator: " · ")
     }
 
     private static func updatedText(from date: Date, timeZone: TimeZone, now: Date) -> String {

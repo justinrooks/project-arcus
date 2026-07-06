@@ -1,6 +1,6 @@
 # Storm Setup Implementation Runbook
 
-**Status:** Investigation complete; implementation not started
+**Status:** Investigation complete; implemented and in review
 
 **Feature surface:** Today / Summary with drill-in detail
 

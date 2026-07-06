@@ -68,6 +68,24 @@ struct StormSetupPresentationTests {
         )
     }
 
+    @Test("source line keeps useful guidance when model metadata is missing")
+    func sourceLine_keepsUsefulGuidanceWhenModelMetadataIsMissing() {
+        let timeZone = TimeZone(identifier: "America/Denver")!
+        let presentation = StormSetupSummaryPresentation(
+            dto: makeDTO(
+                validTime: date("2026-06-01T18:00:00Z"),
+                model: nil
+            ),
+            timeZone: timeZone,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(
+            presentation.sourceLine.replacingOccurrences(of: "\u{202F}", with: " ")
+                == "Guidance · valid near 12 PM"
+        )
+    }
+
     @Test("freshness copy stays calm for stale degraded and combined guidance")
     func freshnessCopy_staysCalm() {
         let stale = StormSetupSummaryPresentation(
@@ -137,29 +155,36 @@ private func makeDTO(
     limitingFactors: [String] = ["capping"],
     validTime: Date = date("2026-06-01T21:00:00Z"),
     isStale: Bool = false,
-    isDegraded: Bool = false
+    isDegraded: Bool = false,
+    model: String? = "HRRR",
+    sourceValidTime: Date? = nil,
+    runTime: Date? = date("2026-06-01T18:00:00Z"),
+    forecastHour: Int? = 3,
+    fieldSetVersion: String? = "1",
+    bbox: StormSetupDTO.Bbox? = .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+    surfaceHeightMslM: Double? = 1132.4
 ) -> StormSetupDTO {
     StormSetupDTO(
         h3Cell: 8_623_451_234_567_890,
         freshness: .init(
             isStale: isStale,
             isDegraded: isDegraded,
-            modelRunTime: date("2026-06-01T18:00:00Z"),
-            sourceValidTime: validTime,
-            forecastHour: 3,
+            modelRunTime: runTime,
+            sourceValidTime: sourceValidTime ?? validTime,
+            forecastHour: forecastHour,
             fetchedAt: date("2026-06-01T21:03:00Z"),
             expiresAt: date("2026-06-01T22:00:00Z")
         ),
         source: .init(
-            model: "HRRR",
+            model: model,
             product: "Storm Setup",
             domain: "severe",
-            fieldSetVersion: "1",
+            fieldSetVersion: fieldSetVersion,
             sourceKind: "production",
-            runTime: date("2026-06-01T18:00:00Z"),
+            runTime: runTime,
             validTime: validTime,
-            forecastHour: 3,
-            bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+            forecastHour: forecastHour,
+            bbox: bbox,
             primaryDownloadURL: "https://example.invalid/storm-setup"
         ),
         raw: .init(
@@ -193,7 +218,7 @@ private func makeDTO(
         ),
         anvilEvidence: nil,
         centroid: .init(latitude: 39.5, longitude: -100.0),
-        surfaceHeightMslM: 1132.4
+        surfaceHeightMslM: surfaceHeightMslM
     )
 }
 

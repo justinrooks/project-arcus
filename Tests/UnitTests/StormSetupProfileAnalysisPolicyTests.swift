@@ -94,6 +94,36 @@ struct StormSetupProfileAnalysisPolicyTests {
         }
     }
 
+    @Test("missing primary source metadata fails closed for cache matching and persistence")
+    func missingPrimarySourceMetadataFailsClosedForCacheMatchingAndPersistence() {
+        let primary = makePrimary(runTime: nil, validTime: nil, forecastHour: nil)
+        let dto = StormSetupProfileAnalysisDTO(
+            request: .init(
+                runTime: primary.source.runTime,
+                validTime: primary.source.validTime,
+                forecastHour: primary.source.forecastHour
+            ),
+            response: response
+        )
+        let cache = makeCachedPayload()
+
+        #expect(
+            StormSetupProfileAnalysisPolicy.makePersistedPayload(
+                from: dto,
+                primary: primary,
+                fetchedAt: fetchedAt
+            ) == nil
+        )
+        #expect(
+            StormSetupProfileAnalysisPolicy.usableCachedPayload(
+                preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                primary: primary,
+                cachedPayload: cache,
+                now: now
+            ) == nil
+        )
+    }
+
     @Test("incoming profile analysis rejects incomplete or mismatched request identity")
     func incomingProfileAnalysisRejectsIncompleteOrMismatchedRequestIdentity() {
         let primary = makePrimary()
@@ -241,9 +271,9 @@ private let expectedEnvelope = HomeProjectionStormSetupProfileAnalysisPayload(
 )
 
 private func makePrimary(
-    runTime: Date = runTime,
-    validTime: Date = validTime,
-    forecastHour: Int = forecastHour,
+    runTime: Date? = runTime,
+    validTime: Date? = validTime,
+    forecastHour: Int? = forecastHour,
     expiresAt: Date = Date(timeIntervalSinceReferenceDate: 2_000_900)
 ) -> StormSetupDTO {
     StormSetupDTO(

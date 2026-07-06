@@ -76,6 +76,27 @@ struct StormSetupDetailPresentationTests {
         #expect(presentation.freshnessText == nil)
     }
 
+    @Test("provenance headline keeps available guidance timing when source metadata is missing")
+    func provenanceHeadline_keepsAvailableGuidanceTimingWhenSourceMetadataIsMissing() {
+        let mountainTime = TimeZone(identifier: "America/Denver")!
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(
+                modelRunTime: nil,
+                validTime: date("2026-07-01T18:00:00Z"),
+                forecastHour: nil,
+                model: nil
+            ),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            forecastLocationTimeZone: mountainTime,
+            now: date("2026-07-01T19:00:00Z")
+        )
+
+        #expect(
+            presentation.provenanceHeadline.replacingOccurrences(of: "\u{202F}", with: " ")
+                == "Forecast · valid 12 PM MDT"
+        )
+    }
+
     @Test("cross-day metadata includes a date and forecast hours pad correctly")
     func crossDayMetadataIncludesDateAndPadsForecastHours() {
         let timeZone = TimeZone(identifier: "America/Denver")!
@@ -918,12 +939,16 @@ private func makeDTO(
     limitingFactors: [String] = ["capping"],
     primaryDrivers: [String] = ["instability", "shear"],
     confidence: String = "high",
-    modelRunTime: Date = date("2026-06-01T17:00:00Z"),
+    modelRunTime: Date? = date("2026-06-01T17:00:00Z"),
     validTime: Date = date("2026-06-01T18:00:00Z"),
     fetchedAt: Date = date("2026-06-01T18:41:00Z"),
-    forecastHour: Int = 3,
+    forecastHour: Int? = 3,
     isStale: Bool = false,
     isDegraded: Bool = false,
+    model: String? = "HRRR",
+    fieldSetVersion: String? = "1",
+    bbox: StormSetupDTO.Bbox? = .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+    surfaceHeightMslM: Double? = 1132.4,
     raw: StormSetupDTO.Raw = .init(
         mlcapeJkg: 1_850,
         mucapeJkg: 2_200.5,
@@ -952,15 +977,15 @@ private func makeDTO(
             expiresAt: date("2026-06-01T22:00:00Z")
         ),
         source: .init(
-            model: "HRRR",
+            model: model,
             product: "Storm Setup",
             domain: "severe",
-            fieldSetVersion: "1",
+            fieldSetVersion: fieldSetVersion,
             sourceKind: sourceKind,
             runTime: modelRunTime,
             validTime: validTime,
             forecastHour: forecastHour,
-            bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+            bbox: bbox,
             primaryDownloadURL: primaryDownloadURL
         ),
         raw: raw,
@@ -983,7 +1008,7 @@ private func makeDTO(
         ),
         anvilEvidence: anvilEvidence,
         centroid: .init(latitude: 39.5, longitude: -100.0),
-        surfaceHeightMslM: 1132.4
+        surfaceHeightMslM: surfaceHeightMslM
     )
 }
 

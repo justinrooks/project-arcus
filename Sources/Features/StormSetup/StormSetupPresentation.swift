@@ -199,13 +199,17 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
     }
 
     private static func sourceLine(
-        model: String,
-        validTime: Date,
+        model: String?,
+        validTime: Date?,
         timeZone: TimeZone,
         now: Date
     ) -> String {
-        let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
-        let modelPrefix = trimmedModel.isEmpty ? "Guidance" : "\(trimmedModel) guidance"
+        let trimmedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        let modelPrefix = trimmedModel.map { "\($0) guidance" } ?? "Guidance"
+        guard let validTime else {
+            return modelPrefix
+        }
+
         return "\(modelPrefix) · valid near \(formattedHour(validTime, timeZone: timeZone, now: now))"
     }
 

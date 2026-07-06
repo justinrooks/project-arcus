@@ -196,6 +196,8 @@ private extension SkyAwareApp {
                 HomeView(
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
+                    initialStormSetupProfileAnalysisPayload: fixture.profileAnalysis,
+                    initialStormSetupProfileAnalysisRefreshKey: fixture.context.refreshKey,
                     initialMesos: Self.uiTestSeedMesos,
                     initialAlerts: Self.uiTestSeedWatches
                 )
@@ -518,6 +520,7 @@ private extension SkyAwareApp {
 private struct UITestStormSetupFixture {
     let context: LocationContext
     let stormSetup: StormSetupDTO
+    let profileAnalysis: HomeProjectionStormSetupProfileAnalysisPayload
 
     static let supportive = UITestStormSetupFixture(
         context: .init(
@@ -617,6 +620,55 @@ private struct UITestStormSetupFixture {
             ),
             centroid: .init(latitude: 39.6, longitude: -104.0),
             surfaceHeightMslM: 1600
+        ),
+        profileAnalysis: .init(
+            response: .init(
+                mlcape: 1_850,
+                mucape: 2_200.5,
+                mlcin: -42,
+                mllclMetersAgl: 980,
+                scp: 0.7,
+                stpFixed: 1.2,
+                stpCin: 0.9,
+                ship: 2.1,
+                effectiveSrh: 135,
+                effectiveBulkShearMs: 24.5,
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: 915,
+                    topPressureMb: 750,
+                    baseMetersAgl: 850,
+                    topMetersAgl: 1_800
+                ),
+                stormMotion: .init(
+                    status: "available",
+                    bunkersRight: .init(
+                        uMs: 8.4,
+                        vMs: -4.2,
+                        speedMs: 9.4,
+                        uKt: 16.3,
+                        vKt: -8.2,
+                        speedKt: 18.3,
+                        directionTowardDeg: 215
+                    ),
+                    uMs: 6.2,
+                    vMs: -2.4,
+                    speedMs: 6.6,
+                    uKt: 12.1,
+                    vKt: -4.7,
+                    speedKt: 12.8,
+                    directionTowardDeg: 201
+                ),
+                quality: .init(
+                    profileLevelCount: 36,
+                    warnings: ["pressure-level diagnostics trimmed"]
+                )
+            ),
+            modelRunTime: uiTestDate("2026-07-03T12:00:00Z"),
+            validTime: uiTestDate("2026-07-03T18:00:00Z"),
+            forecastHour: 6,
+            fetchedAt: uiTestDate("2026-07-03T18:04:00Z"),
+            expiresAt: .distantFuture
         )
     )
 }

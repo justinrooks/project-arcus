@@ -8,7 +8,7 @@ struct StormSetupDTO: Codable, Sendable, Equatable {
     let assessment: Assessment
     let anvilEvidence: AnvilEvidence?
     let centroid: Coordinate2D?
-    let surfaceHeightMslM: Double
+    let surfaceHeightMslM: Double?
 
     var assessmentModel: StormSetupAssessment { .init(dto: self) }
 }
@@ -17,23 +17,23 @@ extension StormSetupDTO {
     struct Freshness: Codable, Sendable, Equatable {
         let isStale: Bool
         let isDegraded: Bool
-        let modelRunTime: Date
-        let sourceValidTime: Date
-        let forecastHour: Int
+        let modelRunTime: Date?
+        let sourceValidTime: Date?
+        let forecastHour: Int?
         let fetchedAt: Date
         let expiresAt: Date
     }
 
     struct Source: Codable, Sendable, Equatable {
-        let model: String
-        let product: String
-        let domain: String
-        let fieldSetVersion: String
+        let model: String?
+        let product: String?
+        let domain: String?
+        let fieldSetVersion: String?
         let sourceKind: String
-        let runTime: Date
-        let validTime: Date
-        let forecastHour: Int
-        let bbox: Bbox
+        let runTime: Date?
+        let validTime: Date?
+        let forecastHour: Int?
+        let bbox: Bbox?
         let primaryDownloadURL: String?
     }
 

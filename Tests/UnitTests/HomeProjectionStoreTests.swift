@@ -466,6 +466,47 @@ struct HomeProjectionStoreTests {
         #expect(persisted.lastStormSetupLoadAt == loadedAt)
     }
 
+    @Test("an on-disk current-schema container survives a process-style reopen")
+    func updateStormSetup_diskContainerReopensWithPersistedPayloads() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let schema = Schema([HomeProjection.self])
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: storeURL
+        )
+        let context = makeContext()
+        let stormLoadedAt = Date(timeIntervalSince1970: 950)
+        let profileLoadedAt = Date(timeIntervalSince1970: 960)
+        let dto = makeStormSetupDTO()
+        let profileAnalysis = makeStormSetupProfileAnalysisPayload()
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let store = HomeProjectionStore(modelContainer: container)
+            _ = try await store.updateStormSetup(dto, for: context, loadedAt: stormLoadedAt)
+            _ = try await store.updateStormSetupProfileAnalysis(
+                profileAnalysis,
+                for: context,
+                loadedAt: profileLoadedAt
+            )
+        }
+
+        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
+        let persisted = try #require(await reopenedStore.projection(for: context))
+
+        #expect(persisted.stormSetup == dto)
+        #expect(persisted.stormSetupProfileAnalysisPayload == profileAnalysis)
+        #expect(persisted.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(persisted.updatedAt == profileLoadedAt)
+    }
+
     @Test("an on-disk pre-Storm-Setup container migrates and retains existing data")
     func updateStormSetup_diskContainerMigratesFromPreStormSetupSchema() async throws {
         let root = FileManager.default.temporaryDirectory

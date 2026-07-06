@@ -1092,15 +1092,33 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private static func isStormSetupNewer(_ candidate: StormSetupDTO, than cached: StormSetupDTO) -> Bool {
         let candidateFreshness = candidate.freshness
         let cachedFreshness = cached.freshness
-        return (
+        let candidateValues = [
             candidateFreshness.modelRunTime,
             candidateFreshness.sourceValidTime,
             candidateFreshness.fetchedAt
-        ) > (
+        ]
+        let cachedValues = [
             cachedFreshness.modelRunTime,
             cachedFreshness.sourceValidTime,
             cachedFreshness.fetchedAt
-        )
+        ]
+
+        for (candidateValue, cachedValue) in zip(candidateValues, cachedValues) {
+            switch (candidateValue, cachedValue) {
+            case let (candidateValue?, cachedValue?):
+                if candidateValue != cachedValue {
+                    return candidateValue > cachedValue
+                }
+            case (nil, nil):
+                continue
+            case (nil, _?):
+                return false
+            case (_?, nil):
+                return true
+            }
+        }
+
+        return false
     }
 
     private func shouldBackOffStormSetup(

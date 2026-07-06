@@ -24,9 +24,12 @@ struct StormSetupProfileAnalysisPolicy {
     ) -> HomeProjectionStormSetupProfileAnalysisPayload? {
         guard preferences.effectiveDetailedIngredientsEnabled else { return nil }
         guard let primary, let cachedPayload else { return nil }
-        guard primary.source.runTime == cachedPayload.modelRunTime else { return nil }
-        guard primary.source.validTime == cachedPayload.validTime else { return nil }
-        guard primary.source.forecastHour == cachedPayload.forecastHour else { return nil }
+        guard let runTime = primary.source.runTime else { return nil }
+        guard let validTime = primary.source.validTime else { return nil }
+        guard let forecastHour = primary.source.forecastHour else { return nil }
+        guard runTime == cachedPayload.modelRunTime else { return nil }
+        guard validTime == cachedPayload.validTime else { return nil }
+        guard forecastHour == cachedPayload.forecastHour else { return nil }
         guard primary.freshness.expiresAt > now else { return nil }
         guard cachedPayload.expiresAt > now else { return nil }
         return cachedPayload
@@ -41,16 +44,19 @@ struct StormSetupProfileAnalysisPolicy {
         guard let runTime = request.runTime else { return nil }
         guard let validTime = request.validTime else { return nil }
         guard let forecastHour = request.forecastHour else { return nil }
-        guard primary.source.runTime == runTime else { return nil }
-        guard primary.source.validTime == validTime else { return nil }
-        guard primary.source.forecastHour == forecastHour else { return nil }
+        guard let primaryRunTime = primary.source.runTime else { return nil }
+        guard let primaryValidTime = primary.source.validTime else { return nil }
+        guard let primaryForecastHour = primary.source.forecastHour else { return nil }
+        guard primaryRunTime == runTime else { return nil }
+        guard primaryValidTime == validTime else { return nil }
+        guard primaryForecastHour == forecastHour else { return nil }
         guard primary.freshness.expiresAt > fetchedAt else { return nil }
 
         return HomeProjectionStormSetupProfileAnalysisPayload(
             response: profileAnalysis.response,
-            modelRunTime: primary.source.runTime,
-            validTime: primary.source.validTime,
-            forecastHour: primary.source.forecastHour,
+            modelRunTime: primaryRunTime,
+            validTime: primaryValidTime,
+            forecastHour: primaryForecastHour,
             fetchedAt: fetchedAt,
             expiresAt: primary.freshness.expiresAt
         )
