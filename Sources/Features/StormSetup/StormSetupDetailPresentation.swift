@@ -28,6 +28,8 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
     let updatedText: String
     let freshnessText: String?
     let advancedRows: [Row]
+    let profileAnalysisRows: [Row]
+    let profileAnalysisNoteText: String?
     let diagnosticsNoteText: String?
     let modelGuidanceTitle: String
     let modelGuidanceBody: String
@@ -71,6 +73,12 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         )
         advancedRows = advanced.rows
         diagnosticsNoteText = advanced.diagnosticsNoteText
+
+        let profileAnalysis = Self.makeProfileAnalysis(
+            from: preferences.effectiveDetailedIngredientsEnabled ? profileAnalysisResponse : nil
+        )
+        profileAnalysisRows = profileAnalysis.rows
+        profileAnalysisNoteText = profileAnalysis.noteText
 
         modelGuidanceTitle = "About HRRR guidance"
         modelGuidanceBody = Self.modelGuidanceBody
@@ -165,6 +173,65 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
 
         let noteText = assessmentAnvil?.diagnostics.warnings.isEmpty == false
             ? "Some advanced diagnostics are limited."
+            : nil
+
+        return (rows, noteText)
+    }
+
+    private static func makeProfileAnalysis(
+        from response: StormSetupProfileAnalysisDTO.Response?
+    ) -> (rows: [Row], noteText: String?) {
+        guard let response else {
+            return ([], nil)
+        }
+
+        var rows: [Row] = []
+        Self.appendIfPresent(Self.makeCompositeRow(title: "SCP", accessibilityTitle: "Supercell composite parameter", value: response.scp), to: &rows)
+        Self.appendIfPresent(
+            Self.makeCompositeRow(
+                title: "STP — fixed",
+                accessibilityTitle: "Significant tornado parameter fixed",
+                value: response.stpFixed
+            ),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeCompositeRow(
+                title: "STP — CIN-adjusted",
+                accessibilityTitle: "Significant tornado parameter C I N adjusted",
+                value: response.stpCin
+            ),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeCompositeRow(title: "SHIP", accessibilityTitle: "Significant hail parameter", value: response.ship),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeWholeRow(
+                title: "Effective SRH — m²/s²",
+                accessibilityTitle: "Storm-relative helicity meters squared per second squared",
+                value: response.effectiveSrh
+            ),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeOneDecimalRow(
+                title: "Effective bulk shear — m/s",
+                accessibilityTitle: "Effective bulk shear meters per second",
+                value: response.effectiveBulkShearMs
+            ),
+            to: &rows
+        )
+        rows.append(contentsOf: makeEffectiveLayerRows(from: response.effectiveLayer))
+        rows.append(contentsOf: makeStormMotionRows(from: response.stormMotion))
+
+        guard rows.isEmpty == false else {
+            return ([], nil)
+        }
+
+        let noteText = response.quality?.warnings?.contains(where: { $0.trimmedNonEmpty != nil }) == true
+            ? "Some profile details are limited."
             : nil
 
         return (rows, noteText)
@@ -299,6 +366,190 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
 
     private static func row(title: String, value: String) -> Row {
         Row(title: title, value: value, accessibilityLabel: "\(title). \(value).")
+    }
+
+    private static func makeEffectiveLayerRows(from layer: StormSetupProfileAnalysisDTO.EffectiveLayer?) -> [Row] {
+        guard let layer else { return [] }
+
+        let status = layer.status?.trimmedNonEmpty?.lowercased()
+        if status == "found" {
+            var rows: [Row] = []
+            rows.append(contentsOf: makeBoundRows(
+                baseTitle: "Effective layer height",
+                boundsTitle: "Effective layer height bounds",
+                baseValue: layer.baseMetersAgl,
+                topValue: layer.topMetersAgl,
+                unit: "m AGL",
+                accessibilityUnit: "meters above ground level"
+            ))
+            rows.append(contentsOf: makeBoundRows(
+                baseTitle: "Effective layer pressure",
+                boundsTitle: "Effective layer pressure bounds",
+                baseValue: layer.basePressureMb,
+                topValue: layer.topPressureMb,
+                unit: "mb",
+                accessibilityUnit: "millibars"
+            ))
+            return rows
+        }
+
+        if status == "notfound" {
+            return [Row(
+                title: "Effective layer",
+                value: "Not identified",
+                accessibilityLabel: "Effective layer. Not identified."
+            )]
+        }
+
+        return []
+    }
+
+    private static func makeBoundRows(
+        baseTitle: String,
+        boundsTitle: String,
+        baseValue: Double?,
+        topValue: Double?,
+        unit: String,
+        accessibilityUnit: String
+    ) -> [Row] {
+        let base = formattedWholeValue(baseValue)
+        let top = formattedWholeValue(topValue)
+
+        switch (base, top) {
+        case let (base?, top?):
+            return [Row(
+                title: boundsTitle,
+                value: "\(base)–\(top) \(unit)",
+                accessibilityLabel: "\(boundsTitle). \(base) to \(top) \(accessibilityUnit)."
+            )]
+        case let (base?, nil):
+            return [Row(
+                title: "\(baseTitle) base",
+                value: "\(base) \(unit)",
+                accessibilityLabel: "\(baseTitle) base. \(base) \(accessibilityUnit)."
+            )]
+        case let (nil, top?):
+            return [Row(
+                title: "\(baseTitle) top",
+                value: "\(top) \(unit)",
+                accessibilityLabel: "\(baseTitle) top. \(top) \(accessibilityUnit)."
+            )]
+        case (nil, nil):
+            return []
+        }
+    }
+
+    private static func makeStormMotionRows(from stormMotion: StormSetupProfileAnalysisDTO.StormMotion?) -> [Row] {
+        guard let stormMotion, let bunkersRight = stormMotion.bunkersRight else {
+            return []
+        }
+
+        let speed = formattedWholeValue(bunkersRight.speedKt)
+        let direction = formattedWholeValue(bunkersRight.directionTowardDeg)
+
+        switch (speed, direction) {
+        case let (speed?, direction?):
+            return [Row(
+                title: "Bunkers-right storm motion",
+                value: "\(speed) kt toward \(direction)°",
+                accessibilityLabel: "Bunkers-right storm motion. \(speed) knots toward \(direction) degrees."
+            )]
+        case let (speed?, nil):
+            return [Row(
+                title: "Bunkers-right storm motion speed",
+                value: "\(speed) kt",
+                accessibilityLabel: "Bunkers-right storm motion speed. \(speed) knots."
+            )]
+        case let (nil, direction?):
+            return [Row(
+                title: "Bunkers-right storm motion direction",
+                value: "toward \(direction)°",
+                accessibilityLabel: "Bunkers-right storm motion direction. Toward \(direction) degrees."
+            )]
+        case (nil, nil):
+            return []
+        }
+    }
+
+    private static func formattedWholeValue(_ value: Double?) -> String? {
+        guard let value, value.isFinite else { return nil }
+
+        let rounded = value.rounded(.toNearestOrAwayFromZero)
+        let normalized = rounded == 0 ? 0 : rounded
+        return normalized.formatted(.number)
+    }
+
+    private static func formattedOneDecimalValue(_ value: Double?) -> String? {
+        guard let value, value.isFinite else { return nil }
+
+        if value == 0 {
+            return "0"
+        }
+
+        let rounded = (value * 10).rounded(.toNearestOrAwayFromZero) / 10
+        if rounded == 0 {
+            return value.formatted(.number.precision(.significantDigits(1...2)))
+        }
+
+        let normalized = rounded == 0 ? 0 : rounded
+        return normalized.formatted(.number.precision(.fractionLength(1)))
+    }
+
+    private static func formattedCompositeValue(_ value: Double?) -> String? {
+        guard let value, value.isFinite else { return nil }
+
+        if value == 0 {
+            return "0"
+        }
+
+        let rounded = (value * 10).rounded(.toNearestOrAwayFromZero) / 10
+        if rounded == 0 {
+            return value.formatted(.number.precision(.significantDigits(1...2)))
+        }
+
+        let normalized = rounded == 0 ? 0 : rounded
+        return normalized.formatted(.number.precision(.fractionLength(1)))
+    }
+
+    private static func makeCompositeRow(
+        title: String,
+        accessibilityTitle: String,
+        value: Double?
+    ) -> Row? {
+        guard let formatted = formattedCompositeValue(value) else {
+            return nil
+        }
+
+        return Row(title: title, value: formatted, accessibilityLabel: "\(accessibilityTitle). \(formatted).")
+    }
+
+    private static func makeWholeRow(
+        title: String,
+        accessibilityTitle: String,
+        value: Double?
+    ) -> Row? {
+        guard let formatted = formattedWholeValue(value) else {
+            return nil
+        }
+
+        return Row(title: title, value: formatted, accessibilityLabel: "\(accessibilityTitle). \(formatted).")
+    }
+
+    private static func makeOneDecimalRow(
+        title: String,
+        accessibilityTitle: String,
+        value: Double?
+    ) -> Row? {
+        guard let formatted = formattedOneDecimalValue(value) else {
+            return nil
+        }
+
+        return Row(title: title, value: formatted, accessibilityLabel: "\(accessibilityTitle). \(formatted).")
+    }
+
+    private static func appendIfPresent(_ row: Row?, to rows: inout [Row]) {
+        guard let row else { return }
+        rows.append(row)
     }
 
     private static let modelGuidanceBody = """

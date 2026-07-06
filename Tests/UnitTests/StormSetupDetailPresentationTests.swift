@@ -256,6 +256,608 @@ struct StormSetupDetailPresentationTests {
         )
 
         #expect(withoutSupplementalData.summaryPresentation == withSupplementalData.summaryPresentation)
+        #expect(withoutSupplementalData.ingredientRows == withSupplementalData.ingredientRows)
+        #expect(withoutSupplementalData.advancedRows == withSupplementalData.advancedRows)
+    }
+
+    @Test("profile analysis is suppressed when Detailed Ingredients are disabled")
+    func profileAnalysisIsSuppressedWhenDetailedIngredientsAreDisabled() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.isEmpty)
+        #expect(presentation.profileAnalysisNoteText == nil)
+    }
+
+    @Test("missing profile analysis response yields no section")
+    func missingProfileAnalysisResponseYieldsNoSection() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.isEmpty)
+        #expect(presentation.profileAnalysisNoteText == nil)
+    }
+
+    @Test("rich profile analysis rows are ordered and formatted")
+    func richProfileAnalysisRowsAreOrderedAndFormatted() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.title) == [
+            "SCP",
+            "STP — fixed",
+            "STP — CIN-adjusted",
+            "SHIP",
+            "Effective SRH — m²/s²",
+            "Effective bulk shear — m/s",
+            "Effective layer height bounds",
+            "Effective layer pressure bounds",
+            "Bunkers-right storm motion"
+        ])
+        #expect(presentation.profileAnalysisRows.map(\.value) == [
+            "0.7",
+            "1.2",
+            "0.9",
+            "2.1",
+            "135",
+            "24.5",
+            "850–1,800 m AGL",
+            "915–750 mb",
+            "18 kt toward 215°"
+        ])
+        #expect(presentation.profileAnalysisNoteText == "Some profile details are limited.")
+    }
+
+    @Test("sparse profile analysis keeps only displayable values")
+    func sparseProfileAnalysisKeepsOnlyDisplayableValues() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                scp: nil,
+                stpFixed: nil,
+                stpCin: 0.25,
+                ship: nil,
+                effectiveSrh: nil,
+                effectiveBulkShearMs: 11.2,
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: nil,
+                    topPressureMb: 775,
+                    baseMetersAgl: nil,
+                    topMetersAgl: 1_721
+                ),
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: .init(
+                        uMs: nil,
+                        vMs: nil,
+                        speedMs: nil,
+                        uKt: nil,
+                        vKt: nil,
+                        speedKt: 28.2,
+                        directionTowardDeg: nil
+                    ),
+                    uMs: 1,
+                    vMs: 1,
+                    speedMs: 1,
+                    uKt: 1,
+                    vKt: 1,
+                    speedKt: 1,
+                    directionTowardDeg: 1
+                ),
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.title) == [
+            "STP — CIN-adjusted",
+            "Effective bulk shear — m/s",
+            "Effective layer height top",
+            "Effective layer pressure top",
+            "Bunkers-right storm motion speed"
+        ])
+        #expect(presentation.profileAnalysisRows.map(\.value) == [
+            "0.3",
+            "11.2",
+            "1,721 m AGL",
+            "775 mb",
+            "28 kt"
+        ])
+    }
+
+    @Test("missing profile analysis fields are omitted independently")
+    func missingProfileAnalysisFieldsAreOmittedIndependently() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                scp: 0.6,
+                stpFixed: nil,
+                stpCin: 0.4,
+                ship: nil,
+                effectiveSrh: 101,
+                effectiveBulkShearMs: nil,
+                effectiveLayer: nil,
+                stormMotion: nil,
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.title) == [
+            "SCP",
+            "STP — CIN-adjusted",
+            "Effective SRH — m²/s²"
+        ])
+        #expect(presentation.profileAnalysisRows.map(\.value) == [
+            "0.6",
+            "0.4",
+            "101"
+        ])
+    }
+
+    @Test("meaningful zeros are preserved")
+    func meaningfulZerosArePreserved() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                scp: 0,
+                stpFixed: 0,
+                stpCin: 0,
+                ship: 0,
+                effectiveSrh: 0,
+                effectiveBulkShearMs: 0,
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: 0,
+                    topPressureMb: 0,
+                    baseMetersAgl: 0,
+                    topMetersAgl: 0
+                ),
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: .init(
+                        uMs: nil,
+                        vMs: nil,
+                        speedMs: nil,
+                        uKt: nil,
+                        vKt: nil,
+                        speedKt: 0,
+                        directionTowardDeg: 0
+                    ),
+                    uMs: nil,
+                    vMs: nil,
+                    speedMs: nil,
+                    uKt: nil,
+                    vKt: nil,
+                    speedKt: nil,
+                    directionTowardDeg: nil
+                ),
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.value) == [
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0",
+            "0–0 m AGL",
+            "0–0 mb",
+            "0 kt toward 0°"
+        ])
+    }
+
+    @Test("negative zero is normalized to zero")
+    func negativeZeroIsNormalizedToZero() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                scp: -0.0,
+                stpFixed: -0.0,
+                stpCin: -0.0,
+                ship: -0.0,
+                effectiveSrh: -0.0,
+                effectiveBulkShearMs: -0.0,
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: -0.0,
+                    topPressureMb: -0.0,
+                    baseMetersAgl: -0.0,
+                    topMetersAgl: -0.0
+                ),
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: .init(
+                        uMs: nil,
+                        vMs: nil,
+                        speedMs: nil,
+                        uKt: nil,
+                        vKt: nil,
+                        speedKt: -0.0,
+                        directionTowardDeg: -0.0
+                    ),
+                    uMs: nil,
+                    vMs: nil,
+                    speedMs: nil,
+                    uKt: nil,
+                    vKt: nil,
+                    speedKt: nil,
+                    directionTowardDeg: nil
+                ),
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.allSatisfy { $0.value.contains("-0") == false })
+    }
+
+    @Test("non-finite values are omitted")
+    func nonFiniteValuesAreOmitted() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                scp: .nan,
+                stpFixed: .infinity,
+                stpCin: -.infinity,
+                ship: nil,
+                effectiveSrh: .nan,
+                effectiveBulkShearMs: .infinity,
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: .nan,
+                    topPressureMb: .infinity,
+                    baseMetersAgl: -.infinity,
+                    topMetersAgl: nil
+                ),
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: .init(
+                        uMs: nil,
+                        vMs: nil,
+                        speedMs: nil,
+                        uKt: nil,
+                        vKt: nil,
+                        speedKt: .nan,
+                        directionTowardDeg: .infinity
+                    ),
+                    uMs: nil,
+                    vMs: nil,
+                    speedMs: nil,
+                    uKt: nil,
+                    vKt: nil,
+                    speedKt: nil,
+                    directionTowardDeg: nil
+                ),
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.isEmpty)
+    }
+
+    @Test("tiny nonzero composite remains visibly nonzero")
+    func tinyNonzeroCompositeRemainsVisiblyNonzero() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(scp: 0.04),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.first?.value != "0")
+        #expect(presentation.profileAnalysisRows.first?.value == "0.04")
+    }
+
+    @Test("fixed and CIN-adjusted STP rows use distinct labels")
+    func fixedAndCinAdjustedSTPRowsUseDistinctLabels() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.title).contains("STP — fixed"))
+        #expect(presentation.profileAnalysisRows.map(\.title).contains("STP — CIN-adjusted"))
+    }
+
+    @Test("complete effective layer bounds render compact ranges")
+    func completeEffectiveLayerBoundsRenderCompactRanges() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: 946,
+                    topPressureMb: 775,
+                    baseMetersAgl: 0,
+                    topMetersAgl: 1_721
+                )
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Effective layer height bounds" && $0.value == "0–1,721 m AGL" }))
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Effective layer pressure bounds" && $0.value == "946–775 mb" }))
+    }
+
+    @Test("partial effective layer bounds are labeled explicitly")
+    func partialEffectiveLayerBoundsAreLabeledExplicitly() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                effectiveLayer: .init(
+                    status: "found",
+                    basePressureMb: nil,
+                    topPressureMb: 775,
+                    baseMetersAgl: 0,
+                    topMetersAgl: nil
+                )
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.title) == [
+            "SCP",
+            "STP — fixed",
+            "STP — CIN-adjusted",
+            "SHIP",
+            "Effective SRH — m²/s²",
+            "Effective bulk shear — m/s",
+            "Effective layer height base",
+            "Effective layer pressure top",
+            "Bunkers-right storm motion"
+        ])
+    }
+
+    @Test("notFound effective layer uses a calm fallback row")
+    func notFoundEffectiveLayerUsesCalmFallbackRow() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                scp: nil,
+                stpFixed: nil,
+                stpCin: nil,
+                ship: nil,
+                effectiveSrh: nil,
+                effectiveBulkShearMs: nil,
+                effectiveLayer: .init(
+                    status: "notFound",
+                    basePressureMb: nil,
+                    topPressureMb: nil,
+                    baseMetersAgl: nil,
+                    topMetersAgl: nil
+                ),
+                stormMotion: nil,
+                quality: .init(profileLevelCount: nil, warnings: nil)
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows == [
+            .init(
+                title: "Effective layer",
+                value: "Not identified",
+                accessibilityLabel: "Effective layer. Not identified."
+            )
+        ])
+    }
+
+    @Test("unknown effective-layer status is not displayed verbatim")
+    func unknownEffectiveLayerStatusIsNotDisplayedVerbatim() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                effectiveLayer: .init(
+                    status: "mystery",
+                    basePressureMb: 946,
+                    topPressureMb: 775,
+                    baseMetersAgl: 0,
+                    topMetersAgl: 1_721
+                )
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.map(\.title).contains("Effective layer") == false)
+        #expect(presentation.profileAnalysisRows.map(\.value).contains("mystery") == false)
+    }
+
+    @Test("complete Bunkers-right motion renders speed and direction together")
+    func completeBunkersRightMotionRendersSpeedAndDirectionTogether() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: .init(
+                        uMs: 8.4,
+                        vMs: -4.2,
+                        speedMs: 9.4,
+                        uKt: 16.3,
+                        vKt: -8.2,
+                        speedKt: 18.3,
+                        directionTowardDeg: 215
+                    ),
+                    uMs: 6.2,
+                    vMs: -2.4,
+                    speedMs: 6.6,
+                    uKt: 12.1,
+                    vKt: -4.7,
+                    speedKt: 12.8,
+                    directionTowardDeg: 201
+                )
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion" && $0.value == "18 kt toward 215°" }))
+    }
+
+    @Test("partial storm motion data renders the available component only")
+    func partialStormMotionDataRendersAvailableComponentOnly() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: .init(
+                        uMs: nil,
+                        vMs: nil,
+                        speedMs: nil,
+                        uKt: nil,
+                        vKt: nil,
+                        speedKt: 28,
+                        directionTowardDeg: nil
+                    ),
+                    uMs: 6.2,
+                    vMs: -2.4,
+                    speedMs: 6.6,
+                    uKt: 12.1,
+                    vKt: -4.7,
+                    speedKt: 12.8,
+                    directionTowardDeg: 201
+                )
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion speed" && $0.value == "28 kt" }))
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion direction" }) == false)
+    }
+
+    @Test("U/V storm motion components stay hidden")
+    func uvStormMotionComponentsStayHidden() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                stormMotion: .init(
+                    status: "found",
+                    bunkersRight: nil,
+                    uMs: 6.2,
+                    vMs: -2.4,
+                    speedMs: 6.6,
+                    uKt: 12.1,
+                    vKt: -4.7,
+                    speedKt: 12.8,
+                    directionTowardDeg: 201
+                )
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title.contains("storm motion") }) == false)
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.value.contains("12.1") || $0.value.contains("-2.4") }) == false)
+    }
+
+    @Test("empty profile warnings produce no note")
+    func emptyProfileWarningsProduceNoNote() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                quality: .init(profileLevelCount: 36, warnings: [])
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows.isEmpty == false)
+        #expect(presentation.profileAnalysisNoteText == nil)
+    }
+
+    @Test("nonempty profile warnings produce only the generic note")
+    func nonemptyProfileWarningsProduceOnlyTheGenericNote() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(
+                quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
+            ),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisNoteText == "Some profile details are limited.")
+        #expect(presentation.profileAnalysisNoteText?.contains("profile trimmed") == false)
+    }
+
+    @Test("legacy ingredients are not duplicated in profile analysis")
+    func legacyIngredientsAreNotDuplicatedInProfileAnalysis() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        let titles = presentation.profileAnalysisRows.map(\.title)
+        #expect(titles.contains("MLCAPE") == false)
+        #expect(titles.contains("MUCAPE") == false)
+        #expect(titles.contains("MLCIN") == false)
+        #expect(titles.contains("MLLCL") == false)
+    }
+
+    @Test("accessibility labels expand acronyms and units")
+    func accessibilityLabelsExpandAcronymsAndUnits() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(),
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.profileAnalysisRows[0].accessibilityLabel == "Supercell composite parameter. 0.7.")
+        #expect(presentation.profileAnalysisRows[4].accessibilityLabel == "Storm-relative helicity meters squared per second squared. 135.")
+        #expect(presentation.profileAnalysisRows.last?.accessibilityLabel == "Bunkers-right storm motion. 18 knots toward 215 degrees.")
     }
 
     @Test("presentation omits raw transport details and warning strings")
@@ -386,46 +988,61 @@ private func makeDTO(
 }
 
 private func makeProfileAnalysisResponse(
-    mlcape: Double? = 1_850
+    mlcape: Double? = 1_850,
+    mucape: Double? = 2_200.5,
+    mlcin: Double? = -42,
+    mllclMetersAgl: Double? = 980,
+    scp: Double? = 0.7,
+    stpFixed: Double? = 1.2,
+    stpCin: Double? = 0.9,
+    ship: Double? = 2.1,
+    effectiveSrh: Double? = 135,
+    effectiveBulkShearMs: Double? = 24.5,
+    effectiveLayer: StormSetupProfileAnalysisDTO.EffectiveLayer? = .init(
+        status: "found",
+        basePressureMb: 915,
+        topPressureMb: 750,
+        baseMetersAgl: 850,
+        topMetersAgl: 1_800
+    ),
+    stormMotion: StormSetupProfileAnalysisDTO.StormMotion? = .init(
+        status: "found",
+        bunkersRight: .init(
+            uMs: 8.4,
+            vMs: -4.2,
+            speedMs: 9.4,
+            uKt: 16.3,
+            vKt: -8.2,
+            speedKt: 18.3,
+            directionTowardDeg: 215
+        ),
+        uMs: 6.2,
+        vMs: -2.4,
+        speedMs: 6.6,
+        uKt: 12.1,
+        vKt: -4.7,
+        speedKt: 12.8,
+        directionTowardDeg: 201
+    ),
+    quality: StormSetupProfileAnalysisDTO.Quality? = .init(
+        profileLevelCount: 36,
+        warnings: ["profile trimmed", "debug ignored"]
+    )
 ) -> StormSetupProfileAnalysisDTO.Response {
     StormSetupProfileAnalysisDTO.Response(
         mlcape: mlcape,
-        mucape: 2_200.5,
-        mlcin: -42,
-        mllclMetersAgl: 980,
-        scp: 0.7,
-        stpFixed: 1.2,
-        stpCin: 0.9,
-        ship: 2.1,
-        effectiveSrh: 135,
-        effectiveBulkShearMs: 24.5,
-        effectiveLayer: .init(
-            status: "available",
-            basePressureMb: 915,
-            topPressureMb: 750,
-            baseMetersAgl: 850,
-            topMetersAgl: 1_800
-        ),
-        stormMotion: .init(
-            status: "available",
-            bunkersRight: .init(
-                uMs: 8.4,
-                vMs: -4.2,
-                speedMs: 9.4,
-                uKt: 16.3,
-                vKt: -8.2,
-                speedKt: 18.3,
-                directionTowardDeg: 215
-            ),
-            uMs: 6.2,
-            vMs: -2.4,
-            speedMs: 6.6,
-            uKt: 12.1,
-            vKt: -4.7,
-            speedKt: 12.8,
-            directionTowardDeg: 201
-        ),
-        quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
+        mucape: mucape,
+        mlcin: mlcin,
+        mllclMetersAgl: mllclMetersAgl,
+        scp: scp,
+        stpFixed: stpFixed,
+        stpCin: stpCin,
+        ship: ship,
+        effectiveSrh: effectiveSrh,
+        effectiveBulkShearMs: effectiveBulkShearMs,
+        effectiveLayer: effectiveLayer,
+        stormMotion: stormMotion,
+        quality: quality
     )
 }
 

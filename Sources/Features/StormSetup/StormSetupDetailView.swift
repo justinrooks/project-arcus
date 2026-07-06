@@ -37,6 +37,10 @@ struct StormSetupDetailView: View {
                 if presentation.advancedRows.isEmpty == false {
                     advancedCard
                 }
+
+                if presentation.profileAnalysisRows.isEmpty == false {
+                    profileAnalysisCard
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -159,6 +163,29 @@ struct StormSetupDetailView: View {
             }
         }
         .accessibilityIdentifier("storm-setup-advanced-details")
+    }
+
+    private var profileAnalysisCard: some View {
+        sectionCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Profile Analysis")
+                    .font(.headline)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(presentation.profileAnalysisRows) { row in
+                        StormSetupDetailRowView(row: row)
+                    }
+                }
+
+                if let profileAnalysisNoteText = presentation.profileAnalysisNoteText {
+                    Text(profileAnalysisNoteText)
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .accessibilityIdentifier("storm-setup-profile-analysis")
     }
 
     private func textCard(title: String, values: [String]) -> some View {
@@ -296,6 +323,7 @@ private struct StormSetupGuidanceSheet: View {
                 dto: StormSetupDetailPreviewData.advancedDTO,
                 preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
                 forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+                profileAnalysisResponse: StormSetupDetailPreviewData.richProfileAnalysisResponse,
                 now: StormSetupDetailPreviewData.now
             )
         )
@@ -303,13 +331,14 @@ private struct StormSetupGuidanceSheet: View {
     }
 }
 
-#Preview("Partial payload") {
+#Preview("Sparse profile analysis") {
     NavigationStack {
         StormSetupDetailView(
             presentation: StormSetupDetailPresentation(
                 dto: StormSetupDetailPreviewData.partialDTO,
                 preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
                 forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+                profileAnalysisResponse: StormSetupDetailPreviewData.sparseProfileAnalysisResponse,
                 now: StormSetupDetailPreviewData.now
             )
         )
@@ -337,6 +366,7 @@ private struct StormSetupGuidanceSheet: View {
                 dto: StormSetupDetailPreviewData.advancedDTO,
                 preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
                 forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+                profileAnalysisResponse: StormSetupDetailPreviewData.richProfileAnalysisResponse,
                 now: StormSetupDetailPreviewData.now
             )
         )
@@ -427,6 +457,46 @@ private enum StormSetupDetailPreviewData {
         anvilEvidence: nil
     )
 
+    static let richProfileAnalysisResponse = makeProfileAnalysisResponse(
+        quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
+    )
+
+    static let sparseProfileAnalysisResponse = makeProfileAnalysisResponse(
+        scp: nil,
+        stpFixed: nil,
+        stpCin: 0.25,
+        ship: nil,
+        effectiveSrh: nil,
+        effectiveBulkShearMs: 11.2,
+        effectiveLayer: .init(
+            status: "found",
+            basePressureMb: nil,
+            topPressureMb: 775,
+            baseMetersAgl: nil,
+            topMetersAgl: 1_721
+        ),
+        stormMotion: .init(
+            status: "found",
+            bunkersRight: .init(
+                uMs: nil,
+                vMs: nil,
+                speedMs: nil,
+                uKt: nil,
+                vKt: nil,
+                speedKt: 28.2,
+                directionTowardDeg: nil
+            ),
+            uMs: nil,
+            vMs: nil,
+            speedMs: nil,
+            uKt: nil,
+            vKt: nil,
+            speedKt: nil,
+            directionTowardDeg: nil
+        ),
+        quality: .init(profileLevelCount: nil, warnings: nil)
+    )
+
     private static func makeDTO(
         summary: String?,
         overall: String,
@@ -490,6 +560,65 @@ private enum StormSetupDetailPreviewData {
             anvilEvidence: anvilEvidence,
             centroid: .init(latitude: 39.5, longitude: -100.0),
             surfaceHeightMslM: 1132.4
+        )
+    }
+
+    private static func makeProfileAnalysisResponse(
+        mlcape: Double? = 1_850,
+        mucape: Double? = 2_200.5,
+        mlcin: Double? = -42,
+        mllclMetersAgl: Double? = 980,
+        scp: Double? = 0.7,
+        stpFixed: Double? = 1.2,
+        stpCin: Double? = 0.9,
+        ship: Double? = 2.1,
+        effectiveSrh: Double? = 135,
+        effectiveBulkShearMs: Double? = 24.5,
+        effectiveLayer: StormSetupProfileAnalysisDTO.EffectiveLayer? = .init(
+            status: "found",
+            basePressureMb: 915,
+            topPressureMb: 750,
+            baseMetersAgl: 850,
+            topMetersAgl: 1_800
+        ),
+        stormMotion: StormSetupProfileAnalysisDTO.StormMotion? = .init(
+            status: "found",
+            bunkersRight: .init(
+                uMs: 8.4,
+                vMs: -4.2,
+                speedMs: 9.4,
+                uKt: 16.3,
+                vKt: -8.2,
+                speedKt: 18.3,
+                directionTowardDeg: 215
+            ),
+            uMs: 6.2,
+            vMs: -2.4,
+            speedMs: 6.6,
+            uKt: 12.1,
+            vKt: -4.7,
+            speedKt: 12.8,
+            directionTowardDeg: 201
+        ),
+        quality: StormSetupProfileAnalysisDTO.Quality? = .init(
+            profileLevelCount: 36,
+            warnings: ["profile trimmed", "debug ignored"]
+        )
+    ) -> StormSetupProfileAnalysisDTO.Response {
+        StormSetupProfileAnalysisDTO.Response(
+            mlcape: mlcape,
+            mucape: mucape,
+            mlcin: mlcin,
+            mllclMetersAgl: mllclMetersAgl,
+            scp: scp,
+            stpFixed: stpFixed,
+            stpCin: stpCin,
+            ship: ship,
+            effectiveSrh: effectiveSrh,
+            effectiveBulkShearMs: effectiveBulkShearMs,
+            effectiveLayer: effectiveLayer,
+            stormMotion: stormMotion,
+            quality: quality
         )
     }
 }
