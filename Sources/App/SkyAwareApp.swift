@@ -275,7 +275,10 @@ private extension SkyAwareApp {
     static let activationCleanupMinimumInterval: TimeInterval = 60 * 60
 
     func scheduleActivationCleanupIfNeeded(now: Date = .now) {
-        guard shouldRunActivationCleanup(now: now) else {
+        guard ActivationCleanupThrottle.shouldRun(
+            lastRunAt: activationCleanupLastRunAt,
+            now: now
+        ) else {
             logger.debug("Skipping activation cleanup; last run was within the minimum interval")
             return
         }
@@ -295,12 +298,6 @@ private extension SkyAwareApp {
             // Keep app-level activation work focused on cleanup/scheduling.
             logger.info("Activation cleanup finished; HomeView will drive foreground data refresh")
         }
-    }
-
-    func shouldRunActivationCleanup(now: Date) -> Bool {
-        guard activationCleanupLastRunAt > 0 else { return true }
-        let lastRun = Date(timeIntervalSinceReferenceDate: activationCleanupLastRunAt)
-        return now.timeIntervalSince(lastRun) >= Self.activationCleanupMinimumInterval
     }
 
     @MainActor
@@ -677,6 +674,16 @@ private func uiTestDate(_ value: String) -> Date {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
     return formatter.date(from: value)!
+}
+
+enum ActivationCleanupThrottle {
+    static let minimumInterval: TimeInterval = 60 * 60
+
+    static func shouldRun(lastRunAt: Double, now: Date) -> Bool {
+        guard lastRunAt > 0 else { return true }
+        let lastRun = Date(timeIntervalSinceReferenceDate: lastRunAt)
+        return now.timeIntervalSince(lastRun) >= minimumInterval
+    }
 }
 
 enum LaunchPresentationState: Identifiable, Equatable {
