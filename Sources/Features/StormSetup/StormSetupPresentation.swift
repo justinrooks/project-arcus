@@ -5,6 +5,7 @@
 //  Created by OpenAI Codex.
 //
 
+import ArcusCore
 import Foundation
 
 enum SummarySectionKind: String, Identifiable, Sendable, Equatable {
@@ -86,6 +87,54 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
     let accessibilityValue: String
     let accessibilityHint: String
 
+    init(response: StormSetupCurrentResponse, timeZone: TimeZone, now: Date = .now) {
+        overallTitle = Self.readableTitle(for: response.tornadoViability.overall)
+        summaryProse = response.tornadoViability.summary
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nilIfEmpty
+        ingredientRows = [
+            .init(
+                kind: .instability,
+                title: "Instability",
+                value: Self.readableSignal(response.tornadoViability.details.instability)
+            ),
+            .init(
+                kind: .rotation,
+                title: "Rotation",
+                value: Self.readableSignal(response.tornadoViability.details.lowLevelRotation)
+            ),
+            .init(
+                kind: .cloudBases,
+                title: "Cloud bases",
+                value: Self.readableCloudBase(response.tornadoViability.details.cloudBase)
+            )
+        ]
+        limiterText = Self.firstMeaningfulLimiter(from: response.tornadoViability.limitingFactors)
+        freshnessText = Self.freshnessCopy(
+            isStale: response.setup.freshness.isStale,
+            isDegraded: response.setup.freshness.isDegraded
+        )
+        sourceLine = Self.sourceLine(
+            model: response.setup.source.model?.rawValue,
+            validTime: response.setup.source.validTime,
+            timeZone: timeZone,
+            now: now
+        )
+
+        let accessibilityParts = [
+            overallTitle,
+            summaryProse,
+            ingredientRows.map { "\($0.title): \($0.value)" }.joined(separator: ". "),
+            limiterText.map { "Limiter: \($0)" },
+            freshnessText,
+            sourceLine
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+
+        accessibilityLabel = "Storm Setup"
+        accessibilityValue = accessibilityParts.joined(separator: ". ")
+        accessibilityHint = "Opens Storm Setup details."
+    }
+
     init(dto: StormSetupDTO, timeZone: TimeZone, now: Date = .now) {
         let assessment = StormSetupAssessment(dto: dto)
 
@@ -151,7 +200,37 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         }
     }
 
+    static func readableTitle(for signal: IngredientSupport) -> String {
+        switch signal {
+        case .supportive:
+            "Supportive Setup"
+        case .strong:
+            "Strong Setup"
+        case .conditional:
+            "Conditional Setup"
+        case .weak:
+            "Weak Setup"
+        case .unknown:
+            "Unavailable"
+        }
+    }
+
     static func readableSignal(_ signal: StormSetupSignal) -> String {
+        switch signal {
+        case .supportive:
+            "Supportive"
+        case .strong:
+            "Strong"
+        case .conditional:
+            "Conditional"
+        case .weak:
+            "Weak"
+        case .unknown:
+            "Unavailable"
+        }
+    }
+
+    static func readableSignal(_ signal: IngredientSupport) -> String {
         switch signal {
         case .supportive:
             "Supportive"
@@ -179,10 +258,58 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         }
     }
 
+    static func readableCloudBase(_ signal: IngredientSupport) -> String {
+        switch signal {
+        case .supportive, .strong:
+            "Low"
+        case .conditional:
+            "Mixed"
+        case .weak:
+            "High"
+        case .unknown:
+            "Unavailable"
+        }
+    }
+
     private static func firstMeaningfulLimiter(from factors: [String]) -> String? {
         factors
             .compactMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
             .first
+    }
+
+    private static func firstMeaningfulLimiter(from factors: [TornadoViabilityLimiter]) -> String? {
+        factors
+            .map(readableLimiter(_:))
+            .first
+    }
+
+    static func readableLimiter(_ limiter: TornadoViabilityLimiter) -> String {
+        switch limiter {
+        case .weakInstability:
+            "Weak instability"
+        case .weakDeepShear:
+            "Weak deep shear"
+        case .weakLowLevelRotation:
+            "Weak low-level rotation"
+        case .weakLowLevelStretching:
+            "Weak low-level stretching"
+        case .elevatedCloudBases:
+            "Elevated cloud bases"
+        case .strongCap:
+            "Strong cap"
+        case .conditionalInitiation:
+            "Conditional initiation"
+        case .weakStormOrganization:
+            "Weak storm organization"
+        case .fixedEffectiveStpDisagreement:
+            "Fixed effective STP disagreement"
+        case .poorMoisture:
+            "Poor moisture"
+        case .missingStormMode:
+            "Missing storm mode"
+        case .unknown:
+            "Unavailable"
+        }
     }
 
     private static func freshnessCopy(isStale: Bool, isDegraded: Bool) -> String? {

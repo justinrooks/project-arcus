@@ -1,10 +1,50 @@
 #if canImport(Testing)
+import ArcusCore
 import Foundation
 import Testing
 @testable import SkyAware
 
 @Suite("Storm Setup Presentation")
 struct StormSetupPresentationTests {
+    @Test("ArcusCore support values and limiter copy render cleanly")
+    func arcusCoreSupportValuesAndLimiterCopyRenderCleanly() {
+        let presentation = StormSetupSummaryPresentation(
+            response: makeCurrentResponse(
+                tornadoViability: .init(
+                    overall: .supportive,
+                    realization: .realized,
+                    primaryFailureMode: .none,
+                    confidence: .moderate,
+                    summary: "Supportive setup.",
+                    details: .init(
+                        stormViability: .supportive,
+                        supercellViability: .strong,
+                        tornadoEfficiency: .supportive,
+                        inhibition: .weak,
+                        instability: .supportive,
+                        moisture: .strong,
+                        cloudBase: .weak,
+                        deepShear: .strong,
+                        lowLevelRotation: .conditional,
+                        lowLevelStretching: .supportive,
+                        cloudBaseEfficiency: .supportive,
+                        supercellComposite: .strong,
+                        tornadoComposite: .supportive,
+                        stormMode: .conditional
+                    ),
+                    limitingFactors: [.strongCap, .poorMoisture]
+                )
+            ),
+            timeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T18:00:00Z")
+        )
+
+        #expect(presentation.overallTitle == "Supportive Setup")
+        #expect(presentation.ingredientRows.map(\.value) == ["Supportive", "Conditional", "High"])
+        #expect(presentation.limiterText == "Strong cap")
+        #expect(presentation.accessibilityValue.contains("Strong cap"))
+    }
+
     @Test("maps signals to readable ingredient text")
     func mapsSignalsToReadableIngredientText() {
         let presentation = StormSetupSummaryPresentation(
@@ -144,6 +184,135 @@ struct StormSetupPresentationTests {
             "Guidance summary unavailable."
         ])
     }
+}
+
+private func makeCurrentResponse(
+    setup: StormSetupCurrentSetupResponse = .init(
+        h3Cell: 8_623_451_234_567_890,
+        centroid: .init(latitude: 39.5, longitude: -100.0),
+        source: .init(
+            model: .hrrr,
+            product: .wrfsfc,
+            domain: .conus,
+            runTime: date("2026-06-01T18:00:00Z"),
+            forecastHour: 3,
+            validTime: date("2026-06-01T21:00:00Z"),
+            fieldSetVersion: .tornadoV1,
+            bbox: .init(leftlon: -104.3, rightlon: -96.2, toplat: 41.5, bottomlat: 36.8),
+            primaryDownloadURL: URL(string: "https://example.invalid/storm-setup"),
+            idxURL: nil
+        ),
+        surfaceHeightMslM: 1132.4,
+        freshness: .init(
+            sourceValidTime: date("2026-06-01T21:00:00Z"),
+            modelRunTime: date("2026-06-01T18:00:00Z"),
+            forecastHour: 3,
+            fetchedAt: date("2026-06-01T21:03:00Z"),
+            expiresAt: date("2026-06-01T22:30:00Z"),
+            isStale: false,
+            isDegraded: false
+        )
+    ),
+    ingredients: StormSetupTornadoIngredientsResponse = .init(
+        canonical: .init(
+            sbcapeJkg: 1_700,
+            mlcapeJkg: 1_850,
+            mucapeJkg: 2_200.5,
+            mlcinJkg: -42,
+            dcapeJkg: nil,
+            mllclM: 980,
+            tempDewPtDeltaF: 4.5,
+            threeCapeJkg: 95,
+            lclLfcSeparationM: nil,
+            lapseRate03kmCkm: nil,
+            lapseRate700500mbCkm: nil,
+            shear06kmKt: 42,
+            shear03kmKt: 31,
+            shear01kmKt: 18,
+            effectiveShearKt: nil,
+            srh01kmM2s2: 125.5,
+            srh03kmM2s2: 175,
+            effectiveSrhM2s2: nil,
+            supercellComposite: nil,
+            significantTornadoFixed: nil,
+            significantTornadoEffective: nil,
+            significantHail: nil,
+            bunkersRightMotion: nil,
+            bunkersLeftMotion: nil,
+            stormRelativeWind46km: nil,
+            meanWind850300mb: nil,
+            diagnostics: nil,
+            effectiveBulkShearMs: nil,
+            effectiveLayer: nil,
+            stormMotion: nil
+        ),
+        diagnostics: .empty
+    ),
+    profileAnalysis: AnvilAnalyzeProfileResponse? = .init(
+        effectiveLayer: .init(
+            status: "found",
+            basePressureMb: 915,
+            topPressureMb: 750,
+            baseMetersAgl: 850,
+            topMetersAgl: 1_800
+        ),
+        stormMotion: .init(
+            status: "found",
+            bunkersRight: .init(
+                uKt: 12.0,
+                vKt: -8.0,
+                speedKt: 18.0,
+                directionTowardDeg: 215.0,
+                uMs: 6.2,
+                vMs: -4.1,
+                speedMs: 9.2
+            )
+        ),
+        mucape: 2_200.5,
+        mlcape: 1_850,
+        mlcin: -42,
+        mllclMetersAgl: 980,
+        effectiveSrh: 135,
+        effectiveBulkShearMs: 24.5,
+        scp: 0.7,
+        stpCin: 0.9,
+        stpFixed: 1.2,
+        ship: 2.1,
+        srh01km: nil,
+        srh03km: nil,
+        sbcape: nil,
+        sbcin: nil,
+        bulkShear06kmMs: nil,
+        lapserate03km: nil,
+        threeCapeJkg: nil,
+        quality: .init(profileLevelCount: 36, warnings: [])
+    ),
+    tornadoViability: TornadoViabilityReport = .init(
+        overall: .supportive,
+        realization: .realized,
+        primaryFailureMode: .none,
+        confidence: .moderate,
+        summary: "Supportive setup.",
+        details: .init(
+            stormViability: .supportive,
+            supercellViability: .strong,
+            tornadoEfficiency: .supportive,
+            inhibition: .weak,
+            instability: .supportive,
+            moisture: .strong,
+            cloudBase: .weak,
+            deepShear: .strong,
+            lowLevelRotation: .conditional,
+            lowLevelStretching: .supportive,
+            cloudBaseEfficiency: .supportive,
+            supercellComposite: .strong,
+            tornadoComposite: .supportive,
+            stormMode: .conditional
+        ),
+        limitingFactors: [.strongCap, .poorMoisture]
+    )
+) -> StormSetupCurrentResponse {
+    .init(setup: setup, ingredients: ingredients, profileAnalysis: profileAnalysis, tornadoViability: tornadoViability)
 }
 
 private func makeDTO(

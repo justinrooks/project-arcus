@@ -5,6 +5,7 @@
 //  Created by OpenAI Codex.
 //
 
+import ArcusCore
 import Foundation
 
 struct StormSetupDetailPresentation: Sendable, Equatable {
@@ -33,6 +34,57 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
     let diagnosticsNoteText: String?
     let modelGuidanceTitle: String
     let modelGuidanceBody: String
+
+    init(
+        response: StormSetupCurrentResponse,
+        preferences: StormSetupPreferences,
+        forecastLocationTimeZone: TimeZone,
+        now: Date = .now
+    ) {
+        summaryPresentation = StormSetupSummaryPresentation(
+            response: response,
+            timeZone: forecastLocationTimeZone,
+            now: now
+        )
+        profileAnalysisResponse = preferences.effectiveDetailedIngredientsEnabled
+            ? Self.legacyProfileAnalysisResponse(from: response.profileAnalysis)
+            : nil
+        assessmentTitle = StormSetupSummaryPresentation.readableTitle(for: response.tornadoViability.overall)
+        summaryText = response.tornadoViability.summary.trimmedNonEmpty
+        confidenceText = Self.confidenceText(for: response.tornadoViability.confidence)
+        ingredientRows = Self.makeIngredientRows(from: response.tornadoViability.details)
+        limitingFactors = response.tornadoViability.limitingFactors.map(StormSetupSummaryPresentation.readableLimiter)
+        primaryDrivers = []
+        provenanceHeadline = Self.provenanceHeadline(
+            model: response.setup.source.model?.rawValue,
+            runTime: response.setup.source.runTime,
+            validTime: response.setup.source.validTime,
+            forecastHour: response.setup.source.forecastHour,
+            timeZone: forecastLocationTimeZone,
+            now: now
+        )
+        updatedText = Self.updatedText(from: response.setup.freshness.fetchedAt, timeZone: forecastLocationTimeZone, now: now)
+        freshnessText = Self.freshnessText(
+            isStale: response.setup.freshness.isStale,
+            isDegraded: response.setup.freshness.isDegraded
+        )
+
+        let advanced = Self.makeAdvancedRows(
+            from: response.ingredients.canonical,
+            diagnostics: response.ingredients.diagnostics
+        )
+        advancedRows = preferences.effectiveDetailedIngredientsEnabled ? advanced.rows : []
+        diagnosticsNoteText = preferences.effectiveDetailedIngredientsEnabled ? advanced.diagnosticsNoteText : nil
+
+        let profileAnalysis = Self.makeProfileAnalysis(
+            from: preferences.effectiveDetailedIngredientsEnabled ? response.profileAnalysis : nil
+        )
+        profileAnalysisRows = profileAnalysis.rows
+        profileAnalysisNoteText = profileAnalysis.noteText
+
+        modelGuidanceTitle = "About HRRR guidance"
+        modelGuidanceBody = Self.modelGuidanceBody
+    }
 
     init(
         dto: StormSetupDTO,
@@ -95,6 +147,20 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
             row(title: "Deep shear", value: StormSetupSummaryPresentation.readableSignal(assessment.deepShear)),
             row(title: "Cloud bases", value: StormSetupSummaryPresentation.readableCloudBase(assessment.cloudBase)),
             row(title: "Cap / inhibition", value: StormSetupSummaryPresentation.readableSignal(assessment.capInhibition))
+        ]
+    }
+
+    private static func makeIngredientRows(from details: TornadoViabilityDetails) -> [Row] {
+        [
+            row(title: "Instability", value: StormSetupSummaryPresentation.readableSignal(details.instability)),
+            row(title: "Moisture", value: StormSetupSummaryPresentation.readableSignal(details.moisture)),
+            row(
+                title: "Low-level rotation",
+                value: StormSetupSummaryPresentation.readableSignal(details.lowLevelRotation)
+            ),
+            row(title: "Deep shear", value: StormSetupSummaryPresentation.readableSignal(details.deepShear)),
+            row(title: "Cloud bases", value: StormSetupSummaryPresentation.readableCloudBase(details.cloudBase)),
+            row(title: "Cap / inhibition", value: StormSetupSummaryPresentation.readableSignal(details.inhibition))
         ]
     }
 
@@ -178,6 +244,98 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         return (rows, noteText)
     }
 
+    private static func makeAdvancedRows(
+        from parameters: TornadoRawParameters,
+        diagnostics: TornadoRawParameters
+    ) -> (rows: [Row], diagnosticsNoteText: String?) {
+        var rows: [Row] = []
+        rows.appendNumericRow(title: "MLCAPE — J/kg", value: parameters.mlcapeJkg, format: .whole, accessibilityTitle: "Mixed-layer CAPE")
+        rows.appendNumericRow(title: "MUCAPE — J/kg", value: parameters.mucapeJkg, format: .whole, accessibilityTitle: "Most-unstable CAPE")
+        rows.appendNumericRow(title: "SBCAPE — J/kg", value: parameters.sbcapeJkg, format: .whole, accessibilityTitle: "Surface-based CAPE")
+        rows.appendNumericRow(title: "MLCIN — J/kg", value: parameters.mlcinJkg, format: .whole, accessibilityTitle: "Mixed-layer CIN")
+        rows.appendNumericRow(title: "0–1 km SRH — m²/s²", value: parameters.srh01kmM2s2, format: .whole, accessibilityTitle: "Zero to one kilometer storm-relative helicity")
+        rows.appendNumericRow(title: "0–3 km SRH — m²/s²", value: parameters.srh03kmM2s2, format: .whole, accessibilityTitle: "Zero to three kilometer storm-relative helicity")
+        rows.appendNumericRow(title: "0–6 km shear — kt", value: parameters.shear06kmKt, format: .whole, accessibilityTitle: "Zero to six kilometer shear")
+        rows.appendNumericRow(title: "MLLCL — m", value: parameters.mllclM, format: .whole, accessibilityTitle: "Mixed-layer lifted condensation level")
+        rows.appendNumericRow(
+            title: "Temperature/dew-point spread — °F",
+            value: parameters.tempDewPtDeltaF,
+            format: .decimalIfNeeded,
+            accessibilityTitle: "Temperature and dew-point spread"
+        )
+        rows.appendNumericRow(
+            title: "0–3 km CAPE / 3CAPE — J/kg",
+            value: parameters.threeCapeJkg,
+            format: .whole,
+            accessibilityTitle: "Zero to three kilometer CAPE"
+        )
+
+        let noteText = diagnostics.nonNilFieldCount > 0 && diagnostics.nonNilFieldCount < parameters.nonNilFieldCount
+            ? "Some advanced diagnostics are limited."
+            : nil
+
+        return (rows, noteText)
+    }
+
+    private static func makeProfileAnalysis(
+        from response: AnvilAnalyzeProfileResponse?
+    ) -> (rows: [Row], noteText: String?) {
+        guard let response else {
+            return ([], nil)
+        }
+
+        var rows: [Row] = []
+        Self.appendIfPresent(Self.makeCompositeRow(title: "SCP", accessibilityTitle: "Supercell composite parameter", value: response.scp), to: &rows)
+        Self.appendIfPresent(
+            Self.makeCompositeRow(
+                title: "STP — fixed",
+                accessibilityTitle: "Significant tornado parameter fixed",
+                value: response.stpFixed
+            ),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeCompositeRow(
+                title: "STP — CIN-adjusted",
+                accessibilityTitle: "Significant tornado parameter C I N adjusted",
+                value: response.stpCin
+            ),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeCompositeRow(title: "SHIP", accessibilityTitle: "Significant hail parameter", value: response.ship),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeWholeRow(
+                title: "Effective SRH — m²/s²",
+                accessibilityTitle: "Storm-relative helicity meters squared per second squared",
+                value: response.effectiveSrh
+            ),
+            to: &rows
+        )
+        Self.appendIfPresent(
+            Self.makeOneDecimalRow(
+                title: "Effective bulk shear — m/s",
+                accessibilityTitle: "Effective bulk shear meters per second",
+                value: response.effectiveBulkShearMs
+            ),
+            to: &rows
+        )
+        rows.append(contentsOf: makeEffectiveLayerRows(from: response.effectiveLayer))
+        rows.append(contentsOf: makeStormMotionRows(from: response.stormMotion))
+
+        guard rows.isEmpty == false else {
+            return ([], nil)
+        }
+
+        let noteText = response.quality.warnings.contains(where: { $0.trimmedNonEmpty != nil })
+            ? "Some profile details are limited."
+            : nil
+
+        return (rows, noteText)
+    }
+
     private static func makeProfileAnalysis(
         from response: StormSetupProfileAnalysisDTO.Response?
     ) -> (rows: [Row], noteText: String?) {
@@ -237,6 +395,57 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         return (rows, noteText)
     }
 
+    private static func legacyProfileAnalysisResponse(from response: AnvilAnalyzeProfileResponse?) -> StormSetupProfileAnalysisDTO.Response? {
+        guard let response else {
+            return nil
+        }
+
+        return .init(
+            mlcape: response.mlcape,
+            mucape: response.mucape,
+            mlcin: response.mlcin,
+            mllclMetersAgl: response.mllclMetersAgl,
+            scp: response.scp,
+            stpFixed: response.stpFixed,
+            stpCin: response.stpCin,
+            ship: response.ship,
+            effectiveSrh: response.effectiveSrh,
+            effectiveBulkShearMs: response.effectiveBulkShearMs,
+            effectiveLayer: .init(
+                status: response.effectiveLayer.status,
+                basePressureMb: response.effectiveLayer.basePressureMb,
+                topPressureMb: response.effectiveLayer.topPressureMb,
+                baseMetersAgl: response.effectiveLayer.baseMetersAgl,
+                topMetersAgl: response.effectiveLayer.topMetersAgl
+            ),
+            stormMotion: .init(
+                status: response.stormMotion.status,
+                bunkersRight: response.stormMotion.bunkersRight.map {
+                    .init(
+                        uMs: $0.uMs,
+                        vMs: $0.vMs,
+                        speedMs: $0.speedMs,
+                        uKt: $0.uKt,
+                        vKt: $0.vKt,
+                        speedKt: $0.speedKt,
+                        directionTowardDeg: $0.directionTowardDeg
+                    )
+                },
+                uMs: nil,
+                vMs: nil,
+                speedMs: nil,
+                uKt: nil,
+                vKt: nil,
+                speedKt: nil,
+                directionTowardDeg: nil
+            ),
+            quality: .init(
+                profileLevelCount: response.quality.profileLevelCount,
+                warnings: response.quality.warnings
+            )
+        )
+    }
+
     private static func confidenceText(for confidence: StormSetupConfidence) -> String? {
         switch confidence {
         case .high:
@@ -247,6 +456,17 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
             "Low confidence"
         case .unknown:
             nil
+        }
+    }
+
+    private static func confidenceText(for confidence: SnapshotConfidence) -> String? {
+        switch confidence {
+        case .high:
+            "High confidence"
+        case .moderate:
+            "Medium confidence"
+        case .low, .degraded:
+            "Low confidence"
         }
     }
 
@@ -382,6 +602,42 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         Row(title: title, value: value, accessibilityLabel: "\(title). \(value).")
     }
 
+    private static func makeEffectiveLayerRows(from layer: AnvilEffectiveLayerDTO?) -> [Row] {
+        guard let layer else { return [] }
+
+        let status = layer.status.trimmedNonEmpty?.lowercased()
+        if status == "found" {
+            var rows: [Row] = []
+            rows.append(contentsOf: makeBoundRows(
+                baseTitle: "Effective layer height",
+                boundsTitle: "Effective layer height bounds",
+                baseValue: layer.baseMetersAgl,
+                topValue: layer.topMetersAgl,
+                unit: "m AGL",
+                accessibilityUnit: "meters above ground level"
+            ))
+            rows.append(contentsOf: makeBoundRows(
+                baseTitle: "Effective layer pressure",
+                boundsTitle: "Effective layer pressure bounds",
+                baseValue: layer.basePressureMb,
+                topValue: layer.topPressureMb,
+                unit: "mb",
+                accessibilityUnit: "millibars"
+            ))
+            return rows
+        }
+
+        if status == "notfound" {
+            return [Row(
+                title: "Effective layer",
+                value: "Not identified",
+                accessibilityLabel: "Effective layer. Not identified."
+            )]
+        }
+
+        return []
+    }
+
     private static func makeEffectiveLayerRows(from layer: StormSetupProfileAnalysisDTO.EffectiveLayer?) -> [Row] {
         guard let layer else { return [] }
 
@@ -447,6 +703,38 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
                 title: "\(baseTitle) top",
                 value: "\(top) \(unit)",
                 accessibilityLabel: "\(baseTitle) top. \(top) \(accessibilityUnit)."
+            )]
+        case (nil, nil):
+            return []
+        }
+    }
+
+    private static func makeStormMotionRows(from stormMotion: AnvilStormMotionDTO?) -> [Row] {
+        guard let stormMotion, let bunkersRight = stormMotion.bunkersRight else {
+            return []
+        }
+
+        let speed = formattedWholeValue(bunkersRight.speedKt)
+        let direction = formattedWholeValue(bunkersRight.directionTowardDeg)
+
+        switch (speed, direction) {
+        case let (speed?, direction?):
+            return [Row(
+                title: "Bunkers-right storm motion",
+                value: "\(speed) kt toward \(direction)°",
+                accessibilityLabel: "Bunkers-right storm motion. \(speed) knots toward \(direction) degrees."
+            )]
+        case let (speed?, nil):
+            return [Row(
+                title: "Bunkers-right storm motion speed",
+                value: "\(speed) kt",
+                accessibilityLabel: "Bunkers-right storm motion speed. \(speed) knots."
+            )]
+        case let (nil, direction?):
+            return [Row(
+                title: "Bunkers-right storm motion direction",
+                value: "toward \(direction)°",
+                accessibilityLabel: "Bunkers-right storm motion direction. Toward \(direction) degrees."
             )]
         case (nil, nil):
             return []
