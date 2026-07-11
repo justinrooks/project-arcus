@@ -80,10 +80,10 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 
 ### Issue #285 — 02: Decode the aggregate response in the primary client
 
-- Status: Planned
-- Outcome: Pending
-- Validation: Pending
-- Handoff: Keep old orchestration temporarily so the client cutover remains reviewable.
+- Status: Complete
+- Outcome: The primary Storm Setup client now decodes `ArcusCore.StormSetupCurrentResponse` directly, preserves the existing H3 request shape, headers, retry handling, and HTTP error mapping, and accepts a nil `profileAnalysis` as a successful response.
+- Validation: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -only-testing:SkyAwareTests/StormSetupHTTPClientTests test` passed. `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' build` passed.
+- Handoff: Keep the legacy ingestion bridge in place for #286 so the compile-safe staged cutover remains isolated.
 
 ### Issue #286 — 03: Persist one aggregate Storm Setup payload
 
@@ -112,6 +112,7 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 |---|---|---|---|
 | 2026-07-10 | Planning | Investigation across Project Arcus, ArcusCore, and the relevant Arcus Signal route/tests | Complete |
 | 2026-07-10 | #284 | `StormSetupPresentationTests`, `StormSetupDetailPresentationTests`, and `xcodebuild ... build` | Complete |
+| 2026-07-10 | #285 | `StormSetupHTTPClientTests` and `xcodebuild ... build` | Complete |
 
 ## Handoff Notes
 

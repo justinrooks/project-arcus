@@ -651,7 +651,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     private enum StormSetupAttemptOutcome {
-        case success(StormSetupDTO)
+        case success(StormSetupCurrentResponse)
         case failure
         case timeout
         case cancelled
@@ -712,10 +712,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         h3Cell: Int64,
         querying: any StormSetupQuerying,
         executionMode: HTTPExecutionMode
-    ) async throws -> StormSetupDTO {
+    ) async throws -> StormSetupCurrentResponse {
         if executionMode == .foreground {
             let foregroundTimeout = environment.stormSetupForegroundTimeout
-            return try await withThrowingTaskGroup(of: StormSetupDTO.self) { group in
+            return try await withThrowingTaskGroup(of: StormSetupCurrentResponse.self) { group in
                 group.addTask {
                     try await HTTPExecutionMode.$current.withValue(executionMode) {
                         try await querying.fetchCurrentStormSetup(h3Cell: h3Cell)
@@ -853,7 +853,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     private func handleSuccessfulStormSetup(
-        _ stormSetup: StormSetupDTO,
+        _ stormSetup: StormSetupCurrentResponse,
         context: LocationContext,
         projectionKey: String,
         cachedStormSetup: StormSetupDTO?,
@@ -862,7 +862,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         startedAt: Date,
         executionMode: HTTPExecutionMode
     ) async -> StormSetupRefreshDecision {
-        guard stormSetup.h3Cell == context.h3Cell else {
+        let legacyStormSetup = StormSetupDTO(response: stormSetup)
+
+        guard legacyStormSetup.h3Cell == context.h3Cell else {
             markStormSetupAttemptFailed(
                 for: projectionKey,
                 refreshKey: context.refreshKey,
@@ -892,12 +894,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return .init(result: .failure, stormSetup: freshCachedStormSetup)
         }
 
-        let shouldPersist = cachedStormSetup.map { Self.isStormSetupNewer(stormSetup, than: $0) } ?? true
+        let shouldPersist = cachedStormSetup.map { Self.isStormSetupNewer(legacyStormSetup, than: $0) } ?? true
 
         if shouldPersist {
             do {
                 _ = try await projectionStore.updateStormSetup(
-                    stormSetup,
+                    legacyStormSetup,
                     for: context,
                     loadedAt: now
                 )
@@ -913,7 +915,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     startedAt: startedAt,
                     executionMode: executionMode
                 )
-                let resolvedStormSetup = stormSetup.freshness.expiresAt > now ? stormSetup : freshCachedStormSetup
+                let resolvedStormSetup = legacyStormSetup.freshness.expiresAt > now ? legacyStormSetup : freshCachedStormSetup
                 return .init(result: .success, stormSetup: resolvedStormSetup)
             } catch {
                 markStormSetupAttemptFailed(

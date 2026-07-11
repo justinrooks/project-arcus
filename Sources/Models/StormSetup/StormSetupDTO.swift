@@ -1,3 +1,4 @@
+import ArcusCore
 import Foundation
 
 struct StormSetupDTO: Codable, Sendable, Equatable {
@@ -91,6 +92,83 @@ extension StormSetupDTO {
             let hasStormMotion: Bool?
             let qualityProfileLevelCount: Int?
             let warnings: [String]?
+        }
+    }
+}
+
+extension StormSetupDTO {
+    init(response: StormSetupCurrentResponse) {
+        self.init(
+            h3Cell: response.setup.h3Cell,
+            freshness: .init(
+                isStale: response.setup.freshness.isStale,
+                isDegraded: response.setup.freshness.isDegraded,
+                modelRunTime: response.setup.freshness.modelRunTime,
+                sourceValidTime: response.setup.freshness.sourceValidTime,
+                forecastHour: response.setup.freshness.forecastHour,
+                fetchedAt: response.setup.freshness.fetchedAt,
+                expiresAt: response.setup.freshness.expiresAt
+            ),
+            source: .init(
+                model: response.setup.source.model?.rawValue,
+                product: response.setup.source.product?.rawValue,
+                domain: response.setup.source.domain?.rawValue,
+                fieldSetVersion: response.setup.source.fieldSetVersion?.rawValue,
+                sourceKind: "production",
+                runTime: response.setup.source.runTime,
+                validTime: response.setup.source.validTime,
+                forecastHour: response.setup.source.forecastHour,
+                bbox: response.setup.source.bbox.map { .init(
+                    toplat: $0.toplat,
+                    leftlon: $0.leftlon,
+                    rightlon: $0.rightlon,
+                    bottomlat: $0.bottomlat
+                ) },
+                primaryDownloadURL: response.setup.source.primaryDownloadURL?.absoluteString
+            ),
+            raw: .init(
+                mlcapeJkg: response.ingredients.canonical.mlcapeJkg,
+                mucapeJkg: response.ingredients.canonical.mucapeJkg,
+                sbcapeJkg: response.ingredients.canonical.sbcapeJkg,
+                mlcinJkg: response.ingredients.canonical.mlcinJkg,
+                srh01kmM2s2: response.ingredients.canonical.srh01kmM2s2,
+                srh03kmM2s2: response.ingredients.canonical.srh03kmM2s2,
+                shear06kmKt: response.ingredients.canonical.shear06kmKt,
+                mllclM: response.ingredients.canonical.mllclM,
+                tempDewPtDeltaF: response.ingredients.canonical.tempDewPtDeltaF,
+                threeCapeJkg: response.ingredients.canonical.threeCapeJkg
+            ),
+            assessment: .init(
+                overall: response.tornadoViability.overall.rawValue,
+                summary: response.tornadoViability.summary,
+                instability: response.tornadoViability.details.instability.rawValue,
+                moisture: response.tornadoViability.details.moisture.rawValue,
+                lowLevelRotation: response.tornadoViability.details.lowLevelRotation.rawValue,
+                deepShear: response.tornadoViability.details.deepShear.rawValue,
+                cloudBase: response.tornadoViability.details.cloudBase.rawValue,
+                capInhibition: response.tornadoViability.details.inhibition.rawValue,
+                limitingFactors: response.tornadoViability.limitingFactors.map(\.rawValue),
+                confidence: Self.legacyConfidenceString(from: response.tornadoViability.confidence),
+                primaryDrivers: [],
+                stormMode: response.tornadoViability.details.stormMode.rawValue,
+                stormModeHint: response.tornadoViability.details.stormMode.rawValue,
+                trend: response.tornadoViability.details.stormViability.rawValue,
+                compositeSignal: response.tornadoViability.details.tornadoComposite.rawValue
+            ),
+            anvilEvidence: nil,
+            centroid: .init(latitude: response.setup.centroid.latitude, longitude: response.setup.centroid.longitude),
+            surfaceHeightMslM: response.setup.surfaceHeightMslM
+        )
+    }
+
+    private static func legacyConfidenceString(from confidence: SnapshotConfidence) -> String {
+        switch confidence {
+        case .high:
+            "high"
+        case .moderate:
+            "medium"
+        case .low, .degraded:
+            "low"
         }
     }
 }

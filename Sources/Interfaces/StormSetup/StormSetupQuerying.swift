@@ -6,7 +6,8 @@
 //
 
 import Foundation
+import ArcusCore
 
 protocol StormSetupQuerying: Sendable {
-    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupDTO
+    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse
 }

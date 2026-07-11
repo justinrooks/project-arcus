@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 import OSLog
 
 struct StormSetupHTTPClient: StormSetupQuerying {
@@ -21,7 +22,7 @@ struct StormSetupHTTPClient: StormSetupQuerying {
         self.http = http
     }
 
-    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupDTO {
+    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse {
         let url = try makeURL(
             queryItems: [
                 URLQueryItem(name: "h3", value: canonicalH3String(for: h3Cell))
@@ -42,41 +43,41 @@ struct StormSetupHTTPClient: StormSetupQuerying {
         String(h3Cell)
     }
 
-    private func fetch(from url: URL) async throws -> StormSetupDTO {
+    private func fetch(from url: URL) async throws -> StormSetupCurrentResponse {
         do {
             try Task.checkCancellation()
 
-            let response = try await http.get(url, headers: requestHeaders)
+            let httpResponse = try await http.get(url, headers: requestHeaders)
             try Task.checkCancellation()
 
-            if response.source != .live {
-                logger.notice("Arcus response served from \(response.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
+            if httpResponse.source != .live {
+                logger.notice("Arcus response served from \(httpResponse.source.description, privacy: .public) endpoint=\(url.path, privacy: .public)")
             }
 
-            switch response.classifyStatus() {
+            switch httpResponse.classifyStatus() {
             case .success, .notModified:
-                guard let data = response.data else {
-                    logger.error("Arcus response missing body endpoint=\(url.path, privacy: .public) status=\(response.status, privacy: .public)")
+                guard let data = httpResponse.data else {
+                    logger.error("Arcus response missing body endpoint=\(url.path, privacy: .public) status=\(httpResponse.status, privacy: .public)")
                     throw ArcusError.missingData
                 }
 
                 do {
-                    let dto = try DecoderFactory.iso8601.decode(StormSetupDTO.self, from: data)
+                    let stormSetupResponse = try DecoderFactory.iso8601.decode(StormSetupCurrentResponse.self, from: data)
                     logger.info(
-                        "Arcus request completed endpoint=\(url.path, privacy: .public) status=\(response.status, privacy: .public) source=\(response.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
+                        "Arcus request completed endpoint=\(url.path, privacy: .public) status=\(httpResponse.status, privacy: .public) source=\(httpResponse.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
                     )
-                    return dto
+                    return stormSetupResponse
                 } catch {
-                    logger.error("Arcus response decoding failed endpoint=\(url.path, privacy: .public) status=\(response.status, privacy: .public)")
+                    logger.error("Arcus response decoding failed endpoint=\(url.path, privacy: .public) status=\(httpResponse.status, privacy: .public)")
                     throw ArcusError.parsingError
                 }
             case .rateLimited(let retryAfter):
                 let error = ArcusError.rateLimited(retryAfterSeconds: retryAfter)
-                logFailure(error: error, endpoint: url.path, status: response.status)
+                logFailure(error: error, endpoint: url.path, status: httpResponse.status)
                 throw error
             case .serviceUnavailable(let retryAfter):
                 let error = ArcusError.serviceUnavailable(retryAfterSeconds: retryAfter)
-                logFailure(error: error, endpoint: url.path, status: response.status)
+                logFailure(error: error, endpoint: url.path, status: httpResponse.status)
                 throw error
             case .failure(let status):
                 let error = ArcusError.networkError(status: status)

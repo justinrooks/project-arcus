@@ -1316,6 +1316,107 @@ struct StormSetupIngestionTests {
             quality: .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
         )
     }
+
+}
+
+private extension StormSetupDTO {
+    var stormSetupCurrentResponse: StormSetupCurrentResponse {
+        .init(
+            setup: .init(
+                h3Cell: h3Cell,
+                centroid: .init(latitude: centroid?.latitude ?? 0, longitude: centroid?.longitude ?? 0),
+                    source: .init(
+                        model: .hrrr,
+                        product: .wrfsfc,
+                        domain: .conus,
+                        runTime: freshness.modelRunTime,
+                        forecastHour: freshness.forecastHour,
+                        validTime: freshness.sourceValidTime,
+                        fieldSetVersion: .tornadoV1,
+                        bbox: source.bbox.map {
+                            .init(
+                                leftlon: $0.leftlon,
+                                rightlon: $0.rightlon,
+                                toplat: $0.toplat,
+                                bottomlat: $0.bottomlat
+                            )
+                        },
+                    primaryDownloadURL: URL(string: source.primaryDownloadURL ?? "https://example.invalid/storm-setup"),
+                    idxURL: nil
+                ),
+                surfaceHeightMslM: surfaceHeightMslM,
+                freshness: .init(
+                    sourceValidTime: freshness.sourceValidTime,
+                    modelRunTime: freshness.modelRunTime,
+                    forecastHour: freshness.forecastHour,
+                    fetchedAt: freshness.fetchedAt,
+                    expiresAt: freshness.expiresAt,
+                    isStale: freshness.isStale,
+                    isDegraded: freshness.isDegraded
+                )
+            ),
+            ingredients: .init(
+                canonical: .init(
+                    sbcapeJkg: raw.sbcapeJkg,
+                    mlcapeJkg: raw.mlcapeJkg,
+                    mucapeJkg: raw.mucapeJkg,
+                    mlcinJkg: raw.mlcinJkg,
+                    dcapeJkg: nil,
+                    mllclM: raw.mllclM,
+                    tempDewPtDeltaF: raw.tempDewPtDeltaF,
+                    threeCapeJkg: raw.threeCapeJkg,
+                    lclLfcSeparationM: nil,
+                    lapseRate03kmCkm: nil,
+                    lapseRate700500mbCkm: nil,
+                    shear06kmKt: raw.shear06kmKt,
+                    shear03kmKt: nil,
+                    shear01kmKt: nil,
+                    effectiveShearKt: nil,
+                    srh01kmM2s2: raw.srh01kmM2s2,
+                    srh03kmM2s2: raw.srh03kmM2s2,
+                    effectiveSrhM2s2: nil,
+                    supercellComposite: nil,
+                    significantTornadoFixed: nil,
+                    significantTornadoEffective: nil,
+                    significantHail: nil,
+                    bunkersRightMotion: nil,
+                    bunkersLeftMotion: nil,
+                    stormRelativeWind46km: nil,
+                    meanWind850300mb: nil,
+                    diagnostics: nil,
+                    effectiveBulkShearMs: nil,
+                    effectiveLayer: nil,
+                    stormMotion: nil
+                ),
+                diagnostics: .empty
+            ),
+            profileAnalysis: nil,
+            tornadoViability: .init(
+                overall: .supportive,
+                realization: .realized,
+                primaryFailureMode: .none,
+                confidence: .moderate,
+                summary: assessment.summary ?? "",
+                details: .init(
+                    stormViability: .supportive,
+                    supercellViability: .strong,
+                    tornadoEfficiency: .supportive,
+                    inhibition: .weak,
+                    instability: .supportive,
+                    moisture: .supportive,
+                    cloudBase: .weak,
+                    deepShear: .strong,
+                    lowLevelRotation: .conditional,
+                    lowLevelStretching: .supportive,
+                    cloudBaseEfficiency: .supportive,
+                    supercellComposite: .strong,
+                    tornadoComposite: .supportive,
+                    stormMode: .supportive
+                ),
+                limitingFactors: [.strongCap]
+            )
+        )
+    }
 }
 
 private struct StormSetupHarness {
@@ -1363,7 +1464,7 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
         self.gate = gate
     }
 
-    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupDTO {
+    func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse {
         requests.append(.init(h3Cell: h3Cell, executionMode: HTTPExecutionMode.current))
         if let gate {
             try await gate.wait()
@@ -1371,7 +1472,7 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
 
         switch response {
         case .success(let stormSetup):
-            return stormSetup
+            return stormSetup.stormSetupCurrentResponse
         case .failure(let error):
             throw error
         }
