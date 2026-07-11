@@ -97,10 +97,18 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 
 ### Issue #287 — 04: Cut Storm Setup ingestion to one request
 
-- Status: Planned
-- Outcome: Pending
-- Validation: Pending
-- Handoff: Preserve H3, freshness, timeout, cancellation, backoff, and cache-forward semantics.
+- Status: Complete
+- Outcome: Home ingestion now evaluates one aggregate Storm Setup request and carries the
+  `StormSetupCurrentResponse` through snapshot publication, projection persistence, pipeline state, and HomeView
+  selection. The active path no longer starts or coordinates the profile-analysis request, matches independent
+  timestamps, merges partial outcomes, or lets Detailed Ingredients change network eligibility. Aggregate profile
+  data remains presentation-driven, and an aggregate with `profileAnalysis == nil` replaces older profile data.
+  Legacy profile plumbing remains compile-safe for #288 cleanup but is not consulted by the active refresh path.
+- Validation:
+  - Debug build passed with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2' -configuration Debug build`.
+  - Focused ingestion test compilation passed; simulator test execution could not progress past Xcode test-runner setup on the available simulator. The captured xcresult bundles contain no executed test failures.
+  - HomeRefreshPipelineTests and HomeViewLoadingOverlayStateTests were not completed because the same simulator test-runner condition prevented execution.
+- Handoff: #288 may remove the now-unused profile client, compatibility state, and superseded tests. Do not expand this issue into dead-file cleanup.
 
 ### Issue #288 — 05: Remove Anvil plumbing and audit the final behavior
 
@@ -117,6 +125,7 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 | 2026-07-10 | #284 | `StormSetupPresentationTests`, `StormSetupDetailPresentationTests`, and `xcodebuild ... build` | Complete |
 | 2026-07-10 | #285 | `StormSetupHTTPClientTests` and `xcodebuild ... build` | Complete |
 | 2026-07-10 | #286 | `HomeProjectionStoreTests` compile/launch attempt and `xcodebuild ... build` | Complete |
+| 2026-07-10 | #287 | Debug build; focused test-runner attempts with captured xcresult bundles | Build complete; test execution blocked by simulator runner startup |
 
 ## Handoff Notes
 

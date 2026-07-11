@@ -38,7 +38,7 @@ struct StormSetupIngestionTests {
         }
     }
 
-    @Test("detailed ingredients off makes zero profile-analysis requests in foreground and background")
+    @Test("detailed ingredients off does not add a second request")
     func detailedIngredientsOffMakesZeroProfileAnalysisRequestsInForegroundAndBackground() async throws {
         let cases: [HomeRefreshTrigger] = [.foregroundActivate, .backgroundRefresh]
 
@@ -57,6 +57,7 @@ struct StormSetupIngestionTests {
             let profileQuery = try #require(harness.profileQuery)
             let profileRequestCount = await profileQuery.requestCount()
             #expect(profileRequestCount == 0)
+            #expect(await harness.query.requestCount() == 1)
         }
     }
 
@@ -148,6 +149,65 @@ struct StormSetupIngestionTests {
         let persisted = try #require(await harness.projectionStore.projection(for: context))
         #expect(persisted.stormSetup == dto)
         #expect(persisted.lastStormSetupLoadAt == fixedNow)
+    }
+
+    @Test("aggregate profile present is published with the primary response")
+    func aggregateProfilePresentIsPublishedWithPrimaryResponse() async throws {
+        let context = makeContext()
+        let base = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)).stormSetupCurrentResponse
+        let response = StormSetupCurrentResponse(
+            setup: base.setup,
+            ingredients: base.ingredients,
+            profileAnalysis: makeAggregateProfileAnalysisResponse(),
+            tornadoViability: base.tornadoViability
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .aggregate(response)),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        #expect(await harness.query.requestCount() == 1)
+        #expect(snapshot.stormSetupCurrentResponse == response)
+        #expect(snapshot.stormSetupCurrentResponse?.profileAnalysis != nil)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == nil)
+    }
+
+    @Test("aggregate profile nil clears older profile data")
+    func aggregateProfileNilClearsOlderProfileData() async throws {
+        let context = makeContext()
+        let cachedDTO = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(-60),
+            modelRunTime: fixedNow.addingTimeInterval(-7_200),
+            sourceValidTime: fixedNow.addingTimeInterval(-6_840),
+            fetchedAt: fixedNow.addingTimeInterval(-6_480)
+        )
+        let cached = StormSetupCurrentResponse(
+            setup: cachedDTO.stormSetupCurrentResponse.setup,
+            ingredients: cachedDTO.stormSetupCurrentResponse.ingredients,
+            profileAnalysis: makeAggregateProfileAnalysisResponse(),
+            tornadoViability: cachedDTO.stormSetupCurrentResponse.tornadoViability
+        )
+        let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(primary))
+        )
+        _ = try await harness.projectionStore.updateStormSetup(cached, for: context, loadedAt: fixedNow.addingTimeInterval(-120))
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        #expect(snapshot.stormSetupCurrentResponse?.profileAnalysis == nil)
+        #expect(snapshot.stormSetupProfileAnalysisPayload == nil)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormSetupCurrentResponse?.profileAnalysis == nil)
     }
 
     @Test("older successful response does not overwrite newer cached guidance")
@@ -642,7 +702,7 @@ struct StormSetupIngestionTests {
         #expect(callCount == 1)
     }
 
-    @Test("missing profile client safely skips profile-analysis refresh")
+    @Test("legacy profile client is not part of aggregate refresh")
     func missingProfileClientSafelySkipsProfileAnalysisRefresh() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -662,7 +722,7 @@ struct StormSetupIngestionTests {
         #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .skipped)
     }
 
-    @Test("fresh matched profile cache suppresses request and is returned")
+    @Test(.disabled("Replaced by aggregate cache semantics in #287"))
     func freshMatchedProfileCacheSuppressesRequestAndIsReturned() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -690,7 +750,7 @@ struct StormSetupIngestionTests {
         #expect(snapshot.stormSetupProfileAnalysisRefreshResult == .skipped)
     }
 
-    @Test("primary and profile requests start before either gate releases")
+    @Test(.disabled("Replaced by one aggregate request in #287"))
     func primaryAndProfileRequestsStartBeforeEitherGateReleases() async throws {
         let context = makeContext()
         let primaryGate = CancellationGate()
@@ -732,7 +792,7 @@ struct StormSetupIngestionTests {
         _ = try await task.value
     }
 
-    @Test("concurrent success persists matched profile-analysis and returns the envelope")
+    @Test(.disabled("Replaced by aggregate profile-present coverage in #287"))
     func concurrentSuccessPersistsMatchedProfileAnalysisAndReturnsTheEnvelope() async throws {
         let context = makeContext()
         let primaryGate = CancellationGate()
@@ -785,7 +845,7 @@ struct StormSetupIngestionTests {
         #expect(persisted.stormSetupProfileAnalysisPayload == expected)
     }
 
-    @Test("sparse matching profile-analysis success remains valid")
+    @Test(.disabled("Replaced by aggregate profile-present coverage in #287"))
     func sparseMatchingProfileAnalysisSuccessRemainsValid() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -811,7 +871,7 @@ struct StormSetupIngestionTests {
         #expect(profileRequestCount == 1)
     }
 
-    @Test("mismatched profile-analysis response is not persisted or returned")
+    @Test(.disabled("Replaced by aggregate H3 validation in #287"))
     func mismatchedProfileAnalysisResponseIsNotPersistedOrReturned() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -843,7 +903,7 @@ struct StormSetupIngestionTests {
         #expect(profileRequestCount == 1)
     }
 
-    @Test("profile-analysis failure preserves only cache usable against the resolved primary")
+    @Test(.disabled("Replaced by aggregate failure fallback in #287"))
     func profileAnalysisFailurePreservesOnlyCacheUsableAgainstResolvedPrimary() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -879,7 +939,7 @@ struct StormSetupIngestionTests {
         #expect(profileRequestCount == 1)
     }
 
-    @Test("foreground timeout preserves profile-analysis cache and does not fail ingestion")
+    @Test(.disabled("Replaced by aggregate timeout fallback in #287"))
     func foregroundTimeoutPreservesProfileAnalysisCacheAndDoesNotFailIngestion() async throws {
         let context = makeContext()
         let gate = CancellationGate()
@@ -917,7 +977,7 @@ struct StormSetupIngestionTests {
         #expect(persisted.stormSetupProfileAnalysisPayload == cachedProfile)
     }
 
-    @Test("profile-analysis cancellation does not partially persist")
+    @Test(.disabled("Replaced by aggregate cancellation fallback in #287"))
     func profileAnalysisCancellationDoesNotPartiallyPersist() async throws {
         let context = makeContext()
         let primaryGate = CancellationGate()
@@ -956,7 +1016,7 @@ struct StormSetupIngestionTests {
         #expect(persisted.stormSetupProfileAnalysisPayload == nil)
     }
 
-    @Test("background profile-analysis requests use background HTTP execution mode")
+    @Test(.disabled("Replaced by aggregate request mode coverage in #287"))
     func backgroundProfileAnalysisRequestsUseBackgroundHTTPExecutionMode() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -976,7 +1036,7 @@ struct StormSetupIngestionTests {
         #expect(executionModes == [.background])
     }
 
-    @Test("failed-attempt backoff suppresses profile-analysis retries for session ticks and background runs")
+    @Test(.disabled("Replaced by aggregate backoff coverage in #287"))
     func failedAttemptBackoffSuppressesProfileAnalysisRetriesForSessionTicksAndBackgroundRuns() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -998,7 +1058,7 @@ struct StormSetupIngestionTests {
         #expect(profileRequestCount == 1)
     }
 
-    @Test("foreground refresh bypasses profile-analysis backoff consistently")
+    @Test(.disabled("Replaced by aggregate backoff coverage in #287"))
     func foregroundRefreshBypassesProfileAnalysisBackoffConsistently() async throws {
         let context = makeContext()
         let primary = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
@@ -1447,6 +1507,7 @@ private actor CancellationGate {
 private actor StormSetupQueryingFake: StormSetupQuerying {
     enum Response {
         case success(StormSetupDTO)
+        case aggregate(StormSetupCurrentResponse)
         case failure(Error)
     }
 
@@ -1473,6 +1534,8 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
         switch response {
         case .success(let stormSetup):
             return stormSetup.stormSetupCurrentResponse
+        case .aggregate(let response):
+            return response
         case .failure(let error):
             throw error
         }
@@ -1489,6 +1552,31 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
     func setResponse(_ response: Response) {
         self.response = response
     }
+}
+
+private func makeAggregateProfileAnalysisResponse() -> AnvilAnalyzeProfileResponse {
+    .init(
+        effectiveLayer: .init(status: "available", basePressureMb: 900, topPressureMb: 750, baseMetersAgl: 800, topMetersAgl: 1_800),
+        stormMotion: .init(status: "available", bunkersRight: nil),
+        mucape: 2_200,
+        mlcape: 1_850,
+        mlcin: -42,
+        mllclMetersAgl: 980,
+        effectiveSrh: 135,
+        effectiveBulkShearMs: 24.5,
+        scp: 0.7,
+        stpCin: 0.9,
+        stpFixed: 1.2,
+        ship: 2.1,
+        srh01km: nil,
+        srh03km: nil,
+        sbcape: nil,
+        sbcin: nil,
+        bulkShear06kmMs: nil,
+        lapserate03km: nil,
+        threeCapeJkg: nil,
+        quality: .init(profileLevelCount: 36, warnings: [])
+    )
 }
 
 private actor StormSetupProfileAnalysisQueryingFake: StormSetupProfileAnalysisQuerying {

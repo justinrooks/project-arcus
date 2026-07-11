@@ -9,6 +9,7 @@ import SwiftUI
 import OSLog
 import SwiftData
 import Foundation
+import ArcusCore
 
 struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -78,7 +79,14 @@ struct HomeView: View {
     }
 
     private var displayedStormSetup: StormSetupDTO? {
-        Self.selectStormSetup(
+        let response = Self.selectStormSetupCurrentResponse(
+            projection: displayedProjection,
+            currentContext: locationSession.currentContext,
+            pipelineValue: refreshPipeline.stormSetupCurrentResponse,
+            pipelineRefreshKey: refreshPipeline.stormSetupRefreshKey,
+            now: Date()
+        )
+        return response.map(StormSetupDTO.init(response:)) ?? Self.selectStormSetup(
             projection: displayedProjection,
             currentContext: locationSession.currentContext,
             pipelineValue: refreshPipeline.stormSetup,
@@ -87,16 +95,21 @@ struct HomeView: View {
         )
     }
 
-    private var displayedStormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? {
-        Self.selectStormSetupProfileAnalysisResponse(
-            selectedProjection: displayedProjection,
+    private var displayedStormSetupCurrentResponse: StormSetupCurrentResponse? {
+        Self.selectStormSetupCurrentResponse(
+            projection: displayedProjection,
             currentContext: locationSession.currentContext,
-            selectedPrimary: displayedStormSetup,
-            preferences: stormSetupPreferences,
-            pipelinePayload: refreshPipeline.stormSetupProfileAnalysisPayload,
-            pipelineRefreshKey: refreshPipeline.stormSetupProfileAnalysisRefreshKey,
+            pipelineValue: refreshPipeline.stormSetupCurrentResponse,
+            pipelineRefreshKey: refreshPipeline.stormSetupRefreshKey,
             now: Date()
         )
+    }
+
+    private var displayedStormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? {
+        guard stormSetupPreferences.effectiveDetailedIngredientsEnabled else { return nil }
+        return displayedStormSetupCurrentResponse.flatMap {
+            StormSetupDetailPresentation.legacyProfileAnalysisResponse(from: $0.profileAnalysis)
+        }
     }
 
     private var resolvedLocationTimeZone: TimeZone {
@@ -239,6 +252,7 @@ struct HomeView: View {
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
         initialStormSetup: StormSetupDTO? = nil,
+        initialStormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
         initialStormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         initialStormSetupProfileAnalysisRefreshKey: LocationContext.RefreshKey? = nil,
@@ -254,6 +268,7 @@ struct HomeView: View {
                 initialSevereRisk: initialSevereRisk,
                 initialFireRisk: initialFireRisk,
                 initialStormSetup: initialStormSetup,
+                initialStormSetupCurrentResponse: initialStormSetupCurrentResponse,
                 initialStormSetupRefreshKey: initialStormSetupRefreshKey,
                 initialStormSetupProfileAnalysisPayload: initialStormSetupProfileAnalysisPayload,
                 initialStormSetupProfileAnalysisRefreshKey: initialStormSetupProfileAnalysisRefreshKey,
@@ -556,6 +571,39 @@ extension HomeView {
         }
 
         return stormSetup
+    }
+
+    static func selectStormSetupCurrentResponse(
+        projection: HomeProjectionRecord?,
+        currentContext: LocationContext?,
+        pipelineValue: StormSetupCurrentResponse?,
+        pipelineRefreshKey: LocationContext.RefreshKey?,
+        now: Date
+    ) -> StormSetupCurrentResponse? {
+        if let currentContext {
+            let currentRefreshKey = currentContext.refreshKey
+            if pipelineRefreshKey == currentRefreshKey,
+               let pipelineValue,
+               pipelineValue.setup.freshness.expiresAt > now,
+               pipelineValue.setup.h3Cell == currentContext.h3Cell {
+                return pipelineValue
+            }
+
+            guard let projection,
+                  projection.projectionKey == HomeProjection.projectionKey(for: currentContext),
+                  let response = projection.stormSetupCurrentResponse,
+                  response.setup.freshness.expiresAt > now,
+                  response.setup.h3Cell == currentContext.h3Cell else {
+                return nil
+            }
+            return response
+        }
+
+        guard let response = projection?.stormSetupCurrentResponse,
+              response.setup.freshness.expiresAt > now else {
+            return nil
+        }
+        return response
     }
 
     static func selectStormSetupProfileAnalysisResponse(

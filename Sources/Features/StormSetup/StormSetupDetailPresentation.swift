@@ -395,7 +395,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         return (rows, noteText)
     }
 
-    private static func legacyProfileAnalysisResponse(from response: AnvilAnalyzeProfileResponse?) -> StormSetupProfileAnalysisDTO.Response? {
+    static func legacyProfileAnalysisResponse(from response: AnvilAnalyzeProfileResponse?) -> StormSetupProfileAnalysisDTO.Response? {
         guard let response else {
             return nil
         }

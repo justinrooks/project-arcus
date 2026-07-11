@@ -81,6 +81,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private struct StormSetupRefreshDecision: Sendable {
         let result: HomeStormSetupRefreshResult
+        let currentResponse: StormSetupCurrentResponse?
         let stormSetup: StormSetupDTO?
     }
 
@@ -242,6 +243,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             executionMode: executionMode
         )
         snapshot.stormSetupRefreshResult = stormSetupRefresh.stormSetup.result
+        snapshot.stormSetupCurrentResponse = stormSetupRefresh.stormSetup.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup.stormSetup
         snapshot.stormSetupProfileAnalysisRefreshResult = stormSetupRefresh.profileAnalysis.result
         snapshot.stormSetupProfileAnalysisPayload = stormSetupRefresh.profileAnalysis.profileAnalysisPayload
@@ -500,7 +502,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 executionMode: executionMode
             )
             return (
-                stormSetup: .init(result: .skipped, stormSetup: nil),
+                stormSetup: .init(result: .skipped, currentResponse: nil, stormSetup: nil),
                 profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil)
             )
         }
@@ -519,7 +521,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 executionMode: executionMode
             )
             return (
-                stormSetup: .init(result: .skipped, stormSetup: nil),
+                stormSetup: .init(result: .skipped, currentResponse: nil, stormSetup: nil),
                 profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil)
             )
         }
@@ -527,15 +529,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let preferences = await environment.stormSetupPreferencesReader()
         let projectionKey = HomeProjection.projectionKey(for: context)
         let projection = try? await projectionStore.projection(for: context)
-        let cachedStormSetup = projection?.stormSetup
-        let cachedProfileAnalysis = projection?.stormSetupProfileAnalysisPayload
-        let freshCachedStormSetup = cachedStormSetup.flatMap { $0.freshness.expiresAt > now ? $0 : nil }
-        let freshCachedProfileAnalysis = StormSetupProfileAnalysisPolicy.usableCachedPayload(
-            preferences: preferences,
-            primary: freshCachedStormSetup,
-            cachedPayload: cachedProfileAnalysis,
-            now: now
-        )
+        let cachedCurrentResponse = projection?.stormSetupCurrentResponse
+        let cachedStormSetup = cachedCurrentResponse.map(StormSetupDTO.init(response:))
+        let freshCachedCurrentResponse = cachedCurrentResponse.flatMap {
+            $0.setup.freshness.expiresAt > now ? $0 : nil
+        }
+        let freshCachedStormSetup = freshCachedCurrentResponse.map(StormSetupDTO.init(response:))
 
         let policyInput = StormSetupPolicyInput(
             preferences: preferences,
@@ -549,16 +548,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
 
         let shouldFetchPrimary = environment.stormSetupQuerying != nil && StormSetupFetchPolicy.shouldFetch(policyInput)
-        let shouldFetchProfileAnalysis = environment.stormSetupProfileAnalysisQuerying != nil && StormSetupProfileAnalysisPolicy.shouldFetch(
-            preferences: preferences,
-            primary: cachedStormSetup,
-            cachedPayload: cachedProfileAnalysis,
-            now: now
-        )
         let shouldBackOffPrimary = shouldBackOffStormSetup(for: projectionKey, plan: plan, now: now)
-        let shouldBackOffProfileAnalysis = shouldBackOffStormSetupProfileAnalysis(for: projectionKey, plan: plan, now: now)
 
-        if shouldFetchPrimary == false, shouldFetchProfileAnalysis == false {
+        if shouldFetchPrimary == false {
             let resolvedStormSetup = freshCachedStormSetup
             logStormSetupOutcome(
                 outcome: "skipped",
@@ -572,10 +564,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return (
-                stormSetup: .init(result: .skipped, stormSetup: resolvedStormSetup),
-                profileAnalysis: .init(result: .skipped, profileAnalysisPayload: freshCachedProfileAnalysis)
-            )
+            return (stormSetup: .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: resolvedStormSetup), profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil))
         }
 
         async let primaryOutcome: StormSetupAttemptOutcome = {
@@ -594,60 +583,19 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             )
         }()
 
-        async let profileOutcome: StormSetupProfileAnalysisAttemptOutcome = {
-            guard shouldFetchProfileAnalysis, let querying = environment.stormSetupProfileAnalysisQuerying else {
-                return .skipped
-            }
-
-            if shouldBackOffProfileAnalysis {
-                return .skipped
-            }
-
-            return await performStormSetupProfileAnalysisFetch(
-                h3Cell: context.h3Cell,
-                querying: querying,
-                executionMode: executionMode
-            )
-        }()
-
         let resolvedPrimaryDecision = await handleStormSetupOutcome(
             primaryOutcome,
             context: context,
             projectionKey: projectionKey,
-            cachedStormSetup: cachedStormSetup,
+            cachedCurrentResponse: cachedCurrentResponse,
+            freshCachedCurrentResponse: freshCachedCurrentResponse,
             freshCachedStormSetup: freshCachedStormSetup,
             now: now,
             startedAt: startedAt,
             executionMode: executionMode
         )
 
-        let completedAt = environment.stormSetupCurrentDate()
-        let profileAnalysisDecision = await handleStormSetupProfileAnalysisOutcome(
-            await profileOutcome,
-            context: context,
-            primary: resolvedPrimaryDecision.stormSetup,
-            projectionKey: projectionKey,
-            refreshKey: context.refreshKey,
-            now: completedAt,
-            startedAt: startedAt,
-            executionMode: executionMode
-        )
-
-        let resolvedProfilePayload = profileAnalysisDecision.profileAnalysisPayload
-            ?? StormSetupProfileAnalysisPolicy.usableCachedPayload(
-                preferences: preferences,
-                primary: resolvedPrimaryDecision.stormSetup,
-                cachedPayload: cachedProfileAnalysis,
-                now: completedAt
-            )
-
-        return (
-            stormSetup: resolvedPrimaryDecision,
-            profileAnalysis: .init(
-                result: profileAnalysisDecision.result,
-                profileAnalysisPayload: resolvedProfilePayload
-            )
-        )
+        return (stormSetup: resolvedPrimaryDecision, profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil))
     }
 
     private enum StormSetupAttemptOutcome {
@@ -784,7 +732,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         _ outcome: StormSetupAttemptOutcome,
         context: LocationContext,
         projectionKey: String,
-        cachedStormSetup: StormSetupDTO?,
+        cachedCurrentResponse: StormSetupCurrentResponse?,
+        freshCachedCurrentResponse: StormSetupCurrentResponse?,
         freshCachedStormSetup: StormSetupDTO?,
         now: Date,
         startedAt: Date,
@@ -796,7 +745,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 stormSetup,
                 context: context,
                 projectionKey: projectionKey,
-                cachedStormSetup: cachedStormSetup,
+                cachedCurrentResponse: cachedCurrentResponse,
+                freshCachedCurrentResponse: freshCachedCurrentResponse,
                 freshCachedStormSetup: freshCachedStormSetup,
                 now: now,
                 startedAt: startedAt,
@@ -814,7 +764,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return .init(result: .timeout, stormSetup: freshCachedStormSetup)
+            return .init(result: .timeout, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         case .cancelled:
             markStormSetupAttemptFailed(
                 for: projectionKey,
@@ -827,7 +777,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return .init(result: .cancelled, stormSetup: freshCachedStormSetup)
+            return .init(result: .cancelled, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         case .failure:
             markStormSetupAttemptFailed(
                 for: projectionKey,
@@ -840,7 +790,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return .init(result: .failure, stormSetup: freshCachedStormSetup)
+            return .init(result: .failure, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         case .skipped:
             logStormSetupOutcome(
                 outcome: "skipped",
@@ -848,7 +798,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return .init(result: .skipped, stormSetup: freshCachedStormSetup)
+            return .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         }
     }
 
@@ -856,7 +806,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         _ stormSetup: StormSetupCurrentResponse,
         context: LocationContext,
         projectionKey: String,
-        cachedStormSetup: StormSetupDTO?,
+        cachedCurrentResponse: StormSetupCurrentResponse?,
+        freshCachedCurrentResponse: StormSetupCurrentResponse?,
         freshCachedStormSetup: StormSetupDTO?,
         now: Date,
         startedAt: Date,
@@ -876,7 +827,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return .init(result: .h3Mismatch, stormSetup: freshCachedStormSetup)
+            return .init(result: .h3Mismatch, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         }
 
         guard let projectionStore = environment.projectionStore else {
@@ -891,10 +842,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            return .init(result: .failure, stormSetup: freshCachedStormSetup)
+            return .init(result: .failure, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
         }
 
-        let shouldPersist = cachedStormSetup.map { Self.isStormSetupNewer(legacyStormSetup, than: $0) } ?? true
+        let shouldPersist = cachedCurrentResponse.map { Self.isStormSetupNewer(stormSetup, than: $0) } ?? true
 
         if shouldPersist {
             do {
@@ -915,8 +866,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     startedAt: startedAt,
                     executionMode: executionMode
                 )
-                let resolvedStormSetup = legacyStormSetup.freshness.expiresAt > now ? legacyStormSetup : freshCachedStormSetup
-                return .init(result: .success, stormSetup: resolvedStormSetup)
+                let resolvedCurrentResponse = stormSetup.setup.freshness.expiresAt > now ? stormSetup : freshCachedCurrentResponse
+                return .init(result: .success, currentResponse: resolvedCurrentResponse, stormSetup: resolvedCurrentResponse.map(StormSetupDTO.init(response:)))
             } catch {
                 markStormSetupAttemptFailed(
                     for: projectionKey,
@@ -929,7 +880,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     startedAt: startedAt,
                     executionMode: executionMode
                 )
-                return .init(result: .failure, stormSetup: freshCachedStormSetup)
+                return .init(result: .failure, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
             }
         }
 
@@ -944,7 +895,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             startedAt: startedAt,
             executionMode: executionMode
         )
-        return .init(result: .success, stormSetup: freshCachedStormSetup)
+        return .init(result: .success, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
     }
 
     private func handleStormSetupProfileAnalysisOutcome(
@@ -1086,6 +1037,16 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
 
         return false
+    }
+
+    private static func isStormSetupNewer(
+        _ candidate: StormSetupCurrentResponse,
+        than cached: StormSetupCurrentResponse
+    ) -> Bool {
+        isStormSetupNewer(
+            StormSetupDTO(response: candidate),
+            than: StormSetupDTO(response: cached)
+        )
     }
 
     private func shouldBackOffStormSetup(

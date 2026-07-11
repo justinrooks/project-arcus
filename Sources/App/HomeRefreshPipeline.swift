@@ -89,6 +89,7 @@ final class HomeRefreshPipeline {
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
     var stormSetup: StormSetupDTO?
+    var stormSetupCurrentResponse: StormSetupCurrentResponse?
     var stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     private(set) var riskSnapshot: HomeRiskSnapshot
     private(set) var alertSnapshot: HomeAlertSnapshot
@@ -113,6 +114,7 @@ final class HomeRefreshPipeline {
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
         initialStormSetup: StormSetupDTO? = nil,
+        initialStormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
         initialStormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         initialStormSetupProfileAnalysisRefreshKey: LocationContext.RefreshKey? = nil,
@@ -130,6 +132,7 @@ final class HomeRefreshPipeline {
         ) {
         self.snap = initialSnap
         self.stormSetup = initialStormSetup
+        self.stormSetupCurrentResponse = initialStormSetupCurrentResponse
         self.stormSetupRefreshKey = initialStormSetupRefreshKey
         self.stormSetupProfileAnalysisPayload = initialStormSetupProfileAnalysisPayload
         self.stormSetupProfileAnalysisRefreshKey = initialStormSetupProfileAnalysisRefreshKey
@@ -517,8 +520,6 @@ final class HomeRefreshPipeline {
         }
 
         applyStormSetup(snapshot)
-        applyStormSetupProfileAnalysis(snapshot)
-
         switch snapshot.weatherRefreshResult {
         case .success(let weather):
             summaryWeather = weather
@@ -549,11 +550,13 @@ final class HomeRefreshPipeline {
             }
 
             self.stormSetup = nil
+            stormSetupCurrentResponse = nil
             stormSetupRefreshKey = snapshotRefreshKey
             return
         }
 
         self.stormSetup = resolvedStormSetup
+        stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
         stormSetupRefreshKey = snapshotRefreshKey
     }
 

@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 
 enum HomeStormSetupRefreshResult: Sendable, Equatable {
     case skipped
@@ -32,6 +33,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var weatherRefreshResult: HomeWeatherRefreshResult
     var stormSetup: StormSetupDTO?
     var stormSetupRefreshResult: HomeStormSetupRefreshResult
+    var stormSetupCurrentResponse: StormSetupCurrentResponse?
     var stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     var stormSetupProfileAnalysisRefreshResult: HomeStormSetupProfileAnalysisRefreshResult
     var stormRisk: StormRiskLevel?
@@ -50,6 +52,7 @@ struct HomeSnapshot: Sendable, Equatable {
         weatherRefreshResult: HomeWeatherRefreshResult = .skipped,
         stormSetup: StormSetupDTO? = nil,
         stormSetupRefreshResult: HomeStormSetupRefreshResult = .skipped,
+        stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         stormSetupProfileAnalysisRefreshResult: HomeStormSetupProfileAnalysisRefreshResult = .skipped,
         stormRisk: StormRiskLevel? = nil,
@@ -67,6 +70,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.weatherRefreshResult = weatherRefreshResult
         self.stormSetup = stormSetup
         self.stormSetupRefreshResult = stormSetupRefreshResult
+        self.stormSetupCurrentResponse = stormSetupCurrentResponse
         self.stormSetupProfileAnalysisPayload = stormSetupProfileAnalysisPayload
         self.stormSetupProfileAnalysisRefreshResult = stormSetupProfileAnalysisRefreshResult
         self.stormRisk = stormRisk
