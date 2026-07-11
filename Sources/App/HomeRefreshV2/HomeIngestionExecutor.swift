@@ -899,7 +899,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         if shouldPersist {
             do {
                 _ = try await projectionStore.updateStormSetup(
-                    legacyStormSetup,
+                    stormSetup,
                     for: context,
                     loadedAt: now
                 )
@@ -974,21 +974,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 return .init(result: .mismatch, profileAnalysisPayload: nil)
             }
 
-            guard let projectionStore = environment.projectionStore else {
-                markStormSetupProfileAnalysisAttemptFailed(
-                    for: projectionKey,
-                    refreshKey: refreshKey,
-                    now: now
-                )
-                logStormSetupProfileAnalysisOutcome(
-                    outcome: "failure",
-                    reason: "missing-projection-store",
-                    startedAt: startedAt,
-                    executionMode: executionMode
-                )
-                return .init(result: .failure, profileAnalysisPayload: nil)
-            }
-
             let persistedAt = environment.stormSetupCurrentDate()
             guard let persistedPayload = StormSetupProfileAnalysisPolicy.makePersistedPayload(
                 from: profileAnalysis,
@@ -1009,38 +994,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 return .init(result: .mismatch, profileAnalysisPayload: nil)
             }
 
-            do {
-                _ = try await projectionStore.updateStormSetupProfileAnalysis(
-                    persistedPayload,
-                    for: context,
-                    loadedAt: persistedAt
-                )
-                markStormSetupProfileAnalysisAttemptSucceeded(
-                    for: projectionKey,
-                    refreshKey: refreshKey,
-                    now: persistedAt
-                )
-                logStormSetupProfileAnalysisOutcome(
-                    outcome: "success",
-                    reason: nil,
-                    startedAt: startedAt,
-                    executionMode: executionMode
-                )
-                return .init(result: .success, profileAnalysisPayload: persistedPayload)
-            } catch {
-                markStormSetupProfileAnalysisAttemptFailed(
-                    for: projectionKey,
-                    refreshKey: refreshKey,
-                    now: now
-                )
-                logStormSetupProfileAnalysisOutcome(
-                    outcome: "failure",
-                    reason: "persistence",
-                    startedAt: startedAt,
-                    executionMode: executionMode
-                )
-                return .init(result: .failure, profileAnalysisPayload: nil)
-            }
+            markStormSetupProfileAnalysisAttemptSucceeded(
+                for: projectionKey,
+                refreshKey: refreshKey,
+                now: persistedAt
+            )
+            logStormSetupProfileAnalysisOutcome(
+                outcome: "success",
+                reason: nil,
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .success, profileAnalysisPayload: persistedPayload)
         case .timeout:
             markStormSetupProfileAnalysisAttemptFailed(
                 for: projectionKey,

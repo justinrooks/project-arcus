@@ -5,6 +5,7 @@
 //  Created by OpenAI Codex.
 //
 
+import ArcusCore
 import Foundation
 import SwiftData
 
@@ -82,6 +83,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let fireRisk: FireRiskLevel?
     let activeAlerts: [AlertDTO]
     let activeMesos: [MdDTO]
+    let stormSetupCurrentResponse: StormSetupCurrentResponse?
     let stormSetup: StormSetupDTO?
     let stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     let lastHotAlertsLoadAt: Date?
@@ -113,6 +115,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
         lastHotAlertsLoadAt: Date?,
         lastSlowProductsLoadAt: Date?,
         lastWeatherLoadAt: Date?,
+        stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         stormSetup: StormSetupDTO? = nil,
         stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         lastStormSetupLoadAt: Date? = nil
@@ -137,6 +140,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
         self.fireRisk = fireRisk
         self.activeAlerts = activeAlerts
         self.activeMesos = activeMesos
+        self.stormSetupCurrentResponse = stormSetupCurrentResponse
         self.stormSetup = stormSetup
         self.stormSetupProfileAnalysisPayload = stormSetupProfileAnalysisPayload
         self.lastHotAlertsLoadAt = lastHotAlertsLoadAt
@@ -178,8 +182,7 @@ final class HomeProjection {
     var lastViewedAt: Date?
 
     var weatherPayload: HomeProjectionWeatherPayload?
-    var stormSetupPayload: StormSetupDTO?
-    var stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
+    var stormSetupCurrentResponse: StormSetupCurrentResponse?
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -211,8 +214,7 @@ final class HomeProjection {
         updatedAt = createdAt
         self.lastViewedAt = lastViewedAt
         weatherPayload = nil
-        stormSetupPayload = nil
-        stormSetupProfileAnalysisPayload = nil
+        stormSetupCurrentResponse = nil
         stormRisk = nil
         severeRisk = nil
         fireRisk = nil
@@ -261,8 +263,11 @@ extension HomeProjection {
             lastHotAlertsLoadAt: lastHotAlertsLoadAt,
             lastSlowProductsLoadAt: lastSlowProductsLoadAt,
             lastWeatherLoadAt: lastWeatherLoadAt,
-            stormSetup: stormSetupPayload,
-            stormSetupProfileAnalysisPayload: stormSetupProfileAnalysisPayload,
+            stormSetupCurrentResponse: stormSetupCurrentResponse,
+            stormSetup: stormSetupCurrentResponse.map(StormSetupDTO.init(response:)),
+            stormSetupProfileAnalysisPayload: Self.makeStormSetupProfileAnalysisPayload(
+                from: stormSetupCurrentResponse
+            ),
             lastStormSetupLoadAt: lastStormSetupLoadAt
         )
     }
@@ -289,5 +294,75 @@ extension HomeProjection {
             return "_"
         }
         return trimmed.uppercased()
+    }
+
+    private static func makeStormSetupProfileAnalysisPayload(
+        from response: StormSetupCurrentResponse?
+    ) -> HomeProjectionStormSetupProfileAnalysisPayload? {
+        guard let response,
+              let profileAnalysis = response.profileAnalysis,
+              let modelRunTime = response.setup.source.runTime,
+              let validTime = response.setup.source.validTime,
+              let forecastHour = response.setup.source.forecastHour else {
+            return nil
+        }
+
+        return HomeProjectionStormSetupProfileAnalysisPayload(
+            response: Self.legacyProfileAnalysisResponse(from: profileAnalysis),
+            modelRunTime: modelRunTime,
+            validTime: validTime,
+            forecastHour: forecastHour,
+            fetchedAt: response.setup.freshness.fetchedAt,
+            expiresAt: response.setup.freshness.expiresAt
+        )
+    }
+
+    private static func legacyProfileAnalysisResponse(
+        from response: AnvilAnalyzeProfileResponse
+    ) -> StormSetupProfileAnalysisDTO.Response {
+        StormSetupProfileAnalysisDTO.Response(
+            mlcape: response.mlcape,
+            mucape: response.mucape,
+            mlcin: response.mlcin,
+            mllclMetersAgl: response.mllclMetersAgl,
+            scp: response.scp,
+            stpFixed: response.stpFixed,
+            stpCin: response.stpCin,
+            ship: response.ship,
+            effectiveSrh: response.effectiveSrh,
+            effectiveBulkShearMs: response.effectiveBulkShearMs,
+            effectiveLayer: .init(
+                status: response.effectiveLayer.status,
+                basePressureMb: response.effectiveLayer.basePressureMb,
+                topPressureMb: response.effectiveLayer.topPressureMb,
+                baseMetersAgl: response.effectiveLayer.baseMetersAgl,
+                topMetersAgl: response.effectiveLayer.topMetersAgl
+            ),
+            stormMotion: .init(
+                status: response.stormMotion.status,
+                bunkersRight: response.stormMotion.bunkersRight.map {
+                    .init(
+                        uMs: $0.uMs,
+                        vMs: $0.vMs,
+                        speedMs: $0.speedMs,
+                        uKt: $0.uKt,
+                        vKt: $0.vKt,
+                        speedKt: $0.speedKt,
+                        directionTowardDeg: $0.directionTowardDeg
+                    )
+                },
+                uMs: nil,
+                vMs: nil,
+                speedMs: nil,
+                uKt: nil,
+                vKt: nil,
+                speedKt: nil,
+                directionTowardDeg: nil
+            ),
+            quality: .init(
+                profileLevelCount: response.quality.profileLevelCount,
+                warnings: response.quality.warnings
+            )
+        )
     }
 }

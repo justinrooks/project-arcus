@@ -87,10 +87,13 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 
 ### Issue #286 — 03: Persist one aggregate Storm Setup payload
 
-- Status: Planned
-- Outcome: Pending
-- Validation: Pending
-- Handoff: Prefer reinstall/clear over generalized legacy-cache migration work.
+- Status: Complete
+- Outcome: `HomeProjection` now persists a single `ArcusCore.StormSetupCurrentResponse` per projection key and derives the legacy `stormSetup` / profile-analysis record fields from that aggregate. The ingestion executor writes the aggregate directly, and the separate profile-analysis persistence path is now a compatibility no-op.
+- Validation:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' -only-testing:SkyAwareTests/HomeProjectionStoreTests test`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17,OS=26.5' build`
+  - The focused test command compiled cleanly, but simulator app launch failed in CoreSimulator before execution on the current machine.
+- Handoff: Prefer reinstall/clear over generalized legacy-cache migration work. No generalized SwiftData migration layer was added.
 
 ### Issue #287 — 04: Cut Storm Setup ingestion to one request
 
@@ -113,6 +116,7 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 | 2026-07-10 | Planning | Investigation across Project Arcus, ArcusCore, and the relevant Arcus Signal route/tests | Complete |
 | 2026-07-10 | #284 | `StormSetupPresentationTests`, `StormSetupDetailPresentationTests`, and `xcodebuild ... build` | Complete |
 | 2026-07-10 | #285 | `StormSetupHTTPClientTests` and `xcodebuild ... build` | Complete |
+| 2026-07-10 | #286 | `HomeProjectionStoreTests` compile/launch attempt and `xcodebuild ... build` | Complete |
 
 ## Handoff Notes
 
