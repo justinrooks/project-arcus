@@ -204,6 +204,27 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         let title: String
         let value: String
         let iconName: String
+        let detail: String?
+        let semanticAccent: AirQualityPresentation.SemanticAccent?
+        let accessibilityValue: String?
+
+        init(
+            kind: Kind,
+            title: String,
+            value: String,
+            iconName: String,
+            detail: String? = nil,
+            semanticAccent: AirQualityPresentation.SemanticAccent? = nil,
+            accessibilityValue: String? = nil
+        ) {
+            self.kind = kind
+            self.title = title
+            self.value = value
+            self.iconName = iconName
+            self.detail = detail
+            self.semanticAccent = semanticAccent
+            self.accessibilityValue = accessibilityValue
+        }
 
         var id: String { kind.id }
     }
@@ -226,7 +247,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         dewPointValue = Self.formatTemperature(weather.dewPoint)
         dewPointFahrenheit = dewPoint
         dewPointDescriptor = DewPointDescriptor.text(for: dewPoint)
-        secondaryMetrics = [
+        var metrics: [Metric] = [
             .init(
                 kind: .humidity,
                 title: "Humidity",
@@ -247,14 +268,27 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
                 title: "Pressure",
                 value: Self.formatPressure(weather.pressure),
                 iconName: "gauge.with.dots.needle.50percent"
-            ),
-            .init(
-                kind: .aqi,
-                title: "AQI",
-                value: Self.formatAirQuality(airQuality),
-                iconName: "circle.hexagongrid.fill"
             )
         ]
+
+        if let airQuality = AirQualityPresentation(
+            aqi: airQuality?.aqi,
+            primaryPollutant: airQuality?.primaryPollutant
+        ) {
+            metrics.append(
+                Metric(
+                    kind: .aqi,
+                    title: "AQI",
+                    value: airQuality.value,
+                    iconName: "circle.hexagongrid.fill",
+                    detail: airQuality.shortCategory,
+                    semanticAccent: airQuality.semanticAccent,
+                    accessibilityValue: airQuality.accessibilityValue
+                )
+            )
+        }
+
+        secondaryMetrics = metrics
     }
 
     private static func temperatureFormatter() -> MeasurementFormatter {
@@ -292,26 +326,59 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         return "\(inHg.formatted(.number.precision(.fractionLength(2)))) inHg"
     }
 
-    private static func formatAirQuality(_ airQuality: AirQualityCurrentResponse?) -> String {
-        guard let airQuality else { return "Unavailable" }
-        let category = switch airQuality.category?.identifier {
-        case 1: "Good"
-        case 2: "Moderate"
-        case 3: "USG"
-        case 4: "Unhealthy"
-        case 5: "Very Unhealthy"
-        case 6: "Hazardous"
-        default: airQuality.category?.name ?? "—"
-        }
-        return "\(airQuality.aqi)\n \(category)"
-    }
-
     private static var unavailableMetrics: [Metric] {
         [
             .init(kind: .humidity, title: "Humidity", value: "—", iconName: "humidity.fill"),
             .init(kind: .wind, title: "Wind", value: "—", iconName: "wind"),
             .init(kind: .pressure, title: "Pressure", value: "—", iconName: "gauge.with.dots.needle.50percent")
         ]
+    }
+}
+
+struct AirQualityPresentation: Sendable, Equatable {
+    enum SemanticAccent: Sendable, Equatable {
+        case caution
+        case unhealthy
+        case veryUnhealthy
+        case hazardous
+    }
+
+    let value: String
+    let shortCategory: String
+    let accessibilityCategory: String
+    let semanticAccent: SemanticAccent
+    let primaryPollutant: String?
+
+    init?(aqi: Int?, primaryPollutant: String?) {
+        guard let aqi, aqi >= 101 else {
+            return nil
+        }
+
+        let category: (String, String, SemanticAccent) = switch aqi {
+        case 101...150:
+            ("USG", "unhealthy for sensitive groups", SemanticAccent.caution)
+        case 151...200:
+            ("Unhealthy", "unhealthy", SemanticAccent.unhealthy)
+        case 201...300:
+            ("Very Unhealthy", "very unhealthy", SemanticAccent.veryUnhealthy)
+        default:
+            ("Hazardous", "hazardous", SemanticAccent.hazardous)
+        }
+
+        self.value = aqi.formatted()
+        self.shortCategory = category.0
+        self.accessibilityCategory = category.1
+        self.semanticAccent = category.2
+        let trimmedPollutant = primaryPollutant?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.primaryPollutant = trimmedPollutant?.isEmpty == false ? trimmedPollutant : nil
+    }
+
+    var accessibilityValue: String {
+        var accessibilityText = "Air quality index \(value), \(accessibilityCategory)."
+        if let primaryPollutant {
+            accessibilityText += " Primary pollutant \(primaryPollutant)."
+        }
+        return accessibilityText
     }
 }
 
@@ -398,14 +465,23 @@ private struct AtmosphericMetricRow: View {
 
                 Text(metric.value)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(valueColor)
                     .monospacedDigit()
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let detail = metric.detail {
+                    Text(detail)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(valueColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(metric.title) \(metric.value)")
+            .accessibilityLabel(metric.title)
+            .accessibilityValue(metric.accessibilityValue ?? metric.value)
         } else {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: metric.iconName)
@@ -422,17 +498,40 @@ private struct AtmosphericMetricRow: View {
 
                     Text(metric.value)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(valueColor)
                         .monospacedDigit()
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let detail = metric.detail {
+                        Text(detail)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(valueColor)
+                            .lineLimit(1)
+                    }
                 }
 
                 Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(metric.title) \(metric.value)")
+            .accessibilityLabel(metric.title)
+            .accessibilityValue(metric.accessibilityValue ?? metric.value)
+        }
+    }
+
+    private var valueColor: Color {
+        switch metric.semanticAccent {
+        case .caution:
+            .warningYellow
+        case .unhealthy:
+            .riskEnhanced
+        case .veryUnhealthy:
+            .riskModerate
+        case .hazardous:
+            .riskHigh
+        case nil:
+            .primary
         }
     }
 }

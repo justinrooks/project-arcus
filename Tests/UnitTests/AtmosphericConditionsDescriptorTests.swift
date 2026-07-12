@@ -2,28 +2,53 @@
 import Testing
 @testable import SkyAware
 
-@Suite("Atmospheric conditions dew point descriptor")
+@Suite("Atmospheric conditions presentation")
 struct AtmosphericConditionsDescriptorTests {
-    @Test("unavailable AQI does not prevent existing weather metrics from rendering")
-    func unavailableAQILeavesConditionsAvailable() {
-        let weather = SummaryWeather(
-            temperature: .init(value: 72, unit: .fahrenheit),
-            symbolName: "sun.max.fill",
-            conditionText: "Clear",
-            asOf: .now,
-            dewPoint: .init(value: 48, unit: .fahrenheit),
-            humidity: 0.4,
-            windSpeed: .init(value: 8, unit: .milesPerHour),
-            windGust: nil,
-            windDirection: "N",
-            pressure: .init(value: 30, unit: .inchesOfMercury),
-            pressureTrend: "steady"
-        )
+    @Test("AQI at or below 100 is hidden")
+    func aqiAtOrBelowOneHundredIsHidden() {
+        #expect(AirQualityPresentation(aqi: 100, primaryPollutant: nil) == nil)
+    }
 
-        let model = AtmosphericConditionsDisplayModel(weather: weather, airQuality: nil)
+    @Test("AQI 101 through 150 uses USG")
+    func aqiUSGRange() {
+        #expect(AirQualityPresentation(aqi: 101, primaryPollutant: nil)?.shortCategory == "USG")
+        #expect(AirQualityPresentation(aqi: 150, primaryPollutant: nil)?.shortCategory == "USG")
+    }
 
-        #expect(model.secondaryMetrics.first(where: { $0.kind == .humidity })?.value == "40%")
-        #expect(model.secondaryMetrics.first(where: { $0.kind == .aqi })?.value == "Unavailable")
+    @Test("AQI 151 through 200 uses Unhealthy")
+    func aqiUnhealthyRange() {
+        #expect(AirQualityPresentation(aqi: 151, primaryPollutant: nil)?.shortCategory == "Unhealthy")
+        #expect(AirQualityPresentation(aqi: 200, primaryPollutant: nil)?.shortCategory == "Unhealthy")
+    }
+
+    @Test("AQI 201 uses Very Unhealthy")
+    func aqiVeryUnhealthyRange() {
+        #expect(AirQualityPresentation(aqi: 201, primaryPollutant: nil)?.shortCategory == "Very Unhealthy")
+    }
+
+    @Test("AQI 301 and above uses Hazardous")
+    func aqiHazardousRange() {
+        #expect(AirQualityPresentation(aqi: 301, primaryPollutant: nil)?.shortCategory == "Hazardous")
+    }
+
+    @Test("missing and invalid AQI are hidden")
+    func missingAndInvalidAQIAreHidden() {
+        #expect(AirQualityPresentation(aqi: nil, primaryPollutant: nil) == nil)
+        #expect(AirQualityPresentation(aqi: -1, primaryPollutant: nil) == nil)
+    }
+
+    @Test("AQI accessibility uses the full category and optional pollutant")
+    func aqiAccessibilityUsesFullCategory() {
+        let presentation = AirQualityPresentation(aqi: 112, primaryPollutant: "PM2.5")
+
+        #expect(presentation?.accessibilityValue == "Air quality index 112, unhealthy for sensitive groups. Primary pollutant PM2.5.")
+    }
+
+    @Test("hidden AQI preserves the original three-metric rail")
+    func hiddenAQIPreservesThreeMetricRail() {
+        let model = AtmosphericConditionsDisplayModel(weather: sampleWeather, airQuality: nil)
+
+        #expect(model.secondaryMetrics.map(\.kind) == [.humidity, .wind, .pressure])
     }
     @Test("dew points below 50 are dry air")
     func belowFiftyIsDryAir() {
@@ -57,6 +82,22 @@ struct AtmosphericConditionsDescriptorTests {
     @Test("missing dew point returns unavailable text")
     func missingValueReturnsUnavailableText() {
         #expect(DewPointDescriptor.text(for: nil) == "Dew point unavailable")
+    }
+
+    private var sampleWeather: SummaryWeather {
+        SummaryWeather(
+            temperature: .init(value: 72, unit: .fahrenheit),
+            symbolName: "sun.max.fill",
+            conditionText: "Clear",
+            asOf: .now,
+            dewPoint: .init(value: 48, unit: .fahrenheit),
+            humidity: 0.4,
+            windSpeed: .init(value: 8, unit: .milesPerHour),
+            windGust: nil,
+            windDirection: "N",
+            pressure: .init(value: 30, unit: .inchesOfMercury),
+            pressureTrend: "steady"
+        )
     }
 }
 #endif
