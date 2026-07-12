@@ -340,10 +340,6 @@ final class Dependencies: Sendable {
             baseURL: arcusBaseURL,
             http: httpClient
         )
-        let stormSetupProfileAnalysisClient = StormSetupProfileAnalysisHTTPClient(
-            baseURL: arcusBaseURL,
-            http: httpClient
-        )
         let metadataRepo = NwsMetadataRepo()
 
         let locationUploadCoordinator: any LocationUploadCoordinating
@@ -504,7 +500,6 @@ final class Dependencies: Sendable {
                 projectionStore: homeProjectionStore,
                 widgetSnapshotRefresher: widgetSnapshotRefresher,
                 stormSetupQuerying: stormSetupClient,
-                stormSetupProfileAnalysisQuerying: stormSetupProfileAnalysisClient,
                 stormSetupPreferencesReader: stormSetupPreferencesReader
             )
         )

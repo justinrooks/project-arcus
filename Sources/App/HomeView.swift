@@ -105,11 +105,9 @@ struct HomeView: View {
         )
     }
 
-    private var displayedStormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? {
+    private var displayedStormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse? {
         guard stormSetupPreferences.effectiveDetailedIngredientsEnabled else { return nil }
-        return displayedStormSetupCurrentResponse.flatMap {
-            StormSetupDetailPresentation.legacyProfileAnalysisResponse(from: $0.profileAnalysis)
-        }
+        return displayedStormSetupCurrentResponse?.profileAnalysis
     }
 
     private var resolvedLocationTimeZone: TimeZone {
@@ -254,8 +252,6 @@ struct HomeView: View {
         initialStormSetup: StormSetupDTO? = nil,
         initialStormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
-        initialStormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
-        initialStormSetupProfileAnalysisRefreshKey: LocationContext.RefreshKey? = nil,
         initialMesos: [MdDTO] = [],
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -270,8 +266,6 @@ struct HomeView: View {
                 initialStormSetup: initialStormSetup,
                 initialStormSetupCurrentResponse: initialStormSetupCurrentResponse,
                 initialStormSetupRefreshKey: initialStormSetupRefreshKey,
-                initialStormSetupProfileAnalysisPayload: initialStormSetupProfileAnalysisPayload,
-                initialStormSetupProfileAnalysisRefreshKey: initialStormSetupProfileAnalysisRefreshKey,
                 initialMesos: initialMesos,
                 initialAlerts: initialAlerts,
                 initialOutlooks: initialOutlooks,
@@ -606,53 +600,6 @@ extension HomeView {
         return response
     }
 
-    static func selectStormSetupProfileAnalysisResponse(
-        selectedProjection: HomeProjectionRecord?,
-        currentContext: LocationContext?,
-        selectedPrimary: StormSetupDTO?,
-        preferences: StormSetupPreferences,
-        pipelinePayload: HomeProjectionStormSetupProfileAnalysisPayload?,
-        pipelineRefreshKey: LocationContext.RefreshKey?,
-        now: Date
-    ) -> StormSetupProfileAnalysisDTO.Response? {
-        if let currentContext {
-            let currentRefreshKey = currentContext.refreshKey
-            if pipelineRefreshKey == currentRefreshKey,
-               let usablePipelinePayload = StormSetupProfileAnalysisPolicy.usableCachedPayload(
-                preferences: preferences,
-                primary: selectedPrimary,
-                cachedPayload: pipelinePayload,
-                now: now
-               ) {
-                return usablePipelinePayload.response
-            }
-
-            guard let selectedProjection,
-                  selectedProjection.projectionKey == HomeProjection.projectionKey(for: currentContext),
-                  let usableProjectionPayload = StormSetupProfileAnalysisPolicy.usableCachedPayload(
-                    preferences: preferences,
-                    primary: selectedPrimary,
-                    cachedPayload: selectedProjection.stormSetupProfileAnalysisPayload,
-                    now: now
-                  ) else {
-                return nil
-            }
-
-            return usableProjectionPayload.response
-        }
-
-        guard let usableProjectionPayload = StormSetupProfileAnalysisPolicy.usableCachedPayload(
-            preferences: preferences,
-            primary: selectedPrimary,
-            cachedPayload: selectedProjection?.stormSetupProfileAnalysisPayload,
-            now: now
-        ) else {
-            return nil
-        }
-
-        return usableProjectionPayload.response
-    }
-
     static func resolveLocationTimeZone(
         selectedProjection: HomeProjectionRecord?,
         currentContext: LocationContext?,
@@ -879,7 +826,7 @@ private struct TodayTabView: View {
 
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?
-    let stormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response?
+    let stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
     let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?

@@ -1,6 +1,6 @@
 # Storm Setup Contract Migration Runbook
 
-**Status:** Planned
+**Status:** Complete
 
 **Applies to:** Project Arcus / SkyAware Storm Setup
 
@@ -13,7 +13,7 @@
 Migrate Project Arcus from its local two-response Storm Setup integration to the public ArcusCore
 `StormSetupCurrentResponse` returned by `GET /api/v1/storm-setup/current`. Preserve the existing Storm Setup summary,
 detail navigation, layout, labels, and cache-forward behavior while removing every app-side request and lifecycle
-dependency on `GET /api/v1/dev/anvil/profile-analysis`.
+dependency on the legacy profile-analysis path.
 
 Dependency adoption and baseline ArcusCore contract fixtures are handled separately by the project owner. This campaign
 starts with presentation alignment.
@@ -89,7 +89,7 @@ Do not create a parallel app-local transport graph.
 ## Guardrails
 
 - One Storm Setup HTTP request per eligible refresh.
-- No calls to `dev/anvil/profile-analysis` after cutover.
+- No calls to the legacy profile-analysis path after cutover.
 - No Arcus Signal changes unless direct evidence shows the public contract cannot satisfy the agreed UI.
 - No UI redesign, navigation change, label rewrite, icon change, or layout restructuring.
 - No speculative compatibility decoder for old and new server payloads.

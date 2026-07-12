@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import ArcusCore
 
 struct StormSetupDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -470,31 +471,24 @@ private enum StormSetupDetailPreviewData {
         effectiveBulkShearMs: 11.2,
         effectiveLayer: .init(
             status: "found",
-            basePressureMb: nil,
+            basePressureMb: 946,
             topPressureMb: 775,
-            baseMetersAgl: nil,
+            baseMetersAgl: 0,
             topMetersAgl: 1_721
         ),
         stormMotion: .init(
             status: "found",
             bunkersRight: .init(
-                uMs: nil,
-                vMs: nil,
-                speedMs: nil,
-                uKt: nil,
-                vKt: nil,
+                uKt: 0,
+                vKt: 0,
                 speedKt: 28.2,
-                directionTowardDeg: nil
-            ),
-            uMs: nil,
-            vMs: nil,
-            speedMs: nil,
-            uKt: nil,
-            vKt: nil,
-            speedKt: nil,
-            directionTowardDeg: nil
+                directionTowardDeg: 0,
+                uMs: 0,
+                vMs: 0,
+                speedMs: 0
+            )
         ),
-        quality: .init(profileLevelCount: nil, warnings: nil)
+        quality: .init(profileLevelCount: 0, warnings: [])
     )
 
     private static func makeDTO(
@@ -574,50 +568,67 @@ private enum StormSetupDetailPreviewData {
         ship: Double? = 2.1,
         effectiveSrh: Double? = 135,
         effectiveBulkShearMs: Double? = 24.5,
-        effectiveLayer: StormSetupProfileAnalysisDTO.EffectiveLayer? = .init(
+        effectiveLayer: AnvilEffectiveLayerDTO? = .init(
             status: "found",
             basePressureMb: 915,
             topPressureMb: 750,
             baseMetersAgl: 850,
             topMetersAgl: 1_800
         ),
-        stormMotion: StormSetupProfileAnalysisDTO.StormMotion? = .init(
+        stormMotion: AnvilStormMotionDTO? = .init(
             status: "found",
             bunkersRight: .init(
-                uMs: 8.4,
-                vMs: -4.2,
-                speedMs: 9.4,
                 uKt: 16.3,
                 vKt: -8.2,
                 speedKt: 18.3,
-                directionTowardDeg: 215
-            ),
-            uMs: 6.2,
-            vMs: -2.4,
-            speedMs: 6.6,
-            uKt: 12.1,
-            vKt: -4.7,
-            speedKt: 12.8,
-            directionTowardDeg: 201
+                directionTowardDeg: 215,
+                uMs: 8.4,
+                vMs: -4.2,
+                speedMs: 9.4
+            )
         ),
-        quality: StormSetupProfileAnalysisDTO.Quality? = .init(
+        quality: AnvilQualityDTO = .init(
             profileLevelCount: 36,
             warnings: ["profile trimmed", "debug ignored"]
         )
-    ) -> StormSetupProfileAnalysisDTO.Response {
-        StormSetupProfileAnalysisDTO.Response(
-            mlcape: mlcape,
+    ) -> AnvilAnalyzeProfileResponse {
+        AnvilAnalyzeProfileResponse(
+            effectiveLayer: effectiveLayer ?? .init(
+                status: "found",
+                basePressureMb: 915,
+                topPressureMb: 750,
+                baseMetersAgl: 850,
+                topMetersAgl: 1_800
+            ),
+            stormMotion: stormMotion ?? .init(
+                status: "found",
+                bunkersRight: .init(
+                    uKt: 16.3,
+                    vKt: -8.2,
+                    speedKt: 18.3,
+                    directionTowardDeg: 215,
+                    uMs: 8.4,
+                    vMs: -4.2,
+                    speedMs: 9.4
+                )
+            ),
             mucape: mucape,
+            mlcape: mlcape,
             mlcin: mlcin,
             mllclMetersAgl: mllclMetersAgl,
-            scp: scp,
-            stpFixed: stpFixed,
-            stpCin: stpCin,
-            ship: ship,
             effectiveSrh: effectiveSrh,
             effectiveBulkShearMs: effectiveBulkShearMs,
-            effectiveLayer: effectiveLayer,
-            stormMotion: stormMotion,
+            scp: scp,
+            stpCin: stpCin,
+            stpFixed: stpFixed,
+            ship: ship,
+            srh01km: nil,
+            srh03km: nil,
+            sbcape: nil,
+            sbcin: nil,
+            bulkShear06kmMs: nil,
+            lapserate03km: nil,
+            threeCapeJkg: nil,
             quality: quality
         )
     }

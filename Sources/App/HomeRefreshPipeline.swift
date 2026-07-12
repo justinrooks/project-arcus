@@ -79,7 +79,6 @@ final class HomeRefreshPipeline {
     private var environment: Environment?
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
     private(set) var stormSetupRefreshKey: LocationContext.RefreshKey?
-    private(set) var stormSetupProfileAnalysisRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
@@ -90,7 +89,6 @@ final class HomeRefreshPipeline {
     var summaryWeather: SummaryWeather?
     var stormSetup: StormSetupDTO?
     var stormSetupCurrentResponse: StormSetupCurrentResponse?
-    var stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     private(set) var riskSnapshot: HomeRiskSnapshot
     private(set) var alertSnapshot: HomeAlertSnapshot
     private(set) var outlookSnapshot: HomeOutlookSnapshot
@@ -116,8 +114,6 @@ final class HomeRefreshPipeline {
         initialStormSetup: StormSetupDTO? = nil,
         initialStormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
-        initialStormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
-        initialStormSetupProfileAnalysisRefreshKey: LocationContext.RefreshKey? = nil,
         initialMesos: [MdDTO] = [],
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -134,8 +130,6 @@ final class HomeRefreshPipeline {
         self.stormSetup = initialStormSetup
         self.stormSetupCurrentResponse = initialStormSetupCurrentResponse
         self.stormSetupRefreshKey = initialStormSetupRefreshKey
-        self.stormSetupProfileAnalysisPayload = initialStormSetupProfileAnalysisPayload
-        self.stormSetupProfileAnalysisRefreshKey = initialStormSetupProfileAnalysisRefreshKey
         self.riskSnapshot = HomeRiskSnapshot(
             stormRisk: initialStormRisk,
             severeRisk: initialSevereRisk,
@@ -558,27 +552,6 @@ final class HomeRefreshPipeline {
         self.stormSetup = resolvedStormSetup
         stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
         stormSetupRefreshKey = snapshotRefreshKey
-    }
-
-    private func applyStormSetupProfileAnalysis(_ snapshot: HomeSnapshot) {
-        guard let snapshotRefreshKey = snapshot.refreshKey else {
-            stormSetupProfileAnalysisPayload = nil
-            stormSetupProfileAnalysisRefreshKey = nil
-            return
-        }
-
-        guard let resolvedProfileAnalysis = snapshot.stormSetupProfileAnalysisPayload else {
-            guard snapshotRefreshKey != stormSetupProfileAnalysisRefreshKey else {
-                return
-            }
-
-            stormSetupProfileAnalysisPayload = nil
-            stormSetupProfileAnalysisRefreshKey = snapshotRefreshKey
-            return
-        }
-
-        stormSetupProfileAnalysisPayload = resolvedProfileAnalysis
-        stormSetupProfileAnalysisRefreshKey = snapshotRefreshKey
     }
 }
 

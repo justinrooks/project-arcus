@@ -39,3 +39,9 @@
 - When a new async test suite mirrors an existing serialized suite, copy its task and polling pattern exactly before
   blaming production code. Detached `Task {}` bodies, throwing spin-loop wait helpers, and timeout gates left closed
   after assertions can poison a full Xcode run even when an isolated test looks fine.
+
+## 2026-07-12
+
+- Do not infer SwiftData Codable storage behavior from JSON Codable behavior. SwiftData may flatten nested values and
+  use framework-specific encoders that trap on otherwise valid custom enum conformances. Inspect the SQLite schema and
+  reproduce an actual save/reopen path before prescribing a shared-model decoder fix.

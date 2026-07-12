@@ -10,6 +10,7 @@ import SwiftData
 import BackgroundTasks
 import CoreLocation
 import OSLog
+import ArcusCore
 
 // e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.skyaware.app.refresh"]
 
@@ -195,9 +196,8 @@ private extension SkyAwareApp {
             if let fixture = Self.uiTestStormSetupFixture {
                 HomeView(
                     initialStormSetup: fixture.stormSetup,
+                    initialStormSetupCurrentResponse: fixture.currentResponse,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
-                    initialStormSetupProfileAnalysisPayload: fixture.profileAnalysis,
-                    initialStormSetupProfileAnalysisRefreshKey: fixture.context.refreshKey,
                     initialMesos: Self.uiTestSeedMesos,
                     initialAlerts: Self.uiTestSeedWatches
                 )
@@ -517,7 +517,11 @@ private extension SkyAwareApp {
 private struct UITestStormSetupFixture {
     let context: LocationContext
     let stormSetup: StormSetupDTO
-    let profileAnalysis: HomeProjectionStormSetupProfileAnalysisPayload
+    let profileAnalysis: AnvilAnalyzeProfileResponse
+
+    var currentResponse: StormSetupCurrentResponse {
+        stormSetup.stormSetupCurrentResponse(profileAnalysis: profileAnalysis)
+    }
 
     static let supportive = UITestStormSetupFixture(
         context: .init(
@@ -618,56 +622,153 @@ private struct UITestStormSetupFixture {
             centroid: .init(latitude: 39.6, longitude: -104.0),
             surfaceHeightMslM: 1600
         ),
-        profileAnalysis: .init(
-            response: .init(
-                mlcape: 1_850,
-                mucape: 2_200.5,
-                mlcin: -42,
-                mllclMetersAgl: 980,
-                scp: 0.7,
-                stpFixed: 1.2,
-                stpCin: 0.9,
-                ship: 2.1,
-                effectiveSrh: 135,
-                effectiveBulkShearMs: 24.5,
-                effectiveLayer: .init(
-                    status: "found",
-                    basePressureMb: 915,
-                    topPressureMb: 750,
-                    baseMetersAgl: 850,
-                    topMetersAgl: 1_800
-                ),
-                stormMotion: .init(
-                    status: "available",
-                    bunkersRight: .init(
-                        uMs: 8.4,
-                        vMs: -4.2,
-                        speedMs: 9.4,
-                        uKt: 16.3,
-                        vKt: -8.2,
-                        speedKt: 18.3,
-                        directionTowardDeg: 215
-                    ),
-                    uMs: 6.2,
-                    vMs: -2.4,
-                    speedMs: 6.6,
-                    uKt: 12.1,
-                    vKt: -4.7,
-                    speedKt: 12.8,
-                    directionTowardDeg: 201
-                ),
-                quality: .init(
-                    profileLevelCount: 36,
-                    warnings: ["pressure-level diagnostics trimmed"]
+        profileAnalysis: Self.makeProfileAnalysisResponse()
+    )
+
+    private static func makeProfileAnalysisResponse() -> AnvilAnalyzeProfileResponse {
+        AnvilAnalyzeProfileResponse(
+            effectiveLayer: .init(
+                status: "found",
+                basePressureMb: 915,
+                topPressureMb: 750,
+                baseMetersAgl: 850,
+                topMetersAgl: 1_800
+            ),
+            stormMotion: .init(
+                status: "available",
+                bunkersRight: .init(
+                    uKt: 16.3,
+                    vKt: -8.2,
+                    speedKt: 18.3,
+                    directionTowardDeg: 215,
+                    uMs: 8.4,
+                    vMs: -4.2,
+                    speedMs: 9.4
                 )
             ),
-            modelRunTime: uiTestDate("2026-07-03T12:00:00Z"),
-            validTime: uiTestDate("2026-07-03T18:00:00Z"),
-            forecastHour: 6,
-            fetchedAt: uiTestDate("2026-07-03T18:04:00Z"),
-            expiresAt: .distantFuture
+            mucape: 2_200.5,
+            mlcape: 1_850,
+            mlcin: -42,
+            mllclMetersAgl: 980,
+            effectiveSrh: 135,
+            effectiveBulkShearMs: 24.5,
+            scp: 0.7,
+            stpCin: 0.9,
+            stpFixed: 1.2,
+            ship: 2.1,
+            srh01km: nil,
+            srh03km: nil,
+            sbcape: nil,
+            sbcin: nil,
+            bulkShear06kmMs: nil,
+            lapserate03km: nil,
+            threeCapeJkg: nil,
+            quality: .init(
+                profileLevelCount: 36,
+                warnings: ["pressure-level diagnostics trimmed"]
+            )
         )
-    )
+    }
+}
+
+private extension StormSetupDTO {
+    func stormSetupCurrentResponse(profileAnalysis: AnvilAnalyzeProfileResponse?) -> StormSetupCurrentResponse {
+        .init(
+            setup: .init(
+                h3Cell: h3Cell,
+                centroid: .init(latitude: centroid?.latitude ?? 0, longitude: centroid?.longitude ?? 0),
+                source: .init(
+                    model: .hrrr,
+                    product: .wrfsfc,
+                    domain: .conus,
+                    runTime: freshness.modelRunTime,
+                    forecastHour: freshness.forecastHour,
+                    validTime: freshness.sourceValidTime,
+                    fieldSetVersion: .tornadoV1,
+                    bbox: source.bbox.map {
+                        .init(
+                            leftlon: $0.leftlon,
+                            rightlon: $0.rightlon,
+                            toplat: $0.toplat,
+                            bottomlat: $0.bottomlat
+                        )
+                    },
+                    primaryDownloadURL: URL(string: source.primaryDownloadURL ?? "https://example.invalid/storm-setup"),
+                    idxURL: nil
+                ),
+                surfaceHeightMslM: surfaceHeightMslM,
+                freshness: .init(
+                    sourceValidTime: freshness.sourceValidTime,
+                    modelRunTime: freshness.modelRunTime,
+                    forecastHour: freshness.forecastHour,
+                    fetchedAt: freshness.fetchedAt,
+                    expiresAt: freshness.expiresAt,
+                    isStale: freshness.isStale,
+                    isDegraded: freshness.isDegraded
+                )
+            ),
+            ingredients: .init(
+                canonical: .init(
+                    sbcapeJkg: raw.sbcapeJkg,
+                    mlcapeJkg: raw.mlcapeJkg,
+                    mucapeJkg: raw.mucapeJkg,
+                    mlcinJkg: raw.mlcinJkg,
+                    dcapeJkg: nil,
+                    mllclM: raw.mllclM,
+                    tempDewPtDeltaF: raw.tempDewPtDeltaF,
+                    threeCapeJkg: raw.threeCapeJkg,
+                    lclLfcSeparationM: nil,
+                    lapseRate03kmCkm: nil,
+                    lapseRate700500mbCkm: nil,
+                    shear06kmKt: raw.shear06kmKt,
+                    shear03kmKt: nil,
+                    shear01kmKt: nil,
+                    effectiveShearKt: nil,
+                    srh01kmM2s2: raw.srh01kmM2s2,
+                    srh03kmM2s2: raw.srh03kmM2s2,
+                    effectiveSrhM2s2: nil,
+                    supercellComposite: nil,
+                    significantTornadoFixed: nil,
+                    significantTornadoEffective: nil,
+                    significantHail: nil,
+                    bunkersRightMotion: nil,
+                    bunkersLeftMotion: nil,
+                    stormRelativeWind46km: nil,
+                    meanWind850300mb: nil,
+                    diagnostics: nil,
+                    effectiveBulkShearMs: nil,
+                    effectiveLayer: nil,
+                    stormMotion: nil
+                ),
+                diagnostics: .empty
+            ),
+            profileAnalysis: profileAnalysis,
+            tornadoViability: .init(
+                overall: .supportive,
+                realization: .realized,
+                primaryFailureMode: .none,
+                confidence: .moderate,
+                summary: assessment.summary ?? "",
+                details: .init(
+                    stormViability: .supportive,
+                    supercellViability: .strong,
+                    tornadoEfficiency: .supportive,
+                    inhibition: .weak,
+                    instability: .supportive,
+                    moisture: .supportive,
+                    cloudBase: .weak,
+                    deepShear: .strong,
+                    lowLevelRotation: .conditional,
+                    lowLevelStretching: .supportive,
+                    cloudBaseEfficiency: .supportive,
+                    supercellComposite: .strong,
+                    tornadoComposite: .supportive,
+                    stormMode: .supportive
+                ),
+                limitingFactors: [.strongCap]
+            )
+        )
+    }
 }
 
 private func uiTestDate(_ value: String) -> Date {

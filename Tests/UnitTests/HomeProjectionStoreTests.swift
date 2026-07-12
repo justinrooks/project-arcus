@@ -51,7 +51,6 @@ struct HomeProjectionStoreTests {
 
         #expect(projection.stormSetupCurrentResponse == nil)
         #expect(projection.stormSetup == nil)
-        #expect(projection.stormSetupProfileAnalysisPayload == nil)
         #expect(projection.lastStormSetupLoadAt == nil)
     }
 
@@ -67,14 +66,12 @@ struct HomeProjectionStoreTests {
 
         #expect(updated.stormSetupCurrentResponse == response)
         #expect(updated.stormSetup == StormSetupDTO(response: response))
-        #expect(updated.stormSetupProfileAnalysisPayload == makeStormSetupProfileAnalysisPayload())
         #expect(updated.lastStormSetupLoadAt == loadedAt)
         #expect(updated.updatedAt == loadedAt)
 
         let persisted = try #require(await store.projection(for: context))
         #expect(persisted.stormSetupCurrentResponse == response)
         #expect(persisted.stormSetup == StormSetupDTO(response: response))
-        #expect(persisted.stormSetupProfileAnalysisPayload == makeStormSetupProfileAnalysisPayload())
         #expect(persisted.lastStormSetupLoadAt == loadedAt)
     }
 
@@ -92,13 +89,11 @@ struct HomeProjectionStoreTests {
         let updated = try await store.updateStormSetup(secondResponse, for: context, loadedAt: secondLoadedAt)
 
         #expect(updated.stormSetupCurrentResponse == secondResponse)
-        #expect(updated.stormSetupProfileAnalysisPayload == nil)
         #expect(updated.stormSetup == StormSetupDTO(response: secondResponse))
         #expect(updated.lastStormSetupLoadAt == secondLoadedAt)
 
         let persisted = try #require(await store.projection(for: context))
         #expect(persisted.stormSetupCurrentResponse == secondResponse)
-        #expect(persisted.stormSetupProfileAnalysisPayload == nil)
     }
 
     @Test("updating Storm Setup preserves weather, risks, alerts, mesos, and timestamps")
@@ -137,7 +132,6 @@ struct HomeProjectionStoreTests {
         #expect(updated.activeMesos == [meso])
         #expect(updated.stormSetupCurrentResponse == response)
         #expect(updated.stormSetup == StormSetupDTO(response: response))
-        #expect(updated.stormSetupProfileAnalysisPayload == makeStormSetupProfileAnalysisPayload())
         #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 400))
         #expect(updated.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
@@ -201,8 +195,6 @@ struct HomeProjectionStoreTests {
         #expect(secondProjection.stormSetupCurrentResponse == secondResponse)
         #expect(firstProjection.stormSetup == StormSetupDTO(response: firstResponse))
         #expect(secondProjection.stormSetup == StormSetupDTO(response: secondResponse))
-        #expect(firstProjection.stormSetupProfileAnalysisPayload == makeStormSetupProfileAnalysisPayload())
-        #expect(secondProjection.stormSetupProfileAnalysisPayload == nil)
         #expect(firstProjection.stormSetup != secondProjection.stormSetup)
     }
 
@@ -223,7 +215,6 @@ struct HomeProjectionStoreTests {
 
         #expect(persisted.stormSetupCurrentResponse == response)
         #expect(persisted.stormSetup == StormSetupDTO(response: response))
-        #expect(persisted.stormSetupProfileAnalysisPayload == makeStormSetupProfileAnalysisPayload())
         #expect(persisted.lastStormSetupLoadAt == loadedAt)
     }
 
@@ -257,8 +248,69 @@ struct HomeProjectionStoreTests {
 
         #expect(persisted.stormSetupCurrentResponse == response)
         #expect(persisted.stormSetup == StormSetupDTO(response: response))
-        #expect(persisted.stormSetupProfileAnalysisPayload == makeStormSetupProfileAnalysisPayload())
         #expect(persisted.lastStormSetupLoadAt == stormLoadedAt)
+    }
+
+    @Test("a corrupt Storm Setup cache is treated as a cache miss")
+    func projection_corruptStormSetupPayloadPreservesOtherSlices() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let weather = makeWeather()
+        let response = makeStormSetupCurrentResponse()
+
+        _ = try await store.updateWeather(weather, for: context, loadedAt: Date(timeIntervalSince1970: 300))
+        _ = try await store.updateStormSetup(response, for: context, loadedAt: Date(timeIntervalSince1970: 600))
+
+        let contextForCorruption = ModelContext(container)
+        let projection = try #require(contextForCorruption.fetch(FetchDescriptor<HomeProjection>()).first)
+        projection.stormSetupCurrentResponseData = Data("corrupt".utf8)
+        try contextForCorruption.save()
+
+        let reopenedStore = HomeProjectionStore(modelContainer: container)
+        let persisted = try #require(await reopenedStore.projection(for: context))
+
+        #expect(persisted.stormSetupCurrentResponse == nil)
+        #expect(persisted.stormSetup == nil)
+        #expect(persisted.weather == weather)
+        #expect(persisted.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
+        #expect(persisted.lastStormSetupLoadAt == Date(timeIntervalSince1970: 600))
+    }
+
+    @Test("a pre-change store migrates without losing unrelated projection data")
+    func projection_preChangeStoreMigratesWithoutStormSetupCache() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let context = makeContext()
+        let weather = makeWeather()
+        let createdAt = Date(timeIntervalSince1970: 100)
+
+        do {
+            let legacySchema = Schema(versionedSchema: HomeProjectionSchemaV1.self)
+            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
+            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
+            let legacyContext = ModelContext(legacyContainer)
+            let legacyProjection = HomeProjectionSchemaV1.HomeProjection(context: context, createdAt: createdAt)
+            legacyProjection.weatherPayload = HomeProjectionWeatherPayload(summary: weather)
+            legacyProjection.lastWeatherLoadAt = Date(timeIntervalSince1970: 300)
+            legacyContext.insert(legacyProjection)
+            try legacyContext.save()
+        }
+
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let store = HomeProjectionStore(modelContainer: container)
+        let persisted = try #require(await store.projection(for: context))
+
+        #expect(persisted.weather == weather)
+        #expect(persisted.createdAt == createdAt)
+        #expect(persisted.stormSetupCurrentResponse == nil)
+        #expect(persisted.stormSetup == nil)
     }
 
     @Test("updating slow products keeps existing weather and alert slices")
@@ -579,64 +631,6 @@ struct HomeProjectionStoreTests {
         )
     }
 
-    private func makeStormSetupProfileAnalysisPayload(
-        response: StormSetupProfileAnalysisDTO.Response? = nil,
-        modelRunTime: Date = Date(timeIntervalSince1970: 1_717_270_400),
-        validTime: Date = Date(timeIntervalSince1970: 1_717_281_600),
-        forecastHour: Int = 3,
-        fetchedAt: Date = Date(timeIntervalSince1970: 1_717_281_780),
-        expiresAt: Date = Date(timeIntervalSince1970: 1_717_284_000)
-    ) -> HomeProjectionStormSetupProfileAnalysisPayload {
-        let resolvedResponse = response ?? .init(
-            mlcape: 1_850,
-            mucape: 2_200.5,
-            mlcin: -42,
-            mllclMetersAgl: 980,
-            scp: 3.2,
-            stpFixed: 1.4,
-            stpCin: 1.8,
-            ship: 0.9,
-            effectiveSrh: 125.5,
-            effectiveBulkShearMs: 21.5,
-            effectiveLayer: .init(
-                status: "available",
-                basePressureMb: 887,
-                topPressureMb: 715,
-                baseMetersAgl: 600,
-                topMetersAgl: 5_100
-            ),
-            stormMotion: .init(
-                status: "available",
-                bunkersRight: .init(
-                    uMs: 4.8,
-                    vMs: 1.6,
-                    speedMs: 5.1,
-                    uKt: 9.3,
-                    vKt: 3.1,
-                    speedKt: 9.9,
-                    directionTowardDeg: 65
-                ),
-                uMs: 4.8,
-                vMs: 1.6,
-                speedMs: 5.1,
-                uKt: 9.3,
-                vKt: 3.1,
-                speedKt: 9.9,
-                directionTowardDeg: 65
-            ),
-            quality: .init(profileLevelCount: 4, warnings: ["sample"])
-        )
-
-        return HomeProjectionStormSetupProfileAnalysisPayload(
-            response: resolvedResponse,
-            modelRunTime: modelRunTime,
-            validTime: validTime,
-            forecastHour: forecastHour,
-            fetchedAt: fetchedAt,
-            expiresAt: expiresAt
-        )
-    }
-
     private func makeStormSetupDTO(
         h3Cell: Int64 = 123_456,
         surfaceHeightMslM: Double = 1_132.4,
@@ -891,6 +885,7 @@ enum HomeProjectionSchemaV1: VersionedSchema {
         var lastViewedAt: Date?
 
         var weatherPayload: HomeProjectionWeatherPayload?
+        var stormSetupCurrentResponse: StormSetupCurrentResponse?
         var stormRisk: StormRiskLevel?
         var severeRisk: SevereWeatherThreat?
         var fireRisk: FireRiskLevel?
@@ -917,6 +912,7 @@ enum HomeProjectionSchemaV1: VersionedSchema {
             updatedAt = createdAt
             self.lastViewedAt = lastViewedAt
             weatherPayload = nil
+            stormSetupCurrentResponse = nil
             stormRisk = nil
             severeRisk = nil
             fireRisk = nil

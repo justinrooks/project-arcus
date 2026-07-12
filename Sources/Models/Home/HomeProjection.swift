@@ -53,15 +53,6 @@ struct HomeProjectionWeatherPayload: Sendable, Codable, Equatable {
     }
 }
 
-struct HomeProjectionStormSetupProfileAnalysisPayload: Sendable, Codable, Equatable {
-    let response: StormSetupProfileAnalysisDTO.Response
-    let modelRunTime: Date
-    let validTime: Date
-    let forecastHour: Int
-    let fetchedAt: Date
-    let expiresAt: Date
-}
-
 struct HomeProjectionRecord: Sendable, Equatable {
     let id: UUID
     let projectionKey: String
@@ -85,7 +76,6 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let activeMesos: [MdDTO]
     let stormSetupCurrentResponse: StormSetupCurrentResponse?
     let stormSetup: StormSetupDTO?
-    let stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
     let lastHotAlertsLoadAt: Date?
     let lastSlowProductsLoadAt: Date?
     let lastWeatherLoadAt: Date?
@@ -117,7 +107,6 @@ struct HomeProjectionRecord: Sendable, Equatable {
         lastWeatherLoadAt: Date?,
         stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         stormSetup: StormSetupDTO? = nil,
-        stormSetupProfileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload? = nil,
         lastStormSetupLoadAt: Date? = nil
     ) {
         self.id = id
@@ -142,7 +131,6 @@ struct HomeProjectionRecord: Sendable, Equatable {
         self.activeMesos = activeMesos
         self.stormSetupCurrentResponse = stormSetupCurrentResponse
         self.stormSetup = stormSetup
-        self.stormSetupProfileAnalysisPayload = stormSetupProfileAnalysisPayload
         self.lastHotAlertsLoadAt = lastHotAlertsLoadAt
         self.lastSlowProductsLoadAt = lastSlowProductsLoadAt
         self.lastWeatherLoadAt = lastWeatherLoadAt
@@ -182,7 +170,7 @@ final class HomeProjection {
     var lastViewedAt: Date?
 
     var weatherPayload: HomeProjectionWeatherPayload?
-    var stormSetupCurrentResponse: StormSetupCurrentResponse?
+    var stormSetupCurrentResponseData: Data?
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -214,7 +202,7 @@ final class HomeProjection {
         updatedAt = createdAt
         self.lastViewedAt = lastViewedAt
         weatherPayload = nil
-        stormSetupCurrentResponse = nil
+        stormSetupCurrentResponseData = nil
         stormRisk = nil
         severeRisk = nil
         fireRisk = nil
@@ -239,7 +227,8 @@ extension HomeProjection {
     }
 
     var record: HomeProjectionRecord {
-        HomeProjectionRecord(
+        let stormSetupCurrentResponse = StormSetupCurrentResponsePersistenceCodec.decode(stormSetupCurrentResponseData)
+        return HomeProjectionRecord(
             id: id,
             projectionKey: projectionKey,
             latitude: latitude,
@@ -265,9 +254,6 @@ extension HomeProjection {
             lastWeatherLoadAt: lastWeatherLoadAt,
             stormSetupCurrentResponse: stormSetupCurrentResponse,
             stormSetup: stormSetupCurrentResponse.map(StormSetupDTO.init(response:)),
-            stormSetupProfileAnalysisPayload: Self.makeStormSetupProfileAnalysisPayload(
-                from: stormSetupCurrentResponse
-            ),
             lastStormSetupLoadAt: lastStormSetupLoadAt
         )
     }
@@ -295,74 +281,19 @@ extension HomeProjection {
         }
         return trimmed.uppercased()
     }
+}
 
-    private static func makeStormSetupProfileAnalysisPayload(
-        from response: StormSetupCurrentResponse?
-    ) -> HomeProjectionStormSetupProfileAnalysisPayload? {
-        guard let response,
-              let profileAnalysis = response.profileAnalysis,
-              let modelRunTime = response.setup.source.runTime,
-              let validTime = response.setup.source.validTime,
-              let forecastHour = response.setup.source.forecastHour else {
-            return nil
-        }
-
-        return HomeProjectionStormSetupProfileAnalysisPayload(
-            response: Self.legacyProfileAnalysisResponse(from: profileAnalysis),
-            modelRunTime: modelRunTime,
-            validTime: validTime,
-            forecastHour: forecastHour,
-            fetchedAt: response.setup.freshness.fetchedAt,
-            expiresAt: response.setup.freshness.expiresAt
-        )
+enum StormSetupCurrentResponsePersistenceCodec {
+    static func encode(_ response: StormSetupCurrentResponse) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(response)
     }
 
-    private static func legacyProfileAnalysisResponse(
-        from response: AnvilAnalyzeProfileResponse
-    ) -> StormSetupProfileAnalysisDTO.Response {
-        StormSetupProfileAnalysisDTO.Response(
-            mlcape: response.mlcape,
-            mucape: response.mucape,
-            mlcin: response.mlcin,
-            mllclMetersAgl: response.mllclMetersAgl,
-            scp: response.scp,
-            stpFixed: response.stpFixed,
-            stpCin: response.stpCin,
-            ship: response.ship,
-            effectiveSrh: response.effectiveSrh,
-            effectiveBulkShearMs: response.effectiveBulkShearMs,
-            effectiveLayer: .init(
-                status: response.effectiveLayer.status,
-                basePressureMb: response.effectiveLayer.basePressureMb,
-                topPressureMb: response.effectiveLayer.topPressureMb,
-                baseMetersAgl: response.effectiveLayer.baseMetersAgl,
-                topMetersAgl: response.effectiveLayer.topMetersAgl
-            ),
-            stormMotion: .init(
-                status: response.stormMotion.status,
-                bunkersRight: response.stormMotion.bunkersRight.map {
-                    .init(
-                        uMs: $0.uMs,
-                        vMs: $0.vMs,
-                        speedMs: $0.speedMs,
-                        uKt: $0.uKt,
-                        vKt: $0.vKt,
-                        speedKt: $0.speedKt,
-                        directionTowardDeg: $0.directionTowardDeg
-                    )
-                },
-                uMs: nil,
-                vMs: nil,
-                speedMs: nil,
-                uKt: nil,
-                vKt: nil,
-                speedKt: nil,
-                directionTowardDeg: nil
-            ),
-            quality: .init(
-                profileLevelCount: response.quality.profileLevelCount,
-                warnings: response.quality.warnings
-            )
-        )
+    static func decode(_ data: Data?) -> StormSetupCurrentResponse? {
+        guard let data else {
+            return nil
+        }
+        return try? DecoderFactory.iso8601.decode(StormSetupCurrentResponse.self, from: data)
     }
 }

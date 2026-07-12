@@ -3,9 +3,9 @@
 ## Overview
 
 This ledger tracks Project Arcus migration to ArcusCore `StormSetupCurrentResponse` and removal of the app's direct
-`dev/anvil/profile-analysis` integration.
+legacy profile-analysis integration.
 
-**Epic status:** Planned
+**Epic status:** Complete
 
 **Primary GitHub epic:** [#283](https://github.com/justinrooks/project-arcus/issues/283)
 
@@ -42,16 +42,13 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 | 2 | [#285](https://github.com/justinrooks/project-arcus/issues/285) | Decode the aggregate response in the primary client | `5.4 mini medium` | Planned | #284 |
 | 3 | [#286](https://github.com/justinrooks/project-arcus/issues/286) | Persist one aggregate Storm Setup payload | `5.4 mini medium` | Planned | #285 |
 | 4 | [#287](https://github.com/justinrooks/project-arcus/issues/287) | Cut Storm Setup ingestion to one request | `5.6 luna medium` | Planned | #286 |
-| 5 | [#288](https://github.com/justinrooks/project-arcus/issues/288) | Remove Anvil plumbing and audit the final behavior | `5.4 mini medium` | Planned | #287 |
+| 5 | [#288](https://github.com/justinrooks/project-arcus/issues/288) | Remove Anvil plumbing and audit the final behavior | `5.4 mini medium` | Complete | #287 |
 
 ## Existing Code Map
 
 - Contract dependency: `SkyAware.xcodeproj` and `Package.resolved`
 - Current endpoint client: `Sources/Clients/StormSetupClient.swift`
-- Development endpoint client: `Sources/Clients/StormSetupProfileAnalysisClient.swift`
-- Local DTOs: `Sources/Models/StormSetup/StormSetupDTO.swift` and
-  `Sources/Models/StormSetup/StormSetupProfileAnalysisDTO.swift`
-- Merge/cache policy: `Sources/Models/StormSetup/StormSetupProfileAnalysisPolicy.swift`
+- Legacy profile-analysis client, DTOs, and merge policy: removed
 - Ingestion: `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`
 - Persistence: `Sources/Models/Home/HomeProjection.swift` and `Sources/Repos/HomeProjectionStore.swift`
 - Observable state: `Sources/App/HomeRefreshPipeline.swift` and `Sources/App/HomeView.swift`
@@ -61,7 +58,8 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 ## Investigation Notes
 
 - The exact join occurs in `HomeIngestionExecutor.refreshStormSetupIfNeeded` after parallel primary/profile outcomes.
-- `StormSetupProfileAnalysisPolicy` exists to match independently fetched source times and becomes obsolete atomically.
+- The legacy profile-analysis merge policy existed to match independently fetched source times and was removed
+  atomically.
 - `SnapshotConfidence.moderate` does not match the old local string normalizer's `medium` case.
 - `TornadoViabilityRealization` and `TornadoViabilityFailureMode` use one-key object payloads; direct ArcusCore decoding
   avoids local wire-shape drift.
@@ -112,10 +110,14 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 
 ### Issue #288 — 05: Remove Anvil plumbing and audit the final behavior
 
-- Status: Planned
-- Outcome: Pending
-- Validation: Pending
-- Handoff: Delete obsolete tests only after equivalent aggregate behavior is covered.
+- Status: Complete
+- Outcome: Removed the obsolete profile-analysis client, protocol, DTOs, merge policy, refresh state, persistence
+  envelope, logs, fixtures, and tests. Storm Setup now rides the single aggregate endpoint end to end.
+- Validation:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build`
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareTests/StormSetupIngestionTests -only-testing:SkyAwareTests/StormSetupDetailPresentationTests -only-testing:SkyAwareTests/StormSetupPresentationTests -only-testing:SkyAwareTests/HomeProjectionStoreTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests -only-testing:SkyAwareTests/HomeViewLoadingOverlayStateTests test`
+  - Targeted stale-reference sweep across `Sources`, `Tests`, and `docs`
+- Handoff: Keep the remaining Storm Setup work on the aggregate contract. No dead-code compatibility layer remains.
 
 ## Verification Ledger
 
@@ -126,6 +128,7 @@ campaign defers Primary Drivers and preserves numeric SHIP.
 | 2026-07-10 | #285 | `StormSetupHTTPClientTests` and `xcodebuild ... build` | Complete |
 | 2026-07-10 | #286 | `HomeProjectionStoreTests` compile/launch attempt and `xcodebuild ... build` | Complete |
 | 2026-07-10 | #287 | Debug build; focused test-runner attempts with captured xcresult bundles | Build complete; test execution blocked by simulator runner startup |
+| 2026-07-10 | #288 | Debug build, focused Storm Setup tests, and stale-reference sweep | Complete |
 
 ## Handoff Notes
 

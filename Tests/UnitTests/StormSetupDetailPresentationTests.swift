@@ -533,14 +533,14 @@ struct StormSetupDetailPresentationTests {
             "Effective bulk shear — m/s",
             "Effective layer height top",
             "Effective layer pressure top",
-            "Bunkers-right storm motion speed"
+            "Bunkers-right storm motion"
         ])
         #expect(presentation.profileAnalysisRows.map(\.value) == [
             "0.3",
             "11.2",
             "1,721 m AGL",
             "775 mb",
-            "28 kt"
+            "28 kt toward 0°"
         ])
     }
 
@@ -557,8 +557,14 @@ struct StormSetupDetailPresentationTests {
                 ship: nil,
                 effectiveSrh: 101,
                 effectiveBulkShearMs: nil,
-                effectiveLayer: nil,
-                stormMotion: nil,
+                effectiveLayer: .init(
+                    status: "missing",
+                    basePressureMb: nil,
+                    topPressureMb: nil,
+                    baseMetersAgl: nil,
+                    topMetersAgl: nil
+                ),
+                stormMotion: .init(status: "found", bunkersRight: nil),
                 quality: .init(profileLevelCount: nil, warnings: nil)
             ),
             now: date("2026-06-01T19:00:00Z")
@@ -828,7 +834,7 @@ struct StormSetupDetailPresentationTests {
                     baseMetersAgl: nil,
                     topMetersAgl: nil
                 ),
-                stormMotion: nil,
+                stormMotion: .init(status: "found", bunkersRight: nil),
                 quality: .init(profileLevelCount: nil, warnings: nil)
             ),
             now: date("2026-06-01T19:00:00Z")
@@ -928,7 +934,8 @@ struct StormSetupDetailPresentationTests {
             now: date("2026-06-01T19:00:00Z")
         )
 
-        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion speed" && $0.value == "28 kt" }))
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion" && $0.value == "28 kt toward 0°" }))
+        #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion speed" }) == false)
         #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "Bunkers-right storm motion direction" }) == false)
     }
 
@@ -1293,52 +1300,106 @@ private func makeProfileAnalysisResponse(
     ship: Double? = 2.1,
     effectiveSrh: Double? = 135,
     effectiveBulkShearMs: Double? = 24.5,
-    effectiveLayer: StormSetupProfileAnalysisDTO.EffectiveLayer? = .init(
+    effectiveLayer: AnvilEffectiveLayerDTO? = .init(
         status: "found",
         basePressureMb: 915,
         topPressureMb: 750,
         baseMetersAgl: 850,
         topMetersAgl: 1_800
     ),
-    stormMotion: StormSetupProfileAnalysisDTO.StormMotion? = .init(
+    stormMotion: AnvilStormMotionDTO? = .init(
         status: "found",
         bunkersRight: .init(
-            uMs: 8.4,
-            vMs: -4.2,
-            speedMs: 9.4,
             uKt: 16.3,
             vKt: -8.2,
             speedKt: 18.3,
-            directionTowardDeg: 215
-        ),
-        uMs: 6.2,
-        vMs: -2.4,
-        speedMs: 6.6,
-        uKt: 12.1,
-        vKt: -4.7,
-        speedKt: 12.8,
-        directionTowardDeg: 201
+            directionTowardDeg: 215,
+            uMs: 8.4,
+            vMs: -4.2,
+            speedMs: 9.4
+        )
     ),
-    quality: StormSetupProfileAnalysisDTO.Quality? = .init(
+    quality: AnvilQualityDTO? = .init(
         profileLevelCount: 36,
         warnings: ["profile trimmed", "debug ignored"]
     )
-) -> StormSetupProfileAnalysisDTO.Response {
-    StormSetupProfileAnalysisDTO.Response(
-        mlcape: mlcape,
+) -> AnvilAnalyzeProfileResponse {
+    AnvilAnalyzeProfileResponse(
+        effectiveLayer: effectiveLayer ?? .init(
+            status: "found",
+            basePressureMb: 915,
+            topPressureMb: 750,
+            baseMetersAgl: 850,
+            topMetersAgl: 1_800
+        ),
+        stormMotion: stormMotion ?? .init(
+            status: "found",
+            bunkersRight: .init(
+                uKt: 16.3,
+                vKt: -8.2,
+                speedKt: 18.3,
+                directionTowardDeg: 215,
+                uMs: 8.4,
+                vMs: -4.2,
+                speedMs: 9.4
+            )
+        ),
         mucape: mucape,
+        mlcape: mlcape,
         mlcin: mlcin,
         mllclMetersAgl: mllclMetersAgl,
-        scp: scp,
-        stpFixed: stpFixed,
-        stpCin: stpCin,
-        ship: ship,
         effectiveSrh: effectiveSrh,
         effectiveBulkShearMs: effectiveBulkShearMs,
-        effectiveLayer: effectiveLayer,
-        stormMotion: stormMotion,
-        quality: quality
+        scp: scp,
+        stpCin: stpCin,
+        stpFixed: stpFixed,
+        ship: ship,
+        quality: quality ?? .init(profileLevelCount: 36, warnings: ["profile trimmed", "debug ignored"])
     )
+}
+
+private extension AnvilBunkersRightStormMotionDTO {
+    init(
+        uMs: Double?,
+        vMs: Double?,
+        speedMs: Double?,
+        uKt: Double?,
+        vKt: Double?,
+        speedKt: Double?,
+        directionTowardDeg: Double?
+    ) {
+        self.init(
+            uKt: uKt ?? 0,
+            vKt: vKt ?? 0,
+            speedKt: speedKt ?? 0,
+            directionTowardDeg: directionTowardDeg ?? 0,
+            uMs: uMs ?? 0,
+            vMs: vMs ?? 0,
+            speedMs: speedMs ?? 0
+        )
+    }
+}
+
+private extension AnvilStormMotionDTO {
+    init(
+        status: String,
+        bunkersRight: AnvilBunkersRightStormMotionDTO?,
+        uMs: Double? = nil,
+        vMs: Double? = nil,
+        speedMs: Double? = nil,
+        uKt: Double? = nil,
+        vKt: Double? = nil,
+        speedKt: Double? = nil,
+        directionTowardDeg: Double? = nil
+    ) {
+        self.init(status: status, bunkersRight: bunkersRight)
+    }
+}
+
+private extension AnvilQualityDTO {
+    init(profileLevelCount: Int?, warnings: [String]?) {
+        self.init(profileLevelCount: profileLevelCount ?? 0, warnings: warnings ?? [])
+    }
 }
 
 private func date(_ value: String) -> Date {

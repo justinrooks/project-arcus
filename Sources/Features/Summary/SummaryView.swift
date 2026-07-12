@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Foundation
+import ArcusCore
 
 enum SummaryReadinessState: Equatable {
     case loadingLocation
@@ -127,7 +128,7 @@ struct SummaryView: View {
 
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?
-    let stormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response?
+    let stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
     let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -156,7 +157,7 @@ struct SummaryView: View {
     init(
         snap: LocationSnapshot? = nil,
         stormSetup: StormSetupDTO? = nil,
-        stormSetupProfileAnalysisResponse: StormSetupProfileAnalysisDTO.Response? = nil,
+        stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse? = nil,
         stormSetupPreferences: StormSetupPreferences = StormSetupPreferences(),
         stormRisk: StormRiskLevel? = nil,
         severeRisk: SevereWeatherThreat? = nil,

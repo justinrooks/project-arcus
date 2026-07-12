@@ -72,26 +72,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         var lastAttemptFailed: Bool
     }
 
-    private struct StormSetupProfileAnalysisRefreshState: Sendable {
-        var refreshKey: LocationContext.RefreshKey
-        var lastAttemptAt: Date?
-        var lastSuccessAt: Date?
-        var lastAttemptFailed: Bool
-    }
-
     private struct StormSetupRefreshDecision: Sendable {
         let result: HomeStormSetupRefreshResult
         let currentResponse: StormSetupCurrentResponse?
         let stormSetup: StormSetupDTO?
     }
 
-    private struct StormSetupProfileAnalysisRefreshDecision: Sendable {
-        let result: HomeStormSetupProfileAnalysisRefreshResult
-        let profileAnalysisPayload: HomeProjectionStormSetupProfileAnalysisPayload?
-    }
-
     private struct StormSetupQueryTimeoutError: Error {}
-    private struct StormSetupProfileAnalysisQueryTimeoutError: Error {}
 
     struct Environment: Sendable {
         let logger: Logger
@@ -103,13 +90,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let projectionStore: HomeProjectionStore?
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
         let stormSetupQuerying: (any StormSetupQuerying)?
-        let stormSetupProfileAnalysisQuerying: (any StormSetupProfileAnalysisQuerying)?
         let stormSetupPreferencesReader: @Sendable () async -> StormSetupPreferences
         let stormSetupCurrentDate: @Sendable () -> Date
         let stormSetupForegroundTimeout: TimeInterval
-        let stormSetupProfileAnalysisForegroundTimeout: TimeInterval
         let stormSetupFailedAttemptBackoff: TimeInterval
-        let stormSetupProfileAnalysisFailedAttemptBackoff: TimeInterval
 
         init(
             logger: Logger,
@@ -121,13 +105,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             projectionStore: HomeProjectionStore?,
             widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?,
             stormSetupQuerying: (any StormSetupQuerying)? = nil,
-            stormSetupProfileAnalysisQuerying: (any StormSetupProfileAnalysisQuerying)? = nil,
             stormSetupPreferencesReader: @escaping @Sendable () async -> StormSetupPreferences = { StormSetupPreferences() },
             stormSetupCurrentDate: @escaping @Sendable () -> Date = { Date() },
             stormSetupForegroundTimeout: TimeInterval = 5,
-            stormSetupProfileAnalysisForegroundTimeout: TimeInterval = 5,
-            stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60,
-            stormSetupProfileAnalysisFailedAttemptBackoff: TimeInterval = 5 * 60
+            stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
         ) {
             self.logger = logger
             self.spcSync = spcSync
@@ -138,13 +119,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             self.projectionStore = projectionStore
             self.widgetSnapshotRefresher = widgetSnapshotRefresher
             self.stormSetupQuerying = stormSetupQuerying
-            self.stormSetupProfileAnalysisQuerying = stormSetupProfileAnalysisQuerying
             self.stormSetupPreferencesReader = stormSetupPreferencesReader
             self.stormSetupCurrentDate = stormSetupCurrentDate
             self.stormSetupForegroundTimeout = stormSetupForegroundTimeout
-            self.stormSetupProfileAnalysisForegroundTimeout = stormSetupProfileAnalysisForegroundTimeout
             self.stormSetupFailedAttemptBackoff = stormSetupFailedAttemptBackoff
-            self.stormSetupProfileAnalysisFailedAttemptBackoff = stormSetupProfileAnalysisFailedAttemptBackoff
         }
     }
 
@@ -156,7 +134,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private var freshness = HomeFreshnessState()
     private var stormSetupRefreshStates: [String: StormSetupRefreshState] = [:]
-    private var stormSetupProfileAnalysisRefreshStates: [String: StormSetupProfileAnalysisRefreshState] = [:]
 
     init(
         environment: Environment,
@@ -242,11 +219,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             plan: plan,
             executionMode: executionMode
         )
-        snapshot.stormSetupRefreshResult = stormSetupRefresh.stormSetup.result
-        snapshot.stormSetupCurrentResponse = stormSetupRefresh.stormSetup.currentResponse
-        snapshot.stormSetup = stormSetupRefresh.stormSetup.stormSetup
-        snapshot.stormSetupProfileAnalysisRefreshResult = stormSetupRefresh.profileAnalysis.result
-        snapshot.stormSetupProfileAnalysisPayload = stormSetupRefresh.profileAnalysis.profileAnalysisPayload
+        snapshot.stormSetupRefreshResult = stormSetupRefresh.result
+        snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
+        snapshot.stormSetup = stormSetupRefresh.stormSetup
 
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(
@@ -484,7 +459,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         snapshot: HomeSnapshot,
         plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode
-    ) async -> (stormSetup: StormSetupRefreshDecision, profileAnalysis: StormSetupProfileAnalysisRefreshDecision) {
+    ) async -> StormSetupRefreshDecision {
         let startedAt = Date()
         let now = environment.stormSetupCurrentDate()
 
@@ -495,16 +470,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "skipped",
-                reason: "no-location",
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return (
-                stormSetup: .init(result: .skipped, currentResponse: nil, stormSetup: nil),
-                profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil)
-            )
+            return .init(result: .skipped, currentResponse: nil, stormSetup: nil)
         }
 
         guard let projectionStore = environment.projectionStore else {
@@ -514,16 +480,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "skipped",
-                reason: "ineligible",
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return (
-                stormSetup: .init(result: .skipped, currentResponse: nil, stormSetup: nil),
-                profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil)
-            )
+            return .init(result: .skipped, currentResponse: nil, stormSetup: nil)
         }
 
         let preferences = await environment.stormSetupPreferencesReader()
@@ -558,13 +515,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 startedAt: startedAt,
                 executionMode: executionMode
             )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "skipped",
-                reason: resolvedStormSetup == nil ? "disabled-or-ineligible" : "fresh-cache",
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return (stormSetup: .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: resolvedStormSetup), profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil))
+            return .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: resolvedStormSetup)
         }
 
         async let primaryOutcome: StormSetupAttemptOutcome = {
@@ -595,19 +546,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             executionMode: executionMode
         )
 
-        return (stormSetup: resolvedPrimaryDecision, profileAnalysis: .init(result: .skipped, profileAnalysisPayload: nil))
+        return resolvedPrimaryDecision
     }
 
     private enum StormSetupAttemptOutcome {
         case success(StormSetupCurrentResponse)
-        case failure
-        case timeout
-        case cancelled
-        case skipped
-    }
-
-    private enum StormSetupProfileAnalysisAttemptOutcome {
-        case success(StormSetupProfileAnalysisDTO)
         case failure
         case timeout
         case cancelled
@@ -627,27 +570,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             )
             return .success(stormSetup)
         } catch is StormSetupQueryTimeoutError {
-            return .timeout
-        } catch is CancellationError {
-            return .cancelled
-        } catch {
-            return .failure
-        }
-    }
-
-    private func performStormSetupProfileAnalysisFetch(
-        h3Cell: Int64,
-        querying: any StormSetupProfileAnalysisQuerying,
-        executionMode: HTTPExecutionMode
-    ) async -> StormSetupProfileAnalysisAttemptOutcome {
-        do {
-            let profileAnalysis = try await fetchStormSetupProfileAnalysis(
-                h3Cell: h3Cell,
-                querying: querying,
-                executionMode: executionMode
-            )
-            return .success(profileAnalysis)
-        } catch is StormSetupProfileAnalysisQueryTimeoutError {
             return .timeout
         } catch is CancellationError {
             return .cancelled
@@ -689,42 +611,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
         return try await HTTPExecutionMode.$current.withValue(executionMode) {
             try await querying.fetchCurrentStormSetup(h3Cell: h3Cell)
-        }
-    }
-
-    private func fetchStormSetupProfileAnalysis(
-        h3Cell: Int64,
-        querying: any StormSetupProfileAnalysisQuerying,
-        executionMode: HTTPExecutionMode
-    ) async throws -> StormSetupProfileAnalysisDTO {
-        if executionMode == .foreground {
-            let foregroundTimeout = environment.stormSetupProfileAnalysisForegroundTimeout
-            return try await withThrowingTaskGroup(of: StormSetupProfileAnalysisDTO.self) { group in
-                group.addTask {
-                    try await HTTPExecutionMode.$current.withValue(executionMode) {
-                        try await querying.fetchProfileAnalysis(h3Cell: h3Cell)
-                    }
-                }
-                group.addTask {
-                    try await Task.sleep(for: .seconds(foregroundTimeout))
-                    throw StormSetupProfileAnalysisQueryTimeoutError()
-                }
-
-                do {
-                    guard let profileAnalysis = try await group.next() else {
-                        throw CancellationError()
-                    }
-                    group.cancelAll()
-                    return profileAnalysis
-                } catch {
-                    group.cancelAll()
-                    throw error
-                }
-            }
-        }
-
-        return try await HTTPExecutionMode.$current.withValue(executionMode) {
-            try await querying.fetchProfileAnalysis(h3Cell: h3Cell)
         }
     }
 
@@ -898,115 +784,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         return .init(result: .success, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
     }
 
-    private func handleStormSetupProfileAnalysisOutcome(
-        _ outcome: StormSetupProfileAnalysisAttemptOutcome,
-        context: LocationContext,
-        primary: StormSetupDTO?,
-        projectionKey: String,
-        refreshKey: LocationContext.RefreshKey,
-        now: Date,
-        startedAt: Date,
-        executionMode: HTTPExecutionMode
-    ) async -> StormSetupProfileAnalysisRefreshDecision {
-        switch outcome {
-        case .success(let profileAnalysis):
-            guard let primary else {
-                markStormSetupProfileAnalysisAttemptFailed(
-                    for: projectionKey,
-                    refreshKey: refreshKey,
-                    now: now
-                )
-                logStormSetupProfileAnalysisOutcome(
-                    outcome: "mismatch",
-                    reason: "missing-primary",
-                    startedAt: startedAt,
-                    executionMode: executionMode
-                )
-                return .init(result: .mismatch, profileAnalysisPayload: nil)
-            }
-
-            let persistedAt = environment.stormSetupCurrentDate()
-            guard let persistedPayload = StormSetupProfileAnalysisPolicy.makePersistedPayload(
-                from: profileAnalysis,
-                primary: primary,
-                fetchedAt: persistedAt
-            ) else {
-                markStormSetupProfileAnalysisAttemptFailed(
-                    for: projectionKey,
-                    refreshKey: refreshKey,
-                    now: now
-                )
-                logStormSetupProfileAnalysisOutcome(
-                    outcome: "mismatch",
-                    reason: nil,
-                    startedAt: startedAt,
-                    executionMode: executionMode
-                )
-                return .init(result: .mismatch, profileAnalysisPayload: nil)
-            }
-
-            markStormSetupProfileAnalysisAttemptSucceeded(
-                for: projectionKey,
-                refreshKey: refreshKey,
-                now: persistedAt
-            )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "success",
-                reason: nil,
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return .init(result: .success, profileAnalysisPayload: persistedPayload)
-        case .timeout:
-            markStormSetupProfileAnalysisAttemptFailed(
-                for: projectionKey,
-                refreshKey: refreshKey,
-                now: now
-            )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "timeout",
-                reason: nil,
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return .init(result: .timeout, profileAnalysisPayload: nil)
-        case .cancelled:
-            markStormSetupProfileAnalysisAttemptFailed(
-                for: projectionKey,
-                refreshKey: refreshKey,
-                now: now
-            )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "cancelled",
-                reason: nil,
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return .init(result: .cancelled, profileAnalysisPayload: nil)
-        case .failure:
-            markStormSetupProfileAnalysisAttemptFailed(
-                for: projectionKey,
-                refreshKey: refreshKey,
-                now: now
-            )
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "failure",
-                reason: nil,
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return .init(result: .failure, profileAnalysisPayload: nil)
-        case .skipped:
-            logStormSetupProfileAnalysisOutcome(
-                outcome: "skipped",
-                reason: "no-request",
-                startedAt: startedAt,
-                executionMode: executionMode
-            )
-            return .init(result: .skipped, profileAnalysisPayload: nil)
-        }
-    }
-
     private static func isStormSetupNewer(_ candidate: StormSetupDTO, than cached: StormSetupDTO) -> Bool {
         let candidateFreshness = candidate.freshness
         let cachedFreshness = cached.freshness
@@ -1089,50 +866,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             refreshKey: refreshKey,
             lastAttemptAt: now,
             lastSuccessAt: stormSetupRefreshStates[projectionKey]?.lastSuccessAt,
-            lastAttemptFailed: true
-        )
-    }
-
-    private func shouldBackOffStormSetupProfileAnalysis(
-        for projectionKey: String,
-        plan: HomeIngestionPlan,
-        now: Date
-    ) -> Bool {
-        guard plan.provenance.contains(.background) || plan.provenance.contains(.sessionTick) else {
-            return false
-        }
-
-        guard let state = stormSetupProfileAnalysisRefreshStates[projectionKey],
-              state.lastAttemptFailed,
-              let lastAttemptAt = state.lastAttemptAt else {
-            return false
-        }
-
-        return now.timeIntervalSince(lastAttemptAt) < environment.stormSetupProfileAnalysisFailedAttemptBackoff
-    }
-
-    private func markStormSetupProfileAnalysisAttemptSucceeded(
-        for projectionKey: String,
-        refreshKey: LocationContext.RefreshKey,
-        now: Date
-    ) {
-        stormSetupProfileAnalysisRefreshStates[projectionKey] = .init(
-            refreshKey: refreshKey,
-            lastAttemptAt: now,
-            lastSuccessAt: now,
-            lastAttemptFailed: false
-        )
-    }
-
-    private func markStormSetupProfileAnalysisAttemptFailed(
-        for projectionKey: String,
-        refreshKey: LocationContext.RefreshKey,
-        now: Date
-    ) {
-        stormSetupProfileAnalysisRefreshStates[projectionKey] = .init(
-            refreshKey: refreshKey,
-            lastAttemptAt: now,
-            lastSuccessAt: stormSetupProfileAnalysisRefreshStates[projectionKey]?.lastSuccessAt,
             lastAttemptFailed: true
         )
     }
@@ -1317,23 +1050,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
     }
 
-    private func logStormSetupProfileAnalysisOutcome(
-        outcome: String,
-        reason: String?,
-        startedAt: Date,
-        executionMode: HTTPExecutionMode
-    ) {
-        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
-        if let reason {
-            environment.logger.info(
-                "Storm Setup profile-analysis refresh outcome=\(outcome, privacy: .public) reason=\(reason, privacy: .public) mode=\(executionMode.logName, privacy: .public) durationMs=\(durationMs, privacy: .public)"
-            )
-        } else {
-            environment.logger.info(
-                "Storm Setup profile-analysis refresh outcome=\(outcome, privacy: .public) mode=\(executionMode.logName, privacy: .public) durationMs=\(durationMs, privacy: .public)"
-            )
-        }
-    }
 }
 
 func homeWidgetRefreshScope(for plan: HomeIngestionPlan) -> WidgetSnapshotChangeScope? {
