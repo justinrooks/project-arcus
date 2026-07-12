@@ -90,6 +90,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let projectionStore: HomeProjectionStore?
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
         let stormSetupQuerying: (any StormSetupQuerying)?
+        let airQualityQuerying: (any AirQualityQuerying)?
         let stormSetupPreferencesReader: @Sendable () async -> StormSetupPreferences
         let stormSetupCurrentDate: @Sendable () -> Date
         let stormSetupForegroundTimeout: TimeInterval
@@ -105,6 +106,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             projectionStore: HomeProjectionStore?,
             widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?,
             stormSetupQuerying: (any StormSetupQuerying)? = nil,
+            airQualityQuerying: (any AirQualityQuerying)? = nil,
             stormSetupPreferencesReader: @escaping @Sendable () async -> StormSetupPreferences = { StormSetupPreferences() },
             stormSetupCurrentDate: @escaping @Sendable () -> Date = { Date() },
             stormSetupForegroundTimeout: TimeInterval = 5,
@@ -119,6 +121,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             self.projectionStore = projectionStore
             self.widgetSnapshotRefresher = widgetSnapshotRefresher
             self.stormSetupQuerying = stormSetupQuerying
+            self.airQualityQuerying = airQualityQuerying
             self.stormSetupPreferencesReader = stormSetupPreferencesReader
             self.stormSetupCurrentDate = stormSetupCurrentDate
             self.stormSetupForegroundTimeout = stormSetupForegroundTimeout
@@ -222,6 +225,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
         snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup
+        snapshot.airQuality = await refreshAirQuality(context: context, executionMode: executionMode)
 
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(
@@ -452,6 +456,24 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
         await progress.report(.completed(.lane(.weather)))
         return weatherResult
+    }
+
+    private func refreshAirQuality(
+        context: LocationContext?,
+        executionMode: HTTPExecutionMode
+    ) async -> AirQualityCurrentResponse? {
+        guard let context, let querying = environment.airQualityQuerying else { return nil }
+
+        do {
+            return try await HTTPExecutionMode.$current.withValue(executionMode) {
+                try await querying.fetchCurrentAirQuality(h3Cell: context.h3Cell)
+            }
+        } catch is CancellationError {
+            return nil
+        } catch {
+            environment.logger.debug("AQI refresh unavailable; continuing home refresh error=\(String(describing: error), privacy: .public)")
+            return nil
+        }
     }
 
     private func refreshStormSetupIfNeeded(

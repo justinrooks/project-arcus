@@ -20,6 +20,7 @@ enum ArcusSignalConfiguration {
     static let locationSnapshotsPath = "/api/v1/devices/location-snapshots"
     static let devicePreferencesPath = "/api/v1/devices/preferences"
     static let stormSetupCurrentPath = "/api/v1/storm-setup/current"
+    static let airQualityCurrentPath = "/api/v1/air-quality/current"
 
     private static let infoDictionaryKey = "ArcusSignalURL"
 

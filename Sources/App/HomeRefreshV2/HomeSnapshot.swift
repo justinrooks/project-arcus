@@ -25,6 +25,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var stormSetup: StormSetupDTO?
     var stormSetupRefreshResult: HomeStormSetupRefreshResult
     var stormSetupCurrentResponse: StormSetupCurrentResponse?
+    var airQuality: AirQualityCurrentResponse?
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -42,6 +43,7 @@ struct HomeSnapshot: Sendable, Equatable {
         stormSetup: StormSetupDTO? = nil,
         stormSetupRefreshResult: HomeStormSetupRefreshResult = .skipped,
         stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
+        airQuality: AirQualityCurrentResponse? = nil,
         stormRisk: StormRiskLevel? = nil,
         severeRisk: SevereWeatherThreat? = nil,
         fireRisk: FireRiskLevel? = nil,
@@ -58,6 +60,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.stormSetup = stormSetup
         self.stormSetupRefreshResult = stormSetupRefreshResult
         self.stormSetupCurrentResponse = stormSetupCurrentResponse
+        self.airQuality = airQuality
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk

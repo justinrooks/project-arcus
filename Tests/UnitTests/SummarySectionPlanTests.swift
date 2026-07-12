@@ -5,8 +5,8 @@ import Testing
 
 @Suite("Summary Section Plan")
 struct SummarySectionPlanTests {
-    @Test("populated alerts precede Storm Setup and the atmospheric fallback")
-    func populatedAlerts_precedeStormSetupAndAtmosphericFallback() {
+    @Test("populated alerts precede Atmospheric Conditions and Storm Setup")
+    func populatedAlerts_precedeAtmosphericConditionsAndStormSetup() {
         let populated = makePlan(
             localAlertsDisplayState: .current(content: .populated, source: .cached),
             showsStormSetup: true,
@@ -22,6 +22,7 @@ struct SummarySectionPlanTests {
             .currentConditions,
             .primaryAwareness,
             .localAlerts,
+            .atmosphericConditions,
             .stormSetup,
             .locationReliability,
             .outlookSummary,
@@ -38,23 +39,23 @@ struct SummarySectionPlanTests {
         ])
     }
 
-    @Test("quiet loading empty and unavailable alerts follow Storm Setup or the atmospheric fallback")
-    func quietLoadingEmptyAndUnavailableAlerts_followSupportingSection() {
+    @Test("quiet loading empty and unavailable alerts keep Atmospheric Conditions before Storm Setup")
+    func quietLoadingEmptyAndUnavailableAlerts_keepAtmosphericConditionsBeforeStormSetup() {
         let cases: [(String, LocalAlertsDisplayState, [SummarySectionKind])] = [
             (
                 "loading",
                 .noCacheResolving,
-                [.currentConditions, .primaryAwareness, .stormSetup, .localAlerts, .outlookSummary, .attribution]
+                [.currentConditions, .primaryAwareness, .atmosphericConditions, .stormSetup, .localAlerts, .outlookSummary, .attribution]
             ),
             (
                 "empty",
                 .current(content: .empty, source: .cached),
-                [.currentConditions, .primaryAwareness, .stormSetup, .localAlerts, .outlookSummary, .attribution]
+                [.currentConditions, .primaryAwareness, .atmosphericConditions, .stormSetup, .localAlerts, .outlookSummary, .attribution]
             ),
             (
                 "unavailable",
                 .unavailable(reason: .locationUnavailable),
-                [.currentConditions, .primaryAwareness, .stormSetup, .localAlerts, .outlookSummary, .attribution]
+                [.currentConditions, .primaryAwareness, .atmosphericConditions, .stormSetup, .localAlerts, .outlookSummary, .attribution]
             )
         ]
 
@@ -79,7 +80,14 @@ struct SummarySectionPlanTests {
                 .outlookSummary,
                 .attribution
             ], "\(label) atmospheric fallback order")
-            #expect(stormSetupPlan.sections.contains(.stormSetup) != stormSetupPlan.sections.contains(.atmosphericConditions))
+            let atmosphericIndex = stormSetupPlan.sections.firstIndex(of: .atmosphericConditions)
+            let stormSetupIndex = stormSetupPlan.sections.firstIndex(of: .stormSetup)
+            #expect(stormSetupIndex != nil)
+            #expect(atmosphericIndex != nil)
+            guard let atmosphericIndex, let stormSetupIndex else {
+                continue
+            }
+            #expect(atmosphericIndex < stormSetupIndex)
         }
     }
 
@@ -102,8 +110,8 @@ struct SummarySectionPlanTests {
         #expect(locationReliabilityIndex > localAlertsIndex)
     }
 
-    @Test("disabled Storm Setup always selects Atmospheric Conditions")
-    func disabledStormSetup_selectsAtmosphericConditions() {
+    @Test("disabled Storm Setup still shows Atmospheric Conditions")
+    func disabledStormSetup_stillShowsAtmosphericConditions() {
         let plan = makePlan(
             localAlertsDisplayState: .noCacheResolving,
             showsStormSetup: false,
@@ -114,16 +122,22 @@ struct SummarySectionPlanTests {
         #expect(plan.sections.contains(.atmosphericConditions))
     }
 
-    @Test("Storm Setup and Atmospheric Conditions are mutually exclusive")
-    func stormSetupAndAtmosphericConditions_areMutuallyExclusive() {
+    @Test("Storm Setup follows Atmospheric Conditions when both are shown")
+    func stormSetupFollowsAtmosphericConditionsWhenBothAreShown() {
         let stormPlan = makePlan(
             localAlertsDisplayState: .noCacheResolving,
             showsStormSetup: true,
             hasLocationReliabilityRail: false
         )
 
-        #expect(stormPlan.sections.contains(.stormSetup))
-        #expect(stormPlan.sections.contains(.atmosphericConditions) == false)
+        let atmosphericIndex = stormPlan.sections.firstIndex(of: .atmosphericConditions)
+        let stormSetupIndex = stormPlan.sections.firstIndex(of: .stormSetup)
+        #expect(atmosphericIndex != nil)
+        #expect(stormSetupIndex != nil)
+        guard let atmosphericIndex, let stormSetupIndex else {
+            return
+        }
+        #expect(atmosphericIndex < stormSetupIndex)
     }
 
     @Test("outlook and attribution remain last in canonical order")

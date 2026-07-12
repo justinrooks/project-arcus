@@ -30,7 +30,6 @@ struct SummarySectionPlan: Sendable, Equatable {
         hasLocationReliabilityRail: Bool
     ) -> SummarySectionPlan {
         let localAlertsArePopulated = localAlertsDisplayState.presentationState == .alerts
-        let supportingSection: SummarySectionKind = showsStormSetup ? .stormSetup : .atmosphericConditions
 
         var sections: [SummarySectionKind] = [
             .currentConditions,
@@ -39,13 +38,21 @@ struct SummarySectionPlan: Sendable, Equatable {
 
         if localAlertsArePopulated {
             sections.append(.localAlerts)
-            sections.append(supportingSection)
+            sections.append(.atmosphericConditions)
+
+            if showsStormSetup {
+                sections.append(.stormSetup)
+            }
 
             if hasLocationReliabilityRail {
                 sections.append(.locationReliability)
             }
         } else {
-            sections.append(supportingSection)
+            sections.append(.atmosphericConditions)
+
+            if showsStormSetup {
+                sections.append(.stormSetup)
+            }
 
             if hasLocationReliabilityRail {
                 sections.append(.locationReliability)

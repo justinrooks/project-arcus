@@ -137,6 +137,7 @@ struct SummaryView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let airQuality: AirQualityCurrentResponse?
     let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
     let localAlertsDisplayState: LocalAlertsDisplayState
@@ -166,6 +167,7 @@ struct SummaryView: View {
         alerts: [AlertDTO] = [],
         outlook: ConvectiveOutlookDTO? = nil,
         weather: SummaryWeather? = nil,
+        airQuality: AirQualityCurrentResponse? = nil,
         locationTimeZone: TimeZone = .autoupdatingCurrent,
         todayContentState: TodayContentState,
         localAlertsDisplayState: LocalAlertsDisplayState,
@@ -189,6 +191,7 @@ struct SummaryView: View {
         self.alerts = alerts
         self.outlook = outlook
         self.weather = weather
+        self.airQuality = airQuality
         self.locationTimeZone = locationTimeZone
         self.todayContentState = todayContentState
         self.localAlertsDisplayState = localAlertsDisplayState
@@ -494,7 +497,7 @@ struct SummaryView: View {
 
         case .atmosphericConditions:
             if isLocationUnavailable == false {
-                AtmosphericConditionsCard(weather: weather, isOffline: showsOfflineToken)
+                AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
                     .allowsHitTesting(!isWeatherLoading)
                     .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
                     .summaryResolving(

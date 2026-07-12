@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import ArcusCore
 
 struct AtmosphericConditionsCard: View {
     @Environment(\.colorScheme) private var colorScheme
@@ -13,10 +14,11 @@ struct AtmosphericConditionsCard: View {
     @State private var activeTip: DewPointTip?
 
     let weather: SummaryWeather?
+    let airQuality: AirQualityCurrentResponse?
     var isOffline: Bool = false
 
     private var model: AtmosphericConditionsDisplayModel {
-        AtmosphericConditionsDisplayModel(weather: weather)
+        AtmosphericConditionsDisplayModel(weather: weather, airQuality: airQuality)
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -160,24 +162,30 @@ struct AtmosphericConditionsCard: View {
     @ViewBuilder
     private var metricsStrip: some View {
         if adaptiveLayout.usesVerticalMetricRows {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: SkyAwareSpacing.standard) {
                 ForEach(model.secondaryMetrics) { metric in
                     AtmosphericMetricRow(metric: metric, isCompact: false)
                 }
             }
         } else {
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(model.secondaryMetrics.enumerated()), id: \.element.id) { index, metric in
+            LazyVGrid(
+                columns: secondaryMetricColumns,
+                alignment: .leading,
+                spacing: SkyAwareSpacing.standard
+            ) {
+                ForEach(model.secondaryMetrics) { metric in
                     AtmosphericMetricRow(metric: metric, isCompact: true)
-
-                    if index < model.secondaryMetrics.count - 1 {
-                        Divider()
-                            .frame(maxHeight: .infinity)
-                            .padding(.vertical, 2)
-                    }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
+    }
+
+    private var secondaryMetricColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: SkyAwareSpacing.standard, alignment: .top),
+            count: max(model.secondaryMetrics.count, 1)
+        )
     }
 }
 
@@ -187,6 +195,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
             case humidity
             case wind
             case pressure
+            case aqi
 
             var id: String { rawValue }
         }
@@ -204,7 +213,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
     let dewPointDescriptor: String
     let secondaryMetrics: [Metric]
 
-    init(weather: SummaryWeather?) {
+    init(weather: SummaryWeather?, airQuality: AirQualityCurrentResponse? = nil) {
         guard let weather else {
             dewPointValue = nil
             dewPointFahrenheit = nil
@@ -238,6 +247,12 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
                 title: "Pressure",
                 value: Self.formatPressure(weather.pressure),
                 iconName: "gauge.with.dots.needle.50percent"
+            ),
+            .init(
+                kind: .aqi,
+                title: "AQI",
+                value: Self.formatAirQuality(airQuality),
+                iconName: "circle.hexagongrid.fill"
             )
         ]
     }
@@ -275,6 +290,20 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
     private static func formatPressure(_ pressure: Measurement<UnitPressure>) -> String {
         let inHg = pressure.converted(to: .inchesOfMercury).value
         return "\(inHg.formatted(.number.precision(.fractionLength(2)))) inHg"
+    }
+
+    private static func formatAirQuality(_ airQuality: AirQualityCurrentResponse?) -> String {
+        guard let airQuality else { return "Unavailable" }
+        let category = switch airQuality.category?.identifier {
+        case 1: "Good"
+        case 2: "Moderate"
+        case 3: "USG"
+        case 4: "Unhealthy"
+        case 5: "Very Unhealthy"
+        case 6: "Hazardous"
+        default: airQuality.category?.name ?? "—"
+        }
+        return "\(airQuality.aqi)\n \(category)"
     }
 
     private static var unavailableMetrics: [Metric] {
@@ -374,8 +403,7 @@ private struct AtmosphericMetricRow: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(metric.title) \(metric.value)")
         } else {
@@ -402,8 +430,7 @@ private struct AtmosphericMetricRow: View {
 
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("\(metric.title) \(metric.value)")
         }
@@ -411,33 +438,33 @@ private struct AtmosphericMetricRow: View {
 }
 
 #Preview("Atmospheric Conditions - Calm Light") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Moist") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Very Moist") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Unavailable Weather") {
-    AtmosphericConditionsCard(weather: nil)
+    AtmosphericConditionsCard(weather: nil, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Light Mode") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive, airQuality: nil)
         .preferredColorScheme(.light)
 }
 
 #Preview("Atmospheric Conditions - Dark Mode") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist, airQuality: nil)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Atmospheric Conditions - Large Dynamic Type") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive, airQuality: nil)
         .environment(\.dynamicTypeSize, .accessibility3)
 }
 

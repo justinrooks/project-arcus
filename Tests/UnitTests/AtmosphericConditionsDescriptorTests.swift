@@ -4,6 +4,27 @@ import Testing
 
 @Suite("Atmospheric conditions dew point descriptor")
 struct AtmosphericConditionsDescriptorTests {
+    @Test("unavailable AQI does not prevent existing weather metrics from rendering")
+    func unavailableAQILeavesConditionsAvailable() {
+        let weather = SummaryWeather(
+            temperature: .init(value: 72, unit: .fahrenheit),
+            symbolName: "sun.max.fill",
+            conditionText: "Clear",
+            asOf: .now,
+            dewPoint: .init(value: 48, unit: .fahrenheit),
+            humidity: 0.4,
+            windSpeed: .init(value: 8, unit: .milesPerHour),
+            windGust: nil,
+            windDirection: "N",
+            pressure: .init(value: 30, unit: .inchesOfMercury),
+            pressureTrend: "steady"
+        )
+
+        let model = AtmosphericConditionsDisplayModel(weather: weather, airQuality: nil)
+
+        #expect(model.secondaryMetrics.first(where: { $0.kind == .humidity })?.value == "40%")
+        #expect(model.secondaryMetrics.first(where: { $0.kind == .aqi })?.value == "Unavailable")
+    }
     @Test("dew points below 50 are dry air")
     func belowFiftyIsDryAir() {
         #expect(DewPointDescriptor.text(for: 49.9) == "Dry air in place")

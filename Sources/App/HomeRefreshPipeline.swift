@@ -89,6 +89,7 @@ final class HomeRefreshPipeline {
     var summaryWeather: SummaryWeather?
     var stormSetup: StormSetupDTO?
     var stormSetupCurrentResponse: StormSetupCurrentResponse?
+    var airQuality: AirQualityCurrentResponse?
     private(set) var riskSnapshot: HomeRiskSnapshot
     private(set) var alertSnapshot: HomeAlertSnapshot
     private(set) var outlookSnapshot: HomeOutlookSnapshot
@@ -514,6 +515,7 @@ final class HomeRefreshPipeline {
         }
 
         applyStormSetup(snapshot)
+        airQuality = snapshot.airQuality
         switch snapshot.weatherRefreshResult {
         case .success(let weather):
             summaryWeather = weather

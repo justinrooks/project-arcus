@@ -167,6 +167,10 @@ struct HomeView: View {
         )
     }
 
+    private var displayedAirQuality: AirQualityCurrentResponse? {
+        isCurrentContextResolvedInPipeline ? refreshPipeline.airQuality : nil
+    }
+
     private var displayedMesos: [MdDTO] {
         if isUITestStaticMode && refreshPipeline.mesos.isEmpty == false {
             return refreshPipeline.mesos
@@ -302,6 +306,7 @@ struct HomeView: View {
                         alerts: displayedAlerts,
                         outlook: displayedOutlook,
                         weather: displayedWeather,
+                        airQuality: displayedAirQuality,
                         locationTimeZone: resolvedLocationTimeZone,
                         todayContentState: todayContentState,
                         localAlertsDisplayState: localAlertsDisplayState,
@@ -835,6 +840,7 @@ private struct TodayTabView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let airQuality: AirQualityCurrentResponse?
     let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
     let localAlertsDisplayState: LocalAlertsDisplayState
@@ -885,6 +891,7 @@ private struct TodayTabView: View {
                     alerts: alerts,
                     outlook: outlook,
                     weather: visibleWeather,
+                    airQuality: airQuality,
                     locationTimeZone: locationTimeZone,
                     todayContentState: todayContentState,
                     localAlertsDisplayState: localAlertsDisplayState,
