@@ -22,6 +22,7 @@ struct StormSetupDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                provenanceCard
                 assessmentCard
                 ingredientCard
 
@@ -33,14 +34,8 @@ struct StormSetupDetailView: View {
                     textCard(title: "Primary drivers", values: presentation.primaryDrivers)
                 }
 
-                provenanceCard
-
-                if presentation.advancedRows.isEmpty == false {
-                    advancedCard
-                }
-
-                if presentation.profileAnalysisRows.isEmpty == false {
-                    profileAnalysisCard
+                ForEach(presentation.detailIngredientGroups) { group in
+                    detailIngredientGroupCard(group)
                 }
             }
             .padding(.horizontal, 16)
@@ -105,8 +100,16 @@ struct StormSetupDetailView: View {
     private var ingredientCard: some View {
         sectionCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Readable ingredients")
-                    .font(.headline)
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Ingredients")
+                        .font(.headline)
+
+                    Spacer(minLength: 10)
+
+                    Text("Confidence")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
 
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(presentation.ingredientRows) { row in
@@ -143,50 +146,26 @@ struct StormSetupDetailView: View {
         }
     }
 
-    private var advancedCard: some View {
+    private func detailIngredientGroupCard(_ group: StormSetupDetailPresentation.DetailIngredientGroup) -> some View {
         sectionCard {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Advanced Details")
+                Text(group.title)
                     .font(.headline)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(presentation.advancedRows) { row in
+                    ForEach(group.rows) { row in
                         StormSetupDetailRowView(row: row)
                     }
                 }
 
-                if let diagnosticsNoteText = presentation.diagnosticsNoteText {
-                    Text(diagnosticsNoteText)
+                if let noteText = group.noteText {
+                    Text(noteText)
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .accessibilityIdentifier("storm-setup-advanced-details")
-    }
-
-    private var profileAnalysisCard: some View {
-        sectionCard {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Profile Analysis")
-                    .font(.headline)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(presentation.profileAnalysisRows) { row in
-                        StormSetupDetailRowView(row: row)
-                    }
-                }
-
-                if let profileAnalysisNoteText = presentation.profileAnalysisNoteText {
-                    Text(profileAnalysisNoteText)
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .accessibilityIdentifier("storm-setup-profile-analysis")
     }
 
     private func textCard(title: String, values: [String]) -> some View {

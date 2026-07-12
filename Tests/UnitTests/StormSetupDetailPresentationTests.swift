@@ -25,8 +25,49 @@ struct StormSetupDetailPresentationTests {
             "High",
             "Weak"
         ])
-        #expect(presentation.limitingFactors == ["Strong cap", "Poor moisture"])
+        #expect(presentation.limitingFactors == ["Strong Cap", "Poor Moisture"])
         #expect(presentation.primaryDrivers.isEmpty)
+        #expect(presentation.detailIngredientGroups.map(\.title) == [
+            "Fuel & Instability",
+            "Cloud Base & Effective Layer",
+            "Shear & Rotation",
+            "Composite Parameters",
+            "Profile Quality"
+        ])
+        #expect(presentation.detailIngredientGroups.map { $0.rows.map(\.title) } == [
+            [
+                "MLCAPE — J/kg",
+                "MUCAPE — J/kg",
+                "SBCAPE — J/kg",
+                "MLCIN — J/kg",
+                "0–3 km CAPE / 3CAPE — J/kg",
+                "Temperature/dew-point spread — °F"
+            ],
+            [
+                "MLLCL — m",
+                "Effective layer height bounds",
+                "Effective layer pressure bounds",
+                "Effective layer availability"
+            ],
+            [
+                "0–1 km SRH — m²/s²",
+                "0–3 km SRH — m²/s²",
+                "0–6 km shear — kt",
+                "Effective SRH — m²/s²",
+                "Effective bulk shear — m/s",
+                "Bunkers-right storm motion",
+                "Storm motion availability"
+            ],
+            [
+                "SCP",
+                "STP — fixed",
+                "STP — CIN-adjusted",
+                "SHIP"
+            ],
+            [
+                "Profile level count"
+            ]
+        ])
         #expect(presentation.advancedRows.map(\.title) == [
             "MLCAPE — J/kg",
             "MUCAPE — J/kg",
@@ -53,6 +94,69 @@ struct StormSetupDetailPresentationTests {
         ])
         #expect(presentation.profileAnalysisRows.contains(where: { $0.title == "SHIP" && $0.value == "2.1" }))
         #expect(presentation.profileAnalysisResponse != nil)
+    }
+
+    @Test("all typed limiting factors render title-cased labels")
+    func allTypedLimitingFactorsRenderTitleCasedLabels() {
+        let presentation = StormSetupDetailPresentation(
+            response: makeCurrentResponse(
+                tornadoViability: .init(
+                    overall: .strong,
+                    realization: .realized,
+                    primaryFailureMode: .none,
+                    confidence: .high,
+                    summary: "Strong setup.",
+                    details: .init(
+                        stormViability: .strong,
+                        supercellViability: .strong,
+                        tornadoEfficiency: .strong,
+                        inhibition: .strong,
+                        instability: .strong,
+                        moisture: .strong,
+                        cloudBase: .strong,
+                        deepShear: .strong,
+                        lowLevelRotation: .strong,
+                        lowLevelStretching: .strong,
+                        cloudBaseEfficiency: .strong,
+                        supercellComposite: .strong,
+                        tornadoComposite: .strong,
+                        stormMode: .strong
+                    ),
+                    limitingFactors: [
+                        .weakInstability,
+                        .weakDeepShear,
+                        .weakLowLevelRotation,
+                        .weakLowLevelStretching,
+                        .elevatedCloudBases,
+                        .strongCap,
+                        .conditionalInitiation,
+                        .weakStormOrganization,
+                        .fixedEffectiveStpDisagreement,
+                        .poorMoisture,
+                        .missingStormMode,
+                        .unknown
+                    ]
+                )
+            ),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.limitingFactors == [
+            "Weak Instability",
+            "Weak Deep Shear",
+            "Weak Low-Level Rotation",
+            "Weak Low-Level Stretching",
+            "Elevated Cloud Bases",
+            "Strong Cap",
+            "Conditional Initiation",
+            "Weak Storm Organization",
+            "Fixed Effective STP Disagreement",
+            "Poor Moisture",
+            "Missing Storm Mode",
+            "Unavailable"
+        ])
     }
 
     @Test("degraded confidence and missing profile analysis stay calm")
@@ -144,6 +248,8 @@ struct StormSetupDetailPresentationTests {
         #expect(presentation.advancedRows.map(\.title) == ["MLCAPE — J/kg"])
         #expect(presentation.advancedRows.map(\.value) == ["1,850"])
         #expect(presentation.profileAnalysisRows.isEmpty)
+        #expect(presentation.detailIngredientGroups.map(\.title) == ["Fuel & Instability"])
+        #expect(presentation.detailIngredientGroups.first?.rows.map(\.title) == ["MLCAPE — J/kg"])
     }
 
     @Test("readable content is ordered and cleaned")
@@ -188,6 +294,20 @@ struct StormSetupDetailPresentationTests {
         ])
         #expect(presentation.limitingFactors == ["capping"])
         #expect(presentation.primaryDrivers == ["shear"])
+    }
+
+    @Test("legacy limiting factors render readable labels")
+    func legacyLimitingFactorsRenderReadableLabels() {
+        let presentation = StormSetupDetailPresentation(
+            dto: makeDTO(
+                limitingFactors: ["weakInstability", "strongCap", "capping"]
+            ),
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T19:00:00Z")
+        )
+
+        #expect(presentation.limitingFactors == ["Weak Instability", "Strong Cap", "capping"])
     }
 
     @Test("metadata formatting respects UTC run time and local valid time")
@@ -341,6 +461,8 @@ struct StormSetupDetailPresentationTests {
 
         #expect(gatedOff.advancedRows.isEmpty)
         #expect(storedButDisabled.advancedRows.isEmpty)
+        #expect(gatedOff.detailIngredientGroups.isEmpty)
+        #expect(storedButDisabled.detailIngredientGroups.isEmpty)
         #expect(enabled.advancedRows.map(\.title) == [
             "MLCAPE — J/kg",
             "MUCAPE — J/kg",

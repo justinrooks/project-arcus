@@ -41,8 +41,8 @@ struct StormSetupPresentationTests {
 
         #expect(presentation.overallTitle == "Supportive Setup")
         #expect(presentation.ingredientRows.map(\.value) == ["Supportive", "Conditional", "High"])
-        #expect(presentation.limiterText == "Strong cap")
-        #expect(presentation.accessibilityValue.contains("Strong cap"))
+        #expect(presentation.limiterText == "Strong Cap")
+        #expect(presentation.accessibilityValue.contains("Strong Cap"))
     }
 
     @Test("maps signals to readable ingredient text")
@@ -91,6 +91,20 @@ struct StormSetupPresentationTests {
         )
 
         #expect(presentation.limiterText == "capping")
+    }
+
+    @Test("typed limiter copy is title-cased in the summary card data")
+    func typedLimiterCopyIsTitleCasedInTheSummaryCardData() {
+        let presentation = StormSetupSummaryPresentation(
+            dto: makeDTO(
+                limitingFactors: ["weakInstability", "capping"]
+            ),
+            timeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T18:00:00Z")
+        )
+
+        #expect(presentation.limiterText == "Weak Instability")
+        #expect(presentation.accessibilityValue.contains("Limiter: Weak Instability"))
     }
 
     @Test("source line uses the forecast-location time zone")

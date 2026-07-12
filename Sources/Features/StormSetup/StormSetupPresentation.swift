@@ -273,7 +273,7 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
 
     private static func firstMeaningfulLimiter(from factors: [String]) -> String? {
         factors
-            .compactMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
+            .compactMap { Self.readableLimiter(from: $0) }
             .first
     }
 
@@ -286,30 +286,72 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
     static func readableLimiter(_ limiter: TornadoViabilityLimiter) -> String {
         switch limiter {
         case .weakInstability:
-            "Weak instability"
+            "Weak Instability"
         case .weakDeepShear:
-            "Weak deep shear"
+            "Weak Deep Shear"
         case .weakLowLevelRotation:
-            "Weak low-level rotation"
+            "Weak Low-Level Rotation"
         case .weakLowLevelStretching:
-            "Weak low-level stretching"
+            "Weak Low-Level Stretching"
         case .elevatedCloudBases:
-            "Elevated cloud bases"
+            "Elevated Cloud Bases"
         case .strongCap:
-            "Strong cap"
+            "Strong Cap"
         case .conditionalInitiation:
-            "Conditional initiation"
+            "Conditional Initiation"
         case .weakStormOrganization:
-            "Weak storm organization"
+            "Weak Storm Organization"
         case .fixedEffectiveStpDisagreement:
-            "Fixed effective STP disagreement"
+            "Fixed Effective STP Disagreement"
         case .poorMoisture:
-            "Poor moisture"
+            "Poor Moisture"
         case .missingStormMode:
-            "Missing storm mode"
+            "Missing Storm Mode"
         case .unknown:
             "Unavailable"
         }
+    }
+
+    private static func readableLimiter(from value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return nil
+        }
+
+        switch normalizedLimiterKey(trimmed) {
+        case "weakinstability":
+            return "Weak Instability"
+        case "weakdeepshear":
+            return "Weak Deep Shear"
+        case "weaklowlevelrotation":
+            return "Weak Low-Level Rotation"
+        case "weaklowlevelstretching":
+            return "Weak Low-Level Stretching"
+        case "elevatedcloudbases":
+            return "Elevated Cloud Bases"
+        case "strongcap":
+            return "Strong Cap"
+        case "conditionalinitiation":
+            return "Conditional Initiation"
+        case "weakstormorganization":
+            return "Weak Storm Organization"
+        case "fixedeffectivestpdisagreement":
+            return "Fixed Effective STP Disagreement"
+        case "poormoisture":
+            return "Poor Moisture"
+        case "missingstormmode":
+            return "Missing Storm Mode"
+        default:
+            return trimmed
+        }
+    }
+
+    private static func normalizedLimiterKey(_ value: String) -> String {
+        value.unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) }
+            .map(String.init)
+            .joined()
+            .lowercased()
     }
 
     private static func freshnessCopy(isStale: Bool, isDegraded: Bool) -> String? {
