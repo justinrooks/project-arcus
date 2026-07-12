@@ -12,13 +12,21 @@ struct AtmosphericConditionsCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var activeTip: DewPointTip?
+    @AppStorage(
+        AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
+        store: UserDefaults.shared
+    ) private var alwaysShowAirQuality: Bool = false
 
     let weather: SummaryWeather?
     let airQuality: AirQualityCurrentResponse?
     var isOffline: Bool = false
 
     private var model: AtmosphericConditionsDisplayModel {
-        AtmosphericConditionsDisplayModel(weather: weather, airQuality: airQuality)
+        AtmosphericConditionsDisplayModel(
+            weather: weather,
+            airQuality: airQuality,
+            alwaysShowAirQuality: alwaysShowAirQuality
+        )
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -184,8 +192,14 @@ struct AtmosphericConditionsCard: View {
     private var secondaryMetricColumns: [GridItem] {
         Array(
             repeating: GridItem(.flexible(), spacing: SkyAwareSpacing.standard, alignment: .top),
-            count: max(model.secondaryMetrics.count, 1)
+            count: AtmosphericMetricRailLayout.compactColumnCount(for: model.secondaryMetrics.count)
         )
+    }
+}
+
+enum AtmosphericMetricRailLayout {
+    static func compactColumnCount(for metricCount: Int) -> Int {
+        metricCount == 4 ? 2 : max(metricCount, 1)
     }
 }
 
@@ -234,7 +248,11 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
     let dewPointDescriptor: String
     let secondaryMetrics: [Metric]
 
-    init(weather: SummaryWeather?, airQuality: AirQualityCurrentResponse? = nil) {
+    init(
+        weather: SummaryWeather?,
+        airQuality: AirQualityCurrentResponse? = nil,
+        alwaysShowAirQuality: Bool = false
+    ) {
         guard let weather else {
             dewPointValue = nil
             dewPointFahrenheit = nil
@@ -273,7 +291,8 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
 
         if let airQuality = AirQualityPresentation(
             aqi: airQuality?.aqi,
-            primaryPollutant: airQuality?.primaryPollutant
+            primaryPollutant: airQuality?.primaryPollutant,
+            alwaysShow: alwaysShowAirQuality
         ) {
             metrics.append(
                 Metric(
@@ -335,8 +354,14 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
     }
 }
 
+enum AtmosphericConditionsPreferences {
+    static let alwaysShowAirQualityKey = "alwaysShowAirQuality"
+}
+
 struct AirQualityPresentation: Sendable, Equatable {
     enum SemanticAccent: Sendable, Equatable {
+        case good
+        case moderate
         case caution
         case unhealthy
         case veryUnhealthy
@@ -349,12 +374,16 @@ struct AirQualityPresentation: Sendable, Equatable {
     let semanticAccent: SemanticAccent
     let primaryPollutant: String?
 
-    init?(aqi: Int?, primaryPollutant: String?) {
-        guard let aqi, aqi >= 101 else {
+    init?(aqi: Int?, primaryPollutant: String?, alwaysShow: Bool = false) {
+        guard let aqi, aqi >= 0, alwaysShow || aqi >= 101 else {
             return nil
         }
 
         let category: (String, String, SemanticAccent) = switch aqi {
+        case 0...50:
+            ("Good", "good", SemanticAccent.good)
+        case 51...100:
+            ("Moderate", "moderate", SemanticAccent.moderate)
         case 101...150:
             ("USG", "unhealthy for sensitive groups", SemanticAccent.caution)
         case 151...200:
@@ -522,6 +551,10 @@ private struct AtmosphericMetricRow: View {
 
     private var valueColor: Color {
         switch metric.semanticAccent {
+        case .good:
+            .riskAllClear
+        case .moderate:
+            .riskSlight
         case .caution:
             .warningYellow
         case .unhealthy:

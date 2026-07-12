@@ -9,6 +9,14 @@ struct AtmosphericConditionsDescriptorTests {
         #expect(AirQualityPresentation(aqi: 100, primaryPollutant: nil) == nil)
     }
 
+    @Test("AQI override shows valid values below the severe-weather threshold")
+    func aqiOverrideShowsValidLowerValues() {
+        let presentation = AirQualityPresentation(aqi: 100, primaryPollutant: nil, alwaysShow: true)
+
+        #expect(presentation?.shortCategory == "Moderate")
+        #expect(presentation?.semanticAccent == .moderate)
+    }
+
     @Test("AQI 101 through 150 uses USG")
     func aqiUSGRange() {
         #expect(AirQualityPresentation(aqi: 101, primaryPollutant: nil)?.shortCategory == "USG")
@@ -49,6 +57,12 @@ struct AtmosphericConditionsDescriptorTests {
         let model = AtmosphericConditionsDisplayModel(weather: sampleWeather, airQuality: nil)
 
         #expect(model.secondaryMetrics.map(\.kind) == [.humidity, .wind, .pressure])
+        #expect(AtmosphericMetricRailLayout.compactColumnCount(for: model.secondaryMetrics.count) == 3)
+    }
+
+    @Test("AQI rail wraps to two readable columns")
+    func aqiRailWrapsToTwoColumns() {
+        #expect(AtmosphericMetricRailLayout.compactColumnCount(for: 4) == 2)
     }
     @Test("dew points below 50 are dry air")
     func belowFiftyIsDryAir() {

@@ -79,6 +79,11 @@ struct SettingsView: View {
         "mapWarningGeometryVisible",
         store: UserDefaults.shared
     ) private var mapWarningGeometryVisible: Bool = true
+
+    @AppStorage(
+        AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
+        store: UserDefaults.shared
+    ) private var alwaysShowAirQuality: Bool = false
     
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
@@ -276,6 +281,17 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Toggle("Show Active Alerts on Map", isOn: $mapWarningGeometryVisible)
                         Text("Controls whether active warning geometry is shown on the map.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                sectionCard(title: "Atmospheric Conditions", symbol: "wind", accent: .primary) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Always Show Air Quality", isOn: $alwaysShowAirQuality)
+                            .accessibilityIdentifier("settings-always-show-air-quality-toggle")
+                        Text("Shows AQI whenever valid air-quality data is available, including Good and Moderate levels.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
