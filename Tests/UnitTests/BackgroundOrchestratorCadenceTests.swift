@@ -129,8 +129,8 @@ struct BackgroundOrchestratorCadenceTests {
         #expect((await setup.spc.queriedPoints()).isEmpty)
     }
 
-    @Test("Background refresh waits for unified ingestion before finishing")
-    func backgroundRefresh_waitsForUnifiedIngestionBeforeFinishing() async throws {
+    @Test("Background refresh starts upload draining only after unified ingestion")
+    func backgroundRefresh_startsUploadDrainingOnlyAfterUnifiedIngestion() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
 
@@ -186,15 +186,16 @@ struct BackgroundOrchestratorCadenceTests {
         }
         #expect(requestStarted)
         #expect(await completion.isFinished() == false)
+        #expect(await uploadDrainer.drainCount() == 0)
 
         let request = try #require(await coordinator.requests().first)
         #expect(request.trigger == .backgroundRefresh)
-        #expect(await uploadDrainer.drainCount() == 1)
 
         await gate.open()
         await runTask.value
 
         #expect(await completion.isFinished())
+        #expect(await uploadDrainer.drainCount() == 1)
     }
 
     @Test("Active meso tightens cadence to short")

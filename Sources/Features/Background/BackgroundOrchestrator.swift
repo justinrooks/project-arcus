@@ -80,7 +80,6 @@ actor BackgroundOrchestrator {
             do {
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
-                await pendingUploadDrainer.drainPendingUploads()
                 let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
                 let snapshot = try await coordinator.enqueueAndWait(
                     .backgroundRefresh,
@@ -190,6 +189,12 @@ actor BackgroundOrchestrator {
                     cadenceReason: cadenceResult.reason,
                     active: active
                 )
+
+                if Task.isCancelled {
+                    logger.notice("Skipping pending upload drain because background refresh was cancelled after refresh work completed")
+                } else {
+                    await pendingUploadDrainer.drainPendingUploads()
+                }
                 
                 signposter.endInterval("Background Run", runInterval)
                 logger.notice("Background run finished with result: success")
