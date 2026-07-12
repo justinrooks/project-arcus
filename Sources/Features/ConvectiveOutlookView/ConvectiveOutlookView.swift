@@ -15,11 +15,7 @@ struct ConvectiveOutlookView: View {
     let presentationState: ConvectiveOutlookPresentationState
 
     private var sortedOutlooks: [ConvectiveOutlookDTO] {
-        dtos.sorted { lhs, rhs in
-            let lhsDate = lhs.issued ?? lhs.published
-            let rhsDate = rhs.issued ?? rhs.published
-            return lhsDate > rhsDate
-        }
+        sortedConvectiveOutlooks(dtos)
     }
 
     private var latestOutlook: ConvectiveOutlookDTO? {
@@ -324,6 +320,27 @@ struct ConvectiveOutlookView: View {
                 trailing: SkyAwareSpacing.contentInset
             )
         )
+    }
+}
+
+func sortedConvectiveOutlooks(_ dtos: [ConvectiveOutlookDTO]) -> [ConvectiveOutlookDTO] {
+    dtos.sorted { lhs, rhs in
+        if lhs.published != rhs.published {
+            return lhs.published > rhs.published
+        }
+
+        let lhsIssued = lhs.issued ?? lhs.published
+        let rhsIssued = rhs.issued ?? rhs.published
+
+        if lhsIssued != rhsIssued {
+            return lhsIssued > rhsIssued
+        }
+
+        if lhs.title != rhs.title {
+            return lhs.title > rhs.title
+        }
+
+        return lhs.id > rhs.id
     }
 }
 

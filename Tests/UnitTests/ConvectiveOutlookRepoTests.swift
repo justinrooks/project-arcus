@@ -457,6 +457,43 @@ struct ConvectiveOutlookViewCopyTests {
     }
 }
 
+@Suite("ConvectiveOutlookView sorting")
+struct ConvectiveOutlookViewSortingTests {
+    @Test("earlier outlooks remain newest to oldest by publication time")
+    func sortsByPublishedDateDescending() {
+        let newerPublicationButOlderIssue = ConvectiveOutlookDTO(
+            title: "Day 2 Convective Outlook",
+            link: URL(string: "https://example.com/day2")!,
+            published: Date(timeIntervalSince1970: 2_000),
+            summary: "Latest outlook",
+            fullText: "Latest full text",
+            day: 2,
+            riskLevel: "ENH",
+            issued: Date(timeIntervalSince1970: 1_000),
+            validUntil: Date(timeIntervalSince1970: 2_500)
+        )
+
+        let olderPublicationButNewerIssue = ConvectiveOutlookDTO(
+            title: "Day 1 Convective Outlook",
+            link: URL(string: "https://example.com/day1")!,
+            published: Date(timeIntervalSince1970: 1_000),
+            summary: "Earlier outlook",
+            fullText: "Earlier full text",
+            day: 1,
+            riskLevel: "SLGT",
+            issued: Date(timeIntervalSince1970: 3_000),
+            validUntil: Date(timeIntervalSince1970: 3_500)
+        )
+
+        let sorted = sortedConvectiveOutlooks([olderPublicationButNewerIssue, newerPublicationButOlderIssue])
+
+        #expect(sorted.map(\.title) == [
+            "Day 2 Convective Outlook",
+            "Day 1 Convective Outlook"
+        ])
+    }
+}
+
 @Suite("ConvectiveOutlookDetailPresentation")
 struct ConvectiveOutlookDetailPresentationTests {
     @Test("all metadata present stays visible and truthful")
