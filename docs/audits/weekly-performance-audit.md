@@ -122,3 +122,23 @@
   - Added `activationCleanupLastRunAt` persistence to `SkyAwareApp`.
   - Gated activation cleanup to once per hour before launching the existing cleanup task.
   - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone 17" build`.
+
+## 2026-07-12
+- workflow reviewed: Background App Refresh
+- files inspected:
+  - docs/codebase/skyaware-app-summary.md
+  - Sources/App/SkyAwareApp.swift
+  - Sources/Features/Background/BackgroundOrchestrator.swift
+  - Sources/Infrastructure/Location/LocationSnapshotPusher.swift
+  - Sources/Infrastructure/Scheduling/BackgroundScheduler.swift
+  - Sources/Models/Health/BgHealthStore.swift
+  - Sources/Features/Diagnostics/BgHealthDiagnosticsView.swift
+- top finding: `BackgroundOrchestrator` drains pending location uploads before it starts unified background ingestion, and the drain path can sort every queued request and spend 5s/15s retry delays per item, so a backlog can burn the task budget before weather state is refreshed.
+- best next fix: move or cap upload draining so the core background refresh and notification work runs first within the available background task window.
+- measurement gap: instrument orchestrator span time and pending-upload drain duration against queue size to confirm whether backlog materially increases expiration risk.
+- implementation recommended: yes
+- implementation status: completed on 2026-07-12
+- implementation notes:
+  - Moved pending upload draining to the end of `BackgroundOrchestrator.run()` so unified ingestion and notifications complete first.
+  - Added a cancellation-safe skip before upload draining so a cancelled background task does not start queue replay.
+  - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832' build`.

@@ -494,6 +494,38 @@ struct ConvectiveOutlookViewSortingTests {
     }
 }
 
+@Suite("ConvectiveOutlookDTO identity")
+struct ConvectiveOutlookDTOIdentityTests {
+    @Test("same link revisions keep distinct identities")
+    func sameLinkRevisionsKeepDistinctIdentities() {
+        let link = URL(string: "https://www.spc.noaa.gov/products/outlook/day1otlk.html")!
+        let earlier = ConvectiveOutlookDTO(
+            title: "Day 1 Convective Outlook",
+            link: link,
+            published: Date(timeIntervalSince1970: 1_700_000_000),
+            summary: "Earlier summary",
+            fullText: "Earlier full text",
+            day: 1,
+            riskLevel: "SLGT",
+            issued: Date(timeIntervalSince1970: 1_700_000_000),
+            validUntil: Date(timeIntervalSince1970: 1_700_000_600)
+        )
+        let later = ConvectiveOutlookDTO(
+            title: "Day 1 Convective Outlook",
+            link: link,
+            published: Date(timeIntervalSince1970: 1_700_000_300),
+            summary: "Later summary",
+            fullText: "Later full text",
+            day: 1,
+            riskLevel: "SLGT",
+            issued: Date(timeIntervalSince1970: 1_700_000_300),
+            validUntil: Date(timeIntervalSince1970: 1_700_000_900)
+        )
+
+        #expect(earlier.id != later.id)
+    }
+}
+
 @Suite("ConvectiveOutlookDetailPresentation")
 struct ConvectiveOutlookDetailPresentationTests {
     @Test("all metadata present stays visible and truthful")
