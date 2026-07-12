@@ -425,6 +425,7 @@ struct StormSetupDetailPresentationTests {
             dto: makeDTO(),
             preferences: .init(stormSetupEnabled: false, detailedIngredientsEnabled: true),
             forecastLocationTimeZone: TimeZone(identifier: "America/Denver")!,
+            profileAnalysisResponse: makeProfileAnalysisResponse(),
             now: date("2026-06-01T19:00:00Z")
         )
         let enabled = StormSetupDetailPresentation(
@@ -462,7 +463,7 @@ struct StormSetupDetailPresentationTests {
         #expect(gatedOff.advancedRows.isEmpty)
         #expect(storedButDisabled.advancedRows.isEmpty)
         #expect(gatedOff.detailIngredientGroups.isEmpty)
-        #expect(storedButDisabled.detailIngredientGroups.isEmpty)
+        #expect(storedButDisabled.detailIngredientGroups.map(\.title) == ["Profile Quality"])
         #expect(enabled.advancedRows.map(\.title) == [
             "MLCAPE — J/kg",
             "MUCAPE — J/kg",
@@ -508,8 +509,8 @@ struct StormSetupDetailPresentationTests {
         #expect(presentation.profileAnalysisResponse == response)
     }
 
-    @Test("disabled Detailed Ingredients suppresses the supplied profile analysis response")
-    func disabledDetailedIngredientsSuppressesSuppliedProfileAnalysisResponse() {
+    @Test("disabled Detailed Ingredients retains the supplied profile analysis response")
+    func disabledDetailedIngredientsRetainsSuppliedProfileAnalysisResponse() {
         let response = makeProfileAnalysisResponse()
         let presentation = StormSetupDetailPresentation(
             dto: makeDTO(),
@@ -519,7 +520,7 @@ struct StormSetupDetailPresentationTests {
             now: date("2026-06-01T19:00:00Z")
         )
 
-        #expect(presentation.profileAnalysisResponse == nil)
+        #expect(presentation.profileAnalysisResponse == response)
     }
 
     @Test("summary presentation is identical with and without supplemental data")
@@ -544,8 +545,8 @@ struct StormSetupDetailPresentationTests {
         #expect(withoutSupplementalData.advancedRows == withSupplementalData.advancedRows)
     }
 
-    @Test("profile analysis is suppressed when Detailed Ingredients are disabled")
-    func profileAnalysisIsSuppressedWhenDetailedIngredientsAreDisabled() {
+    @Test("profile analysis is retained when Detailed Ingredients are disabled")
+    func profileAnalysisIsRetainedWhenDetailedIngredientsAreDisabled() {
         let presentation = StormSetupDetailPresentation(
             dto: makeDTO(),
             preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
@@ -554,6 +555,7 @@ struct StormSetupDetailPresentationTests {
             now: date("2026-06-01T19:00:00Z")
         )
 
+        #expect(presentation.profileAnalysisResponse != nil)
         #expect(presentation.profileAnalysisRows.isEmpty)
         #expect(presentation.profileAnalysisNoteText == nil)
     }
@@ -567,6 +569,7 @@ struct StormSetupDetailPresentationTests {
             now: date("2026-06-01T19:00:00Z")
         )
 
+        #expect(presentation.profileAnalysisResponse == nil)
         #expect(presentation.profileAnalysisRows.isEmpty)
         #expect(presentation.profileAnalysisNoteText == nil)
     }

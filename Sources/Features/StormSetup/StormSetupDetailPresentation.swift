@@ -55,7 +55,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
             timeZone: forecastLocationTimeZone,
             now: now
         )
-        profileAnalysisResponse = preferences.effectiveDetailedIngredientsEnabled ? response.profileAnalysis : nil
+        profileAnalysisResponse = response.profileAnalysis
         assessmentTitle = StormSetupSummaryPresentation.readableTitle(for: response.tornadoViability.overall)
         summaryText = response.tornadoViability.summary.trimmedNonEmpty
         confidenceText = Self.confidenceText(for: response.tornadoViability.confidence)
@@ -89,40 +89,37 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         profileAnalysisRows = profileAnalysis.rows
         profileAnalysisNoteText = profileAnalysis.noteText
 
-        if preferences.effectiveDetailedIngredientsEnabled {
-            detailIngredientGroups = Self.makeDetailIngredientGroups(
-                fuelAndInstability: Self.makeFuelAndInstabilityRows(from: response.ingredients.canonical),
-                cloudBaseAndEffectiveLayer: Self.makeCloudBaseAndEffectiveLayerRows(
-                    mllclM: response.ingredients.canonical.mllclM,
-                    effectiveLayer: response.profileAnalysis?.effectiveLayer,
-                    effectiveLayerAvailability: response.profileAnalysis?.effectiveLayer.status
-                ),
-                shearAndRotation: Self.makeShearAndRotationRows(
-                    srh01kmM2s2: response.ingredients.canonical.srh01kmM2s2,
-                    srh03kmM2s2: response.ingredients.canonical.srh03kmM2s2,
-                    shear06kmKt: response.ingredients.canonical.shear06kmKt,
-                    effectiveSrhM2s2: response.profileAnalysis?.effectiveSrh,
-                    effectiveBulkShearMs: response.profileAnalysis?.effectiveBulkShearMs,
-                    stormMotion: response.profileAnalysis?.stormMotion,
-                    stormMotionAvailability: response.profileAnalysis?.stormMotion.status
-                ),
-                compositeParameters: Self.makeCompositeParameterRows(
-                    scp: response.profileAnalysis?.scp,
-                    stpFixed: response.profileAnalysis?.stpFixed,
-                    stpCin: response.profileAnalysis?.stpCin,
-                    ship: response.profileAnalysis?.ship
-                ),
-                profileQuality: Self.makeProfileQualityRows(
-                    profileLevelCount: response.profileAnalysis?.quality.profileLevelCount
-                ),
-                profileQualityNoteText: Self.combinedNoteText(
-                    diagnosticsNoteText,
-                    profileAnalysisNoteText
-                )
+        detailIngredientGroups = Self.makeDetailIngredientGroups(
+            fuelAndInstability: Self.makeFuelAndInstabilityRows(from: response.ingredients.canonical),
+            cloudBaseAndEffectiveLayer: Self.makeCloudBaseAndEffectiveLayerRows(
+                mllclM: response.ingredients.canonical.mllclM,
+                effectiveLayer: profileAnalysisResponse?.effectiveLayer,
+                effectiveLayerAvailability: profileAnalysisResponse?.effectiveLayer.status
+            ),
+            shearAndRotation: Self.makeShearAndRotationRows(
+                srh01kmM2s2: response.ingredients.canonical.srh01kmM2s2,
+                srh03kmM2s2: response.ingredients.canonical.srh03kmM2s2,
+                shear06kmKt: response.ingredients.canonical.shear06kmKt,
+                effectiveSrhM2s2: profileAnalysisResponse?.effectiveSrh,
+                effectiveBulkShearMs: profileAnalysisResponse?.effectiveBulkShearMs,
+                stormMotion: profileAnalysisResponse?.stormMotion,
+                stormMotionAvailability: profileAnalysisResponse?.stormMotion.status
+            ),
+            compositeParameters: Self.makeCompositeParameterRows(
+                scp: profileAnalysisResponse?.scp,
+                stpFixed: profileAnalysisResponse?.stpFixed,
+                stpCin: profileAnalysisResponse?.stpCin,
+                ship: profileAnalysisResponse?.ship
+            ),
+            showsDetailedIngredientSections: preferences.effectiveDetailedIngredientsEnabled,
+            profileQuality: Self.makeProfileQualityRows(
+                profileLevelCount: profileAnalysisResponse?.quality.profileLevelCount
+            ),
+            profileQualityNoteText: Self.combinedNoteText(
+                diagnosticsNoteText,
+                profileAnalysisNoteText
             )
-        } else {
-            detailIngredientGroups = []
-        }
+        )
 
         modelGuidanceTitle = "About HRRR guidance"
         modelGuidanceBody = Self.modelGuidanceBody
@@ -142,7 +139,7 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
             timeZone: forecastLocationTimeZone,
             now: now
         )
-        self.profileAnalysisResponse = preferences.effectiveDetailedIngredientsEnabled ? profileAnalysisResponse : nil
+        self.profileAnalysisResponse = profileAnalysisResponse
         assessmentTitle = StormSetupSummaryPresentation.readableTitle(for: assessment.assessment.overall)
         summaryText = assessment.assessment.summary?.trimmedNonEmpty
         confidenceText = Self.confidenceText(for: assessment.assessment.confidence)
@@ -172,43 +169,40 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         profileAnalysisRows = profileAnalysis.rows
         profileAnalysisNoteText = profileAnalysis.noteText
 
-        if preferences.effectiveDetailedIngredientsEnabled {
-            detailIngredientGroups = Self.makeDetailIngredientGroups(
-                fuelAndInstability: Self.makeFuelAndInstabilityRows(from: dto.raw),
-                cloudBaseAndEffectiveLayer: Self.makeCloudBaseAndEffectiveLayerRows(
-                    mllclM: dto.raw.mllclM,
-                    effectiveLayer: profileAnalysisResponse?.effectiveLayer,
-                    effectiveLayerAvailability: profileAnalysisResponse?.effectiveLayer.status,
-                    hasEffectiveLayer: assessment.anvilEvidence?.diagnostics.hasEffectiveLayer
-                ),
-                shearAndRotation: Self.makeShearAndRotationRows(
-                    srh01kmM2s2: dto.raw.srh01kmM2s2,
-                    srh03kmM2s2: dto.raw.srh03kmM2s2,
-                    shear06kmKt: dto.raw.shear06kmKt,
-                    effectiveSrhM2s2: profileAnalysisResponse?.effectiveSrh,
-                    effectiveBulkShearMs: profileAnalysisResponse?.effectiveBulkShearMs,
-                    stormMotion: profileAnalysisResponse?.stormMotion,
-                    stormMotionAvailability: profileAnalysisResponse?.stormMotion.status,
-                    hasStormMotion: assessment.anvilEvidence?.diagnostics.hasStormMotion
-                ),
-                compositeParameters: Self.makeCompositeParameterRows(
-                    scp: profileAnalysisResponse?.scp,
-                    stpFixed: profileAnalysisResponse?.stpFixed,
-                    stpCin: profileAnalysisResponse?.stpCin,
-                    ship: profileAnalysisResponse?.ship,
-                    signalEvidence: assessment.anvilEvidence
-                ),
-                profileQuality: Self.makeProfileQualityRows(
-                    profileLevelCount: profileAnalysisResponse?.quality.profileLevelCount ?? assessment.anvilEvidence?.diagnostics.qualityProfileLevelCount
-                ),
-                profileQualityNoteText: Self.combinedNoteText(
-                    diagnosticsNoteText,
-                    profileAnalysisNoteText
-                )
+        detailIngredientGroups = Self.makeDetailIngredientGroups(
+            fuelAndInstability: Self.makeFuelAndInstabilityRows(from: dto.raw),
+            cloudBaseAndEffectiveLayer: Self.makeCloudBaseAndEffectiveLayerRows(
+                mllclM: dto.raw.mllclM,
+                effectiveLayer: profileAnalysisResponse?.effectiveLayer,
+                effectiveLayerAvailability: profileAnalysisResponse?.effectiveLayer.status,
+                hasEffectiveLayer: assessment.anvilEvidence?.diagnostics.hasEffectiveLayer
+            ),
+            shearAndRotation: Self.makeShearAndRotationRows(
+                srh01kmM2s2: dto.raw.srh01kmM2s2,
+                srh03kmM2s2: dto.raw.srh03kmM2s2,
+                shear06kmKt: dto.raw.shear06kmKt,
+                effectiveSrhM2s2: profileAnalysisResponse?.effectiveSrh,
+                effectiveBulkShearMs: profileAnalysisResponse?.effectiveBulkShearMs,
+                stormMotion: profileAnalysisResponse?.stormMotion,
+                stormMotionAvailability: profileAnalysisResponse?.stormMotion.status,
+                hasStormMotion: assessment.anvilEvidence?.diagnostics.hasStormMotion
+            ),
+            compositeParameters: Self.makeCompositeParameterRows(
+                scp: profileAnalysisResponse?.scp,
+                stpFixed: profileAnalysisResponse?.stpFixed,
+                stpCin: profileAnalysisResponse?.stpCin,
+                ship: profileAnalysisResponse?.ship,
+                signalEvidence: assessment.anvilEvidence
+            ),
+            showsDetailedIngredientSections: preferences.effectiveDetailedIngredientsEnabled,
+            profileQuality: Self.makeProfileQualityRows(
+                profileLevelCount: profileAnalysisResponse?.quality.profileLevelCount ?? assessment.anvilEvidence?.diagnostics.qualityProfileLevelCount
+            ),
+            profileQualityNoteText: Self.combinedNoteText(
+                diagnosticsNoteText,
+                profileAnalysisNoteText
             )
-        } else {
-            detailIngredientGroups = []
-        }
+        )
 
         modelGuidanceTitle = "About HRRR guidance"
         modelGuidanceBody = Self.modelGuidanceBody
@@ -576,35 +570,38 @@ struct StormSetupDetailPresentation: Sendable, Equatable {
         cloudBaseAndEffectiveLayer: [Row],
         shearAndRotation: [Row],
         compositeParameters: [Row],
+        showsDetailedIngredientSections: Bool,
         profileQuality: [Row],
         profileQualityNoteText: String?
     ) -> [DetailIngredientGroup] {
         var groups: [DetailIngredientGroup] = []
 
-        appendDetailIngredientGroup(
-            title: "Fuel & Instability",
-            rows: fuelAndInstability,
-            noteText: nil,
-            to: &groups
-        )
-        appendDetailIngredientGroup(
-            title: "Cloud Base & Effective Layer",
-            rows: cloudBaseAndEffectiveLayer,
-            noteText: nil,
-            to: &groups
-        )
-        appendDetailIngredientGroup(
-            title: "Shear & Rotation",
-            rows: shearAndRotation,
-            noteText: nil,
-            to: &groups
-        )
-        appendDetailIngredientGroup(
-            title: "Composite Parameters",
-            rows: compositeParameters,
-            noteText: nil,
-            to: &groups
-        )
+        if showsDetailedIngredientSections {
+            appendDetailIngredientGroup(
+                title: "Fuel & Instability",
+                rows: fuelAndInstability,
+                noteText: nil,
+                to: &groups
+            )
+            appendDetailIngredientGroup(
+                title: "Cloud Base & Effective Layer",
+                rows: cloudBaseAndEffectiveLayer,
+                noteText: nil,
+                to: &groups
+            )
+            appendDetailIngredientGroup(
+                title: "Shear & Rotation",
+                rows: shearAndRotation,
+                noteText: nil,
+                to: &groups
+            )
+            appendDetailIngredientGroup(
+                title: "Composite Parameters",
+                rows: compositeParameters,
+                noteText: nil,
+                to: &groups
+            )
+        }
         appendDetailIngredientGroup(
             title: "Profile Quality",
             rows: profileQuality,
