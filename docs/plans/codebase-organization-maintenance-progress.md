@@ -46,7 +46,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 | 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Complete | GPT-5.6 Sol / high |
 | 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Complete | GPT-5.6 Sol / xhigh |
 | 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Complete | GPT-5.6 Sol / xhigh |
-| 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Pending | GPT-5.6 Luna / high |
+| 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Complete | GPT-5.6 Luna / high |
 | 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Pending | GPT-5.6 Terra / high |
 | 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Pending | GPT-5.6 Sol / high |
 
@@ -497,7 +497,41 @@ infrastructure work. COM-10 and GitHub #299 are complete; do not begin COM-11 or
 
 ### COM-11 / GitHub #300 - Split widget rendering components by domain
 
-Status: Pending
+Status: Complete
+
+Files changed and component ownership:
+
+- `WidgetsExtension/WidgetStormRiskComponents.swift`: `WidgetStormRiskSmallView` and its private storm badge card.
+- `WidgetsExtension/WidgetSevereRiskComponents.swift`: `WidgetSevereRiskSmallView` and its private severe badge card.
+- `WidgetsExtension/WidgetAlertComponents.swift`: compact alert and no-alert row components.
+- `WidgetsExtension/WidgetStateComponents.swift`: freshness, unavailable, and stale state components.
+- `WidgetsExtension/WidgetCombinedComponents.swift`: combined large widget and its private risk, alert, and no-alert
+  subcomponents.
+- `WidgetsExtension/WidgetRenderingComponents.swift`: shared `WidgetRiskBadgeView`, retained at the narrowest
+  shared rendering boundary.
+
+Behavior, accessibility, and previews: declarations moved intact. Storm-risk small, severe-risk small, alert and
+no-alert, stale and unavailable, and combined medium/large rendering preserve existing layout, typography, spacing,
+colors, gradients, symbols, freshness copy, accessibility labels/values, widget-family behavior, routes, and snapshot
+contracts. The 27 hosted preview names and eight fixture references are unchanged.
+
+Visibility: no visibility changes. Existing internal declarations remain internal, and private subcomponents remain
+private within their owning files.
+
+Target-membership evidence: the filesystem-synchronized `WidgetsExtension` group belongs to
+`SkyAwareWidgetsExtension`; the post-build `SkyAwareWidgetsExtension.SwiftFileList` contains all five new component
+files and the retained shared component file.
+
+Validation: ran
+`xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+successfully after extraction. The widget extension compiled all new files and hosted preview declarations. Compared
+preview names and fixture references against `HEAD`, inspected representative storm/severe small, alert/no-alert,
+stale/unavailable, and combined medium/large scenarios, and ran whitespace/diff checks. No screenshots were captured,
+so pixel equivalence is not claimed.
+
+Residual risks and handoff: this is organization-only work with no production logic or preview-fixture edits. Runtime
+preview canvas inspection was not performed in this environment; the successful target build verifies compilation and
+preview contracts. Issue #300 is complete; do not begin COM-12 or GitHub #301 in this task.
 
 ### COM-12 / GitHub #301 - Extract Storm Setup detail presentation builders
 
