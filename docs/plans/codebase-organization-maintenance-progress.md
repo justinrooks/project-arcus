@@ -48,7 +48,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 | 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Complete | GPT-5.6 Sol / xhigh |
 | 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Complete | GPT-5.6 Luna / high |
 | 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Pending | GPT-5.6 Terra / high |
-| 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Pending | GPT-5.6 Sol / high |
+| 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Complete | GPT-5.6 Sol / high |
 
 ## Existing Code Map
 
@@ -574,7 +574,60 @@ the focused tests must be rerun once CoreSimulatorService is healthy. Do not beg
 
 ### COM-13 / GitHub #302 - Resolve URL session metrics collector concurrency warning
 
-Status: Pending
+Status: Complete
+
+Original diagnostic:
+
+`Sources/Infrastructure/Networking/HTTPDataDownloader.swift:516:17: warning: stored property 'storedMetrics' of
+'Sendable'-conforming class 'URLSessionTaskMetricsCollector' is mutable`
+
+Root cause: `URLSessionTaskDelegate` makes the collector `Sendable`, while its synchronous metrics callback wrote to a
+mutable stored property. An `NSLock` protected both the callback write and the post-request read at runtime, but the
+compiler cannot infer that a separate lock establishes safe access to the property.
+
+Synchronization model: the collector now stores its optional `URLSessionTaskMetrics` inside
+`Synchronization.Mutex`. Both the synchronous delegate callback and the `metrics` getter access the value exclusively
+through `withLock`, so the mutable state has one compiler-understood synchronization boundary. Immutable storage was
+rejected because metrics arrive after initialization; actor or global-actor isolation was rejected because the
+delegate requirement is synchronous and must not add a hop or change callback ordering; retaining `NSLock` with
+`@unchecked Sendable` was rejected because the native iOS 18+ mutex expresses the same invariant without a local
+unchecked conformance.
+
+Files changed:
+
+- `Sources/Infrastructure/Networking/HTTPDataDownloader.swift` — replaced the separate `NSLock` and mutable property
+  with native mutex-protected metrics storage.
+- `docs/plans/codebase-organization-maintenance-progress.md` — recorded COM-13 implementation and validation evidence.
+
+Behavior preserved: one collector is still created per request attempt and passed as the task-specific
+`URLSessionTaskDelegate`. Foundation invokes its callback on the session's serial delegate operation queue, and metrics
+collection precedes the task-completion callback that resumes `data(for:delegate:)`; the downloader therefore reads
+after the expected write while the mutex also makes overlapping access safe. Metrics remain available synchronously,
+and the existing final-transaction mapping remains unchanged: `.localCache` maps to `.localCache`; missing,
+network-load, server-push, and unknown metrics map to `.live`. Request, retry, cache fallback, observer, and logging
+behavior did not change.
+
+Validation:
+
+- Fresh baseline `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /tmp/issue302-baseline-derived build` — succeeded and
+  reproduced the exact original warning above in target `SkyAware`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HTTPDataDownloaderTests -resultBundlePath
+  /tmp/issue302-focused-tests.xcresult test` — succeeded. `xcresulttool` reports 6 passed, 0 failed, 0 skipped.
+- Required final `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" build` — succeeded.
+- Post-fix baseline-derived build using the first command recompiled `HTTPDataDownloader.swift` and succeeded.
+
+Warning scan: the required final Debug build emitted zero warnings. The baseline-derived post-fix log explicitly shows
+`HTTPDataDownloader.swift` compiling with no `URLSessionTaskMetricsCollector`, `storedMetrics`, or other warning. The
+focused test build emitted pre-existing warnings from unrelated test files; none references the changed production
+file or was introduced by COM-13.
+
+Residual risks and handoff: no deterministic `.localCache` metrics fixture was added because doing so would require
+production visibility expansion or reliance on URL loading cache behavior; the classification switch itself is
+unchanged. The focused suite covers live, cache-fallback, and 304-revalidation response sources. COM-13 and GitHub #302
+are complete. Do not close parent #289 or alter other ledger entries in this task.
 
 ## Verification Ledger
 

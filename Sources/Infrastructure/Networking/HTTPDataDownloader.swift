@@ -7,6 +7,7 @@
 
 import Foundation
 import OSLog
+import Synchronization
 
 public enum HTTPExecutionMode: Sendable, Equatable {
     case foreground
@@ -512,18 +513,13 @@ public final class URLSessionHTTPClient: HTTPClient {
 }
 
 private final class URLSessionTaskMetricsCollector: NSObject, URLSessionTaskDelegate {
-    private let lock = NSLock()
-    private var storedMetrics: URLSessionTaskMetrics?
+    private let storedMetrics = Mutex<URLSessionTaskMetrics?>(nil)
 
     var metrics: URLSessionTaskMetrics? {
-        lock.lock()
-        defer { lock.unlock() }
-        return storedMetrics
+        storedMetrics.withLock { $0 }
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
-        lock.lock()
-        storedMetrics = metrics
-        lock.unlock()
+        storedMetrics.withLock { $0 = metrics }
     }
 }
