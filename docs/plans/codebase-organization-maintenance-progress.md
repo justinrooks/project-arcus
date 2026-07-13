@@ -165,7 +165,48 @@ Residual risks and handoff: no production behavior or coverage semantics changed
 
 ### COM-04 / GitHub #293 - Split home refresh pipeline tests and fakes
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/HomeRefreshPipelineTests.swift` — retains the pipeline suite and all pipeline-only support declarations.
+- `Tests/UnitTests/SkyAwareAppActivationCleanupTests.swift` — activation-cleanup suite moved intact from the mixed source file.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the activation-cleanup test file in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-04 ledger entry.
+
+Suites and support declarations moved:
+
+- `SkyAwareAppActivationCleanupTests` and its one test moved to `SkyAwareAppActivationCleanupTests.swift` unchanged.
+- `HomeRefreshPipelineTests` remains in `HomeRefreshPipelineTests.swift` with all 35 tests unchanged.
+- Pipeline-only support remains private to its owning file: `RecordingHomeIngestionCoordinator`,
+  `SequencedHomeIngestionCoordinator`, `AsyncGate`, `CompletionFlag`, `TestFailure`, `FakeLocationSession`,
+  `FakeWeatherClient`, `FakeSpcProvider`, `RecordingWidgetSnapshotRefresher`, `FakeAlertProvider`, `waitUntil`, and
+  the six pipeline fixture/environment helpers. No support declaration was shared by the resulting suites, so no
+  generic or unnecessary support file was introduced.
+
+Async behavior preserved: `.serialized`, `@MainActor`, task creation, polling, gate opening, serialization, the
+10-millisecond polling sleep, and all one-second/default and five-second explicit timeouts remain unchanged. No
+production files or test semantics changed.
+
+Validation:
+
+- Pre/post inventory comparison using the `awk` suite/test extractor reported an exact match: 2 suites and 36 tests;
+  the pipeline declaration comparison and activation-suite block comparison also matched, ignoring only the moved
+  file-separator blank line.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-293-derived -resultBundlePath /private/tmp/project-arcus-293-pipeline.xcresult -only-testing:SkyAwareTests/HomeRefreshPipelineTests test` — **TEST SUCCEEDED**; 35 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-293-pipeline.xcresult --compact` — `result: Passed`, 35 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-293-derived -resultBundlePath /private/tmp/project-arcus-293-activation.xcresult -only-testing:SkyAwareTests/SkyAwareAppActivationCleanupTests test` — **TEST SUCCEEDED**; 1 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcrun xcresulttool get test-results tests --path /private/tmp/project-arcus-293-activation.xcresult --compact` — activation suite and test both reported `Passed`; the summary subcommand was also attempted but hit Xcode's TestReport materialization permission error.
+- `git diff --check` — passed.
+
+Target-membership evidence: the generated `SkyAwareTests.SwiftFileList` contains both `HomeRefreshPipelineTests.swift` and
+`SkyAwareAppActivationCleanupTests.swift`; the generated `SkyAware.SwiftFileList` contains neither. The project file
+lists the new path in the `SkyAware` exclusion set and the `SkyAwareTests` synchronized-folder membership set.
+
+Residual risks and handoff: the focused runs compile the synchronized test target and emitted existing unrelated
+warnings, including `HTTPDataDownloader.swift`'s mutable Sendable property and warnings in other test files. No
+assertion, timeout, async ordering, production, or application-target changes were introduced. Issue #293 is complete;
+do not begin #294 in this task.
 
 ### COM-05 / GitHub #294 - Split map feature model tests and fakes
 
