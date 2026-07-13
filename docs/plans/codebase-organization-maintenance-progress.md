@@ -535,7 +535,42 @@ preview contracts. Issue #300 is complete; do not begin COM-12 or GitHub #301 in
 
 ### COM-12 / GitHub #301 - Extract Storm Setup detail presentation builders
 
-Status: Pending
+Status: Complete — focused simulator test execution is blocked locally; Debug build and static presentation-contract checks pass.
+
+Files changed:
+
+- `Sources/Features/StormSetup/StormSetupDetailPresentation.swift` — retains the composed `Sendable` presentation result and both entry-point initializers.
+- `Sources/Features/StormSetup/StormSetupDetailIngredientRowsBuilder.swift` — owns basic ingredient rows, detail group assembly, effective-layer availability, and storm-motion availability rows.
+- `Sources/Features/StormSetup/StormSetupDetailAdvancedRowsBuilder.swift` — owns advanced rows, profile-analysis rows, composite parameters, effective-layer bounds, and storm-motion rows.
+- `Sources/Features/StormSetup/StormSetupDetailPresentationFormatter.swift` — owns confidence, limiter, provenance/freshness/date/numeric formatting and reusable row collection helpers.
+
+Presentation contract preserved: every existing row/group, ordering, title, value, accessibility label, fallback, limiter normalization,
+effective-layer/storm-motion availability state, composite formatting, provenance, freshness, and local/UTC time format was moved intact.
+The before/after quoted-literal multiset for the original file and all four production files is identical; no user-facing copy or numeric
+format specification changed.
+
+Visibility changes: no public API changed. `AdvancedValueFormat`, the row-array extension, and `String.trimmedNonEmpty` changed from
+file-private to internal solely because their existing pure implementations are now used by sibling presentation files. The new builder
+and formatter enums are internal, stateless, and have no actor isolation or mutable state. `StormSetupDetailPresentation`, `Row`, and
+`DetailIngredientGroup` retain their existing `Sendable` conformances and isolation behavior.
+
+Validation:
+
+- `git diff --check` — passed.
+- Literal and numeric-format comparison between `HEAD:Sources/Features/StormSetup/StormSetupDetailPresentation.swift` and the four
+  extracted production files — exact match.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` — passed
+  (exit code 0) after compiling all four presentation files.
+- `xcodebuild -quiet -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  -only-testing:SkyAwareTests/StormSetupDetailPresentationTests test` — could not complete: test execution remained in an incomplete
+  staging bundle. `xcrun simctl list devices available` then confirmed `CoreSimulatorService` was unavailable (connection refused), so
+  no valid `.xcresult` could be inspected. The focused test source compiled in the preceding test attempt.
+
+Compiler warnings: no warnings from the four changed presentation files. The existing COM-13 warning remains in
+`HTTPDataDownloader.swift`: mutable `storedMetrics` on `Sendable` `URLSessionTaskMetricsCollector`; no warning was introduced here.
+
+Residual risks and handoff: output preservation is supported by unchanged tests, compile success, and exact literal/format matching, but
+the focused tests must be rerun once CoreSimulatorService is healthy. Do not begin COM-13 in this task.
 
 ### COM-13 / GitHub #302 - Resolve URL session metrics collector concurrency warning
 
