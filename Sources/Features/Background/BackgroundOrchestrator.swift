@@ -70,6 +70,7 @@ actor BackgroundOrchestrator {
         let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
         let start = Date()
+        await pendingUploadDrainer.drainPendingUploads()
         
         return await withTaskCancellationHandler {
             var didMorningNotify = false
@@ -190,12 +191,6 @@ actor BackgroundOrchestrator {
                     active: active
                 )
 
-                if Task.isCancelled {
-                    logger.notice("Skipping pending upload drain because background refresh was cancelled after refresh work completed")
-                } else {
-                    await pendingUploadDrainer.drainPendingUploads()
-                }
-                
                 signposter.endInterval("Background Run", runInterval)
                 logger.notice("Background run finished with result: success")
                 return .init(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)

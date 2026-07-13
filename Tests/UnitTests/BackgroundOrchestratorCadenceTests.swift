@@ -129,8 +129,8 @@ struct BackgroundOrchestratorCadenceTests {
         #expect((await setup.spc.queriedPoints()).isEmpty)
     }
 
-    @Test("Background refresh starts upload draining only after unified ingestion")
-    func backgroundRefresh_startsUploadDrainingOnlyAfterUnifiedIngestion() async throws {
+    @Test("Background refresh drains pending uploads before unified ingestion starts")
+    func backgroundRefresh_drainsPendingUploadsBeforeUnifiedIngestionStarts() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
 
@@ -186,7 +186,7 @@ struct BackgroundOrchestratorCadenceTests {
         }
         #expect(requestStarted)
         #expect(await completion.isFinished() == false)
-        #expect(await uploadDrainer.drainCount() == 0)
+        #expect(await uploadDrainer.drainCount() == 1)
 
         let request = try #require(await coordinator.requests().first)
         #expect(request.trigger == .backgroundRefresh)
@@ -195,6 +195,43 @@ struct BackgroundOrchestratorCadenceTests {
         await runTask.value
 
         #expect(await completion.isFinished())
+        #expect(await uploadDrainer.drainCount() == 1)
+    }
+
+    @Test("Background refresh still drains pending uploads when it exits early")
+    func backgroundRefresh_drainsPendingUploadsOnEarlyExit() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
+
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot())
+        let uploadDrainer = RecordingPendingUploadDrainer()
+        let orchestrator = BackgroundOrchestrator(
+            coordinator: coordinator,
+            policy: RefreshPolicy(),
+            engine: MorningEngine(
+                rule: NoopMorningRule(),
+                gate: AllowAllGate(),
+                composer: NoopComposer(),
+                sender: NoopSender()
+            ),
+            mesoEngine: MesoEngine(
+                rule: NoopMesoRule(),
+                gate: AllowAllGate(),
+                composer: NoopComposer(),
+                sender: NoopSender(),
+                spc: FakeSpcProvider(activeMesos: [])
+            ),
+            health: BgHealthStore(modelContainer: container),
+            cadence: CadencePolicy(),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+            ),
+            pendingUploadDrainer: uploadDrainer
+        )
+
+        let outcome = await orchestrator.run()
+
+        #expect(outcome.result == .skipped)
         #expect(await uploadDrainer.drainCount() == 1)
     }
 

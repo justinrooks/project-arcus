@@ -225,7 +225,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
         snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup
-        snapshot.airQuality = await refreshAirQuality(context: context, executionMode: executionMode)
+        snapshot.airQuality = await refreshAirQuality(
+            context: context,
+            plan: plan,
+            executionMode: executionMode
+        )
 
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(
@@ -460,9 +464,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private func refreshAirQuality(
         context: LocationContext?,
+        plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode
     ) async -> AirQualityCurrentResponse? {
         guard let context, let querying = environment.airQualityQuerying else { return nil }
+        guard shouldRefreshAirQuality(for: plan) else { return nil }
 
         do {
             return try await HTTPExecutionMode.$current.withValue(executionMode) {
@@ -474,6 +480,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             environment.logger.debug("AQI refresh unavailable; continuing home refresh error=\(String(describing: error), privacy: .public)")
             return nil
         }
+    }
+
+    private func shouldRefreshAirQuality(for plan: HomeIngestionPlan) -> Bool {
+        plan.lanes.contains(.weather)
     }
 
     private func refreshStormSetupIfNeeded(

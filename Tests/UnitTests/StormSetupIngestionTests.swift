@@ -74,6 +74,24 @@ struct StormSetupIngestionTests {
         }
     }
 
+    @Test("session tick skips AQI refresh while hot alerts are the only requested lane")
+    func sessionTick_skipsAQIRefreshWhileHotAlertsAreTheOnlyRequestedLane() async throws {
+        let context = makeContext()
+        let airQuality = AirQualityQueryingFake()
+        let harness = try makeHarness(
+            context: context,
+            airQualityQuerying: airQuality,
+            activeAlerts: [Watch.sampleWatchRows[0]],
+            activeMesos: [MD.sampleDiscussionDTOs[0]]
+        )
+
+        _ = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        )
+
+        #expect(await airQuality.requestCount() == 0)
+    }
+
     @Test("fresh cache suppresses request and is returned")
     func freshCacheSuppressesRequestAndIsReturned() async throws {
         let context = makeContext()
@@ -681,6 +699,7 @@ struct StormSetupIngestionTests {
         context: LocationContext,
         query: StormSetupQueryingFake? = nil,
         weather: FakeWeatherClient = FakeWeatherClient(result: .success(sampleWeather())),
+        airQualityQuerying: AirQualityQueryingFake? = nil,
         spc: StormSetupTestSpcProvider = StormSetupTestSpcProvider(),
         alerts: StormSetupTestArcusProvider = StormSetupTestArcusProvider(),
         locationSession: FakeLocationSession? = nil,
@@ -721,6 +740,7 @@ struct StormSetupIngestionTests {
                 projectionStore: projectionStore,
                 widgetSnapshotRefresher: nil,
                 stormSetupQuerying: stormSetupQuery,
+                airQualityQuerying: airQualityQuerying,
                 stormSetupPreferencesReader: preferencesReader,
                 stormSetupCurrentDate: { dateProvider.date },
                 stormSetupForegroundTimeout: stormSetupForegroundTimeout,
@@ -733,6 +753,7 @@ struct StormSetupIngestionTests {
             projectionStore: projectionStore,
             query: stormSetupQuery,
             weather: weather,
+            airQualityQuerying: airQualityQuerying,
             locationSession: session,
             dateProvider: dateProvider
         )
@@ -863,6 +884,7 @@ private struct StormSetupHarness {
     let projectionStore: HomeProjectionStore
     let query: StormSetupQueryingFake
     let weather: FakeWeatherClient
+    let airQualityQuerying: AirQualityQueryingFake?
     let locationSession: FakeLocationSession
     let dateProvider: MutableDateProvider
 }
@@ -1033,6 +1055,19 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
 
     func setResponse(_ response: Response) {
         self.response = response
+    }
+}
+
+private actor AirQualityQueryingFake: AirQualityQuerying {
+    private var requests = 0
+
+    func fetchCurrentAirQuality(h3Cell: Int64) async throws -> AirQualityCurrentResponse? {
+        requests += 1
+        return nil
+    }
+
+    func requestCount() -> Int {
+        requests
     }
 }
 

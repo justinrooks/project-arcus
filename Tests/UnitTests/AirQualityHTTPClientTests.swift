@@ -31,7 +31,7 @@ private final class AirQualityStubHTTPClient: HTTPClient, @unchecked Sendable {
 
     func get(_ url: URL, headers: [String: String]) async throws -> HTTPResponse {
         self.url = url
-        return HTTPResponse(status: 200, headers: [:], data: data, source: .network)
+        return HTTPResponse(status: 200, headers: [:], data: data, source: .live)
     }
 
     func post(_ url: URL, headers: [String: String], body: Data?) async throws -> HTTPResponse {
