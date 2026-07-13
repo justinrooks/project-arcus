@@ -98,7 +98,40 @@ Handoff: issue #290 is complete; do not begin #291 in this task.
 
 ### COM-02 / GitHub #291 - Split Home and Summary state test suites
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift` — removed after all declarations moved cleanly.
+- `Tests/UnitTests/HomeViewStateTests.swift` — HomeView refresh triggers, projection launch, and outlook display suites.
+- `Tests/UnitTests/HomeRefreshPolicyTests.swift` — foreground refresh policy suite.
+- `Tests/UnitTests/SummaryViewLocalAlertsStateTests.swift` — Summary local-alert and local-alert display-state suites.
+- `Tests/UnitTests/SummaryViewLoadingStateTests.swift` — Summary resolving, risk-placeholder, content-presentation, and resolution-state suites.
+- `Tests/UnitTests/TodayContentStateTests.swift` — Today content, surface-flow, and visible-weather suites.
+- `Tests/UnitTests/SummaryRefreshPolicyTests.swift` — outlook and WeatherKit refresh policy suites.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the six new test files in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-02 ledger entry.
+
+Suites moved:
+
+- `HomeViewRefreshTriggerTests`, `HomeViewProjectionLaunchTests`, `HomeViewOutlookDisplayTests` → `HomeViewStateTests.swift`
+- `ForegroundRefreshPolicyTests` → `HomeRefreshPolicyTests.swift`
+- `SummaryViewLocalAlertsTests`, `LocalAlertsDisplayStateTests` → `SummaryViewLocalAlertsStateTests.swift`
+- `SummaryViewEmptyResolvingTests`, `SummaryViewRiskPlaceholderPresentationTests`, `SummaryContentPresentationStateTests`, `SummaryResolutionStateTests` → `SummaryViewLoadingStateTests.swift`
+- `TodayContentStateTests`, `TodaySurfaceStateFlowTests`, `TodayVisibleWeatherStateTests` → `TodayContentStateTests.swift`
+- `OutlookRefreshPolicyTests`, `WeatherKitRefreshPolicyTests` → `SummaryRefreshPolicyTests.swift`
+
+Behavior preserved: the pre-edit inventory contained 15 suites and 99 tests; the post-edit inventory contains the same 15 suites and 99 tests. Every suite declaration, test name, trait, serialization/actor annotation, test body, assertion, fixture, and declaration order was moved intact. No production files changed.
+
+Validation:
+
+- Inventory comparison: exact suite-block comparison against `HEAD` reported 15 pre-edit suites, 15 post-edit suites, 99 pre-edit tests, 99 post-edit tests, no missing suites, no extra suites, no changed declarations.
+- Focused command: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' test -derivedDataPath /private/tmp/project-arcus-291-derived-2 -resultBundlePath /tmp/project-arcus-291-final.xcresult -only-testing:SkyAwareTests/HomeViewRefreshTriggerTests -only-testing:SkyAwareTests/HomeViewProjectionLaunchTests -only-testing:SkyAwareTests/SummaryViewLocalAlertsTests -only-testing:SkyAwareTests/LocalAlertsDisplayStateTests -only-testing:SkyAwareTests/SummaryViewEmptyResolvingTests -only-testing:SkyAwareTests/SummaryViewRiskPlaceholderPresentationTests -only-testing:SkyAwareTests/SummaryContentPresentationStateTests -only-testing:SkyAwareTests/TodayContentStateTests -only-testing:SkyAwareTests/TodaySurfaceStateFlowTests -only-testing:SkyAwareTests/HomeViewOutlookDisplayTests -only-testing:SkyAwareTests/ForegroundRefreshPolicyTests -only-testing:SkyAwareTests/SummaryResolutionStateTests -only-testing:SkyAwareTests/OutlookRefreshPolicyTests -only-testing:SkyAwareTests/WeatherKitRefreshPolicyTests -only-testing:SkyAwareTests/TodayVisibleWeatherStateTests` — **TEST SUCCEEDED** on iPhone 17 / iOS 26.5.
+- Result inspection: `xcrun xcresulttool get test-results tests --path /tmp/project-arcus-291-final.xcresult --compact` reported a passed test plan, 15 suites, 99 cases, and zero failures.
+
+Target-membership evidence: the fresh `SkyAwareTests.SwiftFileList` contains all six new test files; the fresh `SkyAware.SwiftFileList` contains none of the six and no deleted original file. The project file lists each new path in both the `SkyAware` exclusion set and the `SkyAwareTests` inclusion set.
+
+Residual risks and handoff: GitHub issue metadata could not be fetched because the GitHub API/page cache was unavailable; implementation followed the supplied issue objective and repository runbook. The full target compilation emitted existing unrelated warnings in `MesoNotificationTests.swift`, `RemoteNotificationRegistrarTests.swift`, and the simulator asset catalog; none were caused by this movement. Issue #291 is complete; do not begin #292 in this task.
 
 ### COM-03 / GitHub #292 - Split location provider and resolver tests
 
