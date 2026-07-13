@@ -135,7 +135,33 @@ Residual risks and handoff: GitHub issue metadata could not be fetched because t
 
 ### COM-03 / GitHub #292 - Split location provider and resolver tests
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/LocationProviderTests.swift` — provider suite and provider-only support declarations remain focused in the original provider file.
+- `Tests/UnitTests/LocationContextResolverTests.swift` — new resolver-focused file containing the resolver suite, serialized trait, tests, and resolver-only support declarations.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the new resolver test file in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-03 ledger entry.
+
+Suites and support declarations moved:
+
+- `LocationContextResolverTests` and its 10 tests moved to `LocationContextResolverTests.swift` unchanged.
+- Resolver-only support moved intact: `TestError`, `AuthorizationState`, `AuthorizationRequestState`, `TestGeocoder`, `TestHasher`, `waitUntil`, `RefreshRequestTracker`, `MockSnapshotCache`, `ResolverNwsClient`, and `makePointPayload`.
+- `LocationProviderTests` retains its 58 tests, 20 nested provider support declarations, and the provider-only `waitUntilLocationSnapshot` helper. No shared support file was needed.
+
+Behavior preserved: the pre-edit inventory contained 2 suites and 68 tests (58 provider, 10 resolver); the post-edit inventory contains the same declarations and counts. Exact comparisons against `HEAD` matched the provider prefix, suite/test inventory, and support-declaration inventory; the resolver segment was moved intact with only two pre-existing trailing-whitespace markers removed. Test names, traits, bodies, assertions, fixture values, async behavior, and production code were unchanged.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath /tmp/project-arcus-292-location-provider.xcresult test` — **TEST SUCCEEDED**; 58 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/LocationContextResolverTests -resultBundlePath /tmp/project-arcus-292-location-resolver.xcresult test` — **TEST SUCCEEDED**; 10 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcrun xcresulttool get test-results summary --path /tmp/project-arcus-292-location-provider.xcresult --compact` and the resolver equivalent — both reported `result: Passed` with zero failures.
+- `git diff --check` plus the equivalent check for the untracked resolver file — passed. Final diff contains only test organization, synchronized-folder membership, and this ledger entry; no assertion or production-code changes.
+
+Target-membership evidence: the generated `SkyAwareTests.SwiftFileList` contains both `LocationContextResolverTests.swift` and `LocationProviderTests.swift`; the generated `SkyAware.SwiftFileList` contains neither. The project file lists both test paths in the `SkyAware` exclusion set and the `SkyAwareTests` inclusion set.
+
+Residual risks and handoff: no production behavior or coverage semantics changed. `xcresulttool get test-results tests` could not be used because this Xcode version attempted to materialize `TestReport` without permission; the supported summary reader and xcodebuild results were inspected successfully. Issue #292 is complete; do not begin #293 in this task.
 
 ### COM-04 / GitHub #293 - Split home refresh pipeline tests and fakes
 
