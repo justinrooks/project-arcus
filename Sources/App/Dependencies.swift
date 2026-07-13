@@ -296,6 +296,7 @@ final class Dependencies: Sendable {
     ) -> Dependencies {
         let logger = Logger.appDependencies
         let appRefreshID = "com.skyaware.app.refresh"
+        let isUITestStaticHome = ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
         
         // Shared SwiftData context
         let schema = Schema([
@@ -308,7 +309,9 @@ final class Dependencies: Sendable {
             FireRisk.self,
             HomeProjection.self
         ])
-        let config = ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
+        let config = isUITestStaticHome
+            ? ModelConfiguration(isStoredInMemoryOnly: true)
+            : ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         let container: ModelContainer
         do {
             container = try ModelContainer(for: schema, configurations: config)
@@ -327,12 +330,17 @@ final class Dependencies: Sendable {
         let httpClient = URLSessionHTTPClient(observer: responseObserver)
         let nwsClient = NwsHttpClient(http: httpClient)
         let spcClient = SpcHttpClient(http: httpClient)
-        let arcusBaseURL = ArcusSignalConfiguration.resolvedBaseURL()
+        let arcusBaseURL = ArcusSignalConfiguration.baseURL()
         let arcusClient = ArcusHttpClient(
             baseURL: arcusBaseURL,
             http: httpClient,
             reachabilityReporter: arcusReachabilityTracker
         )
+        let stormSetupClient = StormSetupHTTPClient(
+            baseURL: arcusBaseURL,
+            http: httpClient
+        )
+        let airQualityClient = AirQualityHTTPClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()
 
         let locationUploadCoordinator: any LocationUploadCoordinating
@@ -461,6 +469,15 @@ final class Dependencies: Sendable {
         let weatherClient = WeatherClient()
         logger.debug("WeatherKit client initialized")
 
+        let stormSetupPreferencesReader: @Sendable () async -> StormSetupPreferences = {
+            await MainActor.run {
+                StormSetupPreferences(
+                    stormSetupEnabled: UserDefaults.shared?.object(forKey: "stormSetupEnabled") as? Bool ?? false,
+                    detailedIngredientsEnabled: UserDefaults.shared?.object(forKey: "detailedIngredientsEnabled") as? Bool ?? false
+                )
+            }
+        }
+
         let homeSnapshotStore = HomeSnapshotStore(
             spcRisk: spc,
             spcOutlook: spc,
@@ -482,7 +499,10 @@ final class Dependencies: Sendable {
                 locationSession: locationSession,
                 snapshotStore: homeSnapshotStore,
                 projectionStore: homeProjectionStore,
-                widgetSnapshotRefresher: widgetSnapshotRefresher
+                widgetSnapshotRefresher: widgetSnapshotRefresher,
+                stormSetupQuerying: stormSetupClient,
+                airQualityQuerying: airQualityClient,
+                stormSetupPreferencesReader: stormSetupPreferencesReader
             )
         )
         let homeIngestionCoordinator = HomeIngestionCoordinator(executor: homeIngestionExecutor)

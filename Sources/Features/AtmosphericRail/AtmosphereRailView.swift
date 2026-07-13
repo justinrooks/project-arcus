@@ -6,17 +6,27 @@
 //
 
 import SwiftUI
+import ArcusCore
 
 struct AtmosphericConditionsCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var activeTip: DewPointTip?
+    @AppStorage(
+        AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
+        store: UserDefaults.shared
+    ) private var alwaysShowAirQuality: Bool = false
 
     let weather: SummaryWeather?
+    let airQuality: AirQualityCurrentResponse?
     var isOffline: Bool = false
 
     private var model: AtmosphericConditionsDisplayModel {
-        AtmosphericConditionsDisplayModel(weather: weather)
+        AtmosphericConditionsDisplayModel(
+            weather: weather,
+            airQuality: airQuality,
+            alwaysShowAirQuality: alwaysShowAirQuality
+        )
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -59,6 +69,7 @@ struct AtmosphericConditionsCard: View {
             shadowRadius: colorScheme == .dark ? 8 : 10,
             shadowY: colorScheme == .dark ? 3 : 4
         )
+        .accessibilityIdentifier("summary-atmospheric-conditions")
     }
 
     private var header: some View {
@@ -159,24 +170,36 @@ struct AtmosphericConditionsCard: View {
     @ViewBuilder
     private var metricsStrip: some View {
         if adaptiveLayout.usesVerticalMetricRows {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: SkyAwareSpacing.standard) {
                 ForEach(model.secondaryMetrics) { metric in
                     AtmosphericMetricRow(metric: metric, isCompact: false)
                 }
             }
         } else {
-            HStack(alignment: .top, spacing: 0) {
-                ForEach(Array(model.secondaryMetrics.enumerated()), id: \.element.id) { index, metric in
+            LazyVGrid(
+                columns: secondaryMetricColumns,
+                alignment: .leading,
+                spacing: SkyAwareSpacing.standard
+            ) {
+                ForEach(model.secondaryMetrics) { metric in
                     AtmosphericMetricRow(metric: metric, isCompact: true)
-
-                    if index < model.secondaryMetrics.count - 1 {
-                        Divider()
-                            .frame(maxHeight: .infinity)
-                            .padding(.vertical, 2)
-                    }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
             }
         }
+    }
+
+    private var secondaryMetricColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(), spacing: SkyAwareSpacing.standard, alignment: .top),
+            count: AtmosphericMetricRailLayout.compactColumnCount(for: model.secondaryMetrics.count)
+        )
+    }
+}
+
+enum AtmosphericMetricRailLayout {
+    static func compactColumnCount(for metricCount: Int) -> Int {
+        metricCount == 4 ? 2 : max(metricCount, 1)
     }
 }
 
@@ -186,6 +209,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
             case humidity
             case wind
             case pressure
+            case aqi
 
             var id: String { rawValue }
         }
@@ -194,6 +218,27 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         let title: String
         let value: String
         let iconName: String
+        let detail: String?
+        let semanticAccent: AirQualityPresentation.SemanticAccent?
+        let accessibilityValue: String?
+
+        init(
+            kind: Kind,
+            title: String,
+            value: String,
+            iconName: String,
+            detail: String? = nil,
+            semanticAccent: AirQualityPresentation.SemanticAccent? = nil,
+            accessibilityValue: String? = nil
+        ) {
+            self.kind = kind
+            self.title = title
+            self.value = value
+            self.iconName = iconName
+            self.detail = detail
+            self.semanticAccent = semanticAccent
+            self.accessibilityValue = accessibilityValue
+        }
 
         var id: String { kind.id }
     }
@@ -203,7 +248,11 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
     let dewPointDescriptor: String
     let secondaryMetrics: [Metric]
 
-    init(weather: SummaryWeather?) {
+    init(
+        weather: SummaryWeather?,
+        airQuality: AirQualityCurrentResponse? = nil,
+        alwaysShowAirQuality: Bool = false
+    ) {
         guard let weather else {
             dewPointValue = nil
             dewPointFahrenheit = nil
@@ -216,7 +265,7 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
         dewPointValue = Self.formatTemperature(weather.dewPoint)
         dewPointFahrenheit = dewPoint
         dewPointDescriptor = DewPointDescriptor.text(for: dewPoint)
-        secondaryMetrics = [
+        var metrics: [Metric] = [
             .init(
                 kind: .humidity,
                 title: "Humidity",
@@ -239,6 +288,26 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
                 iconName: "gauge.with.dots.needle.50percent"
             )
         ]
+
+        if let airQuality = AirQualityPresentation(
+            aqi: airQuality?.aqi,
+            primaryPollutant: airQuality?.primaryPollutant,
+            alwaysShow: alwaysShowAirQuality
+        ) {
+            metrics.append(
+                Metric(
+                    kind: .aqi,
+                    title: "AQI",
+                    value: airQuality.value,
+                    iconName: "circle.hexagongrid.fill",
+                    detail: airQuality.shortCategory,
+                    semanticAccent: airQuality.semanticAccent,
+                    accessibilityValue: airQuality.accessibilityValue
+                )
+            )
+        }
+
+        secondaryMetrics = metrics
     }
 
     private static func temperatureFormatter() -> MeasurementFormatter {
@@ -282,6 +351,63 @@ struct AtmosphericConditionsDisplayModel: Sendable, Equatable {
             .init(kind: .wind, title: "Wind", value: "—", iconName: "wind"),
             .init(kind: .pressure, title: "Pressure", value: "—", iconName: "gauge.with.dots.needle.50percent")
         ]
+    }
+}
+
+enum AtmosphericConditionsPreferences {
+    static let alwaysShowAirQualityKey = "alwaysShowAirQuality"
+}
+
+struct AirQualityPresentation: Sendable, Equatable {
+    enum SemanticAccent: Sendable, Equatable {
+        case good
+        case moderate
+        case caution
+        case unhealthy
+        case veryUnhealthy
+        case hazardous
+    }
+
+    let value: String
+    let shortCategory: String
+    let accessibilityCategory: String
+    let semanticAccent: SemanticAccent
+    let primaryPollutant: String?
+
+    init?(aqi: Int?, primaryPollutant: String?, alwaysShow: Bool = false) {
+        guard let aqi, aqi >= 0, alwaysShow || aqi >= 101 else {
+            return nil
+        }
+
+        let category: (String, String, SemanticAccent) = switch aqi {
+        case 0...50:
+            ("Good", "good", SemanticAccent.good)
+        case 51...100:
+            ("Moderate", "moderate", SemanticAccent.moderate)
+        case 101...150:
+            ("USG", "unhealthy for sensitive groups", SemanticAccent.caution)
+        case 151...200:
+            ("Unhealthy", "unhealthy", SemanticAccent.unhealthy)
+        case 201...300:
+            ("Very Unhealthy", "very unhealthy", SemanticAccent.veryUnhealthy)
+        default:
+            ("Hazardous", "hazardous", SemanticAccent.hazardous)
+        }
+
+        self.value = aqi.formatted()
+        self.shortCategory = category.0
+        self.accessibilityCategory = category.1
+        self.semanticAccent = category.2
+        let trimmedPollutant = primaryPollutant?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.primaryPollutant = trimmedPollutant?.isEmpty == false ? trimmedPollutant : nil
+    }
+
+    var accessibilityValue: String {
+        var accessibilityText = "Air quality index \(value), \(accessibilityCategory)."
+        if let primaryPollutant {
+            accessibilityText += " Primary pollutant \(primaryPollutant)."
+        }
+        return accessibilityText
     }
 }
 
@@ -368,15 +494,23 @@ private struct AtmosphericMetricRow: View {
 
                 Text(metric.value)
                     .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(valueColor)
                     .monospacedDigit()
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
+
+                if let detail = metric.detail {
+                    Text(detail)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(valueColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(metric.title) \(metric.value)")
+            .accessibilityLabel(metric.title)
+            .accessibilityValue(metric.accessibilityValue ?? metric.value)
         } else {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: metric.iconName)
@@ -393,50 +527,76 @@ private struct AtmosphericMetricRow: View {
 
                     Text(metric.value)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(valueColor)
                         .monospacedDigit()
-                        .lineLimit(2)
+                        .lineLimit(1)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    if let detail = metric.detail {
+                        Text(detail)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(valueColor)
+                            .lineLimit(1)
+                    }
                 }
 
                 Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(metric.title) \(metric.value)")
+            .accessibilityLabel(metric.title)
+            .accessibilityValue(metric.accessibilityValue ?? metric.value)
+        }
+    }
+
+    private var valueColor: Color {
+        switch metric.semanticAccent {
+        case .good:
+            .riskAllClear
+        case .moderate:
+            .riskSlight
+        case .caution:
+            .warningYellow
+        case .unhealthy:
+            .riskEnhanced
+        case .veryUnhealthy:
+            .riskModerate
+        case .hazardous:
+            .riskHigh
+        case nil:
+            .primary
         }
     }
 }
 
 #Preview("Atmospheric Conditions - Calm Light") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.calm, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Moist") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Very Moist") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Unavailable Weather") {
-    AtmosphericConditionsCard(weather: nil)
+    AtmosphericConditionsCard(weather: nil, airQuality: nil)
 }
 
 #Preview("Atmospheric Conditions - Light Mode") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive, airQuality: nil)
         .preferredColorScheme(.light)
 }
 
 #Preview("Atmospheric Conditions - Dark Mode") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist, airQuality: nil)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Atmospheric Conditions - Large Dynamic Type") {
-    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive)
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.stormSupportive, airQuality: nil)
         .environment(\.dynamicTypeSize, .accessibility3)
 }
 

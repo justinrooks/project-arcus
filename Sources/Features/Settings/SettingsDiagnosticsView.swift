@@ -27,6 +27,11 @@ struct SettingsDiagnosticsView: View {
         store: UserDefaults.shared
     ) private var apnsDeviceToken: String = ""
 
+    @AppStorage(
+        "stormSetupForceDisplay",
+        store: UserDefaults.shared
+    ) private var stormSetupForceDisplay: Bool = false
+
     @State private var installationId: String = ""
 #endif
 
@@ -173,6 +178,16 @@ struct SettingsDiagnosticsView: View {
                     UserDefaults.shared?.removeObject(forKey: "disclaimerAcceptedVersion")
                 }
                 .skyAwareGlassButtonStyle()
+            }
+
+            sectionCard(title: "Storm Setup Debug", symbol: "cloud.bolt", accent: .primary) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("Force Storm Setup Card", isOn: $stormSetupForceDisplay)
+                    Text("Shows the Storm Setup card even when policy would normally hide it. Use this to validate layout and accessibility on live data.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
         }
     }

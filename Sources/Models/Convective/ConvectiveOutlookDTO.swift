@@ -20,7 +20,7 @@ struct ConvectiveOutlookDTO: Sendable, Identifiable, Hashable {
     let validUntil: Date?
     
     init(title: String, link: URL, published: Date, summary: String, fullText: String, day: Int?, riskLevel: String?, issued: Date?, validUntil: Date?) {
-        self.id = link.absoluteString
+        self.id = "\(title)|\(published.ISO8601Format())"
         self.title = title
         self.link = link
         self.published = published

@@ -70,6 +70,7 @@ actor BackgroundOrchestrator {
         let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
         let start = Date()
+        await pendingUploadDrainer.drainPendingUploads()
         
         return await withTaskCancellationHandler {
             var didMorningNotify = false
@@ -80,7 +81,6 @@ actor BackgroundOrchestrator {
             do {
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
-                await pendingUploadDrainer.drainPendingUploads()
                 let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
                 let snapshot = try await coordinator.enqueueAndWait(
                     .backgroundRefresh,
@@ -190,7 +190,7 @@ actor BackgroundOrchestrator {
                     cadenceReason: cadenceResult.reason,
                     active: active
                 )
-                
+
                 signposter.endInterval("Background Run", runInterval)
                 logger.notice("Background run finished with result: success")
                 return .init(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)

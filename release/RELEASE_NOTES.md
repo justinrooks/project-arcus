@@ -1,6 +1,20 @@
 # Release Notes
 
-## Unreleased
+## v1.1.0(81)
+
+### Overview
+This build brings Storm Setup into Today as a dedicated card and detail flow, moves it onto the ArcusCore aggregate path, and tightens refresh behavior so cached guidance and background work behave more predictably.
+
+### Highlights
+- Storm Setup now appears on Today as its own summary card with drill-in detail.
+- Summary now keeps populated local alerts ahead of model guidance and falls back to Atmospheric Conditions when Storm Setup is unavailable.
+- Storm Setup now follows the ArcusCore aggregate path and preserves cached location-scoped guidance until fresher data replaces it.
+- Settings now exposes Storm Setup and Detailed Ingredients controls, plus a diagnostic force-display toggle for layout/accessibility checks.
+- Air quality refreshes are more narrowly gated, and background refresh now drains pending uploads before unified ingestion starts.
+- Regression coverage was expanded for the Storm Setup aggregate path, detail/presentation behavior, background orchestration, AQI decoding, and Summary section ordering.
+
+### Maintenance
+- Storm Setup runbooks, migration ledgers, audits, lessons, and project membership were updated to match the implemented behavior.
 
 ## v1.0.1(79)
 

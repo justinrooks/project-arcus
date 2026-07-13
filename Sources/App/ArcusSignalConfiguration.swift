@@ -8,10 +8,19 @@
 import Foundation
 
 enum ArcusSignalConfiguration {
-    static let defaultBaseURL = URL(string: "https://skyaware.bennettbunker.com")!
+    static func baseURL(bundle: Bundle = .main) -> URL {
+        guard let url = configuredBaseURL(bundle: bundle) else {
+            fatalError("Missing or invalid ARCUS_SIGNAL_URL")
+        }
+
+        return url
+    }
+
     static let alertsPath = "/api/v2/alerts"
     static let locationSnapshotsPath = "/api/v1/devices/location-snapshots"
     static let devicePreferencesPath = "/api/v1/devices/preferences"
+    static let stormSetupCurrentPath = "/api/v1/storm-setup/current"
+    static let airQualityCurrentPath = "/api/v1/air-quality/current"
 
     private static let infoDictionaryKey = "ArcusSignalURL"
 
@@ -27,10 +36,6 @@ enum ArcusSignalConfiguration {
         }
         guard scheme == "https" || scheme == "http" else { return nil }
         return url
-    }
-
-    static func resolvedBaseURL(bundle: Bundle = .main) -> URL {
-        configuredBaseURL(bundle: bundle) ?? defaultBaseURL
     }
 
     static func url(

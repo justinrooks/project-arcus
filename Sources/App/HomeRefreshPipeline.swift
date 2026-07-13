@@ -78,6 +78,7 @@ final class HomeRefreshPipeline {
 
     private var environment: Environment?
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
+    private(set) var stormSetupRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
@@ -86,6 +87,9 @@ final class HomeRefreshPipeline {
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
+    var stormSetup: StormSetupDTO?
+    var stormSetupCurrentResponse: StormSetupCurrentResponse?
+    var airQuality: AirQualityCurrentResponse?
     private(set) var riskSnapshot: HomeRiskSnapshot
     private(set) var alertSnapshot: HomeAlertSnapshot
     private(set) var outlookSnapshot: HomeOutlookSnapshot
@@ -108,6 +112,9 @@ final class HomeRefreshPipeline {
         initialStormRisk: StormRiskLevel? = nil,
         initialSevereRisk: SevereWeatherThreat? = nil,
         initialFireRisk: FireRiskLevel? = nil,
+        initialStormSetup: StormSetupDTO? = nil,
+        initialStormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
+        initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
         initialMesos: [MdDTO] = [],
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -119,8 +126,11 @@ final class HomeRefreshPipeline {
         mapProductRefreshPolicy: MapProductRefreshPolicy = MapProductRefreshPolicy(),
         outlookRefreshPolicy: OutlookRefreshPolicy = OutlookRefreshPolicy(),
         weatherKitRefreshPolicy: WeatherKitRefreshPolicy = WeatherKitRefreshPolicy()
-    ) {
+        ) {
         self.snap = initialSnap
+        self.stormSetup = initialStormSetup
+        self.stormSetupCurrentResponse = initialStormSetupCurrentResponse
+        self.stormSetupRefreshKey = initialStormSetupRefreshKey
         self.riskSnapshot = HomeRiskSnapshot(
             stormRisk: initialStormRisk,
             severeRisk: initialSevereRisk,
@@ -504,6 +514,8 @@ final class HomeRefreshPipeline {
             )
         }
 
+        applyStormSetup(snapshot)
+        airQuality = snapshot.airQuality
         switch snapshot.weatherRefreshResult {
         case .success(let weather):
             summaryWeather = weather
@@ -519,6 +531,29 @@ final class HomeRefreshPipeline {
             outlook: snapshot.latestOutlook
         )
         outlookRefreshStatus = .success(hasContent: snapshot.outlooks.isEmpty == false)
+    }
+
+    private func applyStormSetup(_ snapshot: HomeSnapshot) {
+        guard let snapshotRefreshKey = snapshot.refreshKey else {
+            stormSetup = nil
+            stormSetupRefreshKey = nil
+            return
+        }
+
+        guard let resolvedStormSetup = snapshot.stormSetup else {
+            guard snapshotRefreshKey != stormSetupRefreshKey else {
+                return
+            }
+
+            self.stormSetup = nil
+            stormSetupCurrentResponse = nil
+            stormSetupRefreshKey = snapshotRefreshKey
+            return
+        }
+
+        self.stormSetup = resolvedStormSetup
+        stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
+        stormSetupRefreshKey = snapshotRefreshKey
     }
 }
 

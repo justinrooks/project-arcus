@@ -270,6 +270,226 @@ struct HomeViewProjectionLaunchTests {
         #expect(selected == .critical)
     }
 
+    @Test("storm setup selection prefers the current projection until a matching pipeline value exists")
+    func stormSetupSelection_prefersCurrentProjectionUntilMatchingPipelineExists() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let stormSetup = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: stormSetup
+        )
+
+        let selected = HomeView.selectStormSetup(
+            projection: projection,
+            currentContext: currentContext,
+            pipelineValue: nil,
+            pipelineRefreshKey: nil,
+            now: Date(timeIntervalSince1970: 200)
+        )
+
+        #expect(selected == stormSetup)
+    }
+
+    @Test("storm setup selection prefers a matching pipeline value and falls back to the projection when needed")
+    func stormSetupSelection_prefersMatchingPipelineAndFallsBackToProjection() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let projectionStormSetup = makeStormSetupDTO(
+            h3Cell: currentContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "projection guidance"
+        )
+        let pipelineStormSetup = makeStormSetupDTO(
+            h3Cell: currentContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 600),
+            summary: "pipeline guidance"
+        )
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: projectionStormSetup
+        )
+
+        let selectedPipeline = HomeView.selectStormSetup(
+            projection: projection,
+            currentContext: currentContext,
+            pipelineValue: pipelineStormSetup,
+            pipelineRefreshKey: currentContext.refreshKey,
+            now: Date(timeIntervalSince1970: 200)
+        )
+        #expect(selectedPipeline == pipelineStormSetup)
+
+        let selectedFallback = HomeView.selectStormSetup(
+            projection: projection,
+            currentContext: currentContext,
+            pipelineValue: nil,
+            pipelineRefreshKey: currentContext.refreshKey,
+            now: Date(timeIntervalSince1970: 200)
+        )
+        #expect(selectedFallback == projectionStormSetup)
+    }
+
+    @Test("storm setup selection rejects wrong refresh keys, h3 mismatches, and expired guidance")
+    func stormSetupSelection_rejectsWrongKeyH3MismatchAndExpiredGuidance() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let otherContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
+        let validStormSetup = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let wrongH3StormSetup = makeStormSetupDTO(h3Cell: otherContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 500))
+        let expiredStormSetup = makeStormSetupDTO(h3Cell: currentContext.h3Cell, expiresAt: Date(timeIntervalSince1970: 150))
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: validStormSetup
+        )
+        let expiredProjection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 50),
+            stormSetup: expiredStormSetup
+        )
+
+        #expect(
+            HomeView.selectStormSetup(
+                projection: projection,
+                currentContext: currentContext,
+                pipelineValue: validStormSetup,
+                pipelineRefreshKey: otherContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == validStormSetup
+        )
+
+        #expect(
+            HomeView.selectStormSetup(
+                projection: projection,
+                currentContext: currentContext,
+                pipelineValue: wrongH3StormSetup,
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 200)
+            ) == validStormSetup
+        )
+
+        #expect(
+            HomeView.selectStormSetup(
+                projection: expiredProjection,
+                currentContext: currentContext,
+                pipelineValue: expiredStormSetup,
+                pipelineRefreshKey: currentContext.refreshKey,
+                now: Date(timeIntervalSince1970: 150)
+            ) == nil
+        )
+
+        #expect(
+            HomeView.selectStormSetup(
+                projection: projection,
+                currentContext: currentContext,
+                pipelineValue: nil,
+                pipelineRefreshKey: nil,
+                now: Date(timeIntervalSince1970: 200)
+            ) == validStormSetup
+        )
+
+        let otherProjection = makeProjectionRecord(
+            context: otherContext,
+            updatedAt: Date(timeIntervalSince1970: 200),
+            stormSetup: nil
+        )
+        #expect(
+            HomeView.selectStormSetup(
+                projection: otherProjection,
+                currentContext: currentContext,
+                pipelineValue: nil,
+                pipelineRefreshKey: nil,
+                now: Date(timeIntervalSince1970: 200)
+            ) == nil
+        )
+    }
+
+    @Test("storm setup selection uses newest startup projection safely when no context exists")
+    func stormSetupSelection_usesNewestStartupProjectionWithoutContext() {
+        let older = makeProjectionRecord(
+            context: makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214"),
+            updatedAt: Date(timeIntervalSince1970: 100),
+            stormSetup: makeStormSetupDTO(h3Cell: 111, expiresAt: Date(timeIntervalSince1970: 500))
+        )
+        let newer = makeProjectionRecord(
+            context: makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200"),
+            updatedAt: Date(timeIntervalSince1970: 200),
+            stormSetup: makeStormSetupDTO(h3Cell: 222, expiresAt: Date(timeIntervalSince1970: 600))
+        )
+
+        let selected = HomeView.selectStormSetup(
+            projection: newer,
+            currentContext: nil,
+            pipelineValue: nil,
+            pipelineRefreshKey: nil,
+            now: Date(timeIntervalSince1970: 250)
+        )
+
+        #expect(selected == newer.stormSetup)
+        #expect(
+            HomeView.selectStormSetup(
+                projection: older,
+                currentContext: nil,
+                pipelineValue: nil,
+                pipelineRefreshKey: nil,
+                now: Date(timeIntervalSince1970: 250)
+            ) == older.stormSetup
+        )
+    }
+
+    @Test("location time zone resolution falls back deterministically")
+    func locationTimeZoneResolution_fallsBackDeterministically() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            timeZoneId: "Invalid/TimeZone"
+        )
+        let fallback = TimeZone(secondsFromGMT: 0)!
+        let selected = HomeView.resolveLocationTimeZone(
+            selectedProjection: projection,
+            currentContext: currentContext,
+            newestStartupProjection: nil,
+            fallback: fallback
+        )
+
+        #expect(selected.identifier == currentContext.grid.timeZoneId)
+
+        let startupProjection = makeProjectionRecord(
+            context: makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200"),
+            updatedAt: Date(timeIntervalSince1970: 200),
+            timeZoneId: "America/Chicago"
+        )
+        let startupSelected = HomeView.resolveLocationTimeZone(
+            selectedProjection: nil,
+            currentContext: nil,
+            newestStartupProjection: startupProjection,
+            fallback: fallback
+        )
+        #expect(startupSelected.identifier == "America/Chicago")
+
+        let fallbackSelected = HomeView.resolveLocationTimeZone(
+            selectedProjection: nil,
+            currentContext: nil,
+            newestStartupProjection: makeProjectionRecord(
+                context: currentContext,
+                updatedAt: Date(timeIntervalSince1970: 100),
+                timeZoneId: "Invalid/TimeZone"
+            ),
+            fallback: fallback
+        )
+        #expect(fallbackSelected == fallback)
+    }
+
+    @Test("storm setup settings use raw values and session tick refresh path")
+    func stormSetupSettings_useRawValuesAndSessionTickRefreshPath() {
+        let preferences = StormSetupPreferences(stormSetupEnabled: false, detailedIngredientsEnabled: true)
+        #expect(preferences.effectiveDetailedIngredientsEnabled == false)
+
+        let current = StormSetupPreferences(stormSetupEnabled: true, detailedIngredientsEnabled: true)
+        #expect(HomeView.shouldRefreshStormSetupSettings(previousPreferences: current, currentPreferences: current) == false)
+        #expect(HomeView.shouldRefreshStormSetupSettings(previousPreferences: nil, currentPreferences: current))
+    }
+
     private func makeContext(
         h3Cell: Int64,
         countyCode: String,
@@ -308,7 +528,9 @@ struct HomeViewProjectionLaunchTests {
 
     private func makeProjectionRecord(
         context: LocationContext,
-        updatedAt: Date
+        updatedAt: Date,
+        stormSetup: StormSetupDTO? = nil,
+        timeZoneId: String? = nil
     ) -> HomeProjectionRecord {
         HomeProjectionRecord(
             id: UUID(),
@@ -320,7 +542,7 @@ struct HomeViewProjectionLaunchTests {
             forecastZone: context.grid.forecastZone,
             fireZone: context.grid.fireZone ?? "",
             placemarkSummary: context.snapshot.placemarkSummary,
-            timeZoneId: context.grid.timeZoneId,
+            timeZoneId: timeZoneId ?? context.grid.timeZoneId,
             locationTimestamp: context.snapshot.timestamp,
             createdAt: updatedAt,
             updatedAt: updatedAt,
@@ -333,7 +555,87 @@ struct HomeViewProjectionLaunchTests {
             activeMesos: [],
             lastHotAlertsLoadAt: nil,
             lastSlowProductsLoadAt: nil,
-            lastWeatherLoadAt: nil
+            lastWeatherLoadAt: nil,
+            stormSetup: stormSetup,
+            lastStormSetupLoadAt: stormSetup == nil ? nil : updatedAt
+        )
+    }
+
+    
+
+    
+
+    private func makeStormSetupDTO(
+        h3Cell: Int64,
+        expiresAt: Date,
+        summary: String = "guidance"
+    ) -> StormSetupDTO {
+        StormSetupDTO(
+            h3Cell: h3Cell,
+            freshness: .init(
+                isStale: false,
+                isDegraded: false,
+                modelRunTime: Date(timeIntervalSince1970: 100),
+                sourceValidTime: Date(timeIntervalSince1970: 100),
+                forecastHour: 1,
+                fetchedAt: Date(timeIntervalSince1970: 100),
+                expiresAt: expiresAt
+            ),
+            source: .init(
+                model: "HRRR",
+                product: "Storm Setup",
+                domain: "severe",
+                fieldSetVersion: "1",
+                sourceKind: "production",
+                runTime: Date(timeIntervalSince1970: 100),
+                validTime: Date(timeIntervalSince1970: 100),
+                forecastHour: 1,
+                bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+                primaryDownloadURL: "https://example.com/storm-setup"
+            ),
+            raw: .init(
+                mlcapeJkg: 1850,
+                mucapeJkg: 2200.5,
+                sbcapeJkg: 1700,
+                mlcinJkg: -42,
+                srh01kmM2s2: 125.5,
+                srh03kmM2s2: 175,
+                shear06kmKt: 42,
+                mllclM: 980,
+                tempDewPtDeltaF: 4.5,
+                threeCapeJkg: 95
+            ),
+            assessment: .init(
+                overall: "supportive",
+                summary: summary,
+                instability: "supportive",
+                moisture: "supportive",
+                lowLevelRotation: "supportive",
+                deepShear: "supportive",
+                cloudBase: "supportive",
+                capInhibition: "supportive",
+                limitingFactors: ["capping"],
+                confidence: "high",
+                primaryDrivers: ["instability"],
+                stormMode: "supportive",
+                stormModeHint: "supportive",
+                trend: "supportive",
+                compositeSignal: "supportive"
+            ),
+            anvilEvidence: .init(
+                status: "available",
+                scp: .init(support: "supportive"),
+                stp: .init(support: "supportive"),
+                ship: .init(support: "supportive"),
+                diagnostics: .init(
+                    hasEffectiveLayer: true,
+                    hasStormMotion: false,
+                    qualityProfileLevelCount: 3,
+                    warnings: ["watch heating"]
+                )
+            ),
+            centroid: .init(latitude: 39.5, longitude: -100.0),
+            surfaceHeightMslM: 1132.4
         )
     }
 }

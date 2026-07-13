@@ -10,6 +10,7 @@ import SwiftData
 import BackgroundTasks
 import CoreLocation
 import OSLog
+import ArcusCore
 
 // e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.skyaware.app.refresh"]
 
@@ -31,6 +32,10 @@ struct SkyAwareApp: App {
     @State private var didBootstrapBGRefresh = false
     @State private var launchPresentation: LaunchPresentationState?
     private let currentDisclaimerVersion = 1
+
+    private var isUITestStaticHome: Bool {
+        ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
+    }
     
     // App Storage
     @AppStorage(
@@ -42,6 +47,11 @@ struct SkyAwareApp: App {
         "disclaimerAcceptedVersion",
         store: UserDefaults.shared
     ) private var disclaimerVersion = 0
+
+    @AppStorage(
+        "activationCleanupLastRunAt",
+        store: UserDefaults.shared
+    ) private var activationCleanupLastRunAt: Double = 0
     
     @MainActor
     init() {
@@ -62,6 +72,7 @@ struct SkyAwareApp: App {
         _runtimeConnectivityState = State(initialValue: runtimeConnectivityState)
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
         Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
+        Self.applyUITestStormSetupFixtureIfNeeded(locationSession: deps.locationSession)
         _locationSession = State(initialValue: deps.locationSession)
         let remoteAlertWidgetSnapshotRefreshDriver: RemoteAlertWidgetSnapshotRefreshDriver? = {
             guard let widgetSnapshotStore = try? WidgetSnapshotStore() else {
@@ -89,9 +100,11 @@ struct SkyAwareApp: App {
     var body: some Scene {
         WindowGroup {
             rootContent
+                .preferredColorScheme(Self.uiTestPreferredColorScheme)
                 .environment(remoteAlertPresentationState)
                 .environment(runtimeConnectivityState)
                 .onAppear {
+                    guard isUITestStaticHome == false else { return }
                     locationSession.handleScenePhaseChange(scenePhase)
                 }
         }
@@ -106,6 +119,7 @@ struct SkyAwareApp: App {
             logger.notice("Scheduled next app refresh at: \(result.next, privacy: .public)")
         }
         .onChange(of: scenePhase) { _, newPhase in
+            guard isUITestStaticHome == false else { return }
             logger.debug("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
             locationSession.handleScenePhaseChange(newPhase)
             
@@ -145,22 +159,9 @@ struct SkyAwareApp: App {
                 // latest data.
                 // Going to rely on the summary view to get most of the data since its the heart
                 // of the app and what gets accessed first.
-                // TODO: Need to gate this so it only happens every hour or so, doesn't need
-                //       to happen on every single activation.
+                // Gate cleanup so activation does not repeatedly contend with foreground refresh.
                 if onboardingComplete {
-                    Task {
-                        logger.notice("Starting activation cleanup")
-                        try? await deps.healthStore.purge()
-                        logger.notice("Starting SPC cleanup")
-                        await deps.spcProvider.cleanup()
-                        logger.info("SPC cleanup finished")
-                        await deps.arcusProvider.cleanup()
-                        logger.info("Arcus alert cleanup finished")
-                        
-                        // HomeView owns foreground startup refresh and map product sync.
-                        // Keep app-level activation work focused on cleanup/scheduling.
-                        logger.info("Activation cleanup finished; HomeView will drive foreground data refresh")
-                    }
+                    scheduleActivationCleanupIfNeeded()
                 }
             @unknown default:
                 logger.warning("Phase transition error. Unknown phase")
@@ -192,10 +193,20 @@ private extension SkyAwareApp {
     @ViewBuilder
     var currentHomeView: some View {
         if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
-            HomeView(
-                initialMesos: Self.uiTestSeedMesos,
-                initialAlerts: Self.uiTestSeedWatches
-            )
+            if let fixture = Self.uiTestStormSetupFixture {
+                HomeView(
+                    initialStormSetup: fixture.stormSetup,
+                    initialStormSetupCurrentResponse: fixture.currentResponse,
+                    initialStormSetupRefreshKey: fixture.context.refreshKey,
+                    initialMesos: Self.uiTestSeedMesos,
+                    initialAlerts: Self.uiTestSeedWatches
+                )
+            } else {
+                HomeView(
+                    initialMesos: Self.uiTestSeedMesos,
+                    initialAlerts: Self.uiTestSeedWatches
+                )
+            }
         } else {
             HomeView()
         }
@@ -261,6 +272,34 @@ private extension SkyAwareApp {
         )
     }
 
+    static let activationCleanupMinimumInterval: TimeInterval = 60 * 60
+
+    func scheduleActivationCleanupIfNeeded(now: Date = .now) {
+        guard ActivationCleanupThrottle.shouldRun(
+            lastRunAt: activationCleanupLastRunAt,
+            now: now
+        ) else {
+            logger.debug("Skipping activation cleanup; last run was within the minimum interval")
+            return
+        }
+
+        activationCleanupLastRunAt = now.timeIntervalSinceReferenceDate
+
+        Task(priority: .utility) {
+            logger.notice("Starting activation cleanup")
+            try? await deps.healthStore.purge()
+            logger.notice("Starting SPC cleanup")
+            await deps.spcProvider.cleanup()
+            logger.info("SPC cleanup finished")
+            await deps.arcusProvider.cleanup()
+            logger.info("Arcus alert cleanup finished")
+
+            // HomeView owns foreground startup refresh and map product sync.
+            // Keep app-level activation work focused on cleanup/scheduling.
+            logger.info("Activation cleanup finished; HomeView will drive foreground data refresh")
+        }
+    }
+
     @MainActor
     static func applyUITestDefaultsOverridesIfNeeded() {
         let env = ProcessInfo.processInfo.environment
@@ -290,6 +329,17 @@ private extension SkyAwareApp {
 
         sharedDefaults.synchronize()
         UserDefaults.standard.synchronize()
+
+        applyUITestBooleanOverride(
+            env["UI_TESTS_STORM_SETUP_ENABLED"],
+            forKey: "stormSetupEnabled",
+            in: sharedDefaults
+        )
+        applyUITestBooleanOverride(
+            env["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"],
+            forKey: "detailedIngredientsEnabled",
+            in: sharedDefaults
+        )
     }
 
     @MainActor
@@ -307,6 +357,16 @@ private extension SkyAwareApp {
         default:
             break
         }
+    }
+
+    @MainActor
+    static func applyUITestStormSetupFixtureIfNeeded(locationSession: LocationSession) {
+        guard let fixture = uiTestStormSetupFixture else { return }
+        guard locationSession.authorizationStatus.isLocationAuthorized else { return }
+
+        locationSession.currentSnapshot = fixture.context.snapshot
+        locationSession.currentContext = fixture.context
+        locationSession.startupState = .ready
     }
 
     static var uiTestSeedWatches: [AlertDTO] {
@@ -407,6 +467,323 @@ private extension SkyAwareApp {
 
     static var uiTestSeedMesos: [MdDTO] {
         MD.sampleDiscussionDTOs
+    }
+
+    static var uiTestPreferredColorScheme: ColorScheme? {
+        guard ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" else {
+            return nil
+        }
+
+        switch ProcessInfo.processInfo.environment["UI_TESTS_COLOR_SCHEME"]?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "dark":
+            return .dark
+        case "light":
+            return .light
+        default:
+            return nil
+        }
+    }
+
+    private static var uiTestStormSetupFixture: UITestStormSetupFixture? {
+        guard ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" else {
+            return nil
+        }
+
+        guard ProcessInfo.processInfo.environment["UI_TESTS_STORM_SETUP_FIXTURE"] == "supportive" else {
+            return nil
+        }
+
+        return .supportive
+    }
+
+    private static func applyUITestBooleanOverride(
+        _ rawValue: String?,
+        forKey key: String,
+        in defaults: UserDefaults
+    ) {
+        guard let rawValue else { return }
+
+        switch rawValue.trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "1":
+            defaults.set(true, forKey: key)
+        case "0":
+            defaults.set(false, forKey: key)
+        default:
+            break
+        }
+    }
+}
+
+private struct UITestStormSetupFixture {
+    let context: LocationContext
+    let stormSetup: StormSetupDTO
+    let profileAnalysis: AnvilAnalyzeProfileResponse
+
+    var currentResponse: StormSetupCurrentResponse {
+        stormSetup.stormSetupCurrentResponse(profileAnalysis: profileAnalysis)
+    }
+
+    static let supportive = UITestStormSetupFixture(
+        context: .init(
+            snapshot: .init(
+                coordinates: .init(latitude: 39.75, longitude: -104.44),
+                timestamp: uiTestDate("2026-07-03T18:00:00Z"),
+                accuracy: 20,
+                placemarkSummary: "Bennett, CO",
+                h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: .init(
+                nwsId: "https://api.weather.gov/points/39.75,-104.44",
+                latitude: 39.75,
+                longitude: -104.44,
+                gridId: "BOU",
+                gridX: 56,
+                gridY: 66,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: "Bennett",
+                state: "CO",
+                timeZoneId: "America/Denver",
+                radarStationId: "KFTG",
+                forecastZone: "COZ039",
+                countyCode: "COC005",
+                fireZone: "COZ246",
+                countyLabel: "Arapahoe County",
+                fireZoneLabel: "East Central Colorado"
+            )
+        ),
+        stormSetup: .init(
+            h3Cell: 0x882681b485fffff,
+            freshness: .init(
+                isStale: false,
+                isDegraded: false,
+                modelRunTime: uiTestDate("2026-07-03T12:00:00Z"),
+                sourceValidTime: uiTestDate("2026-07-03T18:00:00Z"),
+                forecastHour: 6,
+                fetchedAt: uiTestDate("2026-07-03T18:04:00Z"),
+                expiresAt: .distantFuture
+            ),
+            source: .init(
+                model: "HRRR",
+                product: "Storm Setup",
+                domain: "severe",
+                fieldSetVersion: "1",
+                sourceKind: "production",
+                runTime: uiTestDate("2026-07-03T12:00:00Z"),
+                validTime: uiTestDate("2026-07-03T18:00:00Z"),
+                forecastHour: 6,
+                bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+                primaryDownloadURL: "https://example.invalid/storm-setup"
+            ),
+            raw: .init(
+                mlcapeJkg: 1825,
+                mucapeJkg: 2210,
+                sbcapeJkg: 1680,
+                mlcinJkg: -38,
+                srh01kmM2s2: 142,
+                srh03kmM2s2: 198,
+                shear06kmKt: 44,
+                mllclM: 965,
+                tempDewPtDeltaF: 4.5,
+                threeCapeJkg: 101
+            ),
+            assessment: .init(
+                overall: "supportive",
+                summary: "The setup is supportive with several ingredients lining up for a short-term severe-weather threat.",
+                instability: "supportive",
+                moisture: "supportive",
+                lowLevelRotation: "supportive",
+                deepShear: "strong",
+                cloudBase: "supportive",
+                capInhibition: "weak",
+                limitingFactors: ["Capping may slow initiation"],
+                confidence: "high",
+                primaryDrivers: ["deep shear", "low-level rotation", "moisture"],
+                stormMode: "supportive",
+                stormModeHint: "supportive",
+                trend: "conditional",
+                compositeSignal: "supportive"
+            ),
+            anvilEvidence: .init(
+                status: "available",
+                scp: .init(support: "supportive"),
+                stp: .init(support: "strong"),
+                ship: .init(support: "conditional"),
+                diagnostics: .init(
+                    hasEffectiveLayer: true,
+                    hasStormMotion: true,
+                    qualityProfileLevelCount: 12,
+                    warnings: ["pressure-level diagnostics trimmed"]
+                )
+            ),
+            centroid: .init(latitude: 39.6, longitude: -104.0),
+            surfaceHeightMslM: 1600
+        ),
+        profileAnalysis: Self.makeProfileAnalysisResponse()
+    )
+
+    private static func makeProfileAnalysisResponse() -> AnvilAnalyzeProfileResponse {
+        AnvilAnalyzeProfileResponse(
+            effectiveLayer: .init(
+                status: "found",
+                basePressureMb: 915,
+                topPressureMb: 750,
+                baseMetersAgl: 850,
+                topMetersAgl: 1_800
+            ),
+            stormMotion: .init(
+                status: "available",
+                bunkersRight: .init(
+                    uKt: 16.3,
+                    vKt: -8.2,
+                    speedKt: 18.3,
+                    directionTowardDeg: 215,
+                    uMs: 8.4,
+                    vMs: -4.2,
+                    speedMs: 9.4
+                )
+            ),
+            mucape: 2_200.5,
+            mlcape: 1_850,
+            mlcin: -42,
+            mllclMetersAgl: 980,
+            effectiveSrh: 135,
+            effectiveBulkShearMs: 24.5,
+            scp: 0.7,
+            stpCin: 0.9,
+            stpFixed: 1.2,
+            ship: 2.1,
+            srh01km: nil,
+            srh03km: nil,
+            sbcape: nil,
+            sbcin: nil,
+            bulkShear06kmMs: nil,
+            lapserate03km: nil,
+            threeCapeJkg: nil,
+            quality: .init(
+                profileLevelCount: 36,
+                warnings: ["pressure-level diagnostics trimmed"]
+            )
+        )
+    }
+}
+
+private extension StormSetupDTO {
+    func stormSetupCurrentResponse(profileAnalysis: AnvilAnalyzeProfileResponse?) -> StormSetupCurrentResponse {
+        .init(
+            setup: .init(
+                h3Cell: h3Cell,
+                centroid: .init(latitude: centroid?.latitude ?? 0, longitude: centroid?.longitude ?? 0),
+                source: .init(
+                    model: .hrrr,
+                    product: .wrfsfc,
+                    domain: .conus,
+                    runTime: freshness.modelRunTime,
+                    forecastHour: freshness.forecastHour,
+                    validTime: freshness.sourceValidTime,
+                    fieldSetVersion: .tornadoV1,
+                    bbox: source.bbox.map {
+                        .init(
+                            leftlon: $0.leftlon,
+                            rightlon: $0.rightlon,
+                            toplat: $0.toplat,
+                            bottomlat: $0.bottomlat
+                        )
+                    },
+                    primaryDownloadURL: URL(string: source.primaryDownloadURL ?? "https://example.invalid/storm-setup"),
+                    idxURL: nil
+                ),
+                surfaceHeightMslM: surfaceHeightMslM,
+                freshness: .init(
+                    sourceValidTime: freshness.sourceValidTime,
+                    modelRunTime: freshness.modelRunTime,
+                    forecastHour: freshness.forecastHour,
+                    fetchedAt: freshness.fetchedAt,
+                    expiresAt: freshness.expiresAt,
+                    isStale: freshness.isStale,
+                    isDegraded: freshness.isDegraded
+                )
+            ),
+            ingredients: .init(
+                canonical: .init(
+                    sbcapeJkg: raw.sbcapeJkg,
+                    mlcapeJkg: raw.mlcapeJkg,
+                    mucapeJkg: raw.mucapeJkg,
+                    mlcinJkg: raw.mlcinJkg,
+                    dcapeJkg: nil,
+                    mllclM: raw.mllclM,
+                    tempDewPtDeltaF: raw.tempDewPtDeltaF,
+                    threeCapeJkg: raw.threeCapeJkg,
+                    lclLfcSeparationM: nil,
+                    lapseRate03kmCkm: nil,
+                    lapseRate700500mbCkm: nil,
+                    shear06kmKt: raw.shear06kmKt,
+                    shear03kmKt: nil,
+                    shear01kmKt: nil,
+                    effectiveShearKt: nil,
+                    srh01kmM2s2: raw.srh01kmM2s2,
+                    srh03kmM2s2: raw.srh03kmM2s2,
+                    effectiveSrhM2s2: nil,
+                    supercellComposite: nil,
+                    significantTornadoFixed: nil,
+                    significantTornadoEffective: nil,
+                    significantHail: nil,
+                    bunkersRightMotion: nil,
+                    bunkersLeftMotion: nil,
+                    stormRelativeWind46km: nil,
+                    meanWind850300mb: nil,
+                    diagnostics: nil,
+                    effectiveBulkShearMs: nil,
+                    effectiveLayer: nil,
+                    stormMotion: nil
+                ),
+                diagnostics: .empty
+            ),
+            profileAnalysis: profileAnalysis,
+            tornadoViability: .init(
+                overall: .supportive,
+                realization: .realized,
+                primaryFailureMode: .none,
+                confidence: .moderate,
+                summary: assessment.summary ?? "",
+                details: .init(
+                    stormViability: .supportive,
+                    supercellViability: .strong,
+                    tornadoEfficiency: .supportive,
+                    inhibition: .weak,
+                    instability: .supportive,
+                    moisture: .supportive,
+                    cloudBase: .weak,
+                    deepShear: .strong,
+                    lowLevelRotation: .conditional,
+                    lowLevelStretching: .supportive,
+                    cloudBaseEfficiency: .supportive,
+                    supercellComposite: .strong,
+                    tornadoComposite: .supportive,
+                    stormMode: .supportive
+                ),
+                limitingFactors: [.strongCap]
+            )
+        )
+    }
+}
+
+private func uiTestDate(_ value: String) -> Date {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter.date(from: value)!
+}
+
+enum ActivationCleanupThrottle {
+    static let minimumInterval: TimeInterval = 60 * 60
+
+    static func shouldRun(lastRunAt: Double, now: Date) -> Bool {
+        guard lastRunAt > 0 else { return true }
+        let lastRun = Date(timeIntervalSinceReferenceDate: lastRunAt)
+        return now.timeIntervalSince(lastRun) >= minimumInterval
     }
 }
 

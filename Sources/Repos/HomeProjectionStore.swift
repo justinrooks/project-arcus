@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import ArcusCore
 import SwiftData
 
 @ModelActor
@@ -34,6 +35,20 @@ actor HomeProjectionStore {
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
         projection.weatherPayload = weather.map(HomeProjectionWeatherPayload.init(summary:))
         projection.lastWeatherLoadAt = loadedAt
+        projection.updatedAt = loadedAt
+        try modelContext.save()
+        return projection.record
+    }
+
+    func updateStormSetup(
+        _ stormSetup: StormSetupCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date = .now
+    ) throws -> HomeProjectionRecord {
+        let payload = try StormSetupCurrentResponsePersistenceCodec.encode(stormSetup)
+        let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
+        projection.stormSetupCurrentResponseData = payload
+        projection.lastStormSetupLoadAt = loadedAt
         projection.updatedAt = loadedAt
         try modelContext.save()
         return projection.record

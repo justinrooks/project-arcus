@@ -56,6 +56,28 @@ struct HomeRefreshPipelineTests {
         #expect(requests[1].locationContext == context)
     }
 
+    @Test("settings refresh entry point uses one non-forced session tick request")
+    func settingsRefreshEntryPoint_usesNonForcedSessionTickRequest() async throws {
+        let context = makeContext()
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.enqueueRefresh(
+            .timer,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+        await pipeline.waitForIdle()
+
+        let requests = await coordinator.requests()
+        #expect(requests.count == 1)
+        #expect(requests[0].trigger == .sessionTick)
+        #expect(HomeIngestionPlan(request: requests[0]).forcedLanes.isEmpty)
+    }
+
     @Test("initial context publication during startup does not queue a second refresh")
     func startupContextPublication_doesNotQueueFollowUpRefresh() async throws {
         let context = makeContext()
@@ -301,6 +323,202 @@ struct HomeRefreshPipelineTests {
         for section in SummarySection.resolveForwardSections {
             #expect(pipeline.resolutionState.isResolving(section) == false)
         }
+    }
+
+    @Test("visible commit propagates storm setup and keeps existing home slices intact")
+    func visibleCommit_propagatesStormSetupAndKeepsOtherSlicesIntact() async {
+        let context = makeContext()
+        let sampleMd = MD.sampleDiscussionDTOs[0]
+        let sampleAlerts = [Watch.sampleWatchRows[0]]
+        let sampleOutlooksValue = sampleOutlooks()
+        let sampleWeatherValue = sampleWeather()
+        let stormSetup = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500)
+        )
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            weather: sampleWeatherValue,
+            weatherRefreshResult: .success(sampleWeatherValue),
+            stormSetup: stormSetup,
+            stormSetupRefreshResult: .success,
+            stormRisk: .moderate,
+            severeRisk: .hail(probability: 0.25),
+            fireRisk: .elevated,
+            mesos: [sampleMd],
+            alerts: sampleAlerts,
+            outlooks: sampleOutlooksValue,
+            latestOutlook: sampleOutlooksValue.first
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot)
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.stormSetup == stormSetup)
+        #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.severeRisk == .hail(probability: 0.25))
+        #expect(pipeline.fireRisk == .elevated)
+        #expect(pipeline.mesos == [sampleMd])
+        #expect(pipeline.alerts == sampleAlerts)
+        #expect(pipeline.outlooks == sampleOutlooksValue)
+        #expect(pipeline.outlook?.title == sampleOutlooksValue.first?.title)
+        #expect(pipeline.summaryWeather != nil)
+    }
+
+    @Test("same-location nil or failed storm setup preserves the existing value")
+    func sameLocationNilOrFailurePreservesExistingStormSetup() async {
+        let context = makeContext()
+        let existingStormSetup = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "cached guidance"
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialStormSetup: existingStormSetup,
+            initialStormSetupRefreshKey: context.refreshKey
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let nilSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormSetup: nil,
+            stormSetupRefreshResult: .timeout
+        )
+        let failureCoordinator = RecordingHomeIngestionCoordinator(snapshot: nilSnapshot)
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: failureCoordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.stormSetup == existingStormSetup)
+        #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+
+        let failureCoordinator2 = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                stormSetup: nil,
+                stormSetupRefreshResult: .failure
+            )
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: failureCoordinator2,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.stormSetup == existingStormSetup)
+        #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+    }
+
+    @Test("different-location nil storm setup clears the previous value")
+    func differentLocationNilStormSetupClearsPreviousValue() async {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let newContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let existingStormSetup = makeStormSetupDTO(
+            h3Cell: oldContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500)
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialStormSetup: existingStormSetup,
+            initialStormSetupRefreshKey: oldContext.refreshKey
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationSnapshot: newContext.snapshot,
+                refreshKey: newContext.refreshKey,
+                stormSetup: nil,
+                stormSetupRefreshResult: .failure
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: newContext, preparedContext: newContext)
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.stormSetup == nil)
+        #expect(pipeline.stormSetupRefreshKey == newContext.refreshKey)
+    }
+
+    @Test("prime snapshot keeps old storm setup ownership until a visible commit lands")
+    func primeSnapshot_keepsOldStormSetupOwnershipUntilVisibleCommit() async {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let newContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let oldStormSetup = makeStormSetupDTO(
+            h3Cell: oldContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500)
+        )
+        let primeStormSetup = makeStormSetupDTO(
+            h3Cell: newContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 600),
+            summary: "prime guidance"
+        )
+        let primeSnapshot = HomeSnapshot(
+            locationSnapshot: newContext.snapshot,
+            refreshKey: newContext.refreshKey,
+            stormSetup: primeStormSetup,
+            stormSetupRefreshResult: .success
+        )
+        let followUpGate = AsyncGate()
+        let followUpSnapshot = HomeSnapshot(
+            locationSnapshot: newContext.snapshot,
+            refreshKey: newContext.refreshKey,
+            stormSetup: nil,
+            stormSetupRefreshResult: .failure
+        )
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: [primeSnapshot, followUpSnapshot],
+            gates: [nil, followUpGate]
+        )
+        let locationSession = FakeLocationSession(currentContext: oldContext, preparedContext: newContext)
+        let pipeline = HomeRefreshPipeline(
+            initialStormSetup: oldStormSetup,
+            initialStormSetupRefreshKey: oldContext.refreshKey
+        )
+
+        let refreshTask = Task { @MainActor in
+            await pipeline.handleScenePhaseChange(
+                .active,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: locationSession
+                )
+            )
+        }
+
+        let requestCountReached = await waitUntil(timeout: .seconds(5)) {
+            await coordinator.requestCount() == 2
+        }
+        #expect(requestCountReached)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == newContext.refreshKey)
+        #expect(pipeline.stormSetup == oldStormSetup)
+        #expect(pipeline.stormSetupRefreshKey == oldContext.refreshKey)
+
+        await followUpGate.open()
+        await refreshTask.value
+        await pipeline.waitForIdle()
     }
 
     @Test("progress started keeps cached Today display state steady until snapshot commit")
@@ -1356,6 +1574,80 @@ struct HomeRefreshPipelineTests {
         )
     }
 
+    private func makeStormSetupDTO(
+        h3Cell: Int64,
+        expiresAt: Date,
+        summary: String = "guidance"
+    ) -> StormSetupDTO {
+        StormSetupDTO(
+            h3Cell: h3Cell,
+            freshness: .init(
+                isStale: false,
+                isDegraded: false,
+                modelRunTime: Date(timeIntervalSince1970: 100),
+                sourceValidTime: Date(timeIntervalSince1970: 100),
+                forecastHour: 1,
+                fetchedAt: Date(timeIntervalSince1970: 100),
+                expiresAt: expiresAt
+            ),
+            source: .init(
+                model: "HRRR",
+                product: "Storm Setup",
+                domain: "severe",
+                fieldSetVersion: "1",
+                sourceKind: "production",
+                runTime: Date(timeIntervalSince1970: 100),
+                validTime: Date(timeIntervalSince1970: 100),
+                forecastHour: 1,
+                bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+                primaryDownloadURL: "https://example.com/storm-setup"
+            ),
+            raw: .init(
+                mlcapeJkg: 1850,
+                mucapeJkg: 2200.5,
+                sbcapeJkg: 1700,
+                mlcinJkg: -42,
+                srh01kmM2s2: 125.5,
+                srh03kmM2s2: 175,
+                shear06kmKt: 42,
+                mllclM: 980,
+                tempDewPtDeltaF: 4.5,
+                threeCapeJkg: 95
+            ),
+            assessment: .init(
+                overall: "supportive",
+                summary: summary,
+                instability: "supportive",
+                moisture: "supportive",
+                lowLevelRotation: "supportive",
+                deepShear: "supportive",
+                cloudBase: "supportive",
+                capInhibition: "supportive",
+                limitingFactors: ["capping"],
+                confidence: "high",
+                primaryDrivers: ["instability"],
+                stormMode: "supportive",
+                stormModeHint: "supportive",
+                trend: "supportive",
+                compositeSignal: "supportive"
+            ),
+            anvilEvidence: .init(
+                status: "available",
+                scp: .init(support: "supportive"),
+                stp: .init(support: "supportive"),
+                ship: .init(support: "supportive"),
+                diagnostics: .init(
+                    hasEffectiveLayer: true,
+                    hasStormMotion: false,
+                    qualityProfileLevelCount: 3,
+                    warnings: ["watch heating"]
+                )
+            ),
+            centroid: .init(latitude: 39.5, longitude: -100.0),
+            surfaceHeightMslM: 1132.4
+        )
+    }
+
     private func sampleOutlooks() -> [ConvectiveOutlookDTO] {
         [
             ConvectiveOutlookDTO(
@@ -1534,6 +1826,29 @@ private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+}
+
+@Suite("SkyAware App Activation Cleanup")
+struct SkyAwareAppActivationCleanupTests {
+    @Test("shouldRunActivationCleanup_enforcesHourlyThrottle")
+    func shouldRunActivationCleanupEnforcesHourlyThrottle() {
+        let now = Date(timeIntervalSinceReferenceDate: 2_000_000)
+        let minimumInterval = ActivationCleanupThrottle.minimumInterval
+
+        #expect(ActivationCleanupThrottle.shouldRun(lastRunAt: 0, now: now))
+        #expect(
+            ActivationCleanupThrottle.shouldRun(
+                lastRunAt: now.timeIntervalSinceReferenceDate - minimumInterval + 1,
+                now: now
+            ) == false
+        )
+        #expect(
+            ActivationCleanupThrottle.shouldRun(
+                lastRunAt: now.timeIntervalSinceReferenceDate - minimumInterval,
+                now: now
+            )
+        )
     }
 }
 

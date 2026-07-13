@@ -5,6 +5,7 @@
 //  Created by OpenAI Codex.
 //
 
+import ArcusCore
 import Foundation
 import SwiftData
 
@@ -73,9 +74,68 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let fireRisk: FireRiskLevel?
     let activeAlerts: [AlertDTO]
     let activeMesos: [MdDTO]
+    let stormSetupCurrentResponse: StormSetupCurrentResponse?
+    let stormSetup: StormSetupDTO?
     let lastHotAlertsLoadAt: Date?
     let lastSlowProductsLoadAt: Date?
     let lastWeatherLoadAt: Date?
+    let lastStormSetupLoadAt: Date?
+
+    init(
+        id: UUID,
+        projectionKey: String,
+        latitude: Double,
+        longitude: Double,
+        h3Cell: Int64,
+        countyCode: String,
+        forecastZone: String?,
+        fireZone: String,
+        placemarkSummary: String?,
+        timeZoneId: String?,
+        locationTimestamp: Date,
+        createdAt: Date,
+        updatedAt: Date,
+        lastViewedAt: Date?,
+        weather: SummaryWeather?,
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        fireRisk: FireRiskLevel?,
+        activeAlerts: [AlertDTO],
+        activeMesos: [MdDTO],
+        lastHotAlertsLoadAt: Date?,
+        lastSlowProductsLoadAt: Date?,
+        lastWeatherLoadAt: Date?,
+        stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
+        stormSetup: StormSetupDTO? = nil,
+        lastStormSetupLoadAt: Date? = nil
+    ) {
+        self.id = id
+        self.projectionKey = projectionKey
+        self.latitude = latitude
+        self.longitude = longitude
+        self.h3Cell = h3Cell
+        self.countyCode = countyCode
+        self.forecastZone = forecastZone
+        self.fireZone = fireZone
+        self.placemarkSummary = placemarkSummary
+        self.timeZoneId = timeZoneId
+        self.locationTimestamp = locationTimestamp
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.lastViewedAt = lastViewedAt
+        self.weather = weather
+        self.stormRisk = stormRisk
+        self.severeRisk = severeRisk
+        self.fireRisk = fireRisk
+        self.activeAlerts = activeAlerts
+        self.activeMesos = activeMesos
+        self.stormSetupCurrentResponse = stormSetupCurrentResponse
+        self.stormSetup = stormSetup
+        self.lastHotAlertsLoadAt = lastHotAlertsLoadAt
+        self.lastSlowProductsLoadAt = lastSlowProductsLoadAt
+        self.lastWeatherLoadAt = lastWeatherLoadAt
+        self.lastStormSetupLoadAt = lastStormSetupLoadAt
+    }
 }
 
 extension HomeProjectionRecord {
@@ -110,6 +170,7 @@ final class HomeProjection {
     var lastViewedAt: Date?
 
     var weatherPayload: HomeProjectionWeatherPayload?
+    var stormSetupCurrentResponseData: Data?
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
@@ -119,6 +180,7 @@ final class HomeProjection {
     var lastHotAlertsLoadAt: Date?
     var lastSlowProductsLoadAt: Date?
     var lastWeatherLoadAt: Date?
+    var lastStormSetupLoadAt: Date?
 
     init(
         context: LocationContext,
@@ -140,6 +202,7 @@ final class HomeProjection {
         updatedAt = createdAt
         self.lastViewedAt = lastViewedAt
         weatherPayload = nil
+        stormSetupCurrentResponseData = nil
         stormRisk = nil
         severeRisk = nil
         fireRisk = nil
@@ -148,6 +211,7 @@ final class HomeProjection {
         lastHotAlertsLoadAt = nil
         lastSlowProductsLoadAt = nil
         lastWeatherLoadAt = nil
+        lastStormSetupLoadAt = nil
     }
 }
 
@@ -163,7 +227,8 @@ extension HomeProjection {
     }
 
     var record: HomeProjectionRecord {
-        HomeProjectionRecord(
+        let stormSetupCurrentResponse = StormSetupCurrentResponsePersistenceCodec.decode(stormSetupCurrentResponseData)
+        return HomeProjectionRecord(
             id: id,
             projectionKey: projectionKey,
             latitude: latitude,
@@ -186,7 +251,10 @@ extension HomeProjection {
             activeMesos: activeMesos,
             lastHotAlertsLoadAt: lastHotAlertsLoadAt,
             lastSlowProductsLoadAt: lastSlowProductsLoadAt,
-            lastWeatherLoadAt: lastWeatherLoadAt
+            lastWeatherLoadAt: lastWeatherLoadAt,
+            stormSetupCurrentResponse: stormSetupCurrentResponse,
+            stormSetup: stormSetupCurrentResponse.map(StormSetupDTO.init(response:)),
+            lastStormSetupLoadAt: lastStormSetupLoadAt
         )
     }
 
@@ -212,5 +280,20 @@ extension HomeProjection {
             return "_"
         }
         return trimmed.uppercased()
+    }
+}
+
+enum StormSetupCurrentResponsePersistenceCodec {
+    static func encode(_ response: StormSetupCurrentResponse) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(response)
+    }
+
+    static func decode(_ data: Data?) -> StormSetupCurrentResponse? {
+        guard let data else {
+            return nil
+        }
+        return try? DecoderFactory.iso8601.decode(StormSetupCurrentResponse.self, from: data)
     }
 }

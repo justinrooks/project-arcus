@@ -65,6 +65,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let shouldRefreshRiskWidgets: Bool
     }
 
+    private struct StormSetupRefreshState: Sendable {
+        var refreshKey: LocationContext.RefreshKey
+        var lastAttemptAt: Date?
+        var lastSuccessAt: Date?
+        var lastAttemptFailed: Bool
+    }
+
+    private struct StormSetupRefreshDecision: Sendable {
+        let result: HomeStormSetupRefreshResult
+        let currentResponse: StormSetupCurrentResponse?
+        let stormSetup: StormSetupDTO?
+    }
+
+    private struct StormSetupQueryTimeoutError: Error {}
+
     struct Environment: Sendable {
         let logger: Logger
         let spcSync: any SpcSyncing
@@ -74,6 +89,44 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let snapshotStore: any HomeSnapshotReading
         let projectionStore: HomeProjectionStore?
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
+        let stormSetupQuerying: (any StormSetupQuerying)?
+        let airQualityQuerying: (any AirQualityQuerying)?
+        let stormSetupPreferencesReader: @Sendable () async -> StormSetupPreferences
+        let stormSetupCurrentDate: @Sendable () -> Date
+        let stormSetupForegroundTimeout: TimeInterval
+        let stormSetupFailedAttemptBackoff: TimeInterval
+
+        init(
+            logger: Logger,
+            spcSync: any SpcSyncing,
+            arcusAlertSync: any ArcusAlertSyncing,
+            weatherClient: any HomeWeatherQuerying,
+            locationSession: any HomeContextPreparing,
+            snapshotStore: any HomeSnapshotReading,
+            projectionStore: HomeProjectionStore?,
+            widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?,
+            stormSetupQuerying: (any StormSetupQuerying)? = nil,
+            airQualityQuerying: (any AirQualityQuerying)? = nil,
+            stormSetupPreferencesReader: @escaping @Sendable () async -> StormSetupPreferences = { StormSetupPreferences() },
+            stormSetupCurrentDate: @escaping @Sendable () -> Date = { Date() },
+            stormSetupForegroundTimeout: TimeInterval = 5,
+            stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
+        ) {
+            self.logger = logger
+            self.spcSync = spcSync
+            self.arcusAlertSync = arcusAlertSync
+            self.weatherClient = weatherClient
+            self.locationSession = locationSession
+            self.snapshotStore = snapshotStore
+            self.projectionStore = projectionStore
+            self.widgetSnapshotRefresher = widgetSnapshotRefresher
+            self.stormSetupQuerying = stormSetupQuerying
+            self.airQualityQuerying = airQualityQuerying
+            self.stormSetupPreferencesReader = stormSetupPreferencesReader
+            self.stormSetupCurrentDate = stormSetupCurrentDate
+            self.stormSetupForegroundTimeout = stormSetupForegroundTimeout
+            self.stormSetupFailedAttemptBackoff = stormSetupFailedAttemptBackoff
+        }
     }
 
     private let environment: Environment
@@ -83,6 +136,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private let weatherKitRefreshPolicy: WeatherKitRefreshPolicy
 
     private var freshness = HomeFreshnessState()
+    private var stormSetupRefreshStates: [String: StormSetupRefreshState] = [:]
 
     init(
         environment: Environment,
@@ -162,6 +216,20 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             freshness: freshness
         )
         snapshot.weatherRefreshResult = weatherRefresh
+        let stormSetupRefresh = await refreshStormSetupIfNeeded(
+            context: context,
+            snapshot: snapshot,
+            plan: plan,
+            executionMode: executionMode
+        )
+        snapshot.stormSetupRefreshResult = stormSetupRefresh.result
+        snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
+        snapshot.stormSetup = stormSetupRefresh.stormSetup
+        snapshot.airQuality = await refreshAirQuality(
+            context: context,
+            plan: plan,
+            executionMode: executionMode
+        )
 
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(
@@ -394,6 +462,464 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         return weatherResult
     }
 
+    private func refreshAirQuality(
+        context: LocationContext?,
+        plan: HomeIngestionPlan,
+        executionMode: HTTPExecutionMode
+    ) async -> AirQualityCurrentResponse? {
+        guard let context, let querying = environment.airQualityQuerying else { return nil }
+        guard shouldRefreshAirQuality(for: plan) else { return nil }
+
+        do {
+            return try await HTTPExecutionMode.$current.withValue(executionMode) {
+                try await querying.fetchCurrentAirQuality(h3Cell: context.h3Cell)
+            }
+        } catch is CancellationError {
+            return nil
+        } catch {
+            environment.logger.debug("AQI refresh unavailable; continuing home refresh error=\(String(describing: error), privacy: .public)")
+            return nil
+        }
+    }
+
+    private func shouldRefreshAirQuality(for plan: HomeIngestionPlan) -> Bool {
+        plan.lanes.contains(.weather)
+    }
+
+    private func refreshStormSetupIfNeeded(
+        context: LocationContext?,
+        snapshot: HomeSnapshot,
+        plan: HomeIngestionPlan,
+        executionMode: HTTPExecutionMode
+    ) async -> StormSetupRefreshDecision {
+        let startedAt = Date()
+        let now = environment.stormSetupCurrentDate()
+
+        guard let context else {
+            logStormSetupOutcome(
+                outcome: "skipped",
+                reason: "no-location",
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .skipped, currentResponse: nil, stormSetup: nil)
+        }
+
+        guard let projectionStore = environment.projectionStore else {
+            logStormSetupOutcome(
+                outcome: "skipped",
+                reason: "ineligible",
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .skipped, currentResponse: nil, stormSetup: nil)
+        }
+
+        let preferences = await environment.stormSetupPreferencesReader()
+        let projectionKey = HomeProjection.projectionKey(for: context)
+        let projection = try? await projectionStore.projection(for: context)
+        let cachedCurrentResponse = projection?.stormSetupCurrentResponse
+        let cachedStormSetup = cachedCurrentResponse.map(StormSetupDTO.init(response:))
+        let freshCachedCurrentResponse = cachedCurrentResponse.flatMap {
+            $0.setup.freshness.expiresAt > now ? $0 : nil
+        }
+        let freshCachedStormSetup = freshCachedCurrentResponse.map(StormSetupDTO.init(response:))
+
+        let policyInput = StormSetupPolicyInput(
+            preferences: preferences,
+            stormRisk: snapshot.stormRisk,
+            severeRisk: snapshot.severeRisk,
+            hasActiveAlert: snapshot.alerts.isEmpty == false,
+            hasActiveMeso: snapshot.mesos.isEmpty == false,
+            assessmentOverall: cachedStormSetup.map { StormSetupAssessment(dto: $0).assessment.overall },
+            payloadExpiresAt: cachedStormSetup?.freshness.expiresAt,
+            now: now
+        )
+
+        let shouldFetchPrimary = environment.stormSetupQuerying != nil && StormSetupFetchPolicy.shouldFetch(policyInput)
+        let shouldBackOffPrimary = shouldBackOffStormSetup(for: projectionKey, plan: plan, now: now)
+
+        if shouldFetchPrimary == false {
+            let resolvedStormSetup = freshCachedStormSetup
+            logStormSetupOutcome(
+                outcome: "skipped",
+                reason: resolvedStormSetup == nil ? "disabled-or-ineligible" : "fresh-cache",
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: resolvedStormSetup)
+        }
+
+        async let primaryOutcome: StormSetupAttemptOutcome = {
+            guard shouldFetchPrimary, let querying = environment.stormSetupQuerying else {
+                return .skipped
+            }
+
+            if shouldBackOffPrimary {
+                return .skipped
+            }
+
+            return await performStormSetupFetch(
+                h3Cell: context.h3Cell,
+                querying: querying,
+                executionMode: executionMode
+            )
+        }()
+
+        let resolvedPrimaryDecision = await handleStormSetupOutcome(
+            primaryOutcome,
+            context: context,
+            projectionKey: projectionKey,
+            cachedCurrentResponse: cachedCurrentResponse,
+            freshCachedCurrentResponse: freshCachedCurrentResponse,
+            freshCachedStormSetup: freshCachedStormSetup,
+            now: now,
+            startedAt: startedAt,
+            executionMode: executionMode
+        )
+
+        return resolvedPrimaryDecision
+    }
+
+    private enum StormSetupAttemptOutcome {
+        case success(StormSetupCurrentResponse)
+        case failure
+        case timeout
+        case cancelled
+        case skipped
+    }
+
+    private func performStormSetupFetch(
+        h3Cell: Int64,
+        querying: any StormSetupQuerying,
+        executionMode: HTTPExecutionMode
+    ) async -> StormSetupAttemptOutcome {
+        do {
+            let stormSetup = try await fetchStormSetup(
+                h3Cell: h3Cell,
+                querying: querying,
+                executionMode: executionMode
+            )
+            return .success(stormSetup)
+        } catch is StormSetupQueryTimeoutError {
+            return .timeout
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            return .failure
+        }
+    }
+
+    private func fetchStormSetup(
+        h3Cell: Int64,
+        querying: any StormSetupQuerying,
+        executionMode: HTTPExecutionMode
+    ) async throws -> StormSetupCurrentResponse {
+        if executionMode == .foreground {
+            let foregroundTimeout = environment.stormSetupForegroundTimeout
+            return try await withThrowingTaskGroup(of: StormSetupCurrentResponse.self) { group in
+                group.addTask {
+                    try await HTTPExecutionMode.$current.withValue(executionMode) {
+                        try await querying.fetchCurrentStormSetup(h3Cell: h3Cell)
+                    }
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(foregroundTimeout))
+                    throw StormSetupQueryTimeoutError()
+                }
+
+                do {
+                    guard let stormSetup = try await group.next() else {
+                        throw CancellationError()
+                    }
+                    group.cancelAll()
+                    return stormSetup
+                } catch {
+                    group.cancelAll()
+                    throw error
+                }
+            }
+        }
+
+        return try await HTTPExecutionMode.$current.withValue(executionMode) {
+            try await querying.fetchCurrentStormSetup(h3Cell: h3Cell)
+        }
+    }
+
+    private func handleStormSetupOutcome(
+        _ outcome: StormSetupAttemptOutcome,
+        context: LocationContext,
+        projectionKey: String,
+        cachedCurrentResponse: StormSetupCurrentResponse?,
+        freshCachedCurrentResponse: StormSetupCurrentResponse?,
+        freshCachedStormSetup: StormSetupDTO?,
+        now: Date,
+        startedAt: Date,
+        executionMode: HTTPExecutionMode
+    ) async -> StormSetupRefreshDecision {
+        switch outcome {
+        case .success(let stormSetup):
+            return await handleSuccessfulStormSetup(
+                stormSetup,
+                context: context,
+                projectionKey: projectionKey,
+                cachedCurrentResponse: cachedCurrentResponse,
+                freshCachedCurrentResponse: freshCachedCurrentResponse,
+                freshCachedStormSetup: freshCachedStormSetup,
+                now: now,
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+        case .timeout:
+            markStormSetupAttemptFailed(
+                for: projectionKey,
+                refreshKey: context.refreshKey,
+                now: now
+            )
+            logStormSetupOutcome(
+                outcome: "timeout",
+                reason: nil,
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .timeout, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        case .cancelled:
+            markStormSetupAttemptFailed(
+                for: projectionKey,
+                refreshKey: context.refreshKey,
+                now: now
+            )
+            logStormSetupOutcome(
+                outcome: "cancelled",
+                reason: nil,
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .cancelled, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        case .failure:
+            markStormSetupAttemptFailed(
+                for: projectionKey,
+                refreshKey: context.refreshKey,
+                now: now
+            )
+            logStormSetupOutcome(
+                outcome: "failure",
+                reason: nil,
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .failure, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        case .skipped:
+            logStormSetupOutcome(
+                outcome: "skipped",
+                reason: "no-request",
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .skipped, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        }
+    }
+
+    private func handleSuccessfulStormSetup(
+        _ stormSetup: StormSetupCurrentResponse,
+        context: LocationContext,
+        projectionKey: String,
+        cachedCurrentResponse: StormSetupCurrentResponse?,
+        freshCachedCurrentResponse: StormSetupCurrentResponse?,
+        freshCachedStormSetup: StormSetupDTO?,
+        now: Date,
+        startedAt: Date,
+        executionMode: HTTPExecutionMode
+    ) async -> StormSetupRefreshDecision {
+        let legacyStormSetup = StormSetupDTO(response: stormSetup)
+
+        guard legacyStormSetup.h3Cell == context.h3Cell else {
+            markStormSetupAttemptFailed(
+                for: projectionKey,
+                refreshKey: context.refreshKey,
+                now: now
+            )
+            logStormSetupOutcome(
+                outcome: "h3-mismatch",
+                reason: nil,
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .h3Mismatch, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        }
+
+        guard let projectionStore = environment.projectionStore else {
+            markStormSetupAttemptFailed(
+                for: projectionKey,
+                refreshKey: context.refreshKey,
+                now: now
+            )
+            logStormSetupOutcome(
+                outcome: "failure",
+                reason: "missing-projection-store",
+                startedAt: startedAt,
+                executionMode: executionMode
+            )
+            return .init(result: .failure, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+        }
+
+        let shouldPersist = cachedCurrentResponse.map { Self.isStormSetupNewer(stormSetup, than: $0) } ?? true
+
+        if shouldPersist {
+            do {
+                _ = try await projectionStore.updateStormSetup(
+                    stormSetup,
+                    for: context,
+                    loadedAt: now
+                )
+                markStormSetupAttemptSucceeded(
+                    for: projectionKey,
+                    refreshKey: context.refreshKey,
+                    now: now
+                )
+
+                logStormSetupOutcome(
+                    outcome: "success",
+                    reason: nil,
+                    startedAt: startedAt,
+                    executionMode: executionMode
+                )
+                let resolvedCurrentResponse = stormSetup.setup.freshness.expiresAt > now ? stormSetup : freshCachedCurrentResponse
+                return .init(result: .success, currentResponse: resolvedCurrentResponse, stormSetup: resolvedCurrentResponse.map(StormSetupDTO.init(response:)))
+            } catch {
+                markStormSetupAttemptFailed(
+                    for: projectionKey,
+                    refreshKey: context.refreshKey,
+                    now: now
+                )
+                logStormSetupOutcome(
+                    outcome: "failure",
+                    reason: "persistence",
+                    startedAt: startedAt,
+                    executionMode: executionMode
+                )
+                return .init(result: .failure, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+            }
+        }
+
+        markStormSetupAttemptFailed(
+            for: projectionKey,
+            refreshKey: context.refreshKey,
+            now: now
+        )
+        logStormSetupOutcome(
+            outcome: "success",
+            reason: "stale-response",
+            startedAt: startedAt,
+            executionMode: executionMode
+        )
+        return .init(result: .success, currentResponse: freshCachedCurrentResponse, stormSetup: freshCachedStormSetup)
+    }
+
+    private static func isStormSetupNewer(_ candidate: StormSetupDTO, than cached: StormSetupDTO) -> Bool {
+        let candidateFreshness = candidate.freshness
+        let cachedFreshness = cached.freshness
+        let candidateValues = [
+            candidateFreshness.modelRunTime,
+            candidateFreshness.sourceValidTime,
+            candidateFreshness.fetchedAt
+        ]
+        let cachedValues = [
+            cachedFreshness.modelRunTime,
+            cachedFreshness.sourceValidTime,
+            cachedFreshness.fetchedAt
+        ]
+
+        for (candidateValue, cachedValue) in zip(candidateValues, cachedValues) {
+            switch (candidateValue, cachedValue) {
+            case let (candidateValue?, cachedValue?):
+                if candidateValue != cachedValue {
+                    return candidateValue > cachedValue
+                }
+            case (nil, nil):
+                continue
+            case (nil, _?):
+                return false
+            case (_?, nil):
+                return true
+            }
+        }
+
+        return false
+    }
+
+    private static func isStormSetupNewer(
+        _ candidate: StormSetupCurrentResponse,
+        than cached: StormSetupCurrentResponse
+    ) -> Bool {
+        isStormSetupNewer(
+            StormSetupDTO(response: candidate),
+            than: StormSetupDTO(response: cached)
+        )
+    }
+
+    private func shouldBackOffStormSetup(
+        for projectionKey: String,
+        plan: HomeIngestionPlan,
+        now: Date
+    ) -> Bool {
+        guard plan.provenance.contains(.background) || plan.provenance.contains(.sessionTick) else {
+            return false
+        }
+
+        guard let state = stormSetupRefreshStates[projectionKey],
+              state.lastAttemptFailed,
+              let lastAttemptAt = state.lastAttemptAt else {
+            return false
+        }
+
+        return now.timeIntervalSince(lastAttemptAt) < environment.stormSetupFailedAttemptBackoff
+    }
+
+    private func markStormSetupAttemptSucceeded(
+        for projectionKey: String,
+        refreshKey: LocationContext.RefreshKey,
+        now: Date
+    ) {
+        stormSetupRefreshStates[projectionKey] = .init(
+            refreshKey: refreshKey,
+            lastAttemptAt: now,
+            lastSuccessAt: now,
+            lastAttemptFailed: false
+        )
+    }
+
+    private func markStormSetupAttemptFailed(
+        for projectionKey: String,
+        refreshKey: LocationContext.RefreshKey,
+        now: Date
+    ) {
+        stormSetupRefreshStates[projectionKey] = .init(
+            refreshKey: refreshKey,
+            lastAttemptAt: now,
+            lastSuccessAt: stormSetupRefreshStates[projectionKey]?.lastSuccessAt,
+            lastAttemptFailed: true
+        )
+    }
+
+    private func logStormSetupOutcome(
+        outcome: String,
+        reason: String?,
+        startedAt: Date,
+        executionMode: HTTPExecutionMode
+    ) {
+        let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
+        if let reason {
+            environment.logger.info(
+                "Storm Setup refresh outcome=\(outcome, privacy: .public) reason=\(reason, privacy: .public) mode=\(executionMode.logName, privacy: .public) durationMs=\(durationMs, privacy: .public)"
+            )
+        } else {
+            environment.logger.info(
+                "Storm Setup refresh outcome=\(outcome, privacy: .public) mode=\(executionMode.logName, privacy: .public) durationMs=\(durationMs, privacy: .public)"
+            )
+        }
+    }
+
     private func persistProjection(
         for plan: HomeIngestionPlan,
         context: LocationContext,
@@ -555,6 +1081,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return "failed"
         }
     }
+
 }
 
 func homeWidgetRefreshScope(for plan: HomeIngestionPlan) -> WidgetSnapshotChangeScope? {

@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## v1.1.0(81)
+
+### UI / UX
+- Storm Setup now appears on Today as a dedicated summary card with drill-in detail, and Summary now routes populated local alerts ahead of model guidance while keeping Atmospheric Conditions as the fallback when Storm Setup is unavailable.
+<!-- evidence: 727bc71a, 6296b7ec, dac2b3fb, a9d60c15, 31395e6a, 1083e993, 8a44e36e, 3440f821, 079b8e5a -->
+- Settings now exposes Storm Setup and Detailed Ingredients controls, with diagnostics support to force the Storm Setup card for layout and accessibility checks.
+<!-- evidence: 1083e993, 8a44e36e, 3440f821 -->
+
+### Reliability
+- Storm Setup now uses the ArcusCore aggregate response end-to-end, persists location-scoped cached guidance in SwiftData, and only replaces it with fresher data for the same location.
+<!-- evidence: 448cde5d, 465adf23, 3feedcb2, 8c1cb914, 29c6bbb6, d5e80f58, 12163fbb, 0d42897e -->
+- Air quality refreshes are now gated more narrowly, and background refresh drains pending uploads before unified ingestion starts so queued location and preference work still flushes on background runs.
+<!-- evidence: e9474ed8, f238d2b8, 12163fbb, bef36e00, 7cd1b6ac, 0d42897e, 079b8e5a -->
+
+### Tests / QA
+- Added focused regression coverage for the Storm Setup aggregate path, detail/presentation behavior, background orchestration, AQI decoding, and Summary section ordering.
+<!-- evidence: 1a3565ef, e4972fe2, e74c8533, 382153ab, 53982796, 6296b7ec, 1a3565ef, 079b8e5a -->
+
+### Maintenance / Cleanup
+- Updated the Storm Setup runbooks, migration ledgers, audits, lessons, and project membership so the current build and handoff notes stay aligned with the implemented behavior.
+<!-- evidence: 08e765bc, 7280d9d8, ad187a62, 382153ab, 53982796, 6296b7ec -->
 
 ## v1.0.1(79)
 

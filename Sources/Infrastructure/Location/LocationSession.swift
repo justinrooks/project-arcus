@@ -23,6 +23,10 @@ enum LocationStartupState: Equatable {
 @MainActor
 @Observable
 final class LocationSession {
+    private var isUITestStaticHome: Bool {
+        ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
+    }
+
     private let logger = Logger.locationSession
     private let locationClient: LocationClient
     private let locationManager: LocationManager
@@ -66,17 +70,19 @@ final class LocationSession {
             self.applyAuthorizationSnapshot(status: status, accuracy: accuracy, source: "authorization-change")
         }
 
-        updatesTask = Task { [weak self] in
-            guard let self else { return }
+        if isUITestStaticHome == false {
+            updatesTask = Task { [weak self] in
+                guard let self else { return }
 
-            let initialSnapshot = await locationClient.snapshot()
-            if Task.isCancelled { return }
-            self.currentSnapshot = initialSnapshot
+                let initialSnapshot = await locationClient.snapshot()
+                if Task.isCancelled { return }
+                self.currentSnapshot = initialSnapshot
 
-            let stream = await locationClient.updates()
-            for await snapshot in stream {
-                if Task.isCancelled { break }
-                await self.handleSnapshotUpdate(snapshot)
+                let stream = await locationClient.updates()
+                for await snapshot in stream {
+                    if Task.isCancelled { break }
+                    await self.handleSnapshotUpdate(snapshot)
+                }
             }
         }
     }

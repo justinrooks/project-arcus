@@ -6,6 +6,8 @@
 //
 
 import SwiftUI
+import Foundation
+import ArcusCore
 
 enum SummaryReadinessState: Equatable {
     case loadingLocation
@@ -125,6 +127,9 @@ struct SummaryView: View {
     }
 
     let snap: LocationSnapshot?
+    let stormSetup: StormSetupDTO?
+    let stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
+    let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
@@ -132,6 +137,8 @@ struct SummaryView: View {
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
     let weather: SummaryWeather?
+    let airQuality: AirQualityCurrentResponse?
+    let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
     let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
@@ -142,6 +149,61 @@ struct SummaryView: View {
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
+
+#if DEBUG
+    @AppStorage("stormSetupForceDisplay", store: UserDefaults.shared)
+    private var stormSetupForceDisplay: Bool = false
+#endif
+
+    init(
+        snap: LocationSnapshot? = nil,
+        stormSetup: StormSetupDTO? = nil,
+        stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse? = nil,
+        stormSetupPreferences: StormSetupPreferences = StormSetupPreferences(),
+        stormRisk: StormRiskLevel? = nil,
+        severeRisk: SevereWeatherThreat? = nil,
+        fireRisk: FireRiskLevel? = nil,
+        mesos: [MdDTO] = [],
+        alerts: [AlertDTO] = [],
+        outlook: ConvectiveOutlookDTO? = nil,
+        weather: SummaryWeather? = nil,
+        airQuality: AirQualityCurrentResponse? = nil,
+        locationTimeZone: TimeZone = .autoupdatingCurrent,
+        todayContentState: TodayContentState,
+        localAlertsDisplayState: LocalAlertsDisplayState,
+        readinessState: SummaryReadinessState,
+        resolutionState: SummaryResolutionState,
+        showsOfflineToken: Bool,
+        headerCondenseProgress: CGFloat,
+        locationReliabilityRailState: LocationReliabilityRailState? = nil,
+        onOpenMapLayer: @escaping (MapLayer) -> Void,
+        onOpenAlerts: @escaping () -> Void,
+        onOpenOutlooks: @escaping () -> Void
+    ) {
+        self.snap = snap
+        self.stormSetup = stormSetup
+        self.stormSetupProfileAnalysisResponse = stormSetupProfileAnalysisResponse
+        self.stormSetupPreferences = stormSetupPreferences
+        self.stormRisk = stormRisk
+        self.severeRisk = severeRisk
+        self.fireRisk = fireRisk
+        self.mesos = mesos
+        self.alerts = alerts
+        self.outlook = outlook
+        self.weather = weather
+        self.airQuality = airQuality
+        self.locationTimeZone = locationTimeZone
+        self.todayContentState = todayContentState
+        self.localAlertsDisplayState = localAlertsDisplayState
+        self.readinessState = readinessState
+        self.resolutionState = resolutionState
+        self.showsOfflineToken = showsOfflineToken
+        self.headerCondenseProgress = headerCondenseProgress
+        self.locationReliabilityRailState = locationReliabilityRailState
+        self.onOpenMapLayer = onOpenMapLayer
+        self.onOpenAlerts = onOpenAlerts
+        self.onOpenOutlooks = onOpenOutlooks
+    }
 
     private var isWeatherLoading: Bool {
         weather == nil
@@ -334,89 +396,26 @@ struct SummaryView: View {
     }
 
     @ViewBuilder
-    private var summaryContent: some View {
-        SummaryStatus(
-            statusText: statusText,
-            weather: weather,
-            resolutionState: resolutionState,
-            todayContentState: todayContentState,
-            showsOfflineToken: showsOfflineToken,
-            isLocationUnavailable: isLocationUnavailable,
-            condenseProgress: headerCondenseProgress
+    private func summaryContent(now: Date) -> some View {
+        let stormSetupDetailPresentation = stormSetupDetailPresentation(now: now)
+        let sectionPlan = Self.sectionPlan(
+            localAlertsDisplayState: localAlertsDisplayState,
+            showsStormSetup: stormSetupDetailPresentation != nil,
+            hasLocationReliabilityRail: locationReliabilityRailState != nil
         )
 
-        if isLocationUnavailable {
-            unavailableCard(
-                title: "Location Required",
-                message: "Enable location access to load local risk, alerts, and weather conditions.",
-                symbol: "location.slash"
-            )
-        } else {
-            riskSnapshotContent
-
-            AtmosphericConditionsCard(weather: weather, isOffline: showsOfflineToken)
-                .allowsHitTesting(!isWeatherLoading)
-                .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
-                .summaryResolving(
-                    resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
-                    todayContentState: todayContentState,
-                    style: .subtle
-                )
+        ForEach(sectionPlan.sections) { section in
+            sectionView(for: section, stormSetupDetailPresentation: stormSetupDetailPresentation)
         }
-
-        if let locationReliabilityRailState {
-            LocationReliabilitySummaryRailView(
-                onOpen: locationReliabilityRailState.onOpen,
-                onDismiss: locationReliabilityRailState.onDismiss
-            )
-        }
-
-        switch localAlertsPresentationState {
-        case .unavailable:
-            unavailableCard(
-                title: "Location Required",
-                message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                symbol: "location.slash"
-            )
-        case .loading, .alerts, .empty:
-            ActiveAlertSummaryView(
-                mesos: mesos,
-                alerts: alerts,
-                localAlertsDisplayState: localAlertsDisplayState,
-                todayContentState: todayContentState,
-                isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
-                onOpenAlertCenter: onOpenAlerts
-            )
-            .summaryResolving(
-                localAlertsDisplayState.usesSummaryResolvingTreatment &&
-                resolutionState.isResolving(.alerts),
-                todayContentState: todayContentState,
-                style: .subtle
-            )
-        }
-
-        OutlookSummaryCard(
-            outlook: outlook,
-            isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
-            isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
-            todayContentState: todayContentState,
-            onBrowseAllOutlooks: onOpenOutlooks
-        )
-        .summaryResolving(
-            resolutionState.isResolving(.outlook),
-            todayContentState: todayContentState,
-            style: .subtle
-        )
-
-        AttributionView()
     }
 
     var body: some View {
+        let now = Date()
         VStack(spacing: 18) {
             if todayContentState.showsResolvingSurface {
                 LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
             } else {
-                summaryContent
+                summaryContent(now: now)
                     .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
             }
 
@@ -448,6 +447,172 @@ struct SummaryView: View {
 
     private func unavailableCard(title: String, message: String, symbol: String) -> some View {
         emptySectionCard(title: title, message: message, symbol: symbol)
+    }
+
+    @ViewBuilder
+    private func sectionView(
+        for section: SummarySectionKind,
+        stormSetupDetailPresentation: StormSetupDetailPresentation?
+    ) -> some View {
+        switch section {
+        case .currentConditions:
+            SummaryStatus(
+                statusText: statusText,
+                weather: weather,
+                resolutionState: resolutionState,
+                todayContentState: todayContentState,
+                showsOfflineToken: showsOfflineToken,
+                isLocationUnavailable: isLocationUnavailable,
+                condenseProgress: headerCondenseProgress
+            )
+
+        case .primaryAwareness:
+            if isLocationUnavailable {
+                unavailableCard(
+                    title: "Location Required",
+                    message: "Enable location access to load local risk, alerts, and weather conditions.",
+                    symbol: "location.slash"
+                )
+            } else {
+                riskSnapshotContent
+            }
+
+        case .localAlerts:
+            localAlertsSection
+
+        case .stormSetup:
+                if isLocationUnavailable == false,
+                   let presentation = stormSetupDetailPresentation {
+                    NavigationLink {
+                        StormSetupDetailView(presentation: presentation)
+                    } label: {
+                        StormSetupSummaryCard(presentation: presentation.summaryPresentation)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("summary-storm-setup-card")
+                }
+
+        case .atmosphericConditions:
+            if isLocationUnavailable == false {
+                AtmosphericConditionsCard(weather: weather, airQuality: airQuality, isOffline: showsOfflineToken)
+                    .allowsHitTesting(!isWeatherLoading)
+                    .placeholder(isWeatherLoading && showsOfflineToken == false, animated: true)
+                    .summaryResolving(
+                        resolutionState.isResolving(.atmosphere) && showsOfflineToken == false,
+                        todayContentState: todayContentState,
+                        style: .subtle
+                    )
+            }
+
+        case .locationReliability:
+            if let locationReliabilityRailState {
+                LocationReliabilitySummaryRailView(
+                    onOpen: locationReliabilityRailState.onOpen,
+                    onDismiss: locationReliabilityRailState.onDismiss
+                )
+            }
+
+        case .outlookSummary:
+            OutlookSummaryCard(
+                outlook: outlook,
+                isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+                isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+                todayContentState: todayContentState,
+                onBrowseAllOutlooks: onOpenOutlooks
+            )
+            .summaryResolving(
+                resolutionState.isResolving(.outlook),
+                todayContentState: todayContentState,
+                style: .subtle
+            )
+
+        case .attribution:
+            AttributionView()
+        }
+    }
+
+    @ViewBuilder
+    private var localAlertsSection: some View {
+        switch localAlertsPresentationState {
+        case .unavailable:
+            unavailableCard(
+                title: "Location Required",
+                message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                symbol: "location.slash"
+            )
+
+        case .loading, .alerts, .empty:
+            ActiveAlertSummaryView(
+                mesos: mesos,
+                alerts: alerts,
+                localAlertsDisplayState: localAlertsDisplayState,
+                todayContentState: todayContentState,
+                isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
+                onOpenAlertCenter: onOpenAlerts
+            )
+            .summaryResolving(
+                localAlertsDisplayState.usesSummaryResolvingTreatment &&
+                resolutionState.isResolving(.alerts),
+                todayContentState: todayContentState,
+                style: .subtle
+            )
+        }
+    }
+
+    private func stormSetupDetailPresentation(now: Date) -> StormSetupDetailPresentation? {
+        guard let stormSetup else {
+            return nil
+        }
+
+#if DEBUG
+        if stormSetupForceDisplay {
+            return StormSetupDetailPresentation(
+                dto: stormSetup,
+                preferences: stormSetupPreferences,
+                forecastLocationTimeZone: locationTimeZone,
+                profileAnalysisResponse: stormSetupProfileAnalysisResponse,
+                now: now
+            )
+        }
+#endif
+
+        let selectionInput = StormSetupPolicyInput(
+            preferences: stormSetupPreferences,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            hasActiveAlert: !alerts.isEmpty,
+            hasActiveMeso: !mesos.isEmpty,
+            assessmentOverall: StormSetupAssessment(dto: stormSetup).assessment.overall,
+            payloadExpiresAt: stormSetup.freshness.expiresAt,
+            now: now
+        )
+
+        guard StormSetupDisplayPolicy.shouldShow(selectionInput) else {
+            return nil
+        }
+
+        return StormSetupDetailPresentation(
+            dto: stormSetup,
+            preferences: stormSetupPreferences,
+            forecastLocationTimeZone: locationTimeZone,
+            profileAnalysisResponse: stormSetupProfileAnalysisResponse,
+            now: now
+        )
+    }
+
+    private static func sectionPlan(
+        localAlertsDisplayState: LocalAlertsDisplayState,
+        showsStormSetup: Bool,
+        hasLocationReliabilityRail: Bool
+    ) -> SummarySectionPlan {
+        SummarySectionPlan.make(
+            localAlertsDisplayState: localAlertsDisplayState,
+            showsStormSetup: showsStormSetup,
+            hasLocationReliabilityRail: hasLocationReliabilityRail
+        )
     }
 
     static func showsEmptyResolving(
@@ -909,12 +1074,36 @@ private extension AnyTransition {
     }
 }
 
+#Preview("Summary – Storm Setup Ordering") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormSetup: SummaryPreviewData.stormSetup,
+            stormSetupPreferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            locationTimeZone: TimeZone(identifier: "America/Denver")!,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            localAlertsDisplayState: .current(content: .populated, source: .cached)
+        )
+        .environment(\.dynamicTypeSize, .accessibility1)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 private struct SummaryPreviewContent: View {
     let snap: LocationSnapshot?
+    let stormSetup: StormSetupDTO?
+    let stormSetupPreferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
     let weather: SummaryWeather?
+    let locationTimeZone: TimeZone
     let todayContentState: TodayContentState
     let readinessState: SummaryReadinessState
     let showsOfflineToken: Bool
@@ -929,10 +1118,13 @@ private struct SummaryPreviewContent: View {
 
     init(
         snap: LocationSnapshot? = SummaryPreviewData.snapshot,
+        stormSetup: StormSetupDTO? = nil,
+        stormSetupPreferences: StormSetupPreferences = .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
         fireRisk: FireRiskLevel? = .extreme,
         weather: SummaryWeather?,
+        locationTimeZone: TimeZone = .current,
         todayContentState: TodayContentState = .current,
         readinessState: SummaryReadinessState = .ready,
         showsOfflineToken: Bool = false,
@@ -946,10 +1138,13 @@ private struct SummaryPreviewContent: View {
         isCurrentContextResolvedInPipeline: Bool = false
     ) {
         self.snap = snap
+        self.stormSetup = stormSetup
+        self.stormSetupPreferences = stormSetupPreferences
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
         self.weather = weather
+        self.locationTimeZone = locationTimeZone
         self.todayContentState = todayContentState
         self.readinessState = readinessState
         self.showsOfflineToken = showsOfflineToken
@@ -975,6 +1170,8 @@ private struct SummaryPreviewContent: View {
 
         SummaryView(
             snap: snap,
+            stormSetup: stormSetup,
+            stormSetupPreferences: stormSetupPreferences,
             stormRisk: stormRisk,
             severeRisk: severeRisk,
             fireRisk: fireRisk,
@@ -982,6 +1179,7 @@ private struct SummaryPreviewContent: View {
             alerts: alerts,
             outlook: outlook,
             weather: weather,
+            locationTimeZone: locationTimeZone,
             todayContentState: todayContentState,
             localAlertsDisplayState: localAlertsDisplayState,
             readinessState: readinessState,
@@ -1016,6 +1214,63 @@ private enum SummaryPreviewData {
         windDirection: "SSW",
         pressure: Measurement(value: 29.78, unit: .inchesOfMercury),
         pressureTrend: "falling"
+    )
+
+    static let stormSetup = StormSetupDTO(
+        h3Cell: 8_623_451_234_567_890,
+        freshness: .init(
+            isStale: false,
+            isDegraded: false,
+            modelRunTime: .now,
+            sourceValidTime: .now,
+            forecastHour: 3,
+            fetchedAt: .now,
+            expiresAt: .now.addingTimeInterval(3_600)
+        ),
+        source: .init(
+            model: "HRRR",
+            product: "Storm Setup",
+            domain: "severe",
+            fieldSetVersion: "1",
+            sourceKind: "production",
+            runTime: .now,
+            validTime: .now,
+            forecastHour: 3,
+            bbox: .init(toplat: 41.5, leftlon: -104.3, rightlon: -96.2, bottomlat: 36.8),
+            primaryDownloadURL: "https://example.invalid/storm-setup"
+        ),
+        raw: .init(
+            mlcapeJkg: 1_850,
+            mucapeJkg: 2_200.5,
+            sbcapeJkg: 1_700,
+            mlcinJkg: -42,
+            srh01kmM2s2: 125.5,
+            srh03kmM2s2: 175,
+            shear06kmKt: 42,
+            mllclM: 980,
+            tempDewPtDeltaF: 4.5,
+            threeCapeJkg: 95
+        ),
+        assessment: .init(
+            overall: "strong",
+            summary: "The setup is strongly supportive. Multiple ingredients line up, including instability, deep shear, and low-level rotation.",
+            instability: "supportive",
+            moisture: "supportive",
+            lowLevelRotation: "conditional",
+            deepShear: "strong",
+            cloudBase: "weak",
+            capInhibition: "weak",
+            limitingFactors: ["capping"],
+            confidence: "high",
+            primaryDrivers: ["instability", "shear"],
+            stormMode: "supportive",
+            stormModeHint: "supportive",
+            trend: "conditional",
+            compositeSignal: "strong"
+        ),
+        anvilEvidence: nil,
+        centroid: .init(latitude: 39.5, longitude: -100.0),
+        surfaceHeightMslM: 1132.4
     )
 
     static func calmRefreshState(primaryTask: SummaryProviderTask = .weather) -> SummaryResolutionState {

@@ -22,3 +22,26 @@
 ## 2026-06-15
 
 - When a native list migration has an immediately preceding sibling migration, mirror that sibling's row padding and inset baseline first; spacing drift is not a design system, it's just inconsistency with extra steps.
+
+## 2026-07-02
+
+- When planning a new Today data feed, state cache-forward behavior, SwiftData persistence, background participation,
+  and expected endpoint latency explicitly. Naming the unified ingestion path is not enough; each lifecycle guarantee
+  needs its own acceptance criteria and failure tests.
+- When a server field carries prose or confidence semantics, preserve the text boundary explicitly instead of routing
+  it through a generic ingredient signal enum. Valid domain meaning should not be collapsed into `.unknown` just
+  because the token family differs from the other assessment rows.
+- When a broad eligibility test depends on async request startup, keep the default foreground timeout close to the
+  production shape and override only the deliberate timeout cases. A 50 ms default is a flake generator, not a test.
+
+## 2026-07-03
+
+- When a new async test suite mirrors an existing serialized suite, copy its task and polling pattern exactly before
+  blaming production code. Detached `Task {}` bodies, throwing spin-loop wait helpers, and timeout gates left closed
+  after assertions can poison a full Xcode run even when an isolated test looks fine.
+
+## 2026-07-12
+
+- Do not infer SwiftData Codable storage behavior from JSON Codable behavior. SwiftData may flatten nested values and
+  use framework-specific encoders that trap on otherwise valid custom enum conformances. Inspect the SQLite schema and
+  reproduce an actual save/reopen path before prescribing a shared-model decoder fix.

@@ -79,12 +79,21 @@ struct SettingsView: View {
         "mapWarningGeometryVisible",
         store: UserDefaults.shared
     ) private var mapWarningGeometryVisible: Bool = true
+
+    @AppStorage(
+        AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
+        store: UserDefaults.shared
+    ) private var alwaysShowAirQuality: Bool = false
     
     // MARK: AI Settings
     @AppStorage("aiSummaryEnabled", store: UserDefaults.shared) private var aiSummariesEnabled: Bool = true
     @AppStorage("aiShareLocation", store: UserDefaults.shared) private var aiShareLocation: Bool = true
     @AppStorage("aiBrevity", store: UserDefaults.shared) private var brevityIndex: Int = 0
     @AppStorage("aiAudience", store: UserDefaults.shared) private var audienceIndex: Int = 0
+    
+    // MARK: Storm Setup
+    @AppStorage("stormSetupEnabled", store: UserDefaults.shared) private var stormSetupEnabled: Bool = false
+    @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared) private var detailedIngredientsEnabled: Bool = false
     
     private var brevityBinding: Binding<BrevityLevel> {
         Binding(
@@ -182,6 +191,31 @@ struct SettingsView: View {
                     }
                 }
 
+                sectionCard(title: "Storm Setup", symbol: "cloud.bolt", accent: .primary) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Storm Setup", isOn: $stormSetupEnabled)
+                            .accessibilityIdentifier("settings-storm-setup-toggle")
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        Text("Turns on storm-focused setup guidance.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Detailed Ingredients", isOn: $detailedIngredientsEnabled)
+                            .accessibilityIdentifier("settings-detailed-ingredients-toggle")
+                            .disabled(stormSetupEnabled == false)
+                            .frame(minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        Text(stormSetupEnabled ? "Adds more ingredient detail when Storm Setup is on." : "Turn on Storm Setup to use this setting.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 sectionCard(title: "Location", symbol: "location", accent: .primary) {
                     VStack() {
                         Toggle("Share Approximate Location for Alerts", isOn: $sendL8nToSignal)
@@ -252,6 +286,17 @@ struct SettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
+
+                sectionCard(title: "Atmospheric Conditions", symbol: "wind", accent: .primary) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Always Show Air Quality", isOn: $alwaysShowAirQuality)
+                            .accessibilityIdentifier("settings-always-show-air-quality-toggle")
+                        Text("Shows AQI whenever valid air-quality data is available, including Good and Moderate levels.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
                 
                 sectionCard(title: "About", symbol: "info.circle", accent: .primary) {
                     infoRow("Version", Bundle.main.fullVersion)
@@ -285,6 +330,7 @@ struct SettingsView: View {
             .padding(.top, 10)
             .padding(.bottom, 24)
         }
+        .accessibilityIdentifier("settings-scroll")
         .scrollIndicators(.hidden)
         .background(Color(.skyAwareBackground).ignoresSafeArea())
         .task {

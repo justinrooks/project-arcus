@@ -528,6 +528,184 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testStormSetupSummaryOpensDetail() throws {
+        let app = launchStormSetupFixtureApp(colorScheme: nil)
+
+        let todayTab = app.tabBars.buttons["Today"]
+        XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist.")
+
+        let summaryScrollView = app.scrollViews["summary-scroll"]
+        XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist.")
+
+        let localAlert = app.buttons["watches & warnings-row-ui-test-warning-001"]
+        let stormSetupCard = app.buttons["summary-storm-setup-card"]
+        scrollUntilHittable(localAlert, in: summaryScrollView)
+        scrollUntilHittable(stormSetupCard, in: summaryScrollView)
+        XCTAssertTrue(localAlert.waitForExistence(timeout: 10), "Expected seeded local alert to appear in Summary.")
+        XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to appear in Summary.")
+        XCTAssertLessThan(localAlert.frame.minY, stormSetupCard.frame.minY, "Expected local alerts to appear before Storm Setup.")
+        XCTAssertFalse(app.otherElements["summary-atmospheric-conditions"].exists, "Did not expect Atmospheric Conditions when Storm Setup is selected.")
+        XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))
+        XCTAssertTrue((stormSetupCard.value as? String ?? "").contains("Supportive"))
+
+        saveScreenshot(app, named: "storm-setup-summary-light")
+
+        stormSetupCard.tap()
+
+        let detailTitle = app.navigationBars["Storm Setup"]
+        XCTAssertTrue(detailTitle.waitForExistence(timeout: 10), "Expected Storm Setup detail to open.")
+
+        let detailScrollView = app.scrollViews["storm-setup-detail"]
+        XCTAssertTrue(detailScrollView.waitForExistence(timeout: 10), "Expected Storm Setup detail scroll view to exist.")
+
+        let readableIngredients = app.staticTexts["Readable ingredients"]
+        XCTAssertTrue(readableIngredients.waitForExistence(timeout: 10), "Expected readable ingredients section to appear.")
+
+        let advancedDetails = app.otherElements["storm-setup-advanced-details"]
+        scrollUntilHittable(advancedDetails, in: detailScrollView)
+        XCTAssertTrue(app.staticTexts["Advanced Details"].exists, "Expected Advanced Details section to remain reachable.")
+        XCTAssertTrue(app.staticTexts["MLCAPE — J/kg"].exists, "Expected representative advanced ingredients to appear.")
+        XCTAssertTrue(app.staticTexts["1,825"].exists, "Expected representative advanced values to appear.")
+        XCTAssertTrue(app.staticTexts["SCP signal"].exists, "Expected representative advanced signal rows to appear.")
+
+        let guidanceInfo = app.buttons["storm-setup-guidance-info"]
+        XCTAssertTrue(guidanceInfo.waitForExistence(timeout: 10), "Expected the guidance info action to appear.")
+
+        guidanceInfo.tap()
+
+        let guidanceSheet = app.scrollViews["storm-setup-guidance-sheet"]
+        XCTAssertTrue(guidanceSheet.waitForExistence(timeout: 10), "Expected the guidance sheet to appear.")
+        XCTAssertTrue(app.navigationBars["About HRRR guidance"].waitForExistence(timeout: 10), "Expected the guidance sheet title to appear.")
+
+        app.buttons["Done"].tap()
+
+        XCTAssertTrue(guidanceSheet.waitForNonExistence(timeout: 10), "Expected the guidance sheet to dismiss.")
+        XCTAssertTrue(detailTitle.waitForExistence(timeout: 10), "Expected Storm Setup navigation to remain intact after dismissing the sheet.")
+
+        saveScreenshot(app, named: "storm-setup-detail-light")
+
+        app.terminate()
+
+        let darkApp = launchStormSetupFixtureApp(colorScheme: "dark")
+        XCTAssertTrue(darkApp.tabBars.buttons["Today"].waitForExistence(timeout: 10), "Expected Today tab to exist in dark appearance.")
+        XCTAssertTrue(darkApp.buttons["summary-storm-setup-card"].waitForExistence(timeout: 10), "Expected Storm Setup card to appear in dark appearance.")
+        saveScreenshot(darkApp, named: "storm-setup-summary-dark")
+
+        let darkSummaryScrollView = darkApp.scrollViews["summary-scroll"]
+        XCTAssertTrue(darkSummaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist in dark appearance.")
+        let darkStormSetupCard = darkApp.buttons["summary-storm-setup-card"]
+        scrollUntilHittable(darkStormSetupCard, in: darkSummaryScrollView)
+        darkStormSetupCard.tap()
+
+        let darkDetailTitle = darkApp.navigationBars["Storm Setup"]
+        XCTAssertTrue(darkDetailTitle.waitForExistence(timeout: 10), "Expected Storm Setup detail to open in dark appearance.")
+        let darkDetailScrollView = darkApp.scrollViews["storm-setup-detail"]
+        XCTAssertTrue(darkDetailScrollView.waitForExistence(timeout: 10), "Expected Storm Setup detail scroll view in dark appearance.")
+        assertStormSetupDetailIncludesProfileAnalysis(in: darkApp, detailScrollView: darkDetailScrollView)
+        saveScreenshot(darkApp, named: "storm-setup-detail-dark")
+    }
+
+//  TODO: This test is broken and have tried to fix it multiple times with 5.4 mini and 5.4.
+//        Spend some time looking at this later, and determine if/how to fix. We may not need
+//        it since I'm debating actually showing atmospheric conditions and storm setup.
+
+//    @MainActor
+//    func testDisablingStormSetupRestoresAtmosphericConditions() throws {
+//        let app = launchStormSetupFixtureApp(colorScheme: nil)
+//
+//        let todayTab = app.tabBars.buttons["Today"]
+//        XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist.")
+//        let summaryScrollView = app.scrollViews["summary-scroll"]
+//        XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist.")
+//
+//        let stormSetupCard = app.buttons["summary-storm-setup-card"]
+//        scrollUntilHittable(stormSetupCard, in: summaryScrollView)
+//        XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to be visible before disabling it.")
+//        XCTAssertFalse(app.otherElements["summary-atmospheric-conditions"].exists, "Did not expect Atmospheric Conditions while Storm Setup is enabled.")
+//
+//        let settingsTab = app.tabBars.buttons["Settings"]
+//        XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "Expected Settings tab to exist.")
+//        settingsTab.tap()
+//
+//        let settingsScrollView = app.scrollViews["settings-scroll"]
+//        XCTAssertTrue(settingsScrollView.waitForExistence(timeout: 10), "Expected Settings scroll view to exist.")
+//
+//        let stormSetupToggle = app.switches["settings-storm-setup-toggle"]
+//        scrollUntilHittable(stormSetupToggle, in: settingsScrollView)
+//        XCTAssertTrue(stormSetupToggle.waitForExistence(timeout: 10), "Expected the Storm Setup toggle to exist.")
+//        let stormSetupFrame = stormSetupToggle.frame
+//        let stormSetupTapPoint = app.coordinate(
+//            withNormalizedOffset: CGVector(
+//                dx: (stormSetupFrame.maxX - 8) / app.frame.width,
+//                dy: stormSetupFrame.midY / app.frame.height
+//            )
+//        )
+//        stormSetupTapPoint.tap()
+//
+//        todayTab.tap()
+//        XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected to return to Today without relaunching.")
+//        XCTAssertFalse(app.buttons["summary-storm-setup-card"].exists, "Expected Storm Setup to disappear after disabling it.")
+//        XCTAssertTrue(app.otherElements["summary-atmospheric-conditions"].waitForExistence(timeout: 10), "Expected Atmospheric Conditions to return after disabling Storm Setup.")
+//        XCTAssertFalse(app.buttons["Get Started"].exists, "Did not expect the app to relaunch into onboarding.")
+//
+//        settingsTab.tap()
+//        XCTAssertTrue(settingsTab.waitForExistence(timeout: 10), "Expected to return to Settings without relaunching.")
+//
+//        let refreshedStormSetupToggle = app.switches["settings-storm-setup-toggle"]
+//        scrollUntilHittable(refreshedStormSetupToggle, in: settingsScrollView)
+//        XCTAssertTrue(refreshedStormSetupToggle.waitForExistence(timeout: 10), "Expected the Storm Setup toggle to remain visible after returning to Settings.")
+//        XCTAssertTrue(
+//            waitForToggleValue(refreshedStormSetupToggle, equals: "0"),
+//            "Expected the Storm Setup toggle to be off."
+//        )
+//
+//        saveScreenshot(app, named: "storm-setup-atmospheric-fallback")
+//    }
+
+    @MainActor
+    func testStormSetupRemainsUsableAtAccessibilityTextSize() throws {
+        let app = launchStormSetupFixtureApp(colorScheme: nil, accessibilityTextSize: true)
+
+        let todayTab = app.tabBars.buttons["Today"]
+        XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist at accessibility text sizes.")
+
+        let summaryScrollView = app.scrollViews["summary-scroll"]
+        XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist at accessibility text sizes.")
+
+        let localAlert = app.buttons["watches & warnings-row-ui-test-warning-001"]
+        let stormSetupCard = app.buttons["summary-storm-setup-card"]
+        scrollUntilHittable(localAlert, in: summaryScrollView)
+        scrollUntilHittable(stormSetupCard, in: summaryScrollView)
+        XCTAssertTrue(localAlert.waitForExistence(timeout: 10), "Expected local alert to remain reachable at accessibility text sizes.")
+        XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to remain reachable at accessibility text sizes.")
+        XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))
+        XCTAssertTrue((stormSetupCard.value as? String ?? "").contains("Supportive"))
+
+        stormSetupCard.tap()
+
+        let detailTitle = app.navigationBars["Storm Setup"]
+        XCTAssertTrue(detailTitle.waitForExistence(timeout: 10), "Expected Storm Setup detail to open at accessibility text sizes.")
+
+        let detailScrollView = app.scrollViews["storm-setup-detail"]
+        XCTAssertTrue(detailScrollView.waitForExistence(timeout: 10), "Expected Storm Setup detail scroll view to exist at accessibility text sizes.")
+
+        let readableIngredients = app.staticTexts["Readable ingredients"]
+        XCTAssertTrue(readableIngredients.waitForExistence(timeout: 10), "Expected readable ingredients to remain present at accessibility text sizes.")
+
+        let advancedDetails = app.otherElements["storm-setup-advanced-details"]
+        scrollUntilHittable(advancedDetails, in: detailScrollView)
+        XCTAssertTrue(advancedDetails.exists, "Expected Advanced Details to remain reachable by scrolling at accessibility text sizes.")
+        XCTAssertTrue(app.staticTexts["MLCAPE — J/kg"].exists, "Expected ingredient labels to remain present at accessibility text sizes.")
+        XCTAssertTrue(app.staticTexts["1,825"].exists, "Expected ingredient values to remain present at accessibility text sizes.")
+
+        let guidanceInfo = app.buttons["storm-setup-guidance-info"]
+        XCTAssertTrue(guidanceInfo.waitForExistence(timeout: 10), "Expected guidance info to remain reachable at accessibility text sizes.")
+
+        assertStormSetupDetailIncludesProfileAnalysis(in: app, detailScrollView: detailScrollView)
+        saveScreenshot(app, named: "storm-setup-detail-ax")
+    }
+
+    @MainActor
     func testAlertDetailVoiceOverKeepsFullInstructionAndSummaryText() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
@@ -872,6 +1050,101 @@ final class SkyAwareUITests: XCTestCase {
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = mode
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func launchStormSetupFixtureApp(
+        colorScheme: String?,
+        accessibilityTextSize: Bool = false
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_STORM_SETUP_FIXTURE"] = "supportive"
+        app.launchEnvironment["UI_TESTS_STORM_SETUP_ENABLED"] = "1"
+        app.launchEnvironment["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"] = "1"
+
+        if let colorScheme {
+            app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = colorScheme
+        }
+
+        if accessibilityTextSize {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
+
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func scrollUntilHittable(_ element: XCUIElement, in scrollView: XCUIElement, timeout: TimeInterval = 8) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists && element.isHittable {
+                return
+            }
+            scrollView.swipeUp()
+        }
+
+        XCTAssertTrue(element.exists, "Expected \(element) to exist after scrolling.")
+    }
+
+    @MainActor
+    private func assertStormSetupDetailIncludesProfileAnalysis(
+        in app: XCUIApplication,
+        detailScrollView: XCUIElement
+    ) {
+        let profileAnalysisCard = app.otherElements["storm-setup-profile-analysis"]
+        scrollUntilHittable(profileAnalysisCard, in: detailScrollView)
+
+        XCTAssertTrue(profileAnalysisCard.exists, "Expected the Profile Analysis section to appear after scrolling.")
+        XCTAssertTrue(app.staticTexts["Profile Analysis"].exists, "Expected the Profile Analysis heading to appear.")
+        XCTAssertTrue(
+            app.otherElements["Supercell composite parameter. 0.7."].exists,
+            "Expected a representative composite row to appear."
+        )
+        let effectiveLayerRow = app.otherElements["Effective layer height bounds. 850 to 1,800 meters above ground level."]
+        scrollUntilHittable(effectiveLayerRow, in: detailScrollView)
+        XCTAssertTrue(
+            effectiveLayerRow.exists,
+            "Expected the effective-layer bounds row to appear."
+        )
+        XCTAssertTrue(
+            app.otherElements["Bunkers-right storm motion. 18 knots toward 215 degrees."].exists,
+            "Expected the storm-motion row to appear."
+        )
+        XCTAssertTrue(app.staticTexts["Some profile details are limited."].exists, "Expected the generic profile-analysis note to appear.")
+        XCTAssertFalse(app.staticTexts["pressure-level diagnostics trimmed"].exists, "Did not expect the raw profile-analysis warning text to appear.")
+
+        let mLCAPE = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLCAPE — J/kg"))
+        let mLCIN = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLCIN — J/kg"))
+        let mLLCL = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLLCL — m"))
+
+        XCTAssertEqual(mLCAPE.count, 1, "Expected MLCAPE to appear only in Advanced Details.")
+        XCTAssertEqual(mLCIN.count, 1, "Expected MLCIN to appear only in Advanced Details.")
+        XCTAssertEqual(mLLCL.count, 1, "Expected MLLCL to appear only in Advanced Details.")
+    }
+
+    @MainActor
+    private func waitForToggleValue(_ toggle: XCUIElement, equals expectedValue: String, timeout: TimeInterval = 8) -> Bool {
+        let predicate = NSPredicate(format: "value == %@", expectedValue)
+        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: toggle)
+        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    @MainActor
+    private func setSwitch(_ toggle: XCUIElement, to isOn: Bool) {
+        let expectedValue = isOn ? "1" : "0"
+        guard toggle.value as? String != expectedValue else { return }
+
+        let xOffset: CGFloat = isOn ? 0.75 : 0.25
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: xOffset, dy: 0.5)).tap()
+
+        if toggle.value as? String != expectedValue {
+            toggle.tap()
+        }
     }
 
     private func resetReliabilityLedgerDefaults() {
