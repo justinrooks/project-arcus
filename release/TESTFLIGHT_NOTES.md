@@ -1,4 +1,4 @@
-SkyAware v1.1.1(81) brings Storm Setup into Today as a dedicated card and detail flow, moves it onto the ArcusCore aggregate path, and tightens refresh behavior.
+SkyAware v1.1.0(81) brings Storm Setup into Today as a dedicated card and detail flow, moves it onto the ArcusCore aggregate path, and tightens refresh behavior.
 
 Highlights:
 - Storm Setup now appears on Today as its own summary card with drill-in detail.
