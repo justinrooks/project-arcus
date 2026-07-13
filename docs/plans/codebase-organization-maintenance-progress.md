@@ -210,7 +210,34 @@ do not begin #294 in this task.
 
 ### COM-05 / GitHub #294 - Split map feature model tests and fakes
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/MapFeatureModelTests.swift` — retains the original `MapFeatureModelTests` suite with 24 reload/results, failure, summary, stale-data, and partial-result tests.
+- `Tests/UnitTests/MapFeatureModelSceneTests.swift` — layer selection, stacking, scene caching, refetch, in-flight reload follow-up, and center-coordinate tests, with scene-only stores and counting service kept private.
+- `Tests/UnitTests/MapFeatureModelWarningsTests.swift` — warning composition, geometry toggling, warning legends, warning-query failure, and overlay-revision tests.
+- `Tests/UnitTests/MapFeatureModelTestSupport.swift` — shared map/alert stubs, result store, call counter, reload gate, queued reload service, shared fixtures, and common scene assertions.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the original suite and three new test files in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-05 ledger entry.
+
+Behavior families and support declarations moved: the pre-edit suite was divided into reload/results (24 tests), scene/caching (7 tests), and warning/legend (15 tests). Shared support is limited to declarations used by multiple suites: `StubSpcMapData`, `StubArcusAlertQuerying`, `MutableResultMapDataStore`, `MutableResultSpcMapData`, `MapDataCallCounter`, `ReloadGate`, `QueuedReloadSpcMapData`, `StubError`, and common map fixtures/assertions. `CountingSpcMapData`, `MutableMapDataStore`, and `MutableSpcMapData` remain private to the scene suite.
+
+Async and actor behavior preserved: all three suites remain `@MainActor`; the result stores, call counter, reload gate, checked continuations, queued first/second results, task creation, and follow-up-fetch sequencing were moved without semantic edits. No explicit cancellation-specific test existed before this issue, so none was introduced.
+
+Validation:
+
+- Pre/post test-block inventory: 46 tests before and after; zero missing, extra, or changed test names/bodies. `git diff --check` passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-294-derived -resultBundlePath /private/tmp/project-arcus-294-map-2.xcresult -only-testing:SkyAwareTests/MapFeatureModelTests test` — **TEST SUCCEEDED**; 24 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-294-derived -resultBundlePath /private/tmp/project-arcus-294-scene.xcresult -only-testing:SkyAwareTests/MapFeatureModelSceneTests test` — **TEST SUCCEEDED**; 7 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-294-derived -resultBundlePath /private/tmp/project-arcus-294-warnings.xcresult -only-testing:SkyAwareTests/MapFeatureModelWarningsTests test` — **TEST SUCCEEDED**; 15 passed, 0 failed, 0 skipped.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-294-map-2.xcresult --compact` — `result: Passed`, 24 passed, 0 failed, 0 skipped.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-294-scene.xcresult --compact` — `result: Passed`, 7 passed, 0 failed, 0 skipped.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-294-warnings.xcresult --compact` — `result: Passed`, 15 passed, 0 failed, 0 skipped.
+
+Target-membership evidence: `/private/tmp/project-arcus-294-derived/.../SkyAwareTests.SwiftFileList` contains `MapFeatureModelTests.swift`, `MapFeatureModelSceneTests.swift`, `MapFeatureModelTestSupport.swift`, and `MapFeatureModelWarningsTests.swift`; the corresponding `SkyAware.SwiftFileList` contains only production `Sources/Features/Map/MapFeatureModel.swift` for the `MapFeatureModel` search and no test paths. The project file lists all four test paths in both synchronized target sets.
+
+Residual risks and handoff: the initial post-split compile caught a misplaced private `makeMeso` fixture; it was moved intact to the warning suite before the final runs. Existing unrelated build warnings remain, including `HTTPDataDownloader.swift` mutable Sendable state and warnings in other test files. No production map code, assertions, task timing, or fake behavior changed. Issue #294 is complete; do not begin #295 in this task.
 
 ### COM-06 / GitHub #295 - Split mixed SPC and repository sync tests
 
