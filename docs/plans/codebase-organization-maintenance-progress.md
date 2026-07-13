@@ -268,7 +268,45 @@ Residual risks and handoff: the first focused compile caught module-visible fixt
 
 ### COM-07 / GitHub #296 - Decompose Primary Awareness presentation files
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift` retains only the named panel composition and its existing
+  input-to-row presentation wiring.
+- `Sources/Features/Summary/PrimaryAwarenessPresentation.swift` owns primary-state resolution, alert precedence,
+  destinations, and accessibility contracts.
+- `Sources/Features/Summary/SupportingRiskRowDisplayModel.swift` owns supporting-risk display mapping and presentation
+  modes.
+- `Sources/Features/Summary/PrimaryAwarenessHeroView.swift` owns the primary hero component and its local optional
+  accessibility-hint modifier.
+- `Sources/Features/Summary/AwarenessSupportRow.swift` owns the supporting-row component and its layout metrics.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-07 completion.
+
+Behavior and accessibility preserved: alert precedence, risk mapping, loading and offline presentation, destinations,
+button actions, map-layer selection, view identity, environment dependencies, labels, values, hints, traits, and Reduce
+Motion behavior are unchanged. The COM-01 preview file remains unchanged and compiles with the app target.
+
+Visibility changes: `PrimaryAwarenessHeroView` and `AwarenessSupportRow` changed from file-private to module-internal
+only because `PrimaryAwarenessPanel` now composes them from another file. No existing policy or display-model access
+level changed.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  -only-testing:SkyAwareTests/SummaryAwarenessPanelTests -only-testing:SkyAwareTests/TodayContentStateTests test`
+  — passed, 34 tests, 0 failures; result bundle
+  `Test-SkyAware-2026.07.13_08-34-13--0600.xcresult` inspected with `xcresulttool`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  build` — succeeded.
+- The Debug target Swift file list includes `PrimaryAwarenessPanel+Previews.swift` and all four extracted files.
+- Pre- and post-edit declaration inventories match, with declarations redistributed to their stated responsibilities.
+- `git diff --check` passed.
+
+Residual risks and handoff: this is a mechanical file split; focused presentation tests and the Debug build cover the
+compiled contracts, but no manual preview rendering pass was performed. Existing unrelated build warning remains in
+`HTTPDataDownloader.swift` for mutable state in a `Sendable` metrics collector. COM-07 is complete; do not begin COM-08
+or GitHub #297 in this task.
 
 ### COM-08 / GitHub #297 - Decompose map model and render planning files
 
