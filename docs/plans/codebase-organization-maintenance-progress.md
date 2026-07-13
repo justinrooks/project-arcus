@@ -43,7 +43,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 | 5 | COM-05 | [#294](https://github.com/justinrooks/project-arcus/issues/294) | Split map feature model tests and fakes | Pending | GPT-5.6 Luna / high |
 | 6 | COM-06 | [#295](https://github.com/justinrooks/project-arcus/issues/295) | Split mixed SPC and repository sync tests | Pending | GPT-5.6 Luna / high |
 | 7 | COM-07 | [#296](https://github.com/justinrooks/project-arcus/issues/296) | Decompose Primary Awareness presentation files | Pending | GPT-5.6 Terra / high |
-| 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Pending | GPT-5.6 Sol / high |
+| 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Complete | GPT-5.6 Sol / high |
 | 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Pending | GPT-5.6 Sol / xhigh |
 | 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Pending | GPT-5.6 Sol / xhigh |
 | 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Pending | GPT-5.6 Luna / high |
@@ -310,7 +310,54 @@ or GitHub #297 in this task.
 
 ### COM-08 / GitHub #297 - Decompose map model and render planning files
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Features/Map/MapFeatureModel.swift` retains the `@MainActor @Observable` feature owner, mutable feature
+  state, structured fetches, reload coalescing, cache invalidation, selection, and scene warming.
+- `Sources/Features/Map/MapSceneState.swift` owns the scene and canvas value types and their copy/placeholder helpers.
+- `Sources/Features/Map/MapLegendState.swift` owns legend presentation state, legend row values, copy/factory helpers,
+  and private legend copy helpers on `MapLayer`.
+- `Sources/Features/Map/MapScenePlanner.swift` owns the fetched payload/outcome values, the actor-isolated planner, and
+  the existing private result helpers.
+- `Sources/Features/Map/MapRenderPlan.swift` owns render-plan values, explicitly main-actor materialization, pure
+  nonisolated plan construction, overlay ordering/revision hashing, and the private threat-type helper.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-08 completion.
+
+Concurrency and behavior preserved: `MapFeatureModel` and `MapSceneMaterializer` remain explicitly `@MainActor`;
+`MapScenePlanner` remains an actor and `buildRenderPlans` remains actor-isolated; render-plan construction remains
+synchronous and nonisolated. Existing `Sendable` conformances are unchanged, and none were added to scene/canvas
+state. Reload coalescing and `pendingReload`, structured fetches, cancellation checks, warning visibility, selection,
+scene caching/invalidation/warming, initial-center propagation, overlay order/revisions, legend states, logging, and
+failure fallback logic moved without edits.
+
+Visibility changes: `MapDataPayload`, `MapFetchOutcome`, `MapLayerRenderPlan`, `MapScenePlanner`,
+`MapSceneMaterializer`, and `MapRenderPlanBuilder` changed from file-private to module-internal solely because their
+existing callers now cross file boundaries. Their cross-file payload/plan members necessarily share that internal
+visibility. Builder helpers, result helpers, and `MapLayer` helpers remain private; no public API changed.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  -resultBundlePath /private/tmp/COM08-MapFeatureModelTests-20260713-run1.xcresult
+  -only-testing:SkyAwareTests/MapFeatureModelTests -only-testing:SkyAwareTests/MapFeatureModelSceneTests
+  -only-testing:SkyAwareTests/MapFeatureModelWarningsTests test` — passed, 46 tests, 0 failures.
+- `xcrun xcresulttool get test-results summary --path
+  /private/tmp/COM08-MapFeatureModelTests-20260713-run1.xcresult` — result `Passed`; 46 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  build` — succeeded.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Debug -showBuildSettings` confirmed Swift
+  6.0 and `SWIFT_STRICT_CONCURRENCY = complete`, with no default-actor-isolation or approachable-concurrency setting.
+- Pre/post declaration comparison found the feature-model body byte-equivalent and all moved declarations/helpers
+  equivalent modulo file headers, required visibility changes, and splitting the private `MapLayer` helper by owner.
+- Compiler output contains no new warnings in the changed map files. Existing unrelated warnings remain, including
+  mutable `Sendable` state in `HTTPDataDownloader.swift` and pre-existing test-target diagnostics.
+- `git diff --check` passed.
+
+Residual risks and handoff: this is a mechanical file split validated by the focused behavior suites and Debug build;
+no manual map UI pass was performed. The required internal visibility expansion is the only API-surface increase.
+COM-08 and GitHub #297 are complete; do not begin COM-09 or GitHub #298 in this task.
 
 ### COM-09 / GitHub #298 - Extract Storm Setup ingestion responsibilities
 
