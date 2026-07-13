@@ -241,7 +241,30 @@ Residual risks and handoff: the initial post-split compile caught a misplaced pr
 
 ### COM-06 / GitHub #295 - Split mixed SPC and repository sync tests
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- Tests/UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift — retains the severe-risk repository suite and its original eight tests.
+- Tests/UnitTests/StormRiskRepoRefreshCategoricalRiskTests.swift — contains the storm-risk repository suite and its original three tests, with its categorical client and fixtures private.
+- Tests/UnitTests/SpcProviderSyncMapProductsTests.swift — contains the SPC map synchronization suite and its original 22 tests, with counting/scripted clients, provider factory, container, and map fixtures private.
+- Tests/UnitTests/SpcRiskTestSupport.swift — contains only the genuinely shared severe/categorical SPC clients used by repository setup and map synchronization tests.
+- SkyAware.xcodeproj/project.pbxproj — adds all four test paths to both synchronized target exception sets.
+- docs/plans/codebase-organization-maintenance-progress.md — this COM-06 ledger entry.
+
+Suites and support declarations moved: 33 tests were retained across SevereRiskRepoRefreshTornadoRiskTests (8), StormRiskRepoRefreshCategoricalRiskTests (3), and SpcProviderSyncMapProductsTests (22). The shared MockClient and CategoricalMockClient remain distinct; FireMockClient, CountingMapSyncClient, ScriptedMapSyncClient, the provider factory/container, and SPC map-data fixtures remain private to the SPC synchronization file. Private GeoJSON/date builders remain private to each suite file to avoid collisions with existing test-local builders.
+
+Behavior preserved: suite names, test names, traits, assertions, fixtures, scripted responses, call counts, actor isolation, async ordering, and persistence-failure/cancellation semantics were moved without production-code changes. No tests were deleted, duplicated, disabled, or added to the application target.
+
+Validation:
+
+- Pre/post suite and test inventory comparison: 3 suites and 33 tests before and after; zero missing, extra, or changed suite/test declarations. git diff --check passed.
+- xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-295-derived-3 -resultBundlePath /private/tmp/project-arcus-295-3.xcresult -only-testing:SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests -only-testing:SkyAwareTests/StormRiskRepoRefreshCategoricalRiskTests -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests test — TEST SUCCEEDED; 33 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-295-3.xcresult --compact — result: Passed, 33 passed, 0 failed, 0 skipped.
+
+Target-membership evidence: /private/tmp/project-arcus-295-derived-3/Build/Intermediates.noindex/SkyAware.build/Debug-iphonesimulator/SkyAwareTests.build/Objects-normal/arm64/SkyAwareTests.SwiftFileList contains all four new/retained test paths; the corresponding SkyAware.SwiftFileList contains none of those test paths. The project file lists all four paths in both synchronized target exception sets.
+
+Residual risks and handoff: the first focused compile caught module-visible fixture-name collisions and a generated helper-spacing typo; both were corrected without changing test bodies or behavior. The validation build emitted existing unrelated warnings, including HTTPDataDownloader.swift mutable Sendable state and RemoteNotificationRegistrarTests.swift type-inference warnings. No production code changed. Issue #295 is complete; do not begin #296 in this task.
 
 ### COM-07 / GitHub #296 - Decompose Primary Awareness presentation files
 
