@@ -629,6 +629,59 @@ production visibility expansion or reliance on URL loading cache behavior; the c
 unchanged. The focused suite covers live, cache-fallback, and 304-revalidation response sources. COM-13 and GitHub #302
 are complete. Do not close parent #289 or alter other ledger entries in this task.
 
+### COM-14 / Follow-up to GitHub #289 - Decompose HomeView
+
+Status: Complete — focused test execution is blocked locally; the Debug application build passed.
+
+Files changed and final boundaries:
+
+- `Sources/App/HomeView.swift` — reduced from 1,023 to 628 lines; retains all environment and query dependencies,
+  mutable state ownership, tab composition, modifier/task ordering, deep-link routing, refresh orchestration, and
+  location-reliability mutations/actions.
+- `Sources/App/HomeView+PresentationState.swift` — owns pure projection, Storm Setup, timezone, bootstrap, summary,
+  outlook, and settings-refresh presentation selectors.
+- `Sources/App/HomeView+LocationReliability.swift` — owns the pure location-reliability rail eligibility state and
+  selection helper. State-mutating actions remain with `HomeView` because they intentionally operate on its private
+  `@State` and environment-owned location session.
+- `Sources/App/TodayTabView.swift` — owns the independently stateful Today tab, its header-condense state, visible
+  weather retention task, refreshable navigation/scroll hierarchy, and private task identity.
+- `Sources/App/HomeView+Previews.swift` — owns the Home preview and in-memory SwiftData fixture.
+- `docs/plans/codebase-organization-maintenance-progress.md` — records this follow-up.
+
+Behavior preserved: all moved declarations were copied intact. `HomeView` retains every property wrapper, initial
+value, environment dependency, mutable-state owner, `TabView` selection, navigation stack, sheet, task, `onChange`,
+refresh, deep-link, and modifier ordering. Today weather-retention task identity, location-reliability suppression and
+settings behavior, cached/live projection selection, Storm Setup selection/gating, and preview fixtures are unchanged.
+No view model, protocol, dependency injection, generic abstraction, actor, cancellation behavior, or actor-isolation
+annotation was added or altered.
+
+Visibility: `TodayTabView` changed from file-private to module-internal solely because `HomeView` now instantiates it
+from a sibling source file. Its private supporting task-state type remains private. No other existing declaration
+widened access and no public API changed.
+
+Validation:
+
+- Declaration comparison against `HEAD` verified every moved selector, location-reliability state helper, Today tab,
+  weather task state, preview, and fixture body was byte-equivalent; the only intentional declaration difference is
+  `TodayTabView`'s required file-boundary access change.
+- `git diff --check` passed.
+- Filesystem-synchronized target evidence: the generated `SkyAware.SwiftFileList` contains all four new files under
+  `Sources/App`; the generated list contains no test source after the existing unrelated test exclusion is supplied.
+- Standard focused and Debug commands initially failed because Xcode's synchronized-group evaluation removed the
+  existing `StormRiskRepoRefreshCategoricalRiskTests.swift` application-target exclusion and then compiled that
+  `import Testing` test as part of `SkyAware`. The project file was restored without retaining that unrelated change.
+- Focused retry compiled the application and selected test targets and launched the simulator test session, but the
+  simulator harness left an incomplete staging bundle with no `Info.plist`/final `.xcresult`; no passed result can be
+  claimed. The staged app log shows normal launch only.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -configuration Debug build EXCLUDED_SOURCE_FILE_NAMES=Tests/UnitTests/StormRiskRepoRefreshCategoricalRiskTests.swift`
+  — **BUILD SUCCEEDED**. The temporary command-line exclusion matches the project’s existing intended application-target
+  exclusion and was not committed. The build compiled all four new source files and emitted no changed-file warning.
+
+Residual risk and handoff: rerun the six focused Home/Today suites once the local simulator test harness finalizes
+results reliably. The source and target membership are compiler-validated; no live service or manual UI run was
+performed. This completes only the HomeView organization follow-up; do not alter the completed epic items.
+
 ## Verification Ledger
 
 | Date | Scope | Evidence |
