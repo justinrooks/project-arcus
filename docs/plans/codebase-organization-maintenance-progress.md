@@ -44,7 +44,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 | 6 | COM-06 | [#295](https://github.com/justinrooks/project-arcus/issues/295) | Split mixed SPC and repository sync tests | Pending | GPT-5.6 Luna / high |
 | 7 | COM-07 | [#296](https://github.com/justinrooks/project-arcus/issues/296) | Decompose Primary Awareness presentation files | Pending | GPT-5.6 Terra / high |
 | 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Complete | GPT-5.6 Sol / high |
-| 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Pending | GPT-5.6 Sol / xhigh |
+| 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Complete | GPT-5.6 Sol / xhigh |
 | 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Pending | GPT-5.6 Sol / xhigh |
 | 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Pending | GPT-5.6 Luna / high |
 | 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Pending | GPT-5.6 Terra / high |
@@ -361,7 +361,68 @@ COM-08 and GitHub #297 are complete; do not begin COM-09 or GitHub #298 in this 
 
 ### COM-09 / GitHub #298 - Extract Storm Setup ingestion responsibilities
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift` gives Storm Setup eligibility, aggregate fetch/timeout
+  orchestration, cache and newer-response resolution, H3 validation, Storm Setup projection updates, backoff state, and
+  outcome logging one focused actor owner.
+- `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` constructs and awaits that owner while retaining overall run
+  sequencing, lane progress, global freshness, snapshot assembly, later projection persistence, and widget-refresh
+  ordering.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-09 completion.
+
+Actor ownership before and after: before, `HomeIngestionExecutor` actor stored the per-projection Storm Setup backoff
+dictionary and implemented the entire Storm Setup lane. After, `HomeStormSetupIngestion` actor exclusively stores that
+dictionary and owns the lane implementation. `HomeIngestionExecutor` retains its existing freshness state and awaits
+one `Sendable` refresh result at the same point in `run`; no mutable reference, callback, detached task, lock, global
+state, or unchecked conformance crosses the actor boundary. Swift remains 6.0 with complete strict concurrency and no
+default actor isolation or approachable-concurrency setting.
+
+Preserved ingestion invariants: one aggregate request per eligible refresh; existing preference, H3, risk, alert,
+mesoscale-discussion, cache-freshness, and query-availability eligibility; task-local foreground/background HTTP mode;
+foreground timeout and structured sibling cancellation; failed-attempt backoff for background/session-tick work;
+foreground backoff bypass; fresh-cache fallback; model-run/source-valid/fetched-at newer-response ordering; atomic
+aggregate replacement without carrying an older profile into a newer nil-profile response; Storm Setup persistence
+before AQI and remaining home projection work; unchanged snapshot field assignment, progress, publication, global
+freshness, projection, and widget-refresh order. No legacy profile-analysis request path was added.
+
+Visibility changes: the new `HomeStormSetupIngestion` actor and its `RefreshDecision` boundary are module-internal so
+`HomeIngestionExecutor` can use them across files. All dependencies, mutable state, timeout/outcome types, comparison
+logic, and helper methods remain private. No public API changed; existing environment-member visibility is unchanged.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Debug -showBuildSettings | rg
+  'SWIFT_VERSION|SWIFT_STRICT_CONCURRENCY|SWIFT_DEFAULT_ACTOR_ISOLATION|SWIFT_APPROACHABLE_CONCURRENCY|SWIFT_UPCOMING_FEATURE'`
+  confirmed `SWIFT_VERSION = 6.0` and `SWIFT_STRICT_CONCURRENCY = complete`; no default-actor-isolation or
+  approachable-concurrency setting is present.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -resultBundlePath /private/tmp/COM09-StormSetupIngestionTests-20260713-run1.xcresult
+  -only-testing:SkyAwareTests/StormSetupIngestionTests test` — build failed before tests because the moved timeout task
+  closure required an explicit actor-property capture. Restoring the original local timeout constant resolved it;
+  `xcresulttool` reported 0 tests and an unknown result.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -resultBundlePath /private/tmp/COM09-StormSetupIngestionTests-20260713-run2.xcresult
+  -only-testing:SkyAwareTests/StormSetupIngestionTests test` — passed; `xcresulttool` reported 21 passed, 0 failed,
+  0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -resultBundlePath /private/tmp/COM09-HomeCoordinationPersistenceTests-20260713-run1.xcresult
+  -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests
+  -only-testing:SkyAwareTests/HomeProjectionStoreTests test` — passed; `xcresulttool` reported 60 passed, 0 failed,
+  0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  — succeeded.
+- Targeted searches found only the aggregate `fetchCurrentStormSetup` path, no legacy profile-analysis endpoint, and
+  one mutable backoff dictionary owned by `HomeStormSetupIngestion`. `git diff --check` passed.
+
+Compiler-warning result: the moved production code compiles without new warnings. Existing unrelated diagnostics remain,
+including mutable `Sendable` state in `HTTPDataDownloader.swift` and pre-existing test-target actor-isolation warnings.
+
+Residual risks and handoff: the added actor hop is compiler-checked and normal ingestion remains serialized by the
+coordinator; focused cancellation, timeout, persistence, and publication tests cover the boundary. No live-network or
+manual UI run was performed. COM-09 and GitHub #298 are complete; do not begin COM-10 or GitHub #299 in this task.
 
 ### COM-10 / GitHub #299 - Separate location upload persistence from queue coordination
 
