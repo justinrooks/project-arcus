@@ -45,7 +45,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 | 7 | COM-07 | [#296](https://github.com/justinrooks/project-arcus/issues/296) | Decompose Primary Awareness presentation files | Pending | GPT-5.6 Terra / high |
 | 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Complete | GPT-5.6 Sol / high |
 | 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Complete | GPT-5.6 Sol / xhigh |
-| 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Pending | GPT-5.6 Sol / xhigh |
+| 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Complete | GPT-5.6 Sol / xhigh |
 | 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Pending | GPT-5.6 Luna / high |
 | 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Pending | GPT-5.6 Terra / high |
 | 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Pending | GPT-5.6 Sol / high |
@@ -426,7 +426,74 @@ manual UI run was performed. COM-09 and GitHub #298 are complete; do not begin C
 
 ### COM-10 / GitHub #299 - Separate location upload persistence from queue coordination
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Infrastructure/Location/LocationSnapshotPusher.swift` retains upload coordination, payload construction,
+  mutable queue state, drain sequencing, retries, deduplication, coalescing, and legacy-source fallback.
+- `Sources/Infrastructure/Location/LocationUploadPersistenceModels.swift` owns the immutable persisted request,
+  persisted operation, semantic-operation key, and persisted location-context value types with their existing Codable
+  implementations.
+- `Sources/Infrastructure/Location/LocationUploadQueueStore.swift` owns `LocationUploadQueueStoring` and the
+  UserDefaults-backed storage actor.
+- `Tests/UnitTests/LocationProviderTests.swift` adds current persisted-request field/operation-shape and round-trip
+  coverage alongside the existing legacy-decoding, restoration, retry, dedupe/coalescing, operation, and persistence
+  tests.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-10 completion.
+
+Actor ownership before and after: before, `LocationSnapshotPusher` exclusively owned the mutable FIFO queue, active
+drain flag, successful-upload dedupe timestamps, pending-request coalescing map, queued-or-active keys, and persisted
+load flag; `UserDefaultsLocationUploadQueueStore` separately isolated UserDefaults and its encoder/decoder. After, those
+ownership boundaries are identical. Only immutable `Sendable` values cross the existing awaited storage protocol. No
+mutable reference, callback, detached task, lock, global mutable state, or unchecked conformance was introduced. Swift
+remains 6.0 with complete strict concurrency and no default actor isolation or approachable-concurrency setting.
+
+Preserved queue and persistence invariants: FIFO append/remove-first processing and requested-date restoration order;
+one active drain; configured retry delay/attempt order and cancellation checks; 400/422 legacy `"unknown"` source
+fallback; successful-upload semantic dedupe keys and inclusive time window; pending-request and active-request
+coalescing keys; queued-or-active key lifetime; one-time pending-state load; save timing after upsert, restored-request
+dedupe removal, and successful upload removal; failed/cancelled request retention; separate location and preference
+upload routing; subscription override semantics; and unchanged APNs, authorization, application, platform, H3/grid,
+source, reason, and label payload values. Storage suite/key strings are unchanged. Request field names, operation `kind`
+strings, context fields, current `operation` encoding, legacy top-level `context` decoding, and missing-operation
+preference fallback are unchanged.
+
+Visibility changes: none. All extracted declarations retain module-internal access, existing conformances, and existing
+member visibility. Pusher-private key/work-item types and all mutable state remain private to the pusher actor. The new
+persistence file imports `ArcusCore` directly because its existing internal models reference ArcusCore source and
+payload value types; no API surface expanded.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Debug -showBuildSettings | rg
+  "SWIFT_VERSION|SWIFT_STRICT_CONCURRENCY|SWIFT_DEFAULT_ACTOR_ISOLATION|SWIFT_APPROACHABLE_CONCURRENCY|SWIFT_UPCOMING_FEATURE"`
+  confirmed `SWIFT_VERSION = 6.0` and `SWIFT_STRICT_CONCURRENCY = complete`; no default-actor-isolation or
+  approachable-concurrency setting is present.
+- Pre-edit baseline: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath
+  /private/tmp/issue299-baseline-20260713.xcresult test` — passed; `xcresulttool` reported 58 passed, 0 failed, 0 skipped.
+- First post-edit focused run used the same command with result bundle
+  `/private/tmp/issue299-focused-20260713.xcresult` — compilation failed before tests because the extracted model file
+  needed a direct `ArcusCore` import. `xcresulttool` reported 0 tests and six compiler errors derived from the missing
+  source/payload types; adding only the import resolved them.
+- Final focused run: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath
+  /private/tmp/issue299-focused-rerun-20260713.xcresult test` — passed; `xcresulttool` reported 59 passed, 0 failed,
+  0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  build` — succeeded.
+- Pre/post declaration comparison found every moved declaration byte-equivalent. Targeted searches found one owner for
+  all queue mutable state, unchanged storage strings, and no detached task, lock, or unchecked conformance in the
+  production scope. `git diff --check` passed.
+
+Compiler-warning result: no changed production or test file emits a new warning. The final focused test result records
+the existing mutable-`Sendable` COM-13 warning in `HTTPDataDownloader.swift` and unrelated existing test-target
+actor-isolation/diagnostic warnings.
+
+Residual risks and handoff: the UserDefaults store implementation and Codable witnesses moved intact, and current plus
+legacy encoding behavior is covered. No live-network or manual UI run was performed because this is organization-only
+infrastructure work. COM-10 and GitHub #299 are complete; do not begin COM-11 or GitHub #300 in this task.
 
 ### COM-11 / GitHub #300 - Split widget rendering components by domain
 

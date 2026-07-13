@@ -1011,6 +1011,45 @@ struct LocationProviderTests {
         #expect(await store.current().isEmpty)
     }
 
+    @Test("persisted queued upload encodes the current operation shape and round trips")
+    func persistedQueuedUpload_currentPayloadRoundTrips() throws {
+        let persisted = PersistedLocationUploadRequest(
+            source: .manualRefresh,
+            reason: .locationResolved,
+            forceUpload: false,
+            installationId: "install-abc-123",
+            requestedAt: Date(timeIntervalSince1970: 1_780_358_400),
+            isSubscribed: true,
+            authorizationState: "always",
+            apnsToken: "apns-token-123",
+            operation: .locationSnapshot(context: PersistedLocationContext(makeContext()))
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(persisted)
+
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(json.keys) == [
+            "source",
+            "reason",
+            "forceUpload",
+            "installationId",
+            "requestedAt",
+            "isSubscribed",
+            "authorizationState",
+            "apnsToken",
+            "operation"
+        ])
+        let operation = try #require(json["operation"] as? [String: Any])
+        #expect(operation["kind"] as? String == "locationSnapshot")
+        #expect(operation["context"] is [String: Any])
+        #expect(json["context"] == nil)
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        #expect(try decoder.decode(PersistedLocationUploadRequest.self, from: data) == persisted)
+    }
+
     @Test("legacy queued upload payloads decode without a persisted operation key")
     func persistedQueuedUpload_legacyPayloadsDecodeWithoutOperationKey() throws {
         let json = #"""
