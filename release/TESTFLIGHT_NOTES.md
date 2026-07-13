@@ -1,15 +1,15 @@
-SkyAware v1.0.1(79) keeps Home from holding onto stale weather after visible refreshes and trims repeated work in Alerts and map legend rendering.
+SkyAware v1.1.1(81) brings Storm Setup into Today as a dedicated card and detail flow, moves it onto the ArcusCore aggregate path, and tightens refresh behavior.
 
 Highlights:
-- Home now clears stale weather on visible refreshes when the refreshed snapshot omits weather.
-- Alerts now reuse precomputed sort order and latest-issued metadata during display.
-- Map warning legend data is now precomputed once per scene and reused in the map UI and accessibility summary.
-- The fire map accessibility hint is now more specific.
-- Location authorization waiting is more consistent in timing-sensitive flows.
-- Regression coverage was added for nil-weather refreshes, timer refresh weather preservation, map warning legend access, and location timing behavior.
+- Storm Setup now appears on Today as its own summary card with drill-in detail.
+- Summary now keeps populated local alerts ahead of model guidance and falls back to Atmospheric Conditions when Storm Setup is unavailable.
+- Storm Setup now follows the ArcusCore aggregate path and keeps cached location-scoped guidance until fresher data replaces it.
+- Settings now exposes Storm Setup and Detailed Ingredients controls, plus a diagnostic force-display toggle for layout and accessibility checks.
+- Air quality refreshes are more narrowly gated, and background refresh now drains pending uploads before unified ingestion starts.
+- Regression coverage was expanded for the Storm Setup aggregate path, detail/presentation behavior, background orchestration, AQI decoding, and Summary section ordering.
 
 Maintenance:
-- Weekly bug-scan and performance audit notes were updated with the latest validation and handoff notes.
+- Storm Setup runbooks, migration ledgers, audits, lessons, and project membership were updated to match the implemented behavior.
 
 SkyAware v1.0.1(75) makes Today open with cached content immediately, keeps useful content visible during refresh, and calms Local Alerts transitions.
 
