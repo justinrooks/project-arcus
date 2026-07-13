@@ -36,7 +36,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 
 | Order | ID | GitHub | Title | Status | Model |
 |---:|---|---|---|---|---|
-| 1 | COM-01 | [#290](https://github.com/justinrooks/project-arcus/issues/290) | Extract Summary preview galleries | Pending | GPT-5.6 Luna / medium |
+| 1 | COM-01 | [#290](https://github.com/justinrooks/project-arcus/issues/290) | Extract Summary preview galleries | Complete | GPT-5.6 Luna / medium |
 | 2 | COM-02 | [#291](https://github.com/justinrooks/project-arcus/issues/291) | Split Home and Summary state test suites | Pending | GPT-5.6 Luna / high |
 | 3 | COM-03 | [#292](https://github.com/justinrooks/project-arcus/issues/292) | Split location provider and resolver tests | Pending | GPT-5.6 Luna / high |
 | 4 | COM-04 | [#293](https://github.com/justinrooks/project-arcus/issues/293) | Split home refresh pipeline tests and fakes | Pending | GPT-5.6 Luna / high |
@@ -75,7 +75,26 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 
 ### COM-01 / GitHub #290 - Extract Summary preview galleries
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Summary/SummaryView+Previews.swift`
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift`
+- `Sources/Features/Summary/PrimaryAwarenessPanel+Previews.swift`
+- `docs/plans/codebase-organization-maintenance-progress.md`
+
+Preserved behavior: moved all 26 Summary preview scenarios, the Summary preview content/data fixtures, and the single
+Primary Awareness Panel preview gallery/card fixture without renaming scenarios, changing values, traits, access, or
+production APIs. New files are under the synchronized `Sources` group for the `SkyAware` application target only.
+
+Validation: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+Residual risk: GitHub issue metadata could not be fetched from this environment; implementation followed the supplied
+issue objective and required scope. Preview declarations were compared line-for-line with the original blocks.
+
+Handoff: issue #290 is complete; do not begin #291 in this task.
 
 ### COM-02 / GitHub #291 - Split Home and Summary state test suites
 
