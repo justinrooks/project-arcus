@@ -29,36 +29,19 @@ struct SummarySectionPlan: Sendable, Equatable {
         showsStormSetup: Bool,
         hasLocationReliabilityRail: Bool
     ) -> SummarySectionPlan {
-        let localAlertsArePopulated = localAlertsDisplayState.presentationState == .alerts
-
         var sections: [SummarySectionKind] = [
             .currentConditions,
-            .primaryAwareness
+            .primaryAwareness,
+            .localAlerts,
+            .atmosphericConditions
         ]
 
-        if localAlertsArePopulated {
-            sections.append(.localAlerts)
-            sections.append(.atmosphericConditions)
+        if showsStormSetup {
+            sections.append(.stormSetup)
+        }
 
-            if showsStormSetup {
-                sections.append(.stormSetup)
-            }
-
-            if hasLocationReliabilityRail {
-                sections.append(.locationReliability)
-            }
-        } else {
-            sections.append(.atmosphericConditions)
-
-            if showsStormSetup {
-                sections.append(.stormSetup)
-            }
-
-            if hasLocationReliabilityRail {
-                sections.append(.locationReliability)
-            }
-
-            sections.append(.localAlerts)
+        if hasLocationReliabilityRail {
+            sections.append(.locationReliability)
         }
 
         sections.append(.outlookSummary)

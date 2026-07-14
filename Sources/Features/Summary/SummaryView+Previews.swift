@@ -63,6 +63,82 @@ import ArcusCore
     }
 }
 
+#Preview("Summary – No Active Alerts") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormSetup: SummaryPreviewData.stormSetup,
+            stormSetupPreferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: [],
+            alerts: [],
+            localAlertsDisplayState: .current(content: .empty, source: .cached)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Active Alerts") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormSetup: SummaryPreviewData.stormSetup,
+            stormSetupPreferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            localAlertsDisplayState: .current(content: .populated, source: .cached)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Storm Setup Visible") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormSetup: SummaryPreviewData.stormSetup,
+            stormSetupPreferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: [],
+            alerts: [],
+            localAlertsDisplayState: .current(content: .empty, source: .cached)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
+#Preview("Summary – Storm Setup Hidden") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormSetup: nil,
+            stormSetupPreferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            todayContentState: .current,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: [],
+            alerts: [],
+            localAlertsDisplayState: .current(content: .empty, source: .cached)
+        )
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 #Preview("Summary – AX1 Stacked Awareness") {
     NavigationStack {
         SummaryPreviewContent(
