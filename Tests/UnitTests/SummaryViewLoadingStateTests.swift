@@ -112,6 +112,63 @@ struct SummaryViewRiskPlaceholderPresentationTests {
 }
 
 
+@Suite("Summary View Storm Setup Slot State")
+@MainActor
+struct SummaryViewStormSetupSlotStateTests {
+    @Test("storm setup shows a loading slot while refresh is in flight")
+    func stormSetupSlotState_showsLoadingDuringRefresh() {
+        #expect(
+            SummaryView.stormSetupSlotState(
+                presentation: nil,
+                hasStormSetup: false,
+                stormSetupEnabled: true,
+                isRefreshInFlight: true,
+                isLocationUnavailable: false
+            ) == .loading
+        )
+    }
+
+    @Test("storm setup stays hidden when not refreshing")
+    func stormSetupSlotState_staysHiddenWhenIdle() {
+        #expect(
+            SummaryView.stormSetupSlotState(
+                presentation: nil,
+                hasStormSetup: false,
+                stormSetupEnabled: true,
+                isRefreshInFlight: false,
+                isLocationUnavailable: false
+            ) == .hidden
+        )
+    }
+
+    @Test("disabled storm setup never shows the loading shell")
+    func stormSetupSlotState_disabledNeverLoads() {
+        #expect(
+            SummaryView.stormSetupSlotState(
+                presentation: nil,
+                hasStormSetup: false,
+                stormSetupEnabled: false,
+                isRefreshInFlight: true,
+                isLocationUnavailable: false
+            ) == .hidden
+        )
+    }
+
+    @Test("existing storm setup data keeps the slot hidden when policy suppresses visibility")
+    func stormSetupSlotState_existingDataDoesNotShowLoadingShell() {
+        #expect(
+            SummaryView.stormSetupSlotState(
+                presentation: nil,
+                hasStormSetup: true,
+                stormSetupEnabled: true,
+                isRefreshInFlight: true,
+                isLocationUnavailable: false
+            ) == .hidden
+        )
+    }
+}
+
+
 @Suite("Summary Content Presentation State")
 @MainActor
 struct SummaryContentPresentationStateTests {
@@ -255,5 +312,3 @@ struct SummaryResolutionStateTests {
         #expect(state.primaryActiveMessage == "Getting your conditions ready…")
     }
 }
-
-

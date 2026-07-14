@@ -143,6 +143,7 @@ struct SummaryView: View {
     let localAlertsDisplayState: LocalAlertsDisplayState
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
+    let isRefreshInFlight: Bool
     let showsOfflineToken: Bool
     let headerCondenseProgress: CGFloat
     let locationReliabilityRailState: LocationReliabilityRailState?
@@ -173,6 +174,7 @@ struct SummaryView: View {
         localAlertsDisplayState: LocalAlertsDisplayState,
         readinessState: SummaryReadinessState,
         resolutionState: SummaryResolutionState,
+        isRefreshInFlight: Bool = false,
         showsOfflineToken: Bool,
         headerCondenseProgress: CGFloat,
         locationReliabilityRailState: LocationReliabilityRailState? = nil,
@@ -197,6 +199,7 @@ struct SummaryView: View {
         self.localAlertsDisplayState = localAlertsDisplayState
         self.readinessState = readinessState
         self.resolutionState = resolutionState
+        self.isRefreshInFlight = isRefreshInFlight
         self.showsOfflineToken = showsOfflineToken
         self.headerCondenseProgress = headerCondenseProgress
         self.locationReliabilityRailState = locationReliabilityRailState
@@ -218,6 +221,19 @@ struct SummaryView: View {
 
     private var isLocationUnavailable: Bool {
         readinessState == .locationUnavailable
+    }
+
+    enum StormSetupSlotState: Equatable {
+        case hidden
+        case loading
+        case visible(StormSetupDetailPresentation)
+
+        var isVisible: Bool {
+            if case .visible = self {
+                return true
+            }
+            return false
+        }
     }
 
     private var hasActiveAlerts: Bool {
@@ -397,15 +413,15 @@ struct SummaryView: View {
 
     @ViewBuilder
     private func summaryContent(now: Date) -> some View {
-        let stormSetupDetailPresentation = stormSetupDetailPresentation(now: now)
+        let stormSetupSlotState = stormSetupSlotState(now: now)
         let sectionPlan = Self.sectionPlan(
             localAlertsDisplayState: localAlertsDisplayState,
-            showsStormSetup: stormSetupDetailPresentation != nil,
+            showsStormSetup: stormSetupSlotState.isVisible,
             hasLocationReliabilityRail: locationReliabilityRailState != nil
         )
 
         ForEach(sectionPlan.sections) { section in
-            sectionView(for: section, stormSetupDetailPresentation: stormSetupDetailPresentation)
+            sectionView(for: section, stormSetupSlotState: stormSetupSlotState)
         }
     }
 
@@ -452,7 +468,7 @@ struct SummaryView: View {
     @ViewBuilder
     private func sectionView(
         for section: SummarySectionKind,
-        stormSetupDetailPresentation: StormSetupDetailPresentation?
+        stormSetupSlotState: StormSetupSlotState
     ) -> some View {
         switch section {
         case .currentConditions:
@@ -481,8 +497,23 @@ struct SummaryView: View {
             localAlertsSection
 
         case .stormSetup:
-                if isLocationUnavailable == false,
-                   let presentation = stormSetupDetailPresentation {
+            Group {
+                switch stormSetupSlotState {
+                case .hidden:
+                    EmptyView()
+
+                case .loading:
+                    StormSetupSummaryCard(
+                        presentation: .loadingPlaceholder,
+                        isLoading: true
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .padding(.vertical, 8)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("summary-storm-setup-card-loading")
+                    .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .center)))
+
+                case .visible(let presentation):
                     NavigationLink {
                         StormSetupDetailView(presentation: presentation)
                     } label: {
@@ -493,7 +524,10 @@ struct SummaryView: View {
                     .padding(.vertical, 8)
                     .contentShape(Rectangle())
                     .accessibilityIdentifier("summary-storm-setup-card")
+                    .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .center)))
                 }
+            }
+            .animation(SkyAwareMotion.settle(reduceMotion), value: stormSetupSlotState)
 
         case .atmosphericConditions:
             if isLocationUnavailable == false {
@@ -601,6 +635,38 @@ struct SummaryView: View {
             profileAnalysisResponse: stormSetupProfileAnalysisResponse,
             now: now
         )
+    }
+
+    private func stormSetupSlotState(now: Date) -> StormSetupSlotState {
+        Self.stormSetupSlotState(
+            presentation: stormSetupDetailPresentation(now: now),
+            hasStormSetup: stormSetup != nil,
+            stormSetupEnabled: stormSetupPreferences.stormSetupEnabled,
+            isRefreshInFlight: isRefreshInFlight,
+            isLocationUnavailable: isLocationUnavailable
+        )
+    }
+
+    static func stormSetupSlotState(
+        presentation: StormSetupDetailPresentation?,
+        hasStormSetup: Bool,
+        stormSetupEnabled: Bool,
+        isRefreshInFlight: Bool,
+        isLocationUnavailable: Bool
+    ) -> StormSetupSlotState {
+        guard isLocationUnavailable == false, stormSetupEnabled else {
+            return .hidden
+        }
+
+        if let presentation {
+            return .visible(presentation)
+        }
+
+        if hasStormSetup == false, isRefreshInFlight {
+            return .loading
+        }
+
+        return .hidden
     }
 
     private static func sectionPlan(

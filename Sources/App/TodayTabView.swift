@@ -74,6 +74,7 @@ struct TodayTabView: View {
                     localAlertsDisplayState: localAlertsDisplayState,
                     readinessState: readinessState,
                     resolutionState: resolutionState,
+                    isRefreshInFlight: isRefreshInFlight,
                     showsOfflineToken: showsOfflineToken,
                     headerCondenseProgress: headerCondenseProgress,
                     locationReliabilityRailState: locationReliabilityRailState,

@@ -10,8 +10,10 @@ import SwiftUI
 struct StormSetupSummaryCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let presentation: StormSetupSummaryPresentation
+    let isLoading: Bool
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -32,6 +34,27 @@ struct StormSetupSummaryCard: View {
     }
 
     var body: some View {
+        cardContent
+            .placeholder(isLoading, animated: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
+            .cardBackground(
+                cornerRadius: SkyAwareRadius.section,
+                shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
+                shadowRadius: colorScheme == .dark ? 8 : 10,
+                shadowY: colorScheme == .dark ? 3 : 4
+            )
+            .animation(SkyAwareMotion.settle(reduceMotion), value: isLoading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(presentation.accessibilityLabel)
+        .accessibilityValue(presentation.accessibilityValue)
+        .accessibilityHint(presentation.accessibilityHint)
+    }
+
+    private var cardContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
@@ -39,21 +62,6 @@ struct StormSetupSummaryCard: View {
 
             detailSurface
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(minHeight: 44, alignment: .leading)
-        .contentShape(Rectangle())
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.section,
-            shadowOpacity: colorScheme == .dark ? 0.08 : 0.11,
-            shadowRadius: colorScheme == .dark ? 8 : 10,
-            shadowY: colorScheme == .dark ? 3 : 4
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(presentation.accessibilityLabel)
-        .accessibilityValue(presentation.accessibilityValue)
-        .accessibilityHint(presentation.accessibilityHint)
     }
 
     private var header: some View {
@@ -132,6 +140,14 @@ struct StormSetupSummaryCard: View {
         }
     }
 
+    init(
+        presentation: StormSetupSummaryPresentation = .loadingPlaceholder,
+        isLoading: Bool = false
+    ) {
+        self.presentation = presentation
+        self.isLoading = isLoading
+    }
+
     @ViewBuilder
     private var ingredientRows: some View {
         if adaptiveLayout.usesStackedHeroTiles {
@@ -199,6 +215,19 @@ struct StormSetupSummaryCard: View {
                     timeZone: .current,
                     now: StormSetupPreviewData.now
                 )
+            )
+            .padding()
+        }
+        .background(.skyAwareBackground)
+    }
+}
+
+#Preview("Storm Setup - Loading") {
+    NavigationStack {
+        ScrollView {
+            StormSetupSummaryCard(
+                presentation: .loadingPlaceholder,
+                isLoading: true
             )
             .padding()
         }

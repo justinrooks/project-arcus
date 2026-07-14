@@ -442,6 +442,29 @@ import ArcusCore
     }
 }
 
+#Preview("Summary – Storm Setup Loading") {
+    NavigationStack {
+        SummaryPreviewContent(
+            stormSetup: nil,
+            stormSetupPreferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
+            stormRisk: .moderate,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            weather: SummaryPreviewData.weather,
+            locationTimeZone: TimeZone(identifier: "America/Denver")!,
+            todayContentState: .cachedRefreshing,
+            isRefreshInFlight: true,
+            outlook: ConvectiveOutlook.sampleOutlookDtos.first,
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            resolutionState: SummaryPreviewData.calmRefreshState(primaryTask: .weather),
+            localAlertsDisplayState: .current(content: .populated, source: .cached)
+        )
+        .environment(\.dynamicTypeSize, .accessibility1)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+}
+
 private struct SummaryPreviewContent: View {
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?
@@ -454,6 +477,7 @@ private struct SummaryPreviewContent: View {
     let todayContentState: TodayContentState
     let readinessState: SummaryReadinessState
     let showsOfflineToken: Bool
+    let isRefreshInFlight: Bool
     let outlook: ConvectiveOutlookDTO?
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
@@ -475,6 +499,7 @@ private struct SummaryPreviewContent: View {
         todayContentState: TodayContentState = .current,
         readinessState: SummaryReadinessState = .ready,
         showsOfflineToken: Bool = false,
+        isRefreshInFlight: Bool = false,
         outlook: ConvectiveOutlookDTO? = ConvectiveOutlook.sampleOutlookDtos.first,
         mesos: [MdDTO] = MD.sampleDiscussionDTOs,
         alerts: [AlertDTO] = Watch.sampleWatchRows,
@@ -495,6 +520,7 @@ private struct SummaryPreviewContent: View {
         self.todayContentState = todayContentState
         self.readinessState = readinessState
         self.showsOfflineToken = showsOfflineToken
+        self.isRefreshInFlight = isRefreshInFlight
         self.outlook = outlook
         self.mesos = mesos
         self.alerts = alerts
@@ -531,6 +557,7 @@ private struct SummaryPreviewContent: View {
             localAlertsDisplayState: localAlertsDisplayState,
             readinessState: readinessState,
             resolutionState: resolutionState,
+            isRefreshInFlight: isRefreshInFlight,
             showsOfflineToken: showsOfflineToken,
             headerCondenseProgress: 0,
             locationReliabilityRailState: .init(onOpen: {}, onDismiss: {}),
