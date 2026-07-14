@@ -521,6 +521,59 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
     }
 
+    @Test("visible alert commits update ownership and failures retain the prior visible alerts")
+    func visibleAlertCommit_updatesOwnershipAndFailureRetainsPriorVisibleAlerts() async {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let currentContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let oldMeso = MD.sampleDiscussionDTOs[0]
+        let newMeso = MD.sampleDiscussionDTOs[1]
+        let oldAlert = Watch.sampleWatchRows[0]
+        let newAlert = Watch.sampleWatchRows[1]
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: oldContext.refreshKey,
+            initialMesos: [oldMeso],
+            initialAlerts: [oldAlert]
+        )
+        let locationSession = FakeLocationSession(
+            currentContext: currentContext,
+            preparedContext: currentContext
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: RecordingHomeIngestionCoordinator(
+                    snapshot: HomeSnapshot(
+                        locationSnapshot: currentContext.snapshot,
+                        refreshKey: currentContext.refreshKey,
+                        stormSetupRefreshResult: .success,
+                        mesos: [newMeso],
+                        alerts: [newAlert]
+                    )
+                ),
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.alertSnapshotRefreshKey == currentContext.refreshKey)
+        #expect(pipeline.mesos == [newMeso])
+        #expect(pipeline.alerts == [newAlert])
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: RecordingHomeIngestionCoordinator(
+                    results: [.failure(TestError.failed)]
+                ),
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.alertSnapshotRefreshKey == currentContext.refreshKey)
+        #expect(pipeline.mesos == [newMeso])
+        #expect(pipeline.alerts == [newAlert])
+    }
+
     @Test("progress started keeps cached Today display state steady until snapshot commit")
     func progressStarted_keepsCachedTodayDisplayStateSteady() async {
         let context = makeContext()
@@ -1761,6 +1814,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     func progressHistory() -> [HomeIngestionProgressEvent] {
         recordedProgressEvents
     }
+}
+
+private enum TestError: Error {
+    case failed
 }
 
 private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {

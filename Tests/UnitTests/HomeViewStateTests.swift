@@ -490,6 +490,7 @@ struct HomeViewProjectionLaunchTests {
         #expect(HomeView.shouldRefreshStormSetupSettings(previousPreferences: current, currentPreferences: current) == false)
         #expect(HomeView.shouldRefreshStormSetupSettings(previousPreferences: nil, currentPreferences: current))
     }
+}
 
     private func makeContext(
         h3Cell: Int64,
@@ -639,7 +640,6 @@ struct HomeViewProjectionLaunchTests {
             surfaceHeightMslM: 1132.4
         )
     }
-}
 
 
 @Suite("HomeView Outlook Display")
@@ -686,4 +686,81 @@ struct HomeViewOutlookDisplayTests {
     }
 }
 
+@Suite("HomeView Alert Ownership")
+@MainActor
+struct HomeViewAlertOwnershipTests {
+    @Test("cached alerts and mesos stay visible until the committed key matches the current context")
+    func preferredCurrentContextValues_keepsCachedValuesUntilMatchingCommit() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let otherContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
+        let cachedMesos = [MD.sampleDiscussionDTOs[0]]
+        let liveMesos = [MD.sampleDiscussionDTOs[1]]
+        let cachedAlerts = [Watch.sampleWatchRows[0]]
+        let liveAlerts = [Watch.sampleWatchRows[1]]
 
+        #expect(
+            HomeView.preferredCurrentContextValues(
+                cachedValues: cachedMesos,
+                pipelineValues: liveMesos,
+                currentContext: currentContext,
+                pipelineRefreshKey: nil
+            ) == cachedMesos
+        )
+        #expect(
+            HomeView.preferredCurrentContextValues(
+                cachedValues: cachedAlerts,
+                pipelineValues: liveAlerts,
+                currentContext: currentContext,
+                pipelineRefreshKey: otherContext.refreshKey
+            ) == cachedAlerts
+        )
+        #expect(
+            HomeView.preferredCurrentContextValues(
+                cachedValues: cachedMesos,
+                pipelineValues: liveMesos,
+                currentContext: currentContext,
+                pipelineRefreshKey: currentContext.refreshKey
+            ) == liveMesos
+        )
+        #expect(
+            HomeView.preferredCurrentContextValues(
+                cachedValues: cachedAlerts,
+                pipelineValues: liveAlerts,
+                currentContext: currentContext,
+                pipelineRefreshKey: currentContext.refreshKey
+            ) == liveAlerts
+        )
+    }
+
+    @Test("a committed empty snapshot becomes authoritative for the current context")
+    func preferredCurrentContextValues_allowsCommittedEmptyValues() {
+        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let cachedAlerts = [Watch.sampleWatchRows[0]]
+
+        #expect(
+            HomeView.preferredCurrentContextValues(
+                cachedValues: cachedAlerts,
+                pipelineValues: [],
+                currentContext: currentContext,
+                pipelineRefreshKey: currentContext.refreshKey
+            ).isEmpty
+        )
+    }
+
+    @Test("a commit for the previous context does not replace the current context's cached alerts")
+    func preferredCurrentContextValues_ignoresPriorContextCommitAfterLocationChange() {
+        let previousContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let currentContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
+        let cachedAlerts = [Watch.sampleWatchRows[0]]
+        let priorContextAlerts = [Watch.sampleWatchRows[1]]
+
+        #expect(
+            HomeView.preferredCurrentContextValues(
+                cachedValues: cachedAlerts,
+                pipelineValues: priorContextAlerts,
+                currentContext: currentContext,
+                pipelineRefreshKey: previousContext.refreshKey
+            ) == cachedAlerts
+        )
+    }
+}

@@ -175,20 +175,24 @@ struct HomeView: View {
         if isUITestStaticMode && refreshPipeline.mesos.isEmpty == false {
             return refreshPipeline.mesos
         }
-        if isCurrentContextResolvedInPipeline {
-            return refreshPipeline.mesos
-        }
-        return displayedProjection?.activeMesos ?? []
+        return Self.preferredCurrentContextValues(
+            cachedValues: displayedProjection?.activeMesos ?? [],
+            pipelineValues: refreshPipeline.mesos,
+            currentContext: locationSession.currentContext,
+            pipelineRefreshKey: refreshPipeline.alertSnapshotRefreshKey
+        )
     }
 
     private var displayedAlerts: [AlertDTO] {
         if isUITestStaticMode && refreshPipeline.alerts.isEmpty == false {
             return refreshPipeline.alerts
         }
-        if isCurrentContextResolvedInPipeline {
-            return refreshPipeline.alerts
-        }
-        return displayedProjection?.activeAlerts ?? []
+        return Self.preferredCurrentContextValues(
+            cachedValues: displayedProjection?.activeAlerts ?? [],
+            pipelineValues: refreshPipeline.alerts,
+            currentContext: locationSession.currentContext,
+            pipelineRefreshKey: refreshPipeline.alertSnapshotRefreshKey
+        )
     }
 
     private var displayedOutlook: ConvectiveOutlookDTO? {
@@ -210,7 +214,7 @@ struct HomeView: View {
         LocalAlertsDisplayState.from(
             todayContentState: todayContentState,
             hasCachedProjection: displayedProjection != nil,
-            isCurrentContextResolvedInPipeline: isCurrentContextResolvedInPipeline,
+            isCurrentContextResolvedInPipeline: isCurrentContextCommittedAlertSnapshot,
             lastHotAlertsLoadAt: displayedProjection?.lastHotAlertsLoadAt,
             hasActiveAlerts: !displayedMesos.isEmpty || !displayedAlerts.isEmpty,
             isLocationUnavailable: readinessState == .locationUnavailable
@@ -246,6 +250,14 @@ struct HomeView: View {
 
     private var isEmptyResolvingSummary: Bool {
         todayContentState.showsResolvingSurface
+    }
+
+    private var isCurrentContextCommittedAlertSnapshot: Bool {
+        guard let currentContextRefreshKey = currentContextRefreshKey else {
+            return false
+        }
+
+        return currentContextRefreshKey == refreshPipeline.alertSnapshotRefreshKey
     }
 
     init(

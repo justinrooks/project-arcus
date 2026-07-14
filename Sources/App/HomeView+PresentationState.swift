@@ -141,6 +141,20 @@ extension HomeView {
         return projectionValue ?? pipelineValue
     }
 
+    static func preferredCurrentContextValues<T>(
+        cachedValues: [T],
+        pipelineValues: [T],
+        currentContext: LocationContext?,
+        pipelineRefreshKey: LocationContext.RefreshKey?
+    ) -> [T] {
+        guard let currentContext,
+              currentContext.refreshKey == pipelineRefreshKey else {
+            return cachedValues
+        }
+
+        return pipelineValues
+    }
+
     static func shouldRefreshStormSetupSettings(
         previousPreferences: StormSetupPreferences?,
         currentPreferences: StormSetupPreferences
