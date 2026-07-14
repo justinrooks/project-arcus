@@ -36,19 +36,19 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 
 | Order | ID | GitHub | Title | Status | Model |
 |---:|---|---|---|---|---|
-| 1 | COM-01 | [#290](https://github.com/justinrooks/project-arcus/issues/290) | Extract Summary preview galleries | Pending | GPT-5.6 Luna / medium |
+| 1 | COM-01 | [#290](https://github.com/justinrooks/project-arcus/issues/290) | Extract Summary preview galleries | Complete | GPT-5.6 Luna / medium |
 | 2 | COM-02 | [#291](https://github.com/justinrooks/project-arcus/issues/291) | Split Home and Summary state test suites | Pending | GPT-5.6 Luna / high |
 | 3 | COM-03 | [#292](https://github.com/justinrooks/project-arcus/issues/292) | Split location provider and resolver tests | Pending | GPT-5.6 Luna / high |
 | 4 | COM-04 | [#293](https://github.com/justinrooks/project-arcus/issues/293) | Split home refresh pipeline tests and fakes | Pending | GPT-5.6 Luna / high |
 | 5 | COM-05 | [#294](https://github.com/justinrooks/project-arcus/issues/294) | Split map feature model tests and fakes | Pending | GPT-5.6 Luna / high |
 | 6 | COM-06 | [#295](https://github.com/justinrooks/project-arcus/issues/295) | Split mixed SPC and repository sync tests | Pending | GPT-5.6 Luna / high |
 | 7 | COM-07 | [#296](https://github.com/justinrooks/project-arcus/issues/296) | Decompose Primary Awareness presentation files | Pending | GPT-5.6 Terra / high |
-| 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Pending | GPT-5.6 Sol / high |
-| 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Pending | GPT-5.6 Sol / xhigh |
-| 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Pending | GPT-5.6 Sol / xhigh |
-| 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Pending | GPT-5.6 Luna / high |
+| 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Complete | GPT-5.6 Sol / high |
+| 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Complete | GPT-5.6 Sol / xhigh |
+| 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Complete | GPT-5.6 Sol / xhigh |
+| 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Complete | GPT-5.6 Luna / high |
 | 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Pending | GPT-5.6 Terra / high |
-| 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Pending | GPT-5.6 Sol / high |
+| 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Complete | GPT-5.6 Sol / high |
 
 ## Existing Code Map
 
@@ -75,55 +75,612 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 
 ### COM-01 / GitHub #290 - Extract Summary preview galleries
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Features/Summary/SummaryView.swift`
+- `Sources/Features/Summary/SummaryView+Previews.swift`
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift`
+- `Sources/Features/Summary/PrimaryAwarenessPanel+Previews.swift`
+- `docs/plans/codebase-organization-maintenance-progress.md`
+
+Preserved behavior: moved all 26 Summary preview scenarios, the Summary preview content/data fixtures, and the single
+Primary Awareness Panel preview gallery/card fixture without renaming scenarios, changing values, traits, access, or
+production APIs. New files are under the synchronized `Sources` group for the `SkyAware` application target only.
+
+Validation: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+
+Residual risk: GitHub issue metadata could not be fetched from this environment; implementation followed the supplied
+issue objective and required scope. Preview declarations were compared line-for-line with the original blocks.
+
+Handoff: issue #290 is complete; do not begin #291 in this task.
 
 ### COM-02 / GitHub #291 - Split Home and Summary state test suites
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/HomeViewLoadingOverlayStateTests.swift` — removed after all declarations moved cleanly.
+- `Tests/UnitTests/HomeViewStateTests.swift` — HomeView refresh triggers, projection launch, and outlook display suites.
+- `Tests/UnitTests/HomeRefreshPolicyTests.swift` — foreground refresh policy suite.
+- `Tests/UnitTests/SummaryViewLocalAlertsStateTests.swift` — Summary local-alert and local-alert display-state suites.
+- `Tests/UnitTests/SummaryViewLoadingStateTests.swift` — Summary resolving, risk-placeholder, content-presentation, and resolution-state suites.
+- `Tests/UnitTests/TodayContentStateTests.swift` — Today content, surface-flow, and visible-weather suites.
+- `Tests/UnitTests/SummaryRefreshPolicyTests.swift` — outlook and WeatherKit refresh policy suites.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the six new test files in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-02 ledger entry.
+
+Suites moved:
+
+- `HomeViewRefreshTriggerTests`, `HomeViewProjectionLaunchTests`, `HomeViewOutlookDisplayTests` → `HomeViewStateTests.swift`
+- `ForegroundRefreshPolicyTests` → `HomeRefreshPolicyTests.swift`
+- `SummaryViewLocalAlertsTests`, `LocalAlertsDisplayStateTests` → `SummaryViewLocalAlertsStateTests.swift`
+- `SummaryViewEmptyResolvingTests`, `SummaryViewRiskPlaceholderPresentationTests`, `SummaryContentPresentationStateTests`, `SummaryResolutionStateTests` → `SummaryViewLoadingStateTests.swift`
+- `TodayContentStateTests`, `TodaySurfaceStateFlowTests`, `TodayVisibleWeatherStateTests` → `TodayContentStateTests.swift`
+- `OutlookRefreshPolicyTests`, `WeatherKitRefreshPolicyTests` → `SummaryRefreshPolicyTests.swift`
+
+Behavior preserved: the pre-edit inventory contained 15 suites and 99 tests; the post-edit inventory contains the same 15 suites and 99 tests. Every suite declaration, test name, trait, serialization/actor annotation, test body, assertion, fixture, and declaration order was moved intact. No production files changed.
+
+Validation:
+
+- Inventory comparison: exact suite-block comparison against `HEAD` reported 15 pre-edit suites, 15 post-edit suites, 99 pre-edit tests, 99 post-edit tests, no missing suites, no extra suites, no changed declarations.
+- Focused command: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' test -derivedDataPath /private/tmp/project-arcus-291-derived-2 -resultBundlePath /tmp/project-arcus-291-final.xcresult -only-testing:SkyAwareTests/HomeViewRefreshTriggerTests -only-testing:SkyAwareTests/HomeViewProjectionLaunchTests -only-testing:SkyAwareTests/SummaryViewLocalAlertsTests -only-testing:SkyAwareTests/LocalAlertsDisplayStateTests -only-testing:SkyAwareTests/SummaryViewEmptyResolvingTests -only-testing:SkyAwareTests/SummaryViewRiskPlaceholderPresentationTests -only-testing:SkyAwareTests/SummaryContentPresentationStateTests -only-testing:SkyAwareTests/TodayContentStateTests -only-testing:SkyAwareTests/TodaySurfaceStateFlowTests -only-testing:SkyAwareTests/HomeViewOutlookDisplayTests -only-testing:SkyAwareTests/ForegroundRefreshPolicyTests -only-testing:SkyAwareTests/SummaryResolutionStateTests -only-testing:SkyAwareTests/OutlookRefreshPolicyTests -only-testing:SkyAwareTests/WeatherKitRefreshPolicyTests -only-testing:SkyAwareTests/TodayVisibleWeatherStateTests` — **TEST SUCCEEDED** on iPhone 17 / iOS 26.5.
+- Result inspection: `xcrun xcresulttool get test-results tests --path /tmp/project-arcus-291-final.xcresult --compact` reported a passed test plan, 15 suites, 99 cases, and zero failures.
+
+Target-membership evidence: the fresh `SkyAwareTests.SwiftFileList` contains all six new test files; the fresh `SkyAware.SwiftFileList` contains none of the six and no deleted original file. The project file lists each new path in both the `SkyAware` exclusion set and the `SkyAwareTests` inclusion set.
+
+Residual risks and handoff: GitHub issue metadata could not be fetched because the GitHub API/page cache was unavailable; implementation followed the supplied issue objective and repository runbook. The full target compilation emitted existing unrelated warnings in `MesoNotificationTests.swift`, `RemoteNotificationRegistrarTests.swift`, and the simulator asset catalog; none were caused by this movement. Issue #291 is complete; do not begin #292 in this task.
 
 ### COM-03 / GitHub #292 - Split location provider and resolver tests
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/LocationProviderTests.swift` — provider suite and provider-only support declarations remain focused in the original provider file.
+- `Tests/UnitTests/LocationContextResolverTests.swift` — new resolver-focused file containing the resolver suite, serialized trait, tests, and resolver-only support declarations.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the new resolver test file in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-03 ledger entry.
+
+Suites and support declarations moved:
+
+- `LocationContextResolverTests` and its 10 tests moved to `LocationContextResolverTests.swift` unchanged.
+- Resolver-only support moved intact: `TestError`, `AuthorizationState`, `AuthorizationRequestState`, `TestGeocoder`, `TestHasher`, `waitUntil`, `RefreshRequestTracker`, `MockSnapshotCache`, `ResolverNwsClient`, and `makePointPayload`.
+- `LocationProviderTests` retains its 58 tests, 20 nested provider support declarations, and the provider-only `waitUntilLocationSnapshot` helper. No shared support file was needed.
+
+Behavior preserved: the pre-edit inventory contained 2 suites and 68 tests (58 provider, 10 resolver); the post-edit inventory contains the same declarations and counts. Exact comparisons against `HEAD` matched the provider prefix, suite/test inventory, and support-declaration inventory; the resolver segment was moved intact with only two pre-existing trailing-whitespace markers removed. Test names, traits, bodies, assertions, fixture values, async behavior, and production code were unchanged.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath /tmp/project-arcus-292-location-provider.xcresult test` — **TEST SUCCEEDED**; 58 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SkyAwareTests/LocationContextResolverTests -resultBundlePath /tmp/project-arcus-292-location-resolver.xcresult test` — **TEST SUCCEEDED**; 10 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcrun xcresulttool get test-results summary --path /tmp/project-arcus-292-location-provider.xcresult --compact` and the resolver equivalent — both reported `result: Passed` with zero failures.
+- `git diff --check` plus the equivalent check for the untracked resolver file — passed. Final diff contains only test organization, synchronized-folder membership, and this ledger entry; no assertion or production-code changes.
+
+Target-membership evidence: the generated `SkyAwareTests.SwiftFileList` contains both `LocationContextResolverTests.swift` and `LocationProviderTests.swift`; the generated `SkyAware.SwiftFileList` contains neither. The project file lists both test paths in the `SkyAware` exclusion set and the `SkyAwareTests` inclusion set.
+
+Residual risks and handoff: no production behavior or coverage semantics changed. `xcresulttool get test-results tests` could not be used because this Xcode version attempted to materialize `TestReport` without permission; the supported summary reader and xcodebuild results were inspected successfully. Issue #292 is complete; do not begin #293 in this task.
 
 ### COM-04 / GitHub #293 - Split home refresh pipeline tests and fakes
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/HomeRefreshPipelineTests.swift` — retains the pipeline suite and all pipeline-only support declarations.
+- `Tests/UnitTests/SkyAwareAppActivationCleanupTests.swift` — activation-cleanup suite moved intact from the mixed source file.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the activation-cleanup test file in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-04 ledger entry.
+
+Suites and support declarations moved:
+
+- `SkyAwareAppActivationCleanupTests` and its one test moved to `SkyAwareAppActivationCleanupTests.swift` unchanged.
+- `HomeRefreshPipelineTests` remains in `HomeRefreshPipelineTests.swift` with all 35 tests unchanged.
+- Pipeline-only support remains private to its owning file: `RecordingHomeIngestionCoordinator`,
+  `SequencedHomeIngestionCoordinator`, `AsyncGate`, `CompletionFlag`, `TestFailure`, `FakeLocationSession`,
+  `FakeWeatherClient`, `FakeSpcProvider`, `RecordingWidgetSnapshotRefresher`, `FakeAlertProvider`, `waitUntil`, and
+  the six pipeline fixture/environment helpers. No support declaration was shared by the resulting suites, so no
+  generic or unnecessary support file was introduced.
+
+Async behavior preserved: `.serialized`, `@MainActor`, task creation, polling, gate opening, serialization, the
+10-millisecond polling sleep, and all one-second/default and five-second explicit timeouts remain unchanged. No
+production files or test semantics changed.
+
+Validation:
+
+- Pre/post inventory comparison using the `awk` suite/test extractor reported an exact match: 2 suites and 36 tests;
+  the pipeline declaration comparison and activation-suite block comparison also matched, ignoring only the moved
+  file-separator blank line.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-293-derived -resultBundlePath /private/tmp/project-arcus-293-pipeline.xcresult -only-testing:SkyAwareTests/HomeRefreshPipelineTests test` — **TEST SUCCEEDED**; 35 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-293-pipeline.xcresult --compact` — `result: Passed`, 35 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-293-derived -resultBundlePath /private/tmp/project-arcus-293-activation.xcresult -only-testing:SkyAwareTests/SkyAwareAppActivationCleanupTests test` — **TEST SUCCEEDED**; 1 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- `xcrun xcresulttool get test-results tests --path /private/tmp/project-arcus-293-activation.xcresult --compact` — activation suite and test both reported `Passed`; the summary subcommand was also attempted but hit Xcode's TestReport materialization permission error.
+- `git diff --check` — passed.
+
+Target-membership evidence: the generated `SkyAwareTests.SwiftFileList` contains both `HomeRefreshPipelineTests.swift` and
+`SkyAwareAppActivationCleanupTests.swift`; the generated `SkyAware.SwiftFileList` contains neither. The project file
+lists the new path in the `SkyAware` exclusion set and the `SkyAwareTests` synchronized-folder membership set.
+
+Residual risks and handoff: the focused runs compile the synchronized test target and emitted existing unrelated
+warnings, including `HTTPDataDownloader.swift`'s mutable Sendable property and warnings in other test files. No
+assertion, timeout, async ordering, production, or application-target changes were introduced. Issue #293 is complete;
+do not begin #294 in this task.
 
 ### COM-05 / GitHub #294 - Split map feature model tests and fakes
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Tests/UnitTests/MapFeatureModelTests.swift` — retains the original `MapFeatureModelTests` suite with 24 reload/results, failure, summary, stale-data, and partial-result tests.
+- `Tests/UnitTests/MapFeatureModelSceneTests.swift` — layer selection, stacking, scene caching, refetch, in-flight reload follow-up, and center-coordinate tests, with scene-only stores and counting service kept private.
+- `Tests/UnitTests/MapFeatureModelWarningsTests.swift` — warning composition, geometry toggling, warning legends, warning-query failure, and overlay-revision tests.
+- `Tests/UnitTests/MapFeatureModelTestSupport.swift` — shared map/alert stubs, result store, call counter, reload gate, queued reload service, shared fixtures, and common scene assertions.
+- `SkyAware.xcodeproj/project.pbxproj` — synchronized-folder membership for the original suite and three new test files in both target exception sets.
+- `docs/plans/codebase-organization-maintenance-progress.md` — this COM-05 ledger entry.
+
+Behavior families and support declarations moved: the pre-edit suite was divided into reload/results (24 tests), scene/caching (7 tests), and warning/legend (15 tests). Shared support is limited to declarations used by multiple suites: `StubSpcMapData`, `StubArcusAlertQuerying`, `MutableResultMapDataStore`, `MutableResultSpcMapData`, `MapDataCallCounter`, `ReloadGate`, `QueuedReloadSpcMapData`, `StubError`, and common map fixtures/assertions. `CountingSpcMapData`, `MutableMapDataStore`, and `MutableSpcMapData` remain private to the scene suite.
+
+Async and actor behavior preserved: all three suites remain `@MainActor`; the result stores, call counter, reload gate, checked continuations, queued first/second results, task creation, and follow-up-fetch sequencing were moved without semantic edits. No explicit cancellation-specific test existed before this issue, so none was introduced.
+
+Validation:
+
+- Pre/post test-block inventory: 46 tests before and after; zero missing, extra, or changed test names/bodies. `git diff --check` passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-294-derived -resultBundlePath /private/tmp/project-arcus-294-map-2.xcresult -only-testing:SkyAwareTests/MapFeatureModelTests test` — **TEST SUCCEEDED**; 24 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-294-derived -resultBundlePath /private/tmp/project-arcus-294-scene.xcresult -only-testing:SkyAwareTests/MapFeatureModelSceneTests test` — **TEST SUCCEEDED**; 7 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-294-derived -resultBundlePath /private/tmp/project-arcus-294-warnings.xcresult -only-testing:SkyAwareTests/MapFeatureModelWarningsTests test` — **TEST SUCCEEDED**; 15 passed, 0 failed, 0 skipped.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-294-map-2.xcresult --compact` — `result: Passed`, 24 passed, 0 failed, 0 skipped.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-294-scene.xcresult --compact` — `result: Passed`, 7 passed, 0 failed, 0 skipped.
+- `xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-294-warnings.xcresult --compact` — `result: Passed`, 15 passed, 0 failed, 0 skipped.
+
+Target-membership evidence: `/private/tmp/project-arcus-294-derived/.../SkyAwareTests.SwiftFileList` contains `MapFeatureModelTests.swift`, `MapFeatureModelSceneTests.swift`, `MapFeatureModelTestSupport.swift`, and `MapFeatureModelWarningsTests.swift`; the corresponding `SkyAware.SwiftFileList` contains only production `Sources/Features/Map/MapFeatureModel.swift` for the `MapFeatureModel` search and no test paths. The project file lists all four test paths in both synchronized target sets.
+
+Residual risks and handoff: the initial post-split compile caught a misplaced private `makeMeso` fixture; it was moved intact to the warning suite before the final runs. Existing unrelated build warnings remain, including `HTTPDataDownloader.swift` mutable Sendable state and warnings in other test files. No production map code, assertions, task timing, or fake behavior changed. Issue #294 is complete; do not begin #295 in this task.
 
 ### COM-06 / GitHub #295 - Split mixed SPC and repository sync tests
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- Tests/UnitTests/SevereRiskRepoRefreshTornadoRiskTests.swift — retains the severe-risk repository suite and its original eight tests.
+- Tests/UnitTests/StormRiskRepoRefreshCategoricalRiskTests.swift — contains the storm-risk repository suite and its original three tests, with its categorical client and fixtures private.
+- Tests/UnitTests/SpcProviderSyncMapProductsTests.swift — contains the SPC map synchronization suite and its original 22 tests, with counting/scripted clients, provider factory, container, and map fixtures private.
+- Tests/UnitTests/SpcRiskTestSupport.swift — contains only the genuinely shared severe/categorical SPC clients used by repository setup and map synchronization tests.
+- SkyAware.xcodeproj/project.pbxproj — adds all four test paths to both synchronized target exception sets.
+- docs/plans/codebase-organization-maintenance-progress.md — this COM-06 ledger entry.
+
+Suites and support declarations moved: 33 tests were retained across SevereRiskRepoRefreshTornadoRiskTests (8), StormRiskRepoRefreshCategoricalRiskTests (3), and SpcProviderSyncMapProductsTests (22). The shared MockClient and CategoricalMockClient remain distinct; FireMockClient, CountingMapSyncClient, ScriptedMapSyncClient, the provider factory/container, and SPC map-data fixtures remain private to the SPC synchronization file. Private GeoJSON/date builders remain private to each suite file to avoid collisions with existing test-local builders.
+
+Behavior preserved: suite names, test names, traits, assertions, fixtures, scripted responses, call counts, actor isolation, async ordering, and persistence-failure/cancellation semantics were moved without production-code changes. No tests were deleted, duplicated, disabled, or added to the application target.
+
+Validation:
+
+- Pre/post suite and test inventory comparison: 3 suites and 33 tests before and after; zero missing, extra, or changed suite/test declarations. git diff --check passed.
+- xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath /private/tmp/project-arcus-295-derived-3 -resultBundlePath /private/tmp/project-arcus-295-3.xcresult -only-testing:SkyAwareTests/SevereRiskRepoRefreshTornadoRiskTests -only-testing:SkyAwareTests/StormRiskRepoRefreshCategoricalRiskTests -only-testing:SkyAwareTests/SpcProviderSyncMapProductsTests test — TEST SUCCEEDED; 33 passed, 0 failed, 0 skipped on iPhone 17 / iOS 26.5.
+- xcrun xcresulttool get test-results summary --path /private/tmp/project-arcus-295-3.xcresult --compact — result: Passed, 33 passed, 0 failed, 0 skipped.
+
+Target-membership evidence: /private/tmp/project-arcus-295-derived-3/Build/Intermediates.noindex/SkyAware.build/Debug-iphonesimulator/SkyAwareTests.build/Objects-normal/arm64/SkyAwareTests.SwiftFileList contains all four new/retained test paths; the corresponding SkyAware.SwiftFileList contains none of those test paths. The project file lists all four paths in both synchronized target exception sets.
+
+Residual risks and handoff: the first focused compile caught module-visible fixture-name collisions and a generated helper-spacing typo; both were corrected without changing test bodies or behavior. The validation build emitted existing unrelated warnings, including HTTPDataDownloader.swift mutable Sendable state and RemoteNotificationRegistrarTests.swift type-inference warnings. No production code changed. Issue #295 is complete; do not begin #296 in this task.
 
 ### COM-07 / GitHub #296 - Decompose Primary Awareness presentation files
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Features/Summary/PrimaryAwarenessPanel.swift` retains only the named panel composition and its existing
+  input-to-row presentation wiring.
+- `Sources/Features/Summary/PrimaryAwarenessPresentation.swift` owns primary-state resolution, alert precedence,
+  destinations, and accessibility contracts.
+- `Sources/Features/Summary/SupportingRiskRowDisplayModel.swift` owns supporting-risk display mapping and presentation
+  modes.
+- `Sources/Features/Summary/PrimaryAwarenessHeroView.swift` owns the primary hero component and its local optional
+  accessibility-hint modifier.
+- `Sources/Features/Summary/AwarenessSupportRow.swift` owns the supporting-row component and its layout metrics.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-07 completion.
+
+Behavior and accessibility preserved: alert precedence, risk mapping, loading and offline presentation, destinations,
+button actions, map-layer selection, view identity, environment dependencies, labels, values, hints, traits, and Reduce
+Motion behavior are unchanged. The COM-01 preview file remains unchanged and compiles with the app target.
+
+Visibility changes: `PrimaryAwarenessHeroView` and `AwarenessSupportRow` changed from file-private to module-internal
+only because `PrimaryAwarenessPanel` now composes them from another file. No existing policy or display-model access
+level changed.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  -only-testing:SkyAwareTests/SummaryAwarenessPanelTests -only-testing:SkyAwareTests/TodayContentStateTests test`
+  — passed, 34 tests, 0 failures; result bundle
+  `Test-SkyAware-2026.07.13_08-34-13--0600.xcresult` inspected with `xcresulttool`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  build` — succeeded.
+- The Debug target Swift file list includes `PrimaryAwarenessPanel+Previews.swift` and all four extracted files.
+- Pre- and post-edit declaration inventories match, with declarations redistributed to their stated responsibilities.
+- `git diff --check` passed.
+
+Residual risks and handoff: this is a mechanical file split; focused presentation tests and the Debug build cover the
+compiled contracts, but no manual preview rendering pass was performed. Existing unrelated build warning remains in
+`HTTPDataDownloader.swift` for mutable state in a `Sendable` metrics collector. COM-07 is complete; do not begin COM-08
+or GitHub #297 in this task.
 
 ### COM-08 / GitHub #297 - Decompose map model and render planning files
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Features/Map/MapFeatureModel.swift` retains the `@MainActor @Observable` feature owner, mutable feature
+  state, structured fetches, reload coalescing, cache invalidation, selection, and scene warming.
+- `Sources/Features/Map/MapSceneState.swift` owns the scene and canvas value types and their copy/placeholder helpers.
+- `Sources/Features/Map/MapLegendState.swift` owns legend presentation state, legend row values, copy/factory helpers,
+  and private legend copy helpers on `MapLayer`.
+- `Sources/Features/Map/MapScenePlanner.swift` owns the fetched payload/outcome values, the actor-isolated planner, and
+  the existing private result helpers.
+- `Sources/Features/Map/MapRenderPlan.swift` owns render-plan values, explicitly main-actor materialization, pure
+  nonisolated plan construction, overlay ordering/revision hashing, and the private threat-type helper.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-08 completion.
+
+Concurrency and behavior preserved: `MapFeatureModel` and `MapSceneMaterializer` remain explicitly `@MainActor`;
+`MapScenePlanner` remains an actor and `buildRenderPlans` remains actor-isolated; render-plan construction remains
+synchronous and nonisolated. Existing `Sendable` conformances are unchanged, and none were added to scene/canvas
+state. Reload coalescing and `pendingReload`, structured fetches, cancellation checks, warning visibility, selection,
+scene caching/invalidation/warming, initial-center propagation, overlay order/revisions, legend states, logging, and
+failure fallback logic moved without edits.
+
+Visibility changes: `MapDataPayload`, `MapFetchOutcome`, `MapLayerRenderPlan`, `MapScenePlanner`,
+`MapSceneMaterializer`, and `MapRenderPlanBuilder` changed from file-private to module-internal solely because their
+existing callers now cross file boundaries. Their cross-file payload/plan members necessarily share that internal
+visibility. Builder helpers, result helpers, and `MapLayer` helpers remain private; no public API changed.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  -resultBundlePath /private/tmp/COM08-MapFeatureModelTests-20260713-run1.xcresult
+  -only-testing:SkyAwareTests/MapFeatureModelTests -only-testing:SkyAwareTests/MapFeatureModelSceneTests
+  -only-testing:SkyAwareTests/MapFeatureModelWarningsTests test` — passed, 46 tests, 0 failures.
+- `xcrun xcresulttool get test-results summary --path
+  /private/tmp/COM08-MapFeatureModelTests-20260713-run1.xcresult` — result `Passed`; 46 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  build` — succeeded.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Debug -showBuildSettings` confirmed Swift
+  6.0 and `SWIFT_STRICT_CONCURRENCY = complete`, with no default-actor-isolation or approachable-concurrency setting.
+- Pre/post declaration comparison found the feature-model body byte-equivalent and all moved declarations/helpers
+  equivalent modulo file headers, required visibility changes, and splitting the private `MapLayer` helper by owner.
+- Compiler output contains no new warnings in the changed map files. Existing unrelated warnings remain, including
+  mutable `Sendable` state in `HTTPDataDownloader.swift` and pre-existing test-target diagnostics.
+- `git diff --check` passed.
+
+Residual risks and handoff: this is a mechanical file split validated by the focused behavior suites and Debug build;
+no manual map UI pass was performed. The required internal visibility expansion is the only API-surface increase.
+COM-08 and GitHub #297 are complete; do not begin COM-09 or GitHub #298 in this task.
 
 ### COM-09 / GitHub #298 - Extract Storm Setup ingestion responsibilities
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift` gives Storm Setup eligibility, aggregate fetch/timeout
+  orchestration, cache and newer-response resolution, H3 validation, Storm Setup projection updates, backoff state, and
+  outcome logging one focused actor owner.
+- `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` constructs and awaits that owner while retaining overall run
+  sequencing, lane progress, global freshness, snapshot assembly, later projection persistence, and widget-refresh
+  ordering.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-09 completion.
+
+Actor ownership before and after: before, `HomeIngestionExecutor` actor stored the per-projection Storm Setup backoff
+dictionary and implemented the entire Storm Setup lane. After, `HomeStormSetupIngestion` actor exclusively stores that
+dictionary and owns the lane implementation. `HomeIngestionExecutor` retains its existing freshness state and awaits
+one `Sendable` refresh result at the same point in `run`; no mutable reference, callback, detached task, lock, global
+state, or unchecked conformance crosses the actor boundary. Swift remains 6.0 with complete strict concurrency and no
+default actor isolation or approachable-concurrency setting.
+
+Preserved ingestion invariants: one aggregate request per eligible refresh; existing preference, H3, risk, alert,
+mesoscale-discussion, cache-freshness, and query-availability eligibility; task-local foreground/background HTTP mode;
+foreground timeout and structured sibling cancellation; failed-attempt backoff for background/session-tick work;
+foreground backoff bypass; fresh-cache fallback; model-run/source-valid/fetched-at newer-response ordering; atomic
+aggregate replacement without carrying an older profile into a newer nil-profile response; Storm Setup persistence
+before AQI and remaining home projection work; unchanged snapshot field assignment, progress, publication, global
+freshness, projection, and widget-refresh order. No legacy profile-analysis request path was added.
+
+Visibility changes: the new `HomeStormSetupIngestion` actor and its `RefreshDecision` boundary are module-internal so
+`HomeIngestionExecutor` can use them across files. All dependencies, mutable state, timeout/outcome types, comparison
+logic, and helper methods remain private. No public API changed; existing environment-member visibility is unchanged.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Debug -showBuildSettings | rg
+  'SWIFT_VERSION|SWIFT_STRICT_CONCURRENCY|SWIFT_DEFAULT_ACTOR_ISOLATION|SWIFT_APPROACHABLE_CONCURRENCY|SWIFT_UPCOMING_FEATURE'`
+  confirmed `SWIFT_VERSION = 6.0` and `SWIFT_STRICT_CONCURRENCY = complete`; no default-actor-isolation or
+  approachable-concurrency setting is present.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -resultBundlePath /private/tmp/COM09-StormSetupIngestionTests-20260713-run1.xcresult
+  -only-testing:SkyAwareTests/StormSetupIngestionTests test` — build failed before tests because the moved timeout task
+  closure required an explicit actor-property capture. Restoring the original local timeout constant resolved it;
+  `xcresulttool` reported 0 tests and an unknown result.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -resultBundlePath /private/tmp/COM09-StormSetupIngestionTests-20260713-run2.xcresult
+  -only-testing:SkyAwareTests/StormSetupIngestionTests test` — passed; `xcresulttool` reported 21 passed, 0 failed,
+  0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -resultBundlePath /private/tmp/COM09-HomeCoordinationPersistenceTests-20260713-run1.xcresult
+  -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests
+  -only-testing:SkyAwareTests/HomeProjectionStoreTests test` — passed; `xcresulttool` reported 60 passed, 0 failed,
+  0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+  — succeeded.
+- Targeted searches found only the aggregate `fetchCurrentStormSetup` path, no legacy profile-analysis endpoint, and
+  one mutable backoff dictionary owned by `HomeStormSetupIngestion`. `git diff --check` passed.
+
+Compiler-warning result: the moved production code compiles without new warnings. Existing unrelated diagnostics remain,
+including mutable `Sendable` state in `HTTPDataDownloader.swift` and pre-existing test-target actor-isolation warnings.
+
+Residual risks and handoff: the added actor hop is compiler-checked and normal ingestion remains serialized by the
+coordinator; focused cancellation, timeout, persistence, and publication tests cover the boundary. No live-network or
+manual UI run was performed. COM-09 and GitHub #298 are complete; do not begin COM-10 or GitHub #299 in this task.
 
 ### COM-10 / GitHub #299 - Separate location upload persistence from queue coordination
 
-Status: Pending
+Status: Complete
+
+Files changed:
+
+- `Sources/Infrastructure/Location/LocationSnapshotPusher.swift` retains upload coordination, payload construction,
+  mutable queue state, drain sequencing, retries, deduplication, coalescing, and legacy-source fallback.
+- `Sources/Infrastructure/Location/LocationUploadPersistenceModels.swift` owns the immutable persisted request,
+  persisted operation, semantic-operation key, and persisted location-context value types with their existing Codable
+  implementations.
+- `Sources/Infrastructure/Location/LocationUploadQueueStore.swift` owns `LocationUploadQueueStoring` and the
+  UserDefaults-backed storage actor.
+- `Tests/UnitTests/LocationProviderTests.swift` adds current persisted-request field/operation-shape and round-trip
+  coverage alongside the existing legacy-decoding, restoration, retry, dedupe/coalescing, operation, and persistence
+  tests.
+- `docs/plans/codebase-organization-maintenance-progress.md` records COM-10 completion.
+
+Actor ownership before and after: before, `LocationSnapshotPusher` exclusively owned the mutable FIFO queue, active
+drain flag, successful-upload dedupe timestamps, pending-request coalescing map, queued-or-active keys, and persisted
+load flag; `UserDefaultsLocationUploadQueueStore` separately isolated UserDefaults and its encoder/decoder. After, those
+ownership boundaries are identical. Only immutable `Sendable` values cross the existing awaited storage protocol. No
+mutable reference, callback, detached task, lock, global mutable state, or unchecked conformance was introduced. Swift
+remains 6.0 with complete strict concurrency and no default actor isolation or approachable-concurrency setting.
+
+Preserved queue and persistence invariants: FIFO append/remove-first processing and requested-date restoration order;
+one active drain; configured retry delay/attempt order and cancellation checks; 400/422 legacy `"unknown"` source
+fallback; successful-upload semantic dedupe keys and inclusive time window; pending-request and active-request
+coalescing keys; queued-or-active key lifetime; one-time pending-state load; save timing after upsert, restored-request
+dedupe removal, and successful upload removal; failed/cancelled request retention; separate location and preference
+upload routing; subscription override semantics; and unchanged APNs, authorization, application, platform, H3/grid,
+source, reason, and label payload values. Storage suite/key strings are unchanged. Request field names, operation `kind`
+strings, context fields, current `operation` encoding, legacy top-level `context` decoding, and missing-operation
+preference fallback are unchanged.
+
+Visibility changes: none. All extracted declarations retain module-internal access, existing conformances, and existing
+member visibility. Pusher-private key/work-item types and all mutable state remain private to the pusher actor. The new
+persistence file imports `ArcusCore` directly because its existing internal models reference ArcusCore source and
+payload value types; no API surface expanded.
+
+Validation:
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Debug -showBuildSettings | rg
+  "SWIFT_VERSION|SWIFT_STRICT_CONCURRENCY|SWIFT_DEFAULT_ACTOR_ISOLATION|SWIFT_APPROACHABLE_CONCURRENCY|SWIFT_UPCOMING_FEATURE"`
+  confirmed `SWIFT_VERSION = 6.0` and `SWIFT_STRICT_CONCURRENCY = complete`; no default-actor-isolation or
+  approachable-concurrency setting is present.
+- Pre-edit baseline: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath
+  /private/tmp/issue299-baseline-20260713.xcresult test` — passed; `xcresulttool` reported 58 passed, 0 failed, 0 skipped.
+- First post-edit focused run used the same command with result bundle
+  `/private/tmp/issue299-focused-20260713.xcresult` — compilation failed before tests because the extracted model file
+  needed a direct `ArcusCore` import. `xcresulttool` reported 0 tests and six compiler errors derived from the missing
+  source/payload types; adding only the import resolved them.
+- Final focused run: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath
+  /private/tmp/issue299-focused-rerun-20260713.xcresult test` — passed; `xcresulttool` reported 59 passed, 0 failed,
+  0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  build` — succeeded.
+- Pre/post declaration comparison found every moved declaration byte-equivalent. Targeted searches found one owner for
+  all queue mutable state, unchanged storage strings, and no detached task, lock, or unchecked conformance in the
+  production scope. `git diff --check` passed.
+
+Compiler-warning result: no changed production or test file emits a new warning. The final focused test result records
+the existing mutable-`Sendable` COM-13 warning in `HTTPDataDownloader.swift` and unrelated existing test-target
+actor-isolation/diagnostic warnings.
+
+Residual risks and handoff: the UserDefaults store implementation and Codable witnesses moved intact, and current plus
+legacy encoding behavior is covered. No live-network or manual UI run was performed because this is organization-only
+infrastructure work. COM-10 and GitHub #299 are complete; do not begin COM-11 or GitHub #300 in this task.
 
 ### COM-11 / GitHub #300 - Split widget rendering components by domain
 
-Status: Pending
+Status: Complete
+
+Files changed and component ownership:
+
+- `WidgetsExtension/WidgetStormRiskComponents.swift`: `WidgetStormRiskSmallView` and its private storm badge card.
+- `WidgetsExtension/WidgetSevereRiskComponents.swift`: `WidgetSevereRiskSmallView` and its private severe badge card.
+- `WidgetsExtension/WidgetAlertComponents.swift`: compact alert and no-alert row components.
+- `WidgetsExtension/WidgetStateComponents.swift`: freshness, unavailable, and stale state components.
+- `WidgetsExtension/WidgetCombinedComponents.swift`: combined large widget and its private risk, alert, and no-alert
+  subcomponents.
+- `WidgetsExtension/WidgetRenderingComponents.swift`: shared `WidgetRiskBadgeView`, retained at the narrowest
+  shared rendering boundary.
+
+Behavior, accessibility, and previews: declarations moved intact. Storm-risk small, severe-risk small, alert and
+no-alert, stale and unavailable, and combined medium/large rendering preserve existing layout, typography, spacing,
+colors, gradients, symbols, freshness copy, accessibility labels/values, widget-family behavior, routes, and snapshot
+contracts. The 27 hosted preview names and eight fixture references are unchanged.
+
+Visibility: no visibility changes. Existing internal declarations remain internal, and private subcomponents remain
+private within their owning files.
+
+Target-membership evidence: the filesystem-synchronized `WidgetsExtension` group belongs to
+`SkyAwareWidgetsExtension`; the post-build `SkyAwareWidgetsExtension.SwiftFileList` contains all five new component
+files and the retained shared component file.
+
+Validation: ran
+`xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+successfully after extraction. The widget extension compiled all new files and hosted preview declarations. Compared
+preview names and fixture references against `HEAD`, inspected representative storm/severe small, alert/no-alert,
+stale/unavailable, and combined medium/large scenarios, and ran whitespace/diff checks. No screenshots were captured,
+so pixel equivalence is not claimed.
+
+Residual risks and handoff: this is organization-only work with no production logic or preview-fixture edits. Runtime
+preview canvas inspection was not performed in this environment; the successful target build verifies compilation and
+preview contracts. Issue #300 is complete; do not begin COM-12 or GitHub #301 in this task.
 
 ### COM-12 / GitHub #301 - Extract Storm Setup detail presentation builders
 
-Status: Pending
+Status: Complete — focused simulator test execution is blocked locally; Debug build and static presentation-contract checks pass.
+
+Files changed:
+
+- `Sources/Features/StormSetup/StormSetupDetailPresentation.swift` — retains the composed `Sendable` presentation result and both entry-point initializers.
+- `Sources/Features/StormSetup/StormSetupDetailIngredientRowsBuilder.swift` — owns basic ingredient rows, detail group assembly, effective-layer availability, and storm-motion availability rows.
+- `Sources/Features/StormSetup/StormSetupDetailAdvancedRowsBuilder.swift` — owns advanced rows, profile-analysis rows, composite parameters, effective-layer bounds, and storm-motion rows.
+- `Sources/Features/StormSetup/StormSetupDetailPresentationFormatter.swift` — owns confidence, limiter, provenance/freshness/date/numeric formatting and reusable row collection helpers.
+
+Presentation contract preserved: every existing row/group, ordering, title, value, accessibility label, fallback, limiter normalization,
+effective-layer/storm-motion availability state, composite formatting, provenance, freshness, and local/UTC time format was moved intact.
+The before/after quoted-literal multiset for the original file and all four production files is identical; no user-facing copy or numeric
+format specification changed.
+
+Visibility changes: no public API changed. `AdvancedValueFormat`, the row-array extension, and `String.trimmedNonEmpty` changed from
+file-private to internal solely because their existing pure implementations are now used by sibling presentation files. The new builder
+and formatter enums are internal, stateless, and have no actor isolation or mutable state. `StormSetupDetailPresentation`, `Row`, and
+`DetailIngredientGroup` retain their existing `Sendable` conformances and isolation behavior.
+
+Validation:
+
+- `git diff --check` — passed.
+- Literal and numeric-format comparison between `HEAD:Sources/Features/StormSetup/StormSetupDetailPresentation.swift` and the four
+  extracted production files — exact match.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` — passed
+  (exit code 0) after compiling all four presentation files.
+- `xcodebuild -quiet -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17"
+  -only-testing:SkyAwareTests/StormSetupDetailPresentationTests test` — could not complete: test execution remained in an incomplete
+  staging bundle. `xcrun simctl list devices available` then confirmed `CoreSimulatorService` was unavailable (connection refused), so
+  no valid `.xcresult` could be inspected. The focused test source compiled in the preceding test attempt.
+
+Compiler warnings: no warnings from the four changed presentation files. The existing COM-13 warning remains in
+`HTTPDataDownloader.swift`: mutable `storedMetrics` on `Sendable` `URLSessionTaskMetricsCollector`; no warning was introduced here.
+
+Residual risks and handoff: output preservation is supported by unchanged tests, compile success, and exact literal/format matching, but
+the focused tests must be rerun once CoreSimulatorService is healthy. Do not begin COM-13 in this task.
 
 ### COM-13 / GitHub #302 - Resolve URL session metrics collector concurrency warning
 
-Status: Pending
+Status: Complete
+
+Original diagnostic:
+
+`Sources/Infrastructure/Networking/HTTPDataDownloader.swift:516:17: warning: stored property 'storedMetrics' of
+'Sendable'-conforming class 'URLSessionTaskMetricsCollector' is mutable`
+
+Root cause: `URLSessionTaskDelegate` makes the collector `Sendable`, while its synchronous metrics callback wrote to a
+mutable stored property. An `NSLock` protected both the callback write and the post-request read at runtime, but the
+compiler cannot infer that a separate lock establishes safe access to the property.
+
+Synchronization model: the collector now stores its optional `URLSessionTaskMetrics` inside
+`Synchronization.Mutex`. Both the synchronous delegate callback and the `metrics` getter access the value exclusively
+through `withLock`, so the mutable state has one compiler-understood synchronization boundary. Immutable storage was
+rejected because metrics arrive after initialization; actor or global-actor isolation was rejected because the
+delegate requirement is synchronous and must not add a hop or change callback ordering; retaining `NSLock` with
+`@unchecked Sendable` was rejected because the native iOS 18+ mutex expresses the same invariant without a local
+unchecked conformance.
+
+Files changed:
+
+- `Sources/Infrastructure/Networking/HTTPDataDownloader.swift` — replaced the separate `NSLock` and mutable property
+  with native mutex-protected metrics storage.
+- `docs/plans/codebase-organization-maintenance-progress.md` — recorded COM-13 implementation and validation evidence.
+
+Behavior preserved: one collector is still created per request attempt and passed as the task-specific
+`URLSessionTaskDelegate`. Foundation invokes its callback on the session's serial delegate operation queue, and metrics
+collection precedes the task-completion callback that resumes `data(for:delegate:)`; the downloader therefore reads
+after the expected write while the mutex also makes overlapping access safe. Metrics remain available synchronously,
+and the existing final-transaction mapping remains unchanged: `.localCache` maps to `.localCache`; missing,
+network-load, server-push, and unknown metrics map to `.live`. Request, retry, cache fallback, observer, and logging
+behavior did not change.
+
+Validation:
+
+- Fresh baseline `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -derivedDataPath /tmp/issue302-baseline-derived build` — succeeded and
+  reproduced the exact original warning above in target `SkyAware`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HTTPDataDownloaderTests -resultBundlePath
+  /tmp/issue302-focused-tests.xcresult test` — succeeded. `xcresulttool` reports 6 passed, 0 failed, 0 skipped.
+- Required final `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination
+  "platform=iOS Simulator,name=iPhone 17" build` — succeeded.
+- Post-fix baseline-derived build using the first command recompiled `HTTPDataDownloader.swift` and succeeded.
+
+Warning scan: the required final Debug build emitted zero warnings. The baseline-derived post-fix log explicitly shows
+`HTTPDataDownloader.swift` compiling with no `URLSessionTaskMetricsCollector`, `storedMetrics`, or other warning. The
+focused test build emitted pre-existing warnings from unrelated test files; none references the changed production
+file or was introduced by COM-13.
+
+Residual risks and handoff: no deterministic `.localCache` metrics fixture was added because doing so would require
+production visibility expansion or reliance on URL loading cache behavior; the classification switch itself is
+unchanged. The focused suite covers live, cache-fallback, and 304-revalidation response sources. COM-13 and GitHub #302
+are complete. Do not close parent #289 or alter other ledger entries in this task.
+
+### COM-14 / Follow-up to GitHub #289 - Decompose HomeView
+
+Status: Complete — focused test execution is blocked locally; the Debug application build passed.
+
+Files changed and final boundaries:
+
+- `Sources/App/HomeView.swift` — reduced from 1,023 to 628 lines; retains all environment and query dependencies,
+  mutable state ownership, tab composition, modifier/task ordering, deep-link routing, refresh orchestration, and
+  location-reliability mutations/actions.
+- `Sources/App/HomeView+PresentationState.swift` — owns pure projection, Storm Setup, timezone, bootstrap, summary,
+  outlook, and settings-refresh presentation selectors.
+- `Sources/App/HomeView+LocationReliability.swift` — owns the pure location-reliability rail eligibility state and
+  selection helper. State-mutating actions remain with `HomeView` because they intentionally operate on its private
+  `@State` and environment-owned location session.
+- `Sources/App/TodayTabView.swift` — owns the independently stateful Today tab, its header-condense state, visible
+  weather retention task, refreshable navigation/scroll hierarchy, and private task identity.
+- `Sources/App/HomeView+Previews.swift` — owns the Home preview and in-memory SwiftData fixture.
+- `docs/plans/codebase-organization-maintenance-progress.md` — records this follow-up.
+
+Behavior preserved: all moved declarations were copied intact. `HomeView` retains every property wrapper, initial
+value, environment dependency, mutable-state owner, `TabView` selection, navigation stack, sheet, task, `onChange`,
+refresh, deep-link, and modifier ordering. Today weather-retention task identity, location-reliability suppression and
+settings behavior, cached/live projection selection, Storm Setup selection/gating, and preview fixtures are unchanged.
+No view model, protocol, dependency injection, generic abstraction, actor, cancellation behavior, or actor-isolation
+annotation was added or altered.
+
+Visibility: `TodayTabView` changed from file-private to module-internal solely because `HomeView` now instantiates it
+from a sibling source file. Its private supporting task-state type remains private. No other existing declaration
+widened access and no public API changed.
+
+Validation:
+
+- Declaration comparison against `HEAD` verified every moved selector, location-reliability state helper, Today tab,
+  weather task state, preview, and fixture body was byte-equivalent; the only intentional declaration difference is
+  `TodayTabView`'s required file-boundary access change.
+- `git diff --check` passed.
+- Filesystem-synchronized target evidence: the generated `SkyAware.SwiftFileList` contains all four new files under
+  `Sources/App`; the generated list contains no test source after the existing unrelated test exclusion is supplied.
+- Standard focused and Debug commands initially failed because Xcode's synchronized-group evaluation removed the
+  existing `StormRiskRepoRefreshCategoricalRiskTests.swift` application-target exclusion and then compiled that
+  `import Testing` test as part of `SkyAware`. The project file was restored without retaining that unrelated change.
+- Focused retry compiled the application and selected test targets and launched the simulator test session, but the
+  simulator harness left an incomplete staging bundle with no `Info.plist`/final `.xcresult`; no passed result can be
+  claimed. The staged app log shows normal launch only.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5"
+  -configuration Debug build EXCLUDED_SOURCE_FILE_NAMES=Tests/UnitTests/StormRiskRepoRefreshCategoricalRiskTests.swift`
+  — **BUILD SUCCEEDED**. The temporary command-line exclusion matches the project’s existing intended application-target
+  exclusion and was not committed. The build compiled all four new source files and emitted no changed-file warning.
+
+Residual risk and handoff: rerun the six focused Home/Today suites once the local simulator test harness finalizes
+results reliably. The source and target membership are compiler-validated; no live service or manual UI run was
+performed. This completes only the HomeView organization follow-up; do not alter the completed epic items.
 
 ## Verification Ledger
 

@@ -53,7 +53,8 @@ struct HomeRiskSnapshot {
     var fireRisk: FireRiskLevel?
 }
 
-struct HomeAlertSnapshot {
+struct HomeAlertSnapshot: Equatable {
+    var refreshKey: LocationContext.RefreshKey?
     var mesos: [MdDTO] = []
     var alerts: [AlertDTO] = []
 }
@@ -79,6 +80,7 @@ final class HomeRefreshPipeline {
     private var environment: Environment?
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
     private(set) var stormSetupRefreshKey: LocationContext.RefreshKey?
+    private(set) var alertSnapshotRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
@@ -115,6 +117,7 @@ final class HomeRefreshPipeline {
         initialStormSetup: StormSetupDTO? = nil,
         initialStormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         initialStormSetupRefreshKey: LocationContext.RefreshKey? = nil,
+        initialAlertSnapshotRefreshKey: LocationContext.RefreshKey? = nil,
         initialMesos: [MdDTO] = [],
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
@@ -131,12 +134,14 @@ final class HomeRefreshPipeline {
         self.stormSetup = initialStormSetup
         self.stormSetupCurrentResponse = initialStormSetupCurrentResponse
         self.stormSetupRefreshKey = initialStormSetupRefreshKey
+        self.alertSnapshotRefreshKey = initialAlertSnapshotRefreshKey
         self.riskSnapshot = HomeRiskSnapshot(
             stormRisk: initialStormRisk,
             severeRisk: initialSevereRisk,
             fireRisk: initialFireRisk
         )
         self.alertSnapshot = HomeAlertSnapshot(
+            refreshKey: initialAlertSnapshotRefreshKey,
             mesos: initialMesos,
             alerts: initialAlerts
         )
@@ -508,9 +513,12 @@ final class HomeRefreshPipeline {
                 severeRisk: snapshot.severeRisk,
                 fireRisk: snapshot.fireRisk
             )
-            alertSnapshot = HomeAlertSnapshot(
-                mesos: snapshot.mesos,
-                alerts: snapshot.alerts
+            commitAlertSnapshotIfChanged(
+                HomeAlertSnapshot(
+                    refreshKey: snapshot.refreshKey,
+                    mesos: snapshot.mesos,
+                    alerts: snapshot.alerts
+                )
             )
         }
 
@@ -554,6 +562,19 @@ final class HomeRefreshPipeline {
         self.stormSetup = resolvedStormSetup
         stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
         stormSetupRefreshKey = snapshotRefreshKey
+    }
+
+    @discardableResult
+    func commitAlertSnapshotIfChanged(_ proposedSnapshot: HomeAlertSnapshot) -> Bool {
+        guard alertSnapshot != proposedSnapshot else {
+            return false
+        }
+
+        alertSnapshot = proposedSnapshot
+        if alertSnapshotRefreshKey != proposedSnapshot.refreshKey {
+            alertSnapshotRefreshKey = proposedSnapshot.refreshKey
+        }
+        return true
     }
 }
 

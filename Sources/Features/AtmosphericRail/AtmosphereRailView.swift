@@ -11,6 +11,7 @@ import ArcusCore
 struct AtmosphericConditionsCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var activeTip: DewPointTip?
     @AppStorage(
         AtmosphericConditionsPreferences.alwaysShowAirQualityKey,
@@ -169,37 +170,21 @@ struct AtmosphericConditionsCard: View {
 
     @ViewBuilder
     private var metricsStrip: some View {
-        if adaptiveLayout.usesVerticalMetricRows {
-            VStack(alignment: .leading, spacing: SkyAwareSpacing.standard) {
-                ForEach(model.secondaryMetrics) { metric in
-                    AtmosphericMetricRow(metric: metric, isCompact: false)
+        Group {
+            if adaptiveLayout.usesVerticalMetricRows {
+                VStack(alignment: .leading, spacing: SkyAwareSpacing.standard) {
+                    ForEach(model.secondaryMetrics) { metric in
+                        AtmosphericMetricColumn(metric: metric, layout: .stacked)
+                    }
                 }
-            }
-        } else {
-            LazyVGrid(
-                columns: secondaryMetricColumns,
-                alignment: .leading,
-                spacing: SkyAwareSpacing.standard
-            ) {
-                ForEach(model.secondaryMetrics) { metric in
-                    AtmosphericMetricRow(metric: metric, isCompact: true)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    AtmosphericMetricsRail(metrics: model.secondaryMetrics)
+                    AtmosphericMetricsStack(metrics: model.secondaryMetrics)
                 }
             }
         }
-    }
-
-    private var secondaryMetricColumns: [GridItem] {
-        Array(
-            repeating: GridItem(.flexible(), spacing: SkyAwareSpacing.standard, alignment: .top),
-            count: AtmosphericMetricRailLayout.compactColumnCount(for: model.secondaryMetrics.count)
-        )
-    }
-}
-
-enum AtmosphericMetricRailLayout {
-    static func compactColumnCount(for metricCount: Int) -> Int {
-        metricCount == 4 ? 2 : max(metricCount, 1)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: model.secondaryMetrics)
     }
 }
 
@@ -473,80 +458,108 @@ private struct DewPointTipView: View {
     }
 }
 
-private struct AtmosphericMetricRow: View {
-    let metric: AtmosphericConditionsDisplayModel.Metric
-    let isCompact: Bool
+private struct AtmosphericMetricsRail: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let metrics: [AtmosphericConditionsDisplayModel.Metric]
 
     var body: some View {
-        if isCompact {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 5) {
-                    Image(systemName: metric.iconName)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
+                AtmosphericMetricColumn(metric: metric, layout: .rail)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
 
-                    Text(metric.title)
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                }
-
-                Text(metric.value)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(valueColor)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let detail = metric.detail {
-                    Text(detail)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(valueColor)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                if index < metrics.count - 1 {
+                    Divider()
+                        .overlay(colorScheme == .dark ? .white.opacity(0.12) : .black.opacity(0.08))
+                        .padding(.vertical, 2)
+                        .transition(.opacity)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(metric.title)
-            .accessibilityValue(metric.accessibilityValue ?? metric.value)
-        } else {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: metric.iconName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 15, alignment: .leading)
-                    .padding(.top, 1)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(metric.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-
-                    Text(metric.value)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(valueColor)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if let detail = metric.detail {
-                        Text(detail)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(valueColor)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 0)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(metric.title)
-            .accessibilityValue(metric.accessibilityValue ?? metric.value)
         }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: metrics)
+    }
+}
+
+private struct AtmosphericMetricsStack: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let metrics: [AtmosphericConditionsDisplayModel.Metric]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SkyAwareSpacing.standard) {
+            ForEach(metrics) { metric in
+                AtmosphericMetricColumn(metric: metric, layout: .stacked)
+                    .transition(.opacity.combined(with: .offset(y: 4)))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(SkyAwareMotion.settle(reduceMotion), value: metrics)
+    }
+}
+
+private struct AtmosphericMetricColumn: View {
+    enum Layout {
+        case rail
+        case stacked
+
+        var verticalSpacing: CGFloat {
+            switch self {
+            case .rail:
+                4
+            case .stacked:
+                6
+            }
+        }
+    }
+
+    let metric: AtmosphericConditionsDisplayModel.Metric
+    let layout: Layout
+
+    var body: some View {
+        VStack(alignment: .center, spacing: layout.verticalSpacing) {
+            Image(systemName: metric.iconName)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(iconColor)
+                .accessibilityHidden(true)
+
+            Text(metric.title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .frame(maxWidth: .infinity)
+
+            Text(metric.value)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(valueColor)
+                .monospacedDigit()
+                .multilineTextAlignment(.center)
+                .lineLimit(metric.kind == .aqi ? 1 : 2)
+                .minimumScaleFactor(layout == .rail ? 0.88 : 0.84)
+                .frame(maxWidth: .infinity)
+
+            if let detail = metric.detail {
+                Text(detail)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(valueColor)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(metric.title)
+        .accessibilityValue(metric.accessibilityValue ?? metric.value)
+    }
+
+    private var iconColor: Color {
+        metric.semanticAccent == nil ? .secondary : valueColor
     }
 
     private var valueColor: Color {
@@ -581,6 +594,31 @@ private struct AtmosphericMetricRow: View {
     AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.veryMoist, airQuality: nil)
 }
 
+#Preview("Atmospheric Conditions - Hidden AQI") {
+    AtmosphericConditionsCard(
+        weather: AtmosphericConditionsPreviewData.calm,
+        airQuality: AtmosphericConditionsPreviewData.hiddenAirQuality
+    )
+}
+
+#Preview("Atmospheric Conditions - With AQI") {
+    AtmosphericConditionsCard(
+        weather: AtmosphericConditionsPreviewData.stormSupportive,
+        airQuality: AtmosphericConditionsPreviewData.validAirQuality
+    )
+}
+
+#Preview("Atmospheric Conditions - Hazardous AQI") {
+    AtmosphericConditionsCard(
+        weather: AtmosphericConditionsPreviewData.stormSupportive,
+        airQuality: AtmosphericConditionsPreviewData.hazardousAirQuality
+    )
+}
+
+#Preview("Atmospheric Conditions - Long Wind") {
+    AtmosphericConditionsCard(weather: AtmosphericConditionsPreviewData.longWind, airQuality: nil)
+}
+
 #Preview("Atmospheric Conditions - Unavailable Weather") {
     AtmosphericConditionsCard(weather: nil, airQuality: nil)
 }
@@ -601,6 +639,39 @@ private struct AtmosphericMetricRow: View {
 }
 
 private enum AtmosphericConditionsPreviewData {
+    static let hiddenAirQuality: AirQualityCurrentResponse? = {
+        let json = """
+        {"aqi":46,"category":{"identifier":2,"name":"Good"},"primaryPollutant":"O3","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}
+        """
+
+        return try? DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(json.utf8)
+        )
+    }()
+
+    static let validAirQuality: AirQualityCurrentResponse? = {
+        let json = """
+        {"aqi":121,"category":{"identifier":3,"name":"Unhealthy for Sensitive Groups"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}
+        """
+
+        return try? DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(json.utf8)
+        )
+    }()
+
+    static let hazardousAirQuality: AirQualityCurrentResponse? = {
+        let json = """
+        {"aqi":301,"category":{"identifier":5,"name":"Hazardous"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}
+        """
+
+        return try? DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(json.utf8)
+        )
+    }()
+
     static let calm = SummaryWeather(
         temperature: Measurement(value: 58.0, unit: .fahrenheit),
         symbolName: "cloud.sun.fill",
@@ -640,6 +711,20 @@ private enum AtmosphericConditionsPreviewData {
         windGust: nil,
         windDirection: "SE",
         pressure: Measurement(value: 29.76, unit: .inchesOfMercury),
+        pressureTrend: "falling"
+    )
+
+    static let longWind = SummaryWeather(
+        temperature: Measurement(value: 83.0, unit: .fahrenheit),
+        symbolName: "wind",
+        conditionText: "Breezy with a long directional label",
+        asOf: .now,
+        dewPoint: Measurement(value: 67.0, unit: .fahrenheit),
+        humidity: 0.62,
+        windSpeed: Measurement(value: 18.0, unit: .milesPerHour),
+        windGust: Measurement(value: 27.0, unit: .milesPerHour),
+        windDirection: "South-southeast",
+        pressure: Measurement(value: 29.68, unit: .inchesOfMercury),
         pressureTrend: "falling"
     )
 }

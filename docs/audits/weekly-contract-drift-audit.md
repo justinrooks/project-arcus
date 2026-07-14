@@ -228,3 +228,60 @@
 - Findings: 1 High, 0 Medium, 0 Low. Watchlist: 3.
 - Implementation recommended: Yes, for Storm Setup rules-version invalidation.
 - No implementation, tests, branches, commits, pushes, PRs, or GitHub issues were created by this audit.
+
+## 2026-07-13
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- SkyAware: commits after the 2026-07-06 automation run through `0fb54008`. Contract-relevant change was `fa73e569` (`Migrate Storm Setup to the ArcusCore aggregate and wire it through Today (#303)`); later commits were test/file-organization or release-note changes. Current local map refactor edits were present but not contract-relevant.
+- arcus-signal: commits after the 2026-07-06 automation run through `139f10b`, including `a7b277d` (`Separate tornado viability from the Storm Setup current response (#147)`), AirNow AQI endpoint work, and package updates. Current Postman rename/delete working-tree changes were inspected as documentation/fixture evidence only.
+- ArcusCore: commits after `de86f50` through `977945d`, including shared Storm Setup aggregate models, raw-string tornado viability enum compatibility, and `AirQualityCurrentResponse`.
+
+### Contract surfaces inspected
+- `GET /api/v1/storm-setup/current` route, provider composition, `StormSetupCurrentResponse`, `TornadoViabilityReport`, canonical/diagnostic ingredient split, `profileAnalysis`, `surfaceHeightMslM`, and app decoding/persistence of the ArcusCore aggregate.
+- Storm Setup sampled snapshot cache key/versioning, `StormSetupRulesVersion`, `StormSetupSnapshotCache`, interpreter semantics, Anvil exact/stale evidence handling, and response builder paths.
+- `GET /api/v1/air-quality/current`, `AirQualityCurrentResponse`, AirNow normalization, app AQI client decoding, README/Postman endpoint fixtures.
+- Package pins for ArcusCore in SkyAware and arcus-signal.
+- Prior high-risk APNs/date and location-source documentation findings were not re-expanded because no new evidence changed those contracts in this window.
+
+### Highest-risk areas
+- Storm Setup cache versioning remains highest risk because persisted sampled snapshots can survive deployments while the public severe-weather interpretation semantics continue to evolve.
+- The new shared Storm Setup aggregate is high risk because the server, shared package, app decoder, persistence codec, and presentation mapping all now depend on one response shape.
+- Air Quality was inspected because it is a new app/server/shared endpoint with location-scoped freshness and date decoding assumptions.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Storm Setup viability semantics changed again while sampled snapshot cache still uses the V1 rules namespace | arcus-signal, ArcusCore, SkyAware | Storm Setup sampled snapshot persistence/cache key and public current response | Interpreter/response semantics -> persisted sampled snapshot cache -> `GET /api/v1/storm-setup/current` -> app/shared decoder | arcus-signal commit `a7b277d` rewired `TornadoIngredientInterpreter` into a richer tornado viability diagnosis and added the public `TornadoViabilityReport` bridge. `Sources/App/StormSetup/StormSetupRulesVersion.swift` still sets `current = .tornadoIngredientV1` even though `.tornadoIngredientV2` exists. `StormSetupSnapshotCacheKey` includes `rulesVersion` in the cache path, and `StormSetupSnapshotCacheTests.differentRulesVersionsMissTheCache` proves that version is the intended semantic invalidation boundary. `StormSetupSnapshotCache.loadSnapshot` returns a fresh matching record after re-assessing only the cached raw snapshot with the requested rules version. ArcusCore `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift` now makes `tornadoViability` part of the shared response, and SkyAware `Sources/Clients/StormSetupClient.swift` decodes that shared response directly. | Fresh V1 cache records can continue to shape the public tornado viability response after semantics change, especially for cached sampled snapshots that lack exact Anvil canonical ingredients. The user-visible blast radius is Storm Setup guidance for affected H3/source keys until cache expiry. Proposed-change blast radius is limited to sampled snapshot namespace invalidation and one-time recomputation. | High | Bump `StormSetupRulesVersion.current` to `.tornadoIngredientV2`; keep V1 decode support for existing cache records. Add a focused regression proving a V1 sampled snapshot misses when requested through current rules, then verify the current response still encodes/decodes through ArcusCore. | Unit: cache version miss test keyed from `.tornadoIngredientV1` to `.current`. Provider/API contract: seed a V1 cached sampled snapshot and assert current response recomputes under V2. Decoding: keep ArcusCore/SkyAware `StormSetupCurrentResponse` round-trip tests. |
+
+### Top recommended fix
+- Bump `arcus-signal/Sources/App/StormSetup/StormSetupRulesVersion.swift` so `StormSetupRulesVersion.current == .tornadoIngredientV2`.
+- This matters because the public `tornadoViability` response is now shared across ArcusCore and consumed directly by SkyAware, so stale cached assessments have a clearer app-facing contract impact than in prior runs.
+- Expected files touched: `arcus-signal/Sources/App/StormSetup/StormSetupRulesVersion.swift` and one focused cache/provider test.
+- Estimated churn: under 25 lines.
+- Regression risk: Low; existing V1 records remain decodable but should miss the current cache namespace and recompute.
+
+### Watchlist
+- `GET /api/v1/air-quality/current` is implemented in arcus-signal, modeled in ArcusCore, and decoded by SkyAware, but `arcus-signal/docs/api-endpoints.md` does not document the route or response shape. README and Postman mention the endpoint, and code/tests align, so this is not confirmed runtime drift. Promote only if endpoint docs are treated as the authoritative public API contract or fixtures begin contradicting the shared DTO.
+- Anvil profile analysis service schema remains outside the scoped repositories. arcus-signal and ArcusCore now expose app-facing `AnvilAnalyzeProfileResponse` through `StormSetupCurrentResponse.profileAnalysis`, and SkyAware decodes it, but the external Anvil service producer contract is unavailable here. Promote only when that schema/client generation source is in scope.
+- The stale location-source documentation/Postman concern remains a prior unresolved documentation-contract item; no materially better evidence was found this week.
+
+### Files inspected
+- SkyAware: `SkyAware.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, `Sources/Clients/StormSetupClient.swift`, `Sources/Clients/AirQualityClient.swift`, `Sources/Models/StormSetup/StormSetupDTO.swift`, `Sources/Models/StormSetup/StormSetupAssessment.swift`, `Sources/Models/Home/HomeProjection.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeView.swift`, `Sources/Features/StormSetup/StormSetupPresentation.swift`, `Sources/Features/StormSetup/StormSetupDetailPresentation.swift`, `Tests/UnitTests/StormSetupHTTPClientTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `Tests/UnitTests/HomeProjectionStoreTests.swift`, and `Tests/UnitTests/AirQualityHTTPClientTests.swift`.
+- arcus-signal: `Package.resolved`, `Sources/App/Controllers/StormSetupController.swift`, `Sources/App/StormSetup/StormSetupProvider.swift`, `Sources/App/StormSetup/StormSetupRulesVersion.swift`, `Sources/App/StormSetup/StormSetupSnapshotCache.swift`, `Sources/App/StormSetup/StormSetupSnapshotCacheKey.swift`, `Sources/App/StormSetup/StormSetupModels.swift`, `Sources/App/StormSetup/TornadoIngredientInterpreter.swift`, `Sources/App/StormSetup/TornadoIngredientAssessment.swift`, `Sources/App/StormSetup/AnvilIngredientEvidence.swift`, `Sources/App/Controllers/AirQualityController.swift`, `Sources/App/AirQuality/AirQualityProvider.swift`, `Sources/App/AirQuality/AirNowClient.swift`, `Sources/App/AirQuality/AirNowObservation.swift`, `Sources/App/Extensions/VaporContentConformances.swift`, `Tests/AppTests/StormSetupCurrentResponseDTOTests.swift`, `Tests/AppTests/StormSetupProviderTests.swift`, `Tests/AppTests/StormSetupSnapshotCacheTests.swift`, `Tests/AppTests/AirQualityTests.swift`, `README.md`, `docs/api-endpoints.md`, and AirQuality/StormSetup/Anvil Postman request YAML files.
+- ArcusCore: `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, `Sources/ArcusCore/StormSetup/TornadoIngredientAssessment.swift`, `Sources/ArcusCore/StormSetup/TornadoRawParameters.swift`, `Sources/ArcusCore/StormSetup/StormSetupSourceModels.swift`, `Sources/ArcusCore/AirQualityCurrentResponse.swift`, `Tests/ArcusCoreTests/StormSetupDTOTests.swift`, and `Tests/ArcusCoreTests/ArcusCoreTests.swift`.
+
+### Out-of-scope and recommendation status
+- No repositories outside SkyAware, arcus-signal, and ArcusCore were inspected.
+- No external Anvil service schema, deployed API logs, or generated OpenAPI schema was available in the scoped repositories.
+- Findings: 1 High, 0 Medium, 0 Low. Watchlist: 3.
+- Implementation recommended: Yes, for Storm Setup rules-version invalidation.
+- No implementation, tests, branches, commits, pushes, PRs, or GitHub issues were created by this audit.

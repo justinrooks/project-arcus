@@ -142,6 +142,14 @@ struct ActiveAlertSummaryView: View {
     }
 
     var body: some View {
+        if contentState == .empty {
+            LocalAlertsNoActiveRailView()
+        } else {
+            activeContent
+        }
+    }
+
+    private var activeContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
                 Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
@@ -189,7 +197,7 @@ struct ActiveAlertSummaryView: View {
             cornerRadius: SkyAwareRadius.card,
             shadowOpacity: 0.08,
             shadowRadius: 8,
-            shadowY: 3,
+            shadowY: 3
         )
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
@@ -256,20 +264,7 @@ struct ActiveAlertSummaryView: View {
     }
 
     private var emptyContent: some View {
-        VStack(alignment: .leading, spacing: 8) {
-//            Label("No Active Alerts", systemImage: "checkmark.shield")
-//                .symbolVariant(.fill)
-//                .sectionLabel()
-            Label("No Active Alerts", systemImage: "")
-                .labelStyle(.titleOnly)
-                .sectionLabel()
-            Text("Your local area currently has no active alerts or mesoscale discussions.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(2)
-        .accessibilityElement(children: .combine)
+        LocalAlertsNoActiveRailView()
     }
 
     private var loadingContent: some View {
@@ -553,9 +548,16 @@ private struct WatchRowView: View {
     }
 }
 
-#Preview("Local Alerts - Populated Alerts") {
+#Preview("Local Alerts - Multiple Active Alerts") {
     ActiveAlertPreviewContainer(
         alerts: Watch.sampleWatchRows,
+        localAlertsDisplayState: .current(content: .populated, source: .cached)
+    )
+}
+
+#Preview("Local Alerts - One Active Alert") {
+    ActiveAlertPreviewContainer(
+        alerts: Array(Watch.sampleWatchRows.prefix(1)),
         localAlertsDisplayState: .current(content: .populated, source: .cached)
     )
 }
@@ -575,7 +577,7 @@ private struct WatchRowView: View {
     )
 }
 
-#Preview("Local Alerts - Known Empty") {
+#Preview("Local Alerts - No Active Rail") {
     ActiveAlertPreviewContainer(
         mesos: [],
         alerts: [],

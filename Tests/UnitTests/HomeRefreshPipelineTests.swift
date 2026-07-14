@@ -521,6 +521,170 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
     }
 
+    @Test("visible alert commits update ownership and failures retain the prior visible alerts")
+    func visibleAlertCommit_updatesOwnershipAndFailureRetainsPriorVisibleAlerts() async {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let currentContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let oldMeso = MD.sampleDiscussionDTOs[0]
+        let newMeso = MD.sampleDiscussionDTOs[1]
+        let oldAlert = Watch.sampleWatchRows[0]
+        let newAlert = Watch.sampleWatchRows[1]
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: oldContext.refreshKey,
+            initialMesos: [oldMeso],
+            initialAlerts: [oldAlert]
+        )
+        let locationSession = FakeLocationSession(
+            currentContext: currentContext,
+            preparedContext: currentContext
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: RecordingHomeIngestionCoordinator(
+                    snapshot: HomeSnapshot(
+                        locationSnapshot: currentContext.snapshot,
+                        refreshKey: currentContext.refreshKey,
+                        stormSetupRefreshResult: .success,
+                        mesos: [newMeso],
+                        alerts: [newAlert]
+                    )
+                ),
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.alertSnapshotRefreshKey == currentContext.refreshKey)
+        #expect(pipeline.mesos == [newMeso])
+        #expect(pipeline.alerts == [newAlert])
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: RecordingHomeIngestionCoordinator(
+                    results: [.failure(TestError.failed)]
+                ),
+                locationSession: locationSession
+            )
+        )
+
+        #expect(pipeline.alertSnapshotRefreshKey == currentContext.refreshKey)
+        #expect(pipeline.mesos == [newMeso])
+        #expect(pipeline.alerts == [newAlert])
+    }
+
+    @Test("equivalent visible alert snapshots do not republish")
+    func equivalentVisibleAlertSnapshots_doNotRepublish() {
+        let context = makeContext()
+        let meso = MD.sampleDiscussionDTOs[0]
+        let alert = Watch.sampleWatchRows[0]
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [meso],
+            initialAlerts: [alert]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(
+                refreshKey: context.refreshKey,
+                mesos: [meso],
+                alerts: [alert]
+            )
+        )
+
+        #expect(published == false)
+        #expect(pipeline.alertSnapshotRefreshKey == context.refreshKey)
+        #expect(pipeline.mesos == [meso])
+        #expect(pipeline.alerts == [alert])
+    }
+
+    @Test("equivalent empty alert snapshots do not republish")
+    func equivalentEmptyAlertSnapshots_doNotRepublish() {
+        let context = makeContext()
+        let pipeline = HomeRefreshPipeline(initialAlertSnapshotRefreshKey: context.refreshKey)
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(refreshKey: context.refreshKey)
+        )
+
+        #expect(published == false)
+        #expect(pipeline.alertSnapshotRefreshKey == context.refreshKey)
+        #expect(pipeline.mesos.isEmpty)
+        #expect(pipeline.alerts.isEmpty)
+    }
+
+    @Test("meaningful DTO changes still republish visible alert snapshots")
+    func meaningfulDtoChanges_stillRepublishVisibleAlertSnapshots() {
+        let context = makeContext()
+        let originalMeso = MD.sampleDiscussionDTOs[0]
+        let updatedMeso = makeUpdatedMeso(from: originalMeso, summary: "Updated guidance")
+        let originalAlert = Watch.sampleWatchRows[0]
+        var updatedAlert = originalAlert
+        updatedAlert.currentRevisionSent = Date(timeIntervalSince1970: 999)
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [originalMeso],
+            initialAlerts: [originalAlert]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(
+                refreshKey: context.refreshKey,
+                mesos: [updatedMeso],
+                alerts: [updatedAlert]
+            )
+        )
+
+        #expect(published)
+        #expect(pipeline.mesos == [updatedMeso])
+        #expect(pipeline.alerts == [updatedAlert])
+    }
+
+    @Test("active alerts can transition to an authoritative empty snapshot")
+    func activeAlerts_canTransitionToAuthoritativeEmptySnapshot() {
+        let context = makeContext()
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [MD.sampleDiscussionDTOs[0]],
+            initialAlerts: [Watch.sampleWatchRows[0]]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(refreshKey: context.refreshKey)
+        )
+
+        #expect(published)
+        #expect(pipeline.mesos.isEmpty)
+        #expect(pipeline.alerts.isEmpty)
+    }
+
+    @Test("different contexts still commit even when alert collections match")
+    func differentContexts_stillCommitEvenWhenAlertCollectionsMatch() {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let newContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let meso = MD.sampleDiscussionDTOs[0]
+        let alert = Watch.sampleWatchRows[0]
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: oldContext.refreshKey,
+            initialMesos: [meso],
+            initialAlerts: [alert]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(
+                refreshKey: newContext.refreshKey,
+                mesos: [meso],
+                alerts: [alert]
+            )
+        )
+
+        #expect(published)
+        #expect(pipeline.alertSnapshotRefreshKey == newContext.refreshKey)
+        #expect(pipeline.mesos == [meso])
+        #expect(pipeline.alerts == [alert])
+    }
+
     @Test("progress started keeps cached Today display state steady until snapshot commit")
     func progressStarted_keepsCachedTodayDisplayStateSteady() async {
         let context = makeContext()
@@ -1648,6 +1812,23 @@ struct HomeRefreshPipelineTests {
         )
     }
 
+    private func makeUpdatedMeso(from original: MdDTO, summary: String) -> MdDTO {
+        MdDTO(
+            number: original.number,
+            title: original.title,
+            link: original.link,
+            issued: original.issued,
+            validStart: original.validStart,
+            validEnd: original.validEnd,
+            areasAffected: original.areasAffected,
+            summary: summary,
+            concerning: original.concerning,
+            watchProbability: original.watchProbabilityText,
+            threats: original.threats,
+            coordinates: original.coordinates
+        )
+    }
+
     private func sampleOutlooks() -> [ConvectiveOutlookDTO] {
         [
             ConvectiveOutlookDTO(
@@ -1763,6 +1944,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 }
 
+private enum TestError: Error {
+    case failed
+}
+
 private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let snapshots: [HomeSnapshot]
     private let gates: [AsyncGate?]
@@ -1826,29 +2011,6 @@ private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
-    }
-}
-
-@Suite("SkyAware App Activation Cleanup")
-struct SkyAwareAppActivationCleanupTests {
-    @Test("shouldRunActivationCleanup_enforcesHourlyThrottle")
-    func shouldRunActivationCleanupEnforcesHourlyThrottle() {
-        let now = Date(timeIntervalSinceReferenceDate: 2_000_000)
-        let minimumInterval = ActivationCleanupThrottle.minimumInterval
-
-        #expect(ActivationCleanupThrottle.shouldRun(lastRunAt: 0, now: now))
-        #expect(
-            ActivationCleanupThrottle.shouldRun(
-                lastRunAt: now.timeIntervalSinceReferenceDate - minimumInterval + 1,
-                now: now
-            ) == false
-        )
-        #expect(
-            ActivationCleanupThrottle.shouldRun(
-                lastRunAt: now.timeIntervalSinceReferenceDate - minimumInterval,
-                now: now
-            )
-        )
     }
 }
 

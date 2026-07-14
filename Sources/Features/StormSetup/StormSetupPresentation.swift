@@ -29,36 +29,19 @@ struct SummarySectionPlan: Sendable, Equatable {
         showsStormSetup: Bool,
         hasLocationReliabilityRail: Bool
     ) -> SummarySectionPlan {
-        let localAlertsArePopulated = localAlertsDisplayState.presentationState == .alerts
-
         var sections: [SummarySectionKind] = [
             .currentConditions,
-            .primaryAwareness
+            .primaryAwareness,
+            .localAlerts,
+            .atmosphericConditions
         ]
 
-        if localAlertsArePopulated {
-            sections.append(.localAlerts)
-            sections.append(.atmosphericConditions)
+        if showsStormSetup {
+            sections.append(.stormSetup)
+        }
 
-            if showsStormSetup {
-                sections.append(.stormSetup)
-            }
-
-            if hasLocationReliabilityRail {
-                sections.append(.locationReliability)
-            }
-        } else {
-            sections.append(.atmosphericConditions)
-
-            if showsStormSetup {
-                sections.append(.stormSetup)
-            }
-
-            if hasLocationReliabilityRail {
-                sections.append(.locationReliability)
-            }
-
-            sections.append(.localAlerts)
+        if hasLocationReliabilityRail {
+            sections.append(.locationReliability)
         }
 
         sections.append(.outlookSummary)
@@ -93,6 +76,28 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
     let accessibilityLabel: String
     let accessibilityValue: String
     let accessibilityHint: String
+
+    init(
+        overallTitle: String,
+        summaryProse: String?,
+        ingredientRows: [IngredientRow],
+        limiterText: String?,
+        freshnessText: String?,
+        sourceLine: String,
+        accessibilityLabel: String,
+        accessibilityValue: String,
+        accessibilityHint: String
+    ) {
+        self.overallTitle = overallTitle
+        self.summaryProse = summaryProse
+        self.ingredientRows = ingredientRows
+        self.limiterText = limiterText
+        self.freshnessText = freshnessText
+        self.sourceLine = sourceLine
+        self.accessibilityLabel = accessibilityLabel
+        self.accessibilityValue = accessibilityValue
+        self.accessibilityHint = accessibilityHint
+    }
 
     init(response: StormSetupCurrentResponse, timeZone: TimeZone, now: Date = .now) {
         overallTitle = Self.readableTitle(for: response.tornadoViability.overall)
@@ -191,6 +196,22 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         accessibilityValue = accessibilityParts.joined(separator: ". ")
         accessibilityHint = "Opens Storm Setup details."
     }
+
+    static let loadingPlaceholder = StormSetupSummaryPresentation(
+        overallTitle: "Analyzing setup",
+        summaryProse: "Checking ingredients, local context, and guidance so this card can resolve smoothly.",
+        ingredientRows: [
+            .init(kind: .instability, title: "Instability", value: "Loading"),
+            .init(kind: .rotation, title: "Rotation", value: "Loading"),
+            .init(kind: .cloudBases, title: "Cloud bases", value: "Loading")
+        ],
+        limiterText: nil,
+        freshnessText: nil,
+        sourceLine: "Loading guidance",
+        accessibilityLabel: "Storm Setup",
+        accessibilityValue: "Loading storm setup details.",
+        accessibilityHint: "Storm setup guidance is loading."
+    )
 
     static func readableTitle(for signal: StormSetupSignal) -> String {
         switch signal {
