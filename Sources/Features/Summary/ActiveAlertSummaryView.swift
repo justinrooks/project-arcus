@@ -142,52 +142,14 @@ struct ActiveAlertSummaryView: View {
     }
 
     var body: some View {
-        shellContent
-        .sheet(item: $selectedMeso) { meso in
-            sheetContent(selection: $selectedMesoDetent) { isExpanded in
-                MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
-                    .padding(.top, 8)
-                    .padding(.horizontal, 6)
-            }
-        }
-        .sheet(item: $selectedAlert) { alert in
-            sheetContent(selection: $selectedAlertDetent) { isExpanded in
-                AlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
-                    .padding(.top, 8)
-                    .padding(.horizontal, 6)
-            }
-            .accessibilityIdentifier("summary-watch-detail-sheet")
-        }
-        .onChange(of: contentState) { oldValue, newValue in
-            handleContentStateTransition(from: oldValue, to: newValue)
-        }
-        .onAppear {
-            if heightPhase == .uninitialized {
-                heightPhase = .stable(contentState)
-            }
-        }
-        .onDisappear {
-            flexibleHeightResetTask?.cancel()
-            flexibleHeightResetTask = nil
-        }
-    }
-
-    @ViewBuilder
-    private var shellContent: some View {
         if contentState == .empty {
-            contentShell
+            LocalAlertsNoActiveRailView()
         } else {
-            contentShell
-                .cardBackground(
-                    cornerRadius: SkyAwareRadius.card,
-                    shadowOpacity: 0.08,
-                    shadowRadius: 8,
-                    shadowY: 3
-                )
+            activeContent
         }
     }
 
-    private var contentShell: some View {
+    private var activeContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 12) {
                 Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
@@ -231,6 +193,39 @@ struct ActiveAlertSummaryView: View {
             innerContent
         }
         .padding(18)
+        .cardBackground(
+            cornerRadius: SkyAwareRadius.card,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3
+        )
+        .sheet(item: $selectedMeso) { meso in
+            sheetContent(selection: $selectedMesoDetent) { isExpanded in
+                MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 6)
+            }
+        }
+        .sheet(item: $selectedAlert) { alert in
+            sheetContent(selection: $selectedAlertDetent) { isExpanded in
+                AlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
+                    .padding(.top, 8)
+                    .padding(.horizontal, 6)
+            }
+            .accessibilityIdentifier("summary-watch-detail-sheet")
+        }
+        .onChange(of: contentState) { oldValue, newValue in
+            handleContentStateTransition(from: oldValue, to: newValue)
+        }
+        .onAppear {
+            if heightPhase == .uninitialized {
+                heightPhase = .stable(contentState)
+            }
+        }
+        .onDisappear {
+            flexibleHeightResetTask?.cancel()
+            flexibleHeightResetTask = nil
+        }
     }
 
     @ViewBuilder
