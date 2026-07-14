@@ -574,6 +574,117 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.alerts == [newAlert])
     }
 
+    @Test("equivalent visible alert snapshots do not republish")
+    func equivalentVisibleAlertSnapshots_doNotRepublish() {
+        let context = makeContext()
+        let meso = MD.sampleDiscussionDTOs[0]
+        let alert = Watch.sampleWatchRows[0]
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [meso],
+            initialAlerts: [alert]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(
+                refreshKey: context.refreshKey,
+                mesos: [meso],
+                alerts: [alert]
+            )
+        )
+
+        #expect(published == false)
+        #expect(pipeline.alertSnapshotRefreshKey == context.refreshKey)
+        #expect(pipeline.mesos == [meso])
+        #expect(pipeline.alerts == [alert])
+    }
+
+    @Test("equivalent empty alert snapshots do not republish")
+    func equivalentEmptyAlertSnapshots_doNotRepublish() {
+        let context = makeContext()
+        let pipeline = HomeRefreshPipeline(initialAlertSnapshotRefreshKey: context.refreshKey)
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(refreshKey: context.refreshKey)
+        )
+
+        #expect(published == false)
+        #expect(pipeline.alertSnapshotRefreshKey == context.refreshKey)
+        #expect(pipeline.mesos.isEmpty)
+        #expect(pipeline.alerts.isEmpty)
+    }
+
+    @Test("meaningful DTO changes still republish visible alert snapshots")
+    func meaningfulDtoChanges_stillRepublishVisibleAlertSnapshots() {
+        let context = makeContext()
+        let originalMeso = MD.sampleDiscussionDTOs[0]
+        let updatedMeso = makeUpdatedMeso(from: originalMeso, summary: "Updated guidance")
+        let originalAlert = Watch.sampleWatchRows[0]
+        var updatedAlert = originalAlert
+        updatedAlert.currentRevisionSent = Date(timeIntervalSince1970: 999)
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [originalMeso],
+            initialAlerts: [originalAlert]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(
+                refreshKey: context.refreshKey,
+                mesos: [updatedMeso],
+                alerts: [updatedAlert]
+            )
+        )
+
+        #expect(published)
+        #expect(pipeline.mesos == [updatedMeso])
+        #expect(pipeline.alerts == [updatedAlert])
+    }
+
+    @Test("active alerts can transition to an authoritative empty snapshot")
+    func activeAlerts_canTransitionToAuthoritativeEmptySnapshot() {
+        let context = makeContext()
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [MD.sampleDiscussionDTOs[0]],
+            initialAlerts: [Watch.sampleWatchRows[0]]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(refreshKey: context.refreshKey)
+        )
+
+        #expect(published)
+        #expect(pipeline.mesos.isEmpty)
+        #expect(pipeline.alerts.isEmpty)
+    }
+
+    @Test("different contexts still commit even when alert collections match")
+    func differentContexts_stillCommitEvenWhenAlertCollectionsMatch() {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let newContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let meso = MD.sampleDiscussionDTOs[0]
+        let alert = Watch.sampleWatchRows[0]
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: oldContext.refreshKey,
+            initialMesos: [meso],
+            initialAlerts: [alert]
+        )
+
+        let published = pipeline.commitAlertSnapshotIfChanged(
+            HomeAlertSnapshot(
+                refreshKey: newContext.refreshKey,
+                mesos: [meso],
+                alerts: [alert]
+            )
+        )
+
+        #expect(published)
+        #expect(pipeline.alertSnapshotRefreshKey == newContext.refreshKey)
+        #expect(pipeline.mesos == [meso])
+        #expect(pipeline.alerts == [alert])
+    }
+
     @Test("progress started keeps cached Today display state steady until snapshot commit")
     func progressStarted_keepsCachedTodayDisplayStateSteady() async {
         let context = makeContext()
@@ -1698,6 +1809,23 @@ struct HomeRefreshPipelineTests {
             ),
             centroid: .init(latitude: 39.5, longitude: -100.0),
             surfaceHeightMslM: 1132.4
+        )
+    }
+
+    private func makeUpdatedMeso(from original: MdDTO, summary: String) -> MdDTO {
+        MdDTO(
+            number: original.number,
+            title: original.title,
+            link: original.link,
+            issued: original.issued,
+            validStart: original.validStart,
+            validEnd: original.validEnd,
+            areasAffected: original.areasAffected,
+            summary: summary,
+            concerning: original.concerning,
+            watchProbability: original.watchProbabilityText,
+            threats: original.threats,
+            coordinates: original.coordinates
         )
     }
 
