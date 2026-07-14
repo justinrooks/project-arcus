@@ -57,13 +57,23 @@ struct AtmosphericConditionsDescriptorTests {
         let model = AtmosphericConditionsDisplayModel(weather: sampleWeather, airQuality: nil)
 
         #expect(model.secondaryMetrics.map(\.kind) == [.humidity, .wind, .pressure])
-        #expect(AtmosphericMetricRailLayout.compactColumnCount(for: model.secondaryMetrics.count) == 3)
     }
 
-    @Test("AQI rail wraps to two readable columns")
-    func aqiRailWrapsToTwoColumns() {
-        #expect(AtmosphericMetricRailLayout.compactColumnCount(for: 4) == 2)
+    @Test("visible AQI appends a fourth metric with category detail")
+    func visibleAQIAppendsFourthMetric() {
+        let json = """
+        {"aqi":121,"category":{"identifier":3,"name":"Unhealthy for Sensitive Groups"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}
+        """
+        let airQuality = try? DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(json.utf8)
+        )
+        let model = AtmosphericConditionsDisplayModel(weather: sampleWeather, airQuality: airQuality)
+
+        #expect(model.secondaryMetrics.map(\.kind) == [.humidity, .wind, .pressure, .aqi])
+        #expect(model.secondaryMetrics.last?.detail == "USG")
     }
+
     @Test("dew points below 50 are dry air")
     func belowFiftyIsDryAir() {
         #expect(DewPointDescriptor.text(for: 49.9) == "Dry air in place")
