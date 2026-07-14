@@ -285,3 +285,71 @@
 - Findings: 1 High, 0 Medium, 0 Low. Watchlist: 3.
 - Implementation recommended: Yes, for Storm Setup rules-version invalidation.
 - No implementation, tests, branches, commits, pushes, PRs, or GitHub issues were created by this audit.
+
+## 2026-07-06
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- SkyAware: `0b76556..162d232` on the current `stormSetup` checkout (2026-07-02 through 2026-07-06). The window added the Storm Setup production client/DTO, profile-analysis DTO/client, SwiftData persistence, cache-forward ingestion, matching policy, and user-facing Detailed Ingredients rows.
+- arcus-signal: the prior `386dd9f` marker is not an ancestor of the current `anvilParams` checkout, so a date-based window after the 2026-06-29 automation run was used through `852d7f1` (`ba97707`, `8781021`, `852d7f1`). Contract-relevant changes added the Anvil profile-analysis route/DTOs and exact-cycle surface loading.
+- ArcusCore: `de86f50..HEAD` contains no commits. Current `main` at `de86f50` was inspected as the shared-contract reference for APNs, alert, and location payloads.
+
+### Contract surfaces inspected
+- `GET /api/v1/storm-setup/current?h3=` route, `TornadoIngredientSnapshot`, `StormSetupSourceMetadata`, `TornadoRawParameters`, `IngredientFreshness`, SkyAware `StormSetupDTO`, ISO-8601 decoding, H3 query encoding, optionality, and user-facing mapping.
+- Legacy profile-analysis route availability, environment guard, request identity fields, response DTOs, SkyAware profile-analysis DTOs, HTTP client, matching policy, SwiftData persistence, and Detailed Ingredients presentation.
+- Storm Setup sampled snapshot cache keys and `StormSetupRulesVersion`.
+- APNs `HotAlertAPNsPayload` identifiers and ISO-8601 revision encoding across arcus-signal, SkyAware, and ArcusCore.
+- Location snapshot H3/freshness fields and `LocationUploadSource` values across SkyAware, arcus-signal, and ArcusCore.
+- Alert lifecycle and revision fields in ArcusCore plus the unchanged SkyAware `ends`/`expires` presentation boundary.
+
+### Highest-risk areas
+- Profile-analysis route availability because SkyAware once treated the endpoint as an app ingestion dependency, while arcus-signal classified it as a non-production debug endpoint.
+- Storm Setup response optionality because a single partial field can reject the complete severe-weather payload before safe mapping or stale-cache policy runs.
+- Storm Setup persistence/versioning because cached assessments survive deployments and now feed a user-facing client.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SkyAware called a profile-analysis route that arcus-signal disabled in production | SkyAware, arcus-signal | Profile-analysis API route and client availability | Server route → app client | arcus-signal commit `ba97707` added `AnvilProfileAnalysisController`: it registered only the legacy profile-analysis route and returned 404 when `application.environment == .production`; `AnvilProfileAnalysisControllerTests.productionStillBlocksTheEndpoint` locked that behavior. SkyAware commits `2bd08d7` and `4715868` set `ArcusSignalConfiguration` to that same legacy path and added the profile-analysis HTTP client. `Dependencies` always installed that client into `HomeIngestionExecutor`; the profile-analysis policy activated it whenever Storm Setup and Detailed Ingredients were enabled. Commits `0a4b39a`, `06fb0eb`, and `162d232` persisted and displayed its response. | In production, every eligible profile-analysis request received 404, was recorded as a failed refresh, and could not populate Detailed Ingredients. Users saw no profile rows or only a previously cached value; the app repeated failed attempts after backoff. Unfixed blast radius was all production users enabling Detailed Ingredients. | High | Add a production-supported Storm Setup profile-analysis route and point SkyAware at it. Return only the request identity needed for matching plus the analysis response; do not expose the raw profile/location/debug wrapper merely to make the old route public. Proposed-change blast radius was the new route, one app path constant, and focused route/client tests. | Server integration: production environment returns 200 for the supported route and still blocks the old route. Cross-repo contract: encode the server response fixture and decode it with SkyAware's DTO. App HTTP test: assert the production path. Manual: enable Detailed Ingredients against a production-configured server and verify a fresh matched response appears. |
+| Storm Setup permits a missing surface height but SkyAware requires it | SkyAware, arcus-signal | Storm Setup response optionality and safe degraded decoding | Server payload → client decoder | arcus-signal `TornadoIngredientSnapshot.surfaceHeightMslM` is `Double?` with a default of `nil` in `StormSetupModels.swift`. `TornadoIngredientNormalizer.surfaceHeightMslM(from:)` returns `nil` when no surface-height sample exists. `DefaultStormSetupProvider.loadSnapshot` requires only `raw.nonNilFieldCount > 0` and then returns the optional normalized surface height, so a successful response may encode `surfaceHeightMslM: null`. SkyAware commit `8d67dd4` defines `StormSetupDTO.surfaceHeightMslM` as required `Double`; `StormSetupHTTPClient` decodes the whole response with `DecoderFactory.iso8601` and maps any decode failure to `ArcusError.parsingError`. `StormSetupAssessment` also requires the value. | A valid partial server response with useful ingredient and freshness data is rejected wholesale. Without a fresh cache, Storm Setup disappears; with one, the app can retain stale data instead of accepting the current degraded payload. Unfixed blast radius is responses where surface-height sampling is absent or null. | High | Make SkyAware's wire DTO and mapped assessment surface height optional, and render height-dependent detail as unavailable. Preserve the server's explicit partial/degraded contract rather than manufacturing a value. Proposed-change blast radius is the DTO/mapping and height presentation only. | Cross-repo decoding test with the server contract fixture containing `surfaceHeightMslM: null`; mapping test verifies all other fields survive; presentation test verifies height-dependent copy is omitted or marked unavailable. |
+
+### Top recommended fix
+- Replace the dev-only profile-analysis dependency with a production-supported Storm Setup profile-analysis route and update SkyAware's path.
+- This matters first because the current producer explicitly rejects the current consumer in production; the feature cannot succeed regardless of payload correctness.
+- Expected files touched:
+  - arcus-signal `Sources/App/Controllers/AnvilProfileAnalysisController.swift`
+  - arcus-signal profile-analysis response DTO (existing or a small production response DTO)
+  - arcus-signal `Tests/AppTests/AnvilProfileAnalysisControllerTests.swift`
+  - SkyAware `Sources/App/ArcusSignalConfiguration.swift`
+  - SkyAware `Tests/UnitTests/StormSetupHTTPClientTests.swift`
+- Estimated churn: approximately 60-120 lines.
+- Regression risk: Medium. The response should be sanitized before production exposure, and route availability plus request cost need focused review.
+
+### Watchlist
+- arcus-signal `StormSetupSourceMetadata` models `model`, `product`, `domain`, `runTime`, `validTime`, `forecastHour`, `fieldSetVersion`, and `bbox` as optional, while SkyAware's `StormSetupDTO.Source` requires them. Current successful surface-provider evidence builds a complete source, so this is not confirmed runtime drift. Promote if a successful route fixture or degraded/fallback path emits any of those fields as null.
+- Storm Setup and profile-analysis wire DTOs are duplicated in SkyAware and arcus-signal and are not shared through ArcusCore. Duplication is not itself a finding. Promote only when another explicit field, enum, optionality, or date-format mismatch appears; a cross-repo fixture test would reduce this risk without forcing premature shared ownership.
+- SkyAware still uses different lifecycle fields for alert presentation (`ends` in Alert Center ordering and `expires` in Summary active-state copy). No changed producer contract or authoritative fixture in this window establishes the intended precedence. Promote only with an explicit lifecycle specification or a fixture where the fields diverge and expected behavior is defined.
+
+### Previously reported findings not duplicated
+- The 2026-06-29 Storm Setup rules-version finding remains unresolved: `StormSetupRulesVersion.current` is still `.tornadoIngredientV1`. This week adds a real SkyAware consumer and therefore increases user-visible blast radius, but the mismatch and minimal fix are unchanged, so it is not counted again.
+- The stale location-source values in `arcus-signal/docs/api-endpoints.md` and Postman examples remain unchanged. ArcusCore and server code still use the expanded enum set. No materially better evidence or fix was found, so the prior documentation finding is not duplicated.
+
+### Files inspected
+  - SkyAware: `Sources/App/ArcusSignalConfiguration.swift`, `Dependencies.swift`, `HomeRefreshPipeline.swift`, `HomeRefreshV2/HomeIngestionExecutor.swift`, `HomeRefreshV2/HomeSnapshot.swift`, `Sources/Clients/StormSetupClient.swift`, `Sources/Models/StormSetup/StormSetupDTO.swift`, `StormSetupAssessment.swift`, `StormSetupPreferences.swift`, `Sources/Models/Home/HomeProjection.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Sources/Features/StormSetup/StormSetupDetailPresentation.swift`, `StormSetupDetailView.swift`, `Sources/Features/Summary/SummaryView.swift`, and focused Storm Setup tests.
+- arcus-signal: `Sources/App/Controllers/StormSetupController.swift`, `AnvilProfileAnalysisController.swift`, `Sources/App/Models/API/AnvilAnalyzeProfileAnalysisResponse.swift`, `AnvilAnalyzeProfileRequest.swift`, `AnvilAnalyzeProfileResponse.swift`, `Sources/App/StormSetup/StormSetupModels.swift`, `StormSetupProvider.swift`, `StormSetupRulesVersion.swift`, `StormSetupSnapshotCache.swift`, `TornadoIngredientNormalizer.swift`, `IngredientFreshness.swift`, `AnvilProfileAnalysisProvider.swift`, `AnvilProfileRequestBuilder.swift`, `Sources/App/configure.swift`, `Tests/AppTests/StormSetupControllerTests.swift`, `StormSetupProviderTests.swift`, `StormSetupSnapshotCacheTests.swift`, `AnvilProfileAnalysisControllerTests.swift`, `AnvilAnalyzeProfileDTOTests.swift`, `AnvilAnalyzeProfileResponseDTOTests.swift`, `docs/api-endpoints.md`, and relevant Postman definitions.
+- ArcusCore: `Sources/ArcusCore/HotAlertAPNsPayload.swift`, `DeviceAlertPayload.swift`, `LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, and `Tests/ArcusCoreTests/ArcusCoreTests.swift`.
+
+### Out-of-scope and recommendation status
+- The external Anvil service schema/implementation remains outside the three-repository scope; no finding claims drift across that unavailable boundary.
+- No generated Storm Setup client/schema exists in the scoped repositories.
+- Findings: 2 High, 0 Medium, 0 Low. Watchlist: 3.
+- Implementation recommended: Yes, first for production profile-analysis route alignment, then for tolerant `surfaceHeightMslM` decoding.
+- No source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
