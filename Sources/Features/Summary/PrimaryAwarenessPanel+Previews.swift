@@ -126,7 +126,15 @@ import SwiftUI
                 title: "Elevated Fire - Dark",
                 stormRisk: .moderate,
                 severeRisk: .allClear,
-                fireRisk: .elevated,
+                fireRisk: .critical,
+                colorScheme: .dark
+            )
+            
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Extreme Fire - Dark",
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                fireRisk: .extreme,
                 colorScheme: .dark
             )
         }

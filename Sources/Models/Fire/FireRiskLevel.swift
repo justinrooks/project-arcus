@@ -38,10 +38,10 @@ enum FireRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
 
     var message: String {
         switch self {
-        case .clear: return "No elevated fire weather risk from wind and low humidity is forecast."
-        case .elevated: return "Elevated fire weather concerns. Wind and dry air may support faster fire spread if a fire starts."
-        case .critical: return "Critical fire weather is forecast. Strong winds and dry air could support rapid fire spread."
-        case .extreme: return "Extremely critical fire weather is forecast. Very strong wind and very dry air could support dangerous, fast-moving fire spread."
+        case .clear: return "No elevated fire weather risk is forecast."
+        case .elevated: return "Dry fuels, low humidity, and wind could help any fire that starts spread more quickly."
+        case .critical: return "Dry fuels, strong windws, and very low humidity could allow any fire that starts to spread rapidly."
+        case .extreme: return "Exceptionally dry fuels, very strong winds, and extremely low humidity could support dangerous, fast-moving fire spread."
         }
     }
 
@@ -79,8 +79,8 @@ enum FireRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
         switch self {
         case .clear:
             return FireRiskSupportingPresentation(
-                title: "No Fire Risk",
-                detail: "No elevated fire weather risk",
+                title: "No Elevated Fire Risk",
+                detail: message,
                 iconScale: 0.82,
                 isSubdued: true
             )

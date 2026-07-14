@@ -1,5 +1,16 @@
 # Weekly Test Gap Audit
 
+## 2026-07-14
+- Repository reviewed: project-arcus (`/Users/justin/Code/project-arcus`)
+- Commit window inspected: since last automation run marker `2026-07-07T15:01:53.356Z` through `2026-07-14`; 15 commits inspected from `fa73e5692e6e132747126bc8e48afa69a5dd2c73` through `d44cd790407ea3a9d0069a5f5490efd34178549f`
+- High-risk areas inspected: Storm Setup aggregate migration and persistence, `HomeRefresh` / `HomeView` selection logic, `HomeProjection` storm setup cache encoding, and location upload queue persistence / deduplication
+- Files inspected: `Sources/Models/StormSetup/StormSetupDTO.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/Models/Home/HomeProjection.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `Sources/Infrastructure/Location/LocationUploadQueueStore.swift`, `Sources/App/HomeView+PresentationState.swift`, `Tests/UnitTests/StormSetupMappingTests.swift`, `Tests/UnitTests/StormSetupHTTPClientTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `Tests/UnitTests/HomeProjectionStoreTests.swift`, `Tests/UnitTests/LocationProviderTests.swift`, `Tests/UnitTests/HomeViewStateTests.swift`
+- Existing relevant tests found: `Tests/UnitTests/StormSetupHTTPClientTests.swift`, `Tests/UnitTests/StormSetupMappingTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `Tests/UnitTests/HomeProjectionStoreTests.swift`, `Tests/UnitTests/LocationProviderTests.swift`, `Tests/UnitTests/HomeViewStateTests.swift`
+- Top recommended test: No test gap recommended.
+- Watchlist items: none
+- Implementation recommended: no
+- Out-of-scope repositories intentionally not scanned: none
+
 ## 2026-07-07
 - Repository reviewed: project-arcus (`/Users/justin/Code/project-arcus`)
 - Commit window inspected: since last automation run marker `2026-06-30T15:00:37.541Z` through `2026-07-07`; commits inspected included `d5e80f584476955adab5e7ca4b4016e887842e58`, `06fb0eb48428f345ddd69e4dac5e3824a7674df2`, and `8c1cb914fe79a2f2bfdb6f463fca0fb175815114`
