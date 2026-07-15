@@ -40,7 +40,7 @@ enum FireRiskLevel: Int, CaseIterable, Identifiable, Comparable, Codable {
         switch self {
         case .clear: return "No elevated fire weather risk is forecast."
         case .elevated: return "Dry fuels, low humidity, and wind could help any fire that starts spread more quickly."
-        case .critical: return "Dry fuels, strong windws, and very low humidity could allow any fire that starts to spread rapidly."
+        case .critical: return "Dry fuels, strong winds, and very low humidity could allow any fire that starts to spread rapidly."
         case .extreme: return "Exceptionally dry fuels, very strong winds, and extremely low humidity could support dangerous, fast-moving fire spread."
         }
     }
