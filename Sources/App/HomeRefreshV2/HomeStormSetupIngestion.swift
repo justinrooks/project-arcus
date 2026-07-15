@@ -35,7 +35,7 @@ actor HomeStormSetupIngestion {
 
     private let logger: Logger
     private let querying: (any StormSetupQuerying)?
-    private let projectionStore: HomeProjectionStore?
+    private let projectionStore: (any HomeProjectionPersisting)?
     private let preferencesReader: @Sendable () async -> StormSetupPreferences
     private let currentDate: @Sendable () -> Date
     private let foregroundTimeout: TimeInterval
@@ -46,7 +46,7 @@ actor HomeStormSetupIngestion {
     init(
         logger: Logger,
         querying: (any StormSetupQuerying)?,
-        projectionStore: HomeProjectionStore?,
+        projectionStore: (any HomeProjectionPersisting)?,
         preferencesReader: @escaping @Sendable () async -> StormSetupPreferences,
         currentDate: @escaping @Sendable () -> Date,
         foregroundTimeout: TimeInterval,

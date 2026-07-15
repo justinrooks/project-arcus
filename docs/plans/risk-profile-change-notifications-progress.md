@@ -84,7 +84,7 @@ notification side effects.
 
 ### Issue #309 — 02: Carry accepted risk changes through home ingestion
 
-- Status: Planned
+- Status: Complete
 - Scope: Optional delta on `HomeSnapshot`, populated only by successful authorized persistence.
 - Validation target: focused ingestion tests and Debug build.
 - Handoff: Preserve widgets, refresh publication, and rejected/failed map-sync behavior.
@@ -117,6 +117,7 @@ notification side effects.
 |---|---|---|---|
 | 2026-07-15 | Planning | Source-backed investigation, epic/label review, and approved product decisions | Complete |
 | 2026-07-15 | #308 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeProjectionStoreTests test`; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`; `git diff --check` | Passed |
+| 2026-07-15 | #309 | Files: `Sources/App/HomeRefreshV2/HomeSnapshot.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: carry an accepted, successfully persisted risk-profile delta through home ingestion while preserving rejected/failed map-sync and persistence-failure nil semantics; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/StormSetupIngestionTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
 
 ## Handoff Notes
 

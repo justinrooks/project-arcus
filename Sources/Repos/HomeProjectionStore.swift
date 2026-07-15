@@ -144,6 +144,37 @@ struct RiskProfileChange: Sendable, Equatable {
     }
 }
 
+protocol HomeProjectionPersisting: Sendable {
+    func projection(for context: LocationContext) async throws -> HomeProjectionRecord?
+
+    func updateStormSetup(
+        _ stormSetup: StormSetupCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord
+
+    func updateWeather(
+        _ weather: SummaryWeather?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord
+
+    func updateSlowProducts(
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        fireRisk: FireRiskLevel?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange?
+
+    func updateHotAlerts(
+        alerts: [AlertDTO],
+        mesos: [MdDTO],
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord
+}
+
 @ModelActor
 actor HomeProjectionStore {
     func projection(for context: LocationContext) throws -> HomeProjectionRecord? {
@@ -279,3 +310,5 @@ actor HomeProjectionStore {
         return try modelContext.fetch(descriptor).first
     }
 }
+
+extension HomeProjectionStore: HomeProjectionPersisting {}
