@@ -369,7 +369,7 @@ struct SummaryAwarenessPanelTests {
 
         #expect(contract.label == "Fire Risk")
         #expect(contract.value.contains("Critical Fire Risk"))
-        #expect(contract.value.contains("Dry fuels, strong windws, and very low humidity could allow any fire that starts to spread rapidly."))
+        #expect(contract.value.contains("Dry fuels, strong winds, and very low humidity could allow any fire that starts to spread rapidly."))
         #expect(contract.hint == "Opens the fire risk map.")
     }
 
