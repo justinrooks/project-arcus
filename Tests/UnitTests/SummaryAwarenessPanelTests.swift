@@ -288,8 +288,8 @@ struct SummaryAwarenessPanelTests {
         )
 
         #expect(presentation.presentationMode == .subdued)
-        #expect(presentation.title == "No Fire Risk")
-        #expect(presentation.detail == "No elevated fire weather risk")
+        #expect(presentation.title == "No Elevated Fire Risk")
+        #expect(presentation.detail == "No elevated fire weather risk is forecast.")
     }
 
     @Test("elevated fire risk keeps the normal presentation")
@@ -301,7 +301,7 @@ struct SummaryAwarenessPanelTests {
 
         #expect(presentation.presentationMode == .normal)
         #expect(presentation.title == "Elevated Fire Risk")
-        #expect(presentation.detail.contains("Elevated fire weather concerns"))
+        #expect(presentation.detail == "Dry fuels, low humidity, and wind could help any fire that starts spread more quickly.")
     }
 
     @Test("quiet primary leaves supporting rows normal")
@@ -369,8 +369,7 @@ struct SummaryAwarenessPanelTests {
 
         #expect(contract.label == "Fire Risk")
         #expect(contract.value.contains("Critical Fire Risk"))
-        #expect(contract.value.contains("Critical fire weather is forecast"))
-        #expect(contract.value.contains("rapid fire spread"))
+        #expect(contract.value.contains("Dry fuels, strong windws, and very low humidity could allow any fire that starts to spread rapidly."))
         #expect(contract.hint == "Opens the fire risk map.")
     }
 
