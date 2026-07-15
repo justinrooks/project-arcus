@@ -33,7 +33,7 @@ struct NotificationManager: Sendable {
         sound: UNNotificationSound = .default,
         badge: NSNumber = 0,
         repeats: Bool = false
-    ) async {
+    ) async -> Bool {
         let notificationReq = UNMutableNotificationContent()
         notificationReq.title = title
         notificationReq.subtitle = subtitle
@@ -44,11 +44,11 @@ struct NotificationManager: Sendable {
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: repeats)
         let request = UNNotificationRequest(identifier: id, content: notificationReq, trigger: trigger)
         
-        await internalNotify(request: request)
+        return await internalNotify(request: request)
     }
     
     /// Sends the notification with checks for authorization every time
-    private func internalNotify(request: UNNotificationRequest) async {
+    private func internalNotify(request: UNNotificationRequest) async -> Bool {
         let authType = await checkAuthorized()
 
         do {
@@ -58,20 +58,23 @@ struct NotificationManager: Sendable {
                 let result = await requestAuthorization()
                 if result {
                     try await center.add(request)
+                    return true
                 } else {
                     logger.error("Error authorizing notifications")
-                    return
+                    return false
                 }
             case .denied:
-                return
+                return false
             case .authorized, .provisional, .ephemeral:
                 try await center.add(request)
+                return true
             @unknown default:
                 logger.warning("Unknown authorization status")
-                return
+                return false
             }
         } catch {
             logger.error("Error sending notification: \(error.localizedDescription, privacy: .public)")
+            return false
         }
     }
     
@@ -92,15 +95,17 @@ struct NotificationManager: Sendable {
         let center = UNUserNotificationCenter.current()
         
         do {
-            try await center.requestAuthorization(options: [.alert,
+            let granted = try await center.requestAuthorization(options: [.alert,
                                                             .sound,
                                                             .badge,
                                                             .carPlay,
                                                             .provisional,
 //                                                            .criticalAlert,
                                                             .providesAppNotificationSettings])
-            logger.info("Notification authorization successful")
-            return true
+            if granted {
+                logger.info("Notification authorization successful")
+            }
+            return granted
             
         } catch {
             logger.error("Error requesting notification authorization: \(error.localizedDescription, privacy: .public)")

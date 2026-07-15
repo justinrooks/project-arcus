@@ -111,6 +111,8 @@ struct RiskProfile: Sendable, Equatable {
 }
 
 struct RiskProfileChange: Sendable, Equatable {
+    /// Identifies one accepted persistence transition, rather than its destination profile.
+    let occurrenceID: String
     let projectionKey: String
     let locationSummary: String?
     let previous: RiskProfile
@@ -123,7 +125,8 @@ struct RiskProfileChange: Sendable, Equatable {
         previous: RiskProfile?,
         current: RiskProfile?,
         projectionKey: String,
-        locationSummary: String?
+        locationSummary: String?,
+        occurrenceID: String = UUID().uuidString
     ) {
         guard let previous, let current else {
             return nil
@@ -134,6 +137,7 @@ struct RiskProfileChange: Sendable, Equatable {
             return nil
         }
 
+        self.occurrenceID = occurrenceID
         self.projectionKey = projectionKey
         self.locationSummary = locationSummary
         self.previous = previous

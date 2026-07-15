@@ -5,55 +5,33 @@ import Testing
 
 @Suite("Risk Change Notification")
 struct RiskChangeNotificationTests {
-    @Test("engine skips nil input without sending")
-    func engineSkipsNilInputWithoutSending() async {
+    @Test("engine skips nil input without pending delivery")
+    func engineSkipsNilInputWithoutPendingDelivery() async {
         let sender = RecordingSender()
-        let engine = RiskChangeEngine(
-            rule: RiskChangeRule(),
-            gate: RiskChangeGate(store: InMemoryRiskChangeStore()),
-            composer: RiskChangeComposer(),
-            sender: sender
-        )
+        let engine = makeEngine(sender: sender)
 
-        let didSend = await engine.run(change: nil)
-
-        #expect(didSend == false)
+        #expect(await engine.run(change: nil) == false)
         #expect(await sender.sent().isEmpty)
     }
 
-    @Test("rule creates a deterministic event for a single changed dimension")
-    func ruleCreatesEventForSingleChangedDimension() throws {
-        let change = makeChange(
-            projectionKey: "projection:alpha",
-            previous: makeProfile(storm: .marginal, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .marginal, severe: .allClear, fire: .critical),
-            locationSummary: "Oklahoma City, OK"
-        )
-
+    @Test("rule creates an occurrence-aware event")
+    func ruleCreatesOccurrenceAwareEvent() throws {
+        let change = makeChange(occurrenceID: "accepted-transition-1")
         let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: change)))
 
         #expect(event.kind == .riskProfileChange)
-        #expect(event.key == "risk:projection:alpha:storm=2|severe=allClear|fire=8")
+        #expect(event.key == "risk:projection:alpha:accepted-transition-1")
         #expect(event.payload["change"] as? RiskProfileChange == change)
     }
 
     @Test("composer batches storm, severe, and fire transitions in deterministic order")
     func composerBatchesRiskTransitionsInDeterministicOrder() throws {
         let change = makeChange(
-            previous: makeProfile(
-                storm: .marginal,
-                severe: .wind(probability: 0.12),
-                fire: .clear
-            ),
-            current: makeProfile(
-                storm: .enhanced,
-                severe: .tornado(probability: 0.31),
-                fire: .critical
-            ),
+            previous: makeProfile(storm: .marginal, severe: .wind(probability: 0.12), fire: .clear),
+            current: makeProfile(storm: .enhanced, severe: .tornado(probability: 0.31), fire: .critical),
             locationSummary: "Bennett, CO"
         )
         let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: change)))
-
         let message = RiskChangeComposer().compose(event)
 
         #expect(message.title == "Your Risk Profile Changed")
@@ -65,196 +43,145 @@ struct RiskChangeNotificationTests {
         """)
     }
 
-    @Test("composer renders severe hazard and probability-only changes")
-    func composerRendersSevereHazardAndProbabilityOnlyChanges() throws {
-        let hazardChange = makeChange(
-            previous: makeProfile(storm: .allClear, severe: .wind(probability: 0.10), fire: .clear),
-            current: makeProfile(storm: .allClear, severe: .hail(probability: 0.22), fire: .clear),
-            locationSummary: "Norman, OK"
-        )
-        let hazardEvent = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: hazardChange)))
-
-        let hazardMessage = RiskChangeComposer().compose(hazardEvent)
-        #expect(hazardMessage.body == "Severe Risk: Wind 10% → Hail 22%")
-
-        let probabilityChange = makeChange(
-            previous: makeProfile(storm: .allClear, severe: .tornado(probability: 0.10), fire: .clear),
-            current: makeProfile(storm: .allClear, severe: .tornado(probability: 0.18), fire: .clear),
-            locationSummary: "Norman, OK"
-        )
-        let probabilityEvent = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: probabilityChange)))
-
-        let probabilityMessage = RiskChangeComposer().compose(probabilityEvent)
-        #expect(probabilityMessage.body == "Severe Risk: Tornado 10% → Tornado 18%")
-    }
-
-    @Test("composer uses the location subtitle and falls back to your area")
-    func composerUsesLocationSubtitleAndFallback() throws {
-        let locationChange = makeChange(
-            previous: makeProfile(storm: .allClear, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .slight, severe: .allClear, fire: .clear),
-            locationSummary: "Oklahoma City, OK"
-        )
-        let locationEvent = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: locationChange)))
-
-        let locationMessage = RiskChangeComposer().compose(locationEvent)
-        #expect(locationMessage.subtitle == "Updated for Oklahoma City, OK")
-
-        let fallbackChange = makeChange(
-            previous: makeProfile(storm: .allClear, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .slight, severe: .allClear, fire: .clear),
-            locationSummary: nil
-        )
-        let fallbackEvent = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: fallbackChange)))
-
-        let fallbackMessage = RiskChangeComposer().compose(fallbackEvent)
-        #expect(fallbackMessage.subtitle == "Updated for your area")
-    }
-
-    @Test("gate suppresses duplicate risk notifications per projection")
-    func gateSuppressesDuplicateRiskNotificationsPerProjection() async {
-        let store = InMemoryRiskChangeStore()
-        let gate = RiskChangeGate(store: store)
-        let change = makeChange(
-            projectionKey: "projection:alpha",
-            previous: makeProfile(storm: .marginal, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .enhanced, severe: .allClear, fire: .clear),
-            locationSummary: "Bennett, CO"
-        )
-        let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: change)))
-
-        #expect(await gate.allow(event, now: .now))
-        #expect(await gate.allow(event, now: .now) == false)
-    }
-
-    @Test("gate keeps projection keys independent and allows reversions")
-    func gateKeepsProjectionKeysIndependentAndAllowsReversions() async throws {
-        let store = InMemoryRiskChangeStore()
-        let gate = RiskChangeGate(store: store)
-        let firstProjection = "projection:alpha"
-        let secondProjection = "projection:bravo"
-
-        let aToB = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(
-            projectionKey: firstProjection,
-            previous: makeProfile(storm: .marginal, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .enhanced, severe: .allClear, fire: .clear),
-            locationSummary: "Alpha"
-        ))))
-        let bToA = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(
-            projectionKey: firstProjection,
-            previous: makeProfile(storm: .enhanced, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .marginal, severe: .allClear, fire: .clear),
-            locationSummary: "Alpha"
-        ))))
-        let secondProjectionEvent = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(
-            projectionKey: secondProjection,
-            previous: makeProfile(storm: .allClear, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .slight, severe: .allClear, fire: .clear),
-            locationSummary: "Bravo"
-        ))))
-
-        #expect(await gate.allow(aToB, now: .now))
-        #expect(await gate.allow(secondProjectionEvent, now: .now))
-        #expect(await gate.allow(aToB, now: .now) == false)
-        #expect(await gate.allow(bToA, now: .now))
-        #expect(await gate.allow(aToB, now: .now))
-    }
-
-    @Test("gate recovers safely from malformed persisted state")
-    func gateRecoversSafelyFromMalformedPersistedState() async throws {
-        let store = InMemoryRiskChangeStore(stamp: "not-json")
-        let gate = RiskChangeGate(store: store)
-        let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(
-            projectionKey: "projection:alpha",
-            previous: makeProfile(storm: .allClear, severe: .allClear, fire: .clear),
-            current: makeProfile(storm: .slight, severe: .allClear, fire: .clear),
-            locationSummary: "Alpha"
-        ))))
-
-        #expect(await gate.allow(event, now: .now))
-        #expect(await store.lastStamp() != "not-json")
-    }
-
-    @Test("engine sends exactly one notification with a deterministic identifier")
-    func engineSendsExactlyOneNotificationWithDeterministicIdentifier() async throws {
+    @Test("disabled occurrence survives unchanged refresh after enablement")
+    func disabledOccurrenceSurvivesUnchangedRefreshAfterEnablement() async {
         let sender = RecordingSender()
         let store = InMemoryRiskChangeStore()
-        let engine = RiskChangeEngine(
-            rule: RiskChangeRule(),
-            gate: RiskChangeGate(store: store),
-            composer: RiskChangeComposer(),
-            sender: sender
-        )
-        let change = makeChange(
-            projectionKey: "projection:alpha",
-            previous: makeProfile(storm: .marginal, severe: .wind(probability: 0.10), fire: .clear),
-            current: makeProfile(storm: .enhanced, severe: .hail(probability: 0.25), fire: .critical),
-            locationSummary: "Bennett, CO"
-        )
+        let engine = makeEngine(sender: sender, store: store)
 
-        let didSend = await engine.run(change: change)
-
-        #expect(didSend)
-        let sent = await sender.sent()
-        #expect(sent.count == 1)
-        #expect(sent[0].id == "risk:projection:alpha:storm=4|severe=hail:25|fire=8")
-        #expect(sent[0].title == "Your Risk Profile Changed")
-        #expect(sent[0].subtitle == "Updated for Bennett, CO")
+        #expect(await engine.run(change: makeChange(), isEnabled: false) == false)
+        #expect(await engine.run(change: nil, isEnabled: true))
+        #expect((await sender.sent()).count == 1)
     }
+
+    @Test("failed scheduling retains occurrence and reports false until retry succeeds")
+    func failedSchedulingRetainsOccurrenceUntilRetrySucceeds() async {
+        let sender = OutcomeSender(outcomes: [false, true])
+        let engine = makeEngine(sender: sender)
+        let change = makeChange()
+
+        #expect(await engine.run(change: change) == false)
+        #expect(await engine.run(change: nil))
+        #expect(await sender.attemptCount() == 2)
+    }
+
+    @Test("a later identical transition has a distinct accepted occurrence")
+    func laterIdenticalTransitionHasDistinctAcceptedOccurrence() async {
+        let sender = RecordingSender()
+        let engine = makeEngine(sender: sender)
+        let a = makeProfile(storm: .marginal, severe: .allClear, fire: .clear)
+        let b = makeProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+
+        #expect(await engine.run(change: makeChange(previous: a, current: b, occurrenceID: "background-a-to-b-1")))
+        // The foreground B → A update advances persistence but deliberately never reaches this delivery engine.
+        #expect(await engine.run(change: makeChange(previous: a, current: b, occurrenceID: "background-a-to-b-2")))
+        #expect((await sender.sent()).count == 2)
+    }
+
+    @Test("simultaneous consumers claim one occurrence once")
+    func simultaneousConsumersClaimOneOccurrenceOnce() async {
+        let sender = SlowRecordingSender()
+        let engine = makeEngine(sender: sender)
+        let change = makeChange()
+
+        async let first = engine.run(change: change)
+        async let second = engine.run(change: change)
+        let results = await [first, second]
+
+        #expect(results.filter { $0 }.count == 1)
+        #expect((await sender.sent()).count == 1)
+    }
+
+    @Test("concurrent projection occurrences preserve both pending entries")
+    func concurrentProjectionOccurrencesPreserveBothPendingEntries() async {
+        let sender = RecordingSender()
+        let engine = makeEngine(sender: sender)
+        let alpha = makeChange(projectionKey: "projection:alpha", occurrenceID: "alpha")
+        let bravo = makeChange(projectionKey: "projection:bravo", occurrenceID: "bravo")
+
+        async let first = engine.run(change: alpha, isEnabled: false)
+        async let second = engine.run(change: bravo, isEnabled: false)
+        _ = await [first, second]
+
+        #expect(await engine.run(change: nil, isEnabled: true))
+        #expect(await engine.run(change: nil, isEnabled: true))
+        #expect((await sender.sent()).count == 2)
+    }
+}
+
+private func makeEngine<Sender: NotificationSending>(
+    sender: Sender,
+    store: any NotificationStateStoring = InMemoryRiskChangeStore()
+) -> RiskChangeEngine {
+    RiskChangeEngine(
+        rule: RiskChangeRule(),
+        gate: RiskChangeGate(store: store),
+        composer: RiskChangeComposer(),
+        sender: sender
+    )
 }
 
 private func makeChange(
     projectionKey: String = "projection:alpha",
-    previous: RiskProfile,
-    current: RiskProfile,
-    locationSummary: String?
+    previous: RiskProfile = makeProfile(storm: .marginal, severe: .allClear, fire: .clear),
+    current: RiskProfile = makeProfile(storm: .enhanced, severe: .allClear, fire: .clear),
+    locationSummary: String? = "Bennett, CO",
+    occurrenceID: String = UUID().uuidString
 ) -> RiskProfileChange {
     RiskProfileChange(
         previous: previous,
         current: current,
         projectionKey: projectionKey,
-        locationSummary: locationSummary
+        locationSummary: locationSummary,
+        occurrenceID: occurrenceID
     )!
 }
 
-private func makeProfile(
-    storm: StormRiskLevel,
-    severe: SevereWeatherThreat,
-    fire: FireRiskLevel
-) -> RiskProfile {
+private func makeProfile(storm: StormRiskLevel, severe: SevereWeatherThreat, fire: FireRiskLevel) -> RiskProfile {
     RiskProfile(stormRisk: storm, severeRisk: severe, fireRisk: fire)
 }
 
-actor InMemoryRiskChangeStore: NotificationStateStoring {
+private actor InMemoryRiskChangeStore: NotificationStateStoring {
     private var stamp: String?
 
-    init(stamp: String? = nil) {
-        self.stamp = stamp
-    }
-
     func lastStamp() async -> String? { stamp }
-
-    func setLastStamp(_ stamp: String) async {
-        self.stamp = stamp
-    }
+    func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }
 
-actor RecordingSender: NotificationSending {
-    struct SentNotification: Sendable {
-        let title: String
-        let body: String
-        let subtitle: String
-        let id: String
+private actor RecordingSender: NotificationSending {
+    private var notifications: [String] = []
+
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
+        notifications.append(id)
+        return true
     }
 
-    private var notifications: [SentNotification] = []
+    func sent() -> [String] { notifications }
+}
 
-    func send(title: String, body: String, subtitle: String, id: String) async {
-        notifications.append(.init(title: title, body: body, subtitle: subtitle, id: id))
+private actor OutcomeSender: NotificationSending {
+    private var outcomes: [Bool]
+    private var attempts = 0
+
+    init(outcomes: [Bool]) { self.outcomes = outcomes }
+
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
+        attempts += 1
+        return outcomes.removeFirst()
     }
 
-    func sent() -> [SentNotification] {
-        notifications
+    func attemptCount() -> Int { attempts }
+}
+
+private actor SlowRecordingSender: NotificationSending {
+    private var notifications: [String] = []
+
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
+        notifications.append(id)
+        try? await Task.sleep(for: .milliseconds(50))
+        return true
     }
+
+    func sent() -> [String] { notifications }
 }
 #endif

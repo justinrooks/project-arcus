@@ -471,7 +471,7 @@ private struct StaticSettingsProvider: NotificationSettingsProviding {
 }
 
 private struct NoopSender: NotificationSending {
-    func send(title: String, body: String, subtitle: String, id: String) async {}
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { true }
 }
 
 private func makeRiskChangeEngine<Sender: NotificationSending>(
@@ -503,8 +503,9 @@ actor RecordingSender: NotificationSending {
 
     private var notifications: [SentNotification] = []
 
-    func send(title: String, body: String, subtitle: String, id: String) async {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
         notifications.append(.init(title: title, body: body, subtitle: subtitle, id: id))
+        return true
     }
 
     func sent() -> [SentNotification] {

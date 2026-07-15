@@ -342,8 +342,16 @@ struct BackgroundOrchestratorCadenceTests {
                 current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
             )
         )
+        let unchangedSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: nil
+        )
         let system = try await makeRiskSystem(
-            snapshot: snapshot,
+            snapshots: [snapshot, unchangedSnapshot],
             riskChangeEngine: makeRiskChangeEngine(sender: sender),
             settingsProvider: settingsProvider
         )
@@ -421,8 +429,16 @@ struct BackgroundOrchestratorCadenceTests {
                 current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
             )
         )
+        let unchangedSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: nil
+        )
         let system = try await makeRiskSystem(
-            snapshot: snapshot,
+            snapshots: [snapshot, unchangedSnapshot],
             riskChangeEngine: makeRiskChangeEngine(sender: sender),
             settingsProvider: settingsProvider
         )
@@ -922,8 +938,9 @@ private actor RecordingRiskSender: NotificationSending {
 
     private var notifications: [SentNotification] = []
 
-    func send(title: String, body: String, subtitle: String, id: String) async {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
         notifications.append(.init(title: title, body: body, subtitle: subtitle, id: id))
+        return true
     }
 
     func sent() -> [SentNotification] {
@@ -944,6 +961,39 @@ private actor InMemoryRiskChangeStore: NotificationStateStoring {
 
     func setLastStamp(_ stamp: String) async {
         self.stamp = stamp
+    }
+}
+
+private actor SequentialHomeIngestionCoordinator: HomeIngestionCoordinating {
+    private var snapshots: [HomeSnapshot]
+    private var lastSnapshot: HomeSnapshot
+
+    init(snapshots: [HomeSnapshot]) {
+        self.snapshots = snapshots
+        self.lastSnapshot = snapshots.last ?? .empty
+    }
+
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {}
+
+    func enqueue(_ request: HomeIngestionRequest) {}
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(.init(trigger: trigger, locationContext: locationContext, remoteAlertContext: remoteAlertContext))
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        guard snapshots.isEmpty == false else { return lastSnapshot }
+        let snapshot = snapshots.removeFirst()
+        lastSnapshot = snapshot
+        return snapshot
     }
 }
 
@@ -973,7 +1023,8 @@ private extension BackgroundOrchestratorCadenceTests {
     }
 
     func makeRiskSystem<Settings: NotificationSettingsProviding>(
-        snapshot: HomeSnapshot,
+        snapshot: HomeSnapshot? = nil,
+        snapshots: [HomeSnapshot]? = nil,
         riskChangeEngine: RiskChangeEngine,
         settingsProvider: Settings
     ) async throws -> RiskSystem {
@@ -981,7 +1032,12 @@ private extension BackgroundOrchestratorCadenceTests {
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
 
         let healthStore = BgHealthStore(modelContainer: container)
-        let coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot)
+        let coordinator: any HomeIngestionCoordinating
+        if let snapshots {
+            coordinator = SequentialHomeIngestionCoordinator(snapshots: snapshots)
+        } else {
+            coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot ?? .empty)
+        }
         let orchestrator = BackgroundOrchestrator(
             coordinator: coordinator,
             policy: RefreshPolicy(),
@@ -1068,7 +1124,7 @@ private struct NoopComposer: NotificationComposing {
 }
 
 private struct NoopSender: NotificationSending {
-    func send(title: String, body: String, subtitle: String, id: String) async {}
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { true }
 }
 
 private func waitUntil(

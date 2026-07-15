@@ -177,8 +177,11 @@ actor BackgroundOrchestrator {
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                 } else { noNotifyReasons.append("Meso notification disabled") }
 
+                didRiskChangeNotify = await riskChangeEngine.run(
+                    change: snapshot.riskProfileChange,
+                    isEnabled: settings.riskChangeNotificationsEnabled
+                )
                 if settings.riskChangeNotificationsEnabled {
-                    didRiskChangeNotify = await riskChangeEngine.run(change: snapshot.riskProfileChange)
                     if !didRiskChangeNotify {
                         if snapshot.riskProfileChange == nil {
                             noNotifyReasons.append("Risk change notification skipped (no change)")

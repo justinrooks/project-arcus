@@ -32,6 +32,6 @@ struct RiskChangeRule: RiskChangeNotificationRuleEvaluating {
     }
 
     static func identifier(for change: RiskProfileChange) -> String {
-        "risk:\(change.projectionKey):\(change.currentFingerprint)"
+        "risk:\(change.projectionKey):\(change.occurrenceID)"
     }
 }

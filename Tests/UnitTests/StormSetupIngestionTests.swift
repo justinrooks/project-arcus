@@ -721,7 +721,7 @@ struct StormSetupIngestionTests {
             plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
         )
 
-        let expectedChange = RiskProfileChange(
+        let expectedChange = try #require(RiskProfileChange(
             previous: .init(
                 stormRisk: .slight,
                 severeRisk: .wind(probability: 0.10),
@@ -734,9 +734,15 @@ struct StormSetupIngestionTests {
             ),
             projectionKey: HomeProjection.projectionKey(for: context),
             locationSummary: context.snapshot.placemarkSummary
-        )
+        ))
 
-        #expect(snapshot.riskProfileChange == expectedChange)
+        let actualChange = try #require(snapshot.riskProfileChange)
+        #expect(actualChange.projectionKey == expectedChange.projectionKey)
+        #expect(actualChange.previous == expectedChange.previous)
+        #expect(actualChange.current == expectedChange.current)
+        #expect(actualChange.changedDimensions == expectedChange.changedDimensions)
+        #expect(actualChange.previousFingerprint == expectedChange.previousFingerprint)
+        #expect(actualChange.currentFingerprint == expectedChange.currentFingerprint)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
         #expect(persisted.stormRisk == .enhanced)
         #expect(persisted.severeRisk == .tornado(probability: 0.30))

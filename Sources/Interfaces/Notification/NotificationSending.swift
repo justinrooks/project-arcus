@@ -8,5 +8,6 @@
 import Foundation
 
 protocol NotificationSending: Sendable {
-    func send(title: String, body: String, subtitle: String, id: String) async
+    /// Returns whether the notification request was accepted for scheduling.
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool
 }

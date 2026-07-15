@@ -64,11 +64,10 @@ actor BackgroundLocationChangeHandler {
                 )
 
                 let settings = await notificationSettingsProvider.current()
-                guard settings.riskChangeNotificationsEnabled else {
-                    return
-                }
-
-                _ = await riskChangeEngine.run(change: snapshot.riskProfileChange)
+                _ = await riskChangeEngine.run(
+                    change: snapshot.riskProfileChange,
+                    isEnabled: settings.riskChangeNotificationsEnabled
+                )
             } catch {
                 logger.error(
                     "Failed to execute background location-change ingestion: \(error.localizedDescription, privacy: .public)"
