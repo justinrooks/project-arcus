@@ -695,30 +695,182 @@ struct StormSetupIngestionTests {
         #expect(callCount == 1)
     }
 
+    @Test("accepted changed profile exposes the delta even when widget refresh fails")
+    func acceptedChangedProfile_exposesDeltaEvenWhenWidgetRefreshFails() async throws {
+        let context = makeContext()
+        let widgetRefresher = ThrowingWidgetSnapshotRefresher()
+        let harness = try makeHarness(
+            context: context,
+            widgetSnapshotRefresher: widgetRefresher,
+            stormRisk: .enhanced,
+            severeRisk: .tornado(probability: 0.30),
+            fireRisk: .critical,
+            activeAlerts: [],
+            activeMesos: []
+        )
+
+        _ = try await harness.projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.10),
+            fireRisk: .elevated,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+        )
+
+        let expectedChange = try #require(RiskProfileChange(
+            previous: .init(
+                stormRisk: .slight,
+                severeRisk: .wind(probability: 0.10),
+                fireRisk: .elevated
+            ),
+            current: .init(
+                stormRisk: .enhanced,
+                severeRisk: .tornado(probability: 0.30),
+                fireRisk: .critical
+            ),
+            projectionKey: HomeProjection.projectionKey(for: context),
+            locationSummary: context.snapshot.placemarkSummary
+        ))
+
+        let actualChange = try #require(snapshot.riskProfileChange)
+        #expect(actualChange.projectionKey == expectedChange.projectionKey)
+        #expect(actualChange.previous == expectedChange.previous)
+        #expect(actualChange.current == expectedChange.current)
+        #expect(actualChange.changedDimensions == expectedChange.changedDimensions)
+        #expect(actualChange.previousFingerprint == expectedChange.previousFingerprint)
+        #expect(actualChange.currentFingerprint == expectedChange.currentFingerprint)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormRisk == .enhanced)
+        #expect(persisted.severeRisk == .tornado(probability: 0.30))
+        #expect(persisted.fireRisk == .critical)
+    }
+
+    @Test("first baseline and unchanged profile expose no delta")
+    func firstBaselineAndUnchangedProfileExposeNoDelta() async throws {
+        let context = makeContext()
+        let harness = try makeHarness(
+            context: context,
+            activeAlerts: [],
+            activeMesos: []
+        )
+
+        let firstSnapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+        )
+        let secondSnapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+        )
+
+        #expect(firstSnapshot.riskProfileChange == nil)
+        #expect(secondSnapshot.riskProfileChange == nil)
+
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormRisk == .enhanced)
+        #expect(persisted.severeRisk == .hail(probability: 0.30))
+        #expect(persisted.fireRisk == .elevated)
+    }
+
+    @Test("rejected and failed map sync preserve the prior baseline and expose no delta")
+    func rejectedAndFailedMapSyncPreservePriorBaselineAndExposeNoDelta() async throws {
+        let cases: [SpcMapSyncOutcome] = [.rejected, .failed]
+
+        for outcome in cases {
+            let context = makeContext()
+            let projectionStore = try makeProjectionStore()
+            _ = try await projectionStore.updateSlowProducts(
+                stormRisk: .slight,
+                severeRisk: .wind(probability: 0.10),
+                fireRisk: .elevated,
+                for: context,
+                loadedAt: Date(timeIntervalSince1970: 200)
+            )
+
+            let harness = try makeHarness(
+                context: context,
+                projectionStore: projectionStore,
+                stormRisk: .enhanced,
+                severeRisk: .tornado(probability: 0.30),
+                fireRisk: .critical,
+                activeAlerts: [],
+                activeMesos: [],
+                mapSyncOutcome: outcome
+            )
+
+            let snapshot = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+            )
+
+            #expect(snapshot.riskProfileChange == nil)
+
+            let persisted = try #require(await harness.projectionStore.projection(for: context))
+            #expect(persisted.stormRisk == .slight)
+            #expect(persisted.severeRisk == .wind(probability: 0.10))
+            #expect(persisted.fireRisk == .elevated)
+            #expect(persisted.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
+        }
+    }
+
+    @Test("missing or failed risk persistence cannot fabricate a delta")
+    func missingOrFailedRiskPersistenceCannotFabricateADelta() async throws {
+        let context = makeContext()
+        let cases: [(String, (any HomeProjectionPersisting)?, (any WidgetSnapshotRefreshing)?)] = [
+            ("missing store", nil, nil),
+            ("failing store", ThrowingHomeProjectionStore(), nil)
+        ]
+
+        for testCase in cases {
+            let harness = try makeHarness(
+                context: context,
+                projectionStore: testCase.1,
+                widgetSnapshotRefresher: testCase.2,
+                stormRisk: .enhanced,
+                severeRisk: .tornado(probability: 0.30),
+                fireRisk: .critical,
+                activeAlerts: [],
+                activeMesos: []
+            )
+
+            let snapshot = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+            )
+
+            #expect(snapshot.riskProfileChange == nil, "\(testCase.0)")
+        }
+    }
+
     private func makeHarness(
         context: LocationContext,
         query: StormSetupQueryingFake? = nil,
         weather: FakeWeatherClient = FakeWeatherClient(result: .success(sampleWeather())),
         airQualityQuerying: AirQualityQueryingFake? = nil,
-        spc: StormSetupTestSpcProvider = StormSetupTestSpcProvider(),
         alerts: StormSetupTestArcusProvider = StormSetupTestArcusProvider(),
         locationSession: FakeLocationSession? = nil,
         preferences: StormSetupPreferences = .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
         dateProvider: MutableDateProvider = MutableDateProvider(fixedNow),
+        projectionStore: (any HomeProjectionPersisting)? = nil,
+        widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)? = nil,
         stormRisk: StormRiskLevel = .enhanced,
         severeRisk: SevereWeatherThreat = .hail(probability: 0.30),
+        fireRisk: FireRiskLevel = .elevated,
         activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
         activeMesos: [MdDTO] = [MD.sampleDiscussionDTOs[0]],
+        mapSyncOutcome: SpcMapSyncOutcome = .accepted,
         stormSetupForegroundTimeout: TimeInterval = 5,
         stormSetupFailedAttemptBackoff: TimeInterval = 5 * 60
     ) throws -> StormSetupHarness {
         let container = try TestStore.container(for: [HomeProjection.self])
-        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let resolvedProjectionStore = projectionStore ?? HomeProjectionStore(modelContainer: container)
         let session = locationSession ?? FakeLocationSession(currentContext: context, preparedContext: context)
         let stormSetupSpc = StormSetupTestSpcProvider(
             stormRisk: stormRisk,
             severeRisk: severeRisk,
-            activeMesos: activeMesos
+            fireRisk: fireRisk,
+            activeMesos: activeMesos,
+            mapSyncOutcome: mapSyncOutcome
         )
         let arcusProvider = StormSetupTestArcusProvider(activeAlerts: activeAlerts)
         let stormSetupQuery = query ?? StormSetupQueryingFake(
@@ -737,8 +889,8 @@ struct StormSetupIngestionTests {
                     spcOutlook: stormSetupSpc,
                     arcusAlerts: arcusProvider
                 ),
-                projectionStore: projectionStore,
-                widgetSnapshotRefresher: nil,
+                projectionStore: resolvedProjectionStore,
+                widgetSnapshotRefresher: widgetSnapshotRefresher,
                 stormSetupQuerying: stormSetupQuery,
                 airQualityQuerying: airQualityQuerying,
                 stormSetupPreferencesReader: preferencesReader,
@@ -750,7 +902,7 @@ struct StormSetupIngestionTests {
 
         return StormSetupHarness(
             executor: executor,
-            projectionStore: projectionStore,
+            projectionStore: resolvedProjectionStore,
             query: stormSetupQuery,
             weather: weather,
             airQualityQuerying: airQualityQuerying,
@@ -881,7 +1033,7 @@ struct StormSetupIngestionTests {
 
 private struct StormSetupHarness {
     let executor: HomeIngestionExecutor
-    let projectionStore: HomeProjectionStore
+    let projectionStore: any HomeProjectionPersisting
     let query: StormSetupQueryingFake
     let weather: FakeWeatherClient
     let airQualityQuerying: AirQualityQueryingFake?
@@ -1006,6 +1158,93 @@ private extension StormSetupDTO {
 
 private func normalizedStormSetupDTO(_ dto: StormSetupDTO) -> StormSetupDTO {
     StormSetupDTO(response: dto.stormSetupCurrentResponse)
+}
+
+private func makeProjectionRecord(
+    context: LocationContext,
+    updatedAt: Date
+) -> HomeProjectionRecord {
+    HomeProjectionRecord(
+        id: UUID(),
+        projectionKey: HomeProjection.projectionKey(for: context),
+        latitude: context.snapshot.coordinates.latitude,
+        longitude: context.snapshot.coordinates.longitude,
+        h3Cell: context.h3Cell,
+        countyCode: context.grid.countyCode ?? "",
+        forecastZone: context.grid.forecastZone,
+        fireZone: context.grid.fireZone ?? "",
+        placemarkSummary: context.snapshot.placemarkSummary,
+        timeZoneId: context.grid.timeZoneId,
+        locationTimestamp: context.snapshot.timestamp,
+        createdAt: updatedAt,
+        updatedAt: updatedAt,
+        lastViewedAt: nil,
+        weather: nil,
+        stormRisk: nil,
+        severeRisk: nil,
+        fireRisk: nil,
+        activeAlerts: [],
+        activeMesos: [],
+        lastHotAlertsLoadAt: nil,
+        lastSlowProductsLoadAt: nil,
+        lastWeatherLoadAt: nil,
+        stormSetupCurrentResponse: nil,
+        stormSetup: nil,
+        lastStormSetupLoadAt: nil
+    )
+}
+
+@MainActor
+private func makeProjectionStore() throws -> HomeProjectionStore {
+    let container = try TestStore.container(for: [HomeProjection.self])
+    return HomeProjectionStore(modelContainer: container)
+}
+
+private struct ThrowingWidgetSnapshotRefresher: WidgetSnapshotRefreshing {
+    func refresh(scope _: WidgetSnapshotChangeScope, input _: WidgetSnapshotRefreshInput) throws {
+        throw TestError.failed
+    }
+}
+
+private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
+    func projection(for context: LocationContext) async throws -> HomeProjectionRecord? {
+        nil
+    }
+
+    func updateStormSetup(
+        _ stormSetup: StormSetupCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        makeProjectionRecord(context: context, updatedAt: loadedAt)
+    }
+
+    func updateWeather(
+        _ weather: SummaryWeather?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        makeProjectionRecord(context: context, updatedAt: loadedAt)
+    }
+
+    func updateSlowProducts(
+        stormRisk _: StormRiskLevel?,
+        severeRisk _: SevereWeatherThreat?,
+        fireRisk _: FireRiskLevel?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange? {
+        throw TestError.failed
+    }
+
+    func updateHotAlerts(
+        alerts: [AlertDTO],
+        mesos: [MdDTO],
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        makeProjectionRecord(context: context, updatedAt: loadedAt)
+    }
 }
 
 private actor StormSetupQueryingFake: StormSetupQuerying {

@@ -313,8 +313,8 @@ struct HomeProjectionStoreTests {
         #expect(persisted.stormSetup == nil)
     }
 
-    @Test("updating slow products keeps existing weather and alert slices")
-    func updateSlowProducts_preservesExistingWeatherAndAlerts() async throws {
+    @Test("updating slow products seeds a baseline without a change and preserves existing slices")
+    func updateSlowProducts_seedsBaselineWithoutChangeAndPreservesExistingSlices() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let store = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
@@ -333,7 +333,7 @@ struct HomeProjectionStoreTests {
             loadedAt: Date(timeIntervalSince1970: 400)
         )
 
-        let updated = try await store.updateSlowProducts(
+        let change = try await store.updateSlowProducts(
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.10),
             fireRisk: .critical,
@@ -341,6 +341,9 @@ struct HomeProjectionStoreTests {
             loadedAt: Date(timeIntervalSince1970: 500)
         )
 
+        #expect(change == nil)
+
+        let updated = try #require(await store.projection(for: context))
         #expect(updated.weather == makeWeather())
         #expect(updated.activeAlerts == [alert])
         #expect(updated.activeMesos == [meso])
@@ -352,8 +355,32 @@ struct HomeProjectionStoreTests {
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 500))
     }
 
+    @Test("updating slow products seeds incomplete baselines without a change")
+    func updateSlowProducts_seedsIncompleteBaselineWithoutChange() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let loadedAt = Date(timeIntervalSince1970: 505)
+
+        let change = try await store.updateSlowProducts(
+            stormRisk: .high,
+            severeRisk: nil,
+            fireRisk: .critical,
+            for: context,
+            loadedAt: loadedAt
+        )
+
+        #expect(change == nil)
+
+        let updated = try #require(await store.projection(for: context))
+        #expect(updated.stormRisk == .high)
+        #expect(updated.severeRisk == nil)
+        #expect(updated.fireRisk == .critical)
+        #expect(updated.lastSlowProductsLoadAt == loadedAt)
+    }
+
     @Test("updating slow products overwrites stale severe risk with all clear")
-    func updateSlowProducts_overwritesStaleSevereRiskWithAllClear() async throws {
+    func updateSlowProducts_detectsRiskProfileChangesAtomically() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let store = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
@@ -366,16 +393,51 @@ struct HomeProjectionStoreTests {
             loadedAt: Date(timeIntervalSince1970: 500)
         )
 
-        let updated = try await store.updateSlowProducts(
+        let change = try #require(await store.updateSlowProducts(
             stormRisk: .marginal,
             severeRisk: .allClear,
             fireRisk: .clear,
             for: context,
             loadedAt: Date(timeIntervalSince1970: 560)
-        )
+        ))
 
+        #expect(change.projectionKey == HomeProjection.projectionKey(for: context))
+        #expect(change.locationSummary == context.snapshot.placemarkSummary)
+        #expect(change.changedDimensions == [.severe])
+        #expect(change.previous == RiskProfile(
+            stormRisk: .marginal,
+            severeRisk: .tornado(probability: 0.02),
+            fireRisk: .clear
+        ))
+        #expect(change.current == RiskProfile(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear
+        ))
+        #expect(change.previousFingerprint == "storm=2|severe=tornado:2|fire=0")
+        #expect(change.currentFingerprint == "storm=2|severe=allClear|fire=0")
+
+        let updated = try #require(await store.projection(for: context))
         #expect(updated.severeRisk == .allClear)
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 560))
+    }
+
+    @Test("risk profile fingerprints normalize severe probabilities to whole percentages")
+    func riskProfile_normalizesSevereProbabilitiesToWholePercentFingerprints() {
+        let first = RiskProfile(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.1041),
+            fireRisk: .critical
+        )
+        let second = RiskProfile(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.1049),
+            fireRisk: .critical
+        )
+
+        #expect(first == second)
+        #expect(first.fingerprint == second.fingerprint)
+        #expect(first.fingerprint == "storm=3|severe=tornado:10|fire=8")
     }
 
     @Test("updating weather keeps the existing risk and alert slices intact")

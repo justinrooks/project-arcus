@@ -174,12 +174,46 @@ struct RemoteNotificationRegistrarTests {
 
 @Suite("Notification preference state")
 struct NotificationPreferenceStateTests {
+    @Test("authorized preferences preserve risk-change settings when delivery is available")
+    func authorized_preservesRiskChangeDeliveryWhenEnabled() {
+        let state = NotificationPreferenceState(
+            authorizationStatus: .authorized,
+            morningSummariesEnabled: false,
+            mesoNotificationsEnabled: false,
+            riskChangeNotificationsEnabled: true,
+            serverNotificationsEnabled: false
+        )
+
+        #expect(state.authorizationStatusTitle == "Allowed")
+        #expect(state.allowsNotificationDelivery == true)
+        #expect(state.effectiveMorningSummariesEnabled == false)
+        #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.effectiveRiskChangeNotificationsEnabled == true)
+        #expect(state.effectiveServerNotificationsEnabled == false)
+        #expect(state.recoveryActionTitle == nil)
+    }
+
+    @Test("disabled stored risk-change preferences remain off")
+    func disabled_storedRiskChangePreferenceRemainsOff() {
+        let state = NotificationPreferenceState(
+            authorizationStatus: .authorized,
+            morningSummariesEnabled: true,
+            mesoNotificationsEnabled: true,
+            riskChangeNotificationsEnabled: false,
+            serverNotificationsEnabled: true
+        )
+
+        #expect(state.riskChangeNotificationsEnabled == false)
+        #expect(state.effectiveRiskChangeNotificationsEnabled == false)
+    }
+
     @Test("denied keeps stored preferences and exposes an Open Settings recovery action")
     func denied_keepsStoredPreferencesAndRecoveryAction() {
         let state = NotificationPreferenceState(
             authorizationStatus: .denied,
             morningSummariesEnabled: true,
             mesoNotificationsEnabled: true,
+            riskChangeNotificationsEnabled: true,
             serverNotificationsEnabled: true
         )
 
@@ -187,6 +221,8 @@ struct NotificationPreferenceStateTests {
         #expect(state.allowsNotificationDelivery == false)
         #expect(state.effectiveMorningSummariesEnabled == false)
         #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.riskChangeNotificationsEnabled == true)
+        #expect(state.effectiveRiskChangeNotificationsEnabled == false)
         #expect(state.effectiveServerNotificationsEnabled == false)
         #expect(state.recoveryActionTitle == "Open Settings")
         #expect(state.systemAvailabilityCopy.contains("preserved"))
@@ -198,6 +234,7 @@ struct NotificationPreferenceStateTests {
             authorizationStatus: .provisional,
             morningSummariesEnabled: true,
             mesoNotificationsEnabled: false,
+            riskChangeNotificationsEnabled: true,
             serverNotificationsEnabled: true
         )
 
@@ -205,6 +242,7 @@ struct NotificationPreferenceStateTests {
         #expect(state.allowsNotificationDelivery == true)
         #expect(state.effectiveMorningSummariesEnabled == true)
         #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.effectiveRiskChangeNotificationsEnabled == true)
         #expect(state.effectiveServerNotificationsEnabled == true)
         #expect(state.recoveryActionTitle == nil)
         #expect(state.systemAvailabilityCopy.contains("quietly"))
@@ -216,6 +254,7 @@ struct NotificationPreferenceStateTests {
             authorizationStatus: .ephemeral,
             morningSummariesEnabled: false,
             mesoNotificationsEnabled: true,
+            riskChangeNotificationsEnabled: false,
             serverNotificationsEnabled: false
         )
 
@@ -223,6 +262,7 @@ struct NotificationPreferenceStateTests {
         #expect(state.allowsNotificationDelivery == true)
         #expect(state.effectiveMorningSummariesEnabled == false)
         #expect(state.effectiveMesoNotificationsEnabled == true)
+        #expect(state.effectiveRiskChangeNotificationsEnabled == false)
         #expect(state.effectiveServerNotificationsEnabled == false)
         #expect(state.recoveryActionTitle == nil)
         #expect(state.systemAvailabilityCopy.contains("temporarily"))
@@ -234,6 +274,7 @@ struct NotificationPreferenceStateTests {
             authorizationStatus: .notDetermined,
             morningSummariesEnabled: true,
             mesoNotificationsEnabled: true,
+            riskChangeNotificationsEnabled: false,
             serverNotificationsEnabled: false
         )
 
@@ -241,9 +282,42 @@ struct NotificationPreferenceStateTests {
         #expect(state.allowsNotificationDelivery == false)
         #expect(state.effectiveMorningSummariesEnabled == false)
         #expect(state.effectiveMesoNotificationsEnabled == false)
+        #expect(state.riskChangeNotificationsEnabled == false)
+        #expect(state.effectiveRiskChangeNotificationsEnabled == false)
         #expect(state.effectiveServerNotificationsEnabled == false)
         #expect(state.recoveryActionTitle == nil)
         #expect(state.systemAvailabilityCopy.contains("saved now"))
+    }
+}
+
+@Suite("Notification settings provider")
+struct NotificationSettingsProviderTests {
+    @Test("defaults risk-change notifications to enabled when no stored preference exists")
+    func defaultsRiskChangeNotificationsToEnabled() async {
+        let suiteName = "NotificationSettingsProviderTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let provider = Dependencies.UserDefaultsNotificationSettingsProvider(suiteName: suiteName)
+        let settings = await provider.current()
+
+        #expect(settings.morningSummariesEnabled == true)
+        #expect(settings.mesoNotificationsEnabled == true)
+        #expect(settings.riskChangeNotificationsEnabled == true)
+    }
+
+    @Test("respects a stored disabled risk-change preference")
+    func respectsStoredDisabledRiskChangePreference() async {
+        let suiteName = "NotificationSettingsProviderTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(false, forKey: "riskChangeNotificationEnabled")
+
+        let provider = Dependencies.UserDefaultsNotificationSettingsProvider(suiteName: suiteName)
+        let settings = await provider.current()
+
+        #expect(settings.riskChangeNotificationsEnabled == false)
     }
 }
 

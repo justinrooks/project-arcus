@@ -1,0 +1,181 @@
+# Risk Profile Change Notifications Progress
+
+## Overview
+
+This ledger tracks the local SkyAware risk-profile change notification campaign. It is the durable handoff record for
+implementation status, validation evidence, decisions, and deferred work.
+
+**Epic status:** Complete
+**Primary GitHub epic:** [#100](https://github.com/justinrooks/project-arcus/issues/100)
+
+## Global Decisions
+
+- Include storm, severe, and fire risk in one profile.
+- Treat severe hazard and probability changes as meaningful; normalize probabilities to whole percentages.
+- Notify for upgrades, downgrades, mixed changes, and later reversions.
+- Compare and persist atomically inside `HomeProjectionStore`.
+- Seed new or incomplete per-projection baselines without notifying.
+- Run notification delivery after background refresh and background significant-location-change ingestion.
+- Do not send foreground local notifications.
+- Default the independent preference to enabled.
+- Batch all changes from one accepted ingestion snapshot into one notification; do not aggregate across executions.
+- Keep this client-only and best effort. Server-side SPC/APNs reliability is separate work.
+
+## Current State Summary
+
+The unified ingestion path already resolves all three risk values and persists them in `HomeProjection`. Background
+refresh receives the complete snapshot but invokes only morning and meso engines. Significant-location-change handling
+invokes only the watch engine. Notification settings have no risk-change preference, and no semantic old/new delta is
+returned from slow-product persistence.
+
+The projection store is the correct comparison seam because its actor can read the previous profile, persist the new
+profile, and return the accepted delta atomically. Ingestion should transport that delta; orchestration should own
+notification side effects.
+
+## Issue Sequence
+
+| Order | Issue | Title | Preferred model | Status | Dependency |
+|---:|---|---|---|---|---|
+| 0 | [#100](https://github.com/justinrooks/project-arcus/issues/100) | Epic: Send Notification when Risk Changes | Coordination | Planned | Approved product decisions |
+| 1 | [#308](https://github.com/justinrooks/project-arcus/issues/308) | Detect accepted risk profile changes atomically | `5.4 mini medium` | Planned | None |
+| 2 | [#309](https://github.com/justinrooks/project-arcus/issues/309) | Carry accepted risk changes through home ingestion | `5.4 mini medium` | Planned | #308 |
+| 3 | [#310](https://github.com/justinrooks/project-arcus/issues/310) | Add the batched risk-change notification engine | `5.4 mini medium` | Complete | #308-#309 |
+| 4 | [#311](https://github.com/justinrooks/project-arcus/issues/311) | Add the risk-change notification preference | `5.4 mini medium` | Complete | None; execute after #310 |
+| 5 | [#312](https://github.com/justinrooks/project-arcus/issues/312) | Run risk-change notifications from background refresh paths | `5.4 mini medium` | Complete | #308-#311 |
+
+## Existing Code Map
+
+- Risk loading: `Sources/App/HomeRefreshV2/HomeSnapshotStore.swift`
+- Snapshot contract: `Sources/App/HomeRefreshV2/HomeSnapshot.swift`
+- Accepted persistence decision: `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`
+- Projection model/store: `Sources/Models/Home/HomeProjection.swift`, `Sources/Repos/HomeProjectionStore.swift`
+- Background refresh: `Sources/Features/Background/BackgroundOrchestrator.swift`
+- Background location changes: `Sources/Features/Background/BackgroundLocationChangeHandler.swift`
+- Notification contracts/engines: `Sources/Notifications`, `Sources/Interfaces/Notification`
+- Dependency composition/settings provider: `Sources/App/Dependencies.swift`
+- User preference UI: `Sources/Features/Settings/SettingsView.swift`
+- Focused persistence tests: `Tests/UnitTests/HomeProjectionStoreTests.swift`
+- Existing executor harness: `Tests/UnitTests/StormSetupIngestionTests.swift`
+- Background and notification tests: `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`,
+  `Tests/UnitTests/AlertNotificationTests.swift`, `Tests/UnitTests/RemoteNotificationRegistrarTests.swift`
+
+## Investigation Notes
+
+- `HomeSnapshotStore` loads storm, severe, and fire values together for a resolved location.
+- `HomeIngestionExecutor.slowProductPersistenceDecision` already blocks projection/widget advancement for rejected or
+  failed SPC map synchronization.
+- `HomeProjection.projectionKey` includes H3, county, forecast zone, and fire zone identity.
+- `SevereWeatherThreat` equality includes its associated probability; SPC values are discrete but should still be
+  normalized before fingerprinting and user-facing formatting.
+- Existing notification engines separate rule, gate, composer, and sender behavior and use deterministic identifiers.
+- A per-projection last-delivered current fingerprint suppresses duplicate shared-snapshot evaluation without blocking
+  a profile that returns after an intervening change.
+- iOS background refresh remains opportunistic. This campaign improves awareness when refresh runs; it does not create
+  guaranteed delivery.
+
+## Status Ledger
+
+### Issue #308 — 01: Detect accepted risk profile changes atomically
+
+- Status: Complete
+- Scope: Domain profile/change contract and atomic projection-store comparison/persistence.
+- Validation target: `HomeProjectionStoreTests` and Debug build.
+- Handoff: Do not add notification side effects or change slow-product eligibility.
+
+### Issue #309 — 02: Carry accepted risk changes through home ingestion
+
+- Status: Complete
+- Scope: Optional delta on `HomeSnapshot`, populated only by successful authorized persistence.
+- Validation target: focused ingestion tests and Debug build.
+- Handoff: Preserve widgets, refresh publication, and rejected/failed map-sync behavior.
+
+### Issue #310 — 03: Add the batched risk-change notification engine
+
+- Status: Complete
+- Scope: Notification kind, rule, one-message composer, per-projection duplicate gate, engine, and deterministic tests.
+- Validation target: `RiskChangeNotificationTests` and Debug build.
+- Handoff: Do not wire background execution or settings yet.
+
+### Issue #311 — 04: Add the risk-change notification preference
+
+- Status: Complete
+- Scope: Default-enabled independent setting, provider state, authorization-aware presentation, and focused tests.
+- Validation target: notification preference tests and Debug build.
+- Handoff: Do not change Arcus Signal subscription/location-sharing semantics.
+
+### Issue #312 — 05: Run risk-change notifications from background refresh paths
+
+- Status: Complete
+- Scope: Dependency composition, background refresh/location-change invocation, preference enforcement, and outcome
+  reporting.
+- Files: `Sources/App/Dependencies.swift`, `Sources/Features/Background/BackgroundOrchestrator.swift`,
+  `Sources/Features/Background/BackgroundLocationChangeHandler.swift`,
+  `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`, `Tests/UnitTests/AlertNotificationTests.swift`
+- Behavior: one shared production `RiskChangeEngine` now runs from background refresh and background location-change
+  ingestion when the independent preference is enabled, records `didNotify`/no-notify reasons in background health,
+  preserves disabled deltas for later enablement, and keeps watch/background joining behavior intact.
+- Validation target: risk engine, orchestrator cadence, and location-change notification tests plus Debug build.
+- Handoff: Stop when both approved background paths are covered; do not add foreground or server delivery.
+
+### Code-review blocker remediation — Complete
+
+- Files: `Sources/Repos/HomeProjectionStore.swift`, `Sources/Notifications/RiskChange/RiskChangeRule.swift`,
+  `Sources/Notifications/RiskChange/RiskChangeEngine.swift`, `Sources/Notifications/RiskChange/RiskChangeGate.swift`,
+  `Sources/Features/Background/BackgroundOrchestrator.swift`,
+  `Sources/Features/Background/BackgroundLocationChangeHandler.swift`,
+  `Sources/Interfaces/Notification/NotificationSending.swift`, `Sources/Notifications/Sender.swift`,
+  `Sources/Notifications/NotificationManager.swift`, `Sources/Notifications/Morning/MorningEngine.swift`,
+  `Sources/Notifications/Meso/MesoEngine.swift`, `Sources/Notifications/Watch/WatchEngine.swift`,
+  `Tests/UnitTests/RiskChangeNotificationTests.swift`, `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`,
+  `Tests/UnitTests/AlertNotificationTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`.
+- Behavior: accepted transitions receive stable occurrence identities; one shared actor persists pending and delivered
+  occurrence state, claims an occurrence before awaiting scheduling, retains disabled or failed occurrences for retry,
+  and keeps separate projection updates from overwriting each other. Notification scheduling now reports authorization
+  denial and `UNUserNotificationCenter` add failures to the risk engine; existing morning, meso, and watch result
+  behavior is unchanged.
+- Tests: production-shaped disabled-then-unchanged refresh, denied/failed scheduling retry, reversible A→B transition,
+  same-occurrence concurrent consumers, and concurrent projection keys; focused suite passed 76/76 on iPhone 17,
+  iOS 26.5.
+- Residual risk: a process termination after iOS accepts a request but before the delivered-occurrence state persists
+  can result in a later duplicate request; the delivery boundary is otherwise serialized and durable.
+
+### Final notification-state cleanup — Complete
+
+- Files: `Sources/Notifications/RiskChange/RiskChangeGate.swift`, `Sources/Notifications/Morning/MorningEngine.swift`,
+  `Sources/Notifications/Meso/MesoEngine.swift`, `Sources/Notifications/Watch/WatchEngine.swift`,
+  `Tests/UnitTests/RiskChangeNotificationTests.swift`, `Tests/UnitTests/MorningNotificationTests.swift`,
+  `Tests/UnitTests/MesoNotificationTests.swift`, `Tests/UnitTests/AlertNotificationTests.swift`, and this ledger;
+  `docs/plans/risk-profile-change-notifications-runbook.md` had trailing whitespace removed.
+- Behavior: preferred risk occurrences are claimed exactly and never fall through to another backlog item; pending
+  state is bounded to the newest non-in-flight occurrence per projection, retains independent projections, persists
+  projection identity and registration order, expires entries older than 24 hours, caps delivered tombstones at 128,
+  preserves valid state across gate recreation, and prevents failed superseded in-flight work from restoring stale
+  backlog. Morning, meso, watch, and risk engines now return the sender's scheduling result and log scheduling only
+  after success.
+- Validation: focused risk, notification-engine, background orchestrator, location-change, persistence, ingestion, and
+  preference suites passed 90/90 with 0 failures on iPhone 17 / iOS 26.5; result bundle
+  `Test-SkyAware-2026.07.15_15-36-52--0600.xcresult` inspected with `xcresulttool`; Debug iPhone 17 simulator build
+  passed under Swift 6; `git diff --check` passed.
+- Residual risk: as before, process termination after iOS accepts a request but before the delivered tombstone is
+  persisted can cause a duplicate scheduling attempt; existing morning, meso, and watch gates still do not gain
+  durable retry in this slice.
+
+## Verification Ledger
+
+| Date | Issue | Verification | Result |
+|---|---|---|---|
+| 2026-07-15 | Planning | Source-backed investigation, epic/label review, and approved product decisions | Complete |
+| 2026-07-15 | #308 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeProjectionStoreTests test`; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`; `git diff --check` | Passed |
+| 2026-07-15 | #309 | Files: `Sources/App/HomeRefreshV2/HomeSnapshot.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: carry an accepted, successfully persisted risk-profile delta through home ingestion while preserving rejected/failed map-sync and persistence-failure nil semantics; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/StormSetupIngestionTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
+| 2026-07-15 | #310 | Files: `Sources/Interfaces/Notification/NotificationRuleEvaluating.swift`, `Sources/Notifications/NotificationsCore.swift`, `Sources/Notifications/RiskChange/RiskChangeContext.swift`, `Sources/Notifications/RiskChange/RiskChangeRule.swift`, `Sources/Notifications/RiskChange/RiskChangeGate.swift`, `Sources/Notifications/RiskChange/RiskChangeComposer.swift`, `Sources/Notifications/RiskChange/RiskChangeEngine.swift`, `Sources/Utilities/Extensions/Logger+Extension.swift`, `Tests/UnitTests/RiskChangeNotificationTests.swift`; behavior: add a pure risk-change notification engine with deterministic event IDs, per-projection duplicate suppression, reversible gate state, ordered storm/severe/fire copy, and location-aware subtitle fallback; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/RiskChangeNotificationTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
+| 2026-07-15 | #311 | Files: `Sources/Features/Background/BackgroundOrchestrator.swift`, `Sources/Features/Settings/SettingsView.swift`, `Sources/App/Dependencies.swift`, `Tests/UnitTests/RemoteNotificationRegistrarTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: add the default-enabled risk-change notification preference to settings, provider state, and authorization-aware effective-state tests without wiring the risk-change engine or changing server/location-sharing behavior; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" -only-testing:SkyAwareTests/NotificationPreferenceStateTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`, `git diff --check` | Passed |
+| 2026-07-15 | #312 | Files: `Sources/App/Dependencies.swift`, `Sources/Features/Background/BackgroundOrchestrator.swift`, `Sources/Features/Background/BackgroundLocationChangeHandler.swift`, `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`, `Tests/UnitTests/AlertNotificationTests.swift`; behavior: wire one shared production `RiskChangeEngine` and settings provider into both background consumers, send only when the preference is enabled, preserve disabled deltas for later enablement, and keep watch/background joining behavior intact; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" -only-testing:SkyAwareTests/RiskChangeNotificationTests -only-testing:SkyAwareTests/BackgroundOrchestratorCadenceTests -only-testing:SkyAwareTests/AlertNotificationTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`, `rg -n "riskChangeEngine" Sources`, `git diff --check`; result: passed | Passed |
+| 2026-07-15 | Review blockers | Files and behavior recorded in “Code-review blocker remediation”; commands: focused risk engine, projection, ingestion, background orchestrator, location-change, and preference suites on `platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832`; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`; `xcrun xcresulttool get test-results summary --path .../Test-SkyAware-2026.07.15_15-10-57--0600.xcresult`; `git diff --check` | Passed: 76 tests, 0 failures; Debug build and diff check passed |
+| 2026-07-15 | Final notification-state cleanup | Files and behavior recorded in “Final notification-state cleanup”; commands: focused risk, notification-engine, background orchestrator, location-change, persistence, ingestion, and preference suites; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`; `xcrun xcresulttool get test-results summary --path .../Test-SkyAware-2026.07.15_15-36-52--0600.xcresult`; `git diff --check` | Passed: 90 tests, 0 failures; Debug Swift 6 build and diff check passed |
+
+## Handoff Notes
+
+- Execute issues sequentially and update the matching ledger section before closing each issue.
+- Record exact files, observable behavior, commands, test execution results, `.xcresult` findings, and deferred work.
+- Stop and re-plan if work requires server changes, cross-run delayed aggregation, foreground delivery, cadence changes,
+  SwiftData migration, or broad notification architecture refactoring.

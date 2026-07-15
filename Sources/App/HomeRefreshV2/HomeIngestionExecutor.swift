@@ -72,7 +72,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let weatherClient: any HomeWeatherQuerying
         let locationSession: any HomeContextPreparing
         let snapshotStore: any HomeSnapshotReading
-        let projectionStore: HomeProjectionStore?
+        let projectionStore: (any HomeProjectionPersisting)?
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
         let stormSetupQuerying: (any StormSetupQuerying)?
         let airQualityQuerying: (any AirQualityQuerying)?
@@ -88,7 +88,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             weatherClient: any HomeWeatherQuerying,
             locationSession: any HomeContextPreparing,
             snapshotStore: any HomeSnapshotReading,
-            projectionStore: HomeProjectionStore?,
+            projectionStore: (any HomeProjectionPersisting)?,
             widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?,
             stormSetupQuerying: (any StormSetupQuerying)? = nil,
             airQualityQuerying: (any AirQualityQuerying)? = nil,
@@ -230,7 +230,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 plan: plan,
                 mapSyncOutcome: slowProductMapSyncOutcome
             )
-            await persistProjection(
+            let riskProfileChange = await persistProjection(
                 for: plan,
                 context: context,
                 snapshot: snapshot,
@@ -238,6 +238,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 loadedAt: now,
                 slowProductDecision: slowProductDecision
             )
+            snapshot.riskProfileChange = riskProfileChange
         }
 
         freshness.lastResolvedRefreshKey = snapshot.refreshKey
@@ -487,8 +488,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         weatherRefreshResult: HomeWeatherRefreshResult,
         loadedAt: Date,
         slowProductDecision: SlowProductPersistenceDecision
-    ) async {
-        guard let projectionStore = environment.projectionStore else { return }
+    ) async -> RiskProfileChange? {
+        guard let projectionStore = environment.projectionStore else { return nil }
+        var riskProfileChange: RiskProfileChange?
 
         do {
             if plan.lanes.contains(.weather) {
@@ -505,7 +507,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             }
 
             if slowProductDecision.shouldUpdateProjection {
-                _ = try await projectionStore.updateSlowProducts(
+                riskProfileChange = try await projectionStore.updateSlowProducts(
                     stormRisk: snapshot.stormRisk,
                     severeRisk: snapshot.severeRisk,
                     fireRisk: snapshot.fireRisk,
@@ -524,11 +526,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             }
 
             guard let widgetSnapshotRefresher = environment.widgetSnapshotRefresher else {
-                return
+                return riskProfileChange
             }
             if let scope = homeWidgetRefreshScope(for: plan) {
                 if case .riskOrLocationProjection = scope, slowProductDecision.shouldRefreshRiskWidgets == false {
-                    return
+                    return riskProfileChange
                 }
                 try widgetSnapshotRefresher.refresh(
                     scope: scope,
@@ -547,6 +549,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 "Failed to persist home projection during ingestion: \(error.localizedDescription, privacy: .public)"
             )
         }
+
+        return riskProfileChange
     }
 
     private func httpExecutionMode(for plan: HomeIngestionPlan) -> HTTPExecutionMode {

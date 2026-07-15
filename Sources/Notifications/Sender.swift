@@ -11,9 +11,12 @@ import OSLog
 struct Sender: NotificationSending {
     private let logger = Logger.notificationsSender
     
-    func send(title: String, body: String, subtitle: String, id: String) async {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
         logger.info("Sending notification")
-        await NotificationManager.shared.notify(title: title, subtitle: subtitle, body: body, id: id)
-        logger.notice("Notification sent")
+        let didSchedule = await NotificationManager.shared.notify(title: title, subtitle: subtitle, body: body, id: id)
+        if didSchedule {
+            logger.notice("Notification scheduled")
+        }
+        return didSchedule
     }
 }

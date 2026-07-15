@@ -47,9 +47,9 @@ struct WatchEngine: Sendable {
         let message = composer.compose(event)
 
         logger.info("Sending watch notification")
-        await sender.send(title: message.title, body: message.body, subtitle: message.subtitle, id: event.key)
+        let didSchedule = await sender.send(title: message.title, body: message.body, subtitle: message.subtitle, id: event.key)
 
-        logger.notice("Watch notification sent")
-        return true
+        if didSchedule { logger.notice("Watch notification scheduled") }
+        return didSchedule
     }
 }
