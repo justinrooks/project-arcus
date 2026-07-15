@@ -7,7 +7,7 @@ import Testing
 struct RiskChangeNotificationTests {
     @Test("engine skips nil input without pending delivery")
     func engineSkipsNilInputWithoutPendingDelivery() async {
-        let sender = RecordingSender()
+        let sender = RiskChangeRecordingSender()
         let engine = makeEngine(sender: sender)
 
         #expect(await engine.run(change: nil) == false)
@@ -45,8 +45,8 @@ struct RiskChangeNotificationTests {
 
     @Test("disabled occurrence survives unchanged refresh after enablement")
     func disabledOccurrenceSurvivesUnchangedRefreshAfterEnablement() async {
-        let sender = RecordingSender()
-        let store = InMemoryRiskChangeStore()
+        let sender = RiskChangeRecordingSender()
+        let store = RiskChangeTestStore()
         let engine = makeEngine(sender: sender, store: store)
 
         #expect(await engine.run(change: makeChange(), isEnabled: false) == false)
@@ -56,7 +56,7 @@ struct RiskChangeNotificationTests {
 
     @Test("failed scheduling retains occurrence and reports false until retry succeeds")
     func failedSchedulingRetainsOccurrenceUntilRetrySucceeds() async {
-        let sender = OutcomeSender(outcomes: [false, true])
+        let sender = RiskChangeOutcomeSender(outcomes: [false, true])
         let engine = makeEngine(sender: sender)
         let change = makeChange()
 
@@ -67,7 +67,7 @@ struct RiskChangeNotificationTests {
 
     @Test("a later identical transition has a distinct accepted occurrence")
     func laterIdenticalTransitionHasDistinctAcceptedOccurrence() async {
-        let sender = RecordingSender()
+        let sender = RiskChangeRecordingSender()
         let engine = makeEngine(sender: sender)
         let a = makeProfile(storm: .marginal, severe: .allClear, fire: .clear)
         let b = makeProfile(storm: .enhanced, severe: .allClear, fire: .clear)
@@ -80,7 +80,7 @@ struct RiskChangeNotificationTests {
 
     @Test("simultaneous consumers claim one occurrence once")
     func simultaneousConsumersClaimOneOccurrenceOnce() async {
-        let sender = SlowRecordingSender()
+        let sender = RiskChangeSlowRecordingSender()
         let engine = makeEngine(sender: sender)
         let change = makeChange()
 
@@ -94,7 +94,7 @@ struct RiskChangeNotificationTests {
 
     @Test("concurrent projection occurrences preserve both pending entries")
     func concurrentProjectionOccurrencesPreserveBothPendingEntries() async {
-        let sender = RecordingSender()
+        let sender = RiskChangeRecordingSender()
         let engine = makeEngine(sender: sender)
         let alpha = makeChange(projectionKey: "projection:alpha", occurrenceID: "alpha")
         let bravo = makeChange(projectionKey: "projection:bravo", occurrenceID: "bravo")
@@ -110,18 +110,20 @@ struct RiskChangeNotificationTests {
 
     @Test("preferred delivery never falls back to another pending occurrence")
     func preferredDeliveryDoesNotDrainAnotherOccurrence() async {
-        let sender = RecordingSender()
+        let sender = RiskChangeRecordingSender()
         let engine = makeEngine(sender: sender)
 
-        #expect(await engine.run(change: makeChange(projectionKey: "projection:alpha", occurrenceID: "x"), isEnabled: false) == false)
+        #expect(await engine.run(change: makeChange(projectionKey: "projection:bravo", occurrenceID: "x"), isEnabled: false) == false)
         #expect(await engine.run(change: makeChange(projectionKey: "projection:alpha", occurrenceID: "y")))
         #expect(await engine.run(change: makeChange(projectionKey: "projection:alpha", occurrenceID: "y")) == false)
         #expect((await sender.sent()) == ["risk:projection:alpha:y"])
+        #expect(await engine.run(change: nil))
+        #expect((await sender.sent()) == ["risk:projection:alpha:y", "risk:projection:bravo:x"])
     }
 
     @Test("newer disabled occurrence supersedes older occurrence for one projection")
     func newerPendingOccurrenceSupersedesOlderOccurrence() async {
-        let sender = RecordingSender()
+        let sender = RiskChangeRecordingSender()
         let engine = makeEngine(sender: sender)
 
         _ = await engine.run(change: makeChange(occurrenceID: "old"), isEnabled: false)
@@ -132,7 +134,7 @@ struct RiskChangeNotificationTests {
 
     @Test("pending projections drain in registration order")
     func pendingProjectionsDrainInRegistrationOrder() async {
-        let sender = RecordingSender()
+        let sender = RiskChangeRecordingSender()
         let engine = makeEngine(sender: sender)
 
         _ = await engine.run(change: makeChange(projectionKey: "projection:bravo", occurrenceID: "bravo"), isEnabled: false)
@@ -144,7 +146,7 @@ struct RiskChangeNotificationTests {
 
     @Test("failed in-flight occurrence does not replace newer pending occurrence")
     func failedInFlightOccurrenceDoesNotReplaceNewerPendingOccurrence() async throws {
-        let gate = RiskChangeGate(store: InMemoryRiskChangeStore())
+        let gate = RiskChangeGate(store: RiskChangeTestStore())
         let old = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: "old"))))
         let new = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: "new"))))
         let message = RiskChangeComposer().compose(old)
@@ -158,7 +160,7 @@ struct RiskChangeNotificationTests {
 
     @Test("expired pending occurrence is removed without delivery")
     func expiredPendingOccurrenceIsRemovedWithoutDelivery() async throws {
-        let gate = RiskChangeGate(store: InMemoryRiskChangeStore())
+        let gate = RiskChangeGate(store: RiskChangeTestStore())
         let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: "expired"))))
         let old = Date(timeIntervalSince1970: 1_000)
         await gate.register(event: event, message: RiskChangeComposer().compose(event), now: old)
@@ -168,38 +170,41 @@ struct RiskChangeNotificationTests {
 
     @Test("recreated gate restores pending state")
     func recreatedGateRestoresPendingState() async throws {
-        let store = InMemoryRiskChangeStore()
+        let store = RiskChangeTestStore()
         let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: "restored"))))
         let firstGate = RiskChangeGate(store: store)
-        await firstGate.register(event: event, message: RiskChangeComposer().compose(event), now: Date(timeIntervalSince1970: 1_000))
+        let now = Date(timeIntervalSince1970: 1_000)
+        await firstGate.register(event: event, message: RiskChangeComposer().compose(event), now: now)
 
         let secondGate = RiskChangeGate(store: store)
-        #expect((await secondGate.claim(preferredEventKey: nil, isEnabled: true)?.eventKey) == event.key)
+        #expect((await secondGate.claim(preferredEventKey: nil, isEnabled: true, now: now)?.eventKey) == event.key)
     }
 
     @Test("delivered tombstones cap at 128 while recent duplicates stay suppressed")
     func deliveredTombstonesAreCapped() async throws {
-        let gate = RiskChangeGate(store: InMemoryRiskChangeStore())
+        let gate = RiskChangeGate(store: RiskChangeTestStore())
         let base = Date(timeIntervalSince1970: 2_000)
         for index in 0..<129 {
             let event = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: String(index)))))
-            await gate.register(event: event, message: RiskChangeComposer().compose(event), now: base.addingTimeInterval(Double(index)))
-            let delivery = await gate.claim(preferredEventKey: event.key, isEnabled: true)
-            if let delivery { await gate.finish(delivery, didSchedule: true, now: base.addingTimeInterval(Double(index))) }
+            let now = base.addingTimeInterval(Double(index))
+            await gate.register(event: event, message: RiskChangeComposer().compose(event), now: now)
+            let delivery = await gate.claim(preferredEventKey: event.key, isEnabled: true, now: now)
+            if let delivery { await gate.finish(delivery, didSchedule: true, now: now) }
         }
 
         let oldest = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: "0"))))
         let recent = try #require(RiskChangeRule().evaluate(RiskChangeContext(change: makeChange(occurrenceID: "128"))))
-        await gate.register(event: oldest, message: RiskChangeComposer().compose(oldest), now: base.addingTimeInterval(130))
-        #expect(await gate.claim(preferredEventKey: oldest.key, isEnabled: true) != nil)
-        await gate.register(event: recent, message: RiskChangeComposer().compose(recent), now: base.addingTimeInterval(130))
-        #expect(await gate.claim(preferredEventKey: recent.key, isEnabled: true) == nil)
+        let now = base.addingTimeInterval(130)
+        await gate.register(event: oldest, message: RiskChangeComposer().compose(oldest), now: now)
+        #expect(await gate.claim(preferredEventKey: oldest.key, isEnabled: true, now: now) != nil)
+        await gate.register(event: recent, message: RiskChangeComposer().compose(recent), now: now)
+        #expect(await gate.claim(preferredEventKey: recent.key, isEnabled: true, now: now) == nil)
     }
 }
 
 private func makeEngine<Sender: NotificationSending>(
     sender: Sender,
-    store: any NotificationStateStoring = InMemoryRiskChangeStore()
+    store: any NotificationStateStoring = RiskChangeTestStore()
 ) -> RiskChangeEngine {
     RiskChangeEngine(
         rule: RiskChangeRule(),
@@ -229,14 +234,14 @@ private func makeProfile(storm: StormRiskLevel, severe: SevereWeatherThreat, fir
     RiskProfile(stormRisk: storm, severeRisk: severe, fireRisk: fire)
 }
 
-private actor InMemoryRiskChangeStore: NotificationStateStoring {
+private actor RiskChangeTestStore: NotificationStateStoring {
     private var stamp: String?
 
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }
 
-private actor RecordingSender: NotificationSending {
+private actor RiskChangeRecordingSender: NotificationSending {
     private var notifications: [String] = []
 
     func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
@@ -247,7 +252,7 @@ private actor RecordingSender: NotificationSending {
     func sent() -> [String] { notifications }
 }
 
-private actor OutcomeSender: NotificationSending {
+private actor RiskChangeOutcomeSender: NotificationSending {
     private var outcomes: [Bool]
     private var attempts = 0
 
@@ -261,7 +266,7 @@ private actor OutcomeSender: NotificationSending {
     func attemptCount() -> Int { attempts }
 }
 
-private actor SlowRecordingSender: NotificationSending {
+private actor RiskChangeSlowRecordingSender: NotificationSending {
     private var notifications: [String] = []
 
     func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
