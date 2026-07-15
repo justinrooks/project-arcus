@@ -39,7 +39,7 @@ notification side effects.
 | 0 | [#100](https://github.com/justinrooks/project-arcus/issues/100) | Epic: Send Notification when Risk Changes | Coordination | Planned | Approved product decisions |
 | 1 | [#308](https://github.com/justinrooks/project-arcus/issues/308) | Detect accepted risk profile changes atomically | `5.4 mini medium` | Planned | None |
 | 2 | [#309](https://github.com/justinrooks/project-arcus/issues/309) | Carry accepted risk changes through home ingestion | `5.4 mini medium` | Planned | #308 |
-| 3 | [#310](https://github.com/justinrooks/project-arcus/issues/310) | Add the batched risk-change notification engine | `5.4 mini medium` | Planned | #308-#309 |
+| 3 | [#310](https://github.com/justinrooks/project-arcus/issues/310) | Add the batched risk-change notification engine | `5.4 mini medium` | Complete | #308-#309 |
 | 4 | [#311](https://github.com/justinrooks/project-arcus/issues/311) | Add the risk-change notification preference | `5.4 mini medium` | Planned | None; execute after #310 |
 | 5 | [#312](https://github.com/justinrooks/project-arcus/issues/312) | Run risk-change notifications from background refresh paths | `5.4 mini medium` | Planned | #308-#311 |
 
@@ -91,7 +91,7 @@ notification side effects.
 
 ### Issue #310 — 03: Add the batched risk-change notification engine
 
-- Status: Planned
+- Status: Complete
 - Scope: Notification kind, rule, one-message composer, per-projection duplicate gate, engine, and deterministic tests.
 - Validation target: `RiskChangeNotificationTests` and Debug build.
 - Handoff: Do not wire background execution or settings yet.
@@ -118,6 +118,7 @@ notification side effects.
 | 2026-07-15 | Planning | Source-backed investigation, epic/label review, and approved product decisions | Complete |
 | 2026-07-15 | #308 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeProjectionStoreTests test`; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`; `git diff --check` | Passed |
 | 2026-07-15 | #309 | Files: `Sources/App/HomeRefreshV2/HomeSnapshot.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: carry an accepted, successfully persisted risk-profile delta through home ingestion while preserving rejected/failed map-sync and persistence-failure nil semantics; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/StormSetupIngestionTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
+| 2026-07-15 | #310 | Files: `Sources/Interfaces/Notification/NotificationRuleEvaluating.swift`, `Sources/Notifications/NotificationsCore.swift`, `Sources/Notifications/RiskChange/RiskChangeContext.swift`, `Sources/Notifications/RiskChange/RiskChangeRule.swift`, `Sources/Notifications/RiskChange/RiskChangeGate.swift`, `Sources/Notifications/RiskChange/RiskChangeComposer.swift`, `Sources/Notifications/RiskChange/RiskChangeEngine.swift`, `Sources/Utilities/Extensions/Logger+Extension.swift`, `Tests/UnitTests/RiskChangeNotificationTests.swift`; behavior: add a pure risk-change notification engine with deterministic event IDs, per-projection duplicate suppression, reversible gate state, ordered storm/severe/fire copy, and location-aware subtitle fallback; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/RiskChangeNotificationTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
 
 ## Handoff Notes
 

@@ -7,7 +7,12 @@
 
 import Foundation
 
-enum NotificationKind: Sendable { case morningOutlook, mesoNotification, watchNotification }
+enum NotificationKind: Sendable {
+    case morningOutlook
+    case mesoNotification
+    case watchNotification
+    case riskProfileChange
+}
 
 struct NotificationEvent: Sendable {
     let kind: NotificationKind

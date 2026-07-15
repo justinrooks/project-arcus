@@ -90,6 +90,12 @@ extension Logger {
     static let notificationsWatchComposer = Logger(subsystem: subsystem, category: "notifications.watch.composer")
     static let notificationsWatchGate = Logger(subsystem: subsystem, category: "notifications.watch.gate")
 
+    // MARK: Risk Change Notification
+    static let notificationsRiskChangeEngine = Logger(subsystem: subsystem, category: "notifications.riskChange.engine")
+    static let notificationsRiskChangeRule = Logger(subsystem: subsystem, category: "notifications.riskChange.rule")
+    static let notificationsRiskChangeComposer = Logger(subsystem: subsystem, category: "notifications.riskChange.composer")
+    static let notificationsRiskChangeGate = Logger(subsystem: subsystem, category: "notifications.riskChange.gate")
+
     // MARK: Notification Delivery
     static let notificationsSender = Logger(subsystem: subsystem, category: "notifications.sender")
 }
