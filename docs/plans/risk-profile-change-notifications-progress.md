@@ -77,7 +77,7 @@ notification side effects.
 
 ### Issue #308 — 01: Detect accepted risk profile changes atomically
 
-- Status: Planned
+- Status: Complete
 - Scope: Domain profile/change contract and atomic projection-store comparison/persistence.
 - Validation target: `HomeProjectionStoreTests` and Debug build.
 - Handoff: Do not add notification side effects or change slow-product eligibility.
@@ -116,6 +116,7 @@ notification side effects.
 | Date | Issue | Verification | Result |
 |---|---|---|---|
 | 2026-07-15 | Planning | Source-backed investigation, epic/label review, and approved product decisions | Complete |
+| 2026-07-15 | #308 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeProjectionStoreTests test`; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`; `git diff --check` | Passed |
 
 ## Handoff Notes
 
