@@ -586,19 +586,30 @@ final class Dependencies: Sendable {
                                                          weatherClient: nil)
     }
 
-    private struct UserDefaultsNotificationSettingsProvider: NotificationSettingsProviding {
+    struct UserDefaultsNotificationSettingsProvider: NotificationSettingsProviding {
+        private let suiteName: String?
+
+        init(suiteName: String? = nil) {
+            self.suiteName = suiteName
+        }
+
         func current() async -> NotificationSettings {
             await MainActor.run {
                 NotificationSettings(
                     morningSummariesEnabled: readBoolSetting(forKey: "morningSummaryEnabled", defaultValue: true),
-                    mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true)
+                    mesoNotificationsEnabled: readBoolSetting(forKey: "mesoNotificationEnabled", defaultValue: true),
+                    riskChangeNotificationsEnabled: readBoolSetting(
+                        forKey: "riskChangeNotificationEnabled",
+                        defaultValue: true
+                    )
                 )
             }
         }
 
         @MainActor
         private func readBoolSetting(forKey key: String, defaultValue: Bool) -> Bool {
-            if let value = UserDefaults.shared?.object(forKey: key) as? Bool {
+            let userDefaults = suiteName.flatMap(UserDefaults.init(suiteName:)) ?? UserDefaults.shared
+            if let value = userDefaults?.object(forKey: key) as? Bool {
                 return value
             }
             return defaultValue

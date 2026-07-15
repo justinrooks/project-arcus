@@ -21,6 +21,17 @@ struct Outcome: Sendable {
 struct NotificationSettings: Sendable {
     let morningSummariesEnabled: Bool
     let mesoNotificationsEnabled: Bool
+    let riskChangeNotificationsEnabled: Bool
+
+    init(
+        morningSummariesEnabled: Bool,
+        mesoNotificationsEnabled: Bool,
+        riskChangeNotificationsEnabled: Bool = true
+    ) {
+        self.morningSummariesEnabled = morningSummariesEnabled
+        self.mesoNotificationsEnabled = mesoNotificationsEnabled
+        self.riskChangeNotificationsEnabled = riskChangeNotificationsEnabled
+    }
 }
 
 protocol NotificationSettingsProviding: Sendable {

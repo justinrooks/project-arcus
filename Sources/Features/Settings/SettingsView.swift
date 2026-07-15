@@ -60,6 +60,11 @@ struct SettingsView: View {
     ) private var mesoNotificationEnabled: Bool = true
     
     @AppStorage(
+        "riskChangeNotificationEnabled",
+        store: UserDefaults.shared
+    ) private var riskChangeNotificationsEnabled: Bool = true
+
+    @AppStorage(
         "serverNotificationEnabled",
         store: UserDefaults.shared
     ) private var serverNotificationEnabled: Bool = true
@@ -114,6 +119,7 @@ struct SettingsView: View {
             authorizationStatus: notificationAuthorizationStatus,
             morningSummariesEnabled: morningSummaryEnabled,
             mesoNotificationsEnabled: mesoNotificationEnabled,
+            riskChangeNotificationsEnabled: riskChangeNotificationsEnabled,
             serverNotificationsEnabled: serverNotificationEnabled
         )
     }
@@ -141,6 +147,18 @@ struct SettingsView: View {
                                 handleNotificationToggle(newValue, for: "Mesoscale Discussion Alerts")
                             }
                         Text("Receive alerts when new mesoscale discussions are issued for your area.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("Risk Profile Changes", isOn: $riskChangeNotificationsEnabled)
+                            .accessibilityIdentifier("settings-risk-change-notification-toggle")
+                            .onChange(of: riskChangeNotificationsEnabled) { _, newValue in
+                                handleNotificationToggle(newValue, for: "Risk Profile Changes")
+                            }
+                        Text("Get an update when storm, severe, or fire risk changes for your area.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
@@ -414,6 +432,7 @@ struct NotificationPreferenceState: Equatable {
     let authorizationStatus: UNAuthorizationStatus
     let morningSummariesEnabled: Bool
     let mesoNotificationsEnabled: Bool
+    let riskChangeNotificationsEnabled: Bool
     let serverNotificationsEnabled: Bool
 
     var allowsNotificationDelivery: Bool {
@@ -426,6 +445,10 @@ struct NotificationPreferenceState: Equatable {
 
     var effectiveMesoNotificationsEnabled: Bool {
         mesoNotificationsEnabled && allowsNotificationDelivery
+    }
+
+    var effectiveRiskChangeNotificationsEnabled: Bool {
+        riskChangeNotificationsEnabled && allowsNotificationDelivery
     }
 
     var effectiveServerNotificationsEnabled: Bool {
