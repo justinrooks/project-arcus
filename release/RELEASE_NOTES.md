@@ -1,5 +1,17 @@
 # Release Notes
 
+## v1.1.0(85)
+
+### Overview
+This build sharpens fire-risk wording, keeps summary alert state tied more closely to the current location-context snapshot, and rolls up mostly internal code organization and maintenance work.
+
+### Highlights
+- Fire-risk presentation now uses clearer wording for the no-risk, elevated, critical, and extreme states, and the quiet title is more explicit.
+- Summary now only promotes live mesos and alerts when they match the committed alert snapshot for the current location context, reducing cross-location swaps.
+
+### Maintenance
+- The rest of the work is internal maintenance, code organization, and supporting documentation updates.
+
 ## v1.1.0(81)
 
 ### Overview

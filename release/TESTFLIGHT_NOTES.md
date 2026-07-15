@@ -1,3 +1,10 @@
+SkyAware v1.1.0(85) sharpens fire-risk wording and makes summary alert state more consistent with the current location-context snapshot.
+
+Highlights:
+- Fire-risk copy is clearer across the no-risk, elevated, critical, and extreme states.
+- Summary now only promotes live mesos and alerts when they match the committed alert snapshot for the current location context.
+- The rest of the build is internal maintenance and code organization.
+
 SkyAware v1.1.0(81) brings Storm Setup into Today as a dedicated card and detail flow, moves it onto the ArcusCore aggregate path, and tightens refresh behavior.
 
 Highlights:
