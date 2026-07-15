@@ -45,6 +45,7 @@ actor BackgroundOrchestrator {
     private let refreshPolicy: RefreshPolicy
     private let morningEngine: MorningEngine
     private let mesoEngine: MesoEngine
+    private let riskChangeEngine: RiskChangeEngine
     private let healthStore: BgHealthStore
     private let cadence: CadencePolicy
     private let notificationSettingsProvider: NotificationSettingsProviding
@@ -57,6 +58,7 @@ actor BackgroundOrchestrator {
         policy: RefreshPolicy,
         engine: MorningEngine,
         mesoEngine: MesoEngine,
+        riskChangeEngine: RiskChangeEngine,
         health: BgHealthStore,
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding,
@@ -68,6 +70,7 @@ actor BackgroundOrchestrator {
         healthStore = health
         self.cadence = cadence
         self.mesoEngine = mesoEngine
+        self.riskChangeEngine = riskChangeEngine
         self.notificationSettingsProvider = notificationSettingsProvider
         self.pendingUploadDrainer = pendingUploadDrainer
         signposter = OSSignposter(logger: logger)
@@ -86,6 +89,7 @@ actor BackgroundOrchestrator {
         return await withTaskCancellationHandler {
             var didMorningNotify = false
             var didMesoNotify = false
+            var didRiskChangeNotify = false
             var noNotifyReasons: [String] = []
             var feedsChanged: Set<Feed> = []
             
@@ -108,9 +112,9 @@ actor BackgroundOrchestrator {
                     let end = Date()
                     let active = clock.now - startInstant
                     
-                    try? await recordBgRun(start: start, end: end, result: .skipped, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
+                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.skipped, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
                     
-                    return .init(next: nextRun, result: .skipped, didNotify: false, feedsChanged: feedsChanged)
+                    return .init(next: nextRun, result: Outcome.BackgroundResult.skipped, didNotify: false, feedsChanged: feedsChanged)
                 }
                 
                 guard
@@ -172,6 +176,19 @@ actor BackgroundOrchestrator {
                     )
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                 } else { noNotifyReasons.append("Meso notification disabled") }
+
+                if settings.riskChangeNotificationsEnabled {
+                    didRiskChangeNotify = await riskChangeEngine.run(change: snapshot.riskProfileChange)
+                    if !didRiskChangeNotify {
+                        if snapshot.riskProfileChange == nil {
+                            noNotifyReasons.append("Risk change notification skipped (no change)")
+                        } else {
+                            noNotifyReasons.append("Risk change notification skipped")
+                        }
+                    }
+                } else {
+                    noNotifyReasons.append("Risk change notifications disabled")
+                }
                                 
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
@@ -187,13 +204,13 @@ actor BackgroundOrchestrator {
                 let nextRun = refreshPolicy.getNextRunTime(for: cadenceResult.cadence)
                 let end = Date()
                 let active = clock.now - startInstant
-                let didNotify = didMorningNotify || didMesoNotify
+                let didNotify = didMorningNotify || didMesoNotify || didRiskChangeNotify
                 let reasonNoNotify = didNotify ? nil : noNotifyReasons.joined(separator: "; ")
 
                 try? await recordBgRun(
                     start: start,
                     end: end,
-                    result: .success,
+                    result: Outcome.BackgroundResult.success,
                     didNotify: didNotify,
                     notificationReason: reasonNoNotify,
                     nextRun: nextRun,
@@ -204,7 +221,7 @@ actor BackgroundOrchestrator {
 
                 signposter.endInterval("Background Run", runInterval)
                 logger.notice("Background run finished with result: success")
-                return .init(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)
+                return .init(next: nextRun, result: Outcome.BackgroundResult.success, didNotify: didNotify, feedsChanged: feedsChanged)
             } catch {
                 signposter.endInterval("Background Run", runInterval)
                 let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
@@ -213,14 +230,14 @@ actor BackgroundOrchestrator {
                 
                 if error is CancellationError {
                     logger.notice("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
-                    try? await recordBgRun(start: start, end: end, result: .cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled", active: active)
-                    return .init(next: nextRun, result: .cancelled, didNotify: false, feedsChanged: feedsChanged)
+                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled", active: active)
+                    return .init(next: nextRun, result: Outcome.BackgroundResult.cancelled, didNotify: false, feedsChanged: feedsChanged)
                 } else {
                     logger.error("Error refreshing background data: \(error.localizedDescription, privacy: .public)")
                     
-                    try? await recordBgRun(start: start, end: end, result: .failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh failed", active: active)
+                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh failed", active: active)
                         
-                    return .init(next: nextRun, result: .failed, didNotify: false, feedsChanged: feedsChanged)
+                    return .init(next: nextRun, result: Outcome.BackgroundResult.failed, didNotify: false, feedsChanged: feedsChanged)
                 }
             }
         } onCancel: {

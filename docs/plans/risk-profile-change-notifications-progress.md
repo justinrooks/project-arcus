@@ -5,7 +5,7 @@
 This ledger tracks the local SkyAware risk-profile change notification campaign. It is the durable handoff record for
 implementation status, validation evidence, decisions, and deferred work.
 
-**Epic status:** Planned  
+**Epic status:** Complete
 **Primary GitHub epic:** [#100](https://github.com/justinrooks/project-arcus/issues/100)
 
 ## Global Decisions
@@ -40,8 +40,8 @@ notification side effects.
 | 1 | [#308](https://github.com/justinrooks/project-arcus/issues/308) | Detect accepted risk profile changes atomically | `5.4 mini medium` | Planned | None |
 | 2 | [#309](https://github.com/justinrooks/project-arcus/issues/309) | Carry accepted risk changes through home ingestion | `5.4 mini medium` | Planned | #308 |
 | 3 | [#310](https://github.com/justinrooks/project-arcus/issues/310) | Add the batched risk-change notification engine | `5.4 mini medium` | Complete | #308-#309 |
-| 4 | [#311](https://github.com/justinrooks/project-arcus/issues/311) | Add the risk-change notification preference | `5.4 mini medium` | Planned | None; execute after #310 |
-| 5 | [#312](https://github.com/justinrooks/project-arcus/issues/312) | Run risk-change notifications from background refresh paths | `5.4 mini medium` | Planned | #308-#311 |
+| 4 | [#311](https://github.com/justinrooks/project-arcus/issues/311) | Add the risk-change notification preference | `5.4 mini medium` | Complete | None; execute after #310 |
+| 5 | [#312](https://github.com/justinrooks/project-arcus/issues/312) | Run risk-change notifications from background refresh paths | `5.4 mini medium` | Complete | #308-#311 |
 
 ## Existing Code Map
 
@@ -105,9 +105,15 @@ notification side effects.
 
 ### Issue #312 — 05: Run risk-change notifications from background refresh paths
 
-- Status: Planned
+- Status: Complete
 - Scope: Dependency composition, background refresh/location-change invocation, preference enforcement, and outcome
   reporting.
+- Files: `Sources/App/Dependencies.swift`, `Sources/Features/Background/BackgroundOrchestrator.swift`,
+  `Sources/Features/Background/BackgroundLocationChangeHandler.swift`,
+  `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`, `Tests/UnitTests/AlertNotificationTests.swift`
+- Behavior: one shared production `RiskChangeEngine` now runs from background refresh and background location-change
+  ingestion when the independent preference is enabled, records `didNotify`/no-notify reasons in background health,
+  preserves disabled deltas for later enablement, and keeps watch/background joining behavior intact.
 - Validation target: risk engine, orchestrator cadence, and location-change notification tests plus Debug build.
 - Handoff: Stop when both approved background paths are covered; do not add foreground or server delivery.
 
@@ -119,7 +125,8 @@ notification side effects.
 | 2026-07-15 | #308 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeProjectionStoreTests test`; `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`; `git diff --check` | Passed |
 | 2026-07-15 | #309 | Files: `Sources/App/HomeRefreshV2/HomeSnapshot.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: carry an accepted, successfully persisted risk-profile delta through home ingestion while preserving rejected/failed map-sync and persistence-failure nil semantics; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/StormSetupIngestionTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
 | 2026-07-15 | #310 | Files: `Sources/Interfaces/Notification/NotificationRuleEvaluating.swift`, `Sources/Notifications/NotificationsCore.swift`, `Sources/Notifications/RiskChange/RiskChangeContext.swift`, `Sources/Notifications/RiskChange/RiskChangeRule.swift`, `Sources/Notifications/RiskChange/RiskChangeGate.swift`, `Sources/Notifications/RiskChange/RiskChangeComposer.swift`, `Sources/Notifications/RiskChange/RiskChangeEngine.swift`, `Sources/Utilities/Extensions/Logger+Extension.swift`, `Tests/UnitTests/RiskChangeNotificationTests.swift`; behavior: add a pure risk-change notification engine with deterministic event IDs, per-projection duplicate suppression, reversible gate state, ordered storm/severe/fire copy, and location-aware subtitle fallback; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/RiskChangeNotificationTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`, `git diff --check` | Passed |
-| 2026-07-15 | #311 | Files: `Sources/Features/Background/BackgroundOrchestrator.swift`, `Sources/Features/Settings/SettingsView.swift`, `Sources/App/Dependencies.swift`, `Tests/UnitTests/RemoteNotificationRegistrarTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: add the default-enabled risk-change notification preference to settings, provider state, and authorization-aware effective-state tests without wiring the risk-change engine or changing server/location-sharing behavior; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone 17" -only-testing:SkyAwareTests/NotificationPreferenceStateTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone 17" build`, `git diff --check` | Passed |
+| 2026-07-15 | #311 | Files: `Sources/Features/Background/BackgroundOrchestrator.swift`, `Sources/Features/Settings/SettingsView.swift`, `Sources/App/Dependencies.swift`, `Tests/UnitTests/RemoteNotificationRegistrarTests.swift`, `docs/plans/risk-profile-change-notifications-progress.md`; behavior: add the default-enabled risk-change notification preference to settings, provider state, and authorization-aware effective-state tests without wiring the risk-change engine or changing server/location-sharing behavior; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" -only-testing:SkyAwareTests/NotificationPreferenceStateTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iPhone Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`, `git diff --check` | Passed |
+| 2026-07-15 | #312 | Files: `Sources/App/Dependencies.swift`, `Sources/Features/Background/BackgroundOrchestrator.swift`, `Sources/Features/Background/BackgroundLocationChangeHandler.swift`, `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`, `Tests/UnitTests/AlertNotificationTests.swift`; behavior: wire one shared production `RiskChangeEngine` and settings provider into both background consumers, send only when the preference is enabled, preserve disabled deltas for later enablement, and keep watch/background joining behavior intact; commands: `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" -only-testing:SkyAwareTests/RiskChangeNotificationTests -only-testing:SkyAwareTests/BackgroundOrchestratorCadenceTests -only-testing:SkyAwareTests/AlertNotificationTests test`, `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832" build`, `rg -n "riskChangeEngine" Sources`, `git diff --check`; result: passed | Passed |
 
 ## Handoff Notes
 

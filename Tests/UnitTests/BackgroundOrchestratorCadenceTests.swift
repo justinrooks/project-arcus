@@ -167,6 +167,7 @@ struct BackgroundOrchestratorCadenceTests {
                 sender: NoopSender(),
                 spc: FakeSpcProvider(activeMesos: [])
             ),
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
             health: BgHealthStore(modelContainer: container),
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(
@@ -221,6 +222,7 @@ struct BackgroundOrchestratorCadenceTests {
                 sender: NoopSender(),
                 spc: FakeSpcProvider(activeMesos: [])
             ),
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
             health: BgHealthStore(modelContainer: container),
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(
@@ -272,6 +274,177 @@ struct BackgroundOrchestratorCadenceTests {
 
         let cadence = try await setup.latestCadence()
         #expect(cadence == Cadence.defaultLong)
+    }
+
+    @Test("Background refresh sends one risk notification and marks didNotify")
+    func backgroundRefresh_sendsRiskNotificationAndMarksDidNotify() async throws {
+        let sender = RecordingRiskSender()
+        let settingsProvider = MutableSettingsProvider(
+            settings: .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: true
+            )
+        )
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: makeRiskChange(
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            riskChangeEngine: makeRiskChangeEngine(sender: sender),
+            settingsProvider: settingsProvider
+        )
+
+        let outcome = await system.orchestrator.run()
+        let health = try #require(await system.latestHealthRecord())
+
+        #expect(outcome.didNotify)
+        #expect(health.didNotify)
+        #expect(await sender.sent().count == 1)
+    }
+
+    @Test("Background refresh records disabled risk change no-notify reason")
+    func backgroundRefresh_recordsDisabledRiskChangeNoNotifyReason() async throws {
+        let sender = RecordingRiskSender()
+        let settingsProvider = MutableSettingsProvider(
+            settings: .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: false
+            )
+        )
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: makeRiskChange(
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            riskChangeEngine: makeRiskChangeEngine(sender: sender),
+            settingsProvider: settingsProvider
+        )
+
+        let outcome = await system.orchestrator.run()
+        let health = try #require(await system.latestHealthRecord())
+
+        #expect(outcome.didNotify == false)
+        #expect(await sender.sent().isEmpty)
+        #expect(health.didNotify == false)
+        #expect(health.reasonNoNotify?.contains("Risk change notifications disabled") == true)
+    }
+
+    @Test("Background refresh records missing risk change no-notify reason")
+    func backgroundRefresh_recordsMissingRiskChangeNoNotifyReason() async throws {
+        let sender = RecordingRiskSender()
+        let settingsProvider = MutableSettingsProvider(
+            settings: .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: true
+            )
+        )
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: nil
+        )
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            riskChangeEngine: makeRiskChangeEngine(sender: sender),
+            settingsProvider: settingsProvider
+        )
+
+        let outcome = await system.orchestrator.run()
+        let health = try #require(await system.latestHealthRecord())
+
+        #expect(outcome.didNotify == false)
+        #expect(await sender.sent().isEmpty)
+        #expect(health.didNotify == false)
+        #expect(health.reasonNoNotify?.contains("Risk change notification skipped (no change)") == true)
+    }
+
+    @Test("Background refresh preserves an eligible risk change until enabled")
+    func backgroundRefresh_preservesEligibleRiskChangeUntilEnabled() async throws {
+        let sender = RecordingRiskSender()
+        let settingsProvider = MutableSettingsProvider(
+            settings: .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: false
+            )
+        )
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: makeRiskChange(
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            riskChangeEngine: makeRiskChangeEngine(sender: sender),
+            settingsProvider: settingsProvider
+        )
+
+        let firstOutcome = await system.orchestrator.run()
+        #expect(firstOutcome.didNotify == false)
+        #expect(await sender.sent().isEmpty)
+
+        await settingsProvider.update(
+            .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: true
+            )
+        )
+
+        let secondOutcome = await system.orchestrator.run()
+        let health = try #require(await system.latestHealthRecord())
+
+        #expect(secondOutcome.didNotify)
+        #expect(await sender.sent().count == 1)
+        #expect(health.didNotify)
     }
 }
 
@@ -369,6 +542,7 @@ private extension BackgroundOrchestratorCadenceTests {
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(settings: settings),
@@ -719,6 +893,153 @@ private struct StaticSettingsProvider: NotificationSettingsProviding {
 
     func current() async -> NotificationSettings {
         settings
+    }
+}
+
+private actor MutableSettingsProvider: NotificationSettingsProviding {
+    private var settings: NotificationSettings
+
+    init(settings: NotificationSettings) {
+        self.settings = settings
+    }
+
+    func current() async -> NotificationSettings {
+        settings
+    }
+
+    func update(_ settings: NotificationSettings) {
+        self.settings = settings
+    }
+}
+
+private actor RecordingRiskSender: NotificationSending {
+    struct SentNotification: Sendable {
+        let title: String
+        let body: String
+        let subtitle: String
+        let id: String
+    }
+
+    private var notifications: [SentNotification] = []
+
+    func send(title: String, body: String, subtitle: String, id: String) async {
+        notifications.append(.init(title: title, body: body, subtitle: subtitle, id: id))
+    }
+
+    func sent() -> [SentNotification] {
+        notifications
+    }
+}
+
+private actor InMemoryRiskChangeStore: NotificationStateStoring {
+    private var stamp: String?
+
+    init(stamp: String? = nil) {
+        self.stamp = stamp
+    }
+
+    func lastStamp() async -> String? {
+        stamp
+    }
+
+    func setLastStamp(_ stamp: String) async {
+        self.stamp = stamp
+    }
+}
+
+private extension BackgroundOrchestratorCadenceTests {
+    struct RiskSystem {
+        let orchestrator: BackgroundOrchestrator
+        let modelContainer: ModelContainer
+
+        struct HealthRecord: Sendable {
+            let didNotify: Bool
+            let reasonNoNotify: String?
+        }
+
+        func latestHealthRecord() async throws -> HealthRecord? {
+            try await MainActor.run {
+                let context = ModelContext(modelContainer)
+                var descriptor = FetchDescriptor<BgRunSnapshot>(
+                    sortBy: [SortDescriptor(\.endedAt, order: .reverse)]
+                )
+                descriptor.fetchLimit = 1
+                guard let health = try context.fetch(descriptor).first else {
+                    return nil
+                }
+                return HealthRecord(didNotify: health.didNotify, reasonNoNotify: health.reasonNoNotify)
+            }
+        }
+    }
+
+    func makeRiskSystem<Settings: NotificationSettingsProviding>(
+        snapshot: HomeSnapshot,
+        riskChangeEngine: RiskChangeEngine,
+        settingsProvider: Settings
+    ) async throws -> RiskSystem {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
+
+        let healthStore = BgHealthStore(modelContainer: container)
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot)
+        let orchestrator = BackgroundOrchestrator(
+            coordinator: coordinator,
+            policy: RefreshPolicy(),
+            engine: MorningEngine(
+                rule: NoopMorningRule(),
+                gate: AllowAllGate(),
+                composer: NoopComposer(),
+                sender: NoopSender()
+            ),
+            mesoEngine: MesoEngine(
+                rule: NoopMesoRule(),
+                gate: AllowAllGate(),
+                composer: NoopComposer(),
+                sender: NoopSender(),
+                spc: FakeSpcProvider(activeMesos: [])
+            ),
+            riskChangeEngine: riskChangeEngine,
+            health: healthStore,
+            cadence: CadencePolicy(),
+            notificationSettingsProvider: settingsProvider,
+            pendingUploadDrainer: NoOpLocationUploadCoordinator()
+        )
+
+        return .init(orchestrator: orchestrator, modelContainer: container)
+    }
+
+    func makeRiskChangeEngine<Sender: NotificationSending>(
+        sender: Sender,
+        store: any NotificationStateStoring = InMemoryRiskChangeStore()
+    ) -> RiskChangeEngine {
+        RiskChangeEngine(
+            rule: RiskChangeRule(),
+            gate: RiskChangeGate(store: store),
+            composer: RiskChangeComposer(),
+            sender: sender
+        )
+    }
+
+    func makeRiskChange(
+        projectionKey: String = "projection:alpha",
+        previous: RiskProfile,
+        current: RiskProfile,
+        locationSummary: String = "Denver, CO"
+    ) -> RiskProfileChange {
+        RiskProfileChange(
+            previous: previous,
+            current: current,
+            projectionKey: projectionKey,
+            locationSummary: locationSummary
+        )!
+    }
+
+    func makeRiskProfile(
+        storm: StormRiskLevel,
+        severe: SevereWeatherThreat,
+        fire: FireRiskLevel
+    ) -> RiskProfile {
+        RiskProfile(stormRisk: storm, severeRisk: severe, fireRisk: fire)
     }
 }
 

@@ -155,7 +155,15 @@ struct AlertNotificationTests {
         )
         let handler = BackgroundLocationChangeHandler(
             coordinator: coordinator,
-            watchEngine: watchEngine
+            watchEngine: watchEngine,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(
+                    morningSummariesEnabled: false,
+                    mesoNotificationsEnabled: false,
+                    riskChangeNotificationsEnabled: false
+                )
+            )
         )
 
         let handleTask = Task {
@@ -196,13 +204,138 @@ struct AlertNotificationTests {
         )
         let handler = BackgroundLocationChangeHandler(
             coordinator: coordinator,
-            watchEngine: watchEngine
+            watchEngine: watchEngine,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(
+                    morningSummariesEnabled: false,
+                    mesoNotificationsEnabled: false,
+                    riskChangeNotificationsEnabled: false
+                )
+            )
         )
 
         await handler.handleLocationChange()
         await handler.handleLocationChange()
 
         #expect((await sender.sent()).count == 1)
+        #expect(await coordinator.requestCount() == 2)
+    }
+
+    @Test("background location change sends risk notifications when enabled")
+    func backgroundLocationChange_sendsRiskNotificationsWhenEnabled() async throws {
+        let watchSender = RecordingSender()
+        let riskSender = RecordingSender()
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: InMemoryNotificationStore()),
+            composer: WatchComposer(),
+            sender: watchSender
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeLocationChangeSnapshot(
+                alerts: [makeAlert(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))],
+                riskProfileChange: Self.makeRiskChange(
+                    previous: Self.makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                    current: Self.makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+                )
+            )
+        )
+        let handler = BackgroundLocationChangeHandler(
+            coordinator: coordinator,
+            watchEngine: watchEngine,
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(
+                    morningSummariesEnabled: false,
+                    mesoNotificationsEnabled: false,
+                    riskChangeNotificationsEnabled: true
+                )
+            )
+        )
+
+        await handler.handleLocationChange()
+
+        #expect((await watchSender.sent()).count == 1)
+        #expect((await riskSender.sent()).count == 1)
+    }
+
+    @Test("background location change keeps watch evaluation when risk notifications are disabled")
+    func backgroundLocationChange_keepsWatchEvaluationWhenRiskNotificationsAreDisabled() async throws {
+        let watchSender = RecordingSender()
+        let riskSender = RecordingSender()
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: InMemoryNotificationStore()),
+            composer: WatchComposer(),
+            sender: watchSender
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeLocationChangeSnapshot(
+                alerts: [makeAlert(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))],
+                riskProfileChange: Self.makeRiskChange(
+                    previous: Self.makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                    current: Self.makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+                )
+            )
+        )
+        let handler = BackgroundLocationChangeHandler(
+            coordinator: coordinator,
+            watchEngine: watchEngine,
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(
+                    morningSummariesEnabled: false,
+                    mesoNotificationsEnabled: false,
+                    riskChangeNotificationsEnabled: false
+                )
+            )
+        )
+
+        await handler.handleLocationChange()
+
+        #expect((await watchSender.sent()).count == 1)
+        #expect((await riskSender.sent()).isEmpty)
+    }
+
+    @Test("background location change suppresses duplicate risk notifications")
+    func backgroundLocationChange_suppressesDuplicateRiskNotifications() async {
+        let watchSender = RecordingSender()
+        let riskSender = RecordingSender()
+        let riskStore = InMemoryNotificationStore()
+        let watchEngine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: InMemoryNotificationStore()),
+            composer: WatchComposer(),
+            sender: watchSender
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeLocationChangeSnapshot(
+                alerts: [makeAlert(id: "watch-1", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))],
+                riskProfileChange: Self.makeRiskChange(
+                    previous: Self.makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                    current: Self.makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+                )
+            )
+        )
+        let handler = BackgroundLocationChangeHandler(
+            coordinator: coordinator,
+            watchEngine: watchEngine,
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender, store: riskStore),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(
+                    morningSummariesEnabled: false,
+                    mesoNotificationsEnabled: false,
+                    riskChangeNotificationsEnabled: true
+                )
+            )
+        )
+
+        await handler.handleLocationChange()
+        await handler.handleLocationChange()
+
+        #expect((await watchSender.sent()).count == 1)
+        #expect((await riskSender.sent()).count == 1)
         #expect(await coordinator.requestCount() == 2)
     }
 
@@ -289,6 +422,68 @@ struct AlertNotificationTests {
         )
         return LocationContext(snapshot: snapshot, h3Cell: 123_456, grid: grid)
     }
+
+    private static func makeLocationChangeSnapshot(
+        alerts: [AlertDTO] = [],
+        riskProfileChange: RiskProfileChange? = nil
+    ) -> HomeSnapshot {
+        let context = Self.makeContext()
+        return HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            riskProfileChange: riskProfileChange,
+            alerts: alerts
+        )
+    }
+
+    private static func makeRiskChange(
+        projectionKey: String = "projection:alpha",
+        previous: RiskProfile,
+        current: RiskProfile,
+        locationSummary: String = "Oklahoma City, OK"
+    ) -> RiskProfileChange {
+        RiskProfileChange(
+            previous: previous,
+            current: current,
+            projectionKey: projectionKey,
+            locationSummary: locationSummary
+        )!
+    }
+
+    private static func makeRiskProfile(
+        storm: StormRiskLevel,
+        severe: SevereWeatherThreat,
+        fire: FireRiskLevel
+    ) -> RiskProfile {
+        RiskProfile(stormRisk: storm, severeRisk: severe, fireRisk: fire)
+    }
+}
+
+private struct StaticSettingsProvider: NotificationSettingsProviding {
+    let settings: NotificationSettings
+
+    func current() async -> NotificationSettings {
+        settings
+    }
+}
+
+private struct NoopSender: NotificationSending {
+    func send(title: String, body: String, subtitle: String, id: String) async {}
+}
+
+private func makeRiskChangeEngine<Sender: NotificationSending>(
+    sender: Sender,
+    store: any NotificationStateStoring = InMemoryNotificationStore()
+) -> RiskChangeEngine {
+    RiskChangeEngine(
+        rule: RiskChangeRule(),
+        gate: RiskChangeGate(store: store),
+        composer: RiskChangeComposer(),
+        sender: sender
+    )
 }
 
 actor InMemoryNotificationStore: NotificationStateStoring {

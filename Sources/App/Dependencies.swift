@@ -440,7 +440,9 @@ final class Dependencies: Sendable {
         let refreshPolicy = RefreshPolicy()
         let cadencePolicy = CadencePolicy()
         logger.info("Refresh policy & cadence configured")
-        
+
+        let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
+
         logger.debug("Composing morning summary engine")
         let morning = MorningEngine(
             rule: AmRangeLocalRule(),
@@ -463,6 +465,14 @@ final class Dependencies: Sendable {
             rule: WatchRule(),
             gate: WatchGate(store: DefaultWatchStore()),
             composer: WatchComposer(),
+            sender: Sender()
+        )
+
+        logger.debug("Composing risk change notification engine")
+        let riskChangeEngine = RiskChangeEngine(
+            rule: RiskChangeRule(),
+            gate: RiskChangeGate(store: DefaultRiskChangeStore()),
+            composer: RiskChangeComposer(),
             sender: Sender()
         )
 
@@ -509,20 +519,21 @@ final class Dependencies: Sendable {
 
         let backgroundLocationChangeHandler = BackgroundLocationChangeHandler(
             coordinator: homeIngestionCoordinator,
-            watchEngine: watchEngine
+            watchEngine: watchEngine,
+            riskChangeEngine: riskChangeEngine,
+            notificationSettingsProvider: notificationSettingsProvider
         )
 
         locationManager.setBackgroundLocationChangeHandler {
             await backgroundLocationChangeHandler.handleLocationChange()
         }
-
-        let notificationSettingsProvider = UserDefaultsNotificationSettingsProvider()
         
         let orchestrator = BackgroundOrchestrator(
             coordinator: homeIngestionCoordinator,
             policy: refreshPolicy,
             engine: morning,
             mesoEngine: meso,
+            riskChangeEngine: riskChangeEngine,
             health: healthStore,
             cadence: cadencePolicy,
             notificationSettingsProvider: notificationSettingsProvider,

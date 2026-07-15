@@ -12,14 +12,20 @@ actor BackgroundLocationChangeHandler {
     private let logger = Logger.backgroundOrchestrator
     private let coordinator: any HomeIngestionCoordinating
     private let watchEngine: WatchEngine
+    private let riskChangeEngine: RiskChangeEngine
+    private let notificationSettingsProvider: NotificationSettingsProviding
     private var activeTask: Task<Void, Never>?
 
     init(
         coordinator: any HomeIngestionCoordinating,
-        watchEngine: WatchEngine
+        watchEngine: WatchEngine,
+        riskChangeEngine: RiskChangeEngine,
+        notificationSettingsProvider: NotificationSettingsProviding
     ) {
         self.coordinator = coordinator
         self.watchEngine = watchEngine
+        self.riskChangeEngine = riskChangeEngine
+        self.notificationSettingsProvider = notificationSettingsProvider
     }
 
     func handleLocationChange() async {
@@ -31,6 +37,8 @@ actor BackgroundLocationChangeHandler {
 
         let coordinator = self.coordinator
         let watchEngine = self.watchEngine
+        let riskChangeEngine = self.riskChangeEngine
+        let notificationSettingsProvider = self.notificationSettingsProvider
         let logger = self.logger
 
         let task = Task {
@@ -54,6 +62,13 @@ actor BackgroundLocationChangeHandler {
                     ),
                     alerts: snapshot.alerts
                 )
+
+                let settings = await notificationSettingsProvider.current()
+                guard settings.riskChangeNotificationsEnabled else {
+                    return
+                }
+
+                _ = await riskChangeEngine.run(change: snapshot.riskProfileChange)
             } catch {
                 logger.error(
                     "Failed to execute background location-change ingestion: \(error.localizedDescription, privacy: .public)"
