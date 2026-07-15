@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.1.0(85)
+
+### UI / UX
+- Fire-risk presentation now uses clearer wording for the no-risk, elevated, critical, and extreme states, and the quiet title now reads "No Elevated Fire Risk".
+<!-- evidence: 3bc13be1, b94102be -->
+
+### Reliability
+- Summary now only promotes live mesos and alerts when they match the committed alert snapshot for the current location context, reducing cross-location swaps.
+<!-- evidence: 3bc13be1 -->
+
+### Tests / QA
+- Regression coverage was refreshed around the refactored home, summary, map, storm setup, location upload, and widget paths, plus the updated fire-risk copy.
+<!-- evidence: 3bc13be1, 9c4ddd98, b94102be -->
+
+### Maintenance / Cleanup
+- Internal maintenance (details not available from commit history).
+<!-- evidence: 3bc13be1, 5cfa3956 -->
+
 ## v1.1.0(81)
 
 ### UI / UX
