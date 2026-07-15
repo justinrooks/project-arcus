@@ -100,6 +100,26 @@ struct AlertNotificationTests {
         #expect(sent[0].id == "watch:abc123")
     }
 
+    @Test("watch engine reports scheduling failure")
+    func watchEngineReportsSchedulingFailure() async {
+        let engine = WatchEngine(
+            rule: WatchRule(),
+            gate: WatchGate(store: InMemoryNotificationStore()),
+            composer: WatchComposer(),
+            sender: FailingWatchSender()
+        )
+
+        #expect(await engine.run(
+            ctx: .init(
+                now: .now,
+                localTZ: centralTime,
+                location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+                placeMark: "Oklahoma City, OK"
+            ),
+            alerts: [makeAlert(id: "failed", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
+        ) == false)
+    }
+
     @Test("composer uses server-aligned wording for known alert event types")
     func composerUsesServerAlignedWordingForAlertType() {
         let event = NotificationEvent(
@@ -472,6 +492,10 @@ private struct StaticSettingsProvider: NotificationSettingsProviding {
 
 private struct NoopSender: NotificationSending {
     func send(title: String, body: String, subtitle: String, id: String) async -> Bool { true }
+}
+
+private struct FailingWatchSender: NotificationSending {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
 }
 
 private func makeRiskChangeEngine<Sender: NotificationSending>(

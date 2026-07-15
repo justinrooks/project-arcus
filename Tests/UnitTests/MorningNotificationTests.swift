@@ -98,6 +98,29 @@ struct MorningNotificationTests {
         #expect(firstPass == true)
         #expect(secondPass == false)
     }
+
+    @Test("engine reports scheduling failure")
+    func engineReportsSchedulingFailure() async {
+        let now = makeDate(year: 2026, month: 1, day: 2, hour: 8, tz: centralTime)
+        let engine = MorningEngine(
+            rule: AmRangeLocalRule(window: 7..<11),
+            gate: MorningGate(store: InMemoryMorningStore()),
+            composer: MorningComposer(),
+            sender: FailingMorningSender()
+        )
+        let context = MorningContext(
+            now: now,
+            lastConvectiveIssue: now.addingTimeInterval(-7_200),
+            localTZ: centralTime,
+            quietHours: nil,
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            placeMark: "Oklahoma City, OK"
+        )
+
+        #expect(await engine.run(ctx: context) == false)
+    }
 }
 
 // MARK: - Test Doubles
@@ -107,4 +130,8 @@ actor InMemoryMorningStore: NotificationStateStoring {
     
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
+}
+
+private struct FailingMorningSender: NotificationSending {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
 }

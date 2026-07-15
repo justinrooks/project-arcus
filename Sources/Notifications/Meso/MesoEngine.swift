@@ -61,9 +61,9 @@ struct MesoEngine: Sendable {
         let msg = composer.compose(event)
 
         logger.info("Sending notification")
-        _ = await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
+        let didSchedule = await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
 
-        logger.notice("Notification sent")
-        return true
+        if didSchedule { logger.notice("Notification scheduled") }
+        return didSchedule
     }
 }

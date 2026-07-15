@@ -212,6 +212,27 @@ struct MesoNotificationTests {
         #expect(message.subtitle.localizedCaseInsensitiveContains("unknown") == false)
         #expect(message.body.localizedCaseInsensitiveContains("unknown") == false)
     }
+
+    @Test("engine reports scheduling failure")
+    func engineReportsSchedulingFailure() async {
+        let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
+        let meso = makeMeso(issued: now.addingTimeInterval(-3_600), validEnd: now.addingTimeInterval(3_600))
+        let engine = MesoEngine(
+            rule: MesoRule(),
+            gate: MesoGate(store: InMemoryMesoStore()),
+            composer: MesoComposer(),
+            sender: FailingMesoSender(),
+            spc: UnusedMesoQuery()
+        )
+        let context = NotificationContext(
+            now: now,
+            localTZ: centralTime,
+            location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            placeMark: "Oklahoma City, OK"
+        )
+
+        #expect(await engine.run(ctx: context, mesos: [meso]) == false)
+    }
 }
 
 // MARK: - Test Doubles
@@ -221,4 +242,15 @@ actor InMemoryMesoStore: NotificationStateStoring {
     
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
+}
+
+private struct FailingMesoSender: NotificationSending {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
+}
+
+private struct UnusedMesoQuery: SpcRiskQuerying {
+    func getActiveMesos(at: Date, for location: CLLocationCoordinate2D) async throws -> [MdDTO] { [] }
+    func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel { .allClear }
+    func getSevereRisk(for point: CLLocationCoordinate2D) async throws -> SevereWeatherThreat { .allClear }
+    func getFireRisk(for point: CLLocationCoordinate2D) async throws -> FireRiskLevel { .clear }
 }

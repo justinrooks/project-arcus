@@ -1,8 +1,8 @@
 # Risk Profile Change Notifications Runbook
 
 **Status:** Complete
-**Applies to:** SkyAware iOS app  
-**Project:** `SkyAware.xcodeproj`  
+**Applies to:** SkyAware iOS app
+**Project:** `SkyAware.xcodeproj`
 **Parent epic:** [#100](https://github.com/justinrooks/project-arcus/issues/100)
 
 ## Related Docs
