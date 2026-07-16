@@ -567,6 +567,50 @@ struct BackgroundOrchestratorCadenceTests {
         #expect((await riskSender.sent()).isEmpty)
     }
 
+    @Test("Coalesced risk change retires an older pending change for the same projection")
+    func coalescedRiskChangeRetiresOlderPendingChangeForSameProjection() async throws {
+        let morningSender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
+        let settings = MutableSettingsProvider(
+            settings: .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: false
+            )
+        )
+        let projectionKey = "projection:alpha"
+        let first = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                projectionKey: projectionKey,
+                previous: makeRiskProfile(storm: .allClear, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear)
+            )
+        )
+        let second = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                projectionKey: projectionKey,
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let third = Self.makeRiskSnapshot(change: nil)
+        let system = try await makeRiskSystem(
+            snapshots: [first, second, third],
+            morningEngine: makeMorningEngine(sender: morningSender),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: settings
+        )
+
+        _ = await system.orchestrator.run()
+        await settings.update(.init(morningSummariesEnabled: true, mesoNotificationsEnabled: false))
+        _ = await system.orchestrator.run()
+        await settings.update(.init(morningSummariesEnabled: false, mesoNotificationsEnabled: false))
+        _ = await system.orchestrator.run()
+
+        #expect((await morningSender.sent()).count == 1)
+        #expect((await riskSender.sent()).isEmpty)
+    }
+
     @Test("Morning scheduling failure falls back to the current snapshot risk change")
     func morningSchedulingFailureFallsBackToRiskChange() async throws {
         let riskSender = RecordingRiskSender()

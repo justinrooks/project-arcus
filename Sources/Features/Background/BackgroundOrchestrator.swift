@@ -182,6 +182,9 @@ actor BackgroundOrchestrator {
                 let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
                     && didMorningNotify
                     && snapshot.riskProfileChange != nil
+                if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
+                    await riskChangeEngine.coalesce(change: riskProfileChange)
+                }
                 didRiskChangeNotify = await riskChangeEngine.run(
                     change: coalescedCurrentRiskChange ? nil : snapshot.riskProfileChange,
                     isEnabled: settings.riskChangeNotificationsEnabled

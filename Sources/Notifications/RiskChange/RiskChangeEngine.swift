@@ -58,4 +58,10 @@ struct RiskChangeEngine: Sendable {
         }
         return didSchedule
     }
+
+    func coalesce(change: RiskProfileChange) async {
+        let context = RiskChangeContext(change: change)
+        guard let event = rule.evaluate(context) else { return }
+        await gate.coalesce(event: event)
+    }
 }
