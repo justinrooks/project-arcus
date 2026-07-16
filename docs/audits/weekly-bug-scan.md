@@ -121,3 +121,28 @@
 - best next fix: Derive DTO identity from an issue-specific key such as the feed GUID or a `title + published` composite, then add a regression test that loads two same-day outlooks with the same link but different publication times and verifies both remain visible.
 - implementation is recommended: Yes
 - out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore
+
+## 2026-07-16T10:10:24Z
+- date: 2026-07-16T10:10:24Z
+- repository reviewed: project-arcus
+- workflow reviewed: Weekly bug scan (audit-only)
+- commit window inspected: 2026-07-02T16:10:07Z through 2026-07-16T09:55:34-06:00
+- files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Features/Background/BackgroundOrchestrator.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Background/BackgroundLocationChangeHandler.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/AmRangeLocalRule.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningComposer.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningContext.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/SevenAmLocalRule.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeComposer.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Scheduling/BackgroundScheduler.swift
+  - /Users/justin/Code/project-arcus/Sources/Policies/CadencePolicy.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MorningNotificationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/RiskChangeNotificationTests.swift
+- top finding: No credible bug confirmed in the inspected window; the new morning/risk-change coalescing and cadence changes matched the current tests and the documented notification contract.
+- best next fix: No fix recommended.
+- implementation is recommended: No
+- out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore
