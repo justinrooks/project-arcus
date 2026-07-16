@@ -1,3 +1,12 @@
+SkyAware v1.1.0(91) adds a branded launch splash overlay, introduces risk-change notifications, coalesces current risk changes into the morning outlook when delivery succeeds, and makes background cadence recovery more reliable.
+
+Highlights:
+- The app now shows a branded launch splash overlay at startup.
+- Risk-change notifications are now available for accepted risk-profile changes.
+- Morning notifications now absorb the current risk-profile change when the summary succeeds, which reduces back-to-back alerts.
+- Background refresh cadence now recovers to the correct 20, 40, or 60 minute band more reliably after failed or interrupted runs.
+- Unit coverage was expanded for morning composition, background cadence edge cases, and risk-change notification flows.
+
 SkyAware v1.1.0(85) sharpens fire-risk wording and makes summary alert state more consistent with the current location-context snapshot.
 
 Highlights:

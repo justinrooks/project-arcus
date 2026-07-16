@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+## v1.1.0(91)
+
+### UI / UX
+- Added a branded launch splash overlay and static launch assets so the app shows a custom startup screen instead of the generated launch storyboard.
+<!-- evidence: 367b1678 -->
+
+### Background & Notifications
+- Risk-change notifications now carry accepted risk-profile changes through home ingestion and deliver them when users opt in.
+<!-- evidence: 05f814bc -->
+- Morning notifications now absorb a current risk-profile change when the summary sends successfully, reducing back-to-back alerts while keeping the standalone risk-change path when morning delivery fails.
+<!-- evidence: def3ba51 -->
+
+### Reliability
+- Background refresh cadence now follows the evaluated severe-weather state more reliably, with scheduling and recovery returning to the correct 20, 40, or 60 minute band after failed or interrupted runs.
+<!-- evidence: 0149fc9d -->
+
+### Tests / QA
+- Expanded unit coverage for morning composition, background cadence edge cases, and risk-change notification flows.
+<!-- evidence: def3ba51, 0149fc9d, 05f814bc -->
+
+### Maintenance / Cleanup
+- Updated supporting runbooks, lesson notes, and weekly audit documentation for the notification and splash work.
+<!-- evidence: 05f814bc, def3ba51, 367b1678 -->
+
 ## v1.1.0(85)
 
 ### UI / UX

@@ -1,5 +1,22 @@
 # Release Notes
 
+## Unreleased
+
+## v1.1.0(91)
+
+### Overview
+This build adds a branded launch splash overlay, introduces risk-change notifications, coalesces current risk changes into the morning outlook when delivery succeeds, and makes background cadence recovery more reliable.
+
+### Highlights
+- The app now shows a branded launch splash overlay at startup.
+- Risk-change notifications are now available for accepted risk-profile changes.
+- Morning notifications now absorb the current risk-profile change when the summary succeeds, which reduces back-to-back alerts.
+- Background refresh cadence now recovers to the evaluated severe-weather state more reliably after failed or interrupted runs.
+- Unit coverage was expanded for morning composition, background cadence edge cases, and risk-change notification flows.
+
+### Maintenance
+- Supporting runbooks, lesson notes, and weekly audit documentation were updated alongside the feature work.
+
 ## v1.1.0(85)
 
 ### Overview
