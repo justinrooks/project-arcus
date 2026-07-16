@@ -12,31 +12,81 @@ import BackgroundTasks
 struct BackgroundScheduler {
     private let logger = Logger.backgroundScheduler
     private let appRefreshID: String
-    private let replacementLeadTime: TimeInterval = 120
+    private let replacementTolerance: TimeInterval = 120
     
     init(refreshId: String) {
         appRefreshID = refreshId
     }
     
+    enum SchedulingIntent {
+        case ensure
+        case authoritative
+    }
+
+    enum PendingRequest: Sendable, Equatable {
+        case none
+        case immediate
+        case at(Date)
+    }
+
+    enum SchedulingDecision: Sendable, Equatable {
+        case submit
+        case keepExisting
+        case keepImmediate
+        case replace(existing: Date)
+    }
+
     // MARK: - Schedule Next App Refresh
-    func scheduleNextAppRefresh(nextRun: Date) async {
+    func scheduleEvaluatedNextAppRefresh(nextRun: Date) async {
+        await schedule(nextRun: nextRun, intent: .authoritative)
+    }
+
+    func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async {
+        let next = policy.getNextRunTime(for: .short, now: now)
+        await schedule(nextRun: next, intent: .ensure)
+    }
+
+    private func schedule(nextRun: Date, intent: SchedulingIntent) async {
         logger.debug("Checking for any pending app refreshes")
         let pending = await pendingRequest(for: appRefreshID)
-        
-        switch pending {
-        case .none:
+
+        switch Self.decision(for: pending, requested: nextRun, intent: intent, minimumDifference: replacementTolerance) {
+        case .submit:
             submitRequest(nextRun: nextRun)
-        case .at(let existing):
-            guard Self.shouldReplace(existing: existing, requested: nextRun, minimumAdvance: replacementLeadTime) else {
+        case .keepExisting:
+            if case .at(let existing) = pending {
                 logger.debug("Keeping existing refresh task at \(existing, privacy: .public); requested \(nextRun, privacy: .public)")
-                return
             }
-            
+        case .keepImmediate:
+            logger.debug("Keeping existing immediate refresh task; requested \(nextRun, privacy: .public)")
+        case .replace(let existing):
             logger.notice("Replacing refresh task from \(existing, privacy: .public) to \(nextRun, privacy: .public)")
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: appRefreshID)
             submitRequest(nextRun: nextRun, restoreOnFailure: existing)
+        }
+    }
+
+    static func decision(
+        for pending: PendingRequest,
+        requested: Date,
+        intent: SchedulingIntent,
+        minimumDifference: TimeInterval = 120
+    ) -> SchedulingDecision {
+        switch pending {
+        case .none:
+            return .submit
         case .immediate:
-            logger.debug("Keeping existing immediate refresh task; requested \(nextRun, privacy: .public)")
+            return .keepImmediate
+        case .at(let existing):
+            guard intent == .authoritative else {
+                return .keepExisting
+            }
+
+            guard shouldReplace(existing: existing, requested: requested, minimumAdvance: minimumDifference) else {
+                return .keepExisting
+            }
+
+            return .replace(existing: existing)
         }
     }
     
@@ -45,7 +95,7 @@ struct BackgroundScheduler {
         requested: Date,
         minimumAdvance: TimeInterval = 120
     ) -> Bool {
-        requested.addingTimeInterval(minimumAdvance) < existing
+        abs(existing.timeIntervalSince(requested)) > minimumAdvance
     }
     
     private func submitRequest(nextRun: Date, restoreOnFailure previousRun: Date? = nil) {
@@ -95,18 +145,5 @@ struct BackgroundScheduler {
                 }
             }
         }
-    }
-    
-    private enum PendingRequest {
-        case none
-        case immediate
-        case at(Date)
-    }
-}
-
-extension BackgroundScheduler {
-    func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async {
-        let next = policy.getNextRunTime(for: .short(20))
-        await scheduleNextAppRefresh(nextRun: next)
     }
 }

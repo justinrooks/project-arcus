@@ -45,3 +45,9 @@
 - Do not infer SwiftData Codable storage behavior from JSON Codable behavior. SwiftData may flatten nested values and
   use framework-specific encoders that trap on otherwise valid custom enum conformances. Inspect the SQLite schema and
   reproduce an actual save/reopen path before prescribing a shared-model decoder fix.
+
+## 2026-07-16
+
+- For background cadence work, preserve the established 20/40/60-minute bands: marginal-or-higher categorical risk,
+  active alerts, or active mesos use 20 minutes; thunderstorm-only uses 40; all-clear uses 60. Missing context and
+  failures retry at 20, but the next successful run must authoritatively restore the condition-appropriate band.

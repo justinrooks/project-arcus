@@ -29,7 +29,7 @@ struct RefreshPolicy: Sendable {
         cal.timeZone = TimeZone(secondsFromGMT: 0)! // Zulu
 
         // Extract minutes from the provided cadence
-        let minutes = cadence.getMinutes()
+        let minutes = cadence.minutes
   
         // Exactly N minutes from now (no top-of-hour alignment)
         let target = cal.date(byAdding: .minute, value: minutes, to: now)!

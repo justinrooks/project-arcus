@@ -8,40 +8,30 @@
 import Foundation
 import OSLog
 
-enum CadenceAdjust { case tighten, loosen }
-
 enum Cadence: Sendable, Equatable {
-    case short(Int), normal(Int), long(Int)
-    
-    var label: String {
-      switch self { case .short(let m): "short(\(m)m)"; case .normal(let m): "normal(\(m)m)"; case .long(let m): "long(\(m)m)" }
-    }
-}
+    case short
+    case normal
+    case long
 
-extension Cadence {
-    static let defaultShort = 20
-    static let defaultNormal = 40
-    static let defaultLong = 60
-    
-    func adjusted(_ a: CadenceAdjust) -> Cadence {
-        switch (a, self) {
-        case (.tighten, .long):   return .normal(Self.defaultNormal)
-        case (.tighten, .normal): return .short(Self.defaultShort)
-        case (.tighten, .short):  return .short(Self.defaultShort)
-        case (.loosen,  .short):  return .normal(Self.defaultNormal)
-        case (.loosen,  .normal): return .long(Self.defaultLong)
-        case (.loosen,  .long):   return .long(Self.defaultLong)
+    var label: String {
+        switch self {
+        case .short:
+            "short(20m)"
+        case .normal:
+            "normal(40m)"
+        case .long:
+            "long(60m)"
         }
     }
-    
-    
-    /// Convenience function to retrieve the minutes saved with the cadence
-    /// - Returns: minutes as Int
-    func getMinutes() -> Int {
+
+    var minutes: Int {
         switch self {
-        case .short(let m):  m
-        case .normal(let m): m
-        case .long(let m):   m
+        case .short:
+            20
+        case .normal:
+            40
+        case .long:
+            60
         }
     }
 }
@@ -52,9 +42,7 @@ struct CadenceResult: Sendable, Equatable {
 }
 
 struct CadenceContext: Sendable {
-    let now: Date
     let categorical: StormRiskLevel
-    let recentlyChangedLocation: Bool
     let inMeso: Bool
     let inAlert: Bool
 }
@@ -68,50 +56,28 @@ struct CadencePolicy: Sendable {
     /// - Returns: a cadence result
     func decide(for ctx: CadenceContext) -> CadenceResult {
         logger.debug("Deciding cadence from context")
-        // Check in meso or watch return short and short circuit
+        // Check in meso or watch return short and short circuit.
         if ctx.inAlert || ctx.inMeso {
             let sources = [ctx.inAlert ? "watch" : nil, ctx.inMeso ? "meso" : nil].compactMap { $0 }.joined(separator: ",")
-            let r = CadenceResult(cadence: .short(Cadence.defaultShort), reason: "gate=\(sources)")
+            let r = CadenceResult(cadence: .short, reason: "gate=\(sources)")
             logger.notice("cadence=\(r.cadence.label, privacy: .public) reason=\(r.reason, privacy: .public)")
             return r
         }
-        
-        // Only going to check categorical storm risk, as its linked to severe.
-        // Tornado, wind, hail don't happen without elevated categorical risk
-        // This makes rule reading easier. No reason to add complexity when
-        // not necessary.
-        
-        // check categorical evaluate level, short circuit return
+
         logger.debug("Checking categorical risk")
-        var base: CadenceResult
         switch ctx.categorical {
-        case .allClear, .thunderstorm, .marginal: // 60
-            base = .init(
-                cadence: .long(Cadence.defaultLong),
-                reason: "gate=categorical: \(ctx.categorical.abbreviation)"
-            )
-        case .slight, .enhanced: // 40
-            base = .init(
-                cadence: .normal(Cadence.defaultNormal),
-                reason: "gate=categorical: \(ctx.categorical.abbreviation)"
-            )
-        case .moderate, .high: // 20
-            base = .init(
-                cadence: .short(Cadence.defaultShort),
-                reason: "gate=categorical: \(ctx.categorical.abbreviation)"
-            )
+        case .allClear:
+            let r = CadenceResult(cadence: .long, reason: "gate=categorical: \(ctx.categorical.abbreviation)")
+            logger.notice("cadence=\(r.cadence.label, privacy: .public) reason=\(r.reason, privacy: .public)")
+            return r
+        case .thunderstorm:
+            let r = CadenceResult(cadence: .normal, reason: "gate=categorical: \(ctx.categorical.abbreviation)")
+            logger.notice("cadence=\(r.cadence.label, privacy: .public) reason=\(r.reason, privacy: .public)")
+            return r
+        case .marginal, .slight, .enhanced, .moderate, .high:
+            let r = CadenceResult(cadence: .short, reason: "gate=categorical: \(ctx.categorical.abbreviation)")
+            logger.notice("cadence=\(r.cadence.label, privacy: .public) reason=\(r.reason, privacy: .public)")
+            return r
         }
-        
-        // if we make it here, apply any nudges and then return
-        
-        if ctx.recentlyChangedLocation {
-            let from = base.cadence
-            let to = base.cadence.adjusted(.tighten)
-            base.cadence = to
-            base.reason = [base.reason, "nudge=move \(from.label)->\(to.label)"]
-                .compactMap { $0 }.joined(separator: " ")
-        }
-        
-        return base
     }
 }

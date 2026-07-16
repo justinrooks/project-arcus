@@ -84,6 +84,7 @@ actor BackgroundOrchestrator {
         let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
         let start = Date()
+        let recoveryCadence = Cadence.short.minutes
         await pendingUploadDrainer.drainPendingUploads()
         
         return await withTaskCancellationHandler {
@@ -108,11 +109,11 @@ actor BackgroundOrchestrator {
 
                 guard let locationSnapshot = snapshot.locationSnapshot else {
                     logger.info("No current location snapshot available; rechecking in 20m")
-                    let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
+                    let nextRun = refreshPolicy.getNextRunTime(for: .short)
                     let end = Date()
                     let active = clock.now - startInstant
                     
-                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.skipped, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: 0, cadenceReason: "Early exit", active: active)
+                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.skipped, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: recoveryCadence, cadenceReason: "Early exit", active: active)
                     
                     return .init(next: nextRun, result: Outcome.BackgroundResult.skipped, didNotify: false, feedsChanged: feedsChanged)
                 }
@@ -196,9 +197,7 @@ actor BackgroundOrchestrator {
                 // MARK: Cadence decision
                 let cadenceResult = cadence.decide(
                     for: .init(
-                        now: .now,
                         categorical: stormRisk,
-                        recentlyChangedLocation: false,
                         inMeso: inMeso,
                         inAlert: inAlert
                     )
@@ -217,7 +216,7 @@ actor BackgroundOrchestrator {
                     didNotify: didNotify,
                     notificationReason: reasonNoNotify,
                     nextRun: nextRun,
-                    cadence: cadenceResult.cadence.getMinutes(),
+                    cadence: cadenceResult.cadence.minutes,
                     cadenceReason: cadenceResult.reason,
                     active: active
                 )
@@ -227,18 +226,18 @@ actor BackgroundOrchestrator {
                 return .init(next: nextRun, result: Outcome.BackgroundResult.success, didNotify: didNotify, feedsChanged: feedsChanged)
             } catch {
                 signposter.endInterval("Background Run", runInterval)
-                let nextRun = refreshPolicy.getNextRunTime(for: .short(20))
+                let nextRun = refreshPolicy.getNextRunTime(for: .short)
                 let end = Date()
                 let active = clock.now - startInstant
                 
                 if error is CancellationError {
                     logger.notice("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
-                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh cancelled", active: active)
+                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: recoveryCadence, cadenceReason: "Background refresh cancelled", active: active)
                     return .init(next: nextRun, result: Outcome.BackgroundResult.cancelled, didNotify: false, feedsChanged: feedsChanged)
                 } else {
                     logger.error("Error refreshing background data: \(error.localizedDescription, privacy: .public)")
                     
-                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: 0, cadenceReason: "Background refresh failed", active: active)
+                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: recoveryCadence, cadenceReason: "Background refresh failed", active: active)
                         
                     return .init(next: nextRun, result: Outcome.BackgroundResult.failed, didNotify: false, feedsChanged: feedsChanged)
                 }

@@ -115,7 +115,7 @@ struct SkyAwareApp: App {
             logger.notice("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
             
             // Schedule the next run
-            await deps.scheduler.scheduleNextAppRefresh(nextRun: result.next)
+            await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: result.next)
             logger.notice("Scheduled next app refresh at: \(result.next, privacy: .public)")
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -127,9 +127,8 @@ struct SkyAwareApp: App {
             case .background:
                 Task {
                     let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
-                    let next = deps.refreshPolicy.getNextRunTime(for: .normal(60))
-                    logger.notice("App entered background; attempting to schedule next app refresh proactively: \(next.shorten(withDateStyle: .none), privacy: .public)")
-                    await scheduler.scheduleNextAppRefresh(nextRun: next)
+                    logger.notice("App entered background; ensuring background refresh is seeded if needed")
+                    await scheduler.ensureScheduled(using: deps.refreshPolicy)
                 }
             case .inactive: // Swallow inactive state
                 break
