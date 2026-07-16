@@ -478,12 +478,13 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(health.reasonNoNotify?.contains("Risk change notification skipped (no change)") == true)
     }
 
-    @Test("Background refresh preserves an eligible risk change until enabled")
-    func backgroundRefresh_preservesEligibleRiskChangeUntilEnabled() async throws {
-        let sender = RecordingRiskSender()
+    @Test("Disabled risk changes remain pending after a normal morning summary")
+    func disabledRiskChangeRemainsPendingAfterNormalMorningSummary() async throws {
+        let morningSender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
         let settingsProvider = MutableSettingsProvider(
             settings: .init(
-                morningSummariesEnabled: false,
+                morningSummariesEnabled: true,
                 mesoNotificationsEnabled: false,
                 riskChangeNotificationsEnabled: false
             )
@@ -514,13 +515,16 @@ struct BackgroundOrchestratorCadenceTests {
         )
         let system = try await makeRiskSystem(
             snapshots: [snapshot, unchangedSnapshot],
-            riskChangeEngine: makeRiskChangeEngine(sender: sender),
+            morningEngine: makeMorningEngine(sender: morningSender),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
             settingsProvider: settingsProvider
         )
 
         let firstOutcome = await system.orchestrator.run()
-        #expect(firstOutcome.didNotify == false)
-        #expect(await sender.sent().isEmpty)
+        #expect(firstOutcome.didNotify)
+        let firstMorning = try #require(await morningSender.sent().first)
+        #expect(firstMorning.body.contains("Risk Update") == false)
+        #expect(await riskSender.sent().isEmpty)
 
         await settingsProvider.update(
             .init(
@@ -534,8 +538,122 @@ struct BackgroundOrchestratorCadenceTests {
         let health = try #require(await system.latestHealthRecord())
 
         #expect(secondOutcome.didNotify)
-        #expect(await sender.sent().count == 1)
+        #expect(await riskSender.sent().count == 1)
         #expect(health.didNotify)
+    }
+
+    @Test("Morning success coalesces the current snapshot risk change")
+    func morningSuccessCoalescesCurrentSnapshotRiskChange() async throws {
+        let morningSender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
+        let settings = StaticSettingsProvider(
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        )
+        let snapshot = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            morningEngine: makeMorningEngine(sender: morningSender),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: settings
+        )
+
+        #expect((await system.orchestrator.run()).didNotify)
+        #expect((await morningSender.sent()).count == 1)
+        #expect((await riskSender.sent()).isEmpty)
+    }
+
+    @Test("Morning scheduling failure falls back to the current snapshot risk change")
+    func morningSchedulingFailureFallsBackToRiskChange() async throws {
+        let riskSender = RecordingRiskSender()
+        let snapshot = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let system = try await makeRiskSystem(
+            snapshot: snapshot,
+            morningEngine: makeMorningEngine(sender: FailingNotificationSender()),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+            )
+        )
+
+        #expect((await system.orchestrator.run()).didNotify)
+        #expect((await riskSender.sent()).count == 1)
+    }
+
+    @Test("Later risk transition remains independent after a coalesced morning")
+    func laterRiskTransitionRemainsIndependentAfterCoalescedMorning() async throws {
+        let morningSender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
+        let first = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                projectionKey: "projection:one",
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let second = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                projectionKey: "projection:two",
+                previous: makeRiskProfile(storm: .allClear, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .slight, severe: .allClear, fire: .clear)
+            )
+        )
+        let system = try await makeRiskSystem(
+            snapshots: [first, second],
+            morningEngine: makeMorningEngine(sender: morningSender, gate: FirstMorningOnlyGate()),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+            )
+        )
+
+        _ = await system.orchestrator.run()
+        _ = await system.orchestrator.run()
+
+        #expect((await morningSender.sent()).count == 1)
+        #expect((await riskSender.sent()).count == 1)
+    }
+
+    @Test("Morning without a current change still delivers an older pending risk change")
+    func morningWithoutCurrentChangeDeliversOlderPendingRiskChange() async throws {
+        let morningSender = RecordingRiskSender()
+        let riskSender = RecordingRiskSender()
+        let settings = MutableSettingsProvider(
+            settings: .init(
+                morningSummariesEnabled: false,
+                mesoNotificationsEnabled: false,
+                riskChangeNotificationsEnabled: false
+            )
+        )
+        let first = Self.makeRiskSnapshot(
+            change: makeRiskChange(
+                previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+                current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+            )
+        )
+        let second = Self.makeRiskSnapshot(change: nil)
+        let system = try await makeRiskSystem(
+            snapshots: [first, second],
+            morningEngine: makeMorningEngine(sender: morningSender),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            settingsProvider: settings
+        )
+
+        _ = await system.orchestrator.run()
+        await settings.update(.init(morningSummariesEnabled: true, mesoNotificationsEnabled: false))
+        _ = await system.orchestrator.run()
+
+        #expect((await morningSender.sent()).count == 1)
+        #expect((await riskSender.sent()).count == 1)
     }
 
     @Test("Missing location context records recovery cadence 20")
@@ -1244,6 +1362,7 @@ private extension BackgroundOrchestratorCadenceTests {
 
     func makeRiskSystem<Settings: NotificationSettingsProviding>(
         coordinator: any HomeIngestionCoordinating,
+        morningEngine: MorningEngine? = nil,
         riskChangeEngine: RiskChangeEngine,
         settingsProvider: Settings
     ) async throws -> RiskSystem {
@@ -1254,7 +1373,7 @@ private extension BackgroundOrchestratorCadenceTests {
         let orchestrator = BackgroundOrchestrator(
             coordinator: coordinator,
             policy: RefreshPolicy(),
-            engine: MorningEngine(
+            engine: morningEngine ?? MorningEngine(
                 rule: NoopMorningRule(),
                 gate: AllowAllGate(),
                 composer: NoopComposer(),
@@ -1280,6 +1399,7 @@ private extension BackgroundOrchestratorCadenceTests {
     func makeRiskSystem<Settings: NotificationSettingsProviding>(
         snapshot: HomeSnapshot? = nil,
         snapshots: [HomeSnapshot]? = nil,
+        morningEngine: MorningEngine? = nil,
         riskChangeEngine: RiskChangeEngine,
         settingsProvider: Settings
     ) async throws -> RiskSystem {
@@ -1291,6 +1411,7 @@ private extension BackgroundOrchestratorCadenceTests {
         }
         return try await makeRiskSystem(
             coordinator: coordinator,
+            morningEngine: morningEngine,
             riskChangeEngine: riskChangeEngine,
             settingsProvider: settingsProvider
         )
@@ -1329,6 +1450,34 @@ private extension BackgroundOrchestratorCadenceTests {
     ) -> RiskProfile {
         RiskProfile(stormRisk: storm, severeRisk: severe, fireRisk: fire)
     }
+
+    func makeMorningEngine<Sender: NotificationSending>(
+        sender: Sender,
+        gate: any NotificationGating = AllowAllGate()
+    ) -> MorningEngine {
+        MorningEngine(
+            rule: AmRangeLocalRule(window: 0..<24),
+            gate: gate,
+            composer: MorningComposer(),
+            sender: sender
+        )
+    }
+
+    static func makeRiskSnapshot(change: RiskProfileChange?) -> HomeSnapshot {
+        let context = makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        return HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: change?.current.stormRisk ?? .enhanced,
+            severeRisk: change?.current.severeRisk ?? .allClear,
+            fireRisk: change?.current.fireRisk ?? .clear,
+            riskProfileChange: change
+        )
+    }
 }
 
 private struct NoopMorningRule: NotificationRuleEvaluating {
@@ -1357,6 +1506,19 @@ private struct NoopComposer: NotificationComposing {
 
 private struct NoopSender: NotificationSending {
     func send(title: String, body: String, subtitle: String, id: String) async -> Bool { true }
+}
+
+private struct FailingNotificationSender: NotificationSending {
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
+}
+
+private actor FirstMorningOnlyGate: NotificationGating {
+    private var hasAllowed = false
+
+    func allow(_ event: NotificationEvent, now: Date) async -> Bool {
+        defer { hasAllowed = true }
+        return hasAllowed == false
+    }
 }
 
 private func waitUntil(

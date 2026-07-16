@@ -33,17 +33,22 @@ struct SevenAmLocalRule: NotificationRuleEvaluating {
         let id = "morning:\(stamp)"
         logger.trace("Stamp generated: \(id)")
         
+        var payload: [String: Sendable] = [
+            "localDay": stamp,
+            "issue": ctx.lastConvectiveIssue as Sendable?,
+            "stormRisk": ctx.stormRisk,
+            "severeRisk": ctx.severeRisk,
+            "fireRisk": ctx.fireRisk,
+            "placeMark": ctx.placeMark
+        ]
+        if let riskProfileChange = ctx.riskProfileChange {
+            payload["riskProfileChange"] = riskProfileChange
+        }
+
         return NotificationEvent(
             kind: .morningOutlook,
             key: id,
-            payload: [
-                "localDay": stamp,
-                "issue": ctx.lastConvectiveIssue as Sendable?,
-                "stormRisk": ctx.stormRisk,
-                "severeRisk": ctx.severeRisk,
-                "fireRisk": ctx.fireRisk,
-                "placeMark": ctx.placeMark
-            ]
+            payload: payload
         )
     }
 }

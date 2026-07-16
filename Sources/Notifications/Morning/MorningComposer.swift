@@ -20,8 +20,18 @@ struct MorningComposer: NotificationComposing {
         let severeRisk = (event.payload["severeRisk"] as? SevereWeatherThreat) ?? .allClear
         let fireRisk = (event.payload["fireRisk"] as? FireRiskLevel) ?? .clear
         let placemark = (event.payload["placeMark"] as? String) ?? "Unknown"
+        let outlook = "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)\nFire Risk: \(fireRisk.message)"
+
+        let body: String
+        if let riskProfileChange = event.payload["riskProfileChange"] as? RiskProfileChange {
+            let transitions = RiskProfileChangeFormatting.transitionLines(for: riskProfileChange)
+                .joined(separator: "\n")
+            body = "Risk Update\n\(transitions)\n\n\(outlook)"
+        } else {
+            body = outlook
+        }
         
         logger.debug("Summary notification generated")
-        return ("Today's Outlook for \(placemark)", "Storm Activity: \(stormRisk.summary)\nSevere Activity: \(severeRisk.summary)\nFire Risk: \(fireRisk.message)", "\(issue)")
+        return ("Today's Outlook for \(placemark)", body, "\(issue)")
     }
 }
