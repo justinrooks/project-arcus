@@ -99,7 +99,9 @@ struct SkyAwareApp: App {
     
     var body: some Scene {
         WindowGroup {
-            rootContent
+            LaunchSplashContainer {
+                rootContent
+            }
                 .preferredColorScheme(Self.uiTestPreferredColorScheme)
                 .environment(remoteAlertPresentationState)
                 .environment(runtimeConnectivityState)
