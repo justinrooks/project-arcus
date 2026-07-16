@@ -15,47 +15,122 @@ struct BackgroundSchedulerReplacementPolicyTests {
         let requested = base.addingTimeInterval(20 * 60)
         
         #expect(
-            BackgroundScheduler.shouldReplace(
-                existing: existing,
+            BackgroundScheduler.decision(
+                for: .at(existing),
                 requested: requested,
-                minimumAdvance: 120
-            )
+                intent: .authoritative,
+                minimumDifference: 120
+            ) == .replace(existing: existing)
         )
     }
     
-    @Test("Does not replace when requested run is later")
-    func doNotReplaceWhenRequestedIsLater() {
+    @Test("Replaces pending request when requested run is materially later")
+    func replaceWhenRequestedIsLater() {
         let base = Date(timeIntervalSince1970: 0)
         let existing = base.addingTimeInterval(20 * 60)
         let requested = base.addingTimeInterval(60 * 60)
         
         #expect(
-            BackgroundScheduler.shouldReplace(
-                existing: existing,
+            BackgroundScheduler.decision(
+                for: .at(existing),
                 requested: requested,
-                minimumAdvance: 120
-            ) == false
+                intent: .authoritative,
+                minimumDifference: 120
+            ) == .replace(existing: existing)
         )
     }
     
-    @Test("Does not replace when request is only slightly earlier than pending")
-    func doNotReplaceForTinyTimingDifference() {
+    @Test("Ensure-only scheduling preserves an existing request")
+    func ensureOnlyPreservesExistingRequest() {
         let base = Date(timeIntervalSince1970: 0)
-        let existing = base.addingTimeInterval(60 * 60)
-        let requested = base.addingTimeInterval((60 * 60) - 60)
+        let existing = base.addingTimeInterval(20 * 60)
+        let requested = base.addingTimeInterval(60 * 60)
         
         #expect(
-            BackgroundScheduler.shouldReplace(
-                existing: existing,
+            BackgroundScheduler.decision(
+                for: .at(existing),
                 requested: requested,
-                minimumAdvance: 120
-            ) == false
+                intent: .ensure,
+                minimumDifference: 120
+            ) == .keepExisting
+        )
+    }
+
+    @Test("Keeps requests within the two-minute replacement tolerance")
+    func keepsRequestsWithinTwoMinuteTolerance() {
+        let base = Date(timeIntervalSince1970: 0)
+        let existing = base.addingTimeInterval(60 * 60)
+        let requested = existing.addingTimeInterval(-120)
+
+        #expect(
+            BackgroundScheduler.decision(
+                for: .at(existing),
+                requested: requested,
+                intent: .authoritative,
+                minimumDifference: 120
+            ) == .keepExisting
+        )
+    }
+
+    @Test("Preserves immediate pending requests")
+    func preservesImmediatePendingRequests() {
+        let requested = Date(timeIntervalSince1970: 0).addingTimeInterval(20 * 60)
+
+        #expect(
+            BackgroundScheduler.decision(
+                for: .immediate,
+                requested: requested,
+                intent: .authoritative,
+                minimumDifference: 120
+            ) == .keepImmediate
         )
     }
 }
 
 @Suite("BackgroundOrchestrator Cadence", .serialized)
 struct BackgroundOrchestratorCadenceTests {
+    @Test("Every storm risk level maps to the evaluated cadence band")
+    func everyStormRiskLevel_mapsToExpectedCadenceBand() {
+        let policy = CadencePolicy()
+        let cases: [(StormRiskLevel, Cadence)] = [
+            (.allClear, .long),
+            (.thunderstorm, .normal),
+            (.marginal, .short),
+            (.slight, .short),
+            (.enhanced, .short),
+            (.moderate, .short),
+            (.high, .short)
+        ]
+
+        for (risk, expected) in cases {
+            let result = policy.decide(
+                for: .init(
+                    categorical: risk,
+                    inMeso: false,
+                    inAlert: false
+                )
+            )
+
+            #expect(result.cadence == expected)
+            #expect(result.reason.contains(risk.abbreviation))
+        }
+    }
+
+    @Test("Alert and meso precedence wins over categorical cadence")
+    func alertAndMesoPrecedenceWinsOverCategoricalCadence() {
+        let policy = CadencePolicy()
+        let result = policy.decide(
+            for: .init(
+                categorical: .allClear,
+                inMeso: true,
+                inAlert: true
+            )
+        )
+
+        #expect(result.cadence == .short)
+        #expect(result.reason == "gate=watch,meso")
+    }
+
     @Test("Fresh location request updates provider before risk queries")
     func freshLocationRequest_updatesProviderBeforeRiskQueries() async throws {
         let refreshed = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
@@ -247,7 +322,7 @@ struct BackgroundOrchestratorCadenceTests {
         _ = await setup.orchestrator.run()
 
         let cadence = try await setup.latestCadence()
-        #expect(cadence == Cadence.defaultShort)
+        #expect(cadence == Cadence.short.minutes)
     }
 
     @Test("Active alert tightens cadence to short")
@@ -260,7 +335,7 @@ struct BackgroundOrchestratorCadenceTests {
         _ = await setup.orchestrator.run()
 
         let cadence = try await setup.latestCadence()
-        #expect(cadence == Cadence.defaultShort)
+        #expect(cadence == Cadence.short.minutes)
     }
 
     @Test("No active meso/alert keeps all-clear cadence long")
@@ -273,7 +348,7 @@ struct BackgroundOrchestratorCadenceTests {
         _ = await setup.orchestrator.run()
 
         let cadence = try await setup.latestCadence()
-        #expect(cadence == Cadence.defaultLong)
+        #expect(cadence == Cadence.long.minutes)
     }
 
     @Test("Background refresh sends one risk notification and marks didNotify")
@@ -461,6 +536,98 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(secondOutcome.didNotify)
         #expect(await sender.sent().count == 1)
         #expect(health.didNotify)
+    }
+
+    @Test("Missing location context records recovery cadence 20")
+    func missingLocationContext_recordsRecoveryCadenceTwenty() async throws {
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            refreshedLocation: nil,
+            refreshSucceeds: false,
+            cachedSnapshotTimestamp: Date().addingTimeInterval(-(6 * 60)),
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+        )
+
+        let outcome = await setup.orchestrator.run()
+        let cadence = try await setup.latestCadence()
+
+        #expect(outcome.result == .skipped)
+        #expect(cadence == 20)
+    }
+
+    @Test("Failure to all-clear recovery records 20 then 60")
+    func failureToAllClearRecovery_recordsTwentyThenSixty() async throws {
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let successSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear
+        )
+        let coordinator = ScriptedHomeIngestionCoordinator(
+            responses: [
+                .failure(.failed),
+                .snapshot(successSnapshot)
+            ]
+        )
+        let system = try await makeRiskSystem(
+            coordinator: coordinator,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+            )
+        )
+
+        let firstOutcome = await system.orchestrator.run()
+        let secondOutcome = await system.orchestrator.run()
+        let cadences = try await system.recordedCadences()
+
+        #expect(firstOutcome.result == .failed)
+        #expect(secondOutcome.result == .success)
+        #expect(cadences == [20, 60])
+    }
+
+    @Test("Failure to thunderstorm recovery records 20 then 40")
+    func failureToThunderstormRecovery_recordsTwentyThenForty() async throws {
+        let context = Self.makeContext(
+            coordinates: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+            timestamp: Date(),
+            placemarkSummary: "Denver, CO"
+        )
+        let successSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .thunderstorm,
+            severeRisk: .allClear,
+            fireRisk: .clear
+        )
+        let coordinator = ScriptedHomeIngestionCoordinator(
+            responses: [
+                .failure(.failed),
+                .snapshot(successSnapshot)
+            ]
+        )
+        let system = try await makeRiskSystem(
+            coordinator: coordinator,
+            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            settingsProvider: StaticSettingsProvider(
+                settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+            )
+        )
+
+        let firstOutcome = await system.orchestrator.run()
+        let secondOutcome = await system.orchestrator.run()
+        let cadences = try await system.recordedCadences()
+
+        #expect(firstOutcome.result == .failed)
+        #expect(secondOutcome.result == .success)
+        #expect(cadences == [20, 40])
     }
 }
 
@@ -997,6 +1164,49 @@ private actor SequentialHomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 }
 
+private enum ScriptedCoordinatorError: Error {
+    case failed
+}
+
+private actor ScriptedHomeIngestionCoordinator: HomeIngestionCoordinating {
+    enum Response: Sendable {
+        case snapshot(HomeSnapshot)
+        case failure(ScriptedCoordinatorError)
+    }
+
+    private var responses: [Response]
+
+    init(responses: [Response]) {
+        self.responses = responses
+    }
+
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {}
+
+    func enqueue(_ request: HomeIngestionRequest) {}
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(.init(trigger: trigger, locationContext: locationContext, remoteAlertContext: remoteAlertContext))
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        guard responses.isEmpty == false else { return .empty }
+        switch responses.removeFirst() {
+        case .snapshot(let snapshot):
+            return snapshot
+        case .failure(let error):
+            throw error
+        }
+    }
+}
+
 private extension BackgroundOrchestratorCadenceTests {
     struct RiskSystem {
         let orchestrator: BackgroundOrchestrator
@@ -1020,11 +1230,20 @@ private extension BackgroundOrchestratorCadenceTests {
                 return HealthRecord(didNotify: health.didNotify, reasonNoNotify: health.reasonNoNotify)
             }
         }
+
+        func recordedCadences() async throws -> [Int] {
+            try await MainActor.run {
+                let context = ModelContext(modelContainer)
+                let descriptor = FetchDescriptor<BgRunSnapshot>(
+                    sortBy: [SortDescriptor(\.endedAt, order: .forward)]
+                )
+                return try context.fetch(descriptor).map(\.cadence)
+            }
+        }
     }
 
     func makeRiskSystem<Settings: NotificationSettingsProviding>(
-        snapshot: HomeSnapshot? = nil,
-        snapshots: [HomeSnapshot]? = nil,
+        coordinator: any HomeIngestionCoordinating,
         riskChangeEngine: RiskChangeEngine,
         settingsProvider: Settings
     ) async throws -> RiskSystem {
@@ -1032,12 +1251,6 @@ private extension BackgroundOrchestratorCadenceTests {
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
 
         let healthStore = BgHealthStore(modelContainer: container)
-        let coordinator: any HomeIngestionCoordinating
-        if let snapshots {
-            coordinator = SequentialHomeIngestionCoordinator(snapshots: snapshots)
-        } else {
-            coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot ?? .empty)
-        }
         let orchestrator = BackgroundOrchestrator(
             coordinator: coordinator,
             policy: RefreshPolicy(),
@@ -1062,6 +1275,25 @@ private extension BackgroundOrchestratorCadenceTests {
         )
 
         return .init(orchestrator: orchestrator, modelContainer: container)
+    }
+
+    func makeRiskSystem<Settings: NotificationSettingsProviding>(
+        snapshot: HomeSnapshot? = nil,
+        snapshots: [HomeSnapshot]? = nil,
+        riskChangeEngine: RiskChangeEngine,
+        settingsProvider: Settings
+    ) async throws -> RiskSystem {
+        let coordinator: any HomeIngestionCoordinating
+        if let snapshots {
+            coordinator = SequentialHomeIngestionCoordinator(snapshots: snapshots)
+        } else {
+            coordinator = RecordingHomeIngestionCoordinator(snapshot: snapshot ?? .empty)
+        }
+        return try await makeRiskSystem(
+            coordinator: coordinator,
+            riskChangeEngine: riskChangeEngine,
+            settingsProvider: settingsProvider
+        )
     }
 
     func makeRiskChangeEngine<Sender: NotificationSending>(
