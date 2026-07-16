@@ -99,6 +99,74 @@ struct MorningNotificationTests {
         #expect(secondPass == false)
     }
 
+    @Test("composer preserves the normal morning summary without a risk change")
+    func composerPreservesNormalMorningSummaryWithoutRiskChange() {
+        let message = MorningComposer().compose(
+            NotificationEvent(
+                kind: .morningOutlook,
+                key: "morning:2026-01-02",
+                payload: [
+                    "stormRisk": StormRiskLevel.slight,
+                    "severeRisk": SevereWeatherThreat.tornado(probability: 0.3),
+                    "fireRisk": FireRiskLevel.clear,
+                    "placeMark": "Oklahoma City, OK"
+                ]
+            )
+        )
+
+        #expect(message.title == "Today's Outlook for Oklahoma City, OK")
+        #expect(message.body == """
+        Storm Activity: Chance for a few strong storms
+        Severe Activity: Tornados are possible
+        Fire Risk: No elevated fire weather risk is forecast.
+        """)
+    }
+
+    @Test("composer adds deterministic risk transitions before the morning outlook")
+    func composerAddsRiskTransitionsBeforeMorningOutlook() throws {
+        let change = try #require(
+            RiskProfileChange(
+                previous: .init(
+                    stormRisk: .marginal,
+                    severeRisk: .wind(probability: 0.12),
+                    fireRisk: .clear
+                ),
+                current: .init(
+                    stormRisk: .enhanced,
+                    severeRisk: .tornado(probability: 0.31),
+                    fireRisk: .critical
+                ),
+                projectionKey: "projection:okc",
+                locationSummary: "Oklahoma City, OK",
+                occurrenceID: "morning-transition"
+            )
+        )
+        let message = MorningComposer().compose(
+            NotificationEvent(
+                kind: .morningOutlook,
+                key: "morning:2026-01-02",
+                payload: [
+                    "stormRisk": StormRiskLevel.enhanced,
+                    "severeRisk": SevereWeatherThreat.tornado(probability: 0.31),
+                    "fireRisk": FireRiskLevel.critical,
+                    "placeMark": "Oklahoma City, OK",
+                    "riskProfileChange": change
+                ]
+            )
+        )
+
+        #expect(message.body == """
+        Risk Update
+        Storm Risk: Marginal Risk → Enhanced Risk
+        Severe Risk: Wind 12% → Tornado 31%
+        Fire Risk: Clear → Critical
+
+        Storm Activity: Several severe storms are possible
+        Severe Activity: Tornados are possible
+        Fire Risk: Dry fuels, strong winds, and very low humidity could allow any fire that starts to spread rapidly.
+        """)
+    }
+
     @Test("engine reports scheduling failure")
     func engineReportsSchedulingFailure() async {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 8, tz: centralTime)

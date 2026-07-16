@@ -51,3 +51,7 @@
 - For background cadence work, preserve the established 20/40/60-minute bands: marginal-or-higher categorical risk,
   active alerts, or active mesos use 20 minutes; thunderstorm-only uses 40; all-clear uses 60. Missing context and
   failures retry at 20, but the next successful run must authoritatively restore the condition-appropriate band.
+- When coalescing one notification channel into another, include the source channel's preference in the coalescing
+  predicate. A disabled delivery must remain pending rather than becoming unrequested content in the alternate channel.
+- Coalescing a newer occurrence must pass through the delivery gate's supersession logic; otherwise a stale pending
+  occurrence for the same projection can escape immediately after the combined notification.

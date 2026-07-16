@@ -16,6 +16,7 @@ struct MorningContext: Sendable {
     let severeRisk: SevereWeatherThreat
     let fireRisk: FireRiskLevel
     let placeMark: String
+    let riskProfileChange: RiskProfileChange?
     
     init(
         now: Date,
@@ -25,7 +26,8 @@ struct MorningContext: Sendable {
         stormRisk: StormRiskLevel,
         severeRisk: SevereWeatherThreat,
         fireRisk: FireRiskLevel,
-        placeMark: String
+        placeMark: String,
+        riskProfileChange: RiskProfileChange? = nil
     ) {
         self.now = now
         self.lastConvectiveIssue = lastConvectiveIssue
@@ -35,5 +37,6 @@ struct MorningContext: Sendable {
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
         self.placeMark = placeMark
+        self.riskProfileChange = riskProfileChange
     }
 }

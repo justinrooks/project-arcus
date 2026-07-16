@@ -88,6 +88,28 @@ actor RiskChangeGate {
         await persist()
     }
 
+    /// Records an occurrence that was delivered through a coalesced notification.
+    func coalesce(event: NotificationEvent, now: Date = .now) async {
+        await loadIfNeeded()
+        guard let change = event.payload["change"] as? RiskProfileChange else { return }
+        var didChange = purgeExpired(now: now)
+
+        for key in state.pending.keys where
+            state.pending[key]?.projectionKey == change.projectionKey && inFlightEventKeys.contains(key) == false {
+            state.pending.removeValue(forKey: key)
+            didChange = true
+        }
+
+        guard state.delivered[event.key] == nil else {
+            if didChange { await persist() }
+            return
+        }
+
+        state.delivered[event.key] = Tombstone(deliveredAt: now)
+        trimDeliveredTombstones()
+        await persist()
+    }
+
     /// Claims one pending occurrence. The claim is recorded before the sender is awaited.
     func claim(preferredEventKey: String?, isEnabled: Bool, now: Date = .now) async -> Delivery? {
         await loadIfNeeded()

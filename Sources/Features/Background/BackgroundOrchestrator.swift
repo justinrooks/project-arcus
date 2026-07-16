@@ -157,7 +157,8 @@ actor BackgroundOrchestrator {
                             stormRisk: stormRisk,
                             severeRisk: severeRisk,
                             fireRisk: fireRisk,
-                            placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
+                            placeMark: locationSnapshot.placemarkSummary ?? "Unknown",
+                            riskProfileChange: settings.riskChangeNotificationsEnabled ? snapshot.riskProfileChange : nil
                         )
                     )
                     if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
@@ -178,12 +179,18 @@ actor BackgroundOrchestrator {
                     if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
                 } else { noNotifyReasons.append("Meso notification disabled") }
 
+                let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
+                    && didMorningNotify
+                    && snapshot.riskProfileChange != nil
+                if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
+                    await riskChangeEngine.coalesce(change: riskProfileChange)
+                }
                 didRiskChangeNotify = await riskChangeEngine.run(
-                    change: snapshot.riskProfileChange,
+                    change: coalescedCurrentRiskChange ? nil : snapshot.riskProfileChange,
                     isEnabled: settings.riskChangeNotificationsEnabled
                 )
                 if settings.riskChangeNotificationsEnabled {
-                    if !didRiskChangeNotify {
+                    if !didRiskChangeNotify, !coalescedCurrentRiskChange {
                         if snapshot.riskProfileChange == nil {
                             noNotifyReasons.append("Risk change notification skipped (no change)")
                         } else {
