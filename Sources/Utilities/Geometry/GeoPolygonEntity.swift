@@ -10,16 +10,22 @@ import CoreLocation
 
 struct GeoPolygonEntity: Sendable, Codable {
     var title: String
-    var coordinates: [Coordinate2D] // Use Coordinate2D from elsewhere in the project
+    var coordinates: [Coordinate2D]
+    var interiorCoordinates: [[Coordinate2D]]
     
     var minLat: Double?
     var maxLat: Double?
     var minLon: Double?
     var maxLon: Double?
     
-    init(title: String, coordinates: [Coordinate2D]) {
+    init(
+        title: String,
+        coordinates: [Coordinate2D],
+        interiorCoordinates: [[Coordinate2D]] = []
+    ) {
         self.title = title
         self.coordinates = coordinates
+        self.interiorCoordinates = interiorCoordinates
         
         if !coordinates.isEmpty {
             let lats = coordinates.map(\.latitude)
@@ -35,6 +41,27 @@ struct GeoPolygonEntity: Sendable, Codable {
             self.minLon = nil
             self.maxLon = nil
         }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case title
+        case coordinates
+        case interiorCoordinates
+        case minLat
+        case maxLat
+        case minLon
+        case maxLon
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        title = try container.decode(String.self, forKey: .title)
+        coordinates = try container.decode([Coordinate2D].self, forKey: .coordinates)
+        interiorCoordinates = try container.decodeIfPresent([[Coordinate2D]].self, forKey: .interiorCoordinates) ?? []
+        minLat = try container.decodeIfPresent(Double.self, forKey: .minLat)
+        maxLat = try container.decodeIfPresent(Double.self, forKey: .maxLat)
+        minLon = try container.decodeIfPresent(Double.self, forKey: .minLon)
+        maxLon = try container.decodeIfPresent(Double.self, forKey: .maxLon)
     }
 }
 

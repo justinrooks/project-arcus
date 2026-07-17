@@ -7,6 +7,7 @@
 
 import Foundation
 import ArcusCore
+import MapKit
 import Testing
 import UIKit
 @testable import SkyAware
@@ -63,6 +64,70 @@ struct MapPolygonMapperTests {
         let secondKeys = second.keyedPolygons.map(\.key)
         #expect(firstKeys == secondKeys)
         #expect(Set(firstKeys).count == firstKeys.count)
+    }
+
+    @Test("MapPolygonMapper carries interior rings into MKPolygon and its stable key")
+    func polygonMapping_preservesInteriorRingsAndInvalidatesKey() throws {
+        let exterior = [
+            Coordinate2D(latitude: 35.0, longitude: -97.0),
+            Coordinate2D(latitude: 35.3, longitude: -97.0),
+            Coordinate2D(latitude: 35.0, longitude: -96.7)
+        ]
+        let firstHole = [
+            Coordinate2D(latitude: 35.05, longitude: -96.95),
+            Coordinate2D(latitude: 35.10, longitude: -96.95),
+            Coordinate2D(latitude: 35.05, longitude: -96.90)
+        ]
+        let changedHole = [
+            Coordinate2D(latitude: 35.06, longitude: -96.95),
+            Coordinate2D(latitude: 35.10, longitude: -96.95),
+            Coordinate2D(latitude: 35.05, longitude: -96.90)
+        ]
+
+        let baseline = makeStormRisk(
+            level: .thunderstorm,
+            title: "TSTM",
+            polygon: GeoPolygonEntity(
+                title: "TSTM",
+                coordinates: exterior,
+                interiorCoordinates: [firstHole]
+            )
+        )
+        let revised = makeStormRisk(
+            level: .thunderstorm,
+            title: "TSTM",
+            polygon: GeoPolygonEntity(
+                title: "TSTM",
+                coordinates: exterior,
+                interiorCoordinates: [changedHole]
+            )
+        )
+
+        let baselineResult = mapper.polygons(
+            for: .categorical, stormRisk: [baseline], severeRisks: [], mesos: [], fires: []
+        )
+        let revisedResult = mapper.polygons(
+            for: .categorical, stormRisk: [revised], severeRisks: [], mesos: [], fires: []
+        )
+        let polygon = try #require(baselineResult.polygons.first)
+
+        #expect(polygon.interiorPolygons?.count == 1)
+        #expect(polygon.interiorPolygons?.first?.pointCount == firstHole.count)
+        #expect(baselineResult.keyedPolygons.first?.key != revisedResult.keyedPolygons.first?.key)
+    }
+
+    @Test("Single-ring polygons keep an empty interior polygon collection")
+    func polygonMapping_singleRingRemainsUnchanged() throws {
+        let result = mapper.polygons(
+            for: .categorical,
+            stormRisk: [makeStormRisk(level: .thunderstorm, title: "TSTM")],
+            severeRisks: [],
+            mesos: [],
+            fires: []
+        )
+
+        let polygon = try #require(result.polygons.first)
+        #expect(polygon.interiorPolygons?.isEmpty ?? true)
     }
 
     @Test("Meso polygon keys remain stable when source order changes")
@@ -506,7 +571,11 @@ struct MapPolygonMapperTests {
         #expect(baselineKey != revisedKey)
     }
 
-    private func makeStormRisk(level: StormRiskLevel, title: String) -> StormRiskDTO {
+    private func makeStormRisk(
+        level: StormRiskLevel,
+        title: String,
+        polygon: GeoPolygonEntity? = nil
+    ) -> StormRiskDTO {
         StormRiskDTO(
             riskLevel: level,
             issued: now,
@@ -514,7 +583,7 @@ struct MapPolygonMapperTests {
             valid: now,
             stroke: nil,
             fill: nil,
-            polygons: [makeGeoPolygon(title: title)]
+            polygons: [polygon ?? makeGeoPolygon(title: title)]
         )
     }
 

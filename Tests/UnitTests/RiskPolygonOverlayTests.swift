@@ -79,6 +79,36 @@ struct RiskPolygonOverlayTests {
         #expect(abs((overlay.hatchStyle?.spacing ?? 0) - (HatchStyle.default.spacing * 0.82)) < 0.001)
     }
 
+    @Test("Filled polygon paths exclude interior rings regardless of winding")
+    func rendererPath_evenOddFillTreatsInteriorRingAsHole() throws {
+        var exterior = [
+            CLLocationCoordinate2D(latitude: 35.0, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.4, longitude: -97.0),
+            CLLocationCoordinate2D(latitude: 35.0, longitude: -96.6)
+        ]
+        var hole = [
+            CLLocationCoordinate2D(latitude: 35.08, longitude: -96.92),
+            CLLocationCoordinate2D(latitude: 35.08, longitude: -96.80),
+            CLLocationCoordinate2D(latitude: 35.20, longitude: -96.92)
+        ]
+        let interior = MKPolygon(coordinates: &hole, count: hole.count)
+        let polygon = MKPolygon(
+            coordinates: &exterior,
+            count: exterior.count,
+            interiorPolygons: [interior]
+        )
+        let overlay = RiskPolygonOverlay.probability(from: polygon)
+        let renderer = RiskPolygonRenderer(riskOverlay: overlay, differentiateWithoutColor: false)
+        renderer.createPath()
+        let path = try #require(renderer.path)
+
+        let holePoint = renderer.point(for: MKMapPoint(CLLocationCoordinate2D(latitude: 35.11, longitude: -96.88)))
+        let filledPoint = renderer.point(for: MKMapPoint(CLLocationCoordinate2D(latitude: 35.02, longitude: -96.95)))
+
+        #expect(path.contains(holePoint, using: .evenOdd) == false)
+        #expect(path.contains(filledPoint, using: .evenOdd))
+    }
+
     @MainActor
     @Test("MapCoordinator reuses cached overlay when geometry and style are unchanged")
     func mapCoordinator_reusesEquivalentOverlayForSameKey() {
