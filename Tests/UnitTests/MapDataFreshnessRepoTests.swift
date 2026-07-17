@@ -232,6 +232,109 @@ struct MapDataFreshnessRepoTests {
         #expect(active == .allClear)
     }
 
+    @MainActor
+    @Test("Categorical active lookup matches points inside an exterior and outside its holes")
+    func stormActiveMatchesExteriorOutsideHoles() async throws {
+        let container = try TestStore.container(for: [StormRisk.self])
+        let repo = StormRiskRepo(modelContainer: container)
+        let polygon = GeoPolygonEntity(
+            title: "Slight",
+            coordinates: squareRing(longitude: -100, latitude: 40, size: 10),
+            interiorCoordinates: [squareRing(longitude: -96, latitude: 44, size: 2)]
+        )
+
+        try insertActiveStormRisks([makeActiveStormRisk(level: .slight, polygons: [polygon])], in: container)
+
+        let active = try await repo.active(
+            asOf: activeStormRiskAsOf,
+            for: CLLocationCoordinate2D(latitude: 42, longitude: -98)
+        )
+        #expect(active == .slight)
+    }
+
+    @MainActor
+    @Test("Categorical active lookup excludes every interior hole and exterior misses")
+    func stormActiveExcludesInteriorHolesAndExteriorMisses() async throws {
+        let container = try TestStore.container(for: [StormRisk.self])
+        let repo = StormRiskRepo(modelContainer: container)
+        let polygon = GeoPolygonEntity(
+            title: "Enhanced",
+            coordinates: squareRing(longitude: -100, latitude: 40, size: 10),
+            interiorCoordinates: [
+                squareRing(longitude: -98, latitude: 42, size: 2),
+                squareRing(longitude: -94, latitude: 46, size: 2)
+            ]
+        )
+
+        try insertActiveStormRisks([makeActiveStormRisk(level: .enhanced, polygons: [polygon])], in: container)
+
+        let firstHole = try await repo.active(
+            asOf: activeStormRiskAsOf,
+            for: CLLocationCoordinate2D(latitude: 43, longitude: -97)
+        )
+        let secondHole = try await repo.active(
+            asOf: activeStormRiskAsOf,
+            for: CLLocationCoordinate2D(latitude: 47, longitude: -93)
+        )
+        let exteriorMiss = try await repo.active(
+            asOf: activeStormRiskAsOf,
+            for: CLLocationCoordinate2D(latitude: 52, longitude: -98)
+        )
+
+        #expect(firstHole == .allClear)
+        #expect(secondHole == .allClear)
+        #expect(exteriorMiss == .allClear)
+    }
+
+    @MainActor
+    @Test("Categorical active lookup continues after a higher-risk hole")
+    func stormActiveFallsBackToLowerRiskOutsideHigherRiskHole() async throws {
+        let container = try TestStore.container(for: [StormRisk.self])
+        let repo = StormRiskRepo(modelContainer: container)
+        let higherRisk = GeoPolygonEntity(
+            title: "Enhanced",
+            coordinates: squareRing(longitude: -100, latitude: 40, size: 10),
+            interiorCoordinates: [squareRing(longitude: -97, latitude: 43, size: 2)]
+        )
+        let lowerRisk = GeoPolygonEntity(
+            title: "Slight",
+            coordinates: squareRing(longitude: -98, latitude: 42, size: 4)
+        )
+
+        try insertActiveStormRisks(
+            [
+                makeActiveStormRisk(level: .enhanced, polygons: [higherRisk]),
+                makeActiveStormRisk(level: .slight, polygons: [lowerRisk])
+            ],
+            in: container
+        )
+
+        let active = try await repo.active(
+            asOf: activeStormRiskAsOf,
+            for: CLLocationCoordinate2D(latitude: 44, longitude: -96)
+        )
+        #expect(active == .slight)
+    }
+
+    @MainActor
+    @Test("Categorical active lookup preserves single-ring polygon behavior")
+    func stormActiveMatchesSingleRingPolygon() async throws {
+        let container = try TestStore.container(for: [StormRisk.self])
+        let repo = StormRiskRepo(modelContainer: container)
+        let polygon = GeoPolygonEntity(
+            title: "Marginal",
+            coordinates: squareRing(longitude: -100, latitude: 40, size: 10)
+        )
+
+        try insertActiveStormRisks([makeActiveStormRisk(level: .marginal, polygons: [polygon])], in: container)
+
+        let active = try await repo.active(
+            asOf: activeStormRiskAsOf,
+            for: CLLocationCoordinate2D(latitude: 45, longitude: -95)
+        )
+        #expect(active == .marginal)
+    }
+
     @Test("Severe map returns newest issuance per type and probability bucket")
     func severeMapReturnsNewestIssuancePerBucket() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
@@ -492,4 +595,37 @@ private func makePolygon(squareAtLonLat origin: (Double, Double), size: Double) 
             Coordinate2D(latitude: lat, longitude: lon)
         ]
     )
+}
+
+private let activeStormRiskAsOf = makeUTCDate(2026, 3, 1, 12, 0)
+
+private func makeActiveStormRisk(level: StormRiskLevel, polygons: [GeoPolygonEntity]) -> StormRisk {
+    StormRisk(
+        riskLevel: level,
+        issued: makeUTCDate(2026, 3, 1, 11, 0),
+        expires: makeUTCDate(2026, 3, 1, 20, 0),
+        valid: makeUTCDate(2026, 3, 1, 8, 0),
+        stroke: nil,
+        fill: nil,
+        polygons: polygons
+    )
+}
+
+@MainActor
+private func insertActiveStormRisks(_ risks: [StormRisk], in container: ModelContainer) throws {
+    let context = ModelContext(container)
+    for risk in risks {
+        context.insert(risk)
+    }
+    try context.save()
+}
+
+private func squareRing(longitude: Double, latitude: Double, size: Double) -> [Coordinate2D] {
+    [
+        Coordinate2D(latitude: latitude, longitude: longitude),
+        Coordinate2D(latitude: latitude + size, longitude: longitude),
+        Coordinate2D(latitude: latitude + size, longitude: longitude + size),
+        Coordinate2D(latitude: latitude, longitude: longitude + size),
+        Coordinate2D(latitude: latitude, longitude: longitude)
+    ]
 }

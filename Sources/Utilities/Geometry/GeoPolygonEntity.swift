@@ -75,4 +75,12 @@ extension GeoPolygonEntity {
     nonisolated var ringCoordinates: [CLLocationCoordinate2D] {
         coordinates.map { $0.location }
     }
+
+    nonisolated func contains(_ point: CLLocationCoordinate2D) -> Bool {
+        guard MesoGeometry.contains(point, inRing: ringCoordinates) else { return false }
+
+        return interiorCoordinates.allSatisfy { interiorRing in
+            MesoGeometry.contains(point, inRing: interiorRing.map(\.location)) == false
+        }
+    }
 }
