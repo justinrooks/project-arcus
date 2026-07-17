@@ -102,6 +102,46 @@ struct MapDataFreshnessRepoTests {
         #expect(results.map(\.riskLevel) == [8])
     }
 
+    @MainActor
+    @Test("Fire active lookup excludes interior holes")
+    func fireActiveLookupExcludesInteriorHoles() async throws {
+        let container = try TestStore.container(for: [FireRisk.self])
+        let repo = FireRiskRepo(modelContainer: container)
+        let polygon = GeoPolygonEntity(
+            title: "Critical",
+            coordinates: squareRing(longitude: -100, latitude: 40, size: 4),
+            interiorCoordinates: [squareRing(longitude: -98.5, latitude: 41.5, size: 1)]
+        )
+        let asOf = makeUTCDate(2026, 3, 1, 12, 0)
+        let context = ModelContext(container)
+        context.insert(
+            FireRisk(
+                product: "FireRH",
+                issued: makeUTCDate(2026, 3, 1, 11, 0),
+                expires: makeUTCDate(2026, 3, 1, 20, 0),
+                valid: makeUTCDate(2026, 3, 1, 8, 0),
+                riskLevel: 8,
+                label: "Critical",
+                stroke: nil,
+                fill: nil,
+                polygons: [polygon]
+            )
+        )
+        try context.save()
+
+        let hole = try await repo.active(
+            asOf: asOf,
+            for: CLLocationCoordinate2D(latitude: 42.0, longitude: -98.0)
+        )
+        let exterior = try await repo.active(
+            asOf: asOf,
+            for: CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        )
+
+        #expect(hole == .clear)
+        #expect(exterior == .critical)
+    }
+
     @Test("Categorical map returns only the newest valid issuance")
     func stormMapReturnsOnlyNewestValidIssuance() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [StormRisk.self]) }
