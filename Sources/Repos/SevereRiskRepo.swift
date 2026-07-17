@@ -88,7 +88,6 @@ actor SevereRiskRepo {
             return lhs.key > rhs.key
         }
 
-        // 3) For each risk, check polygons with optional bbox prefilter, then precise hit test
         for risk in bySeverity {
             for poly in risk.polygons {
                 // Coarse bbox prefilter if available
@@ -96,10 +95,7 @@ actor SevereRiskRepo {
                     continue
                 }
 
-                // Precise hit test on ring coordinates
-                let ring = poly.ringCoordinates
-                guard !ring.isEmpty else { continue }
-                if MesoGeometry.contains(point, inRing: ring) {
+                if poly.contains(point) {
                     return risk.threatLevel
                 }
             }

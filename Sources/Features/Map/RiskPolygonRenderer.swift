@@ -53,7 +53,7 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         if riskOverlay.fillColor.cgColor.alpha > 0 {
             context.addPath(path)
             context.setFillColor(riskOverlay.fillColor.cgColor)
-            context.fillPath()
+            context.drawPath(using: .eoFill)
         }
 
         context.addPath(path)
@@ -80,7 +80,7 @@ final class RiskPolygonRenderer: MKOverlayPathRenderer {
         if softFill.cgColor.alpha > 0 {
             context.addPath(path)
             context.setFillColor(softFill.cgColor)
-            context.fillPath()
+            context.drawPath(using: .eoFill)
         }
 
         let outlineColor = riskOverlay.strokeColor.withAlphaComponent(0.45)

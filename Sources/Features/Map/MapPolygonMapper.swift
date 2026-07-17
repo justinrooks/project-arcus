@@ -13,10 +13,34 @@ struct MapPolygonEntry: Sendable {
     let title: String?
     let subtitle: String?
     let coordinates: [Coordinate2D]
+    let interiorCoordinates: [[Coordinate2D]]
+
+    init(
+        key: String,
+        title: String?,
+        subtitle: String?,
+        coordinates: [Coordinate2D],
+        interiorCoordinates: [[Coordinate2D]] = []
+    ) {
+        self.key = key
+        self.title = title
+        self.subtitle = subtitle
+        self.coordinates = coordinates
+        self.interiorCoordinates = interiorCoordinates
+    }
 
     var polygon: MKPolygon {
-        let ringCoordinates = coordinates.map(\.location)
-        let polygon = MKPolygon(coordinates: ringCoordinates, count: ringCoordinates.count)
+        let interiorPolygons = interiorCoordinates.compactMap { interiorCoordinates -> MKPolygon? in
+            guard interiorCoordinates.count > 2 else { return nil }
+            var ringCoordinates = interiorCoordinates.map(\.location)
+            return MKPolygon(coordinates: &ringCoordinates, count: ringCoordinates.count)
+        }
+        var ringCoordinates = coordinates.map(\.location)
+        let polygon = MKPolygon(
+            coordinates: &ringCoordinates,
+            count: ringCoordinates.count,
+            interiorPolygons: interiorPolygons
+        )
         polygon.title = title
         polygon.subtitle = subtitle
         return polygon
@@ -61,7 +85,8 @@ struct MapPolygonMapper: Sendable {
                         key: "cat|\(risk.riskLevel.rawValue)|\(Int(risk.issued.timeIntervalSince1970))|\(polygonFingerprint(for: polygon))",
                         title: polygon.title,
                         subtitle: subtitle,
-                        coordinates: polygon.coordinates
+                        coordinates: polygon.coordinates,
+                        interiorCoordinates: polygon.interiorCoordinates
                     )
                 }
             }
@@ -113,7 +138,8 @@ struct MapPolygonMapper: Sendable {
                         key: "fire|\(fire.riskLevel)|\(Int(fire.issued.timeIntervalSince1970))|\(polygonFingerprint(for: polygon))",
                         title: polygon.title,
                         subtitle: subtitle,
-                        coordinates: polygon.coordinates
+                        coordinates: polygon.coordinates,
+                        interiorCoordinates: polygon.interiorCoordinates
                     )
                 }
             }
@@ -193,7 +219,8 @@ struct MapPolygonMapper: Sendable {
                     key: "sev|\(type.rawValue)|\(probabilityKey)|\(labelKey)|\(polygonFingerprint(for: polygon))",
                     title: polygon.title,
                     subtitle: subtitle,
-                    coordinates: polygon.coordinates
+                    coordinates: polygon.coordinates,
+                    interiorCoordinates: polygon.interiorCoordinates
                 )
             }
         }
@@ -207,16 +234,32 @@ struct MapPolygonMapper: Sendable {
     }
 
     private func polygonFingerprint(for polygon: GeoPolygonEntity) -> String {
-        polygonFingerprint(title: polygon.title, coordinates: polygon.coordinates)
+        polygonFingerprint(
+            title: polygon.title,
+            coordinates: polygon.coordinates,
+            interiorCoordinates: polygon.interiorCoordinates
+        )
     }
 
-    private func polygonFingerprint(title: String, coordinates: [Coordinate2D]) -> String {
+    private func polygonFingerprint(
+        title: String,
+        coordinates: [Coordinate2D],
+        interiorCoordinates: [[Coordinate2D]] = []
+    ) -> String {
         var hasher = StableMapHasher()
         hasher.combine(title)
         hasher.combine(coordinates.count)
 
         for coordinate in coordinates {
             hasher.combine(coordinate)
+        }
+
+        hasher.combine(interiorCoordinates.count)
+        for interiorRing in interiorCoordinates {
+            hasher.combine(interiorRing.count)
+            for coordinate in interiorRing {
+                hasher.combine(coordinate)
+            }
         }
 
         return hasher.hexString

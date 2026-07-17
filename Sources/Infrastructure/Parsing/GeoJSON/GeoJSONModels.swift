@@ -93,24 +93,51 @@ extension GeoJSONFeatureCollection {
 extension GeoJSONFeature {
     var materialPolygonCount: Int {
         guard geometry.type == "MultiPolygon" else { return 0 }
-        return geometry.coordinates.reduce(into: 0) { count, polygonGroup in
-            count += polygonGroup.count
-        }
+        return geometry.coordinates.count { coordinateRings(from: $0) != nil }
     }
 
-    /// Creates GeoPolygonEntity objects from the polygon rings
+    /// Creates GeoPolygonEntity objects from MultiPolygon members.
     /// - Parameter polyTitle: the title to assign to each GeoPolygonEntity
     /// - Returns: Array of GeoPolygonEntity instances
     func createPolygonEntities(polyTitle: String) -> [GeoPolygonEntity] {
         guard geometry.type == "MultiPolygon" else { return [] }
         
-        return geometry.coordinates.flatMap { polygonGroup in
-            polygonGroup.map { ring in
-                let coords: [Coordinate2D] = ring.map { pair in
-                    Coordinate2D(latitude: pair[1], longitude: pair[0])
-                }
-                return GeoPolygonEntity(title: polyTitle, coordinates: coords)
+        return geometry.coordinates.compactMap { polygonGroup in
+            guard let coordinateRings = coordinateRings(from: polygonGroup) else {
+                return nil
             }
+
+            return GeoPolygonEntity(
+                title: polyTitle,
+                coordinates: coordinateRings[0],
+                interiorCoordinates: Array(coordinateRings.dropFirst())
+            )
         }
+    }
+
+    private func coordinateRings(from polygonGroup: [[[Double]]]) -> [[Coordinate2D]]? {
+        guard !polygonGroup.isEmpty else { return nil }
+
+        let coordinateRings = polygonGroup.compactMap(coordinates(from:))
+        guard coordinateRings.count == polygonGroup.count else { return nil }
+        return coordinateRings
+    }
+
+    private func coordinates(from ring: [[Double]]) -> [Coordinate2D]? {
+        guard ring.count >= 3 else { return nil }
+
+        var coordinates: [Coordinate2D] = []
+        coordinates.reserveCapacity(ring.count)
+
+        for position in ring {
+            guard position.count >= 2,
+                  position[0].isFinite,
+                  position[1].isFinite else {
+                return nil
+            }
+            coordinates.append(Coordinate2D(latitude: position[1], longitude: position[0]))
+        }
+
+        return coordinates
     }
 }

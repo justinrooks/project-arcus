@@ -21,6 +21,45 @@ private struct MultiProductMockClient: SpcClient {
 
 @Suite("SevereRiskRepo.active", .serialized)
 struct SevereRiskRepoActiveSelectionTests {
+    @Test("Tornado active lookup excludes parsed interior holes")
+    func tornadoActiveLookupExcludesParsedInteriorHoles() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
+        let repo = SevereRiskRepo(modelContainer: container)
+        let geometry = makeMultiPolygonGeometry(
+            squareAtLonLat: (-100.0, 40.0),
+            size: 4.0,
+            interiorSquares: [((-98.5, 41.5), 1.0)]
+        )
+        let properties = makeProperties(
+            label: "0.05",
+            label2: "5% Tornado Risk",
+            issue: "202509200000",
+            valid: "202509200000",
+            expire: "202509200200",
+            dn: 5
+        )
+        let data = try JSONEncoder().encode(
+            makeFeatureCollection(features: [makeFeature(properties: properties, geometry: geometry)])
+        )
+
+        try await repo.refreshTornadoRisk(
+            using: MultiProductMockClient(geoJsonByProduct: [.tornado: data])
+        )
+
+        let asOf = makeUTCDate(2025, 9, 20, 1, 0)
+        let hole = try await repo.active(
+            asOf: asOf,
+            for: CLLocationCoordinate2D(latitude: 42.0, longitude: -98.0)
+        )
+        let exterior = try await repo.active(
+            asOf: asOf,
+            for: CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        )
+
+        #expect(hole == .allClear)
+        #expect(exterior == .tornado(probability: 0.05))
+    }
+
     @Test("Newer tornado issuance removes stale older polygon from active lookup")
     func newerTornadoIssuanceRemovesStaleOlderPolygonFromActiveLookup() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }
@@ -267,16 +306,27 @@ private func makeProperties(
     )
 }
 
-private func makeMultiPolygonGeometry(squareAtLonLat origin: (Double, Double), size: Double) -> GeoJSONGeometry {
+private func makeMultiPolygonGeometry(
+    squareAtLonLat origin: (Double, Double),
+    size: Double,
+    interiorSquares: [((Double, Double), Double)] = []
+) -> GeoJSONGeometry {
     let (lon, lat) = origin
-    let ring: [[Double]] = [
-        [lon, lat],
-        [lon, lat + size],
-        [lon + size, lat + size],
-        [lon + size, lat],
-        [lon, lat]
+    let exteriorRing = squareRing(longitude: lon, latitude: lat, size: size)
+    let interiorRings = interiorSquares.map { origin, size in
+        squareRing(longitude: origin.0, latitude: origin.1, size: size)
+    }
+    return GeoJSONGeometry(type: "MultiPolygon", coordinates: [[exteriorRing] + interiorRings])
+}
+
+private func squareRing(longitude: Double, latitude: Double, size: Double) -> [[Double]] {
+    [
+        [longitude, latitude],
+        [longitude, latitude + size],
+        [longitude + size, latitude + size],
+        [longitude + size, latitude],
+        [longitude, latitude]
     ]
-    return GeoJSONGeometry(type: "MultiPolygon", coordinates: [[ring]])
 }
 
 private func makeUTCDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) -> Date {
