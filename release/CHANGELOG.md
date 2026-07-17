@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## v1.1.0(94)
+
+### UI / UX
+- Map overlays now preserve polygon holes instead of filling them in, so excluded interior areas render correctly on the map.
+<!-- evidence: 8bf056f7 -->
+
+### Reliability
+- Active-risk lookup now respects polygon holes across storm, severe, and fire layers, so points inside a hole no longer count as active risk.
+<!-- evidence: 8bf056f7 -->
+- Older saved polygon records without interior-ring data still decode cleanly as empty holes.
+<!-- evidence: 8bf056f7 -->
+
+### Tests / QA
+- Regression coverage was expanded for GeoJSON parsing, polygon mapping, overlay rendering, and active-selection behavior across hole and non-hole cases.
+<!-- evidence: 8bf056f7 -->
+
 ## v1.1.0(91)
 
 ### UI / UX

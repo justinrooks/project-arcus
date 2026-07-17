@@ -1,3 +1,11 @@
+SkyAware v1.1.0(94)
+
+Highlights:
+- Map overlays now render polygon holes correctly instead of filling them in.
+- Active-risk lookup now ignores points that fall inside polygon holes across storm, severe, and fire layers.
+- Existing saved polygon records without interior-ring data still open cleanly.
+- Regression coverage was expanded for parsing, rendering, and active-selection behavior around polygon holes.
+
 SkyAware v1.1.0(91) adds a branded launch splash overlay, introduces risk-change notifications, coalesces current risk changes into the morning outlook when delivery succeeds, and makes background cadence recovery more reliable.
 
 Highlights:

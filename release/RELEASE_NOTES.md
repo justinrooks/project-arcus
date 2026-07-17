@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v1.1.0(94)
+
+### Overview
+This build preserves polygon holes throughout map rendering and active-risk lookup, so excluded interior areas stay visually and behaviorally excluded. It also keeps older saved polygon data readable and adds broader regression coverage around the geometry path.
+
+### Highlights
+- Map overlays now render polygon holes correctly instead of filling them in.
+- Active-risk lookup now ignores points that fall inside polygon holes across storm, severe, and fire layers.
+- Existing saved polygon records without interior-ring data still decode cleanly.
+- Regression coverage was expanded for GeoJSON parsing, polygon mapping, overlay rendering, and active-selection behavior.
+
 ## v1.1.0(91)
 
 ### Overview
