@@ -349,12 +349,45 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #323 — 05: Parallelize independent ingestion work within priority lanes
 
-- Status: Planned
-- Scope: Overlap independent hot-source and slow-source actor calls using structured concurrency while retaining lane
-  priority, progress phases, freshness updates, and deterministic outcome aggregation.
-- Validation target: Gate-controlled concurrency tests proving overlap without wall-clock assertions; coordinator and
-  ingestion suites; baseline comparison; Debug build.
-- Handoff: Do not parallelize location preparation with dependent work or launch all lanes indiscriminately.
+- Status: Complete
+- Files changed:
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — uses `async let` for the normal hot-alert SPC meso and
+    Arcus context syncs, and for slow-product map outcome and convective-outlook syncs; both children are joined before
+    lane completion and the original map outcome is returned.
+  - `Tests/UnitTests/HomeRefreshPipelineTests.swift` — extends the existing executor/pipeline fakes with independent
+    gates, HTTP-mode capture, cancellation probes, and deterministic overlap/join/cancellation coverage.
+  - `docs/plans/today-refresh-performance-progress.md` — records this implementation and validation evidence.
+- Final concurrency and join contract: the normal context-backed hot path starts SPC mesoscale discussions and Arcus
+  alert synchronization as structured children inside the existing `HTTPExecutionMode.$current.withValue` scope and
+  awaits both. The existing remote-alert task group and its context rules remain unchanged. The slow lane starts map
+  synchronization and convective-outlook synchronization as structured children, awaits both, and returns the map
+  result captured from its child. Cancellation propagates through the parent and both children are joined before the
+  executor returns.
+- Preserved semantics: hot freshness updates only after the joined hot operation and the existing hot completion
+  progress event remains before `markHotAlertsCompleted`. Slow freshness advances only for `.accepted`; rejected,
+  failed, and skipped map outcomes retain existing projection/widget/retry behavior. Progress events, lane boundaries,
+  snapshot assembly, logging, remote-alert behavior, provider actors, and in-flight coalescing are unchanged.
+- Gate-controlled scenarios covered: both hot children start before release; releasing one hot child does not complete
+  the lane; terminal hot progress precedes the mark callback; both slow children start before release; releasing one slow
+  child does not complete the lane; the map outcome is returned only after both children finish; both hot and slow
+  children observe foreground HTTP execution; and cancellation observes both started hot children as cancelled after
+  the parent joins them. Existing pipeline coverage retains remote-alert, accepted, rejected, failed, skipped, empty,
+  projection/widget, freshness, and final snapshot behavior.
+- Tests/build evidence: focused `HomeRefreshPipelineTests` result bundle
+  `/tmp/arcus-derived-data-323/Logs/Test/Test-SkyAware-2026.07.19_17-35-13--0600.xcresult` reports 44 passed, 0 failed,
+  0 skipped. The final required coordinator/pipeline/Storm Setup command result bundle
+  `/tmp/arcus-derived-data-323/Logs/Test/Test-SkyAware-2026.07.19_17-38-18--0600.xcresult` reports 76 passed, 0 failed,
+  0 skipped, verified through the legacy `xcresulttool` object summary because the current summary command could not
+  create its temporary `TestReport` directory in the sandbox. The required Debug simulator build passed, and
+  `git diff --check` passed.
+- Signpost comparison: #319 physical-device baseline evidence remains available in
+  `/private/tmp/SkyAware-319-traces/` (`warm-events-launch-20260719-analysis.md` and
+  `pull-events-20260719-analysis.md`), but no comparable post-#323 physical-device trace was captured. No latency
+  improvement is claimed; quantitative campaign comparison remains deferred to #327.
+- Assumptions and residual risks: provider calls remain actor-owned and any provider-internal request coalescing stays
+  authoritative. The simulator verifies deterministic join and cancellation behavior, not production network latency;
+  physical-device release evidence is still required for quantitative performance claims.
+- Final status: acceptance criteria satisfied. Do not begin #324 in this slice.
 
 ### Issue #324 — 06: Run optional enrichment concurrently
 

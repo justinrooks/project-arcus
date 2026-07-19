@@ -1277,6 +1277,172 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncMapProductsCount() == 2)
     }
 
+    @Test("hot-alert providers overlap and join before completion")
+    func hotAlertSync_overlapsProvidersAndJoinsBeforeCompletion() async throws {
+        let context = makeContext()
+        let mesoGate = AsyncGate()
+        let alertGate = AsyncGate()
+        let spc = FakeSpcProvider(syncMesoscaleGate: mesoGate)
+        let alerts = FakeAlertProvider(syncGate: alertGate)
+        let recorder = IngestionProgressRecorder()
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        let task = Task {
+            try await executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .sessionTick)),
+                progress: .init(
+                    markHotAlertsCompleted: { await recorder.markHotAlertsCompleted() },
+                    report: { event in
+                        if case .completed(.lane(.hotAlerts)) = event {
+                            await recorder.recordHotLaneCompletion()
+                        }
+                    }
+                )
+            )
+        }
+
+        let hotProvidersStarted = await waitUntil {
+            let mesoStarted = await spc.syncMesoscaleDiscussionsCount() == 1
+            let alertStarted = await alerts.syncCount() == 1
+            return mesoStarted && alertStarted
+        }
+        #expect(hotProvidersStarted)
+        let hotAlertsMarkedBeforeRelease = await recorder.isHotAlertsMarked()
+        #expect(hotAlertsMarkedBeforeRelease == false)
+        await mesoGate.open()
+        let mesoFinishedWithoutAlert = await waitUntil { await spc.syncMesoscaleDiscussionsCount() == 1 }
+        #expect(mesoFinishedWithoutAlert)
+        let hotAlertsMarkedAfterOneRelease = await recorder.isHotAlertsMarked()
+        #expect(hotAlertsMarkedAfterOneRelease == false)
+        await alertGate.open()
+        _ = try await task.value
+
+        let hotLaneCompletedBeforeMark = await recorder.hotLaneCompletedBeforeMark()
+        let hotAlertsMarked = await recorder.isHotAlertsMarked()
+        #expect(hotLaneCompletedBeforeMark)
+        #expect(hotAlertsMarked)
+        let hotSpcModes = await spc.observedHTTPModes()
+        let hotAlertModes = await alerts.observedHTTPModes()
+        #expect(hotSpcModes == [.foreground])
+        #expect(hotAlertModes == [.foreground])
+    }
+
+    @Test("slow-product providers overlap, join, and preserve map outcome")
+    func slowProductSync_overlapsProvidersAndPreservesMapOutcome() async throws {
+        let context = makeContext()
+        let mapGate = AsyncGate()
+        let outlookGate = AsyncGate()
+        let spc = FakeSpcProvider(
+            mapSyncGate: mapGate,
+            convectiveOutlookGate: outlookGate,
+            mapSyncOutcome: .accepted
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let recorder = IngestionProgressRecorder()
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        var plan = HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        plan.lanes = [.slowProducts]
+        plan.forcedLanes = [.slowProducts]
+        plan.provenance = .manualRefresh
+        let task = Task {
+            try await executor.run(
+                plan: plan,
+                progress: .init(
+                    markHotAlertsCompleted: {},
+                    report: { event in
+                        if case .completed(.lane(.slowProducts)) = event {
+                            await recorder.recordSlowLaneCompletion()
+                        }
+                    }
+                )
+            )
+        }
+
+        let slowProvidersStarted = await waitUntil {
+            let mapStarted = await spc.syncMapProductsCount() == 1
+            let outlookStarted = await spc.syncConvectiveOutlooksCount() == 1
+            return mapStarted && outlookStarted
+        }
+        #expect(slowProvidersStarted)
+        let slowLaneCompletedBeforeRelease = await recorder.isSlowLaneCompleted()
+        #expect(slowLaneCompletedBeforeRelease == false)
+        await mapGate.open()
+        let slowLaneCompletedAfterMapRelease = await recorder.isSlowLaneCompleted()
+        #expect(slowLaneCompletedAfterMapRelease == false)
+        await outlookGate.open()
+        let snapshot = try await task.value
+
+        #expect(snapshot.refreshKey == context.refreshKey)
+        let slowLaneCompleted = await recorder.isSlowLaneCompleted()
+        #expect(slowLaneCompleted)
+        let slowSpcModes = await spc.observedHTTPModes()
+        #expect(slowSpcModes == [.foreground, .foreground])
+    }
+
+    @Test("cancelling a hot sync joins both cancelled provider children")
+    func hotAlertSync_cancellationJoinsBothChildren() async throws {
+        let context = makeContext()
+        let mesoGate = AsyncGate()
+        let alertGate = AsyncGate()
+        let spc = FakeSpcProvider(syncMesoscaleGate: mesoGate)
+        let alerts = FakeAlertProvider(syncGate: alertGate)
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        let task = Task {
+            try await executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .sessionTick)),
+                progress: .none
+            )
+        }
+
+        let providersStarted = await waitUntil {
+            let mesoStarted = await spc.syncMesoscaleDiscussionsCount() == 1
+            let alertStarted = await alerts.syncCount() == 1
+            return mesoStarted && alertStarted
+        }
+        #expect(providersStarted)
+        task.cancel()
+        await mesoGate.open()
+        await alertGate.open()
+        _ = try await task.value
+
+        let spcCancellationCount = await spc.cancelledSyncCount()
+        let alertCancellationCount = await alerts.cancelledSyncCount()
+        #expect(spcCancellationCount == 1)
+        #expect(alertCancellationCount == 1)
+    }
+
     @Test("failed slow-product sync preserves projection, widgets, and retry cadence")
     func slowProductRefresh_failedSyncPreservesProjectionWidgetsAndRetryCadence() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -2047,6 +2213,38 @@ private actor CompletionFlag {
     }
 }
 
+private actor IngestionProgressRecorder {
+    private var events: [String] = []
+
+    func recordHotLaneCompletion() {
+        events.append("hotLaneCompleted")
+    }
+
+    func markHotAlertsCompleted() {
+        events.append("hotAlertsMarked")
+    }
+
+    func recordSlowLaneCompletion() {
+        events.append("slowLaneCompleted")
+    }
+
+    func isHotAlertsMarked() -> Bool {
+        events.contains("hotAlertsMarked")
+    }
+
+    func isSlowLaneCompleted() -> Bool {
+        events.contains("slowLaneCompleted")
+    }
+
+    func hotLaneCompletedBeforeMark() -> Bool {
+        guard let completedIndex = events.firstIndex(of: "hotLaneCompleted"),
+              let markedIndex = events.firstIndex(of: "hotAlertsMarked") else {
+            return false
+        }
+        return completedIndex < markedIndex
+    }
+}
+
 private enum TestFailure: Error {
     case failedRead
 }
@@ -2132,6 +2330,8 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let outlookValues: [ConvectiveOutlookDTO]
     private let locationReadError: Error?
     private let syncMesoscaleGate: AsyncGate?
+    private let mapSyncGate: AsyncGate?
+    private let convectiveOutlookGate: AsyncGate?
     private let mapSyncOutcome: SpcMapSyncOutcome
     private let stormRiskValue: StormRiskLevel
     private let severeRiskValue: SevereWeatherThreat
@@ -2140,6 +2340,8 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private var syncMapProductsCalls = 0
     private var syncConvectiveOutlooksCalls = 0
     private var syncMesoscaleCalls = 0
+    private var observedHTTPModeValues: [HTTPExecutionMode] = []
+    private var cancelledSyncCalls = 0
     private var stormRiskQueries = 0
     private var severeRiskQueries = 0
     private var fireRiskQueries = 0
@@ -2151,6 +2353,8 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         outlooks: [ConvectiveOutlookDTO] = [],
         locationReadError: Error? = nil,
         syncMesoscaleGate: AsyncGate? = nil,
+        mapSyncGate: AsyncGate? = nil,
+        convectiveOutlookGate: AsyncGate? = nil,
         mapSyncOutcome: SpcMapSyncOutcome = .accepted,
         stormRiskValue: StormRiskLevel = .enhanced,
         severeRiskValue: SevereWeatherThreat = .hail(probability: 0.30),
@@ -2160,6 +2364,8 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.outlookValues = outlooks
         self.locationReadError = locationReadError
         self.syncMesoscaleGate = syncMesoscaleGate
+        self.mapSyncGate = mapSyncGate
+        self.convectiveOutlookGate = convectiveOutlookGate
         self.mapSyncOutcome = mapSyncOutcome
         self.stormRiskValue = stormRiskValue
         self.severeRiskValue = severeRiskValue
@@ -2174,6 +2380,13 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func syncMapProductsOutcome() async -> SpcMapSyncOutcome {
         syncMapProductsCalls += 1
+        observedHTTPModeValues.append(HTTPExecutionMode.current)
+        if let mapSyncGate {
+            await mapSyncGate.wait()
+        }
+        if Task.isCancelled {
+            cancelledSyncCalls += 1
+        }
         return mapSyncOutcome
     }
 
@@ -2181,12 +2394,20 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func syncConvectiveOutlooks() async {
         syncConvectiveOutlooksCalls += 1
+        observedHTTPModeValues.append(HTTPExecutionMode.current)
+        if let convectiveOutlookGate {
+            await convectiveOutlookGate.wait()
+        }
     }
 
     func syncMesoscaleDiscussions() async {
         syncMesoscaleCalls += 1
+        observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let syncMesoscaleGate {
             await syncMesoscaleGate.wait()
+        }
+        if Task.isCancelled {
+            cancelledSyncCalls += 1
         }
     }
 
@@ -2240,6 +2461,8 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     func fireRiskQueryCount() -> Int { fireRiskQueries }
     func activeMesosQueryCount() -> Int { activeMesosQueries }
     func outlookQueryCount() -> Int { outlookQueries }
+    func observedHTTPModes() -> [HTTPExecutionMode] { observedHTTPModeValues }
+    func cancelledSyncCount() -> Int { cancelledSyncCalls }
 }
 
 private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, WidgetSnapshotRefreshing {
@@ -2261,19 +2484,34 @@ private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, Widge
 
 private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     private let activeAlerts: [AlertDTO]
+    private let syncGate: AsyncGate?
     private var syncCalls = 0
     private var queryCalls = 0
+    private var observedHTTPModeValues: [HTTPExecutionMode] = []
+    private var cancelledSyncCalls = 0
 
-    init(activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]]) {
+    init(
+        activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
+        syncGate: AsyncGate? = nil
+    ) {
         self.activeAlerts = activeAlerts
+        self.syncGate = syncGate
     }
 
     func sync(context: LocationContext) async {
         syncCalls += 1
+        observedHTTPModeValues.append(HTTPExecutionMode.current)
+        if let syncGate {
+            await syncGate.wait()
+        }
+        if Task.isCancelled {
+            cancelledSyncCalls += 1
+        }
     }
 
     func syncRemoteAlert(id: String, revisionSent: Date?) async {
         syncCalls += 1
+        observedHTTPModeValues.append(HTTPExecutionMode.current)
     }
 
     func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
@@ -2291,6 +2529,8 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
 
     func syncCount() -> Int { syncCalls }
     func queryCount() -> Int { queryCalls }
+    func observedHTTPModes() -> [HTTPExecutionMode] { observedHTTPModeValues }
+    func cancelledSyncCount() -> Int { cancelledSyncCalls }
 }
 
 @MainActor

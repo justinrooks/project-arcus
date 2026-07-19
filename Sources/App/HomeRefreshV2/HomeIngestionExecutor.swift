@@ -395,15 +395,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
         guard let context else { return }
         await HTTPExecutionMode.$current.withValue(executionMode) {
-            await environment.spcSync.syncMesoscaleDiscussions()
-            await environment.arcusAlertSync.sync(context: context)
+            async let mesoSync: Void = environment.spcSync.syncMesoscaleDiscussions()
+            async let alertSync: Void = environment.arcusAlertSync.sync(context: context)
+            _ = await (mesoSync, alertSync)
         }
     }
 
     private func syncSlowFeeds(executionMode: HTTPExecutionMode) async -> SpcMapSyncOutcome {
         await HTTPExecutionMode.$current.withValue(executionMode) {
-            let mapSyncOutcome = await environment.spcSync.syncMapProductsOutcome()
-            await environment.spcSync.syncConvectiveOutlooks()
+            async let mapOutcomeTask = environment.spcSync.syncMapProductsOutcome()
+            async let outlookSync: Void = environment.spcSync.syncConvectiveOutlooks()
+            let mapSyncOutcome = await mapOutcomeTask
+            _ = await outlookSync
             return mapSyncOutcome
         }
     }
