@@ -210,20 +210,23 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             freshness: freshness
         )
         snapshot.weatherRefreshResult = weatherRefresh
-        let stormSetupRefresh = await stormSetupIngestion.refresh(
+        let coreSnapshot = snapshot
+        async let stormSetupRefreshTask = stormSetupIngestion.refresh(
             context: context,
-            snapshot: snapshot,
+            snapshot: coreSnapshot,
             plan: plan,
             executionMode: executionMode
         )
+        async let airQualityTask = refreshAirQuality(
+            context: context,
+            plan: plan,
+            executionMode: executionMode
+        )
+        let (stormSetupRefresh, airQuality) = await (stormSetupRefreshTask, airQualityTask)
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
         snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup
-        snapshot.airQuality = await refreshAirQuality(
-            context: context,
-            plan: plan,
-            executionMode: executionMode
-        )
+        snapshot.airQuality = airQuality
 
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(

@@ -92,6 +92,250 @@ struct StormSetupIngestionTests {
         #expect(await airQuality.requestCount() == 0)
     }
 
+    @Test("eligible optional enrichments start together and join before snapshot return")
+    func eligibleOptionalEnrichmentsStartTogetherAndJoinBeforeSnapshotReturn() async throws {
+        let context = makeContext()
+        let stormGate = CancellationGate()
+        let airQualityGate = CancellationGate()
+        let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let airQualityResponse = try makeAirQualityResponse()
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(dto), gate: stormGate),
+            airQualityQuerying: AirQualityQueryingFake(
+                response: .success(airQualityResponse),
+                gate: airQualityGate
+            )
+        )
+        let completion = EnrichmentCompletionProbe()
+        let task = Task { () -> HomeSnapshot in
+            let snapshot = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            )
+            await completion.markCompleted()
+            return snapshot
+        }
+
+        let bothStarted = await waitUntil(timeout: 5) {
+            let stormStarted = await stormGate.startedCount()
+            let airQualityStarted = await airQualityGate.startedCount()
+            return stormStarted == 1 && airQualityStarted == 1
+        }
+        #expect(bothStarted)
+        await stormGate.open()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await completion.isCompleted() == false)
+        await airQualityGate.open()
+
+        let snapshot = try await task.value
+        #expect(await completion.isCompleted())
+        #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
+        #expect(snapshot.stormSetupRefreshResult == .success)
+        #expect(snapshot.airQuality == airQualityResponse)
+    }
+
+    @Test("AQI release alone does not return the snapshot while Storm Setup is blocked")
+    func aqiReleaseAloneDoesNotReturnSnapshotWhileStormSetupIsBlocked() async throws {
+        let context = makeContext()
+        let stormGate = CancellationGate()
+        let airQualityGate = CancellationGate()
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(
+                response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+                gate: stormGate
+            ),
+            airQualityQuerying: AirQualityQueryingFake(gate: airQualityGate)
+        )
+        let completion = EnrichmentCompletionProbe()
+        let task = Task { () -> HomeSnapshot in
+            let snapshot = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            )
+            await completion.markCompleted()
+            return snapshot
+        }
+
+        let bothStarted = await waitUntil(timeout: 5) {
+            let stormStarted = await stormGate.startedCount()
+            let airQualityStarted = await airQualityGate.startedCount()
+            return stormStarted == 1 && airQualityStarted == 1
+        }
+        #expect(bothStarted)
+        await airQualityGate.open()
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await completion.isCompleted() == false)
+        await stormGate.open()
+        _ = try await task.value
+    }
+
+    @Test("Storm Setup failure and timeout preserve successful AQI")
+    func stormSetupFailureAndTimeoutPreserveSuccessfulAQI() async throws {
+        let context = makeContext()
+        let airQualityResponse = try makeAirQualityResponse()
+        let cases: [(String, StormSetupQueryingFake.Response, TimeInterval, HomeStormSetupRefreshResult)] = [
+            ("failure", .failure(TestError.failed), 5, .failure),
+            (
+                "timeout",
+                .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+                0.05,
+                .timeout
+            )
+        ]
+
+        for testCase in cases {
+            let gate = testCase.3 == .timeout ? CancellationGate() : nil
+            let query = StormSetupQueryingFake(response: testCase.1, gate: gate)
+            let harness = try makeHarness(
+                context: context,
+                query: query,
+                airQualityQuerying: AirQualityQueryingFake(response: .success(airQualityResponse)),
+                stormSetupForegroundTimeout: testCase.2
+            )
+
+            let snapshot = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            )
+            await gate?.open()
+
+            #expect(snapshot.stormSetupRefreshResult == testCase.3, "\(testCase.0)")
+            #expect(snapshot.stormSetup == nil, "\(testCase.0)")
+            #expect(snapshot.airQuality == airQualityResponse, "\(testCase.0)")
+        }
+    }
+
+    @Test("AQI failure preserves Storm Setup and its persistence")
+    func aqiFailurePreservesStormSetupAndItsPersistence() async throws {
+        let context = makeContext()
+        let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(dto)),
+            airQualityQuerying: AirQualityQueryingFake(response: .failure(TestError.failed))
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+
+        #expect(snapshot.stormSetupRefreshResult == .success)
+        #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
+        #expect(snapshot.airQuality == nil)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormSetup == normalizedStormSetupDTO(dto))
+    }
+
+    @Test("fresh or ineligible Storm Setup does not prevent AQI execution")
+    func freshOrIneligibleStormSetupDoesNotPreventAQIExecution() async throws {
+        let context = makeContext()
+        let airQualityResponse = try makeAirQualityResponse()
+        let cached = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let freshHarness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .failure(TestError.failed)),
+            airQualityQuerying: AirQualityQueryingFake(response: .success(airQualityResponse))
+        )
+        _ = try await freshHarness.projectionStore.updateStormSetup(
+            cached.stormSetupCurrentResponse,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-60)
+        )
+
+        let freshSnapshot = try await freshHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+        #expect(await freshHarness.query.requestCount() == 0)
+        #expect(await freshHarness.airQualityQuerying?.requestCount() == 1)
+        #expect(freshSnapshot.airQuality == airQualityResponse)
+
+        let ineligibleAQI = AirQualityQueryingFake(response: .success(airQualityResponse))
+        let ineligibleHarness = try makeHarness(
+            context: context,
+            airQualityQuerying: ineligibleAQI,
+            preferences: .init(stormSetupEnabled: false, detailedIngredientsEnabled: false)
+        )
+        _ = try await ineligibleHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+        #expect(await ineligibleHarness.query.requestCount() == 0)
+        #expect(await ineligibleAQI.requestCount() == 1)
+    }
+
+    @Test("optional children observe foreground HTTP mode and parent cancellation")
+    func optionalChildrenObserveForegroundHTTPModeAndParentCancellation() async throws {
+        let context = makeContext()
+        let stormGate = CancellationGate()
+        let airQualityGate = CancellationGate()
+        let query = StormSetupQueryingFake(
+            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+            gate: stormGate
+        )
+        let airQuality = AirQualityQueryingFake(gate: airQualityGate)
+        let harness = try makeHarness(context: context, query: query, airQualityQuerying: airQuality)
+        let task = Task {
+            try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            )
+        }
+
+        let bothStarted = await waitUntil(timeout: 5) {
+            let stormStarted = await stormGate.startedCount()
+            let airQualityStarted = await airQualityGate.startedCount()
+            return stormStarted == 1 && airQualityStarted == 1
+        }
+        #expect(bothStarted)
+        #expect(await query.executionModes() == [.foreground])
+        #expect(await airQuality.executionModes() == [.foreground])
+        task.cancel()
+        let snapshot = try await task.value
+        #expect(snapshot.stormSetupRefreshResult == .cancelled)
+        #expect(await stormGate.cancelledWaitCount() == 1)
+        #expect(await airQualityGate.cancelledWaitCount() == 1)
+    }
+
+    @Test("optional children preserve background mode and missing-context/provider behavior")
+    func optionalChildrenPreserveBackgroundModeAndMissingContextProviderBehavior() async throws {
+        let context = makeContext()
+        let query = StormSetupQueryingFake(
+            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)))
+        )
+        let airQuality = AirQualityQueryingFake()
+        let backgroundHarness = try makeHarness(
+            context: context,
+            query: query,
+            airQualityQuerying: airQuality
+        )
+
+        _ = try await backgroundHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
+        )
+        #expect(await query.executionModes() == [.background])
+        #expect(await airQuality.executionModes() == [.background])
+
+        let missingContextAQI = AirQualityQueryingFake()
+        let missingContextHarness = try makeHarness(
+            context: context,
+            airQualityQuerying: missingContextAQI,
+            locationSession: FakeLocationSession(currentContext: nil, preparedContext: nil)
+        )
+        let missingContextSnapshot = try await missingContextHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+        #expect(missingContextSnapshot.airQuality == nil)
+        #expect(await missingContextAQI.requestCount() == 0)
+
+        let missingProviderHarness = try makeHarness(
+            context: context,
+            airQualityQuerying: nil,
+            preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: false)
+        )
+        let missingProviderSnapshot = try await missingProviderHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+        )
+        #expect(missingProviderSnapshot.airQuality == nil)
+        #expect(missingProviderSnapshot.stormSetupRefreshResult == .success)
+    }
+
     @Test("fresh cache suppresses request and is returned")
     func freshCacheSuppressesRequestAndIsReturned() async throws {
         let context = makeContext()
@@ -1043,16 +1287,47 @@ private struct StormSetupHarness {
 
 private actor CancellationGate {
     private var isOpen = false
+    private var started = 0
+    private var cancelledWaits = 0
+
+    func markStarted() {
+        started += 1
+    }
 
     func wait() async throws {
         while isOpen == false {
-            try Task.checkCancellation()
-            try await Task.sleep(for: .milliseconds(5))
+            do {
+                try Task.checkCancellation()
+                try await Task.sleep(for: .milliseconds(5))
+            } catch {
+                cancelledWaits += 1
+                throw error
+            }
         }
     }
 
     func open() {
         isOpen = true
+    }
+
+    func startedCount() -> Int {
+        started
+    }
+
+    func cancelledWaitCount() -> Int {
+        cancelledWaits
+    }
+}
+
+private actor EnrichmentCompletionProbe {
+    private var completed = false
+
+    func markCompleted() {
+        completed = true
+    }
+
+    func isCompleted() -> Bool {
+        completed
     }
 }
 
@@ -1270,6 +1545,7 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
 
     func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse {
         requests.append(.init(h3Cell: h3Cell, executionMode: HTTPExecutionMode.current))
+        await gate?.markStarted()
         if let gate {
             try await gate.wait()
         }
@@ -1289,7 +1565,7 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
     }
 
     func executionModes() -> [HTTPExecutionMode] {
-        requests.map(\.executionMode)
+        requests.map { $0.executionMode }
     }
 
     func setResponse(_ response: Response) {
@@ -1298,15 +1574,45 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
 }
 
 private actor AirQualityQueryingFake: AirQualityQuerying {
-    private var requests = 0
+    enum Response {
+        case success(AirQualityCurrentResponse?)
+        case failure(Error)
+    }
+
+    private var response: Response
+    private let gate: CancellationGate?
+    private var requests: [(h3Cell: Int64, executionMode: HTTPExecutionMode)] = []
+
+    init(response: Response = .success(nil), gate: CancellationGate? = nil) {
+        self.response = response
+        self.gate = gate
+    }
 
     func fetchCurrentAirQuality(h3Cell: Int64) async throws -> AirQualityCurrentResponse? {
-        requests += 1
-        return nil
+        requests.append((h3Cell, HTTPExecutionMode.current))
+        await gate?.markStarted()
+        if let gate {
+            try await gate.wait()
+        }
+
+        switch response {
+        case .success(let response):
+            return response
+        case .failure(let error):
+            throw error
+        }
     }
 
     func requestCount() -> Int {
-        requests
+        requests.count
+    }
+
+    func executionModes() -> [HTTPExecutionMode] {
+        requests.map(\.executionMode)
+    }
+
+    func setResponse(_ response: Response) {
+        self.response = response
     }
 }
 
@@ -1523,6 +1829,13 @@ private func waitUntil(
         try? await Task.sleep(for: .seconds(pollInterval))
     }
     return await condition()
+}
+
+private func makeAirQualityResponse() throws -> AirQualityCurrentResponse {
+    let json = """
+    {"aqi":121,"category":{"identifier":3,"name":"Unhealthy for Sensitive Groups"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}
+    """
+    return try DecoderFactory.iso8601.decode(AirQualityCurrentResponse.self, from: Data(json.utf8))
 }
 
 private func sampleWeather() -> SummaryWeather {

@@ -391,12 +391,48 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #324 — 06: Run optional enrichment concurrently
 
-- Status: Planned
-- Scope: Start eligible Storm Setup and AQI work concurrently after core snapshot assembly and preserve independent
-  timeout, cancellation, failure, and persistence semantics.
-- Validation target: Gate-controlled start/join tests, Storm Setup ingestion tests, failure/timeout matrix, signpost
-  comparison, and Debug build.
-- Handoff: This issue reduces additive optional latency only. It does not introduce staged visible commits.
+- Status: Complete
+- Files changed:
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — starts Storm Setup and AQI as structured `async let`
+    children after core snapshot assembly, joins both results, then maps each result independently before the existing
+    projection persistence and single-snapshot return.
+  - `Tests/UnitTests/StormSetupIngestionTests.swift` — extends the existing Storm Setup/AQI fakes with independent
+    start observation, release gates, cancellation observation, response injection, and HTTP-mode capture; adds
+    deterministic optional-enrichment overlap, join, failure, timeout, cache, eligibility, mode, and cancellation
+    coverage.
+  - `docs/plans/today-refresh-performance-progress.md` — records the #324 implementation and validation evidence.
+- Final optional-enrichment concurrency/join contract: after core snapshot assembly, the executor creates two
+  structured children with the same immutable context, plan, execution mode, and core snapshot input used by the
+  previous serial path. It awaits the Storm Setup and AQI results as a tuple before mutating the final snapshot or
+  continuing to projection persistence. Both children remain owned by the executor run and are joined on cancellation.
+- Preserved semantics: Storm Setup eligibility, fresh-cache resolution, failed-attempt backoff, foreground timeout,
+  cancellation result, persistence, current-response/DTO mapping, and failure isolation are unchanged. AQI retains
+  weather-lane eligibility, missing-context/provider behavior, HTTP mode, error isolation, and nil-on-failure mapping.
+  Projection persistence, risk-profile delta calculation, widget refresh, freshness, logging, final snapshot contents,
+  and the single-snapshot publication contract remain unchanged. No core content is published early; that remains #325.
+- Gate-controlled scenarios covered: both eligible children start before either gate opens; releasing only Storm Setup
+  or only AQI does not return the snapshot; successful results appear together; Storm Setup failure and timeout preserve
+  successful AQI; AQI failure preserves Storm Setup and persistence; fresh-cache and ineligible Storm Setup still allow
+  AQI; session-tick hot-only plans skip AQI; both children observe foreground HTTP mode; and parent cancellation is
+  observed by both blocked children with no child left running. Background HTTP mode and missing-context/provider
+  behavior are also asserted. Existing Storm Setup backoff, cache, timeout,
+  persistence, missing-provider, and mapping tests retain their behavior.
+- Tests/build evidence: the required focused command produced `.xcresult` at
+  `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.07.19_17-54-41--0600.xcresult`
+  with 76 tests, 0 failures, and 0 skipped, confirmed through the legacy `xcresulttool` object summary and the
+  successful `xcodebuild` result because the
+  current summary command could not move its temporary database in this environment. The required Debug simulator
+  build passed, and `git diff --check` passed.
+- Signpost comparison and limitations: the available #319 traces include the Storm Setup success trace
+  `/private/tmp/SkyAware-319-traces/storm-setup-success-20260719-analysis.md`, but do not provide a comparable
+  post-change terminal optional-enrichment interval or paired AQI/Storm Setup overlap. The deterministic gate tests
+  prove the new bounded-by-the-slower-child join contract; no quantitative latency improvement is claimed. Physical
+  device comparison remains deferred to #327.
+- Assumptions and residual risks: existing provider and projection actors remain authoritative for internal request
+  coalescing and persistence ordering. Simulator gates verify ownership, overlap, and cancellation, but not production
+  network scheduling or physical-device latency. No production API contract, retry policy, timeout duration, or
+  eligibility rule changed.
+- Final status: acceptance criteria satisfied. Do not begin #325 in this slice.
 
 ### Issue #325 — 07: Publish core Today content before optional enrichment
 
