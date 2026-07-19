@@ -142,48 +142,46 @@ struct ActiveAlertSummaryView: View {
     }
 
     var body: some View {
-        if contentState == .empty {
-            LocalAlertsNoActiveRailView()
-        } else {
-            activeContent
-        }
+        activeContent
     }
 
     private var activeContent: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
-                Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
-                    .sectionLabel()
+            if contentState != .empty {
+                HStack(alignment: .center, spacing: 12) {
+                    Label("Local Alerts", systemImage: "exclamationmark.triangle.fill")
+                        .sectionLabel()
 
-                Spacer(minLength: 12)
+                    Spacer(minLength: 12)
 
-                if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
-                    Button {
-                        onOpenAlertCenter()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text("Alert Center")
-                            Image(systemName: "arrow.right")
-                                .font(.caption.weight(.semibold))
+                    if let onOpenAlertCenter, contentState != .loading, (hasRenderableAlerts || isOffline) {
+                        Button {
+                            onOpenAlertCenter()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text("Alert Center")
+                                Image(systemName: "arrow.right")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
                         }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .skyAwareChip(cornerRadius: SkyAwareRadius.chipCompact, tint: .white.opacity(0.10))
-                    }
-                    .buttonStyle(
-                        SkyAwarePressableButtonStyle(
-                            cornerRadius: SkyAwareRadius.chipCompact,
-                            pressedScale: 0.985,
-                            pressedOverlayOpacity: 0.08
+                        .buttonStyle(
+                            SkyAwarePressableButtonStyle(
+                                cornerRadius: SkyAwareRadius.chipCompact,
+                                pressedScale: 0.985,
+                                pressedOverlayOpacity: 0.08
+                            )
                         )
-                    )
-                    .accessibilityHint("Opens the full alerts tab.")
+                        .accessibilityHint("Opens the full alerts tab.")
+                    }
                 }
             }
 
-            if isOffline {
+            if isOffline, contentState != .empty {
                 Label("Offline. Showing saved local alerts when available.", systemImage: "wifi.slash")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
@@ -192,13 +190,8 @@ struct ActiveAlertSummaryView: View {
 
             innerContent
         }
-        .padding(18)
-        .cardBackground(
-            cornerRadius: SkyAwareRadius.card,
-            shadowOpacity: 0.08,
-            shadowRadius: 8,
-            shadowY: 3
-        )
+        .padding(contentState == .empty ? 0 : 18)
+        .modifier(LocalAlertsSurfaceChrome(contentState: contentState))
         .sheet(item: $selectedMeso) { meso in
             sheetContent(selection: $selectedMesoDetent) { isExpanded in
                 MesoscaleDiscussionCard(meso: meso, layout: .sheet, isExpanded: isExpanded)
@@ -242,6 +235,7 @@ struct ActiveAlertSummaryView: View {
     private var contentStateContainer: some View {
         ZStack(alignment: .topLeading) {
             contentStateView
+                .transition(.opacity)
         }
         .animation(contentStateAnimation, value: contentState)
         .frame(
@@ -363,6 +357,24 @@ struct ActiveAlertSummaryView: View {
             return .loading
         case .alerts, .empty, .unavailable:
             return .empty
+        }
+    }
+}
+
+private struct LocalAlertsSurfaceChrome: ViewModifier {
+    let contentState: ActiveAlertSummaryView.ContentState
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if contentState == .empty {
+            content
+        } else {
+            content.cardBackground(
+                cornerRadius: SkyAwareRadius.card,
+                shadowOpacity: 0.08,
+                shadowRadius: 8,
+                shadowY: 3
+            )
         }
     }
 }
@@ -662,6 +674,44 @@ private struct WatchRowView: View {
         todayContentState: .cachedRefreshing
     )
     .environment(\.dynamicTypeSize, .accessibility3)
+}
+
+#Preview("Local Alerts - State Sequence") {
+    ActiveAlertStateSequencePreview()
+}
+
+private struct ActiveAlertStateSequencePreview: View {
+    @State private var state: LocalAlertsDisplayState = .current(content: .populated, source: .cached)
+
+    private var hasAlerts: Bool {
+        state.presentationState == .alerts
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ActiveAlertSummaryView(
+                mesos: hasAlerts ? MD.sampleDiscussionDTOs : [],
+                alerts: hasAlerts ? Watch.sampleWatchRows : [],
+                localAlertsDisplayState: state,
+                todayContentState: state == .noCacheResolving ? .noCacheResolving : .current
+            )
+
+            HStack {
+                Button("Loading") {
+                    state = .noCacheResolving
+                }
+                Button("Empty") {
+                    state = .current(content: .empty, source: .live)
+                }
+                Button("Alerts") {
+                    state = .current(content: .populated, source: .live)
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+        .background(.skyAwareBackground)
+    }
 }
 
 private struct ActiveAlertPreviewContainer: View {

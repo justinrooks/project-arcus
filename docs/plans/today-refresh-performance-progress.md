@@ -266,11 +266,50 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #321 — 03: Keep Local Alerts structurally stable across content changes
 
-- Status: Planned
+- Status: Implementation complete; rendered simulator inspection blocked by CoreSimulator service failure
 - Scope: Close the residual outer-branch gap left after #258 by keeping one Local Alerts container/card identity and
   transitioning only its content.
-- Validation target: Populated-to-empty, empty-to-populated, cached-refreshing, degraded, sheet-selection, Reduce
-  Motion, and Dynamic Type scenarios plus focused tests and Debug build.
+- Files changed:
+  - `Sources/Features/Summary/ActiveAlertSummaryView.swift` — removes the top-level empty replacement, keeps one
+    stable outer owner for loading/alerts/empty, attaches sheet/lifecycle/height state to that owner, transitions only
+    the internal content slot, preserves renderable-alert precedence, and gives the no-active rail sole ownership of
+    empty-state chrome. Adds an interactive state-sequence preview and retains the existing accessibility-size preview.
+  - `Tests/UnitTests/SummaryViewLocalAlertsStateTests.swift` — covers renderable-alert precedence across transient
+    states and the authoritative-empty height/motion policy.
+  - `docs/plans/today-refresh-performance-progress.md` — this evidence and handoff entry.
+- Final stable-container contract: `ActiveAlertSummaryView.body` always returns the existing `activeContent` owner.
+  Loading, alerts, and empty are internal `contentStateView` values; sheet presentation, selection state, detents,
+  transition observation, height-phase state, cancellation, and lifecycle modifiers remain on the stable owner. No
+  `.id`, `AnyView`, broad implicit animation, business-state recreation, or dependency was added.
+- Observable transition and height behavior: renderable rows still outrank transient loading/empty bookkeeping;
+  cached populated and cached empty refreshes remain calm because their content state does not change. Meaningful
+  empty/alerts changes crossfade only the internal slot. Alerts-to-authoritative-empty retains flexible height during
+  the cancellable main-actor hold, including the Reduce Motion timing path; ordinary cached refreshes do not hold
+  height or animate the full surface. The no-active rail owns its own rail styling without nested card chrome.
+- Rendered scenarios inspected: the existing populated, empty, cached-refreshing, offline/degraded, and accessibility
+  large-type previews were reviewed, and a stateful real-view preview now exercises loading → empty → populated. The
+  existing seeded UI fixture was reviewed for sheet selection, Alert Center navigation, stable identifiers, and
+  accessibility coverage. A live iPhone 17 simulator sequence with Reduce Motion off/on and AX Dynamic Type could
+  not be completed after CoreSimulatorService became unavailable (`connection refused`); no simulator evidence is
+  claimed.
+- Validation:
+  - `xcodebuild ... -only-testing:SkyAwareTests/SummaryViewLocalAlertsTests -only-testing:SkyAwareTests/TodayContentStateTests test` — passed; `.xcresult` at
+    `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.07.19_17-01-23--0600.xcresult`; 28 passed, 0 failed, 0 skipped.
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` — passed.
+  - `git diff --check` — passed.
+  - The existing UI test target is not a member of the scheme’s active test plan, so its sheet fixture could not be
+    invoked through the requested `xcodebuild -only-testing` path.
+- Accessibility/Reduce Motion validation: accessibility identifiers, combined VoiceOver elements, Dynamic Type text
+  styles, sheet identifiers, and the existing `.accessibility3` preview remain unchanged. Reduce Motion is honored by
+  the existing `SkyAwareMotion.layerChange` and cancellable height-reset policy; rendered off/on verification remains
+  blocked by CoreSimulatorService.
+- Assumptions and residual risks: the parent-provided `LocalAlertsDisplayState` remains authoritative, and the current
+  empty rail’s copy and appearance remain product-owned. Identity assertion is not directly exposed by existing test
+  infrastructure; the stable body boundary, deterministic policy tests, and stateful preview provide the available
+  evidence. Physical-device quantitative campaign validation remains deferred to #327, and no #319 instrumentation or
+  #320 projection-publication changes were touched.
+- Final status: implementation, focused tests, Debug build, and static/rendered-preview review complete; live simulator
+  Reduce Motion/Dynamic Type sequence remains an environment-blocked follow-up, not a new production scope.
 - Handoff: Do not redesign rows, sorting, navigation, or alert business state.
 
 ### Issue #322 — 04: Reserve a stable Storm Setup section slot
