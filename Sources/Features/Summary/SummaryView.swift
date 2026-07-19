@@ -5,8 +5,9 @@
 //  Created by Justin Rooks on 7/9/25.
 //
 
-import SwiftUI
 import Foundation
+import OSLog
+import SwiftUI
 import ArcusCore
 
 enum SummaryReadinessState: Equatable {
@@ -117,6 +118,8 @@ struct SummaryAvailabilityBadge: View {
 }
 
 struct SummaryView: View {
+    private static let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
@@ -426,6 +429,7 @@ struct SummaryView: View {
     }
 
     var body: some View {
+        let _ = recordPerformanceRenderIfNeeded()
         let now = Date()
         VStack(spacing: 18) {
             if todayContentState.showsResolvingSurface {
@@ -441,6 +445,11 @@ struct SummaryView: View {
         .padding(.top, 10)
         .padding(.bottom, 20)
         .animation(SkyAwareMotion.settle(reduceMotion), value: todayContentState.showsResolvingSurface)
+    }
+
+    private func recordPerformanceRenderIfNeeded() {
+        guard todayContentState == .current || todayContentState == .degraded else { return }
+        Self.performanceSignposter.emitEvent("Today Summary Render")
     }
 
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {

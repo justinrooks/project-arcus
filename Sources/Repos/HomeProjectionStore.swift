@@ -7,6 +7,7 @@
 
 import Foundation
 import ArcusCore
+import OSLog
 import SwiftData
 
 enum RiskProfileDimension: String, Sendable {
@@ -181,6 +182,8 @@ protocol HomeProjectionPersisting: Sendable {
 
 @ModelActor
 actor HomeProjectionStore {
+    private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
+
     func projection(for context: LocationContext) throws -> HomeProjectionRecord? {
         try fetchProjection(withKey: HomeProjection.projectionKey(for: context))?.record
     }
@@ -206,7 +209,7 @@ actor HomeProjectionStore {
         projection.weatherPayload = weather.map(HomeProjectionWeatherPayload.init(summary:))
         projection.lastWeatherLoadAt = loadedAt
         projection.updatedAt = loadedAt
-        try modelContext.save()
+        try saveProjection(named: "Projection Weather Save")
         return projection.record
     }
 
@@ -220,7 +223,7 @@ actor HomeProjectionStore {
         projection.stormSetupCurrentResponseData = payload
         projection.lastStormSetupLoadAt = loadedAt
         projection.updatedAt = loadedAt
-        try modelContext.save()
+        try saveProjection(named: "Projection Storm Setup Save")
         return projection.record
     }
 
@@ -254,7 +257,7 @@ actor HomeProjectionStore {
         projection.fireRisk = fireRisk
         projection.lastSlowProductsLoadAt = loadedAt
         projection.updatedAt = loadedAt
-        try modelContext.save()
+        try saveProjection(named: "Projection Slow Products Save")
         return change
     }
 
@@ -269,7 +272,7 @@ actor HomeProjectionStore {
         projection.activeMesos = mesos
         projection.lastHotAlertsLoadAt = loadedAt
         projection.updatedAt = loadedAt
-        try modelContext.save()
+        try saveProjection(named: "Projection Hot Alerts Save")
         return projection.record
     }
 
@@ -280,14 +283,20 @@ actor HomeProjectionStore {
     ) throws -> HomeProjection {
         if let existing = try fetchProjection(withKey: HomeProjection.projectionKey(for: context)) {
             existing.updateLocationContext(context, touchedAt: touchedAt, viewedAt: viewedAt)
-            try modelContext.save()
+            try saveProjection(named: "Projection Touch Save")
             return existing
         }
 
         let projection = HomeProjection(context: context, createdAt: touchedAt, lastViewedAt: viewedAt)
         modelContext.insert(projection)
-        try modelContext.save()
+        try saveProjection(named: "Projection Create Save")
         return projection
+    }
+
+    private func saveProjection(named name: StaticString) throws {
+        let interval = performanceSignposter.beginInterval(name)
+        defer { performanceSignposter.endInterval(name, interval) }
+        try modelContext.save()
     }
 
     private func fetchProjection(withKey projectionKey: String) throws -> HomeProjection? {

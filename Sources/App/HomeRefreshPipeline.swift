@@ -76,6 +76,7 @@ final class HomeRefreshPipeline {
     }
 
     private let foregroundTimerInterval: Duration
+    private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
 
     private var environment: Environment?
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
@@ -539,6 +540,7 @@ final class HomeRefreshPipeline {
             outlook: snapshot.latestOutlook
         )
         outlookRefreshStatus = .success(hasContent: snapshot.outlooks.isEmpty == false)
+        performanceSignposter.emitEvent("Today Visible Commit")
     }
 
     private func applyStormSetup(_ snapshot: HomeSnapshot) {
