@@ -208,13 +208,61 @@ state capture are appended here. Do not begin #320 from this state.
 
 ### Issue #320 — 02: Publish coherent Home projections atomically
 
-- Status: Planned
-- Scope: Establish one actor-isolated visible projection commit for authorized core slices; prevent a hot-only prime
-  from creating a projection that Today treats as display-ready; preserve updates to established projections.
-- Validation target: `HomeProjectionStoreTests`, `HomeRefreshPipelineTests`, first-visible state sequence, projection
-  save/publication count, and Debug build.
-- Handoff: Use `GPT-5.6 Terra / medium`. Avoid schema change; stop and re-plan if a durable readiness field is proven
-  necessary. Preserve risk-profile delta and widget semantics.
+- Status: Complete
+- Scope: One actor-isolated core projection commit for authorized weather, slow-product, and hot-alert mutations;
+  display readiness from existing durable load timestamps; no schema change.
+
+#### Files changed
+
+- `Sources/Repos/HomeProjectionStore.swift` — adds the one-save `commitCore` boundary, derives risk deltas from the
+  persisted profile in that actor, and avoids create/touch saves before payload mutation.
+- `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — sends all authorized core mutations through `commitCore`.
+- `Sources/App/HomeView+PresentationState.swift` — treats a projection as Today-ready only when weather,
+  slow-products, and hot-alert timestamps are all durable.
+- `Tests/UnitTests/HomeProjectionStoreTests.swift` — adds core-commit, hot-only readiness, empty-alert, risk-delta,
+  skipped-slice, and real SwiftData reopen coverage.
+- `Tests/UnitTests/HomeViewStateTests.swift` — makes cached projection fixtures explicitly coherent.
+
+#### Final persistence/readiness contract
+
+A new projection is inserted and mutated before its first core save. A core commit applies every authorized weather,
+slow-product, and hot-alert mutation within `HomeProjectionStore`, computes a risk change from the previous persisted
+profile in the same actor operation, then performs one `Projection Core Save`. Existing projections retain any slice
+not authorized by that commit. A `HomeView` cache is display-ready only when all three existing durable core load
+timestamps are non-nil; no new SwiftData field or migration was needed. Explicit fetch/create and Storm Setup retain
+their individually atomic saves, but an auxiliary-only or hot-only record is not a coherent Today cache.
+
+#### Observable behavior and publication evidence
+
+The no-cache foreground path stays resolving after a hot-only prime because the durable weather and slow-product
+timestamps remain absent. It becomes eligible as cached Today content only after the coherent core commit. Warm cache
+selection continues to expose the already coherent record while a replacement is being prepared; skipped or failed
+lanes do not clear prior values. Location-key filtering remains unchanged, so another context's projection cannot be
+selected after a location change.
+
+Before this change, the #319 signposts could show `Projection Create Save`/`Projection Touch Save` followed by
+independent `Projection Weather Save`, `Projection Slow Products Save`, and `Projection Hot Alerts Save` intervals.
+After this change, a full foreground core persistence path produces one `Projection Core Save`; create/touch signposts
+remain only for explicit fetch/create. Deterministic state-publication tests verify that the first-visible projection is
+not selectable until that commit. This is code/test evidence, not a comparable physical-device trace.
+
+#### Validation
+
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/HomeProjectionStoreTests -only-testing:SkyAwareTests/HomeRefreshPipelineTests test` — passed.
+  `.xcresult`: `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.07.19_16-52-42--0600.xcresult`; 64 passed, 0 failed, 0 skipped.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` — passed.
+- `git diff --check` — passed.
+
+#### Assumptions and residual risks
+
+The readiness rule deliberately requires all three durable core timestamps; legacy or specialized-only records remain
+non-display-ready until a coherent foreground core commit. The #319 cold no-cache, authoritative-empty, and Storm
+Setup device scenarios are still incomplete. No quantitative device-performance improvement is claimed here; obtain
+comparable physical-device traces and before/after metrics under #327.
+
+#### Final status
+
+Acceptance criteria satisfied for coherent projection publication. Do not begin #321 in this slice.
 
 ### Issue #321 — 03: Keep Local Alerts structurally stable across content changes
 

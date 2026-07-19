@@ -149,6 +149,22 @@ struct RiskProfileChange: Sendable, Equatable {
     }
 }
 
+struct HomeProjectionCoreCommit: Sendable {
+    let weather: SummaryWeather??
+    let slowProducts: (stormRisk: StormRiskLevel?, severeRisk: SevereWeatherThreat?, fireRisk: FireRiskLevel?)?
+    let hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])?
+
+    init(
+        weather: SummaryWeather?? = nil,
+        slowProducts: (stormRisk: StormRiskLevel?, severeRisk: SevereWeatherThreat?, fireRisk: FireRiskLevel?)? = nil,
+        hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])? = nil
+    ) {
+        self.weather = weather
+        self.slowProducts = slowProducts
+        self.hotAlerts = hotAlerts
+    }
+}
+
 protocol HomeProjectionPersisting: Sendable {
     func projection(for context: LocationContext) async throws -> HomeProjectionRecord?
 
@@ -178,6 +194,43 @@ protocol HomeProjectionPersisting: Sendable {
         for context: LocationContext,
         loadedAt: Date
     ) async throws -> HomeProjectionRecord
+
+    func commitCore(
+        _ commit: HomeProjectionCoreCommit,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange?
+}
+
+extension HomeProjectionPersisting {
+    func commitCore(
+        _ commit: HomeProjectionCoreCommit,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange? {
+        var riskProfileChange: RiskProfileChange?
+        if let weather = commit.weather {
+            _ = try await updateWeather(weather, for: context, loadedAt: loadedAt)
+        }
+        if let slowProducts = commit.slowProducts {
+            riskProfileChange = try await updateSlowProducts(
+                stormRisk: slowProducts.stormRisk,
+                severeRisk: slowProducts.severeRisk,
+                fireRisk: slowProducts.fireRisk,
+                for: context,
+                loadedAt: loadedAt
+            )
+        }
+        if let hotAlerts = commit.hotAlerts {
+            _ = try await updateHotAlerts(
+                alerts: hotAlerts.alerts,
+                mesos: hotAlerts.mesos,
+                for: context,
+                loadedAt: loadedAt
+            )
+        }
+        return riskProfileChange
+    }
 }
 
 @ModelActor
@@ -196,7 +249,12 @@ actor HomeProjectionStore {
         for context: LocationContext,
         viewedAt: Date = .now
     ) throws -> HomeProjectionRecord {
-        let projection = try fetchOrCreateModel(for: context, touchedAt: viewedAt, viewedAt: viewedAt)
+        let projection = try fetchOrCreateModel(
+            for: context,
+            touchedAt: viewedAt,
+            viewedAt: viewedAt,
+            persistsExplicitly: true
+        )
         return projection.record
     }
 
@@ -276,20 +334,69 @@ actor HomeProjectionStore {
         return projection.record
     }
 
+    func commitCore(
+        _ commit: HomeProjectionCoreCommit,
+        for context: LocationContext,
+        loadedAt: Date = .now
+    ) throws -> RiskProfileChange? {
+        let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
+        let previousProfile = RiskProfile(
+            stormRisk: projection.stormRisk,
+            severeRisk: projection.severeRisk,
+            fireRisk: projection.fireRisk
+        )
+
+        if let weather = commit.weather {
+            projection.weatherPayload = weather.map(HomeProjectionWeatherPayload.init(summary:))
+            projection.lastWeatherLoadAt = loadedAt
+        }
+        if let slowProducts = commit.slowProducts {
+            projection.stormRisk = slowProducts.stormRisk
+            projection.severeRisk = slowProducts.severeRisk
+            projection.fireRisk = slowProducts.fireRisk
+            projection.lastSlowProductsLoadAt = loadedAt
+        }
+        if let hotAlerts = commit.hotAlerts {
+            projection.activeAlerts = hotAlerts.alerts
+            projection.activeMesos = hotAlerts.mesos
+            projection.lastHotAlertsLoadAt = loadedAt
+        }
+
+        projection.updatedAt = loadedAt
+        try saveProjection(named: "Projection Core Save")
+        return RiskProfileChange(
+            previous: previousProfile,
+            current: commit.slowProducts.flatMap {
+                RiskProfile(
+                    stormRisk: $0.stormRisk,
+                    severeRisk: $0.severeRisk,
+                    fireRisk: $0.fireRisk
+                )
+            },
+            projectionKey: projection.projectionKey,
+            locationSummary: projection.placemarkSummary
+        )
+    }
+
     private func fetchOrCreateModel(
         for context: LocationContext,
         touchedAt: Date,
-        viewedAt: Date? = nil
+        viewedAt: Date? = nil,
+        persistsExplicitly: Bool = false
     ) throws -> HomeProjection {
         if let existing = try fetchProjection(withKey: HomeProjection.projectionKey(for: context)) {
             existing.updateLocationContext(context, touchedAt: touchedAt, viewedAt: viewedAt)
-            try saveProjection(named: "Projection Touch Save")
+            if persistsExplicitly {
+                try saveProjection(named: "Projection Touch Save")
+            }
             return existing
         }
 
         let projection = HomeProjection(context: context, createdAt: touchedAt, lastViewedAt: viewedAt)
         modelContext.insert(projection)
-        try saveProjection(named: "Projection Create Save")
+        if persistsExplicitly {
+            try saveProjection(named: "Projection Create Save")
+        }
         return projection
     }
 

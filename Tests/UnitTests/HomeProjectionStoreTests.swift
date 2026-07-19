@@ -234,11 +234,21 @@ struct HomeProjectionStoreTests {
         )
         let context = makeContext()
         let stormLoadedAt = Date(timeIntervalSince1970: 950)
+        let coreLoadedAt = Date(timeIntervalSince1970: 900)
         let response = makeStormSetupCurrentResponse(profileAnalysis: makeAnvilAnalyzeProfileResponse())
 
         do {
             let container = try ModelContainer(for: schema, configurations: configuration)
             let store = HomeProjectionStore(modelContainer: container)
+            _ = try await store.commitCore(
+                .init(
+                    weather: makeWeather(),
+                    slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                    hotAlerts: (alerts: [], mesos: [])
+                ),
+                for: context,
+                loadedAt: coreLoadedAt
+            )
             _ = try await store.updateStormSetup(response, for: context, loadedAt: stormLoadedAt)
         }
 
@@ -249,6 +259,11 @@ struct HomeProjectionStoreTests {
         #expect(persisted.stormSetupCurrentResponse == response)
         #expect(persisted.stormSetup == StormSetupDTO(response: response))
         #expect(persisted.lastStormSetupLoadAt == stormLoadedAt)
+        #expect(persisted.weather == makeWeather())
+        #expect(persisted.lastWeatherLoadAt == coreLoadedAt)
+        #expect(persisted.lastSlowProductsLoadAt == coreLoadedAt)
+        #expect(persisted.lastHotAlertsLoadAt == coreLoadedAt)
+        #expect(HomeView.selectProjection(from: [persisted], currentContext: context) == persisted)
     }
 
     @Test("a corrupt Storm Setup cache is treated as a cache miss")
@@ -631,6 +646,105 @@ struct HomeProjectionStoreTests {
         let latestProjection = try #require(await store.latestProjectionForWidgetSnapshotRefresh())
         #expect(latestProjection.projectionKey == HomeProjection.projectionKey(for: currentContext))
         #expect(latestProjection.stormRisk == .slight)
+    }
+
+    @Test("a hot-only projection remains unavailable to Today until a core commit")
+    func hotOnlyProjection_isNotDisplayReadyUntilCoreCommit() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.updateHotAlerts(
+            alerts: [],
+            mesos: [],
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 450)
+        )
+        let hotOnly = try #require(await store.projection(for: context))
+        #expect(HomeView.selectProjection(from: [hotOnly], currentContext: context) == nil)
+
+        _ = try await store.commitCore(
+            .init(
+                weather: makeWeather(),
+                slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                hotAlerts: (alerts: [], mesos: [])
+            ),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+        let committed = try #require(await store.projection(for: context))
+        #expect(HomeView.selectProjection(from: [committed], currentContext: context) == committed)
+    }
+
+    @Test("core commit saves authorized slices together and derives the risk delta from persisted state")
+    func coreCommit_persistsAuthorizedSlicesAndUsesPersistedRiskProfile() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let originalAlert = Watch.sampleWatchRows[0]
+
+        _ = try await store.commitCore(
+            .init(
+                weather: makeWeather(),
+                slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                hotAlerts: (alerts: [originalAlert], mesos: [MD.sampleDiscussionDTOs[0]])
+            ),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+        let change = try #require(await store.commitCore(
+            .init(slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated)),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 600)
+        ))
+
+        #expect(change.previous == RiskProfile(
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.15),
+            fireRisk: .critical
+        ))
+        #expect(change.current == RiskProfile(
+            stormRisk: .enhanced,
+            severeRisk: .tornado(probability: 0.30),
+            fireRisk: .elevated
+        ))
+        let committed = try #require(await store.projection(for: context))
+        #expect(committed.weather == makeWeather())
+        #expect(committed.activeAlerts == [originalAlert])
+        #expect(committed.lastWeatherLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(committed.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(committed.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 600))
+    }
+
+    @Test("core commit preserves skipped slices and persists authoritative empty alerts")
+    func coreCommit_preservesSkippedSlicesAndPersistsAuthoritativeEmptyAlerts() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.commitCore(
+            .init(
+                weather: makeWeather(),
+                slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                hotAlerts: (alerts: [Watch.sampleWatchRows[0]], mesos: [MD.sampleDiscussionDTOs[0]])
+            ),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+        _ = try await store.commitCore(
+            .init(hotAlerts: (alerts: [], mesos: [])),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 600)
+        )
+
+        let committed = try #require(await store.projection(for: context))
+        #expect(committed.weather == makeWeather())
+        #expect(committed.stormRisk == .slight)
+        #expect(committed.severeRisk == .wind(probability: 0.15))
+        #expect(committed.fireRisk == .critical)
+        #expect(committed.activeAlerts.isEmpty)
+        #expect(committed.activeMesos.isEmpty)
+        #expect(committed.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 600))
     }
 
     private func makeContext(

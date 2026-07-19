@@ -493,33 +493,26 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         var riskProfileChange: RiskProfileChange?
 
         do {
-            if plan.lanes.contains(.weather) {
-                switch weatherRefreshResult {
-                case .success(let weather):
-                    _ = try await projectionStore.updateWeather(
-                        weather,
-                        for: context,
-                        loadedAt: loadedAt
-                    )
-                case .skipped, .failure:
-                    break
-                }
+            let weather: SummaryWeather??
+            if case .success(let refreshedWeather) = weatherRefreshResult {
+                weather = .some(refreshedWeather)
+            } else {
+                weather = nil
             }
-
-            if slowProductDecision.shouldUpdateProjection {
-                riskProfileChange = try await projectionStore.updateSlowProducts(
+            let slowProducts = slowProductDecision.shouldUpdateProjection
+                ? (
                     stormRisk: snapshot.stormRisk,
                     severeRisk: snapshot.severeRisk,
-                    fireRisk: snapshot.fireRisk,
-                    for: context,
-                    loadedAt: loadedAt
+                    fireRisk: snapshot.fireRisk
                 )
-            }
+                : nil
+            let hotAlerts = plan.lanes.contains(.hotAlerts)
+                ? (alerts: snapshot.alerts, mesos: snapshot.mesos)
+                : nil
 
-            if plan.lanes.contains(.hotAlerts) {
-                _ = try await projectionStore.updateHotAlerts(
-                    alerts: snapshot.alerts,
-                    mesos: snapshot.mesos,
+            if weather != nil || slowProducts != nil || hotAlerts != nil {
+                riskProfileChange = try await projectionStore.commitCore(
+                    .init(weather: weather, slowProducts: slowProducts, hotAlerts: hotAlerts),
                     for: context,
                     loadedAt: loadedAt
                 )

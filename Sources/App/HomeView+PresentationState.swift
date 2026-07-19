@@ -8,10 +8,14 @@ extension HomeView {
     ) -> HomeProjectionRecord? {
         if let currentContext {
             let projectionKey = HomeProjection.projectionKey(for: currentContext)
-            return projections.first(where: { $0.projectionKey == projectionKey })
+            return projections.first(where: {
+                $0.projectionKey == projectionKey && isDisplayReady($0)
+            })
         }
 
-        return projections.max(by: { $0.updatedAt < $1.updatedAt })
+        return projections
+            .filter(isDisplayReady)
+            .max(by: { $0.updatedAt < $1.updatedAt })
     }
 
     static func selectStormSetup(
@@ -114,10 +118,20 @@ extension HomeView {
     ) -> HomeProjection? {
         if let currentContext {
             let projectionKey = HomeProjection.projectionKey(for: currentContext)
-            return projections.first(where: { $0.projectionKey == projectionKey })
+            return projections.first(where: {
+                $0.projectionKey == projectionKey && isDisplayReady($0.record)
+            })
         }
 
-        return projections.max(by: { $0.updatedAt < $1.updatedAt })
+        return projections
+            .filter { isDisplayReady($0.record) }
+            .max(by: { $0.updatedAt < $1.updatedAt })
+    }
+
+    private static func isDisplayReady(_ projection: HomeProjectionRecord) -> Bool {
+        projection.lastWeatherLoadAt != nil &&
+        projection.lastSlowProductsLoadAt != nil &&
+        projection.lastHotAlertsLoadAt != nil
     }
 
     static func showsBootstrapLoading(
