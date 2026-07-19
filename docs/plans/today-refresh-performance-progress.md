@@ -314,12 +314,38 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #322 — 04: Reserve a stable Storm Setup section slot
 
-- Status: Planned
-- Scope: Represent loading/visible/unavailable/hidden slot semantics explicitly in the section plan so loading-to-
-  visible does not insert a new unreserved section.
-- Validation target: `SummarySectionPlanTests`, Storm Setup slot-state tests, state-sequence preview/simulator evidence,
-  and Debug build.
-- Handoff: Do not change Storm Setup eligibility, endpoint, detail content, or global Summary ordering.
+- Status: Implementation complete; rendered Reduce Motion inspection blocked by CoreSimulatorService failure
+- Files changed:
+  - `Sources/Features/StormSetup/StormSetupPresentation.swift` — replaces the boolean Storm Setup plan input with the
+    explicit `SummaryStormSetupSlot` contract; loading and visible reserve layout, hidden excludes it.
+  - `Sources/Features/Summary/SummaryView.swift` — carries the derived Storm Setup slot state into both section
+    planning and rendering, making the existing loading branch reachable without changing section identity or order.
+  - `Tests/UnitTests/SummarySectionPlanTests.swift` — covers loading-to-visible identity/order, cached refresh retention,
+    hidden exclusion, Local Alerts populated/empty, and Location Reliability present/absent combinations.
+  - `Tests/UnitTests/SummaryViewLoadingStateTests.swift` — covers composed state-to-plan behavior for loading, visible,
+    cached refresh, disabled, location-unavailable, policy-suppressed, and idle-without-content cases.
+- Final slot-to-section contract: `SummaryStormSetupSlot.hidden` excludes `.stormSetup`; `.loading` and `.visible`
+  include `.stormSetup`. The slot remains after `.atmosphericConditions` and before `.locationReliability` when present,
+  otherwise before `.outlookSummary`.
+- Observable layout/transition behavior: eligible no-content refresh renders the existing loading card in a reserved
+  Storm Setup position. Loading-to-visible and cached-refresh transitions retain `SummarySectionKind.stormSetup` and
+  animate only the existing Storm Setup content branch via its local transition/animation. The Summary section list is
+  not globally animated or re-identified.
+- State matrix covered: enabled + refreshing + no content, loading → visible plan identity, cached visible + refreshing,
+  disabled + refreshing, location unavailable, policy-suppressed existing payload, idle without content, Local Alerts
+  empty/populated, and Location Reliability present/absent.
+- Preview/simulator evidence: static review of existing `SummaryView+Previews.swift` confirmed Storm Setup visible,
+  hidden, and cached-refresh preview inputs and existing Reduce Motion-aware local animation. One simulator test run
+  executed all focused cases on iPhone 17/iOS 26.5; rendered Reduce Motion off/on inspection was blocked after the run
+  by `CoreSimulatorService connection became invalid` / `Connection refused`.
+- Tests/build evidence: the required focused command produced `.xcresult` at
+  `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.07.19_17-17-31--0600.xcresult` with 9 passed, 0 failed, and 0 skipped tests. The
+  required Debug build succeeded. `git diff --check` passed.
+- Assumptions and residual risks: existing Storm Setup display policy remains the authority for visible content; no new
+  terminal/unavailable business state or copy was introduced. Live rendered Reduce Motion and Dynamic Type inspection
+  remains an environment follow-up. Local Alerts, instrumentation, navigation, and all ingestion/persistence behavior
+  were left unchanged.
+- Final status: acceptance criteria satisfied. Do not begin #323 in this slice.
 
 ### Issue #323 — 05: Parallelize independent ingestion work within priority lanes
 

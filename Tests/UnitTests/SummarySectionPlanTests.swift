@@ -4,90 +4,78 @@ import Testing
 @testable import SkyAware
 
 @Suite("Summary Section Plan")
+@MainActor
 struct SummarySectionPlanTests {
-    @Test("local alerts stay first below the primary awareness across alert and storm setup states")
-    func localAlertsStayFirstAcrossAlertAndStormSetupStates() {
-        let cases: [(String, LocalAlertsDisplayState, Bool, [SummarySectionKind])] = [
-            (
-                "no active alerts with storm setup visible",
-                .current(content: .empty, source: .cached),
-                true,
-                [
-                    .currentConditions,
-                    .primaryAwareness,
-                    .localAlerts,
-                    .atmosphericConditions,
-                    .stormSetup,
-                    .locationReliability,
-                    .outlookSummary,
-                    .attribution
-                ]
-            ),
-            (
-                "active alerts with storm setup visible",
-                .current(content: .populated, source: .cached),
-                true,
-                [
-                    .currentConditions,
-                    .primaryAwareness,
-                    .localAlerts,
-                    .atmosphericConditions,
-                    .stormSetup,
-                    .locationReliability,
-                    .outlookSummary,
-                    .attribution
-                ]
-            ),
-            (
-                "no active alerts with storm setup hidden",
-                .current(content: .empty, source: .cached),
-                false,
-                [
-                    .currentConditions,
-                    .primaryAwareness,
-                    .localAlerts,
-                    .atmosphericConditions,
-                    .locationReliability,
-                    .outlookSummary,
-                    .attribution
-                ]
-            ),
-            (
-                "active alerts with storm setup hidden",
-                .current(content: .populated, source: .cached),
-                false,
-                [
-                    .currentConditions,
-                    .primaryAwareness,
-                    .localAlerts,
-                    .atmosphericConditions,
-                    .locationReliability,
-                    .outlookSummary,
-                    .attribution
-                ]
-            )
-        ]
+    @Test("loading and visible Storm Setup share the same ordered section slot")
+    func loadingToVisiblePreservesOrderAndIdentity() {
+        let loading = makePlan(stormSetupSlot: .loading, hasLocationReliabilityRail: true)
+        let visible = makePlan(
+            stormSetupSlot: SummaryStormSetupSlot.visible,
+            hasLocationReliabilityRail: true
+        )
 
-        for (label, state, showsStormSetup, expectedSections) in cases {
-            let plan = makePlan(
-                localAlertsDisplayState: state,
-                showsStormSetup: showsStormSetup,
-                hasLocationReliabilityRail: true
-            )
+        #expect(loading.sections == visible.sections)
+        #expect(loading.sections[4] == .stormSetup)
+        #expect(loading.sections[4].id == visible.sections[4].id)
+    }
 
-            #expect(plan.sections == expectedSections)
+    @Test("section plan retains the Storm Setup slot during cached refresh")
+    func cachedVisibleRefreshRetainsStormSetup() {
+        let plan = makePlan(
+            localAlertsDisplayState: .current(content: .populated, source: .cached),
+            stormSetupSlot: SummaryStormSetupSlot.visible,
+            hasLocationReliabilityRail: true
+        )
+
+        #expect(plan.sections.contains(.stormSetup))
+        #expect(plan.sections[3...5] == [.atmosphericConditions, .stormSetup, .locationReliability])
+    }
+
+    @Test("hidden Storm Setup is excluded while surrounding order remains stable")
+    func hiddenStormSetupIsExcluded() {
+        let plan = makePlan(stormSetupSlot: .hidden, hasLocationReliabilityRail: true)
+
+        #expect(plan.sections.contains(.stormSetup) == false)
+        #expect(plan.sections == [
+            .currentConditions, .primaryAwareness, .localAlerts, .atmosphericConditions,
+            .locationReliability, .outlookSummary, .attribution
+        ])
+    }
+
+    @Test("local alerts and location reliability combinations preserve Storm Setup order")
+    func localAlertsAndLocationReliabilityCombinationsPreserveOrder() {
+        for state in [
+            LocalAlertsDisplayState.current(content: .empty, source: .cached),
+            LocalAlertsDisplayState.current(content: .populated, source: .cached)
+        ] {
+            for hasLocationReliabilityRail in [false, true] {
+                let plan = makePlan(
+                    localAlertsDisplayState: state,
+                    stormSetupSlot: .loading,
+                    hasLocationReliabilityRail: hasLocationReliabilityRail
+                )
+                let stormSetupIndex = plan.sections.firstIndex(of: .stormSetup)
+                let atmosphericIndex = plan.sections.firstIndex(of: .atmosphericConditions)
+                #expect(stormSetupIndex == atmosphericIndex.map { $0 + 1 })
+                if hasLocationReliabilityRail {
+                    #expect(plan.sections[stormSetupIndex! + 1] == .locationReliability)
+                } else {
+                    #expect(plan.sections[stormSetupIndex! + 1] == .outlookSummary)
+                }
+            }
         }
     }
 }
 
+@MainActor
 private func makePlan(
-    localAlertsDisplayState: LocalAlertsDisplayState,
-    showsStormSetup: Bool,
+    localAlertsDisplayState: LocalAlertsDisplayState = .current(content: .empty, source: .cached),
+    stormSetupSlot: SummaryStormSetupSlot,
     hasLocationReliabilityRail: Bool
 ) -> SummarySectionPlan {
-    SummarySectionPlan.make(
+    SummaryView.sectionPlan(
         localAlertsDisplayState: localAlertsDisplayState,
-        showsStormSetup: showsStormSetup,
+        stormSetupSlot: stormSetupSlot,
         hasLocationReliabilityRail: hasLocationReliabilityRail
     )
 }

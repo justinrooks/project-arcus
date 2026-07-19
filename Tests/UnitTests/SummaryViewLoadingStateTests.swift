@@ -115,6 +115,43 @@ struct SummaryViewRiskPlaceholderPresentationTests {
 @Suite("Summary View Storm Setup Slot State")
 @MainActor
 struct SummaryViewStormSetupSlotStateTests {
+    @Test("composed Storm Setup state reserves only loading and visible sections")
+    func composedStateAndPlanRespectSlotContract() {
+        let cases: [(String, SummaryView.StormSetupSlotState, Bool)] = [
+            ("enabled refreshing without content", SummaryView.stormSetupSlotState(
+                presentation: nil, hasStormSetup: false, stormSetupEnabled: true,
+                isRefreshInFlight: true, isLocationUnavailable: false
+            ), true),
+            ("visible", .loading, true),
+            ("cached visible while refreshing", .loading, true),
+            ("disabled", SummaryView.stormSetupSlotState(
+                presentation: nil, hasStormSetup: false, stormSetupEnabled: false,
+                isRefreshInFlight: true, isLocationUnavailable: false
+            ), false),
+            ("location unavailable", SummaryView.stormSetupSlotState(
+                presentation: nil, hasStormSetup: true, stormSetupEnabled: true,
+                isRefreshInFlight: true, isLocationUnavailable: true
+            ), false),
+            ("policy suppressed existing payload", SummaryView.stormSetupSlotState(
+                presentation: nil, hasStormSetup: true, stormSetupEnabled: true,
+                isRefreshInFlight: true, isLocationUnavailable: false
+            ), false),
+            ("idle without content", SummaryView.stormSetupSlotState(
+                presentation: nil, hasStormSetup: false, stormSetupEnabled: true,
+                isRefreshInFlight: false, isLocationUnavailable: false
+            ), false)
+        ]
+
+        for (label, slot, shouldInclude) in cases {
+            let plan = SummaryView.sectionPlan(
+                localAlertsDisplayState: .current(content: .empty, source: .cached),
+                stormSetupSlot: slot.sectionSlot,
+                hasLocationReliabilityRail: true
+            )
+            #expect(plan.sections.contains(.stormSetup) == shouldInclude)
+        }
+    }
+
     @Test("storm setup shows a loading slot while refresh is in flight")
     func stormSetupSlotState_showsLoadingDuringRefresh() {
         #expect(
