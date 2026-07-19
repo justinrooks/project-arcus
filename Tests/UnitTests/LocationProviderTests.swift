@@ -29,6 +29,19 @@ struct LocationProviderTests {
             }
         }
     }
+
+    private actor CountingGeocoder: LocationGeocoding {
+        private var reverseGeocodeCallCount = 0
+
+        func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+            reverseGeocodeCallCount += 1
+            return "Denver, CO"
+        }
+
+        func callCount() -> Int {
+            reverseGeocodeCallCount
+        }
+    }
     
     private struct MockHasher: LocationHashing {
         enum Mode: Sendable {
@@ -1694,8 +1707,9 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: snapshot)
+        let geocoder = CountingGeocoder()
         let provider = LocationProvider(
-            geocoder: MockGeocoder(mode: .success("Denver, CO")),
+            geocoder: geocoder,
             hasher: MockHasher(mode: .success(sampleH3Cell)),
             snapshotCache: cache,
             nowProvider: { timestamp }
@@ -1705,6 +1719,7 @@ struct LocationProviderTests {
 
         #expect(resolved == snapshot)
         #expect(cache.saveCount == 0)
+        #expect(await geocoder.callCount() == 0)
     }
 
     @Test("updatePlacemarkIfNeeded updates snapshot when summary changes")
