@@ -134,11 +134,36 @@ hitches summaries.
 
 #### Baseline metrics and trace paths
 
-No physical-device traces were captured in this workspace. Consequently all required baseline metrics are `N/A`, not
-zero: time to first useful content, time to coherent core commit, optional-enrichment completion, projection
-save/publication count, relevant SwiftUI body-update evidence, hitch count, and total hitch time. The required cold
-launch timeline is also not available. Intended artifact directory: `/private/tmp/SkyAware-319-traces/`; no `.trace`
-bundles were created or added to the repository.
+Physical-device Release traces are available for warm launch, pull-to-refresh, and Storm Setup's fresh-cache skip path
+under `/private/tmp/SkyAware-319-traces/`. They are not repository artifacts.
+
+- Warm launch: `warm-events-launch-20260719.trace` and `warm-events-launch-20260719-analysis.{json,md}`. First
+  foreground refresh started at 1,458.257 ms and finished at 3,189.896 ms (logged duration 1,594 ms). The first
+  visible commit was 3,926.712 ms and the first following coherent Summary render was 3,937.825 ms. The trace showed
+  14 projection-save intervals across two observed refresh cycles. SwiftUI: 10,716 body updates; 112 high-severity
+  events. Hitches: 8 app hitches, 150.05 ms total, 41.68 ms worst.
+- Pull-to-refresh: `pull-events-20260719.trace` and `pull-events-20260719-analysis.{json,md}`. Two manual refresh
+  cycles were observed; the first started at 18,319.189 ms and finished at 20,589.369 ms (logged duration 2,269 ms),
+  with visible commit at 20,589.351 ms and first following Summary render at 20,593.258 ms. Six projection-save
+  intervals were observed per manual cycle. SwiftUI: 14,285 body updates; 109 high-severity events. Hitches: 12 app
+  hitches, 141.73 ms total, 16.67 ms worst.
+- Storm Setup: `storm-setup-success-20260719.trace` and `storm-setup-success-20260719-analysis.{json,md}`. The
+  eligible configuration was captured, but the provider returned `skipped / fresh-cache` (43–46 ms) rather than a
+  loading-to-success transition. SwiftUI: 10,354 body updates; 82 high-severity events. Hitches: 16 app hitches,
+  425.19 ms total, 75.02 ms worst.
+- Cold no-cache Today: not captured successfully. `cold-no-cache-20260719.trace` captured onboarding rather than
+  Today; `cold-events-20260719.trace` had the same issue. The later `cold-today-events-20260719.trace` reached Today
+  after onboarding but xctrace finalization hung and the bundle failed `xctrace export` with `Document Missing Template
+  Error`; it is not evidence.
+- Local Alerts populated-to-authoritative-empty: not reproduced. The observed live refreshes remained populated
+  (`alerts=1`); no authoritative-empty transition was recorded.
+- Time to optional-enrichment completion: not separately measurable in these traces because no dedicated enrichment
+  completion signpost exists and Storm Setup was fresh-cache skipped. Record the existing Storm Setup/AQI logs when a
+  non-skipped run is captured.
+
+The required cold-launch save/publication timeline, authoritative-empty transition, and Storm Setup loading/success or
+timeout evidence remain outstanding. Intended artifact directory: `/private/tmp/SkyAware-319-traces/`; no `.trace`
+bundles are committed to the repository.
 
 #### Instrumentation and existing telemetry
 
@@ -149,14 +174,15 @@ payload-free signposts. No coordinates, location summaries, alert content, ident
 
 #### Device/build metadata
 
-- Capture date: not captured; ledger update date is 2026-07-19.
-- Source SHA before uncommitted instrumentation: `024658f1d94f472225b86d4bd2b9df16c3728974`.
+- Capture date: 2026-07-19 (America/Denver); all listed physical-device captures were made on this date.
+- Source SHA before instrumentation: `024658f1d94f472225b86d4bd2b9df16c3728974`; instrumentation commit/build source:
+  `b963fa63eb08997ce24872178af5294f63333251`.
 - Xcode: `26.6 (17F113)`.
-- Required physical device/OS: unavailable; `record_trace.py --list-devices` could not enumerate devices because
-  `xctrace list devices` aborted with `SIGABRT`.
-- Validation build: Debug simulator build, iOS Simulator SDK 26.5, destination `platform=iOS Simulator,name=iPhone 17`.
-  This build validates compilation only and is not performance evidence.
-- Required Release physical-device configuration and OS: not run.
+- Physical device: `Js14Max`, UDID `00008120-001A744E1193C01E`, iOS `26.5.2`.
+- Release build: Xcode `26.6 (17F113)`, iPhoneOS SDK `26.5`, installed from
+  `/private/tmp/SkyAware-319-ReleaseDerivedData/Build/Products/Release-iphoneos/SkyAware.app`.
+- Debug simulator build: iOS Simulator SDK 26.5, destination `platform=iOS Simulator,name=iPhone 17`; compilation-only
+  validation and not performance evidence.
 
 #### Validation performed
 
@@ -168,17 +194,17 @@ payload-free signposts. No coordinates, location summaries, alert content, ident
 
 #### Measurement limitations and residual risks
 
-The issue cannot be closed from this environment because SwiftUI Instruments and Animation Hitches require Release
-physical-device captures, and no usable physical-device capture path was available. Simulator behavior must not be
-used as a substitute. The Summary render event is emitted for each coherent-state body evaluation; use the first event
-after `Today Visible Commit` for the cold-launch render boundary. Existing logger messages remain the source for lane
-boundaries; their timestamps should be correlated with the signposts in Instruments. Runtime behavior, ordering,
-publication semantics, layout, transitions, and animation were intentionally left unchanged.
+The physical capture path is now working, but the required scenario matrix is incomplete. Simulator behavior must not
+be used as a substitute. The Summary render event is emitted for each coherent-state body evaluation; use the first
+event after `Today Visible Commit` for a render boundary. Existing logger messages remain the source for lane
+boundaries; correlate them with signposts in Instruments. Runtime behavior, ordering, publication semantics, layout,
+transitions, and animation were intentionally left unchanged.
 
 #### Final status
 
-Instrumentation is ready and compiles. #319 remains pending until the five required Release/physical-device scenarios
-are captured and their exact metrics and trace paths are appended here. Do not begin #320 from this state.
+Instrumentation is ready and compiles. Partial Release/device evidence is recorded, but #319 remains pending until a
+valid cold Today timeline, populated-to-authoritative-empty Alerts transition, and reproducible Storm Setup terminal
+state capture are appended here. Do not begin #320 from this state.
 
 ### Issue #320 — 02: Publish coherent Home projections atomically
 
