@@ -92,25 +92,39 @@ struct StormSetupIngestionTests {
         #expect(await airQuality.requestCount() == 0)
     }
 
-    @Test("eligible optional enrichments start together and join before snapshot return")
-    func eligibleOptionalEnrichmentsStartTogetherAndJoinBeforeSnapshotReturn() async throws {
+    @Test("executor publishes persisted core before joined optional enrichment")
+    func executorPublishesPersistedCoreBeforeJoinedOptionalEnrichment() async throws {
         let context = makeContext()
+        let runID = UUID(uuidString: "32500000-0000-0000-0000-000000000001")!
         let stormGate = CancellationGate()
         let airQualityGate = CancellationGate()
         let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
         let airQualityResponse = try makeAirQualityResponse()
+        let alert = Watch.sampleWatchRows[0]
+        let meso = MD.sampleDiscussionDTOs[0]
+        let publications = HomeIngestionPublicationRecorder()
         let harness = try makeHarness(
             context: context,
             query: StormSetupQueryingFake(response: .success(dto), gate: stormGate),
             airQualityQuerying: AirQualityQueryingFake(
                 response: .success(airQualityResponse),
                 gate: airQualityGate
-            )
+            ),
+            activeAlerts: [alert],
+            activeMesos: [meso]
         )
         let completion = EnrichmentCompletionProbe()
         let task = Task { () -> HomeSnapshot in
             let snapshot = try await harness.executor.run(
-                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)),
+                progress: HomeIngestionRunProgress(
+                    runID: runID,
+                    markHotAlertsCompleted: {},
+                    report: { _ in },
+                    publish: { publication in
+                        await publications.append(publication)
+                    }
+                )
             )
             await completion.markCompleted()
             return snapshot
@@ -122,12 +136,51 @@ struct StormSetupIngestionTests {
             return stormStarted == 1 && airQualityStarted == 1
         }
         #expect(bothStarted)
+        let coreOnly = await publications.values()
+        #expect(coreOnly.count == 1)
+        let corePublication = try #require(coreOnly.first)
+        #expect(corePublication.runID == runID)
+        guard case .core(let core) = corePublication.stage else {
+            Issue.record("Expected core publication before optional enrichment")
+            await stormGate.open()
+            await airQualityGate.open()
+            _ = try await task.value
+            return
+        }
+        #expect(core.refreshKey == context.refreshKey)
+        #expect(core.locationSnapshot == context.snapshot)
+        #expect(core.weatherRefreshResult == .success(sampleWeather()))
+        #expect(core.stormRisk == .enhanced)
+        #expect(core.severeRisk == .hail(probability: 0.30))
+        #expect(core.fireRisk == .elevated)
+        #expect(core.alerts == [alert])
+        #expect(core.mesos == [meso])
+        let persistedCore = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persistedCore.lastWeatherLoadAt != nil)
+        #expect(persistedCore.lastSlowProductsLoadAt != nil)
+        #expect(persistedCore.lastHotAlertsLoadAt != nil)
+
         await stormGate.open()
-        try await Task.sleep(for: .milliseconds(50))
+        let stormSettled = await waitUntil(timeout: 5) {
+            await stormGate.settledWaitCount() == 1
+        }
+        #expect(stormSettled)
         #expect(await completion.isCompleted() == false)
+        #expect(await publications.values().count == 1)
         await airQualityGate.open()
 
         let snapshot = try await task.value
+        let allPublications = await publications.values()
+        #expect(allPublications.count == 2)
+        let enrichmentPublication = try #require(allPublications.last)
+        #expect(enrichmentPublication.runID == runID)
+        guard case .enrichment(let enrichment) = enrichmentPublication.stage else {
+            Issue.record("Expected enrichment publication after both optional children settled")
+            return
+        }
+        #expect(enrichment.refreshKey == context.refreshKey)
+        #expect(enrichment.stormSetup == normalizedStormSetupDTO(dto))
+        #expect(enrichment.airQuality == airQualityResponse)
         #expect(await completion.isCompleted())
         #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
         #expect(snapshot.stormSetupRefreshResult == .success)
@@ -1288,6 +1341,7 @@ private struct StormSetupHarness {
 private actor CancellationGate {
     private var isOpen = false
     private var started = 0
+    private var settledWaits = 0
     private var cancelledWaits = 0
 
     func markStarted() {
@@ -1295,6 +1349,7 @@ private actor CancellationGate {
     }
 
     func wait() async throws {
+        defer { settledWaits += 1 }
         while isOpen == false {
             do {
                 try Task.checkCancellation()
@@ -1317,6 +1372,10 @@ private actor CancellationGate {
     func cancelledWaitCount() -> Int {
         cancelledWaits
     }
+
+    func settledWaitCount() -> Int {
+        settledWaits
+    }
 }
 
 private actor EnrichmentCompletionProbe {
@@ -1328,6 +1387,18 @@ private actor EnrichmentCompletionProbe {
 
     func isCompleted() -> Bool {
         completed
+    }
+}
+
+private actor HomeIngestionPublicationRecorder {
+    private var publications: [HomeIngestionPublication] = []
+
+    func append(_ publication: HomeIngestionPublication) {
+        publications.append(publication)
+    }
+
+    func values() -> [HomeIngestionPublication] {
+        publications
     }
 }
 

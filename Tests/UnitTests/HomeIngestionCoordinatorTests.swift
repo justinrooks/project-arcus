@@ -259,6 +259,37 @@ struct HomeIngestionCoordinatorTests {
         #expect(plans[1].remoteAlertContext?.alertID == "alert-follow-up")
     }
 
+    @Test("coordinator forwards one executor run identity across publication stages")
+    func stagedPublication_forwardsOneExecutorRunIdentity() async throws {
+        let context = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            weather: makeWeather(),
+            weatherRefreshResult: .success(makeWeather()),
+            stormRisk: .enhanced
+        )
+        let executor = FakeHomeIngestionExecutor(snapshot: snapshot, publishesStages: true)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let recorder = CoordinatorPublicationRecorder()
+
+        let resolved = try await coordinator.enqueueAndWait(
+            HomeIngestionRequest(trigger: .manualRefresh, locationContext: context),
+            progress: nil,
+            publication: { publication in
+                await recorder.append(publication)
+            }
+        )
+
+        #expect(resolved == snapshot)
+        let publications = await recorder.values()
+        #expect(publications.count == 2)
+        #expect(Set(publications.map(\.runID)).count == 1)
+        #expect(publications.first?.runID == publications.last?.runID)
+        #expect(publications.first?.stage == .core(.init(snapshot: snapshot)))
+        #expect(publications.last?.stage == .enrichment(.init(snapshot: snapshot)))
+    }
+
     private func makeContext(
         latitude: Double,
         longitude: Double,
@@ -316,17 +347,20 @@ private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
     private let snapshot: HomeSnapshot
     private let beforeHotAlertsGate: AsyncGate?
     private let afterHotAlertsGate: AsyncGate?
+    private let publishesStages: Bool
     private var plans: [HomeIngestionPlan] = []
     private var completedHotAlerts = 0
 
     init(
         snapshot: HomeSnapshot = .empty,
         beforeHotAlertsGate: AsyncGate? = nil,
-        afterHotAlertsGate: AsyncGate? = nil
+        afterHotAlertsGate: AsyncGate? = nil,
+        publishesStages: Bool = false
     ) {
         self.snapshot = snapshot
         self.beforeHotAlertsGate = beforeHotAlertsGate
         self.afterHotAlertsGate = afterHotAlertsGate
+        self.publishesStages = publishesStages
     }
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
@@ -336,11 +370,29 @@ private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
             await beforeHotAlertsGate.wait()
         }
 
+        if publishesStages {
+            await progress.publish(
+                HomeIngestionPublication(
+                    runID: progress.runID,
+                    stage: .core(.init(snapshot: snapshot))
+                )
+            )
+        }
+
         completedHotAlerts += 1
         await progress.markHotAlertsCompleted()
 
         if plans.count == 1, let afterHotAlertsGate {
             await afterHotAlertsGate.wait()
+        }
+
+        if publishesStages {
+            await progress.publish(
+                HomeIngestionPublication(
+                    runID: progress.runID,
+                    stage: .enrichment(.init(snapshot: snapshot))
+                )
+            )
         }
 
         return snapshot
@@ -356,6 +408,18 @@ private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
 
     func completedHotAlertsCount() -> Int {
         completedHotAlerts
+    }
+}
+
+private actor CoordinatorPublicationRecorder {
+    private var publications: [HomeIngestionPublication] = []
+
+    func append(_ publication: HomeIngestionPublication) {
+        publications.append(publication)
+    }
+
+    func values() -> [HomeIngestionPublication] {
+        publications
     }
 }
 

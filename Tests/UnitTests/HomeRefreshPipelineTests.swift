@@ -375,6 +375,412 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.summaryWeather != nil)
     }
 
+    @Test("staged enrichment rejects a mismatched ingestion run")
+    func stagedEnrichment_rejectsMismatchedRunIdentity() async {
+        let context = makeContext()
+        let acceptedRunID = UUID(uuidString: "32500000-0000-0000-0000-000000000101")!
+        let mismatchedRunID = UUID(uuidString: "32500000-0000-0000-0000-000000000102")!
+        let cached = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "cached guidance"
+        )
+        let rejected = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 600),
+            summary: "wrong run"
+        )
+        let coreSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .moderate
+        )
+        let finalSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormSetup: rejected,
+            stormRisk: .moderate
+        )
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(runID: acceptedRunID, stage: .core(.init(snapshot: coreSnapshot))),
+                    enrichment: .init(
+                        runID: mismatchedRunID,
+                        stage: .enrichment(.init(snapshot: finalSnapshot))
+                    ),
+                    finalSnapshot: finalSnapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialStormRisk: .slight,
+            initialStormSetup: cached,
+            initialStormSetupRefreshKey: context.refreshKey
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.stormSetup == cached)
+        #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+    }
+
+    @Test("staged enrichment rejects a mismatched location refresh key")
+    func stagedEnrichment_rejectsMismatchedRefreshKey() async {
+        let currentContext = makeContext(h3Cell: 111_111)
+        let mismatchedContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let runID = UUID(uuidString: "32500000-0000-0000-0000-000000000103")!
+        let cached = makeStormSetupDTO(
+            h3Cell: currentContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "cached guidance"
+        )
+        let rejected = makeStormSetupDTO(
+            h3Cell: mismatchedContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 600),
+            summary: "wrong location"
+        )
+        let coreSnapshot = HomeSnapshot(
+            locationSnapshot: currentContext.snapshot,
+            refreshKey: currentContext.refreshKey,
+            stormRisk: .moderate
+        )
+        let mismatchedEnrichment = HomeSnapshot(
+            refreshKey: mismatchedContext.refreshKey,
+            stormSetup: rejected
+        )
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(runID: runID, stage: .core(.init(snapshot: coreSnapshot))),
+                    enrichment: .init(
+                        runID: runID,
+                        stage: .enrichment(.init(snapshot: mismatchedEnrichment))
+                    ),
+                    finalSnapshot: coreSnapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialStormSetup: cached,
+            initialStormSetupRefreshKey: currentContext.refreshKey
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(
+                    currentContext: currentContext,
+                    preparedContext: currentContext
+                )
+            )
+        )
+
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.stormSetup == cached)
+        #expect(pipeline.stormSetupRefreshKey == currentContext.refreshKey)
+    }
+
+    @Test("staged optional failure and timeout retain visible core and same-location cache")
+    func stagedOptionalFailureAndTimeout_retainCoreAndSameLocationCache() async {
+        let context = makeContext()
+        let cached = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "cached guidance"
+        )
+        let outcomes: [HomeStormSetupRefreshResult] = [.failure, .timeout]
+
+        for (index, outcome) in outcomes.enumerated() {
+            let gate = AsyncGate()
+            let runID = UUID()
+            let coreSnapshot = HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                stormRisk: index == 0 ? .moderate : .enhanced
+            )
+            let finalSnapshot = HomeSnapshot(
+                locationSnapshot: context.snapshot,
+                refreshKey: context.refreshKey,
+                stormSetupRefreshResult: outcome,
+                stormRisk: coreSnapshot.stormRisk
+            )
+            let coordinator = ScriptedStagedHomeIngestionCoordinator(
+                runs: [
+                    .init(
+                        core: .init(runID: runID, stage: .core(.init(snapshot: coreSnapshot))),
+                        enrichment: .init(
+                            runID: runID,
+                            stage: .enrichment(.init(snapshot: finalSnapshot))
+                        ),
+                        afterCoreGate: gate,
+                        finalSnapshot: finalSnapshot
+                    )
+                ]
+            )
+            let pipeline = HomeRefreshPipeline(
+                initialStormRisk: .slight,
+                initialStormSetup: cached,
+                initialStormSetupRefreshKey: context.refreshKey
+            )
+            let task = Task { @MainActor in
+                await pipeline.forceRefreshCurrentContext(
+                    showsLoading: true,
+                    environment: makeEnvironment(
+                        coordinator: coordinator,
+                        locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+                    )
+                )
+            }
+
+            let coreVisible = await waitUntil(timeout: .seconds(5)) {
+                pipeline.stormRisk == coreSnapshot.stormRisk
+            }
+            #expect(coreVisible, "\(outcome)")
+            #expect(pipeline.stormSetup == cached, "\(outcome)")
+
+            await gate.open()
+            await task.value
+
+            #expect(pipeline.stormRisk == coreSnapshot.stormRisk, "\(outcome)")
+            #expect(pipeline.stormSetup == cached, "\(outcome)")
+            #expect(pipeline.stormSetupRefreshKey == context.refreshKey, "\(outcome)")
+        }
+    }
+
+    @Test("cancellation after staged core keeps core visible without enrichment")
+    func cancellationAfterStagedCore_keepsCoreVisibleWithoutEnrichment() async {
+        let context = makeContext()
+        let cached = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "cached guidance"
+        )
+        let coreSnapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .moderate
+        )
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(runID: UUID(), stage: .core(.init(snapshot: coreSnapshot))),
+                    finalSnapshot: coreSnapshot,
+                    waitsForCancellation: true
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialStormRisk: .slight,
+            initialStormSetup: cached,
+            initialStormSetupRefreshKey: context.refreshKey
+        )
+        let task = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+                )
+            )
+        }
+
+        let coreVisible = await waitUntil(timeout: .seconds(5)) {
+            pipeline.stormRisk == .moderate
+        }
+        #expect(coreVisible)
+        task.cancel()
+        await task.value
+
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.stormSetup == cached)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
+    }
+
+    @Test("location-changing core clears optional content before enrichment")
+    func locationChangingCore_clearsOptionalContentBeforeEnrichment() async throws {
+        let oldContext = makeContext(h3Cell: 111_111)
+        let newContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let oldStormSetup = makeStormSetupDTO(
+            h3Cell: oldContext.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500)
+        )
+        let oldAirQuality = try DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(
+                """
+                {
+                  "aqi": 121,
+                  "category": {"identifier": 3, "name": "Unhealthy for Sensitive Groups"},
+                  "primaryPollutant": "PM2.5",
+                  "observedAt": "2026-07-12T21:00:00Z",
+                  "sourceIdentifier": "airnow"
+                }
+                """.utf8
+            )
+        )
+        let gate = AsyncGate()
+        let oldRunID = UUID()
+        let runID = UUID()
+        let oldSnapshot = HomeSnapshot(
+            locationSnapshot: oldContext.snapshot,
+            refreshKey: oldContext.refreshKey,
+            stormSetup: oldStormSetup,
+            airQuality: oldAirQuality,
+            stormRisk: .slight
+        )
+        let coreSnapshot = HomeSnapshot(
+            locationSnapshot: newContext.snapshot,
+            refreshKey: newContext.refreshKey,
+            stormRisk: .moderate
+        )
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(runID: oldRunID, stage: .core(.init(snapshot: oldSnapshot))),
+                    enrichment: .init(
+                        runID: oldRunID,
+                        stage: .enrichment(.init(snapshot: oldSnapshot))
+                    ),
+                    finalSnapshot: oldSnapshot
+                ),
+                .init(
+                    core: .init(runID: runID, stage: .core(.init(snapshot: coreSnapshot))),
+                    enrichment: .init(
+                        runID: runID,
+                        stage: .enrichment(.init(snapshot: coreSnapshot))
+                    ),
+                    afterCoreGate: gate,
+                    finalSnapshot: coreSnapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(initialStormRisk: .slight)
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: oldContext, preparedContext: oldContext)
+            )
+        )
+        #expect(pipeline.stormSetup == oldStormSetup)
+        #expect(pipeline.airQuality == oldAirQuality)
+
+        let task = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: makeEnvironment(
+                    coordinator: coordinator,
+                    locationSession: FakeLocationSession(currentContext: newContext, preparedContext: newContext)
+                )
+            )
+        }
+
+        let coreVisible = await waitUntil(timeout: .seconds(5)) {
+            pipeline.stormRisk == .moderate
+        }
+        #expect(coreVisible)
+        #expect(pipeline.stormSetup == nil)
+        #expect(pipeline.stormSetupRefreshKey == newContext.refreshKey)
+        #expect(pipeline.airQuality == nil)
+
+        await gate.open()
+        await task.value
+    }
+
+    @Test("superseded same-location enrichment cannot overwrite a newer publication")
+    func supersededSameLocationEnrichment_cannotOverwriteNewerPublication() async {
+        let context = makeContext()
+        let olderGate = AsyncGate()
+        let olderRunID = UUID()
+        let newerRunID = UUID()
+        let olderStormSetup = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 500),
+            summary: "older guidance"
+        )
+        let newerStormSetup = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: Date(timeIntervalSince1970: 600),
+            summary: "newer guidance"
+        )
+        let olderCore = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .enhanced
+        )
+        let olderFinal = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormSetup: olderStormSetup,
+            stormRisk: .enhanced
+        )
+        let newerCore = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .moderate
+        )
+        let newerFinal = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormSetup: newerStormSetup,
+            stormRisk: .moderate
+        )
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(runID: olderRunID, stage: .core(.init(snapshot: olderCore))),
+                    enrichment: .init(
+                        runID: olderRunID,
+                        stage: .enrichment(.init(snapshot: olderFinal))
+                    ),
+                    afterCoreGate: olderGate,
+                    finalSnapshot: olderFinal
+                ),
+                .init(
+                    core: .init(runID: newerRunID, stage: .core(.init(snapshot: newerCore))),
+                    enrichment: .init(
+                        runID: newerRunID,
+                        stage: .enrichment(.init(snapshot: newerFinal))
+                    ),
+                    finalSnapshot: newerFinal
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(initialStormRisk: .slight)
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+        )
+        let olderTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        }
+
+        let olderCoreVisible = await waitUntil(timeout: .seconds(5)) {
+            pipeline.stormRisk == .enhanced
+        }
+        #expect(olderCoreVisible)
+
+        await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.stormSetup == newerStormSetup)
+
+        await olderGate.open()
+        await olderTask.value
+
+        #expect(pipeline.stormRisk == .moderate)
+        #expect(pipeline.stormSetup == newerStormSetup)
+        #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+    }
+
     @Test("same-location nil or failed storm setup preserves the existing value")
     func sameLocationNilOrFailurePreservesExistingStormSetup() async {
         let context = makeContext()
@@ -2177,6 +2583,101 @@ private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+}
+
+private actor ScriptedStagedHomeIngestionCoordinator: HomeIngestionCoordinating {
+    struct Run: Sendable {
+        let core: HomeIngestionPublication
+        let enrichment: HomeIngestionPublication?
+        let afterCoreGate: AsyncGate?
+        let finalSnapshot: HomeSnapshot
+        let waitsForCancellation: Bool
+
+        init(
+            core: HomeIngestionPublication,
+            enrichment: HomeIngestionPublication? = nil,
+            afterCoreGate: AsyncGate? = nil,
+            finalSnapshot: HomeSnapshot,
+            waitsForCancellation: Bool = false
+        ) {
+            self.core = core
+            self.enrichment = enrichment
+            self.afterCoreGate = afterCoreGate
+            self.finalSnapshot = finalSnapshot
+            self.waitsForCancellation = waitsForCancellation
+        }
+    }
+
+    private let runs: [Run]
+    private var submittedRequests: [HomeIngestionRequest] = []
+
+    init(runs: [Run]) {
+        self.runs = runs
+    }
+
+    func enqueue(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) {
+        enqueue(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            )
+        )
+    }
+
+    func enqueueAndWait(
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
+    ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            )
+        )
+    }
+
+    func enqueue(_ request: HomeIngestionRequest) {
+        submittedRequests.append(request)
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: nil, publication: nil)
+    }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?
+    ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: progress, publication: nil)
+    }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        submittedRequests.append(request)
+        let index = submittedRequests.count - 1
+        precondition(index < runs.count, "Test coordinator received more requests than staged runs")
+        let run = runs[index]
+
+        await publication?(run.core)
+        if run.waitsForCancellation {
+            try await Task.sleep(for: .seconds(60))
+        }
+        await run.afterCoreGate?.wait()
+        if let enrichment = run.enrichment {
+            await publication?(enrichment)
+        }
+        return run.finalSnapshot
     }
 }
 

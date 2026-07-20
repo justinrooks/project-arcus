@@ -48,7 +48,7 @@ progress drives layout animation through the Summary hierarchy.
 | 4 | [#322](https://github.com/justinrooks/project-arcus/issues/322) | Reserve a stable Storm Setup section slot | `GPT-5.6 Luna / medium` | Planned | #321 |
 | 5 | [#323](https://github.com/justinrooks/project-arcus/issues/323) | Parallelize independent ingestion work within priority lanes | `GPT-5.6 Luna / medium` | Planned | #322 |
 | 6 | [#324](https://github.com/justinrooks/project-arcus/issues/324) | Run optional enrichment concurrently | `GPT-5.6 Luna / medium` | Planned | #323 |
-| 7 | [#325](https://github.com/justinrooks/project-arcus/issues/325) | Publish core Today content before optional enrichment | `GPT-5.6 Terra / medium` | Planned | #324 |
+| 7 | [#325](https://github.com/justinrooks/project-arcus/issues/325) | Publish core Today content before optional enrichment | `GPT-5.6 Terra / medium` | Complete | #324 |
 | 8 | [#326](https://github.com/justinrooks/project-arcus/issues/326) | Isolate continuous Today header rendering | `GPT-5.6 Luna / medium` | Planned | #325 |
 | 9 | [#327](https://github.com/justinrooks/project-arcus/issues/327) | Prove end-to-end Today refresh smoothness | `GPT-5.6 Luna / medium` | Planned | #319-#326 |
 
@@ -436,13 +436,61 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #325 — 07: Publish core Today content before optional enrichment
 
-- Status: Planned
-- Scope: Add an explicitly owned staged-publication path so the coherent core snapshot returns and commits before
-  optional enrichment, whose later result merges through stable UI slots.
-- Validation target: Core-success/enrichment-slow, enrichment-success, timeout, failure, cancellation, superseding
-  refresh, and location-change tests; pipeline/coordinator suites; device trace; Debug build.
-- Handoff: Use `GPT-5.6 Terra / medium`. No detached work. The coordinator or another explicit owner must govern
-  cancellation, supersession, and location identity. Stop if more than five production files are required.
+- Status: Complete
+- Files changed:
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — defines the core/enrichment publication contract,
+    publishes the persisted core before starting optional children, then publishes joined optional results.
+  - `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift` — assigns one run identity and forwards both stages to
+    compatible waiters while preserving the atomic fallback for conformers that emit no stages.
+  - `Sources/App/HomeRefreshPipeline.swift` — accepts staged publication through submission, run, and location-key
+    identity; shares core/enrichment application with the atomic path; keeps prime callbacks and results non-visible.
+  - `Tests/UnitTests/StormSetupIngestionTests.swift` — proves real-executor sequencing, persistence-before-core,
+    independent optional gating, joined enrichment, and shared run/location identity.
+  - `Tests/UnitTests/HomeIngestionCoordinatorTests.swift` — proves the coordinator forwards one executor run identity
+    across both stages.
+  - `Tests/UnitTests/HomeRefreshPipelineTests.swift` — proves identity rejection, failure/timeout/cancellation retention,
+    location clearing, same-location supersession, and non-staging atomic compatibility.
+  - `docs/plans/today-refresh-performance-progress.md` — records this contract and its validation evidence.
+- Final staged-publication contract: after snapshot assembly, the executor completes the existing atomic core
+  projection commit and widget refresh attempt, then reports one core containing location, weather, risks, alerts,
+  mesos, and outlooks. Only after that report returns does it start Storm Setup and AQI as sibling `async let`
+  children. It awaits both, reports one enrichment, and returns the complete snapshot. No detached or fire-and-forget
+  enrichment work exists; cancellation remains bounded by the executor/coordinator-owned run.
+- Identity and supersession contract: every visible pipeline submission has a submission UUID; every coordinator run
+  has a run UUID; each stage carries the resolved location refresh key. Core acceptance records the exact triple.
+  Enrichment must match all three values, and the pipeline closes the submission window when its waiter returns.
+  Submission identity is required because compatible coordinator waiters can share a run; run identity binds the two
+  executor stages; refresh-key identity prevents location-A optional content from mutating location-B core content.
+  Older same-location submissions cannot overwrite a newer accepted publication.
+- Atomic and lifecycle compatibility: core application is implemented once; the atomic path calls that same core
+  function followed by the same enrichment function. A coordinator conformer that emits no stage therefore still
+  applies its final snapshot atomically. A staged final result does not reapply core. Scene-activation prime uses no
+  progress or publication callback and does not apply its returned snapshot; the existing prime/follow-up cache-forward
+  test is unchanged. Same-location Storm Setup failure/timeout/nil retains valid cached guidance, while a location-key
+  change clears old Storm Setup and AQI ownership at core publication. Core remains visible if optional work fails,
+  times out, or no enrichment is accepted after cancellation.
+- Test evidence: the real executor test supplies a known run UUID, blocks Storm Setup and AQI independently, verifies
+  the durable core timestamps before observing core, proves no enrichment after one child has actually settled, and
+  verifies core then enrichment share the run UUID and refresh key. Pipeline tests use payloads that would visibly
+  overwrite state if either run or refresh-key guard were removed. Separate tests cover failure, timeout, cancellation,
+  location change, and older same-location enrichment. Existing atomic, prime/follow-up, weather, alerts, resolution,
+  Storm Setup retention, AQI, outlook, and signpost coverage remains green.
+- Validation evidence:
+  - Required focused command passed. `.xcresult`:
+    `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.07.19_19-38-43--0600.xcresult`;
+    90 executed, 90 passed, 0 failed, 0 skipped. Console output and result inspection confirm all three named suites ran.
+  - Complete `SkyAwareTests` command passed without the known `AlertNotificationTests` polling timeout. `.xcresult`:
+    `/Users/justin/Library/Developer/Xcode/DerivedData/SkyAware-agjazkpfcnuppmaofanownrwirhh/Logs/Test/Test-SkyAware-2026.07.19_19-47-35--0600.xcresult`;
+    863 executed, 863 passed, 0 failed, 0 skipped.
+  - Required Debug iPhone 17 simulator build passed.
+  - `git diff --check` passed.
+- Review gate: all publication fields are consumed; staged and atomic core application share one implementation; the
+  executor owns and joins both optional children; the coordinator filters stages to its active plan and run; the
+  pipeline rejects stale submission/run/location triples. Production changes remain within the requested three files.
+- Residual risk: deterministic simulator tests prove ordering, ownership, and rejection but not physical-device latency.
+  No post-#325 Release/device trace was captured, so no quantitative improvement is claimed; the campaign comparison
+  remains deferred to #327.
+- Final status: acceptance criteria satisfied. Do not begin #326 in this slice.
 
 ### Issue #326 — 08: Isolate continuous Today header rendering
 
@@ -470,6 +518,9 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 | 2026-07-19 | Investigation | Focused simulator suites; `.xcresult` inspected at `/private/tmp/SkyAware-IngestionAudit/Logs/Test/Test-SkyAware-2026.07.19_11-32-03--0600.xcresult` | Passed: 88 tests, 0 failures, 0 skipped |
 | 2026-07-19 | Planning | Existing labels and related issues #248, #253, #254, and #258 inspected; campaign boundaries reconciled with completed work | Complete |
 | 2026-07-19 | Planning | Epic #318 and sequential children #319-#327 created and verified; runbook/progress links patched; stale-placeholder scan clean | Complete |
+| 2026-07-19 | #325 | Required focused pipeline/coordinator/Storm Setup suites; `.xcresult` `Test-SkyAware-2026.07.19_19-38-43--0600.xcresult` inspected | Passed: 90 tests, 0 failures, 0 skipped |
+| 2026-07-19 | #325 | Complete `SkyAwareTests` bundle; `.xcresult` `Test-SkyAware-2026.07.19_19-47-35--0600.xcresult` inspected | Passed: 863 tests, 0 failures, 0 skipped |
+| 2026-07-19 | #325 | Debug iPhone 17 simulator build and `git diff --check` | Passed |
 
 ## Handoff Notes
 

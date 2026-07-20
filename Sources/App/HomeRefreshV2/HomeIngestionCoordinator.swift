@@ -27,6 +27,11 @@ protocol HomeIngestionCoordinating: Actor, Sendable {
         _ request: HomeIngestionRequest,
         progress: HomeIngestionProgressHandler?
     ) async throws -> HomeSnapshot
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot
 }
 
 extension HomeIngestionCoordinating {
@@ -36,6 +41,14 @@ extension HomeIngestionCoordinating {
     ) async throws -> HomeSnapshot {
         try await enqueueAndWait(request)
     }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: progress)
+    }
 }
 
 actor HomeIngestionCoordinator: HomeIngestionCoordinating {
@@ -43,6 +56,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         let id: UUID
         let requestedPlan: HomeIngestionPlan
         let progress: HomeIngestionProgressHandler?
+        let publication: HomeIngestionPublicationHandler?
         let continuation: CheckedContinuation<HomeSnapshot, Error>
     }
 
@@ -98,12 +112,21 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         _ request: HomeIngestionRequest,
         progress: HomeIngestionProgressHandler?
     ) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: progress, publication: nil)
+    }
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
         let requestedPlan = request.plan
         return try await withCheckedThrowingContinuation { continuation in
             let waiter = Waiter(
                 id: UUID(),
                 requestedPlan: requestedPlan,
                 progress: progress,
+                publication: publication,
                 continuation: continuation
             )
             submit(requestedPlan, waiter: waiter)
@@ -146,6 +169,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private func startRun(with plan: HomeIngestionPlan) {
+        let runID = UUID()
         activePlan = plan
         activeRunStartedAt = Date()
         activeRunCanAbsorbRemoteHotAlert = plan.forcedLanes.contains(.hotAlerts)
@@ -155,11 +179,15 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
             try await executor.run(
                 plan: plan,
                 progress: HomeIngestionRunProgress(
+                    runID: runID,
                     markHotAlertsCompleted: {
                         await self.markHotAlertsCompleted(for: plan)
                     },
                     report: { event in
                         await self.reportProgress(event, for: plan)
+                    },
+                    publish: { publication in
+                        await self.publish(publication, for: plan, runID: runID)
                     }
                 )
             )
@@ -244,6 +272,20 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         }
         for handler in handlers {
             await handler(event)
+        }
+    }
+
+    private func publish(
+        _ publication: HomeIngestionPublication,
+        for plan: HomeIngestionPlan,
+        runID: UUID
+    ) async {
+        guard publication.runID == runID, activePlan == plan else { return }
+        let handlers = waiters.values.compactMap { waiter in
+            plan.satisfies(waiter.requestedPlan) ? waiter.publication : nil
+        }
+        for handler in handlers {
+            await handler(publication)
         }
     }
 }

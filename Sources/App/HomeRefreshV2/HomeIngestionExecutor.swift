@@ -23,9 +23,75 @@ enum HomeIngestionProgressEvent: Sendable, Equatable {
 
 typealias HomeIngestionProgressHandler = @Sendable (HomeIngestionProgressEvent) async -> Void
 
+struct HomeIngestionCorePublication: Sendable, Equatable {
+    let locationSnapshot: LocationSnapshot?
+    let refreshKey: LocationContext.RefreshKey?
+    let weatherRefreshResult: HomeWeatherRefreshResult
+    let stormRisk: StormRiskLevel?
+    let severeRisk: SevereWeatherThreat?
+    let fireRisk: FireRiskLevel?
+    let mesos: [MdDTO]
+    let alerts: [AlertDTO]
+    let outlooks: [ConvectiveOutlookDTO]
+    let latestOutlook: ConvectiveOutlookDTO?
+
+    init(snapshot: HomeSnapshot) {
+        locationSnapshot = snapshot.locationSnapshot
+        refreshKey = snapshot.refreshKey
+        weatherRefreshResult = snapshot.weatherRefreshResult
+        stormRisk = snapshot.stormRisk
+        severeRisk = snapshot.severeRisk
+        fireRisk = snapshot.fireRisk
+        mesos = snapshot.mesos
+        alerts = snapshot.alerts
+        outlooks = snapshot.outlooks
+        latestOutlook = snapshot.latestOutlook
+    }
+}
+
+struct HomeIngestionEnrichmentPublication: Sendable, Equatable {
+    let refreshKey: LocationContext.RefreshKey?
+    let stormSetup: StormSetupDTO?
+    let stormSetupCurrentResponse: StormSetupCurrentResponse?
+    let airQuality: AirQualityCurrentResponse?
+
+    init(snapshot: HomeSnapshot) {
+        refreshKey = snapshot.refreshKey
+        stormSetup = snapshot.stormSetup
+        stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
+        airQuality = snapshot.airQuality
+    }
+}
+
+struct HomeIngestionPublication: Sendable, Equatable {
+    enum Stage: Sendable, Equatable {
+        case core(HomeIngestionCorePublication)
+        case enrichment(HomeIngestionEnrichmentPublication)
+    }
+
+    let runID: UUID
+    let stage: Stage
+}
+
+typealias HomeIngestionPublicationHandler = @Sendable (HomeIngestionPublication) async -> Void
+
 struct HomeIngestionRunProgress: Sendable {
+    let runID: UUID
     let markHotAlertsCompleted: @Sendable () async -> Void
     let report: HomeIngestionProgressHandler
+    let publish: HomeIngestionPublicationHandler
+
+    init(
+        runID: UUID = UUID(),
+        markHotAlertsCompleted: @escaping @Sendable () async -> Void,
+        report: @escaping HomeIngestionProgressHandler,
+        publish: @escaping HomeIngestionPublicationHandler = { _ in }
+    ) {
+        self.runID = runID
+        self.markHotAlertsCompleted = markHotAlertsCompleted
+        self.report = report
+        self.publish = publish
+    }
 
     static let none = HomeIngestionRunProgress(
         markHotAlertsCompleted: {},
@@ -210,24 +276,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             freshness: freshness
         )
         snapshot.weatherRefreshResult = weatherRefresh
-        let coreSnapshot = snapshot
-        async let stormSetupRefreshTask = stormSetupIngestion.refresh(
-            context: context,
-            snapshot: coreSnapshot,
-            plan: plan,
-            executionMode: executionMode
-        )
-        async let airQualityTask = refreshAirQuality(
-            context: context,
-            plan: plan,
-            executionMode: executionMode
-        )
-        let (stormSetupRefresh, airQuality) = await (stormSetupRefreshTask, airQualityTask)
-        snapshot.stormSetupRefreshResult = stormSetupRefresh.result
-        snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
-        snapshot.stormSetup = stormSetupRefresh.stormSetup
-        snapshot.airQuality = airQuality
-
         if let context {
             let slowProductDecision = slowProductPersistenceDecision(
                 plan: plan,
@@ -245,6 +293,36 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
 
         freshness.lastResolvedRefreshKey = snapshot.refreshKey
+        await progress.publish(
+            HomeIngestionPublication(
+                runID: progress.runID,
+                stage: .core(.init(snapshot: snapshot))
+            )
+        )
+
+        let coreSnapshot = snapshot
+        async let stormSetupRefreshTask = stormSetupIngestion.refresh(
+            context: context,
+            snapshot: coreSnapshot,
+            plan: plan,
+            executionMode: executionMode
+        )
+        async let airQualityTask = refreshAirQuality(
+            context: context,
+            plan: plan,
+            executionMode: executionMode
+        )
+        let (stormSetupRefresh, airQuality) = await (stormSetupRefreshTask, airQualityTask)
+        snapshot.stormSetupRefreshResult = stormSetupRefresh.result
+        snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
+        snapshot.stormSetup = stormSetupRefresh.stormSetup
+        snapshot.airQuality = airQuality
+        await progress.publish(
+            HomeIngestionPublication(
+                runID: progress.runID,
+                stage: .enrichment(.init(snapshot: snapshot))
+            )
+        )
         let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
         environment.logger.info(
             "Completed home ingestion plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alerts=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
