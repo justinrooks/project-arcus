@@ -494,11 +494,38 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #326 — 08: Isolate continuous Today header rendering
 
-- Status: Planned
-- Scope: Remove continuously retargeted implicit layout animation, limit condense-progress invalidation to the header,
-  and address only presentation derivation hotspots confirmed by issue 01 or updated Instruments evidence.
-- Validation target: Slow/fast scroll and refresh-while-scrolling device traces, Reduce Motion, Dynamic Type, focused
-  presentation tests, and Debug build.
+- Status: Implementation complete; simulator and device-trace validation deferred by unavailable local services
+- Files changed:
+  - `Sources/App/TodayTabView.swift` — moves normalized scroll progress into a main-actor Observation state holder and
+    avoids publishing an unchanged effective value.
+  - `Sources/Features/Summary/SummaryView.swift` — passes the stable holder to Current Conditions without reading its
+    changing property.
+  - `Sources/Features/Summary/SummaryStatus.swift` — becomes the first and only view reader of continuous progress,
+    while removing the implicit layout animation keyed to that value.
+  - `Sources/Features/Summary/SummaryView+Previews.swift` — supplies the stable holder to the existing Summary preview.
+  - `Tests/UnitTests/TodayContentStateTests.swift` — verifies clamped normalization and unchanged-effective-value
+    suppression deterministically.
+- Rendering evidence: `TodayTabView` owns the stable `TodayHeaderCondenseState`; `SummaryView` only stores and passes
+  its reference; `SummaryStatus` first reads `progress`. Therefore continuous progress does not establish an Observation
+  dependency for `SummaryView`, cards, alerts, Outlook, Storm Setup, or atmospheric content. The prior
+  `SkyAwareMotion.settle` animation keyed to each condense update is removed; weather, refresh-message, and offline
+  animations are unchanged. Spacing, padding, corner radius, shadow, opacity, and title-threshold interpolation remain
+  unchanged and now track scrolling directly.
+- Validation:
+  - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
+    — passed.
+  - Focused Summary/Today and complete `SkyAwareTests` commands were invoked, but their `.xcresult` bundles remained in
+    Xcode staging without `Info.plist`, so no executed/passed/failed/skipped counts can be reported.
+  - `xcrun simctl list devices available` failed because `CoreSimulatorService` was unavailable. Slow/fast scroll,
+    direction reversal, pull-to-refresh while partially condensed, refresh completion while scrolling, Reduce Motion,
+    and Dynamic Type could not be exercised locally.
+  - `xcrun xctrace list devices` could not initialize because Instruments lacked permission to create its local cache;
+    no physical-device Release trace was captured. Quantitative before/after comparison remains deferred to #327.
+  - `git diff --check` — passed.
+- Residual risk: static Observation ownership and deterministic state tests prove the invalidation boundary and direct
+  tracking contract, but runtime visual and hitch evidence remains outstanding until simulator services or a physical
+  device are available. No ingestion, refresh, projection, display-state, accessibility identifier, navigation, or
+  card-identity behavior changed.
 - Handoff: Do not redesign the Summary, introduce speculative caching, or optimize small collections without evidence.
 
 ### Issue #327 — 09: Prove end-to-end Today refresh smoothness
@@ -521,6 +548,9 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 | 2026-07-19 | #325 | Required focused pipeline/coordinator/Storm Setup suites; `.xcresult` `Test-SkyAware-2026.07.19_19-38-43--0600.xcresult` inspected | Passed: 90 tests, 0 failures, 0 skipped |
 | 2026-07-19 | #325 | Complete `SkyAwareTests` bundle; `.xcresult` `Test-SkyAware-2026.07.19_19-47-35--0600.xcresult` inspected | Passed: 863 tests, 0 failures, 0 skipped |
 | 2026-07-19 | #325 | Debug iPhone 17 simulator build and `git diff --check` | Passed |
+| 2026-07-19 | #326 | Debug iPhone 17 simulator build and `git diff --check` | Passed |
+| 2026-07-19 | #326 | Focused and complete unit-test commands with `.xcresult` inspection | Blocked: CoreSimulatorService unavailable; result bundles incomplete and counts unavailable |
+| 2026-07-19 | #326 | Release/device SwiftUI Instruments trace | Deferred: local xctrace cache initialization permission failure; no device evidence captured |
 
 ## Handoff Notes
 
