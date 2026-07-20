@@ -530,12 +530,82 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 
 ### Issue #327 — 09: Prove end-to-end Today refresh smoothness
 
-- Status: Planned
+- Status: Incomplete — not ready for closure
 - Scope: Run the full state/refresh matrix, focused regression suite, Debug build, and before/after Release/device
   Instruments comparison. Fix only documentation or test-fixture defects; file new issues for residual production work.
-- Validation target: Final metrics, trace references, test counts, `.xcresult` inspection, build result, and completed
-  progress ledger.
-- Handoff: This is a proof/closure issue, not a container for late production fixes.
+- Source and environment: validation used HEAD `d520ec8c048c9dcc0050bbf0d2556471ec9f9dc7`, with uncommitted working-tree
+  changes. Xcode 26.6 (17F113),
+  iPhone 17 simulator iOS 26.5 (`F5154D35-3398-4BEB-943E-E8D174B32832`), and the baseline physical device
+  `Js14Max` iOS 26.5.2 (`00008120-001A744E1193C01E`).
+
+The validation working tree included uncommitted test-target and test-fixture corrections in
+`SkyAware.xcodeproj/project.pbxproj` (test-target membership),
+`Tests/UnitTests/AtmosphericConditionsDescriptorTests.swift` (fixture correction), and
+`Tests/UnitTests/SkyAwareAdaptiveLayoutTests.swift` (fixture correction), plus this ledger update. This pass also
+added the separate LocationProvider remediation in `Sources/Providers/Location/LocationProvider.swift` (clear a
+cached placemark when accepted coordinates change) and its deterministic regression coverage in
+`Tests/UnitTests/LocationProviderTests.swift` (actor-gated geocoding and unchanged-coordinate fast-path coverage).
+
+#### Scenario matrix
+
+| Scenario | Result | Evidence / limitation |
+|---|---|---|
+| Cold launch with no usable Today cache | Blocked | #319 has no valid cold-Today baseline; the attempted current physical-device launch trace did not finalize. |
+| Warm cached launch and foreground activation | Not comparable | Valid #319 baseline exists, but no valid current Release/device trace was captured. |
+| Pull-to-refresh with useful cached content visible | Not comparable | Valid #319 baseline exists, but no valid current Release/device trace was captured. |
+| Local Alerts populated to authoritative empty | Blocked | No deterministic device fixture was available; #319 also has no authoritative-empty capture. |
+| Storm Setup loading to success | Blocked | #319 Storm Setup trace is a fresh-cache skip, not a loading-to-success transition. |
+| Storm Setup loading to terminal failure | Blocked | No reproducible device timeout/failure fixture was available. |
+| Partial core-provider failure with useful cache | Blocked | Deterministic state coverage passed, but no device scenario was exercised. |
+| Rapid background/foreground transitions | Blocked | Deterministic identity/rejection coverage passed, but no device lifecycle sequence was exercised. |
+| Scroll, reversal, partial-condense refresh | Blocked | No valid post-#326 SwiftUI trace or rendered device/simulator sequence was captured. |
+| Refresh completion while scrolling | Blocked | No valid post-#326 SwiftUI trace or rendered device/simulator sequence was captured. |
+| Reduce Motion and representative large Dynamic Type | Blocked | Existing unit coverage retains state contracts; no rendered scenario was exercised. |
+
+Focused tests establish the no-partial-projection, cache retention, staged core/enrichment, Local Alerts slot, Storm
+Setup slot, stale-run rejection, and header-condense suppression contracts. They do not substitute for the blocked
+rendered/device scenarios above.
+
+#### Validation evidence
+
+- Focused suites: passed, 160 executed / 160 passed / 0 failed / 0 skipped. Result bundle:
+  `/private/tmp/SkyAware-327-results/focused-escalated.xcresult`. Inspected with
+  `xcrun xcresulttool get test-results summary`; the bundle includes `HomeProjectionStoreTests`,
+  `HomeRefreshPipelineTests`, `HomeIngestionCoordinatorTests`, `StormSetupIngestionTests`,
+  `SummaryViewLocalAlertsTests`, `SummaryViewStormSetupSlotStateTests`, `TodaySurfaceStateFlowTests`,
+  `TodayVisibleWeatherStateTests`, and both #326 `TodayContentStateTests` header-condense cases.
+- Complete unit target: passed, 865 executed / 865 passed / 0 failed / 0 skipped. Result bundle:
+  `/private/tmp/SkyAware-327-results/full-unit.xcresult`, inspected with `xcresulttool`.
+- Today UI smoke: not executed. The existing `SkyAwareUITests/testTabNavigationLoadsEachPrimaryView` was selected,
+  but Xcode rejected it because `SkyAwareUITests` is not a member of the scheme's specified test plan. Result bundle:
+  `/private/tmp/SkyAware-327-results/today-navigation-ui.xcresult`.
+- Debug build: passed with
+  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`.
+- Release/device attempt: current Release build targeted `Js14Max`; `xctrace` was invoked with the SwiftUI template
+  and a 45-second launch capture. Artifact
+  `/private/tmp/SkyAware-327-traces/warm-launch-current-20260719.trace` is invalid: `analyze_trace.py` fails with
+  `Document Missing Template Error`. It is not performance evidence. An earlier `devicectl` install attempt also
+  rejected the otherwise signed bundle as invalid, so no reliable current app launch/interaction sequence was available.
+- Valid #319 baseline evidence remains limited to source `b963fa63eb08997ce24872178af5294f63333251`, Xcode 26.6,
+  `Js14Max` iOS 26.5.2: warm launch has 14 saves, 10,716 Summary body updates, 112 high-severity SwiftUI events,
+  and 8 app hitches / 150.05 ms / 41.68 ms worst; pull-to-refresh has six saves per manual cycle, 14,285 body
+  updates, 109 high-severity events, and 12 app hitches / 141.73 ms / 16.67 ms worst. No valid before/after delta
+  can be claimed. The #319 Storm Setup capture remains a non-comparable fresh-cache skip.
+
+#### Closure decision and recovery
+
+- Closure recommendation: **not ready**. No production regression was discovered, so no follow-up issue was opened.
+  The closure blocker is missing comparable Release/physical-device evidence, not a deterministic test failure.
+- To recover, keep `Js14Max` unlocked, rebuild/install the current Release app from an isolated derived-data path,
+  then record separate SwiftUI-template traces for cold-no-cache, warm foreground, cached pull-to-refresh,
+  alerts-to-empty, Storm Setup success and terminal failure, lifecycle churn, and scroll/refresh sequences. For each
+  finalized trace, run `analyze_trace.py --list-signposts`, `--list-logs`, and `--json-only --top 10`; use the
+  `Today Visible Commit` to first-following-`Today Summary Render` window and compare only like-for-like windows to
+  `/private/tmp/SkyAware-319-traces/warm-events-launch-20260719.trace` and
+  `/private/tmp/SkyAware-319-traces/pull-events-20260719.trace`. Capture Reduce Motion and accessibility Dynamic Type
+  as rendered variants. Do not use the invalid current trace or #319's Storm Setup fresh-cache trace for a delta.
+This pass did not change `LocationSession`, ingestion, SwiftUI, H3 policy, distance thresholds, or the earlier #327
+scenario evidence.
 
 ## Verification Ledger
 
@@ -551,6 +621,15 @@ Acceptance criteria satisfied for coherent projection publication. Do not begin 
 | 2026-07-19 | #326 | Debug iPhone 17 simulator build and `git diff --check` | Passed |
 | 2026-07-19 | #326 | Focused and complete unit-test commands with `.xcresult` inspection | Blocked: CoreSimulatorService unavailable; result bundles incomplete and counts unavailable |
 | 2026-07-19 | #326 | Release/device SwiftUI Instruments trace | Deferred: local xctrace cache initialization permission failure; no device evidence captured |
+| 2026-07-19 | #327 | Focused Today regression suites; `/private/tmp/SkyAware-327-results/focused-escalated.xcresult` inspected | Passed: 160 tests, 0 failures, 0 skipped |
+| 2026-07-19 | #327 | Complete `SkyAwareTests`; `/private/tmp/SkyAware-327-results/full-unit.xcresult` inspected | Passed: 865 tests, 0 failures, 0 skipped |
+| 2026-07-19 | #327 | Debug iPhone 17 simulator build and `git diff --check` | Passed |
+| 2026-07-19 | #327 | Current Release/device SwiftUI capture on baseline `Js14Max` | Blocked: `/private/tmp/SkyAware-327-traces/warm-launch-current-20260719.trace` fails export with `Document Missing Template Error`; no comparable post-change metrics or full rendered scenario matrix |
+| 2026-07-20 | #327 | LocationProvider remediation and deterministic regression test at HEAD `d520ec8c048c9dcc0050bbf0d2556471ec9f9dc7`, with uncommitted test-target/fixture corrections | Passed: accepted coordinate changes clear inherited placemarks; unchanged-coordinate fast path remains zero-geocoder-call; files: `Sources/Providers/Location/LocationProvider.swift`, `Tests/UnitTests/LocationProviderTests.swift` |
+| 2026-07-20 | #327 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareTests/LocationProviderTests -resultBundlePath /private/tmp/SkyAware-review-fix-location.xcresult test`; `xcrun xcresulttool get test-results summary --path /private/tmp/SkyAware-review-fix-location.xcresult` | Passed: 60 executed / 60 passed / 0 failed / 0 skipped; new `send_clearsCachedPlacemarkWhenCoordinatesChange` appears in the bundle |
+| 2026-07-20 | #327 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareTests -resultBundlePath /private/tmp/SkyAware-review-fix-full.xcresult test`; `xcrun xcresulttool get test-results summary --path /private/tmp/SkyAware-review-fix-full.xcresult` | Passed: 887 executed / 887 passed / 0 failed / 0 skipped |
+| 2026-07-20 | #327 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` | Passed |
+| 2026-07-20 | #327 | `git diff --check` | Passed |
 
 ## Handoff Notes
 

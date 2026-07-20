@@ -353,3 +353,58 @@
 - Findings: 2 High, 0 Medium, 0 Low. Watchlist: 3.
 - Implementation recommended: Yes, first for production profile-analysis route alignment, then for tolerant `surfaceHeightMslM` decoding.
 - No source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
+
+## 2026-07-20
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- project-arcus / SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- project-arcus: the prior `0fb54008` marker is not an ancestor of current `origin/main`, so the default-branch commits after the 2026-07-13 automation runtime were inspected through `f8114459` (`3bc13be1` through `f8114459`). Contract-relevant changes were `05f814bc` (risk-change notifications and projection persistence), `0149fc9d` (background cadence recovery), and `8bf056f7` (GeoJSON interior-ring parsing and polygon persistence).
+- arcus-signal: `139f10b..origin/main` contains no commits. Current `main` at `139f10b` was inspected for the three highest-risk established surfaces: Storm Setup cache/version semantics, APNs hot-alert payload encoding, and device location/H3 payload validation.
+- ArcusCore: `977945d..origin/main` contains no commits. Current `main` at `977945d` was inspected as the shared-model reference for the same Storm Setup, APNs, and location contracts.
+
+### Contract surfaces inspected
+- Device location snapshot queue persistence, `LocationSnapshotPushPayload`, `LocationUploadSource`, ISO-8601 dates, H3 cell/resolution pairing, source validation, and device-presence persistence.
+- APNs `HotAlertAPNsPayload` identifiers and `revisionSent` encoding/decoding from server encoder through shared model and app handler.
+- `GET /api/v1/storm-setup/current`, `StormSetupCurrentResponse`, nullable surface height/profile analysis, tornado viability, ArcusCore package pins, and sampled-cache `StormSetupRulesVersion` semantics.
+- SkyAware risk-profile change persistence and local notification dedupe state introduced in `05f814bc`; this is app-local notification state, not a new server/APNs payload contract.
+- GeoJSON MultiPolygon exterior/interior-ring decoding and `GeoPolygonEntity` backward-compatible persistence introduced in `8bf056f7`.
+
+### Highest-risk areas
+- Location upload freshness/H3 semantics were selected because `0149fc9d` changed background scheduling while persisted uploads still cross the app/shared/server boundary.
+- APNs revision identifiers and timestamps remain high risk because notification dedupe and targeted refresh require stable identifiers and date semantics.
+- Storm Setup cache versioning remains high risk because persisted severe-weather assessments can survive deployments and feed a shared, user-visible response.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| No new confirmed contract drift | project-arcus, arcus-signal, ArcusCore | Recent app contract changes plus the three fallback high-risk shared surfaces | App request -> shared model -> server handler; server notification -> shared model -> app consumer; server response -> shared model -> app decoder | project-arcus and arcus-signal both pin ArcusCore `977945d`. The refactored location queue still persists `LocationUploadSource` and constructs `LocationSnapshotPushPayload`; `DeviceController.create` decodes that shared payload, validates the same enum, H3 pair, and timestamp, and `DeviceControllerTests` covers expanded sources. arcus-signal uses `makeAPNSRequestEncoder()` with `.iso8601` for both APNs containers; ArcusCore and app decoding/tests use the same `arcusAlertId` and `revisionSent` contract. Storm Setup server/app both consume `StormSetupCurrentResponse` from the same ArcusCore revision. | No newly evidenced decoding failure, incorrect server behavior, stale-state path, or notification contract break was established in this window. | — | No contract fix recommended. Preserve prior unresolved recommendations without duplicating them as new findings. | Continue focused cross-repo encoding/decoding tests when any shared DTO or producer/consumer side changes. |
+
+### Top recommended fix
+- No new contract fix recommended.
+- The prior unresolved Storm Setup recommendation remains unchanged: advance `StormSetupRulesVersion.current` from `.tornadoIngredientV1` when the V2 semantics are intended to invalidate sampled cache records, with a focused V1-to-current cache-miss/provider test.
+- Expected files for that prior fix: `arcus-signal/Sources/App/StormSetup/StormSetupRulesVersion.swift` and one focused cache/provider test.
+- Estimated churn: under 25 lines. Regression risk: Low; current keys miss once and recompute while legacy records remain decodable.
+
+### Watchlist
+- `arcus-signal/docs/api-endpoints.md` and location-snapshot Postman fixtures still advertise legacy `source` values such as `foreground` and `significantChange`, while ArcusCore and server validation use the expanded enum. This is the previously reported unresolved documentation drift and is not counted again. Promote only with new contradictory runtime evidence, higher severity, or a materially better fix.
+- project-arcus commit `8bf056f7` now preserves GeoJSON MultiPolygon interior rings and persists them compatibly, but the authoritative upstream GeoJSON producer/schema is not present in the three scoped repositories. Promote only if scoped producer evidence becomes available and contradicts the app's `MultiPolygon` nesting, ring ordering, or optionality assumptions.
+
+### Files inspected
+- project-arcus: `SkyAware.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `LocationUploadPersistenceModels.swift`, `LocationUploadQueueStore.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Sources/Notifications/RiskChange/RiskChangeGate.swift`, `RiskChangeEngine.swift`, `Sources/Infrastructure/Parsing/GeoJSON/GeoJSONModels.swift`, `Sources/Utilities/Geometry/GeoPolygonEntity.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Clients/StormSetupClient.swift`, `Sources/Models/StormSetup/StormSetupDTO.swift`, and focused location, notification, GeoJSON, APNs, and Storm Setup tests.
+- arcus-signal: `Package.resolved`, `Sources/App/configure.swift`, `Sources/App/Controllers/DeviceController.swift`, `Sources/App/Models/Device/DevicePresenceModel.swift`, `Sources/App/Migrations/UpdateDevicePresenceSourceConstraintForExpandedLocationUploadSources.swift`, `Sources/App/StormSetup/StormSetupRulesVersion.swift`, `StormSetupSnapshotCache.swift`, `StormSetupProvider.swift`, `Tests/AppTests/AppTests.swift`, `DeviceControllerTests.swift`, `StormSetupSnapshotCacheTests.swift`, `docs/api-endpoints.md`, and location-snapshot Postman fixtures.
+- ArcusCore: `Sources/ArcusCore/HotAlertAPNsPayload.swift`, `LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, `Tests/ArcusCoreTests/ArcusCoreTests.swift`, and `StormSetupDTOTests.swift`.
+
+### Out-of-scope and recommendation status
+- No repositories outside project-arcus, arcus-signal, and ArcusCore were inspected.
+- The authoritative upstream GeoJSON producer/schema, deployed payloads/logs, and the external Anvil service contract were unavailable in the scoped repositories; no confirmed drift claim was made for those boundaries.
+- Findings: 0 High, 0 Medium, 0 Low. Watchlist: 2.
+- No new implementation is recommended. Prior unresolved Storm Setup cache-version and location-source documentation recommendations remain valid but were not duplicated.
+- Updated only this project-arcus audit document; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.

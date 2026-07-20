@@ -137,7 +137,10 @@ actor LocationProvider {
             let snap = LocationSnapshot(coordinates: update.coordinates,
                                         timestamp: update.timestamp,
                                         accuracy: update.accuracy,
-                                        placemarkSummary: lastSnapshot?.placemarkSummary,
+                                        placemarkSummary: lastSnapshot?.coordinates.latitude == update.coordinates.latitude &&
+                                            lastSnapshot?.coordinates.longitude == update.coordinates.longitude
+                                            ? lastSnapshot?.placemarkSummary
+                                            : nil,
                                         h3Cell: resolvedH3Cell)
             saveAndYieldSnapshot(snap, reason: "accepted-update")
             

@@ -1,4 +1,6 @@
 #if canImport(Testing)
+import ArcusCore
+import Foundation
 import Testing
 @testable import SkyAware
 
