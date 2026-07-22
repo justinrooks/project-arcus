@@ -43,6 +43,46 @@ struct SummaryViewLocalAlertsTests {
         )
     }
 
+    @Test("renderable alerts outrank every transient display state")
+    func localAlerts_renderableAlertsRemainAuthoritativeAcrossRefreshStates() {
+        let states: [LocalAlertsDisplayState] = [
+            .noCacheResolving,
+            .cachedRefreshing(content: .empty),
+            .staleOrDegraded(content: .empty),
+            .unavailable(reason: .noUsefulAlertState)
+        ]
+
+        for state in states {
+            #expect(
+                ActiveAlertSummaryView.contentState(for: state, hasRenderableAlerts: true) == .alerts
+            )
+        }
+    }
+
+    @Test("alerts to authoritative empty uses the internal transition policy")
+    func localAlerts_authoritativeEmptyTransitionPreservesHeightHoldAndMotionPolicy() {
+        #expect(
+            ActiveAlertSummaryView.usesFlexibleAlertHeight(
+                currentState: .empty,
+                isLeavingAlerts: true
+            )
+        )
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .alerts,
+                to: .empty,
+                suppressesRoutineRefreshMotion: false
+            )
+        )
+        #expect(
+            ActiveAlertSummaryView.shouldAnimateContentStateTransition(
+                from: .alerts,
+                to: .empty,
+                suppressesRoutineRefreshMotion: true
+            ) == false
+        )
+    }
+
     @Test("cached populated alerts stay calm during refresh")
     func localAlerts_refreshTreatment_cachedPopulated() {
         let state = LocalAlertsDisplayState.from(
@@ -430,5 +470,4 @@ struct LocalAlertsDisplayStateTests {
         )
     }
 }
-
 

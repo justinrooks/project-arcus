@@ -635,7 +635,7 @@ private struct SummaryPreviewContent: View {
             resolutionState: resolutionState,
             isRefreshInFlight: isRefreshInFlight,
             showsOfflineToken: showsOfflineToken,
-            headerCondenseProgress: 0,
+            headerCondenseState: TodayHeaderCondenseState(),
             locationReliabilityRailState: .init(onOpen: {}, onDismiss: {}),
             onOpenMapLayer: { _ in },
             onOpenAlerts: {},

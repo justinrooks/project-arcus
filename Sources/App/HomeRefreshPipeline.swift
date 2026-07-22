@@ -67,6 +67,12 @@ struct HomeOutlookSnapshot {
 @MainActor
 @Observable
 final class HomeRefreshPipeline {
+    private struct AcceptedCorePublication: Equatable {
+        let submissionID: UUID
+        let runID: UUID
+        let refreshKey: LocationContext.RefreshKey?
+    }
+
     struct Environment {
         let logger: Logger
         let sync: any SpcSyncing
@@ -76,16 +82,20 @@ final class HomeRefreshPipeline {
     }
 
     private let foregroundTimerInterval: Duration
+    private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
 
     private var environment: Environment?
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
     private(set) var stormSetupRefreshKey: LocationContext.RefreshKey?
     private(set) var alertSnapshotRefreshKey: LocationContext.RefreshKey?
+    private var airQualityRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
     private var activeRefreshCount = 0
     private var followUpRefreshCount = 0
+    private var latestVisibleSubmissionID: UUID?
+    private var acceptedCorePublication: AcceptedCorePublication?
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
@@ -291,31 +301,23 @@ final class HomeRefreshPipeline {
             let snapshot: HomeSnapshot
             if shouldPrimeSummary(for: trigger) {
                 snapshot = try await environment.coordinator.enqueueAndWait(
-                    makePrimeRequest(for: trigger, using: environment.locationSession),
-                    progress: { [weak self] event in
-                        await self?.handleIngestionProgress(event)
-                    }
+                    makePrimeRequest(for: trigger, using: environment.locationSession)
                 )
-                apply(snapshot, commitsVisibleSnapshot: false)
                 if trigger == .sceneActive, snapshot.locationSnapshot != nil {
                     lastResolvedLocationScopedRefreshKey = snapshot.refreshKey
                 }
                 scheduleFollowUpRefresh(request, environment: environment)
             } else {
-                snapshot = try await environment.coordinator.enqueueAndWait(
-                    request,
-                    progress: { [weak self] event in
-                        await self?.handleIngestionProgress(event)
-                    }
-                )
-                apply(snapshot, commitsVisibleSnapshot: true)
+                snapshot = try await enqueueVisibleSnapshot(request, environment: environment)
             }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.info(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alertss=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
             )
         } catch {
-            lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
+            if shouldPrimeSummary(for: trigger) {
+                lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
+            }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.error(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
@@ -454,13 +456,7 @@ final class HomeRefreshPipeline {
                 self.finalizeForegroundRefreshIfNeeded()
             }
             do {
-                let snapshot = try await environment.coordinator.enqueueAndWait(
-                    request,
-                    progress: { [weak self] event in
-                        await self?.handleIngestionProgress(event)
-                    }
-                )
-                self.apply(snapshot, commitsVisibleSnapshot: true)
+                _ = try await self.enqueueVisibleSnapshot(request, environment: environment)
                 environment.logger.debug(
                     "Finished non-blocking follow-up refresh trigger=\(request.trigger.logName, privacy: .public) result=success"
                 )
@@ -496,35 +492,105 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func apply(_ snapshot: HomeSnapshot, commitsVisibleSnapshot: Bool) {
-        guard commitsVisibleSnapshot else {
-            return
+    private func enqueueVisibleSnapshot(
+        _ request: HomeIngestionRequest,
+        environment: Environment
+    ) async throws -> HomeSnapshot {
+        let submissionID = UUID()
+        let previousResolvedRefreshKey = lastResolvedLocationScopedRefreshKey
+        latestVisibleSubmissionID = submissionID
+        defer {
+            if latestVisibleSubmissionID == submissionID {
+                latestVisibleSubmissionID = nil
+            }
         }
 
-        let locationChanged = snapshot.locationSnapshot != nil
-            && lastResolvedLocationScopedRefreshKey != nil
-            && snapshot.refreshKey != lastResolvedLocationScopedRefreshKey
+        do {
+            let snapshot = try await environment.coordinator.enqueueAndWait(
+                request,
+                progress: { [weak self] event in
+                    await self?.handleIngestionProgress(event)
+                },
+                publication: { [weak self] publication in
+                    await self?.handle(publication, submissionID: submissionID)
+                }
+            )
+            applyFinalSnapshotIfNeeded(snapshot, submissionID: submissionID)
+            return snapshot
+        } catch {
+            if latestVisibleSubmissionID == submissionID,
+               acceptedCorePublication?.submissionID != submissionID {
+                lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
+            }
+            throw error
+        }
+    }
 
-        if let locationSnapshot = snapshot.locationSnapshot {
+    private func handle(_ publication: HomeIngestionPublication, submissionID: UUID) {
+        guard latestVisibleSubmissionID == submissionID else { return }
+
+        switch publication.stage {
+        case .core(let core):
+            guard acceptedCorePublication?.submissionID != submissionID else { return }
+            applyCore(core)
+            acceptedCorePublication = AcceptedCorePublication(
+                submissionID: submissionID,
+                runID: publication.runID,
+                refreshKey: core.refreshKey
+            )
+        case .enrichment(let enrichment):
+            guard acceptedCorePublication == AcceptedCorePublication(
+                submissionID: submissionID,
+                runID: publication.runID,
+                refreshKey: enrichment.refreshKey
+            ) else {
+                return
+            }
+            applyEnrichment(enrichment)
+        }
+    }
+
+    private func applyFinalSnapshotIfNeeded(_ snapshot: HomeSnapshot, submissionID: UUID) {
+        guard latestVisibleSubmissionID == submissionID else { return }
+        guard acceptedCorePublication?.submissionID != submissionID else { return }
+
+        applyCore(.init(snapshot: snapshot))
+        applyEnrichment(.init(snapshot: snapshot))
+    }
+
+    private func applyCore(_ core: HomeIngestionCorePublication) {
+        let locationChanged = core.locationSnapshot != nil
+            && lastResolvedLocationScopedRefreshKey != nil
+            && core.refreshKey != lastResolvedLocationScopedRefreshKey
+
+        if let locationSnapshot = core.locationSnapshot {
             snap = locationSnapshot
-            lastResolvedLocationScopedRefreshKey = snapshot.refreshKey
+            lastResolvedLocationScopedRefreshKey = core.refreshKey
             riskSnapshot = HomeRiskSnapshot(
-                stormRisk: snapshot.stormRisk,
-                severeRisk: snapshot.severeRisk,
-                fireRisk: snapshot.fireRisk
+                stormRisk: core.stormRisk,
+                severeRisk: core.severeRisk,
+                fireRisk: core.fireRisk
             )
             commitAlertSnapshotIfChanged(
                 HomeAlertSnapshot(
-                    refreshKey: snapshot.refreshKey,
-                    mesos: snapshot.mesos,
-                    alerts: snapshot.alerts
+                    refreshKey: core.refreshKey,
+                    mesos: core.mesos,
+                    alerts: core.alerts
                 )
             )
+
+            if core.refreshKey != stormSetupRefreshKey {
+                stormSetup = nil
+                stormSetupCurrentResponse = nil
+                stormSetupRefreshKey = core.refreshKey
+            }
+            if core.refreshKey != airQualityRefreshKey {
+                airQuality = nil
+                airQualityRefreshKey = core.refreshKey
+            }
         }
 
-        applyStormSetup(snapshot)
-        airQuality = snapshot.airQuality
-        switch snapshot.weatherRefreshResult {
+        switch core.weatherRefreshResult {
         case .success(let weather):
             summaryWeather = weather
         case .skipped, .failure:
@@ -535,20 +601,27 @@ final class HomeRefreshPipeline {
         }
 
         outlookSnapshot = HomeOutlookSnapshot(
-            outlooks: snapshot.outlooks,
-            outlook: snapshot.latestOutlook
+            outlooks: core.outlooks,
+            outlook: core.latestOutlook
         )
-        outlookRefreshStatus = .success(hasContent: snapshot.outlooks.isEmpty == false)
+        outlookRefreshStatus = .success(hasContent: core.outlooks.isEmpty == false)
+        performanceSignposter.emitEvent("Today Visible Commit")
     }
 
-    private func applyStormSetup(_ snapshot: HomeSnapshot) {
-        guard let snapshotRefreshKey = snapshot.refreshKey else {
+    private func applyEnrichment(_ enrichment: HomeIngestionEnrichmentPublication) {
+        applyStormSetup(enrichment)
+        airQuality = enrichment.airQuality
+        airQualityRefreshKey = enrichment.refreshKey
+    }
+
+    private func applyStormSetup(_ enrichment: HomeIngestionEnrichmentPublication) {
+        guard let snapshotRefreshKey = enrichment.refreshKey else {
             stormSetup = nil
             stormSetupRefreshKey = nil
             return
         }
 
-        guard let resolvedStormSetup = snapshot.stormSetup else {
+        guard let resolvedStormSetup = enrichment.stormSetup else {
             guard snapshotRefreshKey != stormSetupRefreshKey else {
                 return
             }
@@ -560,7 +633,7 @@ final class HomeRefreshPipeline {
         }
 
         self.stormSetup = resolvedStormSetup
-        stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
+        stormSetupCurrentResponse = enrichment.stormSetupCurrentResponse
         stormSetupRefreshKey = snapshotRefreshKey
     }
 

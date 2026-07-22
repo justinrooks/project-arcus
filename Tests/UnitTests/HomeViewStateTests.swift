@@ -555,9 +555,9 @@ struct HomeViewProjectionLaunchTests {
             fireRisk: nil,
             activeAlerts: [],
             activeMesos: [],
-            lastHotAlertsLoadAt: nil,
-            lastSlowProductsLoadAt: nil,
-            lastWeatherLoadAt: nil,
+            lastHotAlertsLoadAt: updatedAt,
+            lastSlowProductsLoadAt: updatedAt,
+            lastWeatherLoadAt: updatedAt,
             stormSetup: stormSetup,
             lastStormSetupLoadAt: stormSetup == nil ? nil : updatedAt
         )

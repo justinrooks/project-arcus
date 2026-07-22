@@ -41,7 +41,7 @@ struct SummaryStatus: View {
     let todayContentState: TodayContentState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
-    let condenseProgress: CGFloat
+    let condenseState: TodayHeaderCondenseState
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -59,7 +59,7 @@ struct SummaryStatus: View {
     }
 
     private var clampedCondenseProgress: CGFloat {
-        min(max(condenseProgress, 0), 1)
+        condenseState.progress
     }
 
     private var headerSpacing: CGFloat {
@@ -123,7 +123,6 @@ struct SummaryStatus: View {
             shadowRadius: cardShadowRadius,
             shadowY: cardShadowY
         )
-        .animation(SkyAwareMotion.settle(reduceMotion), value: clampedCondenseProgress)
     }
 
     private var locationUnavailableCard: some View {
@@ -457,7 +456,7 @@ private struct SummarySettledConditionLine: View {
             todayContentState: .current,
             showsOfflineToken: false,
             isLocationUnavailable: false,
-            condenseProgress: 0
+            condenseState: TodayHeaderCondenseState(progress: 0)
         )
         SummaryStatus(
             statusText: "Topeka, KS",
@@ -484,7 +483,7 @@ private struct SummarySettledConditionLine: View {
             todayContentState: .current,
             showsOfflineToken: true,
             isLocationUnavailable: false,
-            condenseProgress: 0.75
+            condenseState: TodayHeaderCondenseState(progress: 0.75)
         )
         SummaryStatus(
             statusText: "Location not available",
@@ -493,7 +492,7 @@ private struct SummarySettledConditionLine: View {
             todayContentState: .noCacheResolving,
             showsOfflineToken: false,
             isLocationUnavailable: true,
-            condenseProgress: 0.75
+            condenseState: TodayHeaderCondenseState(progress: 0.75)
         )
     }
 }

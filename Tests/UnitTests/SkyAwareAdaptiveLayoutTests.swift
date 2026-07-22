@@ -2,6 +2,7 @@ import SwiftUI
 
 #if canImport(Testing)
 import Testing
+@testable import SkyAware
 
 @Suite("SkyAware Adaptive Layout")
 struct SkyAwareAdaptiveLayoutTests {

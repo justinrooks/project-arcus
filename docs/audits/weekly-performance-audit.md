@@ -142,3 +142,27 @@
   - Moved pending upload draining to the end of `BackgroundOrchestrator.run()` so unified ingestion and notifications complete first.
   - Added a cancellation-safe skip before upload draining so a cancelled background task does not start queue replay.
   - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832' build`.
+
+## 2026-07-19
+- workflow reviewed: Location Resolution and Context Formation
+- files inspected:
+  - docs/codebase/skyaware-app-summary.md
+  - Sources/Infrastructure/Location/LocationSession.swift
+  - Sources/Infrastructure/Location/LocationManager.swift
+  - Sources/Providers/Location/LocationProvider.swift
+  - Sources/Infrastructure/Location/LocationContextResolver.swift
+  - Sources/App/HomeRefreshV2/HomeRefreshTrigger.swift
+  - Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift
+  - Sources/App/HomeView.swift
+  - Sources/Features/Map/MapScreenView.swift
+  - Sources/Features/Onboarding/OnboardingView.swift
+  - Sources/Features/Settings/SettingsDiagnosticsView.swift
+- top finding: `LocationContextResolver.resolveContext` always routes through reverse geocoding, so the same coordinate can pay placemark work again during onboarding, foreground refresh, and hot-location handoffs even when `LocationProvider` already has a usable snapshot.
+- best next fix: add a small same-coordinate placemark reuse check in `LocationProvider.ensurePlacemark` so context resolution skips reverse geocoding when the cached placemark is already valid.
+- measurement gap: profile reverse-geocode call count and end-to-end context resolution latency across onboarding and foreground refresh.
+- implementation recommended: yes
+- implementation status: completed on 2026-07-19
+- implementation notes:
+  - Reused an unchanged coordinate's cached snapshot only when it has a non-empty placemark and H3 cell.
+  - Added a focused `LocationProviderTests` assertion that the reuse path makes no reverse-geocode call.
+  - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LocationProviderTests test`.

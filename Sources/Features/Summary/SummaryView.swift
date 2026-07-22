@@ -5,8 +5,9 @@
 //  Created by Justin Rooks on 7/9/25.
 //
 
-import SwiftUI
 import Foundation
+import OSLog
+import SwiftUI
 import ArcusCore
 
 enum SummaryReadinessState: Equatable {
@@ -117,6 +118,8 @@ struct SummaryAvailabilityBadge: View {
 }
 
 struct SummaryView: View {
+    private static let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.colorScheme) private var colorScheme
@@ -145,7 +148,7 @@ struct SummaryView: View {
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
     let showsOfflineToken: Bool
-    let headerCondenseProgress: CGFloat
+    let headerCondenseState: TodayHeaderCondenseState
     let locationReliabilityRailState: LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
@@ -176,7 +179,7 @@ struct SummaryView: View {
         resolutionState: SummaryResolutionState,
         isRefreshInFlight: Bool = false,
         showsOfflineToken: Bool,
-        headerCondenseProgress: CGFloat,
+        headerCondenseState: TodayHeaderCondenseState,
         locationReliabilityRailState: LocationReliabilityRailState? = nil,
         onOpenMapLayer: @escaping (MapLayer) -> Void,
         onOpenAlerts: @escaping () -> Void,
@@ -201,7 +204,7 @@ struct SummaryView: View {
         self.resolutionState = resolutionState
         self.isRefreshInFlight = isRefreshInFlight
         self.showsOfflineToken = showsOfflineToken
-        self.headerCondenseProgress = headerCondenseProgress
+        self.headerCondenseState = headerCondenseState
         self.locationReliabilityRailState = locationReliabilityRailState
         self.onOpenMapLayer = onOpenMapLayer
         self.onOpenAlerts = onOpenAlerts
@@ -228,11 +231,15 @@ struct SummaryView: View {
         case loading
         case visible(StormSetupDetailPresentation)
 
-        var isVisible: Bool {
-            if case .visible = self {
-                return true
+        var sectionSlot: SummaryStormSetupSlot {
+            switch self {
+            case .hidden:
+                .hidden
+            case .loading:
+                .loading
+            case .visible(_):
+                SummaryStormSetupSlot.visible
             }
-            return false
         }
     }
 
@@ -416,7 +423,7 @@ struct SummaryView: View {
         let stormSetupSlotState = stormSetupSlotState(now: now)
         let sectionPlan = Self.sectionPlan(
             localAlertsDisplayState: localAlertsDisplayState,
-            showsStormSetup: stormSetupSlotState.isVisible,
+            stormSetupSlot: stormSetupSlotState.sectionSlot,
             hasLocationReliabilityRail: locationReliabilityRailState != nil
         )
 
@@ -426,6 +433,7 @@ struct SummaryView: View {
     }
 
     var body: some View {
+        let _ = recordPerformanceRenderIfNeeded()
         let now = Date()
         VStack(spacing: 18) {
             if todayContentState.showsResolvingSurface {
@@ -441,6 +449,11 @@ struct SummaryView: View {
         .padding(.top, 10)
         .padding(.bottom, 20)
         .animation(SkyAwareMotion.settle(reduceMotion), value: todayContentState.showsResolvingSurface)
+    }
+
+    private func recordPerformanceRenderIfNeeded() {
+        guard todayContentState == .current || todayContentState == .degraded else { return }
+        Self.performanceSignposter.emitEvent("Today Summary Render")
     }
 
     private func emptySectionCard(title: String, message: String, symbol: String) -> some View {
@@ -479,7 +492,7 @@ struct SummaryView: View {
                 todayContentState: todayContentState,
                 showsOfflineToken: showsOfflineToken,
                 isLocationUnavailable: isLocationUnavailable,
-                condenseProgress: headerCondenseProgress
+                condenseState: headerCondenseState
             )
 
         case .primaryAwareness:
@@ -669,14 +682,14 @@ struct SummaryView: View {
         return .hidden
     }
 
-    private static func sectionPlan(
+    static func sectionPlan(
         localAlertsDisplayState: LocalAlertsDisplayState,
-        showsStormSetup: Bool,
+        stormSetupSlot: SummaryStormSetupSlot,
         hasLocationReliabilityRail: Bool
     ) -> SummarySectionPlan {
         SummarySectionPlan.make(
             localAlertsDisplayState: localAlertsDisplayState,
-            showsStormSetup: showsStormSetup,
+            stormSetupSlot: stormSetupSlot,
             hasLocationReliabilityRail: hasLocationReliabilityRail
         )
     }

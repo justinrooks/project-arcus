@@ -7,6 +7,25 @@ import Testing
 @Suite("Today Content State")
 @MainActor
 struct TodayContentStateTests {
+    @Test("header condense progress normalizes and clamps scroll offsets")
+    func headerCondenseProgress_normalizesAndClampsScrollOffsets() {
+        #expect(TodayHeaderCondenseState.normalizedProgress(for: -20) == 0)
+        #expect(TodayHeaderCondenseState.normalizedProgress(for: 40) == 0.5)
+        #expect(TodayHeaderCondenseState.normalizedProgress(for: 100) == 1)
+    }
+
+    @Test("header condense state does not republish equivalent effective progress")
+    func headerCondenseState_doesNotRepublishEquivalentEffectiveProgress() {
+        let state = TodayHeaderCondenseState()
+
+        #expect(state.update(scrollOffset: -20) == false)
+        #expect(state.update(scrollOffset: 40))
+        #expect(state.progress == 0.5)
+        #expect(state.update(scrollOffset: 40) == false)
+        #expect(state.update(scrollOffset: 100))
+        #expect(state.update(scrollOffset: 120) == false)
+    }
+
     @Test("cached refreshing exposes the calm page cue and suppresses section loading branches")
     func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
         #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
@@ -489,4 +508,3 @@ struct TodayVisibleWeatherStateTests {
         )
     }
 }
-

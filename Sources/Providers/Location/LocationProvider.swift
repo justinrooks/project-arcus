@@ -137,7 +137,10 @@ actor LocationProvider {
             let snap = LocationSnapshot(coordinates: update.coordinates,
                                         timestamp: update.timestamp,
                                         accuracy: update.accuracy,
-                                        placemarkSummary: lastSnapshot?.placemarkSummary,
+                                        placemarkSummary: lastSnapshot?.coordinates.latitude == update.coordinates.latitude &&
+                                            lastSnapshot?.coordinates.longitude == update.coordinates.longitude
+                                            ? lastSnapshot?.placemarkSummary
+                                            : nil,
                                         h3Cell: resolvedH3Cell)
             saveAndYieldSnapshot(snap, reason: "accepted-update")
             
@@ -156,6 +159,15 @@ actor LocationProvider {
     ///   - timeout: timeout so we don't consume all our background budget
     /// - Returns: updated location snap
     func ensurePlacemark(for coord: CLLocationCoordinate2D, timeout: Double = 8) async -> LocationSnapshot {
+        if let lastSnapshot,
+           lastSnapshot.coordinates.latitude == coord.latitude,
+           lastSnapshot.coordinates.longitude == coord.longitude,
+           lastSnapshot.placemarkSummary?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+           lastSnapshot.h3Cell != nil {
+            logger.debug("Reusing cached placemark for unchanged location context")
+            return lastSnapshot
+        }
+
         logger.debug("Resolving placemark for location context")
         do {
             let place = try await withTimeout(timeout: timeout) {

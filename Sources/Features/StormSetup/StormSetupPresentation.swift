@@ -21,12 +21,27 @@ enum SummarySectionKind: String, Identifiable, Sendable, Equatable {
     var id: String { rawValue }
 }
 
+enum SummaryStormSetupSlot: Sendable, Equatable {
+    case hidden
+    case loading
+    case visible
+
+    var reservesSection: Bool {
+        switch self {
+        case .hidden:
+            false
+        case .loading, .visible:
+            true
+        }
+    }
+}
+
 struct SummarySectionPlan: Sendable, Equatable {
     let sections: [SummarySectionKind]
 
     static func make(
         localAlertsDisplayState: LocalAlertsDisplayState,
-        showsStormSetup: Bool,
+        stormSetupSlot: SummaryStormSetupSlot,
         hasLocationReliabilityRail: Bool
     ) -> SummarySectionPlan {
         var sections: [SummarySectionKind] = [
@@ -36,7 +51,7 @@ struct SummarySectionPlan: Sendable, Equatable {
             .atmosphericConditions
         ]
 
-        if showsStormSetup {
+        if stormSetupSlot.reservesSection {
             sections.append(.stormSetup)
         }
 

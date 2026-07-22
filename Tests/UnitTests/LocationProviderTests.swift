@@ -29,6 +29,19 @@ struct LocationProviderTests {
             }
         }
     }
+
+    private actor CountingGeocoder: LocationGeocoding {
+        private var reverseGeocodeCallCount = 0
+
+        func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+            reverseGeocodeCallCount += 1
+            return "Denver, CO"
+        }
+
+        func callCount() -> Int {
+            reverseGeocodeCallCount
+        }
+    }
     
     private struct MockHasher: LocationHashing {
         enum Mode: Sendable {
@@ -354,6 +367,39 @@ struct LocationProviderTests {
             firstContinuation?.resume(returning: value)
             firstContinuation = nil
         }
+    }
+
+    private actor CoordinateGateGeocoder: LocationGeocoding {
+        private var callCount = 0
+        private var firstContinuation: CheckedContinuation<String, Never>?
+
+        func reverseGeocode(_ coord: CLLocationCoordinate2D) async throws -> String {
+            callCount += 1
+            firstCallContinuation?.resume()
+            firstCallContinuation = nil
+            if callCount == 1 {
+                return await withCheckedContinuation { continuation in
+                    firstContinuation = continuation
+                }
+            }
+            return "B City"
+        }
+
+        func waitForFirstCall() async {
+            if callCount > 0 { return }
+            await withCheckedContinuation { continuation in
+                firstCallContinuation = continuation
+            }
+        }
+
+        private var firstCallContinuation: CheckedContinuation<Void, Never>?
+
+        func releaseFirst() {
+            firstContinuation?.resume(returning: "B City")
+            firstContinuation = nil
+        }
+
+        func callCountValue() -> Int { callCount }
     }
 
     private func makeUpdate(
@@ -1694,8 +1740,9 @@ struct LocationProviderTests {
             h3Cell: sampleH3Cell
         )
         let cache = MockSnapshotCache(storedSnapshot: snapshot)
+        let geocoder = CountingGeocoder()
         let provider = LocationProvider(
-            geocoder: MockGeocoder(mode: .success("Denver, CO")),
+            geocoder: geocoder,
             hasher: MockHasher(mode: .success(sampleH3Cell)),
             snapshotCache: cache,
             nowProvider: { timestamp }
@@ -1705,6 +1752,47 @@ struct LocationProviderTests {
 
         #expect(resolved == snapshot)
         #expect(cache.saveCount == 0)
+        #expect(await geocoder.callCount() == 0)
+    }
+
+    @Test("send clears a cached placemark when accepted coordinates change")
+    func send_clearsCachedPlacemarkWhenCoordinatesChange() async throws {
+        let coordA = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        let coordB = CLLocationCoordinate2D(latitude: 40.0150, longitude: -105.2705)
+        let timestamp = Date(timeIntervalSince1970: 3_000)
+        let cached = LocationSnapshot(
+            coordinates: coordA,
+            timestamp: timestamp,
+            accuracy: 25,
+            placemarkSummary: "A City",
+            h3Cell: sampleH3Cell
+        )
+        let geocoder = CoordinateGateGeocoder()
+        let provider = LocationProvider(
+            geocoder: geocoder,
+            hasher: MockHasher(mode: .success(sampleH3Cell)),
+            snapshotCache: MockSnapshotCache(storedSnapshot: cached)
+        )
+
+        await provider.send(update: makeUpdate(
+            lat: coordB.latitude,
+            lon: coordB.longitude,
+            timestamp: timestamp.addingTimeInterval(1),
+            accuracy: 25,
+            forceAcceptance: true
+        ))
+        await geocoder.waitForFirstCall()
+
+        let accepted = try #require(await provider.snapshot())
+        #expect(accepted.coordinates.latitude == coordB.latitude)
+        #expect(accepted.coordinates.longitude == coordB.longitude)
+        #expect(accepted.placemarkSummary == nil)
+
+        let resolved = await provider.ensurePlacemark(for: coordB, timeout: 1)
+        #expect(resolved.placemarkSummary == "B City")
+        #expect(await geocoder.callCountValue() == 2)
+
+        await geocoder.releaseFirst()
     }
 
     @Test("updatePlacemarkIfNeeded updates snapshot when summary changes")
