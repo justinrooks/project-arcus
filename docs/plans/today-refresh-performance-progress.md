@@ -630,6 +630,9 @@ scenario evidence.
 | 2026-07-20 | #327 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareTests -resultBundlePath /private/tmp/SkyAware-review-fix-full.xcresult test`; `xcrun xcresulttool get test-results summary --path /private/tmp/SkyAware-review-fix-full.xcresult` | Passed: 887 executed / 887 passed / 0 failed / 0 skipped |
 | 2026-07-20 | #327 | `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` | Passed |
 | 2026-07-20 | #327 | `git diff --check` | Passed |
+| 2026-07-22 | PR #328 review feedback | Projection readiness no longer depends on WeatherKit; persisted slow-product and hot-alert slices remain required. Focused `HomeProjectionStoreTests` and `HomeViewProjectionLaunchTests`; `/private/tmp/SkyAware-328-review-fix.xcresult` inspected | Passed: 39 tests, 0 failures, 0 skipped |
+| 2026-07-22 | PR #328 review feedback | Complete `SkyAwareTests`; `/private/tmp/SkyAware-328-review-fix-full.xcresult` inspected | Passed: 888 tests, 0 failures, 0 skipped |
+| 2026-07-22 | PR #328 review feedback | Debug iPhone 17 simulator build and `git diff --check` | Passed |
 
 ## Handoff Notes
 

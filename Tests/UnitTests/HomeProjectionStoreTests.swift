@@ -676,6 +676,34 @@ struct HomeProjectionStoreTests {
         #expect(HomeView.selectProjection(from: [committed], currentContext: context) == committed)
     }
 
+    @Test("a severe-weather core commit is display-ready when WeatherKit is unavailable")
+    func coreCommit_withoutWeatherIsDisplayReady() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.commitCore(
+            .init(
+                slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                hotAlerts: (alerts: [Watch.sampleWatchRows[0]], mesos: [])
+            ),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 500)
+        )
+
+        let committed = try #require(await store.projection(for: context))
+        #expect(committed.lastWeatherLoadAt == nil)
+        #expect(committed.lastSlowProductsLoadAt != nil)
+        #expect(committed.lastHotAlertsLoadAt != nil)
+        #expect(HomeView.selectProjection(from: [committed], currentContext: context) == committed)
+        #expect(HomeView.selectProjection(from: [committed], currentContext: nil) == committed)
+
+        let modelContext = ModelContext(container)
+        let model = try #require(modelContext.fetch(FetchDescriptor<HomeProjection>()).first)
+        #expect(HomeView.selectProjection(from: [model], currentContext: context)?.record == committed)
+        #expect(HomeView.selectProjection(from: [model], currentContext: nil)?.record == committed)
+    }
+
     @Test("core commit saves authorized slices together and derives the risk delta from persisted state")
     func coreCommit_persistsAuthorizedSlicesAndUsesPersistedRiskProfile() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])

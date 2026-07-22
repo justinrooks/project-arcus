@@ -1,5 +1,16 @@
 # Weekly Test Gap Audit
 
+## 2026-07-21
+- Repository reviewed: project-arcus (`/Users/justin/Code/project-arcus`)
+- Commit window inspected: since last reliable audit marker `d44cd790407ea3a9d0069a5f5490efd34178549f` through `97028ac094ec5895d4db68c95c6a69990576eb66` (2026-07-14 through 2026-07-20); 23 commits inspected
+- High-risk areas inspected: risk-change notification occurrence persistence, deduplication, retry, and morning-summary coalescing; background cadence scheduling and failure recovery; GeoJSON polygon-hole parsing, SwiftData persistence, risk lookup, and map rendering; concurrent ingestion lanes and staged Today-content publication
+- Files inspected: `Sources/Notifications/RiskChange/RiskChangeComposer.swift`, `Sources/Notifications/RiskChange/RiskChangeEngine.swift`, `Sources/Notifications/RiskChange/RiskChangeGate.swift`, `Sources/Features/Background/BackgroundOrchestrator.swift`, `Sources/Infrastructure/Scheduling/BackgroundScheduler.swift`, `Sources/Policies/CadencePolicy.swift`, `Sources/Infrastructure/Parsing/GeoJSON/GeoJSONModels.swift`, `Sources/Utilities/Geometry/GeoPolygonEntity.swift`, `Sources/Features/Map/MapPolygonMapper.swift`, `Sources/App/HomeRefreshPipeline.swift`, `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, and their adjacent unit tests
+- Existing relevant tests found: `Tests/UnitTests/RiskChangeNotificationTests.swift`, `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`, `Tests/UnitTests/MorningNotificationTests.swift`, `Tests/UnitTests/GeoJsonParserTests.swift`, `Tests/UnitTests/MapDataFreshnessRepoTests.swift`, `Tests/UnitTests/MapPolygonMapperTests.swift`, `Tests/UnitTests/RiskPolygonOverlayTests.swift`, `Tests/UnitTests/HomeRefreshPipelineTests.swift`, `Tests/UnitTests/HomeIngestionCoordinatorTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`
+- Top recommended test: No test gap recommended. The inspected notification, scheduling, geometry, persistence, concurrency, and staged-publication behaviors have focused contract and regression coverage in the same commit window.
+- Watchlist items: none
+- Implementation recommended: no
+- Out-of-scope repositories intentionally not scanned: all sibling repositories and external services; no cross-repository findings were evaluated or reported
+
 ## 2026-07-14
 - Repository reviewed: project-arcus (`/Users/justin/Code/project-arcus`)
 - Commit window inspected: since last automation run marker `2026-07-07T15:01:53.356Z` through `2026-07-14`; 15 commits inspected from `fa73e5692e6e132747126bc8e48afa69a5dd2c73` through `d44cd790407ea3a9d0069a5f5490efd34178549f`
