@@ -128,11 +128,22 @@ The current defects are narrow:
 
 ### Issue #330 — 01: Preserve cached warnings when warning lookup fails
 
-- **Status:** Planned
-- **Goal:** Distinguish warning-query failure/unavailability/cancellation from confirmed empty.
+- **Status:** Implemented; simulator execution blocked by CoreSimulator service availability.
+- **Goal:** Distinguish warning-query failure/cancellation from confirmed empty.
 - **Concept removed:** `[]` as both failure and authoritative empty.
-- **Required proof:** sequential success → failure and success → confirmed-empty map tests.
-- **Handoff:** Stop before SPC persistence, MapKit reconciliation, or scene-cache changes.
+- **Changed files:** `MapFeatureModel.swift`, `MapScenePlanner.swift`, `MapRenderPlan.swift`, and
+  `MapFeatureModelWarningsTests.swift`.
+- **Proof added:** Sequential success → failure preserves warning overlays and legends while thematic data refreshes,
+  including after layer selection; success → confirmed empty clears warning slices; cancellation restores the prior
+  selected scene.
+- **Validation:** Debug build for `platform=iOS Simulator,name=iPhone 17,OS=26.5` succeeded on 2026-07-23. The
+  focused map test command compiled the updated app and test targets, but CoreSimulator was unavailable before test
+  execution and produced no readable `.xcresult`; `xcrun simctl list devices available` reported a refused
+  CoreSimulator service connection.
+- **Residual risk / handoff:** Re-run the focused map suites, inspect their `.xcresult`, and run the map UI smoke
+  once CoreSimulator is available. The requested `SkyAwareUITests` smoke command also cannot run because that target
+  is not a member of the `SkyAware` scheme's test plan. No SPC persistence, MapKit reconciliation, or scene-cache
+  work was added.
 
 ### Issue #331 — 02: Preserve same-location AQI when refresh produces no value
 
