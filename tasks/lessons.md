@@ -55,3 +55,9 @@
   predicate. A disabled delivery must remain pending rather than becoming unrequested content in the alternate channel.
 - Coalescing a newer occurrence must pass through the delivery gate's supersession logic; otherwise a stale pending
   occurrence for the same projection can escape immediately after the combined notification.
+
+## 2026-07-23
+
+- Treat checked-in marketing versions and build numbers as placeholders when Xcode Cloud owns release numbering.
+  Monitor only app/widget parity unless the user or release workflow identifies a different repository-owned
+  invariant; do not create speculative release-provenance work from those values.
