@@ -372,11 +372,30 @@ The current defects are narrow:
 
 ### Issue #344 — 15: Make unit and UI validation lanes explicit
 
-- **Status:** Planned
-- **Goal:** Record or configure the intended unit/UI invocations and `.xcresult` inspection.
+- **Status:** Validation executed; unit lane has one failing test and requires follow-up outside this documentation slice.
+- **Goal:** Make the intended unit/UI invocations and `.xcresult` inspection durable and unambiguous.
 - **Concept removed:** Ambiguous "tests passed" provenance.
-- **Required proof:** both plan commands are runnable and every result bundle is inspected.
-- **Handoff:** No test-warning cleanup or live-network tests.
+- **Changed files:** `AGENTS.md` is the canonical runnable procedure; `README.md` points to it instead of providing a
+  contradictory default-plan command. Test plans and the shared scheme were verified and remain unchanged.
+- **Validation commands:** Created fresh result root `/private/tmp/skyaware-344-results.FsBxsb`. Unit lane:
+  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_Tests -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareTests -resultBundlePath /private/tmp/skyaware-344-results.FsBxsb/unit.xcresult test`.
+  UI lane:
+  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareUITests/SkyAwareUITests/testTabNavigationLoadsEachPrimaryView -resultBundlePath /private/tmp/skyaware-344-results.FsBxsb/ui-navigation.xcresult test`.
+- **Result inspection:** `xcrun xcresulttool get test-results summary --path ... --compact` and
+  `xcrun xcresulttool get test-results tests --path ... --compact` inspected both finalized bundles; both contained
+  `Info.plist`. Unit: `SkyAware_Tests`, Debug, iPhone 17 / iOS 26.5, 919 passed, 1 failed, 0 skipped, 920 total;
+  `HomeIngestionCoordinatorTests.finishBeforeCancel_waiterCompletesSuccessfully()` failed with
+  `CancellationError()`. Bundle: `/private/tmp/skyaware-344-results.FsBxsb/unit.xcresult`. UI:
+  `SkyAware_All_Tests`, Debug, iPhone 17 / iOS 26.5, exactly 1 passed, 0 failed, 0 skipped; the named navigation
+  smoke is present and passed. Bundle: `/private/tmp/skyaware-344-results.FsBxsb/ui-navigation.xcresult`.
+- **Evidence boundary:** Unit and simulator UI evidence are recorded separately. No physical-device or Instruments
+  evidence was collected; those claims remain owned by #345. Deterministic test source and the selected smoke use
+  stubs/fakes and make no intentional live WeatherKit, NWS, SPC, Arcus, or APNs requests.
+- **Scope checks:** `git diff --check` passed and the forbidden production/test/project diff was empty. The requested
+  `plutil -lint` commands report `Unexpected character {` because both existing `.xctestplan` files are JSON rather
+  than plist XML; no configuration change was made.
+- **Handoff:** Do not retry or rewrite the failing test in this issue; no test-warning cleanup, live-network tests,
+  physical-device validation, Release profiling, or Instruments work is included.
 
 ### Issue #345 — 16: Capture remaining physical-device Release evidence
 
@@ -415,7 +434,7 @@ The current defects are narrow:
 | 12 | Pending | Pending | Pending | N/A | N/A | Pending |
 | 13 | `git diff --check` | N/A | N/A | N/A | N/A | N/A |
 | 14 | `git diff --check`; `xcodebuild -showBuildSettings` parity: app/widget Debug and Release both `1.1.0` / `80`; release-doc consistency search; source/project/CI diff guard | N/A | N/A | N/A | N/A | N/A |
-| 15 | Pending | N/A | Pending | Pending | N/A | Pending |
+| 15 | `SkyAware_Tests`: 919 passed, 1 failed, 0 skipped; `SkyAware_All_Tests` smoke: 1 passed, 0 failed, 0 skipped | N/A | 919 passed, 1 failed, 0 skipped; inspected `/private/tmp/skyaware-344-results.FsBxsb/unit.xcresult` | 1 passed, 0 failed, 0 skipped; inspected `/private/tmp/skyaware-344-results.FsBxsb/ui-navigation.xcresult` | N/A | Both finalized bundles inspected with `xcresulttool`; unit lane remains incomplete |
 | 16 | Focused regression gates | Release | As needed | Scenario fixtures | Pending | Pending |
 
 ## Handoff rules
