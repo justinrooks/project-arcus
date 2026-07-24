@@ -414,7 +414,13 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         submittedRequests.append(request)
     }
 
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        _ = progress
+        _ = publication
         submittedRequests.append(request)
         return .empty
     }

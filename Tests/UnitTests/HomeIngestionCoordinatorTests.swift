@@ -4,6 +4,58 @@ import Testing
 
 @Suite("Home Ingestion Coordinator", .serialized)
 struct HomeIngestionCoordinatorTests {
+    @Test("protocol conveniences forward complete requests and callbacks to the canonical operation")
+    func protocolConveniences_forwardToCanonicalOperation() async throws {
+        let recordingCoordinator = ForwardingHomeIngestionCoordinator()
+        let coordinator: any HomeIngestionCoordinating = recordingCoordinator
+        let locationContext = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+        let remoteAlertContext = HomeRemoteAlertContext(
+            alertID: "alert-forwarding",
+            revisionSent: Date(timeIntervalSince1970: 200)
+        )
+
+        _ = try await coordinator.enqueueAndWait(
+            .remoteHotAlertReceived,
+            locationContext: locationContext,
+            remoteAlertContext: remoteAlertContext
+        )
+
+        let request = HomeIngestionRequest(trigger: .manualRefresh)
+        _ = try await coordinator.enqueueAndWait(request)
+
+        let callbackRecorder = ForwardingCallbackRecorder()
+        _ = try await coordinator.enqueueAndWait(
+            request,
+            progress: { _ in await callbackRecorder.recordProgress() }
+        )
+        _ = try await coordinator.enqueueAndWait(
+            request,
+            progress: { _ in await callbackRecorder.recordProgress() },
+            publication: { _ in await callbackRecorder.recordPublication() }
+        )
+
+        let submissions = await recordingCoordinator.submissions()
+        #expect(submissions.count == 4)
+        #expect(submissions[0].request == HomeIngestionRequest(
+            trigger: .remoteHotAlertReceived,
+            locationContext: locationContext,
+            remoteAlertContext: remoteAlertContext
+        ))
+        #expect(submissions[0].hasProgress == false)
+        #expect(submissions[0].hasPublication == false)
+        #expect(submissions[1].request == request)
+        #expect(submissions[1].hasProgress == false)
+        #expect(submissions[1].hasPublication == false)
+        #expect(submissions[2].request == request)
+        #expect(submissions[2].hasProgress)
+        #expect(submissions[2].hasPublication == false)
+        #expect(submissions[3].request == request)
+        #expect(submissions[3].hasProgress)
+        #expect(submissions[3].hasPublication)
+        #expect(await callbackRecorder.progressCount() == 2)
+        #expect(await callbackRecorder.publicationCount() == 1)
+    }
+
     @Test("trigger plans preserve the expected lane selection")
     func triggerPlans_matchExpectedCoverage() {
         let activatePlan = HomeIngestionPlan(
@@ -600,6 +652,63 @@ private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
 
     func completedHotAlertsCount() -> Int {
         completedHotAlerts
+    }
+}
+
+private actor ForwardingHomeIngestionCoordinator: HomeIngestionCoordinating {
+    struct Submission: Sendable {
+        let request: HomeIngestionRequest
+        let hasProgress: Bool
+        let hasPublication: Bool
+    }
+
+    private var recordedSubmissions: [Submission] = []
+
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        recordedSubmissions.append(
+            Submission(
+                request: request,
+                hasProgress: progress != nil,
+                hasPublication: publication != nil
+            )
+        )
+        await progress?(.started(.lane(.hotAlerts)))
+        await publication?(
+            HomeIngestionPublication(
+                runID: UUID(),
+                stage: .core(.init(snapshot: .empty))
+            )
+        )
+        return .empty
+    }
+
+    func submissions() -> [Submission] {
+        recordedSubmissions
+    }
+}
+
+private actor ForwardingCallbackRecorder {
+    private var progress = 0
+    private var publication = 0
+
+    func recordProgress() {
+        progress += 1
+    }
+
+    func recordPublication() {
+        publication += 1
+    }
+
+    func progressCount() -> Int {
+        progress
+    }
+
+    func publicationCount() -> Int {
+        publication
     }
 }
 

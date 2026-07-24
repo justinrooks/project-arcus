@@ -1279,7 +1279,13 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         submittedRequests.append(request)
     }
 
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        _ = progress
+        _ = publication
         submittedRequests.append(request)
         if suspendsUntilCancelled {
             try await Task.sleep(for: .seconds(60))
@@ -1484,7 +1490,13 @@ private actor SequentialHomeIngestionCoordinator: HomeIngestionCoordinating {
         try await enqueueAndWait(.init(trigger: trigger, locationContext: locationContext, remoteAlertContext: remoteAlertContext))
     }
 
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        _ = progress
+        _ = publication
         guard snapshots.isEmpty == false else { return lastSnapshot }
         let snapshot = snapshots.removeFirst()
         lastSnapshot = snapshot
@@ -1524,7 +1536,13 @@ private actor ScriptedHomeIngestionCoordinator: HomeIngestionCoordinating {
         try await enqueueAndWait(.init(trigger: trigger, locationContext: locationContext, remoteAlertContext: remoteAlertContext))
     }
 
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+    func enqueueAndWait(
+        _ request: HomeIngestionRequest,
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
+    ) async throws -> HomeSnapshot {
+        _ = progress
+        _ = publication
         guard responses.isEmpty == false else { return .empty }
         switch responses.removeFirst() {
         case .snapshot(let snapshot):

@@ -2545,8 +2545,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
+        _ = publication
         submittedRequests.append(request)
         for event in progressEvents {
             recordedProgressEvents.append(event)
@@ -2629,8 +2631,11 @@ private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
+        _ = progress
+        _ = publication
         submittedRequests.append(request)
         let index = submittedRequests.count - 1
         precondition(index < snapshots.count, "Test coordinator received more requests than snapshots")

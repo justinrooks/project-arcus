@@ -255,11 +255,22 @@ The current defects are narrow:
 
 ### Issue #337 — 08: Collapse Home ingestion coordination to one semantic operation
 
-- **Status:** Planned
-- **Goal:** Remove overload defaults that discard progress/publication.
-- **Concept removed:** Multiple semantic entry surfaces for one request.
-- **Required proof:** all callers reach the canonical operation with callbacks intact.
-- **Handoff:** Mechanical contract cleanup only; preserve compatibility/merge behavior.
+- **Status:** Complete (2026-07-24)
+- **Goal:** Removed overload defaults that could discard progress or publication.
+- **Concept removed:** Multiple semantic protocol entry surfaces for one ingestion request.
+- **Implementation:** `HomeIngestionCoordinating` now requires only request-based `enqueueAndWait(_:progress:publication:)`.
+  Trigger, request-only, and progress-only forms are forwarding conveniences; concrete fire-and-forget submission
+  remains on `HomeIngestionCoordinator`. Every production and test conformer explicitly implements the canonical
+  operation. Contract coverage proves request/context and callback forwarding through an existential.
+- **Validation:** Focused coordinator/pipeline/remote suites passed 79/79; background/alert suites passed 38/38;
+  Debug simulator build passed; full `SkyAwareTests` passed 913/913. All runs had zero failures and skips on
+  iPhone 17 / iOS 26.5. Inspected result bundles:
+  `Test-SkyAware-2026.07.24_12-13-28--0600.xcresult`,
+  `Test-SkyAware-2026.07.24_12-00-11--0600.xcresult`, and
+  `/private/tmp/issue337-full-tests.xcresult`. `git diff --check` passed.
+- **Handoff:** #338 owns only explicit location-upload and preference side effects; do not expand this contract
+  migration into that cleanup. Compatibility, joining, pending merge, publication identity, cancellation, triggers,
+  and result satisfaction remain unchanged.
 
 ### Issue #338 — 09: Require explicit upload and preference side effects
 

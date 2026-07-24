@@ -9,24 +9,6 @@ import Foundation
 import OSLog
 
 protocol HomeIngestionCoordinating: Actor, Sendable {
-    func enqueue(
-        _ trigger: HomeRefreshTrigger,
-        locationContext: LocationContext?,
-        remoteAlertContext: HomeRemoteAlertContext?
-    )
-
-    func enqueueAndWait(
-        _ trigger: HomeRefreshTrigger,
-        locationContext: LocationContext?,
-        remoteAlertContext: HomeRemoteAlertContext?
-    ) async throws -> HomeSnapshot
-
-    func enqueue(_ request: HomeIngestionRequest)
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot
-    func enqueueAndWait(
-        _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
-    ) async throws -> HomeSnapshot
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
         progress: HomeIngestionProgressHandler?,
@@ -36,18 +18,30 @@ protocol HomeIngestionCoordinating: Actor, Sendable {
 
 extension HomeIngestionCoordinating {
     func enqueueAndWait(
-        _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
     ) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request)
+        try await enqueueAndWait(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            ),
+            progress: nil,
+            publication: nil
+        )
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: nil, publication: nil)
     }
 
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?,
-        publication: HomeIngestionPublicationHandler?
+        progress: HomeIngestionProgressHandler?
     ) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request, progress: progress)
+        try await enqueueAndWait(request, progress: progress, publication: nil)
     }
 }
 
@@ -93,32 +87,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         submit(request.plan, waiter: nil)
     }
 
-    func enqueueAndWait(
-        _ trigger: HomeRefreshTrigger,
-        locationContext: LocationContext? = nil,
-        remoteAlertContext: HomeRemoteAlertContext? = nil
-    ) async throws -> HomeSnapshot {
-        let request = HomeIngestionRequest(
-            trigger: trigger,
-            locationContext: locationContext,
-            remoteAlertContext: remoteAlertContext
-        )
-        return try await enqueueAndWait(request)
-    }
-
     func enqueue(_ request: HomeIngestionRequest) {
         submit(request.plan, waiter: nil)
-    }
-
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request, progress: nil)
-    }
-
-    func enqueueAndWait(
-        _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
-    ) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request, progress: progress, publication: nil)
     }
 
     func enqueueAndWait(
