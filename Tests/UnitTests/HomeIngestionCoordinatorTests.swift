@@ -290,6 +290,144 @@ struct HomeIngestionCoordinatorTests {
         #expect(publications.last?.stage == .enrichment(.init(snapshot: snapshot)))
     }
 
+    @Test("pre-canceled callers are currently stored and completed")
+    func preCanceledCaller_isStillAcceptedByCoordinator() async throws {
+        let submissionGate = AsyncGate()
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let waiter = Task {
+            await submissionGate.wait()
+            return try await coordinator.enqueueAndWait(.sessionTick)
+        }
+
+        waiter.cancel()
+        await submissionGate.open()
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        await executor.releaseRun(1)
+        #expect(try await waiter.value == .empty)
+    }
+
+    @Test("canceling an active waiter leaves it callback-eligible until completion")
+    func cancelBeforeFinish_activeWaiterReceivesCallbacksAndResult() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let progressCallbacks = AsyncCount()
+        let publicationCallbacks = AsyncCount()
+
+        let waiter = Task {
+            try await coordinator.enqueueAndWait(
+                HomeIngestionRequest(trigger: .sessionTick),
+                progress: { _ in await progressCallbacks.record() },
+                publication: { _ in await publicationCallbacks.record() }
+            )
+        }
+
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+        await executor.emitProgress(.started(.lane(.hotAlerts)), forRun: 1)
+        await progressCallbacks.waitForCount(1)
+
+        waiter.cancel()
+        await executor.emitProgress(.completed(.lane(.hotAlerts)), forRun: 1)
+        await executor.emitCorePublication(forRun: 1)
+        await progressCallbacks.waitForCount(2)
+        await publicationCallbacks.waitForCount(1)
+
+        await executor.releaseRun(1)
+        #expect(try await waiter.value == .empty)
+        // #333 must instead resume CancellationError and suppress the post-cancellation callbacks.
+    }
+
+    @Test("a canceled pending waiter remains stored through the queued follow-up")
+    func canceledPendingWaiter_startsAndCompletesQueuedRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let activeWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let pendingWaiter = Task {
+            try await coordinator.enqueueAndWait(.manualRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        #expect(await coordinator.testPendingPlanForWaiterCharacterization() != nil)
+        pendingWaiter.cancel()
+
+        await executor.releaseRun(1)
+        await executor.waitForStartedRun(2)
+        #expect(try await activeWaiter.value == .empty)
+
+        await executor.releaseRun(2)
+        #expect(try await pendingWaiter.value == .empty)
+        // #333 must remove this waiter before its queued plan can complete it.
+    }
+
+    @Test("one canceled compatible waiter does not affect an uncanceled waiter")
+    func canceledCompatibleWaiter_doesNotPreventOtherWaiterCompletion() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let canceledWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let retainedWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+        canceledWaiter.cancel()
+
+        await executor.releaseRun(1)
+        #expect(try await canceledWaiter.value == .empty)
+        #expect(try await retainedWaiter.value == .empty)
+    }
+
+    @Test("canceling the last waiter does not cancel fire-and-forget shared work")
+    func canceledLastWaiter_doesNotCancelCoordinatorOwnedRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+
+        let waiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        waiter.cancel()
+
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await waiter.value == .empty)
+    }
+
+    @Test("completion observed before cancellation still resolves the waiter")
+    func finishBeforeCancel_waiterCompletesSuccessfully() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let waiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        waiter.cancel()
+
+        #expect(try await waiter.value == .empty)
+    }
+
     private func makeContext(
         latitude: Double,
         longitude: Double,
@@ -420,6 +558,97 @@ private actor CoordinatorPublicationRecorder {
 
     func values() -> [HomeIngestionPublication] {
         publications
+    }
+}
+
+private actor AsyncCount {
+    private var count = 0
+    private var continuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+
+    func record() {
+        count += 1
+        let satisfiedCounts = continuations.keys.filter { $0 <= count }
+        for expectedCount in satisfiedCounts {
+            let pending = continuations.removeValue(forKey: expectedCount) ?? []
+            pending.forEach { $0.resume() }
+        }
+    }
+
+    func waitForCount(_ expectedCount: Int) async {
+        guard count < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            continuations[expectedCount, default: []].append(continuation)
+        }
+    }
+}
+
+private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
+    private let snapshot: HomeSnapshot
+    private var progresses: [HomeIngestionRunProgress] = []
+    private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
+    private let startedRuns = AsyncCount()
+    private let completedRuns = AsyncCount()
+    private var canceledRunNumbers: Set<Int> = []
+
+    init(snapshot: HomeSnapshot = .empty) {
+        self.snapshot = snapshot
+    }
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        _ = plan
+        progresses.append(progress)
+        let run = progresses.count
+        await startedRuns.record()
+
+        await withCheckedContinuation { continuation in
+            releaseContinuations[run] = continuation
+        }
+
+        if Task.isCancelled {
+            canceledRunNumbers.insert(run)
+        }
+        await completedRuns.record()
+        return snapshot
+    }
+
+    func waitForStartedRun(_ run: Int) async {
+        await startedRuns.waitForCount(run)
+    }
+
+    func waitForCompletedRun(_ run: Int) async {
+        await completedRuns.waitForCount(run)
+    }
+
+    func releaseRun(_ run: Int) {
+        guard let continuation = releaseContinuations.removeValue(forKey: run) else {
+            fatalError("Run \(run) was not waiting for release")
+        }
+        continuation.resume()
+    }
+
+    func emitProgress(_ event: HomeIngestionProgressEvent, forRun run: Int) async {
+        await progress(for: run).report(event)
+    }
+
+    func emitCorePublication(forRun run: Int) async {
+        let progress = progress(for: run)
+        await progress.publish(
+            HomeIngestionPublication(
+                runID: progress.runID,
+                stage: .core(.init(snapshot: snapshot))
+            )
+        )
+    }
+
+    func wasCanceled(run: Int) -> Bool {
+        canceledRunNumbers.contains(run)
+    }
+
+    private func progress(for run: Int) -> HomeIngestionRunProgress {
+        guard progresses.indices.contains(run - 1) else {
+            fatalError("Run \(run) has not started")
+        }
+        return progresses[run - 1]
     }
 }
 

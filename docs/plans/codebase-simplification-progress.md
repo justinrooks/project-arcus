@@ -160,11 +160,24 @@ The current defects are narrow:
 
 ### Issue #332 — 03: Characterize ingestion waiter cancellation
 
-- **Status:** Planned
-- **Goal:** Lock the current intended shared-run behavior and expose orphaned waiter callbacks.
-- **Concept removed:** None yet; this is the required characterization gate.
-- **Required proof:** active/pending/multiple/last waiter and finish/cancel race tests.
-- **Handoff:** Tests only. Do not alter production behavior.
+- **Status:** Implemented; simulator execution blocked by CoreSimulator service availability.
+- **Goal:** Lock current shared-run behavior and expose orphaned waiter callbacks before #333 changes semantics.
+- **Changed files:** `HomeIngestionCoordinatorTests.swift` adds deterministic pre-cancel, active, pending,
+  compatible/last-waiter, callback-lifetime, and finish/cancel ordering coverage. `HomeIngestionCoordinator.swift`
+  has a Debug-only waiter-storage/pending-plan observation seam, explicitly authorized for this characterization and
+  compiled out of Release builds.
+- **Evidence:** Canceled callers are currently stored and resolve with the shared snapshot; active canceled waiters
+  remain eligible for explicitly emitted progress and staged publications; canceled pending waiters remain stored
+  through the queued run; and canceling a waiter does not cancel coordinator-owned fire-and-forget work. #333 must
+  invert only waiter resumption/removal and callback eligibility while preserving shared work.
+- **Validation:** The focused coordinator command on `platform=iOS Simulator,name=iPhone 17,OS=26.5` compiled the
+  updated app and test targets on 2026-07-24, but CoreSimulatorService refused its connection before test execution.
+  The resulting `/private/tmp/SkyAware-332-coordinator-20260724T0002.xcresult` has no `Info.plist`, so
+  `xcresulttool` cannot inspect it. `xcrun simctl list devices available` reported the same service refusal.
+  `git diff --check` passed with the final diff.
+- **Handoff:** Re-run the focused suite and inspect its `.xcresult`; #333 owns cancellation handling, waiter removal,
+  callback suppression, and exactly-once resumption. No plan compatibility, pending merge, executor, or trigger
+  behavior changed.
 
 ### Issue #333 — 04: Cancel waiters without canceling shared ingestion runs
 

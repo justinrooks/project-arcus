@@ -70,6 +70,12 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private var pendingPlan: HomeIngestionPlan?
     private var waiters: [UUID: Waiter] = [:]
 
+    #if DEBUG
+    // Debug-test observation only. Issue #332 needs a storage acknowledgement to order cancellation tests without
+    // polling or changing waiter ownership; Release builds do not include this seam.
+    private var waiterCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    #endif
+
     init(executor: any HomeIngestionExecuting) {
         self.executor = executor
     }
@@ -166,7 +172,28 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func store(_ waiter: Waiter?) {
         guard let waiter else { return }
         waiters[waiter.id] = waiter
+
+        #if DEBUG
+        let satisfiedCounts = waiterCountContinuations.keys.filter { $0 <= waiters.count }
+        for count in satisfiedCounts {
+            let continuations = waiterCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
+        }
+        #endif
     }
+
+    #if DEBUG
+    func waitForTestWaiterCount(atLeast count: Int) async {
+        guard waiters.count < count else { return }
+        await withCheckedContinuation { continuation in
+            waiterCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    func testPendingPlanForWaiterCharacterization() -> HomeIngestionPlan? {
+        pendingPlan
+    }
+    #endif
 
     private func startRun(with plan: HomeIngestionPlan) {
         let runID = UUID()
