@@ -52,6 +52,8 @@ actor BackgroundOrchestrator {
     private let pendingUploadDrainer: any PendingLocationUploadDraining
     
     private let clock = ContinuousClock()
+    private let pendingUploadQuota = 1
+    private let pendingUploadDrainDuration: Duration = .seconds(5)
     
     init(
         coordinator: any HomeIngestionCoordinating,
@@ -85,7 +87,6 @@ actor BackgroundOrchestrator {
         let startInstant = clock.now
         let start = Date()
         let recoveryCadence = Cadence.short.minutes
-        await pendingUploadDrainer.drainPendingUploads()
         
         return await withTaskCancellationHandler {
             var didMorningNotify = false
@@ -95,6 +96,18 @@ actor BackgroundOrchestrator {
             var feedsChanged: Set<Feed> = []
             
             do {
+                try Task.checkCancellation()
+                let pendingUploadDrainBudget = PendingLocationUploadDrainBudget(
+                    uploadQuota: pendingUploadQuota,
+                    deadline: clock.now + pendingUploadDrainDuration
+                )
+                let pendingUploadDrainOutcome = await pendingUploadDrainer.drainPendingUploads(
+                    using: pendingUploadDrainBudget
+                )
+                if pendingUploadDrainOutcome == .remaining {
+                    logger.notice("Background upload drain left durable requests remaining")
+                }
+
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
                 let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")

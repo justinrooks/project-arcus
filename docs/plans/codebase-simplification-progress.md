@@ -216,11 +216,24 @@ The current defects are narrow:
 
 ### Issue #335 — 06: Put background refresh under cancellation and drain budgets
 
-- **Status:** Planned
+- **Status:** Complete
 - **Goal:** Cover pre-drain with OS cancellation and preserve ingestion/notification budget.
 - **Concept removed:** Uncanceled, unbounded pre-handler work.
-- **Required proof:** early exit, expiration during drain, ingestion start, health, cadence, and device backlog timing.
-- **Handoff:** Preserve pre-ingestion attempt and durable queued remainder.
+- **Changed files:** `BackgroundOrchestrator.swift` moves the bounded pre-ingestion upload attempt inside the
+  cancellation handler; `BackgroundOrchestratorCadenceTests.swift` covers budget forwarding, ordering, remaining
+  outcomes, and cancellation during drain or ingestion.
+- **Behavior:** Background refresh admits one durable upload request with a monotonic deadline five seconds after the
+  drain begins, then continues ingestion for `.remaining` unless the task was cancelled. Cancellation before or after
+  that await records the existing cancelled health outcome and 20-minute recovery cadence; pre-ingestion and
+  early-exit attempt ordering, successful 20/40/60 cadence, notification, retry, persistence, and shared-run
+  ownership remain unchanged.
+- **Validation:** Focused `BackgroundOrchestratorCadenceTests` passed 26/26; prerequisite
+  `HomeIngestionCoordinatorTests` and `LocationProviderTests` passed 82/82; full `SkyAwareTests` passed 910/910,
+  all with no failures or skips on iPhone 17 / iOS 26.5. Inspected result bundles:
+  `Test-SkyAware-2026.07.24_10-40-13--0600.xcresult`, `Test-SkyAware-2026.07.24_10-43-21--0600.xcresult`, and
+  `Test-SkyAware-2026.07.24_10-44-41--0600.xcresult`. Debug simulator build and `git diff --check` passed.
+- **Remaining evidence:** Physical-device backlog and OS-expiration timing remain unmeasured; the five-second deadline
+  bounds cooperative drain admission and retry backoff, not an in-flight non-cooperative network operation.
 
 ### Issue #336 — 07: Require atomic Home core commits across conformers
 

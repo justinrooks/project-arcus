@@ -263,6 +263,13 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(requestStarted)
         #expect(await completion.isFinished() == false)
         #expect(await uploadDrainer.drainCount() == 1)
+        #expect(await uploadDrainer.legacyDrainCount() == 0)
+        #expect(await uploadDrainer.boundedDrainCount() == 1)
+
+        let recordedBudget = try #require(await uploadDrainer.recordedBudget())
+        #expect(recordedBudget.budget.uploadQuota == 1)
+        #expect(recordedBudget.budget.deadline - recordedBudget.receivedAt >= .seconds(4))
+        #expect(recordedBudget.budget.deadline - recordedBudget.receivedAt <= .seconds(6))
 
         let request = try #require(await coordinator.requests().first)
         #expect(request.trigger == .backgroundRefresh)
@@ -310,6 +317,84 @@ struct BackgroundOrchestratorCadenceTests {
 
         #expect(outcome.result == .skipped)
         #expect(await uploadDrainer.drainCount() == 1)
+        #expect(await uploadDrainer.legacyDrainCount() == 0)
+        #expect(await uploadDrainer.boundedDrainCount() == 1)
+    }
+
+    @Test("A bounded drain with remaining uploads still starts unified ingestion")
+    func boundedDrainWithRemainingUploads_startsUnifiedIngestion() async throws {
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            runGate: gate
+        )
+        let uploadDrainer = RecordingPendingUploadDrainer(outcome: .remaining)
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
+            pendingUploadDrainer: uploadDrainer,
+            coordinator: coordinator
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await uploadDrainer.boundedDrainCount() == 1)
+        #expect(await uploadDrainer.legacyDrainCount() == 0)
+
+        await gate.open()
+        #expect((await runTask.value).result == .success)
+    }
+
+    @Test("Cancellation during the bounded drain records recovery without starting ingestion")
+    func cancellationDuringBoundedDrain_recordsRecoveryWithoutStartingIngestion() async throws {
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: Self.makeRiskSnapshot(change: nil))
+        let uploadDrainer = RecordingPendingUploadDrainer(suspendsUntilCancelled: true)
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
+            pendingUploadDrainer: uploadDrainer,
+            coordinator: coordinator
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await uploadDrainer.hasStartedBoundedDrain() })
+
+        runTask.cancel()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .cancelled)
+        #expect(await uploadDrainer.observedCancellation())
+        #expect(await coordinator.requestCount() == 0)
+        #expect(health.outcomeCode == 2)
+        #expect(health.cadence == Cadence.short.minutes)
+    }
+
+    @Test("Cancellation during unified ingestion records recovery promptly")
+    func cancellationDuringUnifiedIngestion_recordsRecoveryPromptly() async throws {
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            suspendsUntilCancelled: true
+        )
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
+            coordinator: coordinator
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+
+        runTask.cancel()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .cancelled)
+        #expect(health.outcomeCode == 2)
+        #expect(health.cadence == Cadence.short.minutes)
     }
 
     @Test("Active meso tightens cadence to short")
@@ -799,6 +884,11 @@ private extension BackgroundOrchestratorCadenceTests {
         let modelContainer: ModelContainer
         let spc: FakeSpcProvider
 
+        struct HealthRecord: Sendable {
+            let outcomeCode: Int
+            let cadence: Int
+        }
+
         func latestCadence() async throws -> Int? {
             try await MainActor.run {
                 let context = ModelContext(modelContainer)
@@ -807,6 +897,20 @@ private extension BackgroundOrchestratorCadenceTests {
                 )
                 descriptor.fetchLimit = 1
                 return try context.fetch(descriptor).first?.cadence
+            }
+        }
+
+        func latestHealthRecord() async throws -> HealthRecord? {
+            try await MainActor.run {
+                let context = ModelContext(modelContainer)
+                var descriptor = FetchDescriptor<BgRunSnapshot>(
+                    sortBy: [SortDescriptor(\.endedAt, order: .reverse)]
+                )
+                descriptor.fetchLimit = 1
+                guard let health = try context.fetch(descriptor).first else {
+                    return nil
+                }
+                return .init(outcomeCode: health.outcomeCode, cadence: health.cadence)
             }
         }
     }
@@ -818,7 +922,8 @@ private extension BackgroundOrchestratorCadenceTests {
         refreshSucceeds: Bool = false,
         cachedSnapshotTimestamp: Date = Date(),
         settings: NotificationSettings,
-        pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator()
+        pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator(),
+        coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil
     ) async throws -> SystemUnderTest {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
@@ -867,7 +972,7 @@ private extension BackgroundOrchestratorCadenceTests {
             spcOutlook: spc,
             arcusAlerts: alertProvider
         )
-        let coordinator = HomeIngestionCoordinator(
+        let coordinator = suppliedCoordinator ?? HomeIngestionCoordinator(
             executor: HomeIngestionExecutor(
                 environment: .init(
                     logger: Logger(subsystem: "SkyAwareTests", category: "BackgroundOrchestratorCadenceTests"),
@@ -1130,14 +1235,17 @@ private actor FakeWeatherClient: HomeWeatherQuerying {
 private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let snapshot: HomeSnapshot
     private let runGate: AsyncGate?
+    private let suspendsUntilCancelled: Bool
     private var submittedRequests: [HomeIngestionRequest] = []
 
     init(
         snapshot: HomeSnapshot = .empty,
-        runGate: AsyncGate? = nil
+        runGate: AsyncGate? = nil,
+        suspendsUntilCancelled: Bool = false
     ) {
         self.snapshot = snapshot
         self.runGate = runGate
+        self.suspendsUntilCancelled = suspendsUntilCancelled
     }
 
     func enqueue(
@@ -1173,6 +1281,9 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
         submittedRequests.append(request)
+        if suspendsUntilCancelled {
+            try await Task.sleep(for: .seconds(60))
+        }
         if let runGate {
             await runGate.wait()
         }
@@ -1222,21 +1333,69 @@ private actor CompletionFlag {
 }
 
 private actor RecordingPendingUploadDrainer: PendingLocationUploadDraining {
-    private var count = 0
+    struct RecordedBudget: Sendable {
+        let budget: PendingLocationUploadDrainBudget
+        let receivedAt: ContinuousClock.Instant
+    }
+
+    private let outcome: PendingLocationUploadDrainOutcome
+    private let suspendsUntilCancelled: Bool
+    private var legacyCount = 0
+    private var boundedCount = 0
+    private var budget: RecordedBudget?
+    private var didStartBoundedDrain = false
+    private var didObserveCancellation = false
+
+    init(
+        outcome: PendingLocationUploadDrainOutcome = .drained,
+        suspendsUntilCancelled: Bool = false
+    ) {
+        self.outcome = outcome
+        self.suspendsUntilCancelled = suspendsUntilCancelled
+    }
 
     func drainPendingUploads() async {
-        count += 1
+        legacyCount += 1
     }
 
     func drainPendingUploads(
         using budget: PendingLocationUploadDrainBudget
     ) async -> PendingLocationUploadDrainOutcome {
-        count += 1
-        return .drained
+        boundedCount += 1
+        self.budget = .init(budget: budget, receivedAt: .now)
+        didStartBoundedDrain = true
+        if suspendsUntilCancelled {
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch is CancellationError {
+                didObserveCancellation = true
+            } catch {}
+        }
+        return outcome
     }
 
     func drainCount() -> Int {
-        count
+        legacyCount + boundedCount
+    }
+
+    func legacyDrainCount() -> Int {
+        legacyCount
+    }
+
+    func boundedDrainCount() -> Int {
+        boundedCount
+    }
+
+    func recordedBudget() -> RecordedBudget? {
+        budget
+    }
+
+    func hasStartedBoundedDrain() -> Bool {
+        didStartBoundedDrain
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
     }
 }
 
