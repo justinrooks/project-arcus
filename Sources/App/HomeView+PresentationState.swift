@@ -2,7 +2,110 @@ import ArcusCore
 import Foundation
 
 extension HomeView {
-    static func selectProjection(
+    /// The complete location-scoped value visible on the Today and Alerts surfaces.
+    ///
+    /// This is deliberately a value transformation: callers copy their current persisted and
+    /// pipeline inputs here after sampling time, while ownership of those inputs remains outside.
+    struct HomePresentationSnapshot {
+        let projection: HomeProjectionRecord?
+        let locationSnapshot: LocationSnapshot?
+        let stormRisk: StormRiskLevel?
+        let severeRisk: SevereWeatherThreat?
+        let fireRisk: FireRiskLevel?
+        let weather: SummaryWeather?
+        let airQuality: AirQualityCurrentResponse?
+        let mesos: [MdDTO]
+        let alerts: [AlertDTO]
+        let stormSetup: StormSetupDTO?
+        let stormSetupCurrentResponse: StormSetupCurrentResponse?
+        let locationTimeZone: TimeZone
+        let isCurrentContextResolvedInPipeline: Bool
+        let isCurrentContextCommittedAlertSnapshot: Bool
+
+        init(
+            projections: [HomeProjectionRecord],
+            newestStartupProjection: HomeProjectionRecord?,
+            currentContext: LocationContext?,
+            pipelineSnap: LocationSnapshot?,
+            pipelineStormRisk: StormRiskLevel?,
+            pipelineSevereRisk: SevereWeatherThreat?,
+            pipelineFireRisk: FireRiskLevel?,
+            pipelineWeather: SummaryWeather?,
+            pipelineAirQuality: AirQualityCurrentResponse?,
+            pipelineMesos: [MdDTO],
+            pipelineAlerts: [AlertDTO],
+            resolvedLocationScopedRefreshKey: LocationContext.RefreshKey?,
+            alertSnapshotRefreshKey: LocationContext.RefreshKey?,
+            pipelineStormSetup: StormSetupDTO?,
+            pipelineStormSetupCurrentResponse: StormSetupCurrentResponse?,
+            stormSetupRefreshKey: LocationContext.RefreshKey?,
+            isUITestStaticMode: Bool,
+            now: Date
+        ) {
+            let projection = HomeView.selectProjection(from: projections, currentContext: currentContext)
+            let currentRefreshKey = currentContext?.refreshKey
+            let isResolved = currentRefreshKey == resolvedLocationScopedRefreshKey && currentRefreshKey != nil
+            let currentAlertsAreCommitted = currentRefreshKey == alertSnapshotRefreshKey && currentRefreshKey != nil
+            let response = HomeView.selectStormSetupCurrentResponse(
+                projection: projection,
+                currentContext: currentContext,
+                pipelineValue: pipelineStormSetupCurrentResponse,
+                pipelineRefreshKey: stormSetupRefreshKey,
+                now: now
+            )
+
+            self.projection = projection
+            self.locationSnapshot = HomeView.preferredSummaryValue(
+                projectionValue: projection?.locationSnapshot,
+                pipelineValue: pipelineSnap,
+                prefersPipelineValue: isResolved
+            )
+            self.stormRisk = HomeView.preferredSummaryValue(
+                projectionValue: projection?.stormRisk,
+                pipelineValue: pipelineStormRisk,
+                prefersPipelineValue: isResolved
+            )
+            self.severeRisk = HomeView.preferredSummaryValue(
+                projectionValue: projection?.severeRisk,
+                pipelineValue: pipelineSevereRisk,
+                prefersPipelineValue: isResolved
+            )
+            self.fireRisk = HomeView.preferredSummaryValue(
+                projectionValue: projection?.fireRisk,
+                pipelineValue: pipelineFireRisk,
+                prefersPipelineValue: isResolved
+            )
+            self.weather = HomeView.preferredSummaryValue(
+                projectionValue: projection?.weather,
+                pipelineValue: pipelineWeather,
+                prefersPipelineValue: isResolved
+            )
+            self.airQuality = isResolved ? pipelineAirQuality : nil
+            self.mesos = isUITestStaticMode && !pipelineMesos.isEmpty
+                ? pipelineMesos
+                : (currentAlertsAreCommitted ? pipelineMesos : projection?.activeMesos ?? [])
+            self.alerts = isUITestStaticMode && !pipelineAlerts.isEmpty
+                ? pipelineAlerts
+                : (currentAlertsAreCommitted ? pipelineAlerts : projection?.activeAlerts ?? [])
+            self.stormSetupCurrentResponse = response
+            self.stormSetup = response.map(StormSetupDTO.init(response:)) ?? HomeView.selectStormSetup(
+                projection: projection,
+                currentContext: currentContext,
+                pipelineValue: pipelineStormSetup,
+                pipelineRefreshKey: stormSetupRefreshKey,
+                now: now
+            )
+            self.locationTimeZone = HomeView.resolveLocationTimeZone(
+                selectedProjection: projection,
+                currentContext: currentContext,
+                newestStartupProjection: newestStartupProjection
+            )
+            self.isCurrentContextResolvedInPipeline = isResolved
+            self.isCurrentContextCommittedAlertSnapshot = currentAlertsAreCommitted
+        }
+    }
+
+    nonisolated static func selectProjection(
         from projections: [HomeProjectionRecord],
         currentContext: LocationContext?
     ) -> HomeProjectionRecord? {
@@ -18,7 +121,7 @@ extension HomeView {
             .max(by: { $0.updatedAt < $1.updatedAt })
     }
 
-    static func selectStormSetup(
+    nonisolated static func selectStormSetup(
         projection: HomeProjectionRecord?,
         currentContext: LocationContext?,
         pipelineValue: StormSetupDTO?,
@@ -53,7 +156,7 @@ extension HomeView {
         return stormSetup
     }
 
-    static func selectStormSetupCurrentResponse(
+    nonisolated static func selectStormSetupCurrentResponse(
         projection: HomeProjectionRecord?,
         currentContext: LocationContext?,
         pipelineValue: StormSetupCurrentResponse?,
@@ -86,7 +189,7 @@ extension HomeView {
         return response
     }
 
-    static func resolveLocationTimeZone(
+    nonisolated static func resolveLocationTimeZone(
         selectedProjection: HomeProjectionRecord?,
         currentContext: LocationContext?,
         newestStartupProjection: HomeProjectionRecord?,
@@ -112,7 +215,7 @@ extension HomeView {
         return fallback
     }
 
-    static func selectProjection(
+    nonisolated static func selectProjection(
         from projections: [HomeProjection],
         currentContext: LocationContext?
     ) -> HomeProjection? {
@@ -128,7 +231,7 @@ extension HomeView {
             .max(by: { $0.updatedAt < $1.updatedAt })
     }
 
-    private static func isDisplayReady(_ projection: HomeProjectionRecord) -> Bool {
+    nonisolated private static func isDisplayReady(_ projection: HomeProjectionRecord) -> Bool {
         projection.lastSlowProductsLoadAt != nil &&
         projection.lastHotAlertsLoadAt != nil
     }
@@ -143,7 +246,7 @@ extension HomeView {
         (isRefreshInFlight || readinessState != .ready)
     }
 
-    static func preferredSummaryValue<T>(
+    nonisolated static func preferredSummaryValue<T>(
         projectionValue: T?,
         pipelineValue: T?,
         prefersPipelineValue: Bool
@@ -152,20 +255,6 @@ extension HomeView {
             return pipelineValue ?? projectionValue
         }
         return projectionValue ?? pipelineValue
-    }
-
-    static func preferredCurrentContextValues<T>(
-        cachedValues: [T],
-        pipelineValues: [T],
-        currentContext: LocationContext?,
-        pipelineRefreshKey: LocationContext.RefreshKey?
-    ) -> [T] {
-        guard let currentContext,
-              currentContext.refreshKey == pipelineRefreshKey else {
-            return cachedValues
-        }
-
-        return pipelineValues
     }
 
     static func shouldRefreshStormSetupSettings(

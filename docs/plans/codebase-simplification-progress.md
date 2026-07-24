@@ -83,7 +83,7 @@ The current defects are narrow:
 | 07 | [#336](https://github.com/justinrooks/project-arcus/issues/336) — Require atomic core commits | F-05 | `GPT-5.6 Terra / medium` | Planned | None |
 | 08 | [#337](https://github.com/justinrooks/project-arcus/issues/337) — Collapse coordinator protocol | F-06 | `GPT-5.6 Luna / medium` | Planned | 04 |
 | 09 | [#338](https://github.com/justinrooks/project-arcus/issues/338) — Require explicit side effects | F-06 | `GPT-5.6 Luna / medium` | Planned | 05, 06 |
-| 10 | [#339](https://github.com/justinrooks/project-arcus/issues/339) — Centralize Today display selection | F-07 | `GPT-5.6 Terra / medium` | Planned | 02 |
+| 10 | [#339](https://github.com/justinrooks/project-arcus/issues/339) — Centralize Today display selection | F-07 | `GPT-5.6 Terra / medium` | Implemented | 02 |
 | 11 | [#340](https://github.com/justinrooks/project-arcus/issues/340) — Remove obsolete Home artifacts | F-08 | `GPT-5.6 Luna / medium` | Planned | 10 |
 | 12 | [#341](https://github.com/justinrooks/project-arcus/issues/341) — Clarify Arcus live composition | F-09 | `GPT-5.6 Luna / medium` | Planned | 09 |
 | 13 | [#342](https://github.com/justinrooks/project-arcus/issues/342) — Align architecture/status docs | F-10 | `GPT-5.6 Luna / medium` | Planned | 01-12 or explicit interim state |
@@ -291,11 +291,18 @@ The current defects are narrow:
 
 ### Issue #339 — 10: Centralize Today display selection in a pure value
 
-- **Status:** Planned
+- **Status:** Implemented
 - **Goal:** Replace per-slice cache/key/stage arbitration with one pure presentation snapshot.
-- **Concept removed:** Duplicated display-selection branches.
-- **Required proof:** no cache, matching/stale cache, stages, failure, empty, and location-transition matrix.
-- **Handoff:** No new observable owner, query-scope change, animation redesign, or Summary restructuring.
+- **Evidence:** `HomePresentationSnapshot` receives copied cache/pipeline values and an explicit clock sample, then
+  selects the projection, summary values, alert collections, Storm Setup, AQI, and location time zone. `HomeView`
+  supplies that single value to Today, Alerts, the badge, readiness, and reliability logic.
+- **Characterization:** `HomeViewStateTests` covers stale-location isolation, matching committed authoritative-empty
+  alert/meso values, same-location AQI publication, and the UI-test static-alert override. Existing projection,
+  Storm Setup, alert ownership, pipeline, and Today surface suites retain the surrounding matrix coverage.
+- **Validation:** The focused command compiled the app and affected test target on iPhone 17 / iOS 26.5, but its
+  finalized result bundle reports 0 executed tests with an unknown result; simulator execution remains unavailable.
+  The Debug build command produced an unfinalized result bundle, so it cannot be inspected.
+- **Handoff:** No new observable owner, query-scope change, animation redesign, Summary restructuring, or #340 cleanup.
 
 ### Issue #340 — 11: Remove obsolete Home model and inert pipeline policies
 

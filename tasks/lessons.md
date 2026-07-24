@@ -61,3 +61,12 @@
 - Treat checked-in marketing versions and build numbers as placeholders when Xcode Cloud owns release numbering.
   Monitor only app/widget parity unless the user or release workflow identifies a different repository-owned
   invariant; do not create speculative release-provenance work from those values.
+
+## 2026-07-24
+
+- Do not report a Swift change as build-validated until a successful Xcode build has compiled the affected target;
+  an unfinalized result bundle or a zero-test summary is evidence of an interrupted run, not validation.
+- When a large SwiftUI `TabView` reports a type-checking timeout on an innocent later tab, split every primary tab
+  into an opaque helper before retrying; the failure is usually accumulated result-builder complexity.
+- When extracting SwiftUI structure to resolve a compiler limit, preserve existing presentation predicates verbatim;
+  do not substitute a nearby feature-level loading heuristic for the surface's established state machine.

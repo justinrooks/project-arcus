@@ -2,6 +2,7 @@ import Foundation
 import CoreLocation
 import SwiftUI
 import Testing
+import ArcusCore
 @testable import SkyAware
 
 @Suite("HomeView Refresh Triggers")
@@ -532,7 +533,9 @@ struct HomeViewProjectionLaunchTests {
         context: LocationContext,
         updatedAt: Date,
         stormSetup: StormSetupDTO? = nil,
-        timeZoneId: String? = nil
+        timeZoneId: String? = nil,
+        activeAlerts: [AlertDTO] = [],
+        activeMesos: [MdDTO] = []
     ) -> HomeProjectionRecord {
         HomeProjectionRecord(
             id: UUID(),
@@ -553,8 +556,8 @@ struct HomeViewProjectionLaunchTests {
             stormRisk: nil,
             severeRisk: nil,
             fireRisk: nil,
-            activeAlerts: [],
-            activeMesos: [],
+            activeAlerts: activeAlerts,
+            activeMesos: activeMesos,
             lastHotAlertsLoadAt: updatedAt,
             lastSlowProductsLoadAt: updatedAt,
             lastWeatherLoadAt: updatedAt,
@@ -689,78 +692,100 @@ struct HomeViewOutlookDisplayTests {
 @Suite("HomeView Alert Ownership")
 @MainActor
 struct HomeViewAlertOwnershipTests {
-    @Test("cached alerts and mesos stay visible until the committed key matches the current context")
-    func preferredCurrentContextValues_keepsCachedValuesUntilMatchingCommit() {
+    @Test("presentation snapshot applies one location-scoped selection matrix")
+    func presentationSnapshot_appliesLocationScopedSelectionMatrix() throws {
         let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
-        let otherContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
-        let cachedMesos = [MD.sampleDiscussionDTOs[0]]
-        let liveMesos = [MD.sampleDiscussionDTOs[1]]
-        let cachedAlerts = [Watch.sampleWatchRows[0]]
-        let liveAlerts = [Watch.sampleWatchRows[1]]
+        let previousContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
+        let cachedAlert = Watch.sampleWatchRows[0]
+        let pipelineAlert = Watch.sampleWatchRows[1]
+        let cachedMeso = MD.sampleDiscussionDTOs[0]
+        let pipelineMeso = MD.sampleDiscussionDTOs[1]
+        let projection = makeProjectionRecord(
+            context: currentContext,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            activeAlerts: [cachedAlert],
+            activeMesos: [cachedMeso]
+        )
+        let airQuality = try DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(#"{"aqi":121,"category":{"identifier":3,"name":"Unhealthy for Sensitive Groups"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}"#.utf8)
+        )
 
-        #expect(
-            HomeView.preferredCurrentContextValues(
-                cachedValues: cachedMesos,
-                pipelineValues: liveMesos,
-                currentContext: currentContext,
-                pipelineRefreshKey: nil
-            ) == cachedMesos
+        let stale = makePresentationSnapshot(
+            projections: [projection],
+            newestStartupProjection: projection,
+            currentContext: currentContext,
+            pipelineAirQuality: airQuality,
+            pipelineMesos: [pipelineMeso],
+            pipelineAlerts: [pipelineAlert],
+            resolvedLocationScopedRefreshKey: previousContext.refreshKey,
+            alertSnapshotRefreshKey: previousContext.refreshKey
         )
-        #expect(
-            HomeView.preferredCurrentContextValues(
-                cachedValues: cachedAlerts,
-                pipelineValues: liveAlerts,
-                currentContext: currentContext,
-                pipelineRefreshKey: otherContext.refreshKey
-            ) == cachedAlerts
+        #expect(stale.projection == projection)
+        #expect(stale.alerts == [cachedAlert])
+        #expect(stale.mesos == [cachedMeso])
+        #expect(stale.airQuality == nil)
+
+        let committed = makePresentationSnapshot(
+            projections: [projection],
+            newestStartupProjection: projection,
+            currentContext: currentContext,
+            pipelineAirQuality: airQuality,
+            pipelineMesos: [],
+            pipelineAlerts: [],
+            resolvedLocationScopedRefreshKey: currentContext.refreshKey,
+            alertSnapshotRefreshKey: currentContext.refreshKey
         )
-        #expect(
-            HomeView.preferredCurrentContextValues(
-                cachedValues: cachedMesos,
-                pipelineValues: liveMesos,
-                currentContext: currentContext,
-                pipelineRefreshKey: currentContext.refreshKey
-            ) == liveMesos
+        #expect(committed.isCurrentContextResolvedInPipeline)
+        #expect(committed.isCurrentContextCommittedAlertSnapshot)
+        #expect(committed.alerts.isEmpty)
+        #expect(committed.mesos.isEmpty)
+        #expect(committed.airQuality?.aqi == 121)
+
+        let staticOverride = makePresentationSnapshot(
+            projections: [projection],
+            newestStartupProjection: projection,
+            currentContext: currentContext,
+            pipelineMesos: [pipelineMeso],
+            pipelineAlerts: [pipelineAlert],
+            alertSnapshotRefreshKey: previousContext.refreshKey,
+            isUITestStaticMode: true
         )
-        #expect(
-            HomeView.preferredCurrentContextValues(
-                cachedValues: cachedAlerts,
-                pipelineValues: liveAlerts,
-                currentContext: currentContext,
-                pipelineRefreshKey: currentContext.refreshKey
-            ) == liveAlerts
+        #expect(staticOverride.alerts == [pipelineAlert])
+        #expect(staticOverride.mesos == [pipelineMeso])
+    }
+
+    private func makePresentationSnapshot(
+        projections: [HomeProjectionRecord],
+        newestStartupProjection: HomeProjectionRecord?,
+        currentContext: LocationContext?,
+        pipelineAirQuality: AirQualityCurrentResponse? = nil,
+        pipelineMesos: [MdDTO] = [],
+        pipelineAlerts: [AlertDTO] = [],
+        resolvedLocationScopedRefreshKey: LocationContext.RefreshKey? = nil,
+        alertSnapshotRefreshKey: LocationContext.RefreshKey? = nil,
+        isUITestStaticMode: Bool = false
+    ) -> HomeView.HomePresentationSnapshot {
+        HomeView.HomePresentationSnapshot(
+            projections: projections,
+            newestStartupProjection: newestStartupProjection,
+            currentContext: currentContext,
+            pipelineSnap: nil,
+            pipelineStormRisk: nil,
+            pipelineSevereRisk: nil,
+            pipelineFireRisk: nil,
+            pipelineWeather: nil,
+            pipelineAirQuality: pipelineAirQuality,
+            pipelineMesos: pipelineMesos,
+            pipelineAlerts: pipelineAlerts,
+            resolvedLocationScopedRefreshKey: resolvedLocationScopedRefreshKey,
+            alertSnapshotRefreshKey: alertSnapshotRefreshKey,
+            pipelineStormSetup: nil,
+            pipelineStormSetupCurrentResponse: nil,
+            stormSetupRefreshKey: nil,
+            isUITestStaticMode: isUITestStaticMode,
+            now: Date(timeIntervalSince1970: 200)
         )
     }
 
-    @Test("a committed empty snapshot becomes authoritative for the current context")
-    func preferredCurrentContextValues_allowsCommittedEmptyValues() {
-        let currentContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
-        let cachedAlerts = [Watch.sampleWatchRows[0]]
-
-        #expect(
-            HomeView.preferredCurrentContextValues(
-                cachedValues: cachedAlerts,
-                pipelineValues: [],
-                currentContext: currentContext,
-                pipelineRefreshKey: currentContext.refreshKey
-            ).isEmpty
-        )
-    }
-
-    @Test("a commit for the previous context does not replace the current context's cached alerts")
-    func preferredCurrentContextValues_ignoresPriorContextCommitAfterLocationChange() {
-        let previousContext = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
-        let currentContext = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
-        let cachedAlerts = [Watch.sampleWatchRows[0]]
-        let priorContextAlerts = [Watch.sampleWatchRows[1]]
-
-        #expect(
-            HomeView.preferredCurrentContextValues(
-                cachedValues: cachedAlerts,
-                pipelineValues: priorContextAlerts,
-                currentContext: currentContext,
-                pipelineRefreshKey: previousContext.refreshKey
-            ) == cachedAlerts
-        )
-    }
 }
