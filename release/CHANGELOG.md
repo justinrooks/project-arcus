@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+Post-release user-impacting work is recorded here first, with evidence comments. Promote this section only after
+Xcode Cloud/TestFlight confirms the distributed marketing version and build; checked-in placeholders are not release
+provenance.
+
+### Reliability
+- Today now publishes its core content earlier and keeps key sections more stable while optional enrichment finishes.
+<!-- evidence: 0697e440 (#328) -->
+- Map warning overlays keep their cached warnings when a fresh warning lookup is unavailable or fails.
+<!-- evidence: 919a54f4 (#330) -->
+- Air-quality data for the same location remains visible when an optional refresh has no replacement value.
+<!-- evidence: b0897ee7 (#331) -->
+- Background refresh bounds pending-upload work and responds to cancellation before continuing with ingestion.
+<!-- evidence: 56b7b036 (#335) -->
+
 ## v1.1.0(94)
 
 ### UI / UX

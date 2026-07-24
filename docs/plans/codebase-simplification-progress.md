@@ -87,7 +87,7 @@ The current defects are narrow:
 | 11 | [#340](https://github.com/justinrooks/project-arcus/issues/340) — Remove obsolete Home artifacts | F-08 | `GPT-5.6 Luna / medium` | Implemented | 10 |
 | 12 | [#341](https://github.com/justinrooks/project-arcus/issues/341) — Clarify Arcus live composition | F-09 | `GPT-5.6 Luna / medium` | Planned | 09 |
 | 13 | [#342](https://github.com/justinrooks/project-arcus/issues/342) — Align architecture/status docs | F-10 | `GPT-5.6 Luna / medium` | Planned | 01-12 or explicit interim state |
-| 14 | [#343](https://github.com/justinrooks/project-arcus/issues/343) — Document Xcode Cloud ownership/parity | F-10 correction | `GPT-5.6 Luna / medium` | Planned | 13 |
+| 14 | [#343](https://github.com/justinrooks/project-arcus/issues/343) — Document Xcode Cloud ownership/parity | F-10 correction | `GPT-5.6 Luna / medium` | Complete | 13 |
 | 15 | [#344](https://github.com/justinrooks/project-arcus/issues/344) — Make validation lanes explicit | F-10 | `GPT-5.6 Luna / medium` | Planned | 14 |
 | 16 | [#345](https://github.com/justinrooks/project-arcus/issues/345) — Capture physical-device evidence | Runtime gap | `GPT-5.6 Terra / medium` | Planned | 15 |
 
@@ -356,11 +356,19 @@ The current defects are narrow:
 
 ### Issue #343 — 14: Document Xcode Cloud release ownership and app/widget parity
 
-- **Status:** Planned
-- **Goal:** Record Xcode Cloud ownership, app/widget parity, and `Unreleased` policy.
+- **Status:** Complete
+- **Goal:** Recorded Xcode Cloud ownership, app/widget parity, and the `Unreleased` policy without assigning a future
+  release number.
 - **Concept removed:** Checked-in placeholder numbers treated as release provenance.
-- **Required proof:** app/widget values match; release docs describe the automation boundary; `git diff --check`.
-- **Handoff:** Do not investigate or normalize placeholder values.
+- **Changed documents:** Release-readiness policy, release PR checklist, canonical changelog, derived release and
+  TestFlight notes.
+- **Validation:** Confirmed prerequisite #342 at `3320572a`; inspected #343 as open; reviewed
+  `v1.1.0(94)..HEAD` and the supporting changes for #328, #330, #331, and #335; ran `xcodebuild -showBuildSettings`
+  for `SkyAware` and `SkyAwareWidgetsExtension` in Debug and Release (each resolved
+  `MARKETING_VERSION = 1.1.0`, `CURRENT_PROJECT_VERSION = 80`); verified release-note claims are derived from the
+  changelog; ran release-policy search, `git diff --check`, changed-file review, and source/project/CI diff guard.
+- **Handoff:** The archive script is documented only as generating `WhatToTest.en-US.txt`; downstream upload/delivery
+  remains unproven repository evidence. Do not investigate or normalize placeholders; #344 and #345 remain separate.
 
 ### Issue #344 — 15: Make unit and UI validation lanes explicit
 
@@ -406,7 +414,7 @@ The current defects are narrow:
 | 11 | Pending | Pending | Pending | N/A | N/A | Pending |
 | 12 | Pending | Pending | Pending | N/A | N/A | Pending |
 | 13 | `git diff --check` | N/A | N/A | N/A | N/A | N/A |
-| 14 | `git diff --check`; parity check | N/A | N/A | N/A | N/A | N/A |
+| 14 | `git diff --check`; `xcodebuild -showBuildSettings` parity: app/widget Debug and Release both `1.1.0` / `80`; release-doc consistency search; source/project/CI diff guard | N/A | N/A | N/A | N/A | N/A |
 | 15 | Pending | N/A | Pending | Pending | N/A | Pending |
 | 16 | Focused regression gates | Release | As needed | Scenario fixtures | Pending | Pending |
 

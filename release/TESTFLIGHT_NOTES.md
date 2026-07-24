@@ -1,3 +1,14 @@
+## Unreleased
+
+Highlights:
+- Today should show core content sooner and remain steadier while optional information finishes refreshing.
+- Cached map warnings and same-location air-quality data should remain visible when an optional refresh cannot replace them.
+- Background refresh now keeps pending-upload work bounded and stops cleanly when iOS cancels the task.
+
+What to test:
+- Refresh Today while optional data is unavailable or slow; confirm useful cached map warnings and AQI remain visible.
+- Exercise a background refresh where feasible; confirm the app remains responsive after the task is cancelled or time expires.
+
 SkyAware v1.1.0(94)
 
 Highlights:

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Overview
+This work makes Today and background refresh behavior more resilient when optional data is delayed, unavailable, or
+cancelled.
+
+### Highlights
+- Today publishes core content earlier and keeps key sections stable while optional enrichment finishes.
+- Cached map warnings remain visible when a fresh warning lookup cannot provide a replacement.
+- Same-location air-quality data remains visible when an optional refresh has no replacement value.
+- Background refresh now bounds pending-upload work and responds to cancellation before ingestion continues.
+
 ## v1.1.0(94)
 
 ### Overview
