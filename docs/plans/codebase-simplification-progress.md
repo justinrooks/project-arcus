@@ -343,11 +343,16 @@ The current defects are narrow:
 
 ### Issue #342 — 13: Align current architecture and campaign-status documentation
 
-- **Status:** Planned
+- **Status:** Complete
 - **Goal:** Make current architecture and top-level campaign statuses agree with source and detailed ledgers.
 - **Concept removed:** Multiple unlabeled current-architecture/status truths.
-- **Required proof:** link/status review and `git diff --check`.
-- **Handoff:** Preserve historical audits as point-in-time evidence.
+- **Changed documents:** Current G5 app summary; organization, Today state-flow, and Today performance top-level
+  runbooks/progress tables; July 12 performance-audit supersession annotation.
+- **Validation:** Verified changed source links resolve; checked GitHub issue status for #289, #248, #318, and #327;
+  compared top-level tables with detailed ledgers; confirmed the remaining physical-device evidence is explicit and
+  assigned to #345; ran stale-status searches and `git diff --check`.
+- **Handoff:** Historical audits and baselines remain point-in-time evidence. #343 release/version ownership, #344
+  validation lanes, and #345 physical-device capture work remain out of scope.
 
 ### Issue #343 — 14: Document Xcode Cloud release ownership and app/widget parity
 

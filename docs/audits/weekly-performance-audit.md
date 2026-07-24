@@ -143,6 +143,11 @@
   - Added a cancellation-safe skip before upload draining so a cancelled background task does not start queue replay.
   - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination 'platform=iOS Simulator,id=F5154D35-3398-4BEB-943E-E8D174B32832' build`.
 
+> **Supersession note (2026-07-24):** The original findings and implementation notes above remain point-in-time
+> evidence. Later review and implementation superseded the post-ingestion ordering: current cancellation handling
+> performs a bounded pre-ingestion pending-upload drain of at most one upload or five seconds, then proceeds with the
+> subsequent background work.
+
 ## 2026-07-19
 - workflow reviewed: Location Resolution and Context Formation
 - files inspected:

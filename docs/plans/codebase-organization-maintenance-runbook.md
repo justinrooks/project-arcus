@@ -1,6 +1,6 @@
 # Codebase Organization Maintenance Runbook
 
-**Status:** Planned
+**Status:** Complete
 
 **Applies to:** Project Arcus / SkyAware iOS app, widgets, and tests
 
@@ -80,10 +80,10 @@ Ask the implementer to:
 - Storm Setup detail presentation remains deterministic, pure transformation logic.
 - Tests remain Swift Testing suites and must not enter the application target.
 
-## Sequential Execution
+## Historical Execution Sequence
 
-Issues 01-06 are low-risk reductions that make later production refactors easier to review. Issues 07-13 should run in
-order unless the progress ledger records a safe exception.
+This was the campaign execution order. All listed work, including the COM-14 follow-up, is complete; see the progress
+ledger for retained validation evidence and local simulator limitations.
 
 | Order | Work item | Preferred model | Legacy fallback | Stop condition |
 |---:|---|---|---|---|
@@ -100,6 +100,7 @@ order unless the progress ledger records a safe exception.
 | 11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) — Split widget rendering components by widget domain | `GPT-5.6 Luna / high` | `GPT-5.4 mini / high` | All widget families compile and render from focused component files. |
 | 12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) — Extract Storm Setup detail presentation builders | `GPT-5.6 Terra / high` | `GPT-5.3-Codex / high` | Ingredient, advanced-row, and formatting logic have semantic owners with unchanged output. |
 | 13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) — Resolve URL session metrics collector concurrency warning | `GPT-5.6 Sol / high` | `GPT-5.3-Codex / xhigh` | The warning is removed with proven synchronization and no unchecked shortcut without justification. |
+| 14 | Follow-up to [#289](https://github.com/justinrooks/project-arcus/issues/289) — Decompose `HomeView` | Completed follow-up | N/A | `HomeView` presentation responsibilities are separated without behavior change. |
 
 ## Token-Conscious Execution
 

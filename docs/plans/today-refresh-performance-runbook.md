@@ -1,6 +1,6 @@
 # Today Refresh Performance Runbook
 
-**Status:** Planned
+**Status:** Implementation complete; physical-device evidence pending
 **Applies to:** SkyAware iOS Today foreground refresh and Summary rendering
 **Project:** `SkyAware.xcodeproj`
 **Parent epic:** [#318](https://github.com/justinrooks/project-arcus/issues/318)
@@ -100,21 +100,22 @@ Do not reload the full audit or unrelated server, notification, background, Map,
 - `HomeView` maps raw pipeline/cache state into canonical Today display state.
 - `SummaryView` and child cards render that state without redefining refresh business semantics.
 
-## Sequential Execution
+## Campaign Execution Sequence
 
-| Order | Work item | Preferred model | Stop condition |
+| Order | Work item | Preferred model | Current status |
 |---:|---|---|---|
-| 1 | [#319](https://github.com/justinrooks/project-arcus/issues/319) — Establish Today refresh performance baselines | `GPT-5.6 Luna / medium` | Baseline traces and state/save timelines are recorded in the progress ledger. |
-| 2 | [#320](https://github.com/justinrooks/project-arcus/issues/320) — Publish coherent Home projections atomically | `GPT-5.6 Terra / medium` | No-cache refresh cannot expose a partial projection; one coherent core save is observed. |
-| 3 | [#321](https://github.com/justinrooks/project-arcus/issues/321) — Keep Local Alerts structurally stable across content changes | `GPT-5.6 Luna / medium` | The outer Local Alerts surface retains identity across populated/empty transitions. |
-| 4 | [#322](https://github.com/justinrooks/project-arcus/issues/322) — Reserve a stable Storm Setup section slot | `GPT-5.6 Luna / medium` | Loading-to-visible Storm Setup does not insert an unreserved section. |
-| 5 | [#323](https://github.com/justinrooks/project-arcus/issues/323) — Parallelize independent ingestion work within priority lanes | `GPT-5.6 Luna / medium` | Independent provider waits overlap without changing results, freshness, or progress semantics. |
-| 6 | [#324](https://github.com/justinrooks/project-arcus/issues/324) — Run optional enrichment concurrently | `GPT-5.6 Luna / medium` | Storm Setup and AQI no longer add their latencies serially. |
-| 7 | [#325](https://github.com/justinrooks/project-arcus/issues/325) — Publish core Today content before optional enrichment | `GPT-5.6 Terra / medium` | Core content commits first; enrichment follows through an owned, stable staged update. |
-| 8 | [#326](https://github.com/justinrooks/project-arcus/issues/326) — Isolate continuous Today header rendering | `GPT-5.6 Luna / medium` | Scroll progress no longer drives broad Summary layout animation or confirmed derivation hotspots. |
-| 9 | [#327](https://github.com/justinrooks/project-arcus/issues/327) — Prove end-to-end Today refresh smoothness | `GPT-5.6 Luna / medium` | The scenario matrix, focused tests, build, and before/after device traces are complete. |
+| 1 | [#319](https://github.com/justinrooks/project-arcus/issues/319) — Establish Today refresh performance baselines | `GPT-5.6 Luna / medium` | Instrumentation complete; comparable physical-device scenarios pending. |
+| 2 | [#320](https://github.com/justinrooks/project-arcus/issues/320) — Publish coherent Home projections atomically | `GPT-5.6 Terra / medium` | Complete. |
+| 3 | [#321](https://github.com/justinrooks/project-arcus/issues/321) — Keep Local Alerts structurally stable across content changes | `GPT-5.6 Luna / medium` | Implementation complete; rendered simulator inspection blocked locally. |
+| 4 | [#322](https://github.com/justinrooks/project-arcus/issues/322) — Reserve a stable Storm Setup section slot | `GPT-5.6 Luna / medium` | Implementation complete; rendered Reduce Motion inspection blocked locally. |
+| 5 | [#323](https://github.com/justinrooks/project-arcus/issues/323) — Parallelize independent ingestion work within priority lanes | `GPT-5.6 Luna / medium` | Complete. |
+| 6 | [#324](https://github.com/justinrooks/project-arcus/issues/324) — Run optional enrichment concurrently | `GPT-5.6 Luna / medium` | Complete. |
+| 7 | [#325](https://github.com/justinrooks/project-arcus/issues/325) — Publish core Today content before optional enrichment | `GPT-5.6 Terra / medium` | Complete. |
+| 8 | [#326](https://github.com/justinrooks/project-arcus/issues/326) — Isolate continuous Today header rendering | `GPT-5.6 Luna / medium` | Implementation complete; simulator and device-trace validation deferred. |
+| 9 | [#327](https://github.com/justinrooks/project-arcus/issues/327) — Prove end-to-end Today refresh smoothness | `GPT-5.6 Luna / medium` | Closed; incomplete comparable physical-device evidence is owned by [#345](https://github.com/justinrooks/project-arcus/issues/345). |
 
-Execute sequentially. Do not begin the next issue until the current issue is validated and its ledger entry is updated.
+This was the intended execution order. Implementation is complete; the remaining comparable physical-device evidence is
+explicitly incomplete and is owned by [#345](https://github.com/justinrooks/project-arcus/issues/345).
 
 Terra is intentional for issues 02 and 07. Issue 02 crosses SwiftData save/query visibility and Today state semantics.
 Issue 07 crosses structured-concurrency ownership, coordinator sequencing, failure behavior, and staged UI publication.

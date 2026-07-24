@@ -5,7 +5,7 @@
 This ledger tracks the campaign to make SkyAware foreground Today refresh faster and visually stable. It is the durable
 handoff record for issue status, implementation decisions, validation evidence, and residual risk.
 
-**Epic status:** Planned
+**Epic status:** Implementation complete; physical-device evidence pending
 **Primary GitHub epic:** [#318](https://github.com/justinrooks/project-arcus/issues/318)
 
 ## Global Decisions
@@ -21,7 +21,10 @@ handoff record for issue status, implementation decisions, validation evidence, 
   `GPT-5.6 Terra / medium` because they cross persistence/concurrency/UI publication boundaries.
 - No issue currently justifies Sol. Escalate only after the active issue proves its documented boundary insufficient.
 
-## Current State Summary
+## Campaign Baseline (Historical)
+
+The following describes the pre-implementation state. Detailed entries below are the current authority for completed
+work and remaining validation gaps.
 
 Foreground entry points submit work through `HomeRefreshPipeline`, `HomeIngestionCoordinator`, and
 `HomeIngestionExecutor`. The coordinator reliably coalesces requests, providers and repositories remain actor-isolated,
@@ -41,16 +44,16 @@ progress drives layout animation through the Summary hierarchy.
 
 | Order | Issue | Title | Preferred model | Status | Dependency |
 |---:|---|---|---|---|---|
-| 0 | [#318](https://github.com/justinrooks/project-arcus/issues/318) | Epic: Make Today Refresh Fast and Visually Stable | Coordination | Planned | Completed investigation |
-| 1 | [#319](https://github.com/justinrooks/project-arcus/issues/319) | Establish Today refresh performance baselines | `GPT-5.6 Luna / medium` | Planned | None |
-| 2 | [#320](https://github.com/justinrooks/project-arcus/issues/320) | Publish coherent Home projections atomically | `GPT-5.6 Terra / medium` | Planned | #319 |
-| 3 | [#321](https://github.com/justinrooks/project-arcus/issues/321) | Keep Local Alerts structurally stable across content changes | `GPT-5.6 Luna / medium` | Planned | #320 |
-| 4 | [#322](https://github.com/justinrooks/project-arcus/issues/322) | Reserve a stable Storm Setup section slot | `GPT-5.6 Luna / medium` | Planned | #321 |
-| 5 | [#323](https://github.com/justinrooks/project-arcus/issues/323) | Parallelize independent ingestion work within priority lanes | `GPT-5.6 Luna / medium` | Planned | #322 |
-| 6 | [#324](https://github.com/justinrooks/project-arcus/issues/324) | Run optional enrichment concurrently | `GPT-5.6 Luna / medium` | Planned | #323 |
+| 0 | [#318](https://github.com/justinrooks/project-arcus/issues/318) | Epic: Make Today Refresh Fast and Visually Stable | Coordination | Closed; implementation complete | Remaining physical-device evidence is tracked separately. |
+| 1 | [#319](https://github.com/justinrooks/project-arcus/issues/319) | Establish Today refresh performance baselines | `GPT-5.6 Luna / medium` | Instrumentation complete; physical-device capture pending | Comparable scenario gaps remain. |
+| 2 | [#320](https://github.com/justinrooks/project-arcus/issues/320) | Publish coherent Home projections atomically | `GPT-5.6 Terra / medium` | Complete | #319 |
+| 3 | [#321](https://github.com/justinrooks/project-arcus/issues/321) | Keep Local Alerts structurally stable across content changes | `GPT-5.6 Luna / medium` | Implementation complete; simulator inspection blocked | #320 |
+| 4 | [#322](https://github.com/justinrooks/project-arcus/issues/322) | Reserve a stable Storm Setup section slot | `GPT-5.6 Luna / medium` | Implementation complete; Reduce Motion inspection blocked | #321 |
+| 5 | [#323](https://github.com/justinrooks/project-arcus/issues/323) | Parallelize independent ingestion work within priority lanes | `GPT-5.6 Luna / medium` | Complete | #322 |
+| 6 | [#324](https://github.com/justinrooks/project-arcus/issues/324) | Run optional enrichment concurrently | `GPT-5.6 Luna / medium` | Complete | #323 |
 | 7 | [#325](https://github.com/justinrooks/project-arcus/issues/325) | Publish core Today content before optional enrichment | `GPT-5.6 Terra / medium` | Complete | #324 |
-| 8 | [#326](https://github.com/justinrooks/project-arcus/issues/326) | Isolate continuous Today header rendering | `GPT-5.6 Luna / medium` | Planned | #325 |
-| 9 | [#327](https://github.com/justinrooks/project-arcus/issues/327) | Prove end-to-end Today refresh smoothness | `GPT-5.6 Luna / medium` | Planned | #319-#326 |
+| 8 | [#326](https://github.com/justinrooks/project-arcus/issues/326) | Isolate continuous Today header rendering | `GPT-5.6 Luna / medium` | Implementation complete; simulator/device-trace validation deferred | #325 |
+| 9 | [#327](https://github.com/justinrooks/project-arcus/issues/327) | Prove end-to-end Today refresh smoothness | `GPT-5.6 Luna / medium` | Closed; physical-device evidence incomplete | Remaining comparable evidence is owned by [#345](https://github.com/justinrooks/project-arcus/issues/345). |
 
 ## Existing Code Map
 
