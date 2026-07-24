@@ -127,15 +127,22 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
         let requestedPlan = request.plan
-        return try await withCheckedThrowingContinuation { continuation in
-            let waiter = Waiter(
-                id: UUID(),
-                requestedPlan: requestedPlan,
-                progress: progress,
-                publication: publication,
-                continuation: continuation
-            )
-            submit(requestedPlan, waiter: waiter)
+        let waiterID = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let waiter = Waiter(
+                    id: waiterID,
+                    requestedPlan: requestedPlan,
+                    progress: progress,
+                    publication: publication,
+                    continuation: continuation
+                )
+                submit(requestedPlan, waiter: waiter)
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(withID: waiterID)
+            }
         }
     }
 
@@ -182,6 +189,11 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         #endif
     }
 
+    private func cancelWaiter(withID waiterID: UUID) {
+        guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
+        waiter.continuation.resume(throwing: CancellationError())
+    }
+
     #if DEBUG
     func waitForTestWaiterCount(atLeast count: Int) async {
         guard waiters.count < count else { return }
@@ -192,6 +204,10 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func testPendingPlanForWaiterCharacterization() -> HomeIngestionPlan? {
         pendingPlan
+    }
+
+    func testWaiterCountForWaiterCharacterization() -> Int {
+        waiters.count
     }
     #endif
 

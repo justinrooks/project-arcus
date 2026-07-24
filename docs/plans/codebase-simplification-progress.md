@@ -181,9 +181,18 @@ The current defects are narrow:
 
 ### Issue #333 — 04: Cancel waiters without canceling shared ingestion runs
 
-- **Status:** Planned
+- **Status:** Implemented and validated.
 - **Goal:** Remove canceled waiters promptly and resume continuations exactly once.
-- **Concept removed:** Waiters that outlive caller interest.
+- **Changed files:** `HomeIngestionCoordinator.swift` wraps canonical waiter registration in a task-cancellation
+  handler and removes/resumes the actor-owned waiter through dictionary removal. `HomeIngestionCoordinatorTests.swift`
+  inverts the #332 characterization matrix and adds repeated-cancellation coverage.
+- **Behavior:** Cancellation removes the waiter before resuming `CancellationError`; callbacks and `finishRun` only
+  see retained waiters. Active and pending coordinator work, including fire-and-forget work, remains unchanged.
+- **Validation:** Xcode `SkyAware_Tests` passed 900/900 tests with no failures or skips on iPhone 17 / iOS 26.5 on
+  2026-07-24. The inspected result bundle is
+  `Test-SkyAware-2026.07.24_09-43-09--0600.xcresult`; all 15 `HomeIngestionCoordinatorTests`, including the
+  pre-cancel, active/pending callback suppression, retained-waiter, last-waiter, finish-before-cancel, and repeated
+  cancellation cases, passed. Debug app and test-target builds also succeeded.
 - **Required proof:** issue 03 tests pass; canceled callbacks stop; shared useful work continues.
 - **Handoff:** Do not change plan satisfaction, merging, provider orchestration, or trigger count.
 
