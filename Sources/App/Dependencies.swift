@@ -343,19 +343,13 @@ final class Dependencies: Sendable {
         let airQualityClient = AirQualityHTTPClient(baseURL: arcusBaseURL, http: httpClient)
         let metadataRepo = NwsMetadataRepo()
 
-        let locationUploadCoordinator: any LocationUploadCoordinating
-        if let arcusSignalBaseURL = ArcusSignalConfiguration.configuredBaseURL() {
-            let snapshotUploader = HTTPLocationSnapshotUploader(baseURL: arcusSignalBaseURL, http: httpClient)
-            let preferenceUploader = HTTPDevicePreferenceSyncUploader(baseURL: arcusSignalBaseURL, http: httpClient)
-            locationUploadCoordinator = LocationSnapshotPusher(
-                locationUploader: snapshotUploader,
-                preferenceUploader: preferenceUploader
-            )
-            logger.info("Location snapshot push enabled host=\(arcusSignalBaseURL.host ?? "unknown", privacy: .public)")
-        } else {
-            locationUploadCoordinator = NoOpLocationUploadCoordinator()
-            logger.info("Location snapshot push disabled (missing ARCUS_SIGNAL_URL)")
-        }
+        let snapshotUploader = HTTPLocationSnapshotUploader(baseURL: arcusBaseURL, http: httpClient)
+        let preferenceUploader = HTTPDevicePreferenceSyncUploader(baseURL: arcusBaseURL, http: httpClient)
+        let locationUploadCoordinator = LocationSnapshotPusher(
+            locationUploader: snapshotUploader,
+            preferenceUploader: preferenceUploader
+        )
+        logger.info("Location snapshot push enabled host=\(arcusBaseURL.host ?? "unknown", privacy: .public)")
         
         // Location
         let locationProvider = LocationProvider(snapshotCache: LocationSnapshotCache())

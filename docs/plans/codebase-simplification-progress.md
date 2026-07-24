@@ -326,11 +326,20 @@ The current defects are narrow:
 
 ### Issue #341 — 12: Make Arcus live composition fail-fast and explicit
 
-- **Status:** Planned
-- **Goal:** Use one configuration resolution and one explicit live/no-op policy.
-- **Concept removed:** Unreachable degraded-production branch.
-- **Required proof:** missing/malformed/valid URL configuration and onboarding availability tests.
-- **Handoff:** Do not change the URL scheme or absorb issue #245.
+- **Status:** Implemented (2026-07-24).
+- **Goal:** Resolve one required Arcus base URL for every live Arcus client and uploader.
+- **Concept removed:** The duplicate optional configuration lookup and unreachable degraded-production no-op branch.
+- **Behavior:** `Dependencies.live()` now resolves `ArcusSignalConfiguration.baseURL()` once, then passes that URL to
+  alerts, Storm Setup, AQI, location snapshots, and device preferences. Invalid production configuration still fails
+  before dependencies escape; preview and test composition retain explicit named no-ops. Onboarding's existing
+  remote-setup eligibility/configuration decision is characterized without changing its flow.
+- **Validation:** `ArcusSignalConfigurationTests`, `ArcusHttpClientTests`,
+  `HTTPLocationSnapshotUploaderTests`, `HTTPDevicePreferenceSyncUploaderTests`,
+  `LaunchPresentationStateTests`, `OnboardingStepTests`, and `OnboardingRemoteSetupDecisionTests` passed 23 logical
+  tests / 30 parameterized runs with zero failures on iPhone 17 / iOS 26.5; inspected bundle:
+  `/tmp/project-arcus-341-focused.xcresult`. Debug build passed; inspected bundle:
+  `/tmp/project-arcus-341-build.xcresult`.
+- **Handoff:** No API host, scheme, path, payload, build-setting, ArcusCore, or #245 work was included.
 
 ### Issue #342 — 13: Align current architecture and campaign-status documentation
 
