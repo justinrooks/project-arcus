@@ -147,10 +147,15 @@ The current defects are narrow:
 
 ### Issue #331 — 02: Preserve same-location AQI when refresh produces no value
 
-- **Status:** Planned
+- **Status:** Implemented; simulator validation blocked
 - **Goal:** Preserve same-key AQI across skipped/failed refreshes while isolating location changes.
 - **Concept removed:** `nil` as updated-empty, skipped, and failed.
 - **Required proof:** hot tick, failure, success, location change, and stale run/key tests.
+- **Evidence:** Home enrichment now publishes a two-case AQI replace/preserve outcome. Deterministic executor and
+  pipeline coverage characterizes hot-tick skip, failed and empty responses, replacement, same-key retention,
+  location clearing, mismatched run/key rejection, and superseded enrichment. Debug simulator build passed on
+  2026-07-23. Focused unit and Today UI commands built but could not execute because CoreSimulatorService was
+  unavailable; their staged result bundles have no `Info.plist`, so `xcresulttool` cannot inspect them.
 - **Handoff:** No AQI persistence or server/ArcusCore contract work.
 
 ### Issue #332 — 03: Characterize ingestion waiter cancellation

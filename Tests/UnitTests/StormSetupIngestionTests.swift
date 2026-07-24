@@ -78,6 +78,7 @@ struct StormSetupIngestionTests {
     func sessionTick_skipsAQIRefreshWhileHotAlertsAreTheOnlyRequestedLane() async throws {
         let context = makeContext()
         let airQuality = AirQualityQueryingFake()
+        let publications = HomeIngestionPublicationRecorder()
         let harness = try makeHarness(
             context: context,
             airQualityQuerying: airQuality,
@@ -86,10 +87,23 @@ struct StormSetupIngestionTests {
         )
 
         _ = try await harness.executor.run(
-            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+            plan: HomeIngestionPlan(request: .init(trigger: .sessionTick)),
+            progress: HomeIngestionRunProgress(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in
+                    await publications.append(publication)
+                }
+            )
         )
 
         #expect(await airQuality.requestCount() == 0)
+        let enrichment = try #require(await publications.values().last)
+        guard case .enrichment(let value) = enrichment.stage else {
+            Issue.record("Expected optional enrichment publication")
+            return
+        }
+        #expect(value.airQualityOutcome == .preserve)
     }
 
     @Test("executor publishes persisted core before joined optional enrichment")
@@ -180,7 +194,7 @@ struct StormSetupIngestionTests {
         }
         #expect(enrichment.refreshKey == context.refreshKey)
         #expect(enrichment.stormSetup == normalizedStormSetupDTO(dto))
-        #expect(enrichment.airQuality == airQualityResponse)
+        #expect(enrichment.airQualityOutcome == .replace(airQualityResponse))
         #expect(await completion.isCompleted())
         #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
         #expect(snapshot.stormSetupRefreshResult == .success)
@@ -261,6 +275,7 @@ struct StormSetupIngestionTests {
     func aqiFailurePreservesStormSetupAndItsPersistence() async throws {
         let context = makeContext()
         let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let publications = HomeIngestionPublicationRecorder()
         let harness = try makeHarness(
             context: context,
             query: StormSetupQueryingFake(response: .success(dto)),
@@ -268,14 +283,56 @@ struct StormSetupIngestionTests {
         )
 
         let snapshot = try await harness.executor.run(
-            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)),
+            progress: HomeIngestionRunProgress(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in
+                    await publications.append(publication)
+                }
+            )
         )
 
         #expect(snapshot.stormSetupRefreshResult == .success)
         #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
         #expect(snapshot.airQuality == nil)
+        let enrichment = try #require(await publications.values().last)
+        guard case .enrichment(let value) = enrichment.stage else {
+            Issue.record("Expected optional enrichment publication")
+            return
+        }
+        #expect(value.airQualityOutcome == .preserve)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
         #expect(persisted.stormSetup == normalizedStormSetupDTO(dto))
+    }
+
+    @Test("successful empty AQI response publishes preservation")
+    func successfulEmptyAQIResponse_publishesPreservation() async throws {
+        let context = makeContext()
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(
+            context: context,
+            airQualityQuerying: AirQualityQueryingFake(response: .success(nil))
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)),
+            progress: HomeIngestionRunProgress(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in
+                    await publications.append(publication)
+                }
+            )
+        )
+
+        #expect(snapshot.airQuality == nil)
+        let enrichment = try #require(await publications.values().last)
+        guard case .enrichment(let value) = enrichment.stage else {
+            Issue.record("Expected optional enrichment publication")
+            return
+        }
+        #expect(value.airQualityOutcome == .preserve)
     }
 
     @Test("fresh or ineligible Storm Setup does not prevent AQI execution")

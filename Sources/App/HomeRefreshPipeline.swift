@@ -610,8 +610,10 @@ final class HomeRefreshPipeline {
 
     private func applyEnrichment(_ enrichment: HomeIngestionEnrichmentPublication) {
         applyStormSetup(enrichment)
-        airQuality = enrichment.airQuality
-        airQualityRefreshKey = enrichment.refreshKey
+        if case .replace(let response) = enrichment.airQualityOutcome {
+            airQuality = response
+            airQualityRefreshKey = enrichment.refreshKey
+        }
     }
 
     private func applyStormSetup(_ enrichment: HomeIngestionEnrichmentPublication) {
