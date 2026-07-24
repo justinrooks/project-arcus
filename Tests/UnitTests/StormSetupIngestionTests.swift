@@ -1196,6 +1196,90 @@ struct StormSetupIngestionTests {
         }
     }
 
+    @Test("atomic projection fake publishes no staged core state when a logical slice fails")
+    func atomicProjectionFake_doesNotPublishPartialStateOnFailure() async throws {
+        let context = makeContext()
+        let initialCommit = HomeProjectionCoreCommit(
+            weather: sampleWeather(),
+            slowProducts: (.slight, .wind(probability: 0.15), .critical),
+            hotAlerts: (alerts: [Watch.sampleWatchRows[0]], mesos: [MD.sampleDiscussionDTOs[0]])
+        )
+        let nextCommit = HomeProjectionCoreCommit(
+            weather: sampleWeather(),
+            slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated),
+            hotAlerts: (alerts: [], mesos: [])
+        )
+
+        for failurePoint in AtomicHomeProjectionStore.FailurePoint.allCases {
+            let store = AtomicHomeProjectionStore()
+            _ = try await store.commitCore(initialCommit, for: context, loadedAt: Date(timeIntervalSince1970: 100))
+            let priorState = await store.state(for: context)
+            await store.setFailurePoint(failurePoint)
+
+            await #expect(throws: TestError.self, "\(failurePoint)") {
+                try await store.commitCore(nextCommit, for: context, loadedAt: Date(timeIntervalSince1970: 200))
+            }
+
+            #expect(await store.state(for: context) == priorState, "\(failurePoint)")
+        }
+    }
+
+    @Test("atomic projection fake stages optional slices and derives risk changes from committed state")
+    func atomicProjectionFake_preservesSkippedSlicesClearsIncludedEmptyAndUsesPriorRisk() async throws {
+        let context = makeContext()
+        let store = AtomicHomeProjectionStore()
+        let weather = sampleWeather()
+        let initialAlert = Watch.sampleWatchRows[0]
+        let initialMeso = MD.sampleDiscussionDTOs[0]
+        let initialLoadedAt = Date(timeIntervalSince1970: 100)
+
+        _ = try await store.commitCore(
+            .init(
+                weather: weather,
+                slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                hotAlerts: (alerts: [initialAlert], mesos: [initialMeso])
+            ),
+            for: context,
+            loadedAt: initialLoadedAt
+        )
+        let initialState = try #require(await store.state(for: context))
+        #expect(initialState.weather == weather)
+        #expect(initialState.stormRisk == .slight)
+        #expect(initialState.activeAlerts == [initialAlert])
+        #expect(initialState.activeMesos == [initialMeso])
+        #expect(initialState.lastWeatherLoadAt == initialLoadedAt)
+        #expect(initialState.lastSlowProductsLoadAt == initialLoadedAt)
+        #expect(initialState.lastHotAlertsLoadAt == initialLoadedAt)
+
+        let loadedAt = Date(timeIntervalSince1970: 200)
+        let change = try #require(await store.commitCore(
+            .init(
+                slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated),
+                hotAlerts: (alerts: [], mesos: [])
+            ),
+            for: context,
+            loadedAt: loadedAt
+        ))
+        let committed = try #require(await store.projection(for: context))
+
+        #expect(change.previous == RiskProfile(
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.15),
+            fireRisk: .critical
+        ))
+        #expect(change.current == RiskProfile(
+            stormRisk: .enhanced,
+            severeRisk: .tornado(probability: 0.30),
+            fireRisk: .elevated
+        ))
+        #expect(committed.weather == weather)
+        #expect(committed.lastWeatherLoadAt == initialLoadedAt)
+        #expect(committed.activeAlerts.isEmpty)
+        #expect(committed.activeMesos.isEmpty)
+        #expect(committed.lastHotAlertsLoadAt == loadedAt)
+        #expect(committed.lastSlowProductsLoadAt == loadedAt)
+    }
+
     private func makeHarness(
         context: LocationContext,
         query: StormSetupQueryingFake? = nil,
@@ -1647,6 +1731,171 @@ private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
         loadedAt: Date
     ) async throws -> HomeProjectionRecord {
         makeProjectionRecord(context: context, updatedAt: loadedAt)
+    }
+
+    func commitCore(
+        _ commit: HomeProjectionCoreCommit,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange? {
+        throw TestError.failed
+    }
+}
+
+private actor AtomicHomeProjectionStore: HomeProjectionPersisting {
+    enum FailurePoint: String, CaseIterable, Sendable {
+        case afterWeather
+        case afterSlowProducts
+        case afterHotAlerts
+    }
+
+    struct State: Sendable, Equatable {
+        var weather: SummaryWeather?
+        var stormRisk: StormRiskLevel?
+        var severeRisk: SevereWeatherThreat?
+        var fireRisk: FireRiskLevel?
+        var activeAlerts: [AlertDTO] = []
+        var activeMesos: [MdDTO] = []
+        var lastWeatherLoadAt: Date?
+        var lastSlowProductsLoadAt: Date?
+        var lastHotAlertsLoadAt: Date?
+        var updatedAt: Date?
+    }
+
+    private var states: [String: State] = [:]
+    private var failurePoint: FailurePoint?
+
+    func projection(for context: LocationContext) async throws -> HomeProjectionRecord? {
+        guard let state = states[HomeProjection.projectionKey(for: context)] else {
+            return nil
+        }
+        return record(for: state, context: context)
+    }
+
+    func updateStormSetup(
+        _ stormSetup: StormSetupCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        throw TestError.failed
+    }
+
+    func updateWeather(
+        _ weather: SummaryWeather?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        throw TestError.failed
+    }
+
+    func updateSlowProducts(
+        stormRisk: StormRiskLevel?,
+        severeRisk: SevereWeatherThreat?,
+        fireRisk: FireRiskLevel?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange? {
+        throw TestError.failed
+    }
+
+    func updateHotAlerts(
+        alerts: [AlertDTO],
+        mesos: [MdDTO],
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        throw TestError.failed
+    }
+
+    func commitCore(
+        _ commit: HomeProjectionCoreCommit,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> RiskProfileChange? {
+        let projectionKey = HomeProjection.projectionKey(for: context)
+        let previous = states[projectionKey] ?? State()
+        var candidate = previous
+
+        if let weather = commit.weather {
+            candidate.weather = weather
+            candidate.lastWeatherLoadAt = loadedAt
+            try failIfNeeded(.afterWeather)
+        }
+        if let slowProducts = commit.slowProducts {
+            candidate.stormRisk = slowProducts.stormRisk
+            candidate.severeRisk = slowProducts.severeRisk
+            candidate.fireRisk = slowProducts.fireRisk
+            candidate.lastSlowProductsLoadAt = loadedAt
+            try failIfNeeded(.afterSlowProducts)
+        }
+        if let hotAlerts = commit.hotAlerts {
+            candidate.activeAlerts = hotAlerts.alerts
+            candidate.activeMesos = hotAlerts.mesos
+            candidate.lastHotAlertsLoadAt = loadedAt
+            try failIfNeeded(.afterHotAlerts)
+        }
+
+        candidate.updatedAt = loadedAt
+        states[projectionKey] = candidate
+        return RiskProfileChange(
+            previous: RiskProfile(
+                stormRisk: previous.stormRisk,
+                severeRisk: previous.severeRisk,
+                fireRisk: previous.fireRisk
+            ),
+            current: commit.slowProducts.flatMap {
+                RiskProfile(
+                    stormRisk: $0.stormRisk,
+                    severeRisk: $0.severeRisk,
+                    fireRisk: $0.fireRisk
+                )
+            },
+            projectionKey: projectionKey,
+            locationSummary: context.snapshot.placemarkSummary
+        )
+    }
+
+    func state(for context: LocationContext) -> State? {
+        states[HomeProjection.projectionKey(for: context)]
+    }
+
+    func setFailurePoint(_ failurePoint: FailurePoint?) {
+        self.failurePoint = failurePoint
+    }
+
+    private func failIfNeeded(_ point: FailurePoint) throws {
+        guard failurePoint == point else {
+            return
+        }
+        throw TestError.failed
+    }
+
+    private func record(for state: State, context: LocationContext) -> HomeProjectionRecord {
+        HomeProjectionRecord(
+            id: UUID(),
+            projectionKey: HomeProjection.projectionKey(for: context),
+            latitude: context.snapshot.coordinates.latitude,
+            longitude: context.snapshot.coordinates.longitude,
+            h3Cell: context.h3Cell,
+            countyCode: context.grid.countyCode ?? "",
+            forecastZone: context.grid.forecastZone,
+            fireZone: context.grid.fireZone ?? "",
+            placemarkSummary: context.snapshot.placemarkSummary,
+            timeZoneId: context.grid.timeZoneId,
+            locationTimestamp: context.snapshot.timestamp,
+            createdAt: state.updatedAt ?? .distantPast,
+            updatedAt: state.updatedAt ?? .distantPast,
+            lastViewedAt: nil,
+            weather: state.weather,
+            stormRisk: state.stormRisk,
+            severeRisk: state.severeRisk,
+            fireRisk: state.fireRisk,
+            activeAlerts: state.activeAlerts,
+            activeMesos: state.activeMesos,
+            lastHotAlertsLoadAt: state.lastHotAlertsLoadAt,
+            lastSlowProductsLoadAt: state.lastSlowProductsLoadAt,
+            lastWeatherLoadAt: state.lastWeatherLoadAt
+        )
     }
 }
 

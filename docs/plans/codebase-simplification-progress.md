@@ -237,11 +237,21 @@ The current defects are narrow:
 
 ### Issue #336 — 07: Require atomic Home core commits across conformers
 
-- **Status:** Planned
-- **Goal:** Remove decomposed default `commitCore` behavior.
+- **Status:** Implemented
+- **Goal:** Removed decomposed default `commitCore` behavior.
 - **Concept removed:** One API name with multiple transaction semantics.
-- **Required proof:** production/fake failure atomicity, skipped slices, authoritative empty, risk delta.
-- **Handoff:** Do not redesign projection schema/readiness or split the store.
+- **Changes:** `HomeProjectionPersisting` now requires explicit core-transaction ownership; production retains its one
+  model-actor `Projection Core Save`; `ThrowingHomeProjectionStore` explicitly fails before publication; the new
+  value-state actor fake stages all slices and publishes once after deterministic failure checks.
+- **Required proof:** Failure after weather, slow-product, or hot-alert staging leaves prior fake state unchanged;
+  successful commits preserve skipped weather, clear authoritative-empty alerts/mesos, and derive risk deltas from
+  the prior committed profile.
+- **Validation:** Focused `HomeProjectionStoreTests` and `StormSetupIngestionTests` passed 59/59; full
+  `SkyAwareTests` passed 912/912, both with no failures or skips on iPhone 17 / iOS 26.5. Inspected result bundles:
+  `Test-SkyAware-2026.07.24_11-41-54--0600.xcresult` and
+  `Test-SkyAware-2026.07.24_11-45-18--0600.xcresult`. Debug simulator build and `git diff --check` passed.
+- **Handoff:** #337 may address ingestion-coordinator protocol overloads; do not redesign projection schema,
+  readiness, executor flow, or split the store.
 
 ### Issue #337 — 08: Collapse Home ingestion coordination to one semantic operation
 
