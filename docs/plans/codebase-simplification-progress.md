@@ -84,7 +84,7 @@ The current defects are narrow:
 | 08 | [#337](https://github.com/justinrooks/project-arcus/issues/337) — Collapse coordinator protocol | F-06 | `GPT-5.6 Luna / medium` | Planned | 04 |
 | 09 | [#338](https://github.com/justinrooks/project-arcus/issues/338) — Require explicit side effects | F-06 | `GPT-5.6 Luna / medium` | Planned | 05, 06 |
 | 10 | [#339](https://github.com/justinrooks/project-arcus/issues/339) — Centralize Today display selection | F-07 | `GPT-5.6 Terra / medium` | Implemented | 02 |
-| 11 | [#340](https://github.com/justinrooks/project-arcus/issues/340) — Remove obsolete Home artifacts | F-08 | `GPT-5.6 Luna / medium` | Planned | 10 |
+| 11 | [#340](https://github.com/justinrooks/project-arcus/issues/340) — Remove obsolete Home artifacts | F-08 | `GPT-5.6 Luna / medium` | Implemented | 10 |
 | 12 | [#341](https://github.com/justinrooks/project-arcus/issues/341) — Clarify Arcus live composition | F-09 | `GPT-5.6 Luna / medium` | Planned | 09 |
 | 13 | [#342](https://github.com/justinrooks/project-arcus/issues/342) — Align architecture/status docs | F-10 | `GPT-5.6 Luna / medium` | Planned | 01-12 or explicit interim state |
 | 14 | [#343](https://github.com/justinrooks/project-arcus/issues/343) — Document Xcode Cloud ownership/parity | F-10 correction | `GPT-5.6 Luna / medium` | Planned | 13 |
@@ -306,11 +306,23 @@ The current defects are narrow:
 
 ### Issue #340 — 11: Remove obsolete Home model and inert pipeline policies
 
-- **Status:** Planned
+- **Status:** Implemented (2026-07-24).
 - **Goal:** Delete `HomeScreenModel` and unread pipeline initializer arguments.
-- **Concept removed:** One obsolete owner and six inert policy knobs.
-- **Required proof:** reference scan, trigger/timing tests, Debug build, full unit target.
-- **Handoff:** Split into two commits/checkpoints if the mechanical diff becomes noisy.
+- **Concept removed:** One obsolete owner and six inert policy knobs:
+  `minimumForegroundRefreshInterval`, `minimumRefreshDistanceMeters`, `alertRefreshPolicy`, `mapProductRefreshPolicy`,
+  `outlookRefreshPolicy`, and `weatherKitRefreshPolicy`.
+- **Changed files:** Deleted `HomeRefreshV2/HomeScreenModel.swift`; removed only the six inert arguments from
+  `HomeRefreshPipeline.init`; this ledger records the completed issue.
+- **Behavior:** No trigger, timing, visible-state, persistence, or concurrency behavior changed. The 120-second
+  `foregroundTimerInterval` remains stored and used by the pipeline timer. Foreground location thresholds remain in
+  `HomeRefreshPolicies`, and alert/map/outlook/WeatherKit policies remain owned by `HomeIngestionExecutor`.
+- **Validation:** Repository scans found no `HomeScreenModel` reference after deletion and no removed initializer label
+  in `HomeRefreshPipeline`. On iPhone 17 / iOS 26.5, focused `HomeRefreshPipelineTests`, `HomeViewStateTests`, and
+  `ForegroundRefreshPolicyTests` passed 55/55; inspected bundle:
+  `/tmp/project-arcus-340-focused.xcresult`. Debug build passed with zero warnings/errors; inspected bundle:
+  `/tmp/project-arcus-340-build.xcresult`. Full `SkyAwareTests` passed 912/912 with zero failures/skips; inspected
+  bundle: `/tmp/project-arcus-340-unit.xcresult`. `git diff --check` passed.
+- **Handoff:** No call-site, project-file, test, Arcus composition (#341), or policy-ownership change was needed.
 
 ### Issue #341 — 12: Make Arcus live composition fail-fast and explicit
 

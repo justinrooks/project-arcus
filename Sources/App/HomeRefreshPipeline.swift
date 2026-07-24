@@ -132,14 +132,8 @@ final class HomeRefreshPipeline {
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
-        minimumForegroundRefreshInterval: TimeInterval = 3 * 60,
-        minimumRefreshDistanceMeters: CLLocationDistance = 800,
-        foregroundTimerInterval: Duration = .seconds(120),
-        alertRefreshPolicy: AlertRefreshPolicy = AlertRefreshPolicy(),
-        mapProductRefreshPolicy: MapProductRefreshPolicy = MapProductRefreshPolicy(),
-        outlookRefreshPolicy: OutlookRefreshPolicy = OutlookRefreshPolicy(),
-        weatherKitRefreshPolicy: WeatherKitRefreshPolicy = WeatherKitRefreshPolicy()
-        ) {
+        foregroundTimerInterval: Duration = .seconds(120)
+    ) {
         self.snap = initialSnap
         self.stormSetup = initialStormSetup
         self.stormSetupCurrentResponse = initialStormSetupCurrentResponse
