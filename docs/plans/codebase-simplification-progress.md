@@ -274,11 +274,20 @@ The current defects are narrow:
 
 ### Issue #338 — 09: Require explicit upload and preference side effects
 
-- **Status:** Planned
+- **Status:** Implemented; simulator test execution pending host repair
 - **Goal:** Make every live/no-op side-effect choice explicit at composition.
-- **Concept removed:** Silent critical no-op protocol conformance.
-- **Required proof:** conformance inventory and upload/preference integration tests.
-- **Handoff:** No payload, endpoint, or ArcusCore work.
+- **Concept removed:** Silent critical no-op protocol conformance and initializer-selected upload no-ops.
+- **Changes:** `LocationUploadCoordinating` now requires location enqueue, preference enqueue, legacy drain, and
+  bounded drain from every conformer. Its sole convenience forwards a missing preference override as `nil`.
+  `LocationSnapshotPusher`, `LocationSession`, and `BackgroundOrchestrator` now require their side-effect
+  dependencies. Snapshot-only tests and the `LocationSession` preview explicitly choose named no-ops; live
+  composition continues selecting both HTTP uploaders when configured and the named coordinator no-op otherwise.
+- **Validation:** `git diff --check`, conformance/construction inventories, and an iPhone 17 / iOS 26.5 Debug build
+  passed. Focused location/uploader, background, and full `SkyAwareTests` commands compiled but did not execute:
+  Xcode exited after writing unfinalized result-bundle staging directories (no `Info.plist` or inspectable test
+  counts), even after booting the simulator. Re-run those commands after repairing the local test runner.
+- **Handoff:** #341 alone owns missing-configuration/live-composition policy. No payload, endpoint, ArcusCore, or
+  API URL work is included here.
 
 ### Issue #339 — 10: Centralize Today display selection in a pure value
 

@@ -56,21 +56,20 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 }
 
 extension LocationUploadCoordinating {
-    func drainPendingUploads() async {}
-
-    func drainPendingUploads(
-        using budget: PendingLocationUploadDrainBudget
-    ) async -> PendingLocationUploadDrainOutcome {
-        .drained
-    }
-
     func enqueuePreferenceSync(
         source: LocationUploadSource,
         requestReason: LocationUploadReason,
         forceUpload: Bool,
-        detail: String,
-        isSubscribedOverride: Bool? = nil
-    ) async {}
+        detail: String
+    ) async {
+        await enqueuePreferenceSync(
+            source: source,
+            requestReason: requestReason,
+            forceUpload: forceUpload,
+            detail: detail,
+            isSubscribedOverride: nil
+        )
+    }
 }
 
 enum LocationPushError: Error {
@@ -117,7 +116,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
 
     init(
         locationUploader: any LocationSnapshotUploading,
-        preferenceUploader: any DevicePreferenceSyncUploading = NoOpDevicePreferenceSyncUploader(),
+        preferenceUploader: any DevicePreferenceSyncUploading,
         apnsTokenProvider: @escaping APNsTokenProvider = {
             LocationSnapshotPusher.readApnsTokenFromDefaults()
         },
@@ -151,43 +150,6 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         self.queueStore = queueStore ?? UserDefaultsLocationUploadQueueStore(
             suiteName: Self.userDefaultsSuiteName,
             key: Self.pendingRequestsKey
-        )
-    }
-
-    init(
-        uploader: any LocationSnapshotUploading,
-        apnsTokenProvider: @escaping APNsTokenProvider = {
-            LocationSnapshotPusher.readApnsTokenFromDefaults()
-        },
-        installationIdProvider: @escaping InstallationIDProvider = {
-            InstallationIdentityStore.shared.installationId()
-        },
-        subscriptionStatusProvider: @escaping SubscriptionStatusProvider = {
-            LocationSnapshotPusher.readSubscriptionStatusFromDefaults()
-        },
-        locationUploadEnabledProvider: @escaping LocationUploadEnabledProvider = {
-            LocationSnapshotPusher.readLocationUploadEnabledFromDefaults()
-        },
-        authorizationStatusProvider: @escaping AuthorizationStatusProvider = {
-            CLLocationManager().authorizationStatus
-        },
-        nowProvider: @escaping NowProvider = { Date() },
-        retryDelaysSeconds: [UInt64] = [0, 5, 15],
-        dedupeWindowSeconds: TimeInterval = 15,
-        queueStore: (any LocationUploadQueueStoring)? = nil
-    ) {
-        self.init(
-            locationUploader: uploader,
-            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
-            apnsTokenProvider: apnsTokenProvider,
-            installationIdProvider: installationIdProvider,
-            subscriptionStatusProvider: subscriptionStatusProvider,
-            locationUploadEnabledProvider: locationUploadEnabledProvider,
-            authorizationStatusProvider: authorizationStatusProvider,
-            nowProvider: nowProvider,
-            retryDelaysSeconds: retryDelaysSeconds,
-            dedupeWindowSeconds: dedupeWindowSeconds,
-            queueStore: queueStore
         )
     }
 
@@ -284,7 +246,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         requestReason: LocationUploadReason,
         forceUpload: Bool,
         detail: String,
-        isSubscribedOverride: Bool? = nil
+        isSubscribedOverride: Bool?
     ) async {
         logger.info(
             "Preference sync request accepted source=\(source.rawValue, privacy: .public) reason=\(requestReason.rawValue, privacy: .public) force=\(forceUpload, privacy: .public) detail=\(detail, privacy: .public)"

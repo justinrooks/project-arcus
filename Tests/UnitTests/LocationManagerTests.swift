@@ -218,6 +218,22 @@ struct LocationSessionTests {
         func recordedDrainCount() -> Int { drainCount }
     }
 
+    @Test("preference convenience forwards a nil subscription override")
+    func preferenceConvenience_forwardsNilSubscriptionOverride() async {
+        let coordinator = StubUploadCoordinator()
+
+        await coordinator.enqueuePreferenceSync(
+            source: .settingsPreference,
+            requestReason: .preferenceChanged,
+            forceUpload: true,
+            detail: "notification"
+        )
+
+        #expect(await coordinator.recordedPreferenceSyncCount() == 1)
+        #expect(await coordinator.recordedLastPreferenceReason() == "notification")
+        #expect(await coordinator.recordedLastPreferenceIsSubscribedOverride() == nil)
+    }
+
     @MainActor
     @Test("stores a ready context returned by the resolver")
     func storesReadyContextFromResolver() async throws {
@@ -261,7 +277,8 @@ struct LocationSessionTests {
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: StubResolver(context: context, error: nil)
+            locationContextResolver: StubResolver(context: context, error: nil),
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
         )
 
         let result = await session.prepareCurrentLocationContext(
@@ -287,7 +304,8 @@ struct LocationSessionTests {
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: StubResolver(context: nil, error: .missingRegionContext)
+            locationContextResolver: StubResolver(context: nil, error: .missingRegionContext),
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
         )
 
         let result = await session.prepareCurrentLocationContext(
@@ -683,7 +701,8 @@ struct LocationSessionTests {
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: locationManager,
-            locationContextResolver: StubResolver(context: nil, error: .locationUnavailable)
+            locationContextResolver: StubResolver(context: nil, error: .locationUnavailable),
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
         )
 
         #expect(session.authorizationStatus == .authorizedWhenInUse)

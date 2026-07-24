@@ -601,7 +601,8 @@ struct LocationProviderTests {
     func locationContextPusher_includesTimestampAndApnsToken() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -631,7 +632,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -651,7 +653,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let tokenState = TokenBox("")
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -769,7 +772,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let tokenState = TokenBox("")
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
             authorizationStatusProvider: { .authorizedWhenInUse },
@@ -798,7 +802,8 @@ struct LocationProviderTests {
         }
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: AlwaysFailingUploader(),
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -818,7 +823,8 @@ struct LocationProviderTests {
         }
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: CancellingUploader(),
+            locationUploader: CancellingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -927,7 +933,8 @@ struct LocationProviderTests {
         let clock = ClockBox(Date(timeIntervalSince1970: 21_000))
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: AlwaysFailingUploader(),
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             nowProvider: { clock.now() },
@@ -978,7 +985,8 @@ struct LocationProviderTests {
         let clock = ClockBox(Date(timeIntervalSince1970: 23_000))
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             nowProvider: { clock.now() },
@@ -1029,7 +1037,8 @@ struct LocationProviderTests {
         let uploader = BackoffCancellingUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0, 1],
@@ -1063,7 +1072,8 @@ struct LocationProviderTests {
         )
         let store = InMemoryUploadQueueStore(seed: [persisted])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1082,7 +1092,8 @@ struct LocationProviderTests {
             persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
         ])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1112,7 +1123,8 @@ struct LocationProviderTests {
         )
         let store = InMemoryUploadQueueStore(seed: [first, second, third])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1142,7 +1154,8 @@ struct LocationProviderTests {
         let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
         let store = InMemoryUploadQueueStore(seed: [pending])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1164,7 +1177,8 @@ struct LocationProviderTests {
         let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
         let store = InMemoryUploadQueueStore(seed: [pending])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1190,7 +1204,8 @@ struct LocationProviderTests {
         let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
         let store = InMemoryUploadQueueStore(seed: [pending])
         let pusher = LocationSnapshotPusher(
-            uploader: AlwaysFailingUploader(),
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0, 0],
@@ -1215,7 +1230,8 @@ struct LocationProviderTests {
         let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
         let store = InMemoryUploadQueueStore(seed: [pending])
         let pusher = LocationSnapshotPusher(
-            uploader: AlwaysFailingUploader(),
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0, 5],
@@ -1240,7 +1256,8 @@ struct LocationProviderTests {
         )
         let store = InMemoryUploadQueueStore(seed: [first, second])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0, 5],
@@ -1371,7 +1388,8 @@ struct LocationProviderTests {
     func snapshotPusher_skipsUploadWhenLocationSharingDisabled() async {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             locationUploadEnabledProvider: { false },
@@ -1394,7 +1412,8 @@ struct LocationProviderTests {
     func snapshotPusher_forceUploadWhenLocationSharingDisabled() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -1446,7 +1465,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let clock = ClockBox(Date(timeIntervalSince1970: 10_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1470,7 +1490,8 @@ struct LocationProviderTests {
     func snapshotPusher_coalescesInFlightIdenticalUpload() async throws {
         let uploader = GateableSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0]
@@ -1493,7 +1514,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1524,7 +1546,8 @@ struct LocationProviderTests {
         )
         let store = InMemoryUploadQueueStore(seed: [persisted])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1546,7 +1569,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1573,7 +1597,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let clock = ClockBox(Date(timeIntervalSince1970: 12_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1682,7 +1707,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let clock = ClockBox(Date(timeIntervalSince1970: 14_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -1737,7 +1763,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let clock = ClockBox(Date(timeIntervalSince1970: 15_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1760,7 +1787,8 @@ struct LocationProviderTests {
     func snapshotPusher_retriesWithLegacySourceForCompatibility() async throws {
         let uploader = CompatibilitySnapshotUploader(failingStatus: 400)
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1779,7 +1807,8 @@ struct LocationProviderTests {
     func snapshotPusher_doesNotFallbackForNonCompatStatus() async throws {
         let uploader = CompatibilitySnapshotUploader(failingStatus: 409)
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },

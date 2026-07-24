@@ -64,7 +64,7 @@ actor BackgroundOrchestrator {
         health: BgHealthStore,
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding,
-        pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator()
+        pendingUploadDrainer: any PendingLocationUploadDraining
     ) {
         self.coordinator = coordinator
         morningEngine = engine
