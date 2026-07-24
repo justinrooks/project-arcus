@@ -201,6 +201,13 @@ struct LocationSessionTests {
             drainCount += 1
         }
 
+        func drainPendingUploads(
+            using budget: PendingLocationUploadDrainBudget
+        ) async -> PendingLocationUploadDrainOutcome {
+            drainCount += 1
+            return .drained
+        }
+
         func recordedEnqueueCount() -> Int { enqueueCount }
         func recordedLastForceUpload() -> Bool? { lastForceUpload }
         func recordedLastSource() -> LocationUploadSource? { lastSource }

@@ -19,8 +19,24 @@ enum LocationUploadReason: String, Sendable, Codable, Equatable {
     case retry
 }
 
+struct PendingLocationUploadDrainBudget: Sendable {
+    let uploadQuota: Int
+    let deadline: ContinuousClock.Instant
+
+    init(uploadQuota: Int, deadline: ContinuousClock.Instant) {
+        self.uploadQuota = max(uploadQuota, 0)
+        self.deadline = deadline
+    }
+}
+
+enum PendingLocationUploadDrainOutcome: Sendable, Equatable {
+    case drained
+    case remaining
+}
+
 protocol PendingLocationUploadDraining: Sendable {
     func drainPendingUploads() async
+    func drainPendingUploads(using budget: PendingLocationUploadDrainBudget) async -> PendingLocationUploadDrainOutcome
 }
 
 protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
@@ -41,6 +57,12 @@ protocol LocationUploadCoordinating: PendingLocationUploadDraining, Sendable {
 
 extension LocationUploadCoordinating {
     func drainPendingUploads() async {}
+
+    func drainPendingUploads(
+        using budget: PendingLocationUploadDrainBudget
+    ) async -> PendingLocationUploadDrainOutcome {
+        .drained
+    }
 
     func enqueuePreferenceSync(
         source: LocationUploadSource,
@@ -421,6 +443,108 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await processQueue()
     }
 
+    func drainPendingUploads(
+        using budget: PendingLocationUploadDrainBudget
+    ) async -> PendingLocationUploadDrainOutcome {
+        await ensurePersistedPendingLoaded()
+
+        guard !pendingByCoalescingKey.isEmpty else { return .drained }
+        guard budget.uploadQuota > 0, shouldContinueDraining(before: budget.deadline) else {
+            return .remaining
+        }
+
+        let apnsToken = apnsTokenProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !apnsToken.isEmpty else {
+            logger.notice("Location upload drain skipped reason=missingToken")
+            return .remaining
+        }
+
+        isProcessing = true
+        defer {
+            isProcessing = false
+            queue.removeAll()
+            queuedOrActiveCoalescingKeys.removeAll()
+        }
+
+        var admittedCount = 0
+        for pending in pendingByCoalescingKey.values.sorted(by: { $0.requestedAt < $1.requestedAt }) {
+            guard admittedCount < budget.uploadQuota, shouldContinueDraining(before: budget.deadline) else {
+                break
+            }
+            admittedCount += 1
+
+            let now = nowProvider()
+            let coalescingKey = coalescingKey(for: pending)
+            let dedupeKey = DeduplicationKey(
+                installationId: pending.installationId,
+                apnsToken: apnsToken,
+                operation: pending.operation.deduplicationOperation,
+                isSubscribed: pending.isSubscribed,
+                authorizationState: pending.authorizationState,
+                forceUpload: pending.forceUpload
+            )
+            if shouldDedupeRequest(for: dedupeKey, now: now) {
+                pendingByCoalescingKey.removeValue(forKey: coalescingKey)
+                await persistPendingState()
+                continue
+            }
+
+            let workItem: QueuedUpload
+            switch pending.operation {
+            case .locationSnapshot:
+                workItem = QueuedUpload(
+                    operation: .locationSnapshot(
+                        await makeLocationPayload(
+                            from: pending,
+                            apnsToken: apnsToken,
+                            isSubscribed: pending.isSubscribed,
+                            authorizationState: pending.authorizationState,
+                            now: now
+                        )
+                    ),
+                    coalescingKey: coalescingKey,
+                    semanticDedupeKey: dedupeKey,
+                    reason: pending.reason,
+                    source: pending.source.rawValue
+                )
+            case .preferenceSync:
+                workItem = QueuedUpload(
+                    operation: .preferenceSync(
+                        await makePreferencePayload(
+                            from: pending,
+                            apnsToken: apnsToken,
+                            isSubscribed: pending.isSubscribed,
+                            authorizationState: pending.authorizationState
+                        )
+                    ),
+                    coalescingKey: coalescingKey,
+                    semanticDedupeKey: dedupeKey,
+                    reason: pending.reason,
+                    source: pending.source.rawValue
+                )
+            }
+
+            guard queuedOrActiveCoalescingKeys.insert(coalescingKey).inserted else { continue }
+            defer { queuedOrActiveCoalescingKeys.remove(coalescingKey) }
+
+            if await uploadWithRetry(workItem, deadline: budget.deadline) {
+                if let semanticDedupeKey = workItem.semanticDedupeKey {
+                    lastUploadBySemanticKey[semanticDedupeKey] = nowProvider()
+                }
+                pendingByCoalescingKey.removeValue(forKey: coalescingKey)
+                await persistPendingState()
+            }
+
+            guard shouldContinueDraining(before: budget.deadline) else { break }
+        }
+
+        return pendingByCoalescingKey.isEmpty ? .drained : .remaining
+    }
+
+    private func shouldContinueDraining(before deadline: ContinuousClock.Instant) -> Bool {
+        !Task.isCancelled && ContinuousClock().now < deadline
+    }
+
     private func shouldDedupeRequest(for key: DeduplicationKey, now: Date) -> Bool {
         guard dedupeWindowSeconds > 0 else { return false }
         guard let lastUploadAt = lastUploadBySemanticKey[key] else { return false }
@@ -481,7 +605,10 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         return true
     }
 
-    private func uploadWithRetry(_ workItem: QueuedUpload) async -> Bool {
+    private func uploadWithRetry(
+        _ workItem: QueuedUpload,
+        deadline: ContinuousClock.Instant? = nil
+    ) async -> Bool {
         for (index, delay) in retryDelaysSeconds.enumerated() {
             do {
                 try Task.checkCancellation()
@@ -492,9 +619,24 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
                 return false
             }
 
+            if let deadline, !shouldContinueDraining(before: deadline) {
+                logger.notice("Location upload deadline reached before attempt source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                return false
+            }
+
             if delay > 0 {
                 do {
-                    try await Task.sleep(for: .seconds(Int(delay)))
+                    if let deadline {
+                        let clock = ContinuousClock()
+                        let retryAt = clock.now.advanced(by: .seconds(Int(delay)))
+                        try await clock.sleep(until: min(retryAt, deadline))
+                        guard shouldContinueDraining(before: deadline) else {
+                            logger.notice("Location upload deadline reached during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")
+                            return false
+                        }
+                    } else {
+                        try await Task.sleep(for: .seconds(Int(delay)))
+                    }
                     try Task.checkCancellation()
                 } catch is CancellationError {
                     logger.notice("Location upload cancelled during retry backoff source=\(workItem.source, privacy: .public) reason=\(workItem.reason.rawValue, privacy: .public)")

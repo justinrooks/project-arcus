@@ -1228,6 +1228,13 @@ private actor RecordingPendingUploadDrainer: PendingLocationUploadDraining {
         count += 1
     }
 
+    func drainPendingUploads(
+        using budget: PendingLocationUploadDrainBudget
+    ) async -> PendingLocationUploadDrainOutcome {
+        count += 1
+        return .drained
+    }
+
     func drainCount() -> Int {
         count
     }

@@ -267,6 +267,24 @@ struct LocationProviderTests {
             pending
         }
     }
+
+    private func persistedUploadRequest(
+        requestedAt: Date,
+        isSubscribed: Bool = true,
+        forceUpload: Bool = false
+    ) -> PersistedLocationUploadRequest {
+        PersistedLocationUploadRequest(
+            source: .manualRefresh,
+            reason: .locationResolved,
+            forceUpload: forceUpload,
+            installationId: "install-abc-123",
+            requestedAt: requestedAt,
+            isSubscribed: isSubscribed,
+            authorizationState: "always",
+            apnsToken: "",
+            operation: .locationSnapshot(context: PersistedLocationContext(makeContext()))
+        )
+    }
     
     private final class MockSnapshotCache: @unchecked Sendable, LocationSnapshotCaching {
         private(set) var storedSnapshot: LocationSnapshot?
@@ -1055,6 +1073,192 @@ struct LocationProviderTests {
         await pusher.drainPendingUploads()
         #expect(await uploader.uploadedPayloads().count == 1)
         #expect(await store.current().isEmpty)
+    }
+
+    @Test("bounded drain reports completion after uploading durable work")
+    func snapshotPusher_boundedDrainReportsCompletionAfterSuccess() async {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore(seed: [
+            persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        ])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(outcome == .drained)
+        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("bounded drain preserves and later drains quota remainder")
+    func snapshotPusher_boundedDrainPreservesQuotaRemainder() async {
+        let uploader = MockSnapshotUploader()
+        let first = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let second = persistedUploadRequest(
+            requestedAt: Date(timeIntervalSince1970: 10_001),
+            isSubscribed: false
+        )
+        let third = persistedUploadRequest(
+            requestedAt: Date(timeIntervalSince1970: 10_002),
+            forceUpload: true
+        )
+        let store = InMemoryUploadQueueStore(seed: [first, second, third])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let firstOutcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 2, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(firstOutcome == .remaining)
+        #expect(await uploader.uploadedPayloads().count == 2)
+        #expect(await store.current() == [third])
+
+        let secondOutcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(secondOutcome == .drained)
+        #expect(await uploader.uploadedPayloads().count == 3)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("expired bounded drain starts no upload and reports durable remainder")
+    func snapshotPusher_expiredBoundedDrainPreservesPendingRequest() async {
+        let uploader = MockSnapshotUploader()
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(-1)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain retains pending work when APNs token is unavailable")
+    func snapshotPusher_boundedDrainMissingTokenReportsRemaining() async {
+        let uploader = MockSnapshotUploader()
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { " " },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain retains retry exhaustion and reports remaining")
+    func snapshotPusher_boundedDrainRetryExhaustionReportsRemaining() async {
+        struct AlwaysFailingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            uploader: AlwaysFailingUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain stops at its deadline during retry backoff")
+    func snapshotPusher_boundedDrainDeadlineDuringBackoffPreservesPendingRequest() async {
+        struct AlwaysFailingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            uploader: AlwaysFailingUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 5],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .milliseconds(100)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain cancellation preserves current and unattempted pending work")
+    func snapshotPusher_boundedDrainCancellationPreservesPendingRequests() async {
+        let uploader = BackoffCancellingUploader()
+        let first = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let second = persistedUploadRequest(
+            requestedAt: Date(timeIntervalSince1970: 10_001),
+            isSubscribed: false
+        )
+        let store = InMemoryUploadQueueStore(seed: [first, second])
+        let pusher = LocationSnapshotPusher(
+            uploader: uploader,
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 5],
+            queueStore: store
+        )
+
+        let drainTask = Task {
+            await pusher.drainPendingUploads(
+                using: .init(uploadQuota: 2, deadline: .now.advanced(by: .seconds(10)))
+            )
+        }
+        await uploader.waitForFirstAttempt()
+        drainTask.cancel()
+        let outcome = await drainTask.value
+
+        #expect(outcome == .remaining)
+        #expect(await uploader.attemptCount() == 1)
+        #expect(await store.current() == [first, second])
     }
 
     @Test("persisted queued upload encodes the current operation shape and round trips")

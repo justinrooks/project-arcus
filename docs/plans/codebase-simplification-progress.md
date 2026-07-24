@@ -198,11 +198,21 @@ The current defects are narrow:
 
 ### Issue #334 — 05: Define bounded pending-upload drain semantics
 
-- **Status:** Planned
+- **Status:** Complete
 - **Goal:** Give the durable drainer an explicit quota/deadline outcome and durable remainder.
 - **Concept removed:** "Drain everything" as the only operation.
-- **Required proof:** backlog, retry, missing token, cancellation, and remaining-queue tests.
-- **Handoff:** Do not change background ordering in this issue.
+- **Changed files:** `LocationSnapshotPusher.swift` adds the Sendable budget/outcome contract and bounded actor drain;
+  no-op/test conformers implement the new requirement; `LocationProviderTests.swift` covers quota, deadline,
+  missing-token, retry, cancellation, and durable-redrain behavior.
+- **Behavior:** A bounded drain admits at most its explicit durable-request quota before its monotonic deadline, reports
+  `.drained` only when actor-owned durable state is empty, and retains failed, cancelled, expired, or never-admitted
+  requests. Existing no-argument draining, retry constants, coalescing, semantic deduplication, and background
+  ordering are unchanged.
+- **Validation:** Focused `LocationProviderTests` passed 67/67 with no failures or skips on iPhone 17 / iOS 26.5;
+  inspected result bundle: `Test-SkyAware-2026.07.24_09-55-46--0600.xcresult`. Focused consumer regression,
+  `SkyAware_Tests`, and Debug build commands completed successfully; `git diff --check` passed.
+- **Handoff:** #335 should call `drainPendingUploads(using:)` with its own explicit quota and deadline. It owns
+  background cancellation scope, ordering, and policy; this issue does not select them.
 
 ### Issue #335 — 06: Put background refresh under cancellation and drain budgets
 
