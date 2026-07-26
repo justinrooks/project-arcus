@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0(99)
+## v1.1.0(103)
 
 ### UI / UX
 - Today now publishes core content earlier and centralizes display selection so useful content remains stable while optional enrichment finishes.
