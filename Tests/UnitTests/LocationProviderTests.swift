@@ -177,50 +177,37 @@ struct LocationProviderTests {
     private actor GateableSnapshotUploader: LocationSnapshotUploading {
         private var payloads: [LocationSnapshotPushPayload] = []
         private var isBlocked = true
-        private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
-        private var unblockContinuation: CheckedContinuation<Void, Never>?
-        private var attemptCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
 
         func upload(_ payload: LocationSnapshotPushPayload) async throws {
             payloads.append(payload)
-            if payloads.count == 1 {
-                firstAttemptContinuation?.resume()
-                firstAttemptContinuation = nil
-            }
-            let satisfiedCounts = attemptCountContinuations.keys.filter { $0 <= payloads.count }
-            for count in satisfiedCounts {
-                let continuations = attemptCountContinuations.removeValue(forKey: count) ?? []
-                continuations.forEach { $0.resume() }
-            }
             while isBlocked {
-                await withCheckedContinuation { continuation in
-                    unblockContinuation = continuation
-                }
+                try await Task.sleep(for: .milliseconds(1))
             }
         }
 
-        func waitForFirstAttempt() async {
-            if payloads.isEmpty == false { return }
-            await withCheckedContinuation { continuation in
-                firstAttemptContinuation = continuation
-            }
+        func waitForFirstAttempt() async -> Bool {
+            await waitForAttemptCount(atLeast: 1)
         }
 
         func unblock() {
             isBlocked = false
-            unblockContinuation?.resume()
-            unblockContinuation = nil
         }
 
         func attemptCount() -> Int {
             payloads.count
         }
 
-        func waitForAttemptCount(atLeast count: Int) async {
-            guard payloads.count < count else { return }
-            await withCheckedContinuation { continuation in
-                attemptCountContinuations[count, default: []].append(continuation)
+        func waitForAttemptCount(atLeast count: Int) async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(5))
+            while payloads.count < count, clock.now < deadline {
+                do {
+                    try await Task.sleep(for: .milliseconds(1))
+                } catch {
+                    return false
+                }
             }
+            return payloads.count >= count
         }
     }
 
@@ -1523,7 +1510,7 @@ struct LocationProviderTests {
         let firstTask = Task {
             await pusher.enqueue(context, source: .foregroundPrime, reason: .locationResolved)
         }
-        await uploader.waitForFirstAttempt()
+        #expect(await uploader.waitForFirstAttempt())
         await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
         await uploader.unblock()
         await firstTask.value
@@ -1555,12 +1542,12 @@ struct LocationProviderTests {
             )
         }
 
-        await uploader.waitForFirstAttempt()
+        #expect(await uploader.waitForFirstAttempt())
         await pusher.enqueue(secondContext, source: .foregroundLocationChange, reason: .locationChanged)
         await uploader.unblock()
 
         #expect(await drainTask.value == .remaining)
-        await uploader.waitForAttemptCount(atLeast: 2)
+        #expect(await uploader.waitForAttemptCount(atLeast: 2))
         #expect(await store.waitForEmpty())
     }
 
@@ -1582,7 +1569,7 @@ struct LocationProviderTests {
             await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
         }
 
-        await uploader.waitForFirstAttempt()
+        #expect(await uploader.waitForFirstAttempt())
         let outcome = await pusher.drainPendingUploads(
             using: PendingLocationUploadDrainBudget(
                 uploadQuota: 1,
