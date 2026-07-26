@@ -399,12 +399,100 @@ The current defects are narrow:
 
 ### Issue #345 — 16: Capture remaining physical-device Release evidence
 
-- **Status:** Planned
+- **Status:** Partial trace-only evidence; semantic/visual matrix and deterministic result bundle remain blocked
 - **Goal:** Close the explicit validation gap left by closed issue #327.
 - **Concept removed:** Runtime conclusions without comparable Release/device evidence.
 - **Required proof:** cold/no-cache, authoritative-empty, Storm states, partial failure, lifecycle, scrolling,
   warm/manual, and BG backlog artifacts on a consistent device/configuration.
-- **Handoff:** Validation only; create optimization work only if a measured regression exists.
+- **2026-07-24 preflight:** Source `7a7f92065d5d9945aabb59b75d50982e3df638ec` contains prerequisite
+  `7a7f9206`; worktree was clean on `329-epic-systematically-simplify-skyaware-architecture` (ahead 3). Xcode
+  `26.6 (17F113)`, iPhoneOS SDK `26.5`; templates `SwiftUI` and `Animation Hitches` were available. `Js14Max`
+  (`00008120-001A744E1193C01E`, iOS 26.6) appeared under `devices offline` from
+  `record_trace.py --list-devices`, not `devices`. Therefore no Release build, signing inspection, install, launch,
+  trace, or screen recording was attempted; a simulator is not a substitute.
+- **Historical artifact recheck:** `/private/tmp/SkyAware-319-traces/warm-events-launch-20260719.trace` failed
+  `analyze_trace.py --list-runs` with `Export failed: Trace is malformed - run data is missing`.
+  `/private/tmp/SkyAware-319-traces/pull-events-20260719.trace` failed with `Export failed: Document Missing
+  Template Error`. The ledger's #319 warm/pull metric summaries remain historical summaries only. They cannot support
+  a direct comparison, independently analyzable baseline, or iOS 26.6 comparison (the historical device OS was
+  iOS 26.5.2).
+- **Focused deterministic gate:** Invoked the exact #345 selected-suite command with result path
+  `/private/tmp/skyaware-345-results.dGPvic/focused.xcresult`. Xcode left only `Data/` and `Staging/1_Test`; the
+  required `Info.plist` was absent, so both `xcresulttool get test-results summary --compact` and `tests --compact`
+  failed. Counts and the known #344 cancellation race are therefore **not determined** by this pass; no retry or
+  test/source change was made. This is a result-bundle finalization/infrastructure blocker, not evidence that the
+  known cancellation test passed or failed.
+- **Scenario result:** all required Release/device scenarios are blocked by the same precondition: connect, unlock,
+  and trust `Js14Max` until it appears under `devices`, then keep its OS/build metadata stable for the entire matrix.
+  Existing failure/empty/backlog transitions additionally lack safe, reproducible device fixtures or control points;
+  do not add one in this issue or mutate server/persisted user data.
+- **Artifacts:** fresh unused capture root `/private/tmp/SkyAware-345.t1KHRi` (`derived`, `traces`, `analysis`,
+  `recordings`) and incomplete focused result root `/private/tmp/skyaware-345-results.dGPvic` remain outside source
+  control. No trace, analysis JSON/Markdown, Release app, or recording artifact exists.
+- **2026-07-24 device/build recovery attempt:** Js14Max subsequently appeared online under `devices` at iOS 26.6.
+  Release build command:
+  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -configuration Release -destination "platform=iOS,id=00008120-001A744E1193C01E" -derivedDataPath /private/tmp/SkyAware-345.t1KHRi/derived build`.
+  Its apparent product directory `/private/tmp/SkyAware-345.t1KHRi/derived/Build/Products/Release-iphoneos/SkyAware.app`
+  contains resources and `embedded.mobileprovision`, but lacks `Info.plist` and a signed executable;
+  `codesign --display --verbose=4` reports `bundle format unrecognized, invalid, or unsuitable`. It cannot establish
+  install/source provenance, so no install, launch, or trace was attempted.
+- **2026-07-24 successful Release provenance:** User-built Release artifact
+  `/private/tmp/SkyAware-345-manual-derived/Build/Products/Release-iphoneos/SkyAware.app` verifies with
+  `codesign --verify --deep --strict`; bundle `com.skyaware.app`, version `1.1.0` (80), signed by Apple Development
+  team `YVC4WFW94T`, was installed on Js14Max at 17:06:10 MDT. This is the same source SHA; the only worktree
+  changes were this issue's documentation files.
+- **Current trace-only captures:** `warm-foreground-20260724T230650Z.trace` finalized with one SwiftUI run
+  (97.790079 s): 10,961 body updates, 94 high-severity SwiftUI events, 22 app hitches / 462.64 ms total / 83.35 ms
+  worst, plus one 289.24 ms microhang. `pull-refresh-launch-20260724T231500Z.trace` finalized with one 45.447359 s
+  run: 11,654 body updates, 89 high-severity events, 16 app hitches / 270.97 ms total / 66.68 ms worst, no hangs.
+  Analyses reside beside the traces under `/private/tmp/SkyAware-345.t1KHRi/analysis/`. Neither trace contains a
+  `com.skyaware.app` signpost or log, so no visible-commit/render boundary or projection-save count is available;
+  no separate screen recording exists. These measurements are non-comparable trace-only evidence, not completed
+  semantic or visual scenarios and not an optimization claim.
+- **2026-07-26 continuation:** HEAD remained `7a7f92065d5d9945aabb59b75d50982e3df638ec`; the continuation began
+  with the two prior #345 ledger edits and an unrelated user-owned performance-audit edit already present. CoreDevice
+  and `xctrace` both reported Js14Max online, paired, booted, Developer Mode enabled, and connected over the local
+  network. Xcode stayed `26.6 (17F113)`, SDK 26.5, and the device stayed iPhone 14 Pro Max / iOS 26.6 (`23G71`).
+  Fresh roots: `/private/tmp/SkyAware-345-20260726.REBf1C` and
+  `/private/tmp/skyaware-345-results-20260726.5091YV`.
+- **Deterministic result:** the exact twelve-suite focused bundle finalized and was inspected: Debug, iPhone 17
+  simulator / iOS 26.5, 270 total, 269 passed, 1 failed, 0 skipped. The failure was the known #344
+  `HomeIngestionCoordinatorTests.finishBeforeCancel_waiterCompletesSuccessfully()` `CancellationError()` race; it
+  was neither retried nor fixed.
+- **Current Release provenance:** fresh physical-device Release build succeeded and CoreDevice installed/launched
+  `com.skyaware.app` 1.1.0 (80). Binary/dSYM UUID:
+  `151E8EF4-F43D-357E-855B-3585296DC8E7`. Host strict verification returned `CSSMERR_TP_NOT_TRUSTED` with zero valid
+  local signing identities, while the device accepted the exact artifact; this is recorded as a provenance
+  limitation, not normalized away.
+- **Current warm evidence:** `traces/warm-foreground-20260726T162500Z.trace` under the fresh capture root finalized
+  as one 40.623579-second physical-device SwiftUI run: five View Body Update events, 47 high-severity events, seven
+  app hitches / 141.73 ms total / 25.02 ms worst, and one 328.24 ms microhang. Analysis is under the fresh
+  `analysis/` directory. The stock SwiftUI template had no signpost store.
+- **Supplemental signposts and stop:** `traces/warm-foreground-logging-20260726T162900Z.trace` finalized with the
+  required signpost schemas. The intended activation window was 219,189.595-227,054.907 ms; `Today Visible Commit`
+  at 226,968.136 ms preceded the first following `Today Summary Render` by 86.771 ms, with two Core saves and one
+  Storm Setup save in the window. No screen recording exists. Scoped log export contained private location-derived
+  endpoint text, which is intentionally omitted; this triggered the issue's privacy stop condition. No more device
+  captures were attempted.
+
+| Required scenario | 2026-07-26 result |
+|---|---|
+| Cold launch with no usable Today cache | Blocked — no safe no-cache/onboarding control point. |
+| Warm cached launch and foreground activation | Blocked — valid trace/signpost evidence, but no rendered proof and invalid historical baseline. |
+| Pull-to-refresh with useful cached content | Blocked — prior trace lacks signposts/video; privacy stop prevented recapture. |
+| Local Alerts populated to authoritative empty | Blocked — no safe existing fixture/control point. |
+| Storm Setup loading to success | Blocked — success/save observed, but no rendered slot evidence. |
+| Storm Setup loading to terminal failure | Blocked — no safe failure/timeout control point. |
+| Partial core-provider failure with useful cache | Blocked — no safe provider-failure control point. |
+| Rapid background/foreground lifecycle changes | Blocked — no dedicated trace/video before privacy stop. |
+| Scroll, reversal, and partial-condense refresh | Blocked — no dedicated trace/video before privacy stop. |
+| Refresh completion while scrolling | Blocked — no deterministic completion alignment plus video. |
+| Reduce Motion and representative accessibility Dynamic Type | Blocked — no physical-device rendered recording. |
+| Background upload backlog and task-budget behavior | Blocked — unsafe durable location-state mutation would be required. |
+
+- **Handoff:** Validation only. Re-run preflight only after the device is online, then build/install one Release
+  provenance, capture one scenario per finalized SwiftUI trace, and inspect each trace immediately. Do not create
+  optimization work or claim a before/after result without a valid same-environment baseline.
 
 ## Verification ledger
 
@@ -435,7 +523,7 @@ The current defects are narrow:
 | 13 | `git diff --check` | N/A | N/A | N/A | N/A | N/A |
 | 14 | `git diff --check`; `xcodebuild -showBuildSettings` parity: app/widget Debug and Release both `1.1.0` / `80`; release-doc consistency search; source/project/CI diff guard | N/A | N/A | N/A | N/A | N/A |
 | 15 | `SkyAware_Tests`: 919 passed, 1 failed, 0 skipped; `SkyAware_All_Tests` smoke: 1 passed, 0 failed, 0 skipped | N/A | 919 passed, 1 failed, 0 skipped; inspected `/private/tmp/skyaware-344-results.FsBxsb/unit.xcresult` | 1 passed, 0 failed, 0 skipped; inspected `/private/tmp/skyaware-344-results.FsBxsb/ui-navigation.xcresult` | N/A | Both finalized bundles inspected with `xcresulttool`; unit lane remains incomplete |
-| 16 | Focused regression gates | Release | As needed | Scenario fixtures | Pending | Pending |
+| 16 | 269 passed, 1 known #344 cancellation-race failure, 0 skipped | Fresh Release built, installed, and smoke-launched; host trust-chain verification failed | Not run | Blocked: no safe fixtures/control points for all transitions | Partial: valid warm SwiftUI and supplemental signpost traces; no screen recording; privacy stop applied | Finalized focused bundle inspected |
 
 ## Handoff rules
 

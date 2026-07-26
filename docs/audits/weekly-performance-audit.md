@@ -171,3 +171,27 @@
   - Reused an unchanged coordinate's cached snapshot only when it has a non-empty placemark and H3 cell.
   - Added a focused `LocationProviderTests` assertion that the reuse path makes no reverse-geocode call.
   - Verified with `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" -only-testing:SkyAwareTests/LocationProviderTests test`.
+
+## 2026-07-26
+- workflow reviewed: Widget and Glanceable Summary Rendering
+- files inspected:
+  - docs/codebase/skyaware-app-summary.md
+  - Shared/SkyAwareWidgetKind.swift
+  - Shared/WidgetSnapshot.swift
+  - Shared/WidgetSnapshotStore.swift
+  - Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift
+  - Sources/App/HomeRefreshV2/WidgetSnapshotBuilder.swift
+  - Sources/App/HomeRefreshV2/WidgetSnapshotRefreshCoordinator.swift
+  - WidgetsExtension/SkyAwareWidgetsBundle.swift
+  - WidgetsExtension/WidgetCombinedComponents.swift
+  - WidgetsExtension/WidgetStormRiskComponents.swift
+  - WidgetsExtension/WidgetSevereRiskComponents.swift
+  - Tests/UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift
+- top finding: no code-supported performance defect met the recommendation threshold; snapshot derivation stays outside
+  SwiftUI rendering, refresh scope targets only affected widget kinds, and the remaining rendering and reload concerns
+  require runtime evidence.
+- best next fix: no production change recommended; first capture WidgetKit render duration and extension CPU for the
+  combined widget, plus reload request counts during foreground and background ingestion.
+- measurement gap: quantify the cost of the combined widget's layered gradients and large blurred glow circles, and
+  determine whether unchanged-risk ingestion causes materially redundant timeline renders.
+- implementation recommended: no
