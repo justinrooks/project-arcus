@@ -2,6 +2,9 @@
 
 Use this runbook when implementing the Today state-flow issue set derived from GitHub issue #248.
 
+**Campaign status:** Complete. The baseline and target sections below are retained as June 2026 planning evidence;
+the completed ledger is the current implementation authority.
+
 This work is a focused refinement of the existing cached-first, resolve-forward Today experience. It is not a visual
 redesign, provider rewrite, refresh-cadence project, or permission to add theatrical loading behavior. The goal is a
 calm, predictable landing surface where cached content appears immediately and fresh data resolves forward quietly.
@@ -103,9 +106,9 @@ Relevant tests:
 - `Tests/UnitTests/HomeRefreshPipelineTests.swift`
 - `Tests/UnitTests/SummaryAwarenessPanelTests.swift`
 
-## Baseline State Flow
+## June 2026 Baseline State Flow (Historical)
 
-Current flow:
+Point-in-time flow before the completed campaign:
 
 1. `HomeView` reads cached `HomeProjection` and `ConvectiveOutlook` records through SwiftData `@Query`.
 2. `HomeView` selects a cached projection for the current context, then mixes projection values with
@@ -128,7 +131,7 @@ Primary fragmentation points:
 - Risk/awareness resolving placeholders are selected locally per section.
 - Refresh indicators and animations are distributed across multiple cards.
 
-## Target Design
+## June 2026 Target Design (Historical Planning)
 
 Use a layered model:
 
@@ -169,7 +172,7 @@ This issue set is intentionally scoped so `gpt-5.4-mini` can execute it in seque
   `ActiveAlertSummaryView` transition behavior, and alert-specific validation. Do not reopen broad Today issues for
   those narrower cleanup passes.
 
-## Ordered Work Items
+## Historical Work Sequence
 
 | Order | ID | GitHub | Title | Model | Priority | Effort | Dependency |
 |---:|---|---|---|---|---|---|---|

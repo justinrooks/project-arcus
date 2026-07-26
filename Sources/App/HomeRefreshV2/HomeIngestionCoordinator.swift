@@ -9,24 +9,6 @@ import Foundation
 import OSLog
 
 protocol HomeIngestionCoordinating: Actor, Sendable {
-    func enqueue(
-        _ trigger: HomeRefreshTrigger,
-        locationContext: LocationContext?,
-        remoteAlertContext: HomeRemoteAlertContext?
-    )
-
-    func enqueueAndWait(
-        _ trigger: HomeRefreshTrigger,
-        locationContext: LocationContext?,
-        remoteAlertContext: HomeRemoteAlertContext?
-    ) async throws -> HomeSnapshot
-
-    func enqueue(_ request: HomeIngestionRequest)
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot
-    func enqueueAndWait(
-        _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
-    ) async throws -> HomeSnapshot
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
         progress: HomeIngestionProgressHandler?,
@@ -36,18 +18,30 @@ protocol HomeIngestionCoordinating: Actor, Sendable {
 
 extension HomeIngestionCoordinating {
     func enqueueAndWait(
-        _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
+        _ trigger: HomeRefreshTrigger,
+        locationContext: LocationContext? = nil,
+        remoteAlertContext: HomeRemoteAlertContext? = nil
     ) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request)
+        try await enqueueAndWait(
+            HomeIngestionRequest(
+                trigger: trigger,
+                locationContext: locationContext,
+                remoteAlertContext: remoteAlertContext
+            ),
+            progress: nil,
+            publication: nil
+        )
+    }
+
+    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
+        try await enqueueAndWait(request, progress: nil, publication: nil)
     }
 
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?,
-        publication: HomeIngestionPublicationHandler?
+        progress: HomeIngestionProgressHandler?
     ) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request, progress: progress)
+        try await enqueueAndWait(request, progress: progress, publication: nil)
     }
 }
 
@@ -70,6 +64,13 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private var pendingPlan: HomeIngestionPlan?
     private var waiters: [UUID: Waiter] = [:]
 
+    #if DEBUG
+    // Debug-test observation only. Issue #332 needs a storage acknowledgement to order cancellation tests without
+    // polling or changing waiter ownership; Release builds do not include this seam.
+    private var waiterCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var waiterAtMostCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    #endif
+
     init(executor: any HomeIngestionExecuting) {
         self.executor = executor
     }
@@ -87,32 +88,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         submit(request.plan, waiter: nil)
     }
 
-    func enqueueAndWait(
-        _ trigger: HomeRefreshTrigger,
-        locationContext: LocationContext? = nil,
-        remoteAlertContext: HomeRemoteAlertContext? = nil
-    ) async throws -> HomeSnapshot {
-        let request = HomeIngestionRequest(
-            trigger: trigger,
-            locationContext: locationContext,
-            remoteAlertContext: remoteAlertContext
-        )
-        return try await enqueueAndWait(request)
-    }
-
     func enqueue(_ request: HomeIngestionRequest) {
         submit(request.plan, waiter: nil)
-    }
-
-    func enqueueAndWait(_ request: HomeIngestionRequest) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request, progress: nil)
-    }
-
-    func enqueueAndWait(
-        _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
-    ) async throws -> HomeSnapshot {
-        try await enqueueAndWait(request, progress: progress, publication: nil)
     }
 
     func enqueueAndWait(
@@ -121,15 +98,22 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
         let requestedPlan = request.plan
-        return try await withCheckedThrowingContinuation { continuation in
-            let waiter = Waiter(
-                id: UUID(),
-                requestedPlan: requestedPlan,
-                progress: progress,
-                publication: publication,
-                continuation: continuation
-            )
-            submit(requestedPlan, waiter: waiter)
+        let waiterID = UUID()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let waiter = Waiter(
+                    id: waiterID,
+                    requestedPlan: requestedPlan,
+                    progress: progress,
+                    publication: publication,
+                    continuation: continuation
+                )
+                submit(requestedPlan, waiter: waiter)
+            }
+        } onCancel: {
+            Task {
+                await self.cancelWaiter(withID: waiterID)
+            }
         }
     }
 
@@ -166,7 +150,57 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func store(_ waiter: Waiter?) {
         guard let waiter else { return }
         waiters[waiter.id] = waiter
+
+        #if DEBUG
+        notifyWaiterCountObservers()
+        #endif
     }
+
+    private func cancelWaiter(withID waiterID: UUID) {
+        guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
+        waiter.continuation.resume(throwing: CancellationError())
+        #if DEBUG
+        notifyWaiterCountObservers()
+        #endif
+    }
+
+    #if DEBUG
+    func waitForTestWaiterCount(atLeast count: Int) async {
+        guard waiters.count < count else { return }
+        await withCheckedContinuation { continuation in
+            waiterCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    func waitForTestWaiterCount(atMost count: Int) async {
+        guard waiters.count > count else { return }
+        await withCheckedContinuation { continuation in
+            waiterAtMostCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    private func notifyWaiterCountObservers() {
+        let satisfiedAtLeastCounts = waiterCountContinuations.keys.filter { $0 <= waiters.count }
+        for count in satisfiedAtLeastCounts {
+            let continuations = waiterCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
+        }
+
+        let satisfiedAtMostCounts = waiterAtMostCountContinuations.keys.filter { waiters.count <= $0 }
+        for count in satisfiedAtMostCounts {
+            let continuations = waiterAtMostCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
+        }
+    }
+
+    func testPendingPlanForWaiterCharacterization() -> HomeIngestionPlan? {
+        pendingPlan
+    }
+
+    func testWaiterCountForWaiterCharacterization() -> Int {
+        waiters.count
+    }
+    #endif
 
     private func startRun(with plan: HomeIngestionPlan) {
         let runID = UUID()
@@ -226,6 +260,10 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                 waiter.continuation.resume(throwing: error)
             }
         }
+
+        #if DEBUG
+        notifyWaiterCountObservers()
+        #endif
 
         switch result {
         case .success(let snapshot):

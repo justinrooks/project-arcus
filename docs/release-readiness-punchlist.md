@@ -4,6 +4,28 @@ This punchlist turns the current review into concrete launch work.
 
 The goal is not perfection. The goal is to make SkyAware feel reliable, trustworthy, and understandable to a public audience.
 
+## Release ownership and version parity
+
+Xcode Cloud owns the marketing version and build number of a distributed build. The checked-in
+`MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` values are placeholders, not release provenance; do not use them
+to infer, reconcile, or assign a distributed version/build.
+
+The repository-owned invariant is narrower: the app and widget (`SkyAware` and `SkyAwareWidgetsExtension`) must have
+matching marketing versions and matching build numbers in every shipping configuration (currently Debug and Release).
+Verify that parity without mutating either setting. Unit and UI test targets intentionally have independent values and
+are outside this invariant.
+
+`release/CHANGELOG.md` is the canonical record of user-impacting work. Add verified post-release impact under
+`Unreleased` as it lands, with an evidence comment that identifies the supporting commit or issue. Keep
+`release/RELEASE_NOTES.md` and `release/TESTFLIGHT_NOTES.md` concise derivatives of that canonical content; they must
+not introduce claims absent from the changelog evidence. Promote `Unreleased` to a numbered heading only after the
+actual Xcode Cloud/TestFlight marketing version and build are known. Placeholder settings never supply that heading.
+
+During an archive, `tools/ci/ci_post_xcodebuild.sh` writes `TestFlight/WhatToTest.en-US.txt` from the last three
+commit subjects. Repository evidence establishes that artifact generation only; it does not establish downstream
+upload or delivery ownership. Continue to curate TestFlight notes from the canonical changelog and confirm the actual
+distributed version/build in Xcode Cloud and TestFlight after the release merge.
+
 ## Launch Recommendation
 
 Current recommendation: quiet public launch is reasonable if the `Must Before Public Launch` section is complete.

@@ -147,13 +147,10 @@ struct OnboardingView: View {
         notificationStepState = .working("Getting alerts ready...")
         let status = await RemoteNotificationRegistrar.shared.requestAuthorizationAndRegister()
 
-        guard status.isRemoteRegistrationEligible else {
-            notificationStepState = .idle
-            completeOnboarding()
-            return
-        }
-
-        guard isArcusSignalPushEnabled else {
+        guard OnboardingRemoteSetupDecision.shouldContinue(
+            remoteRegistrationEligible: status.isRemoteRegistrationEligible,
+            arcusSignalPushEnabled: isArcusSignalPushEnabled
+        ) else {
             notificationStepState = .idle
             completeOnboarding()
             return
@@ -200,6 +197,15 @@ struct OnboardingView: View {
     @MainActor
     private func completeOnboarding() {
         onboardingComplete = true
+    }
+}
+
+enum OnboardingRemoteSetupDecision {
+    static func shouldContinue(
+        remoteRegistrationEligible: Bool,
+        arcusSignalPushEnabled: Bool
+    ) -> Bool {
+        remoteRegistrationEligible && arcusSignalPushEnabled
     }
 }
 

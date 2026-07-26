@@ -202,37 +202,6 @@ protocol HomeProjectionPersisting: Sendable {
     ) async throws -> RiskProfileChange?
 }
 
-extension HomeProjectionPersisting {
-    func commitCore(
-        _ commit: HomeProjectionCoreCommit,
-        for context: LocationContext,
-        loadedAt: Date
-    ) async throws -> RiskProfileChange? {
-        var riskProfileChange: RiskProfileChange?
-        if let weather = commit.weather {
-            _ = try await updateWeather(weather, for: context, loadedAt: loadedAt)
-        }
-        if let slowProducts = commit.slowProducts {
-            riskProfileChange = try await updateSlowProducts(
-                stormRisk: slowProducts.stormRisk,
-                severeRisk: slowProducts.severeRisk,
-                fireRisk: slowProducts.fireRisk,
-                for: context,
-                loadedAt: loadedAt
-            )
-        }
-        if let hotAlerts = commit.hotAlerts {
-            _ = try await updateHotAlerts(
-                alerts: hotAlerts.alerts,
-                mesos: hotAlerts.mesos,
-                for: context,
-                loadedAt: loadedAt
-            )
-        }
-        return riskProfileChange
-    }
-}
-
 @ModelActor
 actor HomeProjectionStore {
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)

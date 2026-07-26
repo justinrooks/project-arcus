@@ -28,6 +28,12 @@ struct NoOpLocationUploadCoordinator: LocationUploadCoordinating {
         isSubscribedOverride: Bool?
     ) async {}
     func drainPendingUploads() async {}
+
+    func drainPendingUploads(
+        using budget: PendingLocationUploadDrainBudget
+    ) async -> PendingLocationUploadDrainOutcome {
+        .drained
+    }
 }
 
 actor HTTPLocationSnapshotUploader: LocationSnapshotUploading {

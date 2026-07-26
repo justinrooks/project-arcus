@@ -63,135 +63,33 @@ struct HomeView: View {
         cachedOutlooks.map(\.dto)
     }
 
-    private var displayedProjection: HomeProjectionRecord? {
-        Self.selectProjection(from: cachedProjections, currentContext: locationSession.currentContext)?.record
-    }
-
-    private var newestCachedProjection: HomeProjectionRecord? {
-        cachedProjections.first?.record
+    private func presentationSnapshot(now: Date) -> HomePresentationSnapshot {
+        HomePresentationSnapshot(
+            projections: cachedProjections.map(\.record),
+            newestStartupProjection: cachedProjections.first?.record,
+            currentContext: locationSession.currentContext,
+            pipelineSnap: refreshPipeline.snap,
+            pipelineStormRisk: refreshPipeline.stormRisk,
+            pipelineSevereRisk: refreshPipeline.severeRisk,
+            pipelineFireRisk: refreshPipeline.fireRisk,
+            pipelineWeather: refreshPipeline.summaryWeather,
+            pipelineAirQuality: refreshPipeline.airQuality,
+            pipelineMesos: refreshPipeline.mesos,
+            pipelineAlerts: refreshPipeline.alerts,
+            resolvedLocationScopedRefreshKey: refreshPipeline.lastResolvedLocationScopedRefreshKey,
+            alertSnapshotRefreshKey: refreshPipeline.alertSnapshotRefreshKey,
+            pipelineStormSetup: refreshPipeline.stormSetup,
+            pipelineStormSetupCurrentResponse: refreshPipeline.stormSetupCurrentResponse,
+            stormSetupRefreshKey: refreshPipeline.stormSetupRefreshKey,
+            isUITestStaticMode: isUITestStaticMode,
+            now: now
+        )
     }
 
     private var stormSetupPreferences: StormSetupPreferences {
         StormSetupPreferences(
             stormSetupEnabled: stormSetupEnabled,
             detailedIngredientsEnabled: detailedIngredientsEnabled
-        )
-    }
-
-    private var displayedStormSetup: StormSetupDTO? {
-        let response = Self.selectStormSetupCurrentResponse(
-            projection: displayedProjection,
-            currentContext: locationSession.currentContext,
-            pipelineValue: refreshPipeline.stormSetupCurrentResponse,
-            pipelineRefreshKey: refreshPipeline.stormSetupRefreshKey,
-            now: Date()
-        )
-        return response.map(StormSetupDTO.init(response:)) ?? Self.selectStormSetup(
-            projection: displayedProjection,
-            currentContext: locationSession.currentContext,
-            pipelineValue: refreshPipeline.stormSetup,
-            pipelineRefreshKey: refreshPipeline.stormSetupRefreshKey,
-            now: Date()
-        )
-    }
-
-    private var displayedStormSetupCurrentResponse: StormSetupCurrentResponse? {
-        Self.selectStormSetupCurrentResponse(
-            projection: displayedProjection,
-            currentContext: locationSession.currentContext,
-            pipelineValue: refreshPipeline.stormSetupCurrentResponse,
-            pipelineRefreshKey: refreshPipeline.stormSetupRefreshKey,
-            now: Date()
-        )
-    }
-
-    private var displayedStormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse? {
-        guard stormSetupPreferences.effectiveDetailedIngredientsEnabled else { return nil }
-        return displayedStormSetupCurrentResponse?.profileAnalysis
-    }
-
-    private var resolvedLocationTimeZone: TimeZone {
-        Self.resolveLocationTimeZone(
-            selectedProjection: displayedProjection,
-            currentContext: locationSession.currentContext,
-            newestStartupProjection: newestCachedProjection
-        )
-    }
-
-    private var isCurrentContextResolvedInPipeline: Bool {
-        guard let currentContextRefreshKey else { return false }
-        return currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey
-    }
-
-    private var usesPipelineSummaryFallback: Bool {
-        displayedProjection == nil && isCurrentContextResolvedInPipeline
-    }
-
-    private var displayedLocationSnapshot: LocationSnapshot? {
-        Self.preferredSummaryValue(
-            projectionValue: displayedProjection?.locationSnapshot,
-            pipelineValue: refreshPipeline.snap,
-            prefersPipelineValue: isCurrentContextResolvedInPipeline
-        )
-    }
-
-    private var displayedStormRisk: StormRiskLevel? {
-        Self.preferredSummaryValue(
-            projectionValue: displayedProjection?.stormRisk,
-            pipelineValue: refreshPipeline.stormRisk,
-            prefersPipelineValue: isCurrentContextResolvedInPipeline
-        )
-    }
-
-    private var displayedSevereRisk: SevereWeatherThreat? {
-        Self.preferredSummaryValue(
-            projectionValue: displayedProjection?.severeRisk,
-            pipelineValue: refreshPipeline.severeRisk,
-            prefersPipelineValue: isCurrentContextResolvedInPipeline
-        )
-    }
-
-    private var displayedFireRisk: FireRiskLevel? {
-        Self.preferredSummaryValue(
-            projectionValue: displayedProjection?.fireRisk,
-            pipelineValue: refreshPipeline.fireRisk,
-            prefersPipelineValue: isCurrentContextResolvedInPipeline
-        )
-    }
-
-    private var displayedWeather: SummaryWeather? {
-        Self.preferredSummaryValue(
-            projectionValue: displayedProjection?.weather,
-            pipelineValue: refreshPipeline.summaryWeather,
-            prefersPipelineValue: isCurrentContextResolvedInPipeline
-        )
-    }
-
-    private var displayedAirQuality: AirQualityCurrentResponse? {
-        isCurrentContextResolvedInPipeline ? refreshPipeline.airQuality : nil
-    }
-
-    private var displayedMesos: [MdDTO] {
-        if isUITestStaticMode && refreshPipeline.mesos.isEmpty == false {
-            return refreshPipeline.mesos
-        }
-        return Self.preferredCurrentContextValues(
-            cachedValues: displayedProjection?.activeMesos ?? [],
-            pipelineValues: refreshPipeline.mesos,
-            currentContext: locationSession.currentContext,
-            pipelineRefreshKey: refreshPipeline.alertSnapshotRefreshKey
-        )
-    }
-
-    private var displayedAlerts: [AlertDTO] {
-        if isUITestStaticMode && refreshPipeline.alerts.isEmpty == false {
-            return refreshPipeline.alerts
-        }
-        return Self.preferredCurrentContextValues(
-            cachedValues: displayedProjection?.activeAlerts ?? [],
-            pipelineValues: refreshPipeline.alerts,
-            currentContext: locationSession.currentContext,
-            pipelineRefreshKey: refreshPipeline.alertSnapshotRefreshKey
         )
     }
 
@@ -210,22 +108,29 @@ struct HomeView: View {
         )
     }
 
-    private var localAlertsDisplayState: LocalAlertsDisplayState {
+    private func localAlertsDisplayState(
+        presentation: HomePresentationSnapshot,
+        todayContentState: TodayContentState,
+        readinessState: SummaryReadinessState
+    ) -> LocalAlertsDisplayState {
         LocalAlertsDisplayState.from(
             todayContentState: todayContentState,
-            hasCachedProjection: displayedProjection != nil,
-            isCurrentContextResolvedInPipeline: isCurrentContextCommittedAlertSnapshot,
-            lastHotAlertsLoadAt: displayedProjection?.lastHotAlertsLoadAt,
-            hasActiveAlerts: !displayedMesos.isEmpty || !displayedAlerts.isEmpty,
+            hasCachedProjection: presentation.projection != nil,
+            isCurrentContextResolvedInPipeline: presentation.isCurrentContextCommittedAlertSnapshot,
+            lastHotAlertsLoadAt: presentation.projection?.lastHotAlertsLoadAt,
+            hasActiveAlerts: !presentation.mesos.isEmpty || !presentation.alerts.isEmpty,
             isLocationUnavailable: readinessState == .locationUnavailable
         )
     }
 
-    private var todayContentState: TodayContentState {
+    private func todayContentState(
+        presentation: HomePresentationSnapshot,
+        readinessState: SummaryReadinessState
+    ) -> TodayContentState {
         TodayContentState.from(
             readinessState: readinessState,
-            hasCachedContent: displayedProjection != nil,
-            hasLiveContent: usesPipelineSummaryFallback || (
+            hasCachedContent: presentation.projection != nil,
+            hasLiveContent: (presentation.projection == nil && presentation.isCurrentContextResolvedInPipeline) || (
                 isUITestStaticMode && (!refreshPipeline.mesos.isEmpty || !refreshPipeline.alerts.isEmpty)
             ),
             isRefreshing: refreshPipeline.isRefreshInFlight,
@@ -233,7 +138,7 @@ struct HomeView: View {
         )
     }
 
-    private var readinessState: SummaryReadinessState {
+    private func readinessState(presentation: HomePresentationSnapshot) -> SummaryReadinessState {
         if locationSession.authorizationStatus == .denied || locationSession.authorizationStatus == .restricted {
             return .locationUnavailable
         }
@@ -242,22 +147,10 @@ struct HomeView: View {
             startupState: locationSession.startupState,
             hasContext: locationSession.currentContext != nil,
             hasResolvedLocalData: currentContextRefreshKey == refreshPipeline.lastResolvedLocationScopedRefreshKey,
-            stormRisk: displayedStormRisk,
-            severeRisk: displayedSevereRisk,
-            fireRisk: displayedFireRisk
+            stormRisk: presentation.stormRisk,
+            severeRisk: presentation.severeRisk,
+            fireRisk: presentation.fireRisk
         )
-    }
-
-    private var isEmptyResolvingSummary: Bool {
-        todayContentState.showsResolvingSurface
-    }
-
-    private var isCurrentContextCommittedAlertSnapshot: Bool {
-        guard let currentContextRefreshKey = currentContextRefreshKey else {
-            return false
-        }
-
-        return currentContextRefreshKey == refreshPipeline.alertSnapshotRefreshKey
     }
 
     init(
@@ -300,111 +193,175 @@ struct HomeView: View {
         )
     }
 
+    private var settingsTab: some View {
+        NavigationStack {
+            SettingsView()
+                .background(.skyAwareBackground)
+                .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbarBackground(.visible, for: .navigationBar)
+                .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+        }
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+    }
+
+    private func todayTab(
+        presentation: HomePresentationSnapshot,
+        readinessState: SummaryReadinessState,
+        todayContentState: TodayContentState,
+        localAlertsDisplayState: LocalAlertsDisplayState,
+        stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
+    ) -> some View {
+        TodayTabView(
+            snap: presentation.locationSnapshot,
+            stormSetup: presentation.stormSetup,
+            stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
+            stormSetupPreferences: stormSetupPreferences,
+            stormRisk: presentation.stormRisk,
+            severeRisk: presentation.severeRisk,
+            fireRisk: presentation.fireRisk,
+            mesos: presentation.mesos,
+            alerts: presentation.alerts,
+            outlook: displayedOutlook,
+            weather: presentation.weather,
+            airQuality: presentation.airQuality,
+            locationTimeZone: presentation.locationTimeZone,
+            todayContentState: todayContentState,
+            localAlertsDisplayState: localAlertsDisplayState,
+            readinessState: readinessState,
+            resolutionState: refreshPipeline.resolutionState,
+            isRefreshInFlight: refreshPipeline.isRefreshInFlight,
+            showsOfflineToken: runtimeConnectivityState.isOffline,
+            locationReliabilityRailState: showsLocationReliabilityRail
+                ? SummaryView.LocationReliabilityRailState(
+                    onOpen: openLocationReliabilityRail,
+                    onDismiss: dismissLocationReliabilityRailForToday
+                )
+                : nil,
+            onOpenMapLayer: openMap,
+            onOpenAlerts: openAlertsTab,
+            onOpenOutlooks: openOutlooksTab
+        ) {
+            await refreshPipeline.forceRefreshCurrentContext(
+                showsLoading: true,
+                environment: refreshEnvironment
+            )
+        }
+    }
+
+    private func alertsTab(presentation: HomePresentationSnapshot) -> some View {
+        NavigationStack {
+            AlertView(
+                mesos: presentation.mesos,
+                alerts: presentation.alerts,
+                focusedAlertRequest: remoteAlertPresentationState.focusRequest,
+                onRefresh: {
+                    logger.notice("Manual alerts refresh requested")
+                    refreshPipeline.resetLocationRefreshContext()
+                    await refreshPipeline.forceRefreshCurrentContext(
+                        showsLoading: true,
+                        environment: refreshEnvironment
+                    )
+                },
+                onFocusedAlertRequestHandled: { requestID in
+                    remoteAlertPresentationState.clearFocusRequest(id: requestID)
+                }
+            )
+            .background(.skyAwareBackground)
+            .navigationTitle("Active Alerts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+        }
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+    }
+
+    private var mapTab: some View {
+        MapScreenView(selectedLayer: $selectedMapLayer)
+            .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var outlooksTab: some View {
+        NavigationStack {
+            ConvectiveOutlookView(
+                dtos: displayedOutlooks,
+                refreshStatus: refreshPipeline.outlookRefreshStatus,
+                onRefresh: {
+                    logger.notice("Manual convective outlook refresh requested")
+                    await refreshPipeline.refreshOutlooksManually(environment: refreshEnvironment)
+                }
+            )
+            .background(.skyAwareBackground)
+            .navigationTitle("Convective Outlooks")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+        }
+        .background(Color(.skyAwareBackground).ignoresSafeArea())
+    }
+
     var body: some View {
+        let presentation = presentationSnapshot(now: Date())
+        let readinessState = readinessState(presentation: presentation)
+        let todayContentState = todayContentState(presentation: presentation, readinessState: readinessState)
+        let localAlertsDisplayState = localAlertsDisplayState(
+            presentation: presentation,
+            todayContentState: todayContentState,
+            readinessState: readinessState
+        )
+        let stormSetupProfileAnalysisResponse = stormSetupPreferences.effectiveDetailedIngredientsEnabled
+            ? presentation.stormSetupCurrentResponse?.profileAnalysis
+            : nil
+        let isEmptyResolvingSummary = todayContentState.showsResolvingSurface
+
+        homeBody(
+            presentation: presentation,
+            readinessState: readinessState,
+            todayContentState: todayContentState,
+            localAlertsDisplayState: localAlertsDisplayState,
+            stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
+            isEmptyResolvingSummary: isEmptyResolvingSummary
+        )
+    }
+
+    @ViewBuilder
+    private func homeBody(
+        presentation: HomePresentationSnapshot,
+        readinessState: SummaryReadinessState,
+        todayContentState: TodayContentState,
+        localAlertsDisplayState: LocalAlertsDisplayState,
+        stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?,
+        isEmptyResolvingSummary: Bool
+    ) -> some View {
         ZStack {
             Color(.skyAwareBackground).ignoresSafeArea()
 
             TabView(selection: $selectedTab) {
                 Tab("Today", systemImage: "clock.arrow.trianglehead.clockwise.rotate.90.path.dotted", value: .today) {
-                    TodayTabView(
-                        snap: displayedLocationSnapshot,
-                        stormSetup: displayedStormSetup,
-                        stormSetupProfileAnalysisResponse: displayedStormSetupProfileAnalysisResponse,
-                        stormSetupPreferences: stormSetupPreferences,
-                        stormRisk: displayedStormRisk,
-                        severeRisk: displayedSevereRisk,
-                        fireRisk: displayedFireRisk,
-                        mesos: displayedMesos,
-                        alerts: displayedAlerts,
-                        outlook: displayedOutlook,
-                        weather: displayedWeather,
-                        airQuality: displayedAirQuality,
-                        locationTimeZone: resolvedLocationTimeZone,
+                    todayTab(
+                        presentation: presentation,
+                        readinessState: readinessState,
                         todayContentState: todayContentState,
                         localAlertsDisplayState: localAlertsDisplayState,
-                        readinessState: readinessState,
-                        resolutionState: refreshPipeline.resolutionState,
-                        isRefreshInFlight: refreshPipeline.isRefreshInFlight,
-                        showsOfflineToken: runtimeConnectivityState.isOffline,
-                        locationReliabilityRailState: showsLocationReliabilityRail
-                            ? SummaryView.LocationReliabilityRailState(
-                                onOpen: openLocationReliabilityRail,
-                                onDismiss: dismissLocationReliabilityRailForToday
-                            )
-                            : nil,
-                        onOpenMapLayer: openMap,
-                        onOpenAlerts: openAlertsTab,
-                        onOpenOutlooks: openOutlooksTab
-                    ) {
-                        await refreshPipeline.forceRefreshCurrentContext(
-                            showsLoading: true,
-                            environment: refreshEnvironment
-                        )
-                    }
+                        stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse
+                    )
                 }
 
                 Tab("Alerts", systemImage: "exclamationmark.triangle", value: .alerts) {
-                    NavigationStack {
-                        AlertView(
-                            mesos: displayedMesos,
-                            alerts: displayedAlerts,
-                            focusedAlertRequest: remoteAlertPresentationState.focusRequest,
-                            onRefresh: {
-                                logger.notice("Manual alerts refresh requested")
-                                refreshPipeline.resetLocationRefreshContext()
-                                await refreshPipeline.forceRefreshCurrentContext(
-                                    showsLoading: true,
-                                    environment: refreshEnvironment
-                                )
-                            },
-                            onFocusedAlertRequestHandled: { requestID in
-                                remoteAlertPresentationState.clearFocusRequest(id: requestID)
-                            }
-                        )
-                        .background(.skyAwareBackground)
-                        .navigationTitle("Active Alerts")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    }
-                    .background(Color(.skyAwareBackground).ignoresSafeArea())
+                    alertsTab(presentation: presentation)
                 }
-                .badge(displayedMesos.count + displayedAlerts.count)
+                .badge(presentation.mesos.count + presentation.alerts.count)
 
                 Tab("Map", systemImage: "map", value: .map) {
-                    MapScreenView(selectedLayer: $selectedMapLayer)
-                        .toolbar(.hidden, for: .navigationBar)
+                    mapTab
                 }
 
                 Tab("Outlooks", systemImage: "list.clipboard.fill", value: .outlooks) {
-                    NavigationStack {
-                        ConvectiveOutlookView(
-                            dtos: displayedOutlooks,
-                            refreshStatus: refreshPipeline.outlookRefreshStatus,
-                            onRefresh: {
-                                logger.notice("Manual convective outlook refresh requested")
-                                await refreshPipeline.refreshOutlooksManually(environment: refreshEnvironment)
-                            }
-                        )
-                        .background(.skyAwareBackground)
-                        .navigationTitle("Convective Outlooks")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbarBackground(.visible, for: .navigationBar)
-                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    }
-                    .background(Color(.skyAwareBackground).ignoresSafeArea())
+                    outlooksTab
                 }
 
                 Tab("Settings", systemImage: "gearshape", value: .settings) {
-                    NavigationStack {
-                        SettingsView()
-                            .background(.skyAwareBackground)
-                            .navigationTitle("Settings")
-                            .navigationBarTitleDisplayMode(.inline)
-                            .toolbarBackground(.visible, for: .navigationBar)
-                            .toolbarBackground(.skyAwareBackground, for: .navigationBar)
-                    }
-                    .background(Color(.skyAwareBackground).ignoresSafeArea())
+                    settingsTab
                 }
             }
             .background(Color(.skyAwareBackground).ignoresSafeArea())
@@ -458,10 +415,10 @@ struct HomeView: View {
         .onChange(of: locationSession.reliabilityState) { _, _ in
             refreshLocationReliabilityRail()
         }
-        .onChange(of: displayedStormRisk) { _, _ in
+        .onChange(of: presentation.stormRisk) { _, _ in
             refreshLocationReliabilityRail()
         }
-        .onChange(of: displayedSevereRisk) { _, _ in
+        .onChange(of: presentation.severeRisk) { _, _ in
             refreshLocationReliabilityRail()
         }
         .task {
@@ -555,11 +512,12 @@ extension HomeView {
         let now = Date.now
         let timeZone = TimeZone.autoupdatingCurrent
         let reliability = locationSession.reliabilityState
+        let presentation = presentationSnapshot(now: now)
         let ledger = LocationReliabilityAskLedger.live()
         let decision = LocationReliabilitySummaryRailEligibility.decision(
             reliability: reliability,
-            stormRisk: displayedStormRisk,
-            severeRisk: displayedSevereRisk,
+            stormRisk: presentation.stormRisk,
+            severeRisk: presentation.severeRisk,
             ledger: ledger.snapshot(),
             now: now,
             timeZone: timeZone
@@ -583,7 +541,7 @@ extension HomeView {
         if showsLocationReliabilityRail == false {
             let snapshot = ledger.snapshot()
             locationReliabilityLogger.notice(
-                "Showing location reliability rail qualifyingDay=\(qualifyingDay, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public) stormRisk=\(String(describing: displayedStormRisk), privacy: .public) severeRisk=\(String(describing: displayedSevereRisk), privacy: .public) askCount=\(snapshot.askCount, privacy: .public)"
+                "Showing location reliability rail qualifyingDay=\(qualifyingDay, privacy: .public) authorization=\(reliability.authorization.logName, privacy: .public) accuracy=\(reliability.accuracy.logName, privacy: .public) stormRisk=\(String(describing: presentation.stormRisk), privacy: .public) severeRisk=\(String(describing: presentation.severeRisk), privacy: .public) askCount=\(snapshot.askCount, privacy: .public)"
             )
         }
 

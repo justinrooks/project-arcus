@@ -50,9 +50,14 @@ final class MapFeatureModel {
 
         while Task.isCancelled == false {
             pendingReload = false
-            await performReload(using: service, warningSource: warningSource)
+            let didReplaceRenderPlans = await performReload(using: service, warningSource: warningSource)
 
-            guard pendingReload else { return }
+            if pendingReload == false {
+                if didReplaceRenderPlans == false {
+                    applySelectedLayer(currentSelectedLayer)
+                }
+                return
+            }
             showRefreshStateForCurrentSelection()
         }
     }
@@ -60,7 +65,7 @@ final class MapFeatureModel {
     private func performReload(
         using service: any SpcMapData,
         warningSource: any ArcusAlertQuerying
-    ) async {
+    ) async -> Bool {
         async let severeTask = fetchSevereRiskShapes(using: service)
         async let stormTask = fetchStormRiskShapes(using: service)
         async let mesoTask = fetchMesoShapes(using: service)
@@ -75,24 +80,14 @@ final class MapFeatureModel {
             warningTask
         )
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return false }
 
         if severeResult.isCancellation ||
             stormResult.isCancellation ||
             mesoResult.isCancellation ||
             fireResult.isCancellation ||
             warningResult.isCancellation {
-            return
-        }
-
-        let activeWarnings: [ActiveWarningGeometry]
-        switch warningResult {
-        case .success(let value):
-            activeWarnings = value
-        case .failure:
-            activeWarnings = []
-        case .cancelled:
-            return
+            return false
         }
 
         let payload = MapDataPayload(
@@ -100,10 +95,10 @@ final class MapFeatureModel {
             severeRisks: severeResult,
             mesos: mesoResult,
             fireRisk: fireResult,
-            activeWarnings: activeWarnings
+            activeWarnings: warningResult
         )
 
-        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings)
+        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings.value ?? [])
 
         let plannedScenes = await planner.buildRenderPlans(
             payload: payload,
@@ -112,7 +107,7 @@ final class MapFeatureModel {
             warningPolygons: warningPolygons
         )
 
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return false }
 
         warmScenesTask?.cancel()
         warmScenesTask = nil
@@ -121,6 +116,7 @@ final class MapFeatureModel {
 
         applySelectedLayer(currentSelectedLayer)
         scheduleWarmRemainingScenes()
+        return true
     }
 
     func selectLayer(_ layer: MapLayer) {

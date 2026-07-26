@@ -14,9 +14,12 @@ deliberately left alone, and what the next session should know.
 
 ## Current Status
 
+**Campaign status:** Complete. The investigation below is June 2026 baseline evidence, not a description of current
+Today behavior.
+
 | Order | ID | GitHub | Title | Model | Status | Notes |
 |---:|---|---|---|---|---|---|
-| 0 | TV-00 | [#248](https://github.com/justinrooks/project-arcus/issues/248) | Audit Today View State Flow | `gpt-5.4-mini / medium` | Planned | Parent tracking issue created from source-backed investigation. |
+| 0 | TV-00 | [#248](https://github.com/justinrooks/project-arcus/issues/248) | Audit Today View State Flow | `gpt-5.4-mini / medium` | Complete | Parent tracking issue and source-backed baseline audit completed. |
 | 1 | TV-01 | [#249](https://github.com/justinrooks/project-arcus/issues/249) | Introduce canonical Today content state for cache roll-forward rendering | `gpt-5.4-mini / high` | Complete | Foundation boundary added; `HomeView` and `SummaryView` now share `TodayContentState`. |
 | 2 | TV-02 | [#250](https://github.com/justinrooks/project-arcus/issues/250) | Keep Today section content stable during resolving refreshes | `gpt-5.4-mini / high` | Complete | Canonical Today state now stabilizes Local Alerts, Today's Awareness, and risk placeholders during cached refreshes. |
 | 3 | TV-03 | [#251](https://github.com/justinrooks/project-arcus/issues/251) | Align Current Conditions and Atmospheric Conditions weather roll-forward behavior | `gpt-5.4-mini / high` | Complete | Today boundary now owns visible-weather retention so Current Conditions and Atmospheric Conditions stay aligned during same-location refresh. |
@@ -26,8 +29,8 @@ deliberately left alone, and what the next session should know.
 | 7 | TV-07 | [#255](https://github.com/justinrooks/project-arcus/issues/255) | Add Today state-flow previews and transition mapping tests | `gpt-5.4-mini / medium` | Complete | Final validation/support issue after TV-01 through TV-06. |
 | 8 | LA-01 | [#256](https://github.com/justinrooks/project-arcus/issues/256) | Define Local Alerts display state with cache provenance | `gpt-5.4-mini / high` | Complete | Alert-specific state semantics now preserve live vs cached provenance, cached refresh, stale/degraded, and true unavailable boundaries. |
 | 9 | LA-02 | [#257](https://github.com/justinrooks/project-arcus/issues/257) | Make Local Alerts refresh treatment calm and non-duplicative | `gpt-5.4-mini / medium` | Complete | Local Alerts now derives refresh treatment from `LocalAlertsDisplayState` so cached refreshes stay steady and only useful offline status copy remains. |
-| 10 | LA-03 | [#258](https://github.com/justinrooks/project-arcus/issues/258) | Stabilize ActiveAlertSummaryView transitions and height behavior | `gpt-5.4-mini / high` | Not started | Alert card local state/height mechanics. Depends on LA-01/LA-02. |
-| 11 | LA-04 | [#259](https://github.com/justinrooks/project-arcus/issues/259) | Add Local Alerts state-flow previews and tests | `gpt-5.4-mini / medium` | Not started | Final alert-specific validation support after LA-01 through LA-03. |
+| 10 | LA-03 | [#258](https://github.com/justinrooks/project-arcus/issues/258) | Stabilize ActiveAlertSummaryView transitions and height behavior | `gpt-5.4-mini / high` | Complete | Alert card transition and height behavior stabilized. |
+| 11 | LA-04 | [#259](https://github.com/justinrooks/project-arcus/issues/259) | Add Local Alerts state-flow previews and tests | `gpt-5.4-mini / medium` | Complete | Alert-specific previews and validation support completed. |
 
 ## Global Constraints
 
@@ -41,7 +44,7 @@ deliberately left alone, and what the next session should know.
 - Do not show unavailable/offline states unless no useful cached or fresh data exists.
 - Do not touch unrelated dirty files.
 
-## Baseline Investigation
+## June 2026 Baseline Investigation (Historical)
 
 ### Current Flow
 

@@ -376,7 +376,7 @@ struct HomeRefreshPipelineTests {
     }
 
     @Test("staged enrichment rejects a mismatched ingestion run")
-    func stagedEnrichment_rejectsMismatchedRunIdentity() async {
+    func stagedEnrichment_rejectsMismatchedRunIdentity() async throws {
         let context = makeContext()
         let acceptedRunID = UUID(uuidString: "32500000-0000-0000-0000-000000000101")!
         let mismatchedRunID = UUID(uuidString: "32500000-0000-0000-0000-000000000102")!
@@ -390,6 +390,7 @@ struct HomeRefreshPipelineTests {
             expiresAt: Date(timeIntervalSince1970: 600),
             summary: "wrong run"
         )
+        let rejectedAirQuality = try makeAirQualityResponse(aqi: 151)
         let coreSnapshot = HomeSnapshot(
             locationSnapshot: context.snapshot,
             refreshKey: context.refreshKey,
@@ -399,6 +400,7 @@ struct HomeRefreshPipelineTests {
             locationSnapshot: context.snapshot,
             refreshKey: context.refreshKey,
             stormSetup: rejected,
+            airQuality: rejectedAirQuality,
             stormRisk: .moderate
         )
         let coordinator = ScriptedStagedHomeIngestionCoordinator(
@@ -430,10 +432,11 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.stormRisk == .moderate)
         #expect(pipeline.stormSetup == cached)
         #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+        #expect(pipeline.airQuality == nil)
     }
 
     @Test("staged enrichment rejects a mismatched location refresh key")
-    func stagedEnrichment_rejectsMismatchedRefreshKey() async {
+    func stagedEnrichment_rejectsMismatchedRefreshKey() async throws {
         let currentContext = makeContext(h3Cell: 111_111)
         let mismatchedContext = makeContext(h3Cell: 222_222, timestamp: 200)
         let runID = UUID(uuidString: "32500000-0000-0000-0000-000000000103")!
@@ -447,6 +450,7 @@ struct HomeRefreshPipelineTests {
             expiresAt: Date(timeIntervalSince1970: 600),
             summary: "wrong location"
         )
+        let rejectedAirQuality = try makeAirQualityResponse(aqi: 151)
         let coreSnapshot = HomeSnapshot(
             locationSnapshot: currentContext.snapshot,
             refreshKey: currentContext.refreshKey,
@@ -454,7 +458,8 @@ struct HomeRefreshPipelineTests {
         )
         let mismatchedEnrichment = HomeSnapshot(
             refreshKey: mismatchedContext.refreshKey,
-            stormSetup: rejected
+            stormSetup: rejected,
+            airQuality: rejectedAirQuality
         )
         let coordinator = ScriptedStagedHomeIngestionCoordinator(
             runs: [
@@ -487,6 +492,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.stormRisk == .moderate)
         #expect(pipeline.stormSetup == cached)
         #expect(pipeline.stormSetupRefreshKey == currentContext.refreshKey)
+        #expect(pipeline.airQuality == nil)
     }
 
     @Test("staged optional failure and timeout retain visible core and same-location cache")
@@ -694,10 +700,50 @@ struct HomeRefreshPipelineTests {
 
         await gate.open()
         await task.value
+        #expect(pipeline.airQuality == nil)
+    }
+
+    @Test("same-location AQI preserve retains the value and replacement updates it")
+    func sameLocationAQIPreserveAndReplacement_updatesOnlyOnReplacement() async throws {
+        let context = makeContext()
+        let first = try makeAirQualityResponse(aqi: 121)
+        let replacement = try makeAirQualityResponse(aqi: 151)
+        let snapshots = [
+            HomeSnapshot(locationSnapshot: context.snapshot, refreshKey: context.refreshKey, airQuality: first),
+            HomeSnapshot(locationSnapshot: context.snapshot, refreshKey: context.refreshKey),
+            HomeSnapshot(locationSnapshot: context.snapshot, refreshKey: context.refreshKey, airQuality: replacement)
+        ]
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: snapshots.map { snapshot in
+                let runID = UUID()
+                return .init(
+                    core: .init(runID: runID, stage: .core(.init(snapshot: snapshot))),
+                    enrichment: .init(
+                        runID: runID,
+                        stage: .enrichment(.init(snapshot: snapshot))
+                    ),
+                    finalSnapshot: snapshot
+                )
+            }
+        )
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+        )
+
+        await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        #expect(pipeline.airQuality == first)
+
+        await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        #expect(pipeline.airQuality == first)
+
+        await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        #expect(pipeline.airQuality == replacement)
     }
 
     @Test("superseded same-location enrichment cannot overwrite a newer publication")
-    func supersededSameLocationEnrichment_cannotOverwriteNewerPublication() async {
+    func supersededSameLocationEnrichment_cannotOverwriteNewerPublication() async throws {
         let context = makeContext()
         let olderGate = AsyncGate()
         let olderRunID = UUID()
@@ -712,6 +758,8 @@ struct HomeRefreshPipelineTests {
             expiresAt: Date(timeIntervalSince1970: 600),
             summary: "newer guidance"
         )
+        let olderAirQuality = try makeAirQualityResponse(aqi: 121)
+        let newerAirQuality = try makeAirQualityResponse(aqi: 151)
         let olderCore = HomeSnapshot(
             locationSnapshot: context.snapshot,
             refreshKey: context.refreshKey,
@@ -721,6 +769,7 @@ struct HomeRefreshPipelineTests {
             locationSnapshot: context.snapshot,
             refreshKey: context.refreshKey,
             stormSetup: olderStormSetup,
+            airQuality: olderAirQuality,
             stormRisk: .enhanced
         )
         let newerCore = HomeSnapshot(
@@ -732,6 +781,7 @@ struct HomeRefreshPipelineTests {
             locationSnapshot: context.snapshot,
             refreshKey: context.refreshKey,
             stormSetup: newerStormSetup,
+            airQuality: newerAirQuality,
             stormRisk: .moderate
         )
         let coordinator = ScriptedStagedHomeIngestionCoordinator(
@@ -772,6 +822,7 @@ struct HomeRefreshPipelineTests {
         await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
         #expect(pipeline.stormRisk == .moderate)
         #expect(pipeline.stormSetup == newerStormSetup)
+        #expect(pipeline.airQuality == newerAirQuality)
 
         await olderGate.open()
         await olderTask.value
@@ -779,6 +830,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.stormRisk == .moderate)
         #expect(pipeline.stormSetup == newerStormSetup)
         #expect(pipeline.stormSetupRefreshKey == context.refreshKey)
+        #expect(pipeline.airQuality == newerAirQuality)
     }
 
     @Test("same-location nil or failed storm setup preserves the existing value")
@@ -2310,6 +2362,13 @@ struct HomeRefreshPipelineTests {
         )
     }
 
+    private func makeAirQualityResponse(aqi: Int) throws -> AirQualityCurrentResponse {
+        let json = """
+        {"aqi":\(aqi),"category":{"identifier":3,"name":"Unhealthy for Sensitive Groups"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T21:00:00Z","sourceIdentifier":"airnow"}
+        """
+        return try DecoderFactory.iso8601.decode(AirQualityCurrentResponse.self, from: Data(json.utf8))
+    }
+
     private func makeStormSetupDTO(
         h3Cell: Int64,
         expiresAt: Date,
@@ -2486,8 +2545,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
+        _ = publication
         submittedRequests.append(request)
         for event in progressEvents {
             recordedProgressEvents.append(event)
@@ -2570,8 +2631,11 @@ private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func enqueueAndWait(
         _ request: HomeIngestionRequest,
-        progress: HomeIngestionProgressHandler?
+        progress: HomeIngestionProgressHandler?,
+        publication: HomeIngestionPublicationHandler?
     ) async throws -> HomeSnapshot {
+        _ = progress
+        _ = publication
         submittedRequests.append(request)
         let index = submittedRequests.count - 1
         precondition(index < snapshots.count, "Test coordinator received more requests than snapshots")

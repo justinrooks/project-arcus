@@ -4,7 +4,7 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 
 ## Overview
 
-- Epic status: Planned
+- Epic status: Complete
 - Primary GitHub epic: [#289](https://github.com/justinrooks/project-arcus/issues/289)
 - Scope: Project Arcus only
 - Baseline: 306 Swift files; 61 at or above 300 lines, 36 at or above 500, and 15 at or above 1,000
@@ -21,7 +21,10 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 - One issue per task and normally one issue per PR.
 - Update this ledger rather than repeating investigation context in prompts or issue comments.
 
-## Current State Summary
+## Campaign Baseline (Historical)
+
+The following was the pre-campaign state captured for planning; completed COM-01 through COM-14 entries below are the
+current completion authority.
 
 - Summary files mix presentation policy, SwiftUI components, and large preview galleries.
 - `MapFeatureModel.swift` combines main-actor feature state, scene DTOs, actor planning, and pure plan construction.
@@ -37,18 +40,19 @@ This is the durable, token-conscious handoff ledger for the codebase organizatio
 | Order | ID | GitHub | Title | Status | Model |
 |---:|---|---|---|---|---|
 | 1 | COM-01 | [#290](https://github.com/justinrooks/project-arcus/issues/290) | Extract Summary preview galleries | Complete | GPT-5.6 Luna / medium |
-| 2 | COM-02 | [#291](https://github.com/justinrooks/project-arcus/issues/291) | Split Home and Summary state test suites | Pending | GPT-5.6 Luna / high |
-| 3 | COM-03 | [#292](https://github.com/justinrooks/project-arcus/issues/292) | Split location provider and resolver tests | Pending | GPT-5.6 Luna / high |
-| 4 | COM-04 | [#293](https://github.com/justinrooks/project-arcus/issues/293) | Split home refresh pipeline tests and fakes | Pending | GPT-5.6 Luna / high |
-| 5 | COM-05 | [#294](https://github.com/justinrooks/project-arcus/issues/294) | Split map feature model tests and fakes | Pending | GPT-5.6 Luna / high |
-| 6 | COM-06 | [#295](https://github.com/justinrooks/project-arcus/issues/295) | Split mixed SPC and repository sync tests | Pending | GPT-5.6 Luna / high |
-| 7 | COM-07 | [#296](https://github.com/justinrooks/project-arcus/issues/296) | Decompose Primary Awareness presentation files | Pending | GPT-5.6 Terra / high |
+| 2 | COM-02 | [#291](https://github.com/justinrooks/project-arcus/issues/291) | Split Home and Summary state test suites | Complete | GPT-5.6 Luna / high |
+| 3 | COM-03 | [#292](https://github.com/justinrooks/project-arcus/issues/292) | Split location provider and resolver tests | Complete | GPT-5.6 Luna / high |
+| 4 | COM-04 | [#293](https://github.com/justinrooks/project-arcus/issues/293) | Split home refresh pipeline tests and fakes | Complete | GPT-5.6 Luna / high |
+| 5 | COM-05 | [#294](https://github.com/justinrooks/project-arcus/issues/294) | Split map feature model tests and fakes | Complete | GPT-5.6 Luna / high |
+| 6 | COM-06 | [#295](https://github.com/justinrooks/project-arcus/issues/295) | Split mixed SPC and repository sync tests | Complete | GPT-5.6 Luna / high |
+| 7 | COM-07 | [#296](https://github.com/justinrooks/project-arcus/issues/296) | Decompose Primary Awareness presentation files | Complete | GPT-5.6 Terra / high |
 | 8 | COM-08 | [#297](https://github.com/justinrooks/project-arcus/issues/297) | Decompose map model and render planning files | Complete | GPT-5.6 Sol / high |
 | 9 | COM-09 | [#298](https://github.com/justinrooks/project-arcus/issues/298) | Extract Storm Setup ingestion responsibilities | Complete | GPT-5.6 Sol / xhigh |
 | 10 | COM-10 | [#299](https://github.com/justinrooks/project-arcus/issues/299) | Separate location upload persistence from queue coordination | Complete | GPT-5.6 Sol / xhigh |
 | 11 | COM-11 | [#300](https://github.com/justinrooks/project-arcus/issues/300) | Split widget rendering components by domain | Complete | GPT-5.6 Luna / high |
-| 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Pending | GPT-5.6 Terra / high |
+| 12 | COM-12 | [#301](https://github.com/justinrooks/project-arcus/issues/301) | Extract Storm Setup detail presentation builders | Complete | GPT-5.6 Terra / high |
 | 13 | COM-13 | [#302](https://github.com/justinrooks/project-arcus/issues/302) | Resolve URL session metrics collector concurrency warning | Complete | GPT-5.6 Sol / high |
+| 14 | COM-14 | Follow-up to [#289](https://github.com/justinrooks/project-arcus/issues/289) | Decompose HomeView | Complete | Follow-up |
 
 ## Existing Code Map
 

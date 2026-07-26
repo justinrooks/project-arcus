@@ -55,3 +55,26 @@
   predicate. A disabled delivery must remain pending rather than becoming unrequested content in the alternate channel.
 - Coalescing a newer occurrence must pass through the delivery gate's supersession logic; otherwise a stale pending
   occurrence for the same projection can escape immediately after the combined notification.
+
+## 2026-07-23
+
+- Treat checked-in marketing versions and build numbers as placeholders when Xcode Cloud owns release numbering.
+  Monitor only app/widget parity unless the user or release workflow identifies a different repository-owned
+  invariant; do not create speculative release-provenance work from those values.
+
+## 2026-07-24
+
+- Do not report a Swift change as build-validated until a successful Xcode build has compiled the affected target;
+  an unfinalized result bundle or a zero-test summary is evidence of an interrupted run, not validation.
+- When a large SwiftUI `TabView` reports a type-checking timeout on an innocent later tab, split every primary tab
+  into an opaque helper before retrying; the failure is usually accumulated result-builder complexity.
+- When extracting SwiftUI structure to resolve a compiler limit, preserve existing presentation predicates verbatim;
+  do not substitute a nearby feature-level loading heuristic for the surface's established state machine.
+
+## 2026-07-26
+
+- When a test passes repeated isolated runs but Xcode Cloud still reports it as crashed, treat the test name as process
+  attribution rather than root-cause evidence. Audit the parallel unit lane for abandoned tasks, continuations, shared
+  state, and configuration differences before changing the named test again.
+- Never let a persisted test fixture hard-code authorization or preference state while the operation under test reads
+  that state from the simulator. Inject matching providers so a developer simulator cannot hide clean-Cloud behavior.

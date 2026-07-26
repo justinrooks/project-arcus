@@ -25,9 +25,13 @@ enum ArcusSignalConfiguration {
     private static let infoDictionaryKey = "ArcusSignalURL"
 
     static func configuredBaseURL(bundle: Bundle = .main) -> URL? {
-        guard let rawValue = bundle.object(forInfoDictionaryKey: infoDictionaryKey) as? String else {
-            return nil
-        }
+        configuredBaseURL(
+            rawValue: bundle.object(forInfoDictionaryKey: infoDictionaryKey) as? String
+        )
+    }
+
+    static func configuredBaseURL(rawValue: String?) -> URL? {
+        guard let rawValue else { return nil }
 
         let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !value.hasPrefix("$(") else { return nil }

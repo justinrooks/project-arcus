@@ -48,13 +48,14 @@ xed SkyAware.xcodeproj
 
 ## Build & Run
 ```sh
-xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 15" build
+xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build
 ```
 
 ## Testing
-```sh
-xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 15" test
-```
+The canonical validation procedure is maintained in [`AGENTS.md`](AGENTS.md). It defines the explicit
+`SkyAware_Tests` unit lane and the `SkyAware_All_Tests` simulator navigation-smoke lane, including fresh
+`.xcresult` paths, `xcresulttool` inspection, exact test counts, and the distinction between simulator, device,
+and Instruments evidence.
 
 ## Configuration
 - App configuration lives in `Config`.

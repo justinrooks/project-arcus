@@ -24,8 +24,15 @@
 ## Build, Test, and Development Commands
 - Build (Debug):
   `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build`
-- Run unit + UI tests:
-  `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" test`
+- Validation lanes (Debug, simulator):
+  - Unit lane (`SkyAware_Tests`, all `SkyAwareTests`):
+    `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_Tests -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareTests -resultBundlePath "$ISSUE_RESULTS/unit.xcresult" test`
+  - Navigation-smoke lane (`SkyAware_All_Tests`, exactly one UI test):
+    `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -testPlan SkyAware_All_Tests -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" -only-testing:SkyAwareUITests/SkyAwareUITests/testTabNavigationLoadsEachPrimaryView -resultBundlePath "$ISSUE_RESULTS/ui-navigation.xcresult" test`
+  - Set `ISSUE_RESULTS="$(mktemp -d /private/tmp/skyaware-results.XXXXXX)"` before running either command. Use a fresh `.xcresult` path for every invocation; do not commit result bundles.
+  - Inspect each finalized bundle with `xcrun xcresulttool get test-results summary --path "$ISSUE_RESULTS/<bundle>.xcresult" --compact` and, when needed, `xcrun xcresulttool get test-results tests --path "$ISSUE_RESULTS/<bundle>.xcresult" --compact`.
+  - Report the result, exact passed/failed/skipped counts, simulator model, OS, Debug configuration, and bundle path. A successful exit status alone is insufficient.
+- Validation evidence categories: `SkyAware_Tests` is unit evidence; the named `SkyAware_All_Tests` test is simulator UI navigation evidence. Neither establishes physical-device behavior or Instruments/performance evidence. Deterministic tests use stubs/fakes and make no intentional live WeatherKit, NWS, SPC, Arcus, or APNs requests.
 - Resolve Swift package dependencies:
   `xcodebuild -resolvePackageDependencies -project SkyAware.xcodeproj`
 - Open in Xcode:

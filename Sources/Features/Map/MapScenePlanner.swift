@@ -14,7 +14,7 @@ struct MapDataPayload: Sendable {
     let severeRisks: MapFetchOutcome<[SevereRiskShapeDTO]>
     let mesos: MapFetchOutcome<[MdDTO]>
     let fireRisk: MapFetchOutcome<[FireRiskDTO]>
-    let activeWarnings: [ActiveWarningGeometry]
+    let activeWarnings: MapFetchOutcome<[ActiveWarningGeometry]>
 }
 
 enum MapFetchOutcome<Value: Sendable>: Sendable {

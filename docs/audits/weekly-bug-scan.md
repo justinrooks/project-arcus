@@ -146,3 +146,46 @@
 - best next fix: No fix recommended.
 - implementation is recommended: No
 - out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore
+
+## 2026-07-23T10:09:07-06:00
+- date: 2026-07-23T10:09:07-06:00
+- repository reviewed: project-arcus
+- workflow reviewed: Weekly bug scan (audit-only)
+- commit window inspected: 2026-07-16T10:10:24Z through 2026-07-22T12:40:11-06:00
+  (`def3ba51`, `367b1678`, `55539723`, `8bf056f7`, `f8114459`, `0697e440`)
+- files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Features/Background/BackgroundOrchestrator.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/AmRangeLocalRule.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningComposer.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningContext.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/SevenAmLocalRule.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeComposer.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeGate.swift
+  - /Users/justin/Code/project-arcus/Config/Info.plist
+  - /Users/justin/Code/project-arcus/Sources/App/LaunchSplashView.swift
+  - /Users/justin/Code/project-arcus/Sources/App/SkyAwareApp.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Parsing/GeoJSON/GeoJSONModels.swift
+  - /Users/justin/Code/project-arcus/Sources/Utilities/Geometry/GeoPolygonEntity.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Map/MapPolygonMapper.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/FireRiskRepo.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/SevereRiskRepo.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/StormRiskRepo.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshPipeline.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/HomeProjectionStore.swift
+  - /Users/justin/Code/project-arcus/Sources/Providers/Location/LocationProvider.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MorningNotificationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/GeoJsonParserTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MapPolygonMapperTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeProjectionStoreTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeRefreshPipelineTests.swift
+- top finding: No credible bug confirmed; staged Today publication, polygon-hole exclusion, launch configuration,
+  and morning/risk-change coalescing matched the inspected contracts and focused tests.
+- best next fix: No fix recommended.
+- implementation is recommended: No
+- validation: Focused `xcodebuild test` passed for Home refresh, projection persistence, GeoJSON/map polygon,
+  morning notification, and background cadence suites.
+- out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore

@@ -394,6 +394,93 @@ struct MapFeatureModelWarningsTests {
         #expect(model.activeScene.canvasState.overlays.count == 1)
     }
 
+    @Test("warning lookup failure preserves prior warnings while thematic data refreshes")
+    func reload_warningFailurePreservesPriorWarningSliceAcrossLayers() async {
+        let model = MapFeatureModel()
+        let initialService = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let refreshedService = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .enhanced, title: "ENH")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let initialWarnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning")])
+        )
+        let failedWarnings = StubArcusAlertQuerying(activeWarnings: .failure(StubError()))
+
+        await model.reload(using: initialService, warningSource: initialWarnings, selectedLayer: .categorical)
+        let warningKeys = overlayKeys(in: model.activeScene).filter { $0.contains("warn|") }
+
+        await model.reload(using: refreshedService, warningSource: failedWarnings, selectedLayer: .categorical)
+
+        #expect(overlayTitles(in: model.activeScene) == ["ENH"])
+        #expect(overlayKeys(in: model.activeScene).filter { $0.contains("warn|") } == warningKeys)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+
+        model.selectLayer(.fire)
+        #expect(overlayKeys(in: model.activeScene).filter { $0.contains("warn|") } == warningKeys)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == ["Tornado"])
+    }
+
+    @Test("confirmed empty warning lookup removes prior warning slices")
+    func reload_confirmedEmptyWarningLookupRemovesPriorWarningSlices() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let initialWarnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning")])
+        )
+        let emptyWarnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+
+        await model.reload(using: service, warningSource: initialWarnings, selectedLayer: .categorical)
+        await model.reload(using: service, warningSource: emptyWarnings, selectedLayer: .categorical)
+
+        #expect(overlayTitles(in: model.activeScene) == ["SLGT"])
+        #expect(overlayKeys(in: model.activeScene).contains { $0.contains("warn|") } == false)
+        #expect(warningLegendItems(in: model.activeScene).isEmpty)
+
+        model.selectLayer(.fire)
+        #expect(overlayKeys(in: model.activeScene).contains { $0.contains("warn|") } == false)
+        #expect(warningLegendItems(in: model.activeScene).isEmpty)
+    }
+
+    @Test("cancelled warning lookup leaves the selected scene unchanged")
+    func reload_cancelledWarningLookupLeavesSelectedSceneUnchanged() async {
+        let model = MapFeatureModel()
+        let service = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([makeStormRisk(level: .slight, title: "SLGT")]),
+            mesos: .success([]),
+            fireRisk: .success([])
+        )
+        let initialWarnings = StubArcusAlertQuerying(
+            activeWarnings: .success([makeWarning(event: "Tornado Warning")])
+        )
+        let cancelledWarnings = StubArcusAlertQuerying(activeWarnings: .failure(CancellationError()))
+
+        await model.reload(using: service, warningSource: initialWarnings, selectedLayer: .categorical)
+        let baselineKeys = overlayKeys(in: model.activeScene)
+        let baselineLegendTitles = warningLegendItems(in: model.activeScene).map(\.title)
+        let baselineRevision = model.activeScene.canvasState.overlayRevision
+
+        await model.reload(using: service, warningSource: cancelledWarnings, selectedLayer: .categorical)
+
+        #expect(overlayKeys(in: model.activeScene) == baselineKeys)
+        #expect(warningLegendItems(in: model.activeScene).map(\.title) == baselineLegendTitles)
+        #expect(model.activeScene.canvasState.overlayRevision == baselineRevision)
+        #expect(model.activeScene.legendState.presentationState == .current)
+    }
+
     @Test("reload updates overlay revision when warning geometry changes")
     func reload_warningGeometryChangesUpdateOverlayRevision() async {
         let model = MapFeatureModel()

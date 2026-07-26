@@ -49,17 +49,30 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
     }
 }
 
+enum HomeAirQualityPublicationOutcome: Sendable, Equatable {
+    case replace(AirQualityCurrentResponse)
+    case preserve
+
+    var replacement: AirQualityCurrentResponse? {
+        guard case .replace(let response) = self else { return nil }
+        return response
+    }
+}
+
 struct HomeIngestionEnrichmentPublication: Sendable, Equatable {
     let refreshKey: LocationContext.RefreshKey?
     let stormSetup: StormSetupDTO?
     let stormSetupCurrentResponse: StormSetupCurrentResponse?
-    let airQuality: AirQualityCurrentResponse?
+    let airQualityOutcome: HomeAirQualityPublicationOutcome
 
-    init(snapshot: HomeSnapshot) {
+    init(
+        snapshot: HomeSnapshot,
+        airQualityOutcome: HomeAirQualityPublicationOutcome? = nil
+    ) {
         refreshKey = snapshot.refreshKey
         stormSetup = snapshot.stormSetup
         stormSetupCurrentResponse = snapshot.stormSetupCurrentResponse
-        airQuality = snapshot.airQuality
+        self.airQualityOutcome = airQualityOutcome ?? snapshot.airQuality.map(HomeAirQualityPublicationOutcome.replace) ?? .preserve
     }
 }
 
@@ -312,15 +325,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             plan: plan,
             executionMode: executionMode
         )
-        let (stormSetupRefresh, airQuality) = await (stormSetupRefreshTask, airQualityTask)
+        let (stormSetupRefresh, airQualityOutcome) = await (stormSetupRefreshTask, airQualityTask)
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
         snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup
-        snapshot.airQuality = airQuality
+        snapshot.airQuality = airQualityOutcome.replacement
         await progress.publish(
             HomeIngestionPublication(
                 runID: progress.runID,
-                stage: .enrichment(.init(snapshot: snapshot))
+                stage: .enrichment(.init(snapshot: snapshot, airQualityOutcome: airQualityOutcome))
             )
         )
         let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
@@ -545,19 +558,23 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         context: LocationContext?,
         plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode
-    ) async -> AirQualityCurrentResponse? {
-        guard let context, let querying = environment.airQualityQuerying else { return nil }
-        guard shouldRefreshAirQuality(for: plan) else { return nil }
+    ) async -> HomeAirQualityPublicationOutcome {
+        guard let context, let querying = environment.airQualityQuerying else { return .preserve }
+        guard shouldRefreshAirQuality(for: plan) else { return .preserve }
 
         do {
-            return try await HTTPExecutionMode.$current.withValue(executionMode) {
+            let response = try await HTTPExecutionMode.$current.withValue(executionMode) {
                 try await querying.fetchCurrentAirQuality(h3Cell: context.h3Cell)
             }
+            guard let response else {
+                return .preserve
+            }
+            return .replace(response)
         } catch is CancellationError {
-            return nil
+            return .preserve
         } catch {
             environment.logger.debug("AQI refresh unavailable; continuing home refresh error=\(String(describing: error), privacy: .public)")
-            return nil
+            return .preserve
         }
     }
 

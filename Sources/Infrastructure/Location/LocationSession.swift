@@ -56,7 +56,7 @@ final class LocationSession {
         locationClient: LocationClient,
         locationManager: LocationManager,
         locationContextResolver: any LocationContextResolving,
-        locationUploadCoordinator: any LocationUploadCoordinating = NoOpLocationUploadCoordinator()
+        locationUploadCoordinator: any LocationUploadCoordinating
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
@@ -373,7 +373,8 @@ extension LocationSession {
         let session = LocationSession(
             locationClient: makeLocationClient(provider: provider),
             locationManager: manager,
-            locationContextResolver: resolver
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator()
         )
         session.currentSnapshot = LocationSnapshot(
             coordinates: .init(latitude: 39.75, longitude: -104.44),

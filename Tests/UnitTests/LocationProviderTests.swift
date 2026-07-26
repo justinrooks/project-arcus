@@ -177,37 +177,37 @@ struct LocationProviderTests {
     private actor GateableSnapshotUploader: LocationSnapshotUploading {
         private var payloads: [LocationSnapshotPushPayload] = []
         private var isBlocked = true
-        private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
-        private var unblockContinuation: CheckedContinuation<Void, Never>?
 
         func upload(_ payload: LocationSnapshotPushPayload) async throws {
             payloads.append(payload)
-            if payloads.count == 1 {
-                firstAttemptContinuation?.resume()
-                firstAttemptContinuation = nil
-            }
             while isBlocked {
-                await withCheckedContinuation { continuation in
-                    unblockContinuation = continuation
-                }
+                try await Task.sleep(for: .milliseconds(1))
             }
         }
 
-        func waitForFirstAttempt() async {
-            if payloads.isEmpty == false { return }
-            await withCheckedContinuation { continuation in
-                firstAttemptContinuation = continuation
-            }
+        func waitForFirstAttempt() async -> Bool {
+            await waitForAttemptCount(atLeast: 1)
         }
 
         func unblock() {
             isBlocked = false
-            unblockContinuation?.resume()
-            unblockContinuation = nil
         }
 
         func attemptCount() -> Int {
             payloads.count
+        }
+
+        func waitForAttemptCount(atLeast count: Int) async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(5))
+            while payloads.count < count, clock.now < deadline {
+                do {
+                    try await Task.sleep(for: .milliseconds(1))
+                } catch {
+                    return false
+                }
+            }
+            return payloads.count >= count
         }
     }
 
@@ -266,6 +266,33 @@ struct LocationProviderTests {
         func current() async -> [PersistedLocationUploadRequest] {
             pending
         }
+
+        func waitForEmpty() async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(5))
+            while pending.isEmpty == false, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(1))
+            }
+            return pending.isEmpty
+        }
+    }
+
+    private func persistedUploadRequest(
+        requestedAt: Date,
+        isSubscribed: Bool = true,
+        forceUpload: Bool = false
+    ) -> PersistedLocationUploadRequest {
+        PersistedLocationUploadRequest(
+            source: .manualRefresh,
+            reason: .locationResolved,
+            forceUpload: forceUpload,
+            installationId: "install-abc-123",
+            requestedAt: requestedAt,
+            isSubscribed: isSubscribed,
+            authorizationState: "always",
+            apnsToken: "",
+            operation: .locationSnapshot(context: PersistedLocationContext(makeContext()))
+        )
     }
     
     private final class MockSnapshotCache: @unchecked Sendable, LocationSnapshotCaching {
@@ -583,7 +610,8 @@ struct LocationProviderTests {
     func locationContextPusher_includesTimestampAndApnsToken() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -613,7 +641,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { " " },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -633,7 +662,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let tokenState = TokenBox("")
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -751,7 +781,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let tokenState = TokenBox("")
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { tokenState.value() },
             installationIdProvider: { "install-abc-123" },
             authorizationStatusProvider: { .authorizedWhenInUse },
@@ -780,7 +811,8 @@ struct LocationProviderTests {
         }
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: AlwaysFailingUploader(),
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -800,7 +832,8 @@ struct LocationProviderTests {
         }
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: CancellingUploader(),
+            locationUploader: CancellingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -909,7 +942,8 @@ struct LocationProviderTests {
         let clock = ClockBox(Date(timeIntervalSince1970: 21_000))
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: AlwaysFailingUploader(),
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             nowProvider: { clock.now() },
@@ -960,7 +994,8 @@ struct LocationProviderTests {
         let clock = ClockBox(Date(timeIntervalSince1970: 23_000))
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             nowProvider: { clock.now() },
@@ -1011,7 +1046,8 @@ struct LocationProviderTests {
         let uploader = BackoffCancellingUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0, 1],
@@ -1045,7 +1081,8 @@ struct LocationProviderTests {
         )
         let store = InMemoryUploadQueueStore(seed: [persisted])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1055,6 +1092,199 @@ struct LocationProviderTests {
         await pusher.drainPendingUploads()
         #expect(await uploader.uploadedPayloads().count == 1)
         #expect(await store.current().isEmpty)
+    }
+
+    @Test("bounded drain reports completion after uploading durable work")
+    func snapshotPusher_boundedDrainReportsCompletionAfterSuccess() async {
+        let uploader = MockSnapshotUploader()
+        let store = InMemoryUploadQueueStore(seed: [
+            persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        ])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(outcome == .drained)
+        #expect(await uploader.uploadedPayloads().count == 1)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("bounded drain preserves and later drains quota remainder")
+    func snapshotPusher_boundedDrainPreservesQuotaRemainder() async {
+        let uploader = MockSnapshotUploader()
+        let first = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let second = persistedUploadRequest(
+            requestedAt: Date(timeIntervalSince1970: 10_001),
+            isSubscribed: false
+        )
+        let third = persistedUploadRequest(
+            requestedAt: Date(timeIntervalSince1970: 10_002),
+            forceUpload: true
+        )
+        let store = InMemoryUploadQueueStore(seed: [first, second, third])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let firstOutcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 2, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(firstOutcome == .remaining)
+        #expect(await uploader.uploadedPayloads().count == 2)
+        #expect(await store.current() == [third])
+
+        let secondOutcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(secondOutcome == .drained)
+        #expect(await uploader.uploadedPayloads().count == 3)
+        #expect(await store.current().isEmpty)
+    }
+
+    @Test("expired bounded drain starts no upload and reports durable remainder")
+    func snapshotPusher_expiredBoundedDrainPreservesPendingRequest() async {
+        let uploader = MockSnapshotUploader()
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(-1)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain retains pending work when APNs token is unavailable")
+    func snapshotPusher_boundedDrainMissingTokenReportsRemaining() async {
+        let uploader = MockSnapshotUploader()
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { " " },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await uploader.uploadedPayloads().isEmpty)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain retains retry exhaustion and reports remaining")
+    func snapshotPusher_boundedDrainRetryExhaustionReportsRemaining() async {
+        struct AlwaysFailingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 0],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .seconds(10)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain stops at its deadline during retry backoff")
+    func snapshotPusher_boundedDrainDeadlineDuringBackoffPreservesPendingRequest() async {
+        struct AlwaysFailingUploader: LocationSnapshotUploading {
+            func upload(_ payload: LocationSnapshotPushPayload) async throws {
+                throw LocationPushError.invalidResponseStatus(503)
+            }
+        }
+        let pending = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let store = InMemoryUploadQueueStore(seed: [pending])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: AlwaysFailingUploader(),
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 5],
+            queueStore: store
+        )
+
+        let outcome = await pusher.drainPendingUploads(
+            using: .init(uploadQuota: 1, deadline: .now.advanced(by: .milliseconds(100)))
+        )
+
+        #expect(outcome == .remaining)
+        #expect(await store.current() == [pending])
+    }
+
+    @Test("bounded drain cancellation preserves current and unattempted pending work")
+    func snapshotPusher_boundedDrainCancellationPreservesPendingRequests() async {
+        let uploader = BackoffCancellingUploader()
+        let first = persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        let second = persistedUploadRequest(
+            requestedAt: Date(timeIntervalSince1970: 10_001),
+            isSubscribed: false
+        )
+        let store = InMemoryUploadQueueStore(seed: [first, second])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0, 5],
+            queueStore: store
+        )
+
+        let drainTask = Task {
+            await pusher.drainPendingUploads(
+                using: .init(uploadQuota: 2, deadline: .now.advanced(by: .seconds(10)))
+            )
+        }
+        await uploader.waitForFirstAttempt()
+        drainTask.cancel()
+        let outcome = await drainTask.value
+
+        #expect(outcome == .remaining)
+        #expect(await uploader.attemptCount() == 1)
+        #expect(await store.current() == [first, second])
     }
 
     @Test("persisted queued upload encodes the current operation shape and round trips")
@@ -1167,7 +1397,8 @@ struct LocationProviderTests {
     func snapshotPusher_skipsUploadWhenLocationSharingDisabled() async {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             locationUploadEnabledProvider: { false },
@@ -1190,7 +1421,8 @@ struct LocationProviderTests {
     func snapshotPusher_forceUploadWhenLocationSharingDisabled() async throws {
         let uploader = MockSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -1242,7 +1474,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let clock = ClockBox(Date(timeIntervalSince1970: 10_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1266,7 +1499,8 @@ struct LocationProviderTests {
     func snapshotPusher_coalescesInFlightIdenticalUpload() async throws {
         let uploader = GateableSnapshotUploader()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0]
@@ -1276,7 +1510,7 @@ struct LocationProviderTests {
         let firstTask = Task {
             await pusher.enqueue(context, source: .foregroundPrime, reason: .locationResolved)
         }
-        await uploader.waitForFirstAttempt()
+        #expect(await uploader.waitForFirstAttempt())
         await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
         await uploader.unblock()
         await firstTask.value
@@ -1284,12 +1518,82 @@ struct LocationProviderTests {
         #expect(await uploader.attemptCount() == 1)
     }
 
+    @Test("bounded upload drain preserves work queued while it is processing")
+    func snapshotPusher_boundedDrainPreservesQueuedWork() async throws {
+        let uploader = GateableSnapshotUploader()
+        let store = InMemoryUploadQueueStore(seed: [
+            persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        ])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        let secondContext = makeContext(h3Cell: sampleH3Cell + 1)
+        let drainTask = Task {
+            await pusher.drainPendingUploads(
+                using: PendingLocationUploadDrainBudget(
+                    uploadQuota: 1,
+                    deadline: ContinuousClock().now.advanced(by: .seconds(5))
+                )
+            )
+        }
+
+        #expect(await uploader.waitForFirstAttempt())
+        await pusher.enqueue(secondContext, source: .foregroundLocationChange, reason: .locationChanged)
+        await uploader.unblock()
+
+        #expect(await drainTask.value == .remaining)
+        #expect(await uploader.waitForAttemptCount(atLeast: 2))
+        #expect(await store.waitForEmpty())
+    }
+
+    @Test("bounded upload drain defers to an active ordinary processor")
+    func snapshotPusher_boundedDrainDefersToActiveProcessor() async throws {
+        let uploader = GateableSnapshotUploader()
+        let store = InMemoryUploadQueueStore(seed: [
+            persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        ])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        let ordinaryTask = Task {
+            await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        }
+
+        #expect(await uploader.waitForFirstAttempt())
+        let outcome = await pusher.drainPendingUploads(
+            using: PendingLocationUploadDrainBudget(
+                uploadQuota: 1,
+                deadline: ContinuousClock().now.advanced(by: .seconds(5))
+            )
+        )
+        #expect(outcome == .remaining)
+
+        await uploader.unblock()
+        await ordinaryTask.value
+        #expect(await uploader.attemptCount() == 1)
+        #expect(await store.current().isEmpty)
+    }
+
     @Test("pending queue coalesces duplicate semantic keys deterministically")
     func snapshotPusher_pendingQueueCoalescesDuplicates() async throws {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1320,7 +1624,8 @@ struct LocationProviderTests {
         )
         let store = InMemoryUploadQueueStore(seed: [persisted])
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1342,7 +1647,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let store = InMemoryUploadQueueStore()
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "" },
             installationIdProvider: { "install-abc-123" },
             retryDelaysSeconds: [0],
@@ -1369,7 +1675,8 @@ struct LocationProviderTests {
         let store = InMemoryUploadQueueStore()
         let clock = ClockBox(Date(timeIntervalSince1970: 12_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1478,7 +1785,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let clock = ClockBox(Date(timeIntervalSince1970: 14_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { false },
@@ -1533,7 +1841,8 @@ struct LocationProviderTests {
         let uploader = MockSnapshotUploader()
         let clock = ClockBox(Date(timeIntervalSince1970: 15_000))
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1556,7 +1865,8 @@ struct LocationProviderTests {
     func snapshotPusher_retriesWithLegacySourceForCompatibility() async throws {
         let uploader = CompatibilitySnapshotUploader(failingStatus: 400)
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },
@@ -1575,7 +1885,8 @@ struct LocationProviderTests {
     func snapshotPusher_doesNotFallbackForNonCompatStatus() async throws {
         let uploader = CompatibilitySnapshotUploader(failingStatus: 409)
         let pusher = LocationSnapshotPusher(
-            uploader: uploader,
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
             subscriptionStatusProvider: { true },

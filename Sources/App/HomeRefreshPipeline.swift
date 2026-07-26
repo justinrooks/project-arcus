@@ -132,14 +132,8 @@ final class HomeRefreshPipeline {
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
-        minimumForegroundRefreshInterval: TimeInterval = 3 * 60,
-        minimumRefreshDistanceMeters: CLLocationDistance = 800,
-        foregroundTimerInterval: Duration = .seconds(120),
-        alertRefreshPolicy: AlertRefreshPolicy = AlertRefreshPolicy(),
-        mapProductRefreshPolicy: MapProductRefreshPolicy = MapProductRefreshPolicy(),
-        outlookRefreshPolicy: OutlookRefreshPolicy = OutlookRefreshPolicy(),
-        weatherKitRefreshPolicy: WeatherKitRefreshPolicy = WeatherKitRefreshPolicy()
-        ) {
+        foregroundTimerInterval: Duration = .seconds(120)
+    ) {
         self.snap = initialSnap
         self.stormSetup = initialStormSetup
         self.stormSetupCurrentResponse = initialStormSetupCurrentResponse
@@ -610,8 +604,10 @@ final class HomeRefreshPipeline {
 
     private func applyEnrichment(_ enrichment: HomeIngestionEnrichmentPublication) {
         applyStormSetup(enrichment)
-        airQuality = enrichment.airQuality
-        airQualityRefreshKey = enrichment.refreshKey
+        if case .replace(let response) = enrichment.airQualityOutcome {
+            airQuality = response
+            airQualityRefreshKey = enrichment.refreshKey
+        }
     }
 
     private func applyStormSetup(_ enrichment: HomeIngestionEnrichmentPublication) {

@@ -15,8 +15,9 @@
 - [ ] `TESTFLIGHT_NOTES.md` updated (derived; concise)
 
 ### App metadata
-- [ ] MARKETING_VERSION updated to `__`
-- [ ] CURRENT_PROJECT_VERSION incremented (build number)
+- [ ] Verified without mutation that `SkyAware` and `SkyAwareWidgetsExtension` have matching `MARKETING_VERSION`
+      and `CURRENT_PROJECT_VERSION` values in Debug and Release
+- [ ] Left checked-in version/build placeholders unchanged; test-target values are not part of this parity check
 
 ### Quality gates
 - [ ] Tests pass (local or CI)
@@ -38,8 +39,10 @@
 ### Xcode Cloud / TestFlight
 - [ ] Xcode Cloud build succeeded for the merge commit on `main`
 - [ ] Build processed and visible in TestFlight
-- [ ] “What to Test” pasted from `TESTFLIGHT_NOTES.md`
-- [ ] Version/build confirmed in TestFlight and in-app
+- [ ] Actual distributed marketing version/build confirmed in Xcode Cloud, TestFlight, and in-app
+- [ ] Curated `TESTFLIGHT_NOTES.md` reviewed for the release; archive-generated
+      `TestFlight/WhatToTest.en-US.txt` inspected when present
+      <!-- The repository proves only that the archive script writes this artifact from the last three commit subjects. -->
 
 ### Tagging (version-only)
 - [ ] Tag created and pushed: `v__`
