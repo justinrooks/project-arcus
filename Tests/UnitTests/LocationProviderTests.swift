@@ -179,12 +179,18 @@ struct LocationProviderTests {
         private var isBlocked = true
         private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
         private var unblockContinuation: CheckedContinuation<Void, Never>?
+        private var attemptCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
 
         func upload(_ payload: LocationSnapshotPushPayload) async throws {
             payloads.append(payload)
             if payloads.count == 1 {
                 firstAttemptContinuation?.resume()
                 firstAttemptContinuation = nil
+            }
+            let satisfiedCounts = attemptCountContinuations.keys.filter { $0 <= payloads.count }
+            for count in satisfiedCounts {
+                let continuations = attemptCountContinuations.removeValue(forKey: count) ?? []
+                continuations.forEach { $0.resume() }
             }
             while isBlocked {
                 await withCheckedContinuation { continuation in
@@ -208,6 +214,13 @@ struct LocationProviderTests {
 
         func attemptCount() -> Int {
             payloads.count
+        }
+
+        func waitForAttemptCount(atLeast count: Int) async {
+            guard payloads.count < count else { return }
+            await withCheckedContinuation { continuation in
+                attemptCountContinuations[count, default: []].append(continuation)
+            }
         }
     }
 
@@ -250,6 +263,7 @@ struct LocationProviderTests {
 
     private actor InMemoryUploadQueueStore: LocationUploadQueueStoring {
         private var pending: [PersistedLocationUploadRequest]
+        private var emptyContinuations: [CheckedContinuation<Void, Never>] = []
 
         init(seed: [PersistedLocationUploadRequest] = []) {
             self.pending = seed
@@ -261,10 +275,21 @@ struct LocationProviderTests {
 
         func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async {
             pending = requests
+            guard pending.isEmpty else { return }
+            let continuations = emptyContinuations
+            emptyContinuations.removeAll()
+            continuations.forEach { $0.resume() }
         }
 
         func current() async -> [PersistedLocationUploadRequest] {
             pending
+        }
+
+        func waitForEmpty() async {
+            guard pending.isEmpty == false else { return }
+            await withCheckedContinuation { continuation in
+                emptyContinuations.append(continuation)
+            }
         }
     }
 
@@ -1507,6 +1532,72 @@ struct LocationProviderTests {
         await firstTask.value
 
         #expect(await uploader.attemptCount() == 1)
+    }
+
+    @Test("bounded upload drain preserves work queued while it is processing")
+    func snapshotPusher_boundedDrainPreservesQueuedWork() async throws {
+        let uploader = GateableSnapshotUploader()
+        let store = InMemoryUploadQueueStore(seed: [
+            persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        ])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        let secondContext = makeContext(h3Cell: sampleH3Cell + 1)
+        let drainTask = Task {
+            await pusher.drainPendingUploads(
+                using: PendingLocationUploadDrainBudget(
+                    uploadQuota: 1,
+                    deadline: ContinuousClock().now.advanced(by: .seconds(5))
+                )
+            )
+        }
+
+        await uploader.waitForFirstAttempt()
+        await pusher.enqueue(secondContext, source: .foregroundLocationChange, reason: .locationChanged)
+        await uploader.unblock()
+
+        #expect(await drainTask.value == .remaining)
+        await uploader.waitForAttemptCount(atLeast: 2)
+        await store.waitForEmpty()
+    }
+
+    @Test("bounded upload drain defers to an active ordinary processor")
+    func snapshotPusher_boundedDrainDefersToActiveProcessor() async throws {
+        let uploader = GateableSnapshotUploader()
+        let store = InMemoryUploadQueueStore(seed: [
+            persistedUploadRequest(requestedAt: Date(timeIntervalSince1970: 10_000))
+        ])
+        let pusher = LocationSnapshotPusher(
+            locationUploader: uploader,
+            preferenceUploader: NoOpDevicePreferenceSyncUploader(),
+            apnsTokenProvider: { "apns-token-123" },
+            installationIdProvider: { "install-abc-123" },
+            retryDelaysSeconds: [0],
+            queueStore: store
+        )
+        let ordinaryTask = Task {
+            await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
+        }
+
+        await uploader.waitForFirstAttempt()
+        let outcome = await pusher.drainPendingUploads(
+            using: PendingLocationUploadDrainBudget(
+                uploadQuota: 1,
+                deadline: ContinuousClock().now.advanced(by: .seconds(5))
+            )
+        )
+        #expect(outcome == .remaining)
+
+        await uploader.unblock()
+        await ordinaryTask.value
+        #expect(await uploader.attemptCount() == 1)
+        await store.waitForEmpty()
     }
 
     @Test("pending queue coalesces duplicate semantic keys deterministically")

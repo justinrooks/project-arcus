@@ -508,6 +508,7 @@ struct HomeIngestionCoordinatorTests {
 
         await executor.releaseRun(1)
         await executor.waitForCompletedRun(1)
+        await coordinator.waitForTestWaiterCount(atMost: 0)
         waiter.cancel()
 
         #expect(try await waiter.value == .empty)

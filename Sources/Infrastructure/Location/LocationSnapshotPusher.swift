@@ -411,6 +411,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         await ensurePersistedPendingLoaded()
 
         guard !pendingByCoalescingKey.isEmpty else { return .drained }
+        guard !isProcessing else { return .remaining }
         guard budget.uploadQuota > 0, shouldContinueDraining(before: budget.deadline) else {
             return .remaining
         }
@@ -424,8 +425,7 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         isProcessing = true
         defer {
             isProcessing = false
-            queue.removeAll()
-            queuedOrActiveCoalescingKeys.removeAll()
+            scheduleQueuedProcessingIfNeeded()
         }
 
         var admittedCount = 0
@@ -528,6 +528,16 @@ actor LocationSnapshotPusher: LocationUploadCoordinating {
         isProcessing = true
         defer { isProcessing = false }
         await drainQueue()
+    }
+
+    private func scheduleQueuedProcessingIfNeeded() {
+        guard !queue.isEmpty else { return }
+        Task { await processQueueIfNeeded() }
+    }
+
+    private func processQueueIfNeeded() async {
+        guard !isProcessing else { return }
+        await processQueue()
     }
 
     private func drainQueue() async {

@@ -68,6 +68,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     // Debug-test observation only. Issue #332 needs a storage acknowledgement to order cancellation tests without
     // polling or changing waiter ownership; Release builds do not include this seam.
     private var waiterCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var waiterAtMostCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
     #endif
 
     init(executor: any HomeIngestionExecuting) {
@@ -151,17 +152,16 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         waiters[waiter.id] = waiter
 
         #if DEBUG
-        let satisfiedCounts = waiterCountContinuations.keys.filter { $0 <= waiters.count }
-        for count in satisfiedCounts {
-            let continuations = waiterCountContinuations.removeValue(forKey: count) ?? []
-            continuations.forEach { $0.resume() }
-        }
+        notifyWaiterCountObservers()
         #endif
     }
 
     private func cancelWaiter(withID waiterID: UUID) {
         guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
         waiter.continuation.resume(throwing: CancellationError())
+        #if DEBUG
+        notifyWaiterCountObservers()
+        #endif
     }
 
     #if DEBUG
@@ -169,6 +169,27 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         guard waiters.count < count else { return }
         await withCheckedContinuation { continuation in
             waiterCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    func waitForTestWaiterCount(atMost count: Int) async {
+        guard waiters.count > count else { return }
+        await withCheckedContinuation { continuation in
+            waiterAtMostCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    private func notifyWaiterCountObservers() {
+        let satisfiedAtLeastCounts = waiterCountContinuations.keys.filter { $0 <= waiters.count }
+        for count in satisfiedAtLeastCounts {
+            let continuations = waiterCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
+        }
+
+        let satisfiedAtMostCounts = waiterAtMostCountContinuations.keys.filter { waiters.count <= $0 }
+        for count in satisfiedAtMostCounts {
+            let continuations = waiterAtMostCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
         }
     }
 
@@ -239,6 +260,10 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                 waiter.continuation.resume(throwing: error)
             }
         }
+
+        #if DEBUG
+        notifyWaiterCountObservers()
+        #endif
 
         switch result {
         case .success(let snapshot):
