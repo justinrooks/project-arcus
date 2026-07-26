@@ -263,7 +263,6 @@ struct LocationProviderTests {
 
     private actor InMemoryUploadQueueStore: LocationUploadQueueStoring {
         private var pending: [PersistedLocationUploadRequest]
-        private var emptyContinuations: [CheckedContinuation<Void, Never>] = []
 
         init(seed: [PersistedLocationUploadRequest] = []) {
             self.pending = seed
@@ -275,21 +274,19 @@ struct LocationProviderTests {
 
         func savePendingRequests(_ requests: [PersistedLocationUploadRequest]) async {
             pending = requests
-            guard pending.isEmpty else { return }
-            let continuations = emptyContinuations
-            emptyContinuations.removeAll()
-            continuations.forEach { $0.resume() }
         }
 
         func current() async -> [PersistedLocationUploadRequest] {
             pending
         }
 
-        func waitForEmpty() async {
-            guard pending.isEmpty == false else { return }
-            await withCheckedContinuation { continuation in
-                emptyContinuations.append(continuation)
+        func waitForEmpty() async -> Bool {
+            let clock = ContinuousClock()
+            let deadline = clock.now.advanced(by: .seconds(5))
+            while pending.isEmpty == false, clock.now < deadline {
+                try? await Task.sleep(for: .milliseconds(1))
             }
+            return pending.isEmpty
         }
     }
 
@@ -1564,7 +1561,7 @@ struct LocationProviderTests {
 
         #expect(await drainTask.value == .remaining)
         await uploader.waitForAttemptCount(atLeast: 2)
-        await store.waitForEmpty()
+        #expect(await store.waitForEmpty())
     }
 
     @Test("bounded upload drain defers to an active ordinary processor")
@@ -1597,7 +1594,7 @@ struct LocationProviderTests {
         await uploader.unblock()
         await ordinaryTask.value
         #expect(await uploader.attemptCount() == 1)
-        await store.waitForEmpty()
+        #expect(await store.current().isEmpty)
     }
 
     @Test("pending queue coalesces duplicate semantic keys deterministically")
