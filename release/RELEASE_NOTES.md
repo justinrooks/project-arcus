@@ -2,11 +2,11 @@
 
 ## v1.1.0(103)
 
-### Overview
+## Overview
 This build makes Today more stable during partial refreshes, preserves useful cached warning and air-quality data,
 and makes background refresh cancellation and pending-upload work more predictable.
 
-### Highlights
+## Highlights
 - Today publishes core content earlier and keeps display selection stable while optional enrichment finishes.
 - Cached map warnings remain visible when a fresh warning lookup cannot provide a replacement.
 - Same-location air-quality data remains visible when an optional refresh has no replacement value.
@@ -14,7 +14,7 @@ and makes background refresh cancellation and pending-upload work more predictab
 - Background refresh now bounds pending-upload work and responds to cancellation before ingestion continues.
 - Regression coverage was expanded across Today refresh, ingestion cancellation, background uploads, location side effects, map warnings, AQI preservation, onboarding, and Storm Setup behavior.
 
-### Maintenance
+## Maintenance
 - Today refresh coordination, Home projection commits, upload side effects, and live Arcus dependencies were simplified and made explicit.
 - Architecture, performance, physical-device validation, release-readiness, and simulator validation documentation were updated.
 

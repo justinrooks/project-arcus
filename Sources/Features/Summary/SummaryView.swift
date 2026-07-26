@@ -630,7 +630,7 @@ struct SummaryView: View {
             preferences: stormSetupPreferences,
             stormRisk: stormRisk,
             severeRisk: severeRisk,
-            hasActiveAlert: !alerts.isEmpty,
+            hasQualifyingConvectiveAlert: StormSetupAlertEligibility.hasQualifyingAlert(in: alerts, now: now),
             hasActiveMeso: !mesos.isEmpty,
             assessmentOverall: StormSetupAssessment(dto: stormSetup).assessment.overall,
             payloadExpiresAt: stormSetup.freshness.expiresAt,
