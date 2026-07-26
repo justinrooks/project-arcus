@@ -1,9 +1,11 @@
-## Unreleased
+SkyAware v1.1.0(99)
 
 Highlights:
 - Today should show core content sooner and remain steadier while optional information finishes refreshing.
 - Cached map warnings and same-location air-quality data should remain visible when an optional refresh cannot replace them.
 - Background refresh now keeps pending-upload work bounded and stops cleanly when iOS cancels the task.
+- Cancelling one Today refresh waiter should not interrupt other consumers sharing the same ingestion run.
+- Regression coverage was expanded across Today refresh, background uploads, location side effects, map warnings, AQI preservation, onboarding, and Storm Setup behavior.
 
 What to test:
 - Refresh Today while optional data is unavailable or slow; confirm useful cached map warnings and AQI remain visible.

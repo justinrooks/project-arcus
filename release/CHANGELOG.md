@@ -1,20 +1,30 @@
 # Changelog
 
-## Unreleased
+## v1.1.0(99)
 
-Post-release user-impacting work is recorded here first, with evidence comments. Promote this section only after
-Xcode Cloud/TestFlight confirms the distributed marketing version and build; checked-in placeholders are not release
-provenance.
+### UI / UX
+- Today now publishes core content earlier and centralizes display selection so useful content remains stable while optional enrichment finishes.
+<!-- evidence: 0697e440, 30dd1c29 -->
 
 ### Reliability
-- Today now publishes its core content earlier and keeps key sections more stable while optional enrichment finishes.
-<!-- evidence: 0697e440 (#328) -->
 - Map warning overlays keep their cached warnings when a fresh warning lookup is unavailable or fails.
-<!-- evidence: 919a54f4 (#330) -->
+<!-- evidence: 919a54f4 -->
 - Air-quality data for the same location remains visible when an optional refresh has no replacement value.
-<!-- evidence: b0897ee7 (#331) -->
+<!-- evidence: b0897ee7 -->
+- Cancelled Today refresh waiters no longer cancel a shared ingestion run needed by other consumers.
+<!-- evidence: c2564a71, cc9364f6 -->
 - Background refresh bounds pending-upload work and responds to cancellation before continuing with ingestion.
-<!-- evidence: 56b7b036 (#335) -->
+<!-- evidence: 4055dbc8, 56b7b036 -->
+
+### Tests / QA
+- Regression coverage was expanded for Today publication and presentation state, ingestion waiter cancellation and coalescing, background cadence and upload draining, location side effects, map warnings, AQI preservation, onboarding, and Storm Setup behavior.
+<!-- evidence: 919a54f4, b0897ee7, cc9364f6, c2564a71, 4055dbc8, 56b7b036, eea7e124, dee50eae, b9792467, 30dd1c29, e10ba66b -->
+
+### Maintenance / Cleanup
+- Today refresh coordination, Home projection commits, upload side effects, and live Arcus dependencies were simplified and made explicit.
+<!-- evidence: eea7e124, dee50eae, b9792467, 1576654d, e10ba66b -->
+- Architecture, performance, physical-device validation, release-readiness, and simulator validation documentation were updated for the current build.
+<!-- evidence: 81273f77, 3320572a, 4f42d528, 7a7f9206, dc09dca1 -->
 
 ## v1.1.0(94)
 
