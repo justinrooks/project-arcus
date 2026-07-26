@@ -1562,6 +1562,9 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedAlways },
             retryDelaysSeconds: [0],
             queueStore: store
         )

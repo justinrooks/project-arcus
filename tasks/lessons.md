@@ -70,3 +70,11 @@
   into an opaque helper before retrying; the failure is usually accumulated result-builder complexity.
 - When extracting SwiftUI structure to resolve a compiler limit, preserve existing presentation predicates verbatim;
   do not substitute a nearby feature-level loading heuristic for the surface's established state machine.
+
+## 2026-07-26
+
+- When a test passes repeated isolated runs but Xcode Cloud still reports it as crashed, treat the test name as process
+  attribution rather than root-cause evidence. Audit the parallel unit lane for abandoned tasks, continuations, shared
+  state, and configuration differences before changing the named test again.
+- Never let a persisted test fixture hard-code authorization or preference state while the operation under test reads
+  that state from the simulator. Inject matching providers so a developer simulator cannot hide clean-Cloud behavior.
