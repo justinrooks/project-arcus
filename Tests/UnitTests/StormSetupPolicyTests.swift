@@ -10,7 +10,7 @@ struct StormSetupPolicyTests {
             preferences: .init(stormSetupEnabled: false, detailedIngredientsEnabled: true),
             stormRisk: .high,
             severeRisk: .tornado(probability: 0.7),
-            hasActiveAlert: true,
+            hasQualifyingConvectiveAlert: true,
             hasActiveMeso: true,
             assessmentOverall: .strong,
             payloadExpiresAt: future,
@@ -21,7 +21,7 @@ struct StormSetupPolicyTests {
         #expect(StormSetupDisplayPolicy.shouldShow(input) == false)
     }
 
-    @Test("fetch policy respects risk, alert, meso, override, and payload freshness")
+    @Test("fetch policy respects risk, qualifying alerts, meso, detailed ingredients, and payload freshness")
     func fetchPolicyRespectsTriggersAndFreshness() {
         let cases: [(String, StormSetupPolicyInput, Bool)] = [
             ("thunderstorm does not qualify", makeInput(stormRisk: .thunderstorm), false),
@@ -30,7 +30,7 @@ struct StormSetupPolicyTests {
             ("wind qualifies", makeInput(severeRisk: .wind(probability: 0.2)), true),
             ("hail qualifies", makeInput(severeRisk: .hail(probability: 0.2)), true),
             ("tornado qualifies", makeInput(severeRisk: .tornado(probability: 0.2)), true),
-            ("alert qualifies", makeInput(hasActiveAlert: true), true),
+            ("qualifying convective alert qualifies", makeInput(hasQualifyingConvectiveAlert: true), true),
             ("meso qualifies", makeInput(hasActiveMeso: true), true),
             ("detailed ingredients qualifies", makeInput(preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true)), true),
             ("unexpired payload suppresses refetch", makeInput(stormRisk: .high, payloadExpiresAt: future), false),
@@ -52,10 +52,14 @@ struct StormSetupPolicyTests {
             ("weak stays hidden", makeInput(assessmentOverall: .weak, payloadExpiresAt: future), false),
             ("conditional stays hidden", makeInput(assessmentOverall: .conditional, payloadExpiresAt: future), false),
             ("unknown stays hidden", makeInput(assessmentOverall: .unknown, payloadExpiresAt: future), false),
-            ("alert qualifies", makeInput(hasActiveAlert: true, assessmentOverall: .unknown, payloadExpiresAt: future), true),
+            (
+                "qualifying convective alert qualifies unknown assessment",
+                makeInput(hasQualifyingConvectiveAlert: true, assessmentOverall: .unknown, payloadExpiresAt: future),
+                true
+            ),
             ("meso qualifies", makeInput(hasActiveMeso: true, assessmentOverall: .weak, payloadExpiresAt: future), true),
             (
-                "override qualifies",
+                "detailed ingredients qualifies",
                 makeInput(
                     preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
                     assessmentOverall: .conditional,
@@ -67,7 +71,7 @@ struct StormSetupPolicyTests {
                 "missing assessment stays hidden",
                 makeInput(
                     preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
-                    hasActiveAlert: true,
+                    hasQualifyingConvectiveAlert: true,
                     assessmentOverall: nil,
                     payloadExpiresAt: future
                 ),
@@ -77,7 +81,7 @@ struct StormSetupPolicyTests {
                 "expired assessment stays hidden",
                 makeInput(
                     preferences: .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
-                    hasActiveAlert: true,
+                    hasQualifyingConvectiveAlert: true,
                     assessmentOverall: .strong,
                     payloadExpiresAt: past
                 ),
@@ -109,7 +113,7 @@ private func makeInput(
     preferences: StormSetupPreferences = .init(stormSetupEnabled: true, detailedIngredientsEnabled: false),
     stormRisk: StormRiskLevel? = nil,
     severeRisk: SevereWeatherThreat? = nil,
-    hasActiveAlert: Bool = false,
+    hasQualifyingConvectiveAlert: Bool = false,
     hasActiveMeso: Bool = false,
     assessmentOverall: StormSetupSignal? = nil,
     payloadExpiresAt: Date? = nil,
@@ -119,7 +123,7 @@ private func makeInput(
         preferences: preferences,
         stormRisk: stormRisk,
         severeRisk: severeRisk,
-        hasActiveAlert: hasActiveAlert,
+        hasQualifyingConvectiveAlert: hasQualifyingConvectiveAlert,
         hasActiveMeso: hasActiveMeso,
         assessmentOverall: assessmentOverall,
         payloadExpiresAt: payloadExpiresAt,

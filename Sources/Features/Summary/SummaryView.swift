@@ -630,7 +630,7 @@ struct SummaryView: View {
             preferences: stormSetupPreferences,
             stormRisk: stormRisk,
             severeRisk: severeRisk,
-            hasActiveAlert: !alerts.isEmpty,
+            hasQualifyingConvectiveAlert: StormSetupAlertEligibility.hasQualifyingAlert(in: alerts, now: now),
             hasActiveMeso: !mesos.isEmpty,
             assessmentOverall: StormSetupAssessment(dto: stormSetup).assessment.overall,
             payloadExpiresAt: stormSetup.freshness.expiresAt,
@@ -651,10 +651,17 @@ struct SummaryView: View {
     }
 
     private func stormSetupSlotState(now: Date) -> StormSetupSlotState {
-        Self.stormSetupSlotState(
+#if DEBUG
+        let isForcedPresentation = stormSetupForceDisplay
+#else
+        let isForcedPresentation = false
+#endif
+
+        return Self.stormSetupSlotState(
             presentation: stormSetupDetailPresentation(now: now),
             hasStormSetup: stormSetup != nil,
             stormSetupEnabled: stormSetupPreferences.stormSetupEnabled,
+            isForcedPresentation: isForcedPresentation,
             isRefreshInFlight: isRefreshInFlight,
             isLocationUnavailable: isLocationUnavailable
         )
@@ -664,15 +671,26 @@ struct SummaryView: View {
         presentation: StormSetupDetailPresentation?,
         hasStormSetup: Bool,
         stormSetupEnabled: Bool,
+        isForcedPresentation: Bool = false,
         isRefreshInFlight: Bool,
         isLocationUnavailable: Bool
     ) -> StormSetupSlotState {
-        guard isLocationUnavailable == false, stormSetupEnabled else {
+        guard isLocationUnavailable == false else {
             return .hidden
         }
 
-        if let presentation {
+        if let presentation,
+           Self.shouldShowStormSetupPresentation(
+               hasPresentation: true,
+               stormSetupEnabled: stormSetupEnabled,
+               isForcedPresentation: isForcedPresentation,
+               isLocationUnavailable: isLocationUnavailable
+           ) {
             return .visible(presentation)
+        }
+
+        guard stormSetupEnabled else {
+            return .hidden
         }
 
         if hasStormSetup == false, isRefreshInFlight {
@@ -680,6 +698,17 @@ struct SummaryView: View {
         }
 
         return .hidden
+    }
+
+    static func shouldShowStormSetupPresentation(
+        hasPresentation: Bool,
+        stormSetupEnabled: Bool,
+        isForcedPresentation: Bool,
+        isLocationUnavailable: Bool
+    ) -> Bool {
+        hasPresentation &&
+        isLocationUnavailable == false &&
+        (stormSetupEnabled || isForcedPresentation)
     }
 
     static func sectionPlan(

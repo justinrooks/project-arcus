@@ -482,14 +482,59 @@ struct HomeViewProjectionLaunchTests {
         #expect(fallbackSelected == fallback)
     }
 
-    @Test("storm setup settings use raw values and session tick refresh path")
-    func stormSetupSettings_useRawValuesAndSessionTickRefreshPath() {
+    @Test("storm setup settings schedule only qualifying enablement transitions")
+    func stormSetupSettings_scheduleOnlyQualifyingEnablementTransitions() {
         let preferences = StormSetupPreferences(stormSetupEnabled: false, detailedIngredientsEnabled: true)
         #expect(preferences.effectiveDetailedIngredientsEnabled == false)
 
-        let current = StormSetupPreferences(stormSetupEnabled: true, detailedIngredientsEnabled: true)
-        #expect(HomeView.shouldRefreshStormSetupSettings(previousPreferences: current, currentPreferences: current) == false)
-        #expect(HomeView.shouldRefreshStormSetupSettings(previousPreferences: nil, currentPreferences: current))
+        let cases: [(String, StormSetupPreferences, StormSetupPreferences, Bool, Bool, Bool, Bool)] = [
+            ("Storm Setup enable with context", .init(), .init(stormSetupEnabled: true), true, false, false, true),
+            ("Storm Setup enable without context", .init(), .init(stormSetupEnabled: true), false, false, false, false),
+            ("Storm Setup disable", .init(stormSetupEnabled: true), .init(), true, false, false, false),
+            ("unchanged Storm Setup", .init(stormSetupEnabled: true), .init(stormSetupEnabled: true), true, false, false, false),
+            (
+                "Detailed Ingredients enable with Storm Setup",
+                .init(stormSetupEnabled: true),
+                .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                true,
+                false,
+                false,
+                true
+            ),
+            (
+                "Detailed Ingredients enable without Storm Setup",
+                .init(),
+                .init(detailedIngredientsEnabled: true),
+                true,
+                false,
+                false,
+                false
+            ),
+            (
+                "Detailed Ingredients disable",
+                .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                .init(stormSetupEnabled: true),
+                true,
+                false,
+                false,
+                false
+            ),
+            ("preview mode", .init(), .init(stormSetupEnabled: true), true, true, false, false),
+            ("static UI-test mode", .init(), .init(stormSetupEnabled: true), true, false, true, false)
+        ]
+
+        for (name, previous, current, hasContext, isPreview, isStaticTest, expected) in cases {
+            #expect(
+                HomeView.shouldScheduleStormSetupSettingsRefresh(
+                    previousPreferences: previous,
+                    currentPreferences: current,
+                    hasCurrentLocationContext: hasContext,
+                    isPreviewMode: isPreview,
+                    isUITestStaticMode: isStaticTest
+                ) == expected,
+                "\\(name)"
+            )
+        }
     }
 }
 

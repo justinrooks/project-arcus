@@ -105,8 +105,8 @@ arrays are useful current/cached content.
 
 For Storm Setup fetch eligibility, active severe context includes either:
 
-- at least one `AlertDTO`, or
-- at least one `MdDTO`
+- at least one active Severe Thunderstorm Watch, Severe Thunderstorm Warning, Tornado Watch, or Tornado Warning, or
+- at least one active `MdDTO`
 
 ### Settings and flags
 
@@ -342,7 +342,7 @@ stormSetupEnabled
 AND (
     stormRisk >= marginal
     OR severeRisk != allClear
-    OR active AlertDTO exists
+    OR active qualifying convective AlertDTO exists
     OR active MdDTO exists
     OR effectiveDetailedIngredientsEnabled
 )
@@ -370,7 +370,7 @@ stormSetupEnabled
 AND unexpiredAssessmentExists
 AND (
     assessment.overall is supportive or strong
-    OR active AlertDTO exists
+    OR active qualifying convective AlertDTO exists
     OR active MdDTO exists
     OR effectiveDetailedIngredientsEnabled
 )

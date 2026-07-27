@@ -18,7 +18,7 @@ struct StormSetupPolicyInput: Sendable, Equatable {
     let preferences: StormSetupPreferences
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
-    let hasActiveAlert: Bool
+    let hasQualifyingConvectiveAlert: Bool
     let hasActiveMeso: Bool
     let assessmentOverall: StormSetupSignal?
     let payloadExpiresAt: Date?
@@ -32,7 +32,7 @@ struct StormSetupFetchPolicy {
 
         return input.stormRisk.map { $0 >= .marginal } ?? false
             || input.severeRisk.map { $0 != .allClear } ?? false
-            || input.hasActiveAlert
+            || input.hasQualifyingConvectiveAlert
             || input.hasActiveMeso
             || input.preferences.effectiveDetailedIngredientsEnabled
     }
@@ -46,7 +46,7 @@ struct StormSetupDisplayPolicy {
 
         return input.assessmentOverall == .supportive
             || input.assessmentOverall == .strong
-            || input.hasActiveAlert
+            || input.hasQualifyingConvectiveAlert
             || input.hasActiveMeso
             || input.preferences.effectiveDetailedIngredientsEnabled
     }

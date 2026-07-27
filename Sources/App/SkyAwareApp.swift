@@ -341,6 +341,13 @@ private extension SkyAwareApp {
             forKey: "detailedIngredientsEnabled",
             in: sharedDefaults
         )
+#if DEBUG
+        applyUITestBooleanOverride(
+            env["UI_TESTS_STORM_SETUP_FORCE_DISPLAY"],
+            forKey: "stormSetupForceDisplay",
+            in: sharedDefaults
+        )
+#endif
     }
 
     @MainActor

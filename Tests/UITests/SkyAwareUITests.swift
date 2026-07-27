@@ -605,6 +605,33 @@ final class SkyAwareUITests: XCTestCase {
         saveScreenshot(darkApp, named: "storm-setup-detail-dark")
     }
 
+    @MainActor
+    func testStormSetupDiagnosticsForceDisplayOverridesDisabledFeature() throws {
+        let app = launchStormSetupFixtureApp(
+            colorScheme: nil,
+            stormSetupEnabled: false,
+            forceDisplay: true
+        )
+
+        let summaryScrollView = app.scrollViews["summary-scroll"]
+        XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist.")
+
+        let stormSetupCard = app.buttons["summary-storm-setup-card"]
+        scrollUntilHittable(stormSetupCard, in: summaryScrollView)
+        XCTAssertTrue(stormSetupCard.exists, "Expected forced Storm Setup card while the feature is disabled.")
+
+        stormSetupCard.tap()
+
+        XCTAssertTrue(
+            app.navigationBars["Storm Setup"].waitForExistence(timeout: 10),
+            "Expected forced Storm Setup card to open its detail."
+        )
+        XCTAssertFalse(
+            app.otherElements["storm-setup-advanced-details"].exists,
+            "Force display must not enable Detailed Ingredients while Storm Setup is disabled."
+        )
+    }
+
 //  TODO: This test is broken and have tried to fix it multiple times with 5.4 mini and 5.4.
 //        Spend some time looking at this later, and determine if/how to fix. We may not need
 //        it since I'm debating actually showing atmospheric conditions and storm setup.
@@ -1055,7 +1082,9 @@ final class SkyAwareUITests: XCTestCase {
     @MainActor
     private func launchStormSetupFixtureApp(
         colorScheme: String?,
-        accessibilityTextSize: Bool = false
+        accessibilityTextSize: Bool = false,
+        stormSetupEnabled: Bool = true,
+        forceDisplay: Bool = false
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
@@ -1063,8 +1092,9 @@ final class SkyAwareUITests: XCTestCase {
         app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
         app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
         app.launchEnvironment["UI_TESTS_STORM_SETUP_FIXTURE"] = "supportive"
-        app.launchEnvironment["UI_TESTS_STORM_SETUP_ENABLED"] = "1"
+        app.launchEnvironment["UI_TESTS_STORM_SETUP_ENABLED"] = stormSetupEnabled ? "1" : "0"
         app.launchEnvironment["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"] = "1"
+        app.launchEnvironment["UI_TESTS_STORM_SETUP_FORCE_DISPLAY"] = forceDisplay ? "1" : "0"
 
         if let colorScheme {
             app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = colorScheme
