@@ -115,6 +115,29 @@ struct SummaryViewRiskPlaceholderPresentationTests {
 @Suite("Summary View Storm Setup Slot State")
 @MainActor
 struct SummaryViewStormSetupSlotStateTests {
+    @Test("forced presentation bypasses the normal Storm Setup feature gate")
+    func forcedPresentation_bypassesNormalFeatureGate() {
+        let cases: [(String, Bool, Bool, Bool, Bool, Bool)] = [
+            ("feature off and force off", true, false, false, false, false),
+            ("feature off and force on", true, false, true, false, true),
+            ("policy-suppressed presentation forced on", true, true, true, false, true),
+            ("force on without payload", false, false, true, false, false),
+            ("location unavailable", true, false, true, true, false)
+        ]
+
+        for (name, hasPresentation, stormSetupEnabled, isForcedPresentation, isLocationUnavailable, expected) in cases {
+            #expect(
+                SummaryView.shouldShowStormSetupPresentation(
+                    hasPresentation: hasPresentation,
+                    stormSetupEnabled: stormSetupEnabled,
+                    isForcedPresentation: isForcedPresentation,
+                    isLocationUnavailable: isLocationUnavailable
+                ) == expected,
+                "\\(name)"
+            )
+        }
+    }
+
     @Test("composed Storm Setup state reserves only loading and visible sections")
     func composedStateAndPlanRespectSlotContract() {
         let cases: [(String, SummaryView.StormSetupSlotState, Bool)] = [
@@ -185,6 +208,7 @@ struct SummaryViewStormSetupSlotStateTests {
                 presentation: nil,
                 hasStormSetup: false,
                 stormSetupEnabled: false,
+                isForcedPresentation: true,
                 isRefreshInFlight: true,
                 isLocationUnavailable: false
             ) == .hidden
