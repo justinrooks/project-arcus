@@ -1,4 +1,4 @@
-SkyAware v1.1.0(99)
+SkyAware v1.1.0(103)
 
 Highlights:
 - Today should show core content sooner and remain steadier while optional information finishes refreshing.

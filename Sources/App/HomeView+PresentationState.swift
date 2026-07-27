@@ -257,11 +257,24 @@ extension HomeView {
         return projectionValue ?? pipelineValue
     }
 
-    static func shouldRefreshStormSetupSettings(
-        previousPreferences: StormSetupPreferences?,
-        currentPreferences: StormSetupPreferences
+    static func shouldScheduleStormSetupSettingsRefresh(
+        previousPreferences: StormSetupPreferences,
+        currentPreferences: StormSetupPreferences,
+        hasCurrentLocationContext: Bool,
+        isPreviewMode: Bool,
+        isUITestStaticMode: Bool
     ) -> Bool {
-        previousPreferences != currentPreferences
+        guard hasCurrentLocationContext, isPreviewMode == false, isUITestStaticMode == false else {
+            return false
+        }
+
+        let stormSetupWasEnabled = previousPreferences.stormSetupEnabled
+        let stormSetupIsEnabled = currentPreferences.stormSetupEnabled
+        let detailedIngredientsWereEnabled = previousPreferences.detailedIngredientsEnabled
+        let detailedIngredientsAreEnabled = currentPreferences.detailedIngredientsEnabled
+
+        return (stormSetupWasEnabled == false && stormSetupIsEnabled) ||
+            (detailedIngredientsWereEnabled == false && detailedIngredientsAreEnabled && stormSetupIsEnabled)
     }
 
     static func preferredOutlooks(

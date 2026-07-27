@@ -120,6 +120,7 @@
 				UnitTests/SpcProviderSyncMapProductsTests.swift,
 				UnitTests/SpcRiskTestSupport.swift,
 				UnitTests/StormRiskRepoRefreshCategoricalRiskTests.swift,
+				UnitTests/StormSetupAlertEligibilityTests.swift,
 				UnitTests/StormSetupDetailPresentationTests.swift,
 				UnitTests/StormSetupHTTPClientTests.swift,
 				UnitTests/StormSetupIngestionTests.swift,

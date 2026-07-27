@@ -38,6 +38,57 @@ struct StormSetupIngestionTests {
         }
     }
 
+    @Test("Storm Setup classifies alerts before request eligibility")
+    func stormSetupClassifiesAlertsBeforeRequestEligibility() async throws {
+        let cases: [(String, AlertDTO, [MdDTO], Int)] = [
+            (
+                "active tornado warning",
+                makeStormSetupAlert(title: "Tornado Warning", issued: fixedNow, ends: fixedNow.addingTimeInterval(60)),
+                [],
+                1
+            ),
+            (
+                "active air quality alert",
+                makeStormSetupAlert(title: "Air Quality Alert", issued: fixedNow, ends: fixedNow.addingTimeInterval(60)),
+                [],
+                0
+            ),
+            (
+                "expired tornado warning",
+                makeStormSetupAlert(title: "Tornado Warning", issued: fixedNow.addingTimeInterval(-60), ends: fixedNow),
+                [],
+                0
+            ),
+            (
+                "meso remains independently eligible",
+                makeStormSetupAlert(title: "Air Quality Alert", issued: fixedNow, ends: fixedNow.addingTimeInterval(60)),
+                [MD.sampleDiscussionDTOs[0]],
+                1
+            )
+        ]
+
+        for testCase in cases {
+            let context = makeContext()
+            let query = StormSetupQueryingFake(
+                response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)))
+            )
+            let harness = try makeHarness(
+                context: context,
+                query: query,
+                stormRisk: .allClear,
+                severeRisk: .allClear,
+                activeAlerts: [testCase.1],
+                activeMesos: testCase.2
+            )
+
+            _ = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            )
+
+            #expect(await query.requestCount() == testCase.3, "\(testCase.0)")
+        }
+    }
+
     @Test("eligible triggers request exactly once in the expected HTTP mode")
     func eligibleTriggersRequestExactlyOnceInExpectedHTTPMode() async throws {
         let cases: [(String, HomeRefreshTrigger, HTTPExecutionMode)] = [
@@ -2191,6 +2242,38 @@ private enum TestError: Error {
 }
 
 private let fixedNow = Date(timeIntervalSinceReferenceDate: 1_000_000)
+
+private func makeStormSetupAlert(title: String, issued: Date, ends: Date) -> AlertDTO {
+    AlertDTO(
+        id: UUID().uuidString,
+        messageId: nil,
+        currentRevisionSent: nil,
+        title: title,
+        headline: title,
+        issued: issued,
+        expires: ends,
+        ends: ends,
+        messageType: "Alert",
+        sender: nil,
+        severity: "Severe",
+        urgency: "Immediate",
+        certainty: "Observed",
+        description: "Alert",
+        instruction: nil,
+        response: nil,
+        areaSummary: "Area",
+        geometryData: nil,
+        tornadoDetection: nil,
+        tornadoDamageThreat: nil,
+        maxWindGust: nil,
+        maxHailSize: nil,
+        windThreat: nil,
+        hailThreat: nil,
+        thunderstormDamageThreat: nil,
+        flashFloodDetection: nil,
+        flashFloodDamageThreat: nil
+    )
+}
 
 @MainActor
 private func waitUntil(

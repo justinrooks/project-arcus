@@ -41,8 +41,6 @@ struct HomeView: View {
     @State private var locationReliabilityRailQualifyingDay: String?
     @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
     @State private var showsLocationReliabilitySheet: Bool = false
-    @State private var lastStormSetupPreferences: StormSetupPreferences?
-
     private var isUITestStaticMode: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
     }
@@ -402,11 +400,29 @@ struct HomeView: View {
                 )
             }
         }
-        .onChange(of: stormSetupEnabled) { _, _ in
-            scheduleStormSetupSettingsRefreshIfNeeded()
+        .onChange(of: stormSetupEnabled) { oldValue, newValue in
+            scheduleStormSetupSettingsRefreshIfNeeded(
+                previousPreferences: .init(
+                    stormSetupEnabled: oldValue,
+                    detailedIngredientsEnabled: detailedIngredientsEnabled
+                ),
+                currentPreferences: .init(
+                    stormSetupEnabled: newValue,
+                    detailedIngredientsEnabled: detailedIngredientsEnabled
+                )
+            )
         }
-        .onChange(of: detailedIngredientsEnabled) { _, _ in
-            scheduleStormSetupSettingsRefreshIfNeeded()
+        .onChange(of: detailedIngredientsEnabled) { oldValue, newValue in
+            scheduleStormSetupSettingsRefreshIfNeeded(
+                previousPreferences: .init(
+                    stormSetupEnabled: stormSetupEnabled,
+                    detailedIngredientsEnabled: oldValue
+                ),
+                currentPreferences: .init(
+                    stormSetupEnabled: stormSetupEnabled,
+                    detailedIngredientsEnabled: newValue
+                )
+            )
         }
         .onChange(of: remoteAlertPresentationState.focusRequest?.id) { _, newValue in
             guard newValue != nil else { return }
@@ -440,20 +456,20 @@ struct HomeView: View {
         }
     }
 
-    private func scheduleStormSetupSettingsRefreshIfNeeded() {
-        guard isPreviewMode == false, isUITestStaticMode == false else {
-            return
-        }
-
-        let currentPreferences = stormSetupPreferences
-        guard Self.shouldRefreshStormSetupSettings(
-            previousPreferences: lastStormSetupPreferences,
-            currentPreferences: currentPreferences
+    private func scheduleStormSetupSettingsRefreshIfNeeded(
+        previousPreferences: StormSetupPreferences,
+        currentPreferences: StormSetupPreferences
+    ) {
+        guard Self.shouldScheduleStormSetupSettingsRefresh(
+            previousPreferences: previousPreferences,
+            currentPreferences: currentPreferences,
+            hasCurrentLocationContext: locationSession.currentContext != nil,
+            isPreviewMode: isPreviewMode,
+            isUITestStaticMode: isUITestStaticMode
         ) else {
             return
         }
 
-        lastStormSetupPreferences = currentPreferences
         refreshPipeline.updateEnvironment(refreshEnvironment)
         Task {
             await refreshPipeline.enqueueRefresh(.timer, environment: refreshEnvironment)

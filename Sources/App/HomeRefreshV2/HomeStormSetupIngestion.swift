@@ -104,7 +104,10 @@ actor HomeStormSetupIngestion {
             preferences: preferences,
             stormRisk: snapshot.stormRisk,
             severeRisk: snapshot.severeRisk,
-            hasActiveAlert: snapshot.alerts.isEmpty == false,
+            hasQualifyingConvectiveAlert: StormSetupAlertEligibility.hasQualifyingAlert(
+                in: snapshot.alerts,
+                now: now
+            ),
             hasActiveMeso: snapshot.mesos.isEmpty == false,
             assessmentOverall: cachedStormSetup.map { StormSetupAssessment(dto: $0).assessment.overall },
             payloadExpiresAt: cachedStormSetup?.freshness.expiresAt,
