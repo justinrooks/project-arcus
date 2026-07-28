@@ -83,3 +83,9 @@
 
 - When characterizing coordinator compatibility, construct requests exactly as production does. A trigger without its
   production-required context can bypass a compatibility guard and turn a queued request into a synthetic join.
+- For background deadlines, distinguish request admission from a hard in-flight transfer bound, propagate expiry as an
+  observable execution outcome rather than relying on task cancellation alone, and retain task-local budget context
+  with queued coordinator work instead of assuming later child tasks inherit the original caller's scope.
+- When background and foreground ingestion ownership can share a coordinator, never let deadline state fail a
+  foreground waiter merely because plans are compatible; queue it for an unbudgeted follow-up and track waiter/run
+  eligibility so the preceding background result cannot resolve it.

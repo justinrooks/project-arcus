@@ -80,3 +80,40 @@ enum BackgroundRefreshBudgetAdmission: Sendable, Equatable {
     case workDeadlineReached
     case insufficientTime
 }
+
+struct BackgroundRefreshExecutionContext: Sendable {
+    let budget: BackgroundRefreshBudget
+    let deadlineState: BackgroundRefreshDeadlineState
+
+    init(budget: BackgroundRefreshBudget, deadlineState: BackgroundRefreshDeadlineState = .init()) {
+        self.budget = budget
+        self.deadlineState = deadlineState
+    }
+
+    @TaskLocal static var current: BackgroundRefreshExecutionContext?
+
+    static func merged(
+        _ lhs: BackgroundRefreshExecutionContext?,
+        _ rhs: BackgroundRefreshExecutionContext?
+    ) -> BackgroundRefreshExecutionContext? {
+        switch (lhs, rhs) {
+        case (nil, nil): nil
+        case let (context?, nil), let (nil, context?): context
+        case let (lhs?, rhs?):
+            lhs.budget.workDeadline <= rhs.budget.workDeadline ? lhs : rhs
+        }
+    }
+}
+
+actor BackgroundRefreshDeadlineState {
+    private var isExceeded = false
+
+    func markExceeded() {
+        isExceeded = true
+    }
+
+    func throwIfExceeded() throws {
+        guard isExceeded else { return }
+        throw CancellationError()
+    }
+}

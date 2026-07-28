@@ -1,22 +1,30 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import SkyAware
 
 private enum HTTPStubResult {
     case response(status: Int, headers: [String: String], body: Data?)
     case error(URLError)
+    case pending
 }
 
 private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var stubsByURL: [String: [HTTPStubResult]] = [:]
     nonisolated(unsafe) private static var requestTimeoutsByURL: [String: [TimeInterval]] = [:]
+    nonisolated(unsafe) private static var stoppedURLs: Set<String> = []
+    nonisolated(unsafe) private static var requestStartContinuations: [String: [CheckedContinuation<Void, Never>]] = [:]
 
     static func reset() {
         lock.lock()
         stubsByURL = [:]
         requestTimeoutsByURL = [:]
+        stoppedURLs = []
+        let continuations = requestStartContinuations.values.flatMap { $0 }
+        requestStartContinuations = [:]
         lock.unlock()
+        continuations.forEach { $0.resume() }
     }
 
     static func setStubs(_ stubs: [URL: [HTTPStubResult]]) {
@@ -31,6 +39,25 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return requestTimeoutsByURL[url.absoluteString] ?? []
+    }
+
+    static func didStopLoading(for url: URL) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stoppedURLs.contains(url.absoluteString)
+    }
+
+    static func waitForRequest(for url: URL) async {
+        await withCheckedContinuation { continuation in
+            lock.lock()
+            if requestTimeoutsByURL[url.absoluteString] != nil {
+                lock.unlock()
+                continuation.resume()
+                return
+            }
+            requestStartContinuations[url.absoluteString, default: []].append(continuation)
+            lock.unlock()
+        }
     }
 
     override class func canInit(with request: URLRequest) -> Bool {
@@ -69,10 +96,15 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
             client?.urlProtocolDidFinishLoading(self)
         case .error(let error):
             client?.urlProtocol(self, didFailWithError: error)
+        case .pending:
+            break
         }
     }
 
-    override func stopLoading() {}
+    override func stopLoading() {
+        guard let url = request.url else { return }
+        Self.recordStopped(url)
+    }
 
     private static func popStub(for url: URL) -> HTTPStubResult? {
         lock.lock()
@@ -86,8 +118,30 @@ private final class HTTPTestURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static func record(timeout: TimeInterval, for url: URL) {
         lock.lock()
-        defer { lock.unlock() }
         requestTimeoutsByURL[url.absoluteString, default: []].append(timeout)
+        let continuations = requestStartContinuations.removeValue(forKey: url.absoluteString) ?? []
+        lock.unlock()
+        continuations.forEach { $0.resume() }
+    }
+
+    private static func recordStopped(_ url: URL) {
+        lock.lock()
+        stoppedURLs.insert(url.absoluteString)
+        lock.unlock()
+    }
+}
+
+private actor HTTPTestDeadlineGate {
+    private var continuations: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        await withCheckedContinuation { continuations.append($0) }
+    }
+
+    func open() {
+        let continuations = continuations
+        self.continuations = []
+        continuations.forEach { $0.resume() }
     }
 }
 
@@ -251,6 +305,178 @@ struct HTTPDataDownloaderTests {
         #expect(backgroundTimeout == backgroundPolicy.requestTimeout)
     }
 
+    @Test("Budgeted background request timeout is capped to remaining work")
+    func budgetedBackgroundRequestCapsTimeout() async throws {
+        let url = URL(string: "https://example.test/budget-timeout")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: 200, headers: [:], body: nil)]])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let currentInstant = Mutex(start)
+        let client = makeDownloader(
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: []),
+            budgetNow: { currentInstant.withLock { $0 } }
+        )
+
+        try await withBackgroundBudget(workDuration: .seconds(3), start: start) {
+            _ = try await client.get(url, headers: [:])
+        }
+
+        #expect(HTTPTestURLProtocol.requestTimeouts(for: url) == [3])
+    }
+
+    @Test("Budgeted background request refuses an expired work deadline")
+    func budgetedBackgroundRequestRefusesExpiredDeadline() async {
+        let url = URL(string: "https://example.test/budget-expired")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: 200, headers: [:], body: nil)]])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let client = makeDownloader(budgetNow: { start })
+
+        await #expect(throws: CancellationError.self) {
+            try await withBackgroundBudget(workDuration: .zero, start: start) {
+                _ = try await client.get(url, headers: [:])
+            }
+        }
+        #expect(HTTPTestURLProtocol.requestTimeouts(for: url).isEmpty)
+    }
+
+    @Test("Budget deadline cancels an in-flight delayed transfer")
+    func budgetedBackgroundRequestCancelsDelayedTransferAtDeadline() async {
+        let url = URL(string: "https://example.test/budget-delayed-transfer")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.pending]])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let deadlineGate = HTTPTestDeadlineGate()
+        let client = makeDownloader(
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: []),
+            budgetNow: { start },
+            sleepForDeadline: { _ in await deadlineGate.wait() }
+        )
+
+        let requestTask = Task {
+            try await withBackgroundBudget(workDuration: .seconds(10), start: start) {
+                _ = try await client.get(url, headers: [:])
+            }
+        }
+        await HTTPTestURLProtocol.waitForRequest(for: url)
+        await deadlineGate.open()
+        await #expect(throws: CancellationError.self) {
+            try await requestTask.value
+        }
+        #expect(HTTPTestURLProtocol.didStopLoading(for: url))
+    }
+
+    @Test("Budgeted transient retry runs only while its delay fits")
+    func budgetedTransientRetryRunsWhileAdmitted() async throws {
+        let url = URL(string: "https://example.test/budget-transient-retry")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([
+            url: [
+                .error(URLError(.timedOut)),
+                .response(status: 200, headers: [:], body: nil)
+            ]
+        ])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let currentInstant = Mutex(start)
+        let sleeps = Mutex<[TimeInterval]>([])
+        let client = makeDownloader(
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: [5]),
+            sleepFor: { delay in
+                sleeps.withLock { $0.append(delay) }
+                currentInstant.withLock { $0 += .seconds(delay) }
+            },
+            budgetNow: { currentInstant.withLock { $0 } }
+        )
+
+        try await withBackgroundBudget(workDuration: .seconds(10), start: start) {
+            _ = try await client.get(url, headers: [:])
+        }
+
+        #expect(sleeps.withLock { $0 } == [5])
+        #expect(HTTPTestURLProtocol.requestTimeouts(for: url).count == 2)
+    }
+
+    @Test("Budgeted 429 Retry-After refuses retry and serves eligible cache")
+    func budgeted429RetryAfterUsesCacheWhenRetryDoesNotFit() async throws {
+        try await assertBudgetedRetryAfterFallsBackToCache(status: 429)
+    }
+
+    @Test("Budgeted 503 Retry-After refuses retry and serves eligible cache")
+    func budgeted503RetryAfterUsesCacheWhenRetryDoesNotFit() async throws {
+        try await assertBudgetedRetryAfterFallsBackToCache(status: 503)
+    }
+
+    @Test("Budgeted retry exhaustion without cache is cancellation")
+    func budgetedRetryExhaustionWithoutCacheIsCancellation() async {
+        let url = URL(string: "https://example.test/budget-no-cache")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: 503, headers: ["Retry-After": "5"], body: nil)]])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let client = makeDownloader(
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: [5]),
+            budgetNow: { start }
+        )
+
+        await #expect(throws: CancellationError.self) {
+            try await withBackgroundBudget(workDuration: .seconds(3), start: start) {
+                _ = try await client.get(url, headers: [:])
+            }
+        }
+    }
+
+    @Test("Cancellation during a budgeted retry wait remains cancellation")
+    func cancellationDuringBudgetedRetryWaitRemainsCancellation() async {
+        let url = URL(string: "https://example.test/budget-cancel-wait")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: 429, headers: ["Retry-After": "1"], body: nil)]])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let client = makeDownloader(
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: [1]),
+            sleepFor: { _ in throw CancellationError() },
+            budgetNow: { start }
+        )
+
+        await #expect(throws: CancellationError.self) {
+            try await withBackgroundBudget(workDuration: .seconds(10), start: start) {
+                _ = try await client.get(url, headers: [:])
+            }
+        }
+    }
+
+    @Test("Foreground policy ignores a surrounding background budget")
+    func foregroundPolicyIgnoresBackgroundBudget() async throws {
+        let url = URL(string: "https://example.test/foreground-budget")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: 200, headers: [:], body: nil)]])
+
+        let clock = ContinuousClock()
+        let start = clock.now
+        let client = makeDownloader(
+            foregroundPolicy: testPolicy(requestTimeout: 9, retryDelays: []),
+            budgetNow: { start }
+        )
+
+        try await BackgroundRefreshExecutionContext.$current.withValue(.init(budget: budget(workDuration: .seconds(1), start: start))) {
+            try await HTTPExecutionMode.$current.withValue(.foreground) {
+                _ = try await client.get(url, headers: [:])
+            }
+        }
+
+        #expect(HTTPTestURLProtocol.requestTimeouts(for: url) == [9])
+    }
+
     private func makeDownloader(
         cache: URLCache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 1_000_000, diskPath: nil),
         foregroundPolicy: HTTPRequestPolicy = HTTPRequestPolicy(
@@ -266,7 +492,10 @@ struct HTTPDataDownloaderTests {
             retryDelays: [0],
             retryableStatusCodes: [429, 503],
             allowCacheFallback: true
-        )
+        ),
+        sleepFor: @escaping @Sendable (TimeInterval) async throws -> Void = { _ in },
+        budgetNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
+        sleepForDeadline: @escaping @Sendable (Duration) async throws -> Void = URLSessionHTTPClient.defaultDeadlineSleep
     ) -> URLSessionHTTPClient {
         let foregroundSession = makeSession(cache: cache)
         let backgroundSession = makeSession(cache: cache)
@@ -276,8 +505,65 @@ struct HTTPDataDownloaderTests {
             urlCache: cache,
             foregroundSession: foregroundSession,
             backgroundSession: backgroundSession,
-            sleepFor: { _ in },
-            now: Date.init
+            sleepFor: sleepFor,
+            now: Date.init,
+            budgetNow: budgetNow,
+            sleepForDeadline: sleepForDeadline
+        )
+    }
+
+    private func assertBudgetedRetryAfterFallsBackToCache(status: Int) async throws {
+        let url = URL(string: "https://example.test/budget-retry-after-\(status)")!
+        HTTPTestURLProtocol.reset()
+        HTTPTestURLProtocol.setStubs([url: [.response(status: status, headers: ["Retry-After": "5"], body: nil)]])
+
+        let cache = URLCache(memoryCapacity: 1_000_000, diskCapacity: 1_000_000, diskPath: nil)
+        storeCachedBody(Data("cached-\(status)".utf8), for: url, cache: cache)
+        let clock = ContinuousClock()
+        let start = clock.now
+        let sleeps = Mutex<[TimeInterval]>([])
+        let client = makeDownloader(
+            cache: cache,
+            backgroundPolicy: testPolicy(requestTimeout: 15, retryDelays: [5]),
+            sleepFor: { delay in sleeps.withLock { $0.append(delay) } },
+            budgetNow: { start }
+        )
+
+        let response = try await withBackgroundBudget(workDuration: .seconds(3), start: start) {
+            try await client.get(url, headers: [:])
+        }
+
+        #expect(response.source == .cacheFallback)
+        #expect(response.data == Data("cached-\(status)".utf8))
+        #expect(sleeps.withLock { $0 }.isEmpty)
+    }
+
+    private func withBackgroundBudget<Result: Sendable>(
+        workDuration: Duration,
+        start: ContinuousClock.Instant,
+        operation: @Sendable () async throws -> Result
+    ) async rethrows -> Result {
+        try await BackgroundRefreshExecutionContext.$current.withValue(.init(budget: budget(workDuration: workDuration, start: start))) {
+            try await HTTPExecutionMode.$current.withValue(.background, operation: operation)
+        }
+    }
+
+    private func budget(workDuration: Duration, start: ContinuousClock.Instant) -> BackgroundRefreshBudget {
+        BackgroundRefreshBudget(
+            start: start,
+            completionDeadline: start + workDuration,
+            finalizationReserve: .zero
+        )
+    }
+
+    private func testPolicy(requestTimeout: TimeInterval, retryDelays: [TimeInterval]) -> HTTPRequestPolicy {
+        HTTPRequestPolicy(
+            requestTimeout: requestTimeout,
+            resourceTimeout: 30,
+            retryDelays: retryDelays,
+            retryableStatusCodes: [429, 503],
+            allowCacheFallback: true,
+            jitterMultiplierRange: 1...1
         )
     }
 

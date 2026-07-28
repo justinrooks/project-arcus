@@ -4,6 +4,110 @@ import Testing
 
 @Suite("Home Ingestion Coordinator", .serialized)
 struct HomeIngestionCoordinatorTests {
+    @Test("child executor task inherits the scoped background budget")
+    func childExecutorTaskInheritsScopedBackgroundBudget() async throws {
+        let executor = BudgetCapturingHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let clock = ContinuousClock()
+        let budget = BackgroundRefreshBudget.standard(start: clock.now)
+
+        _ = try await BackgroundRefreshExecutionContext.$current.withValue(.init(budget: budget)) {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+
+        #expect(await executor.sawBudget())
+    }
+
+    @Test("queued background follow-up retains its submitted budget")
+    func queuedBackgroundFollowUpRetainsSubmittedBudget() async {
+        let gate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let clock = ContinuousClock()
+
+        await coordinator.enqueue(.sessionTick)
+        let firstStarted = await waitUntil { await executor.runCount() == 1 }
+        #expect(firstStarted)
+
+        let context = BackgroundRefreshExecutionContext(budget: .standard(start: clock.now))
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await coordinator.enqueue(.backgroundRefresh)
+        }
+        await gate.open()
+
+        let followUpStarted = await waitUntil { await executor.runCount() == 2 }
+        #expect(followUpStarted)
+        #expect(await executor.observedBudgetContexts() == [false, true])
+    }
+
+    @Test("queued scheduled budget survives merging unbudgeted background work in either order")
+    func queuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge() async {
+        await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: true)
+        await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: false)
+    }
+
+    @Test("foreground waiter restarts outside a deadline-exhausted background run")
+    func foregroundWaiterRestartsOutsideDeadlineExhaustedBackgroundRun() async throws {
+        let gate = AsyncGate()
+        let executor = DeadlineExhaustingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = BackgroundRefreshExecutionContext(
+            budget: .standard(start: ContinuousClock().now)
+        )
+
+        let backgroundWaiter = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(context) {
+                try await coordinator.enqueueAndWait(.backgroundRefresh)
+            }
+        }
+        #expect(await waitUntil { await executor.runCount() == 1 })
+
+        let foregroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        await gate.open()
+
+        await expectCancellation(backgroundWaiter)
+        #expect(try await foregroundWaiter.value == .empty)
+        #expect(await executor.observedBudgetContexts() == [true, false])
+    }
+
+    private func assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(
+        budgetedRequestFirst: Bool
+    ) async {
+        let gate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let executionContext = BackgroundRefreshExecutionContext(
+            budget: .standard(start: ContinuousClock().now)
+        )
+        let remoteContext = HomeRemoteAlertContext(
+            alertID: "queued-budget-merge",
+            revisionSent: Date(timeIntervalSince1970: 700)
+        )
+
+        await coordinator.enqueue(.sessionTick)
+        #expect(await waitUntil { await executor.runCount() == 1 })
+
+        if budgetedRequestFirst {
+            await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                await coordinator.enqueue(.backgroundRefresh)
+            }
+            await coordinator.enqueue(.remoteHotAlertReceived, remoteAlertContext: remoteContext)
+        } else {
+            await coordinator.enqueue(.remoteHotAlertReceived, remoteAlertContext: remoteContext)
+            await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                await coordinator.enqueue(.backgroundRefresh)
+            }
+        }
+
+        await gate.open()
+        #expect(await waitUntil { await executor.runCount() == 2 })
+        #expect(await executor.observedBudgetContexts() == [false, true])
+    }
+
     @Test("protocol conveniences forward complete requests and callbacks to the canonical operation")
     func protocolConveniences_forwardToCanonicalOperation() async throws {
         let recordingCoordinator = ForwardingHomeIngestionCoordinator()
@@ -712,6 +816,75 @@ struct HomeIngestionCoordinatorTests {
             pressure: .init(value: 29.92, unit: .inchesOfMercury),
             pressureTrend: "steady"
         )
+    }
+}
+
+private actor BudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
+    private var inheritedBudget = false
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        inheritedBudget = BackgroundRefreshExecutionContext.current != nil
+        return HomeSnapshot()
+    }
+
+    func sawBudget() -> Bool {
+        inheritedBudget
+    }
+}
+
+private actor QueuedBudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
+    private let gate: AsyncGate
+    private var contexts: [Bool] = []
+
+    init(gate: AsyncGate) {
+        self.gate = gate
+    }
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        contexts.append(BackgroundRefreshExecutionContext.current != nil)
+        if contexts.count == 1 {
+            await gate.wait()
+        }
+        return HomeSnapshot()
+    }
+
+    func runCount() -> Int {
+        contexts.count
+    }
+
+    func observedBudgetContexts() -> [Bool] {
+        contexts
+    }
+}
+
+private actor DeadlineExhaustingHomeIngestionExecutor: HomeIngestionExecuting {
+    private let gate: AsyncGate
+    private var contexts: [Bool] = []
+
+    init(gate: AsyncGate) {
+        self.gate = gate
+    }
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        contexts.append(BackgroundRefreshExecutionContext.current != nil)
+        if contexts.count == 1 {
+            await gate.wait()
+            guard let context = BackgroundRefreshExecutionContext.current else {
+                Issue.record("Expected the first run to have a background execution context")
+                return .empty
+            }
+            await context.deadlineState.markExceeded()
+            try await context.deadlineState.throwIfExceeded()
+        }
+        return .empty
+    }
+
+    func runCount() -> Int {
+        contexts.count
+    }
+
+    func observedBudgetContexts() -> [Bool] {
+        contexts
     }
 }
 

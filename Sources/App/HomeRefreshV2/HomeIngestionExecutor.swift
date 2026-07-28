@@ -247,6 +247,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 await progress.report(.started(.lane(.hotAlerts)))
                 environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
                 await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
+                try await throwIfBackgroundDeadlineExceeded()
                 freshness.lastHotFeedSyncAt = now
                 await progress.report(.completed(.lane(.hotAlerts)))
                 environment.logger.debug("Finished home ingestion hot-alert sync")
@@ -264,6 +265,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 await progress.report(.started(.lane(.slowProducts)))
                 environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
                 slowProductMapSyncOutcome = await syncSlowFeeds(executionMode: executionMode)
+                try await throwIfBackgroundDeadlineExceeded()
                 if slowProductMapSyncOutcome == .accepted {
                     freshness.lastSlowFeedSyncAt = now
                 }
@@ -655,6 +657,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return .background
         }
         return .foreground
+    }
+
+    private func throwIfBackgroundDeadlineExceeded() async throws {
+        try await BackgroundRefreshExecutionContext.current?.deadlineState.throwIfExceeded()
     }
 
     private func slowProductPersistenceDecision(

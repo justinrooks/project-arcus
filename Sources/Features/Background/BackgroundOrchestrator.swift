@@ -85,6 +85,9 @@ actor BackgroundOrchestrator {
         // Mark the entire background job
         let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
+        let executionContext = BackgroundRefreshExecutionContext(
+            budget: .standard(start: startInstant)
+        )
         let start = Date()
         let recoveryCadence = Cadence.short.minutes
         
@@ -111,11 +114,13 @@ actor BackgroundOrchestrator {
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
                 let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
-                let snapshot = try await coordinator.enqueueAndWait(
-                    .backgroundRefresh,
-                    locationContext: nil,
-                    remoteAlertContext: nil
-                )
+                let snapshot = try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                    try await coordinator.enqueueAndWait(
+                        .backgroundRefresh,
+                        locationContext: nil,
+                        remoteAlertContext: nil
+                    )
+                }
                 signposter.endInterval("Unified Background Ingestion", ingestionInterval)
 
                 try Task.checkCancellation()

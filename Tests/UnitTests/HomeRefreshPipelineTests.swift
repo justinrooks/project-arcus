@@ -2486,6 +2486,35 @@ struct HomeRefreshPipelineTests {
             )
         ]
     }
+
+    @Test("background deadline exhaustion from a nonthrowing sync fails the executor")
+    func backgroundDeadlineExhaustionFromNonthrowingSyncFailsExecutor() async {
+        let context = makeContext()
+        let spc = FakeSpcProvider(marksBackgroundDeadlineDuringMesoSync: true)
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        let budget = BackgroundRefreshExecutionContext(budget: .standard(start: ContinuousClock().now))
+
+        await #expect(throws: CancellationError.self) {
+            try await BackgroundRefreshExecutionContext.$current.withValue(budget) {
+                try await executor.run(
+                    plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+                    progress: .none
+                )
+            }
+        }
+    }
 }
 
 private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
@@ -2897,6 +2926,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let syncMesoscaleGate: AsyncGate?
     private let mapSyncGate: AsyncGate?
     private let convectiveOutlookGate: AsyncGate?
+    private let marksBackgroundDeadlineDuringMesoSync: Bool
     private let mapSyncOutcome: SpcMapSyncOutcome
     private let stormRiskValue: StormRiskLevel
     private let severeRiskValue: SevereWeatherThreat
@@ -2920,6 +2950,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         syncMesoscaleGate: AsyncGate? = nil,
         mapSyncGate: AsyncGate? = nil,
         convectiveOutlookGate: AsyncGate? = nil,
+        marksBackgroundDeadlineDuringMesoSync: Bool = false,
         mapSyncOutcome: SpcMapSyncOutcome = .accepted,
         stormRiskValue: StormRiskLevel = .enhanced,
         severeRiskValue: SevereWeatherThreat = .hail(probability: 0.30),
@@ -2931,6 +2962,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.syncMesoscaleGate = syncMesoscaleGate
         self.mapSyncGate = mapSyncGate
         self.convectiveOutlookGate = convectiveOutlookGate
+        self.marksBackgroundDeadlineDuringMesoSync = marksBackgroundDeadlineDuringMesoSync
         self.mapSyncOutcome = mapSyncOutcome
         self.stormRiskValue = stormRiskValue
         self.severeRiskValue = severeRiskValue
@@ -2970,6 +3002,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let syncMesoscaleGate {
             await syncMesoscaleGate.wait()
+        }
+        if marksBackgroundDeadlineDuringMesoSync {
+            await BackgroundRefreshExecutionContext.current?.deadlineState.markExceeded()
         }
         if Task.isCancelled {
             cancelledSyncCalls += 1

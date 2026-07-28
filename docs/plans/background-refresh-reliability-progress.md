@@ -151,10 +151,29 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #368 — 04: Bound background HTTP retries by remaining task budget
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Prevent a request or retry wait from crossing the background deadline.
 - **Required proof:** attempt count, retry delay, Retry-After, cancellation, cache fallback, and foreground-policy
   regression tests.
+- **Implementation:** `BackgroundOrchestrator` creates one standard #373 budget per scheduled run and scopes it through
+  the coordinator's child executor task. Budgeted background HTTP caps per-attempt timeout, races an in-flight
+  `URLSession` operation against the monotonic remaining work time, refuses retry waits without a usable subsequent
+  window, and preserves eligible GET cache fallback. Deadline exhaustion is recorded across non-throwing provider
+  boundaries so the executor cannot publish a nominal-success snapshot, while queued coordinator follow-ups retain
+  their submitted execution context. Merging scheduled work with an unbudgeted background trigger preserves the
+  scheduled budget regardless of submission order. Foreground requests do not join a budgeted active run; they are
+  queued as an unbudgeted follow-up, and waiter eligibility prevents the expired background result from resolving
+  that owner. Foreground and unbudgeted-background policy paths otherwise remain unchanged.
+- **Validation:** `HTTPDataDownloaderTests` passed **15 / 15** with **0 failed, 0 skipped** on iPhone 17, iOS 26.5,
+  Debug (`/private/tmp/skyaware-results.nI9gjk/http-budget.xcresult`). Focused downloader/coordinator/executor
+  correction tests passed **90 / 90** with **0 failed, 0 skipped**
+  (`/private/tmp/skyaware-results.7waSyp/deadline-correction.xcresult`). Debug build passed on iPhone 17. Full
+  `SkyAwareTests` passed with **0 failed, 0 skipped** on iPhone 17, iOS 26.5, Debug; the result summary reports
+  **961 passed** (the device-configuration counter reports 968 parameterized runs)
+  (`/private/tmp/skyaware-results.aT8RML/unit.xcresult`).
+- **Correction validation:** coordinator budget/ownership tests passed **25 / 25** with **0 failed, 0 skipped**
+  on iPhone 17, iOS 26.5, Debug
+  (`/private/tmp/skyaware-results.aT8RML/coordinator-budget-merge.xcresult`).
 - **Handoff:** No endpoint-specific retry exceptions.
 
 ### Issue #370 — 05: Make optional enrichment deadline-aware and cancellation-transparent
