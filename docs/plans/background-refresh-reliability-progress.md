@@ -139,9 +139,14 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #373 — 03: Define a global background refresh budget contract
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Establish one monotonic work deadline with reserved finalization time.
 - **Required proof:** deterministic remaining-time and admission decisions at boundaries.
+- **Implementation:** `BackgroundRefreshBudget` defines the soft 30-second completion window, five-second
+  finalization reserve, derived 25-second work deadline, nonnegative remaining durations, and explicit optional-work
+  admission decisions. The unused value remains ready for #368 and #370 integration.
+- **Validation:** `BackgroundRefreshBudgetTests` passed 9/9 on iPhone 17, iOS 26.5, Debug
+  (`/private/tmp/skyaware-results.sPqYN2/background-refresh-budget.xcresult`). Debug build passed on iPhone 17.
 - **Handoff:** Contract/policy only; do not rewrite providers in this issue.
 
 ### Issue #368 — 04: Bound background HTTP retries by remaining task budget

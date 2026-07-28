@@ -6,6 +6,110 @@ import OSLog
 import ArcusCore
 @testable import SkyAware
 
+@Suite("Background refresh budget")
+struct BackgroundRefreshBudgetTests {
+    private let clock = ContinuousClock()
+
+    @Test("Default policy reserves five seconds after twenty-five seconds of work")
+    func defaultPolicy_derivesExpectedDeadlines() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.completionDeadline == start + .seconds(30))
+        #expect(budget.workDeadline == start + .seconds(25))
+        #expect(budget.finalizationReserve == .seconds(5))
+    }
+
+    @Test("Work before its deadline is admitted when it fits")
+    func admission_beforeWorkDeadline_admitsFittingWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+        let instant = start + .seconds(20)
+
+        #expect(budget.remainingWork(at: instant) == .seconds(5))
+        #expect(budget.admission(for: .seconds(5), at: instant, isCancelled: false) == .admitted)
+    }
+
+    @Test("Work admission closes exactly at the work deadline")
+    func admission_atWorkDeadline_rejectsWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.remainingWork(at: budget.workDeadline) == .zero)
+        #expect(
+            budget.admission(for: .zero, at: budget.workDeadline, isCancelled: false) == .workDeadlineReached
+        )
+    }
+
+    @Test("Remaining durations never become negative after either deadline")
+    func remainingDurations_afterDeadlines_areZero() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.remainingWork(at: start + .seconds(26)) == .zero)
+        #expect(budget.remainingTotal(at: start + .seconds(31)) == .zero)
+    }
+
+    @Test("Finalization reserve closes work while total time remains")
+    func finalizationReserve_preservesTotalTimeAfterWorkCloses() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+        let instant = start + .seconds(27)
+
+        #expect(budget.remainingWork(at: instant) == .zero)
+        #expect(budget.remainingTotal(at: instant) == .seconds(3))
+        #expect(budget.admission(for: .seconds(1), at: instant, isCancelled: false) == .workDeadlineReached)
+    }
+
+    @Test("Work that exceeds the remaining window is rejected distinctly")
+    func admission_withInsufficientTime_rejectsWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(
+            budget.admission(for: .seconds(6), at: start + .seconds(20), isCancelled: false) == .insufficientTime
+        )
+    }
+
+    @Test("Cancellation rejects work before evaluating available time")
+    func admission_whenCancelled_rejectsWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.admission(for: .seconds(1), at: start, isCancelled: true) == .cancelled)
+    }
+
+    @Test("Injected deadlines derive deterministic work boundaries")
+    func injectedDeadline_derivesWorkDeadline() {
+        let start = clock.now
+        let completionDeadline = start + .seconds(12)
+        let budget = BackgroundRefreshBudget(
+            start: start,
+            completionDeadline: completionDeadline,
+            finalizationReserve: .seconds(4)
+        )
+
+        #expect(budget.completionDeadline == completionDeadline)
+        #expect(budget.workDeadline == start + .seconds(8))
+        #expect(budget.remainingWork(at: start) == .seconds(8))
+        #expect(budget.remainingTotal(at: start) == .seconds(12))
+    }
+
+    @Test("An oversized reserve produces no work time")
+    func oversizedReserve_clampsWorkDeadlineToStart() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget(
+            start: start,
+            completionDeadline: start + .seconds(3),
+            finalizationReserve: .seconds(5)
+        )
+
+        #expect(budget.workDeadline == start)
+        #expect(budget.remainingWork(at: start) == .zero)
+        #expect(budget.admission(for: .seconds(1), at: start, isCancelled: false) == .workDeadlineReached)
+    }
+}
+
 @Suite("BackgroundScheduler replacement policy", .serialized)
 struct BackgroundSchedulerReplacementPolicyTests {
     @Test("Replaces pending request when requested run is materially earlier")
