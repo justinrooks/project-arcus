@@ -94,3 +94,7 @@
   remains an owner until it is actually removed.
 - Test seams that expose terminal execution must acknowledge both success and cancellation before rethrowing; a
   success-only completion counter turns cancellation tests into deadlocks.
+- For background cache-reuse policy, validate every freshness horizon against the actual 20/40/60-minute scheduling
+  cadence, but never present `earliestBeginDate` delay as bounded. State any longer reuse window as an explicit
+  product privacy tolerance and test the intentional skip behavior beyond it; a threshold that expires before the
+  first scheduled successor is dead code for When-In-Use background refresh.

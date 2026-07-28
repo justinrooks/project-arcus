@@ -243,10 +243,29 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #367 — 08: Define the background location-context reuse policy
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Make authorization, age, accuracy, movement, and cache-miss decisions explicit.
 - **Required proof:** a pure deterministic policy matrix, including stale/travel and When-In-Use cases.
-- **Handoff:** No permission UX or persistence changes.
+- **Implementation:** Added the pure `Sendable` `BackgroundLocationContextReusePolicy`. Complete, valid cached context
+  may reuse only through an inclusive 90-minute explicit product privacy tolerance and inclusive 100-meter accuracy
+  boundary with no
+  movement/invalidation evidence. Always authorization otherwise attempts fresh location; When-In-Use reuses only an
+  eligible cache and otherwise skips location-dependent work. Denied, restricted, not-determined, and unknown states
+  skip without a prompt. Invalid coordinates, future timestamps, non-finite/nonpositive accuracy, incomplete context,
+  and corrupt cache never reuse.
+- **Tests:** Added `BackgroundLocationContextReusePolicyTests` covering authorization, cache, age and accuracy
+  boundaries, all 20/40/60-minute cadence bands, invalid values, movement/invalidation, stale travel risk, future timestamps, and fixed-input
+  determinism. `SkyAware.xcodeproj` excludes the new test source from the app target as required by its synchronized
+  test-folder membership configuration.
+- **Validation:** `BackgroundLocationContextReusePolicyTests` passed **10 / 10** with **0 failed, 0 skipped** on
+  iPhone 17, iOS 26.5, Debug
+  (`/private/tmp/skyaware-results.9Svt2U/location-policy-privacy-tolerance.xcresult`). Debug build passed
+  on iPhone 17. `git diff --check` passed.
+- **Residual risk:** `earliestBeginDate` does not bound scheduler delay. A launch beyond the 90-minute product privacy
+  tolerance intentionally skips location-dependent work under When-In-Use; this issue supplies no physical-device,
+  persistence, resolver, or NWS-reuse evidence.
+- **Handoff:** #366 may map durable cache restoration into this input contract and invoke the result. No permission UX,
+  persistence, live resolver, trigger, ingestion, or NWS changes were included.
 
 ### Issue #366 — 09: Reuse durable location and NWS region context
 

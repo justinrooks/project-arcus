@@ -114,6 +114,27 @@ Do not repeat the original investigation or load unrelated Today, Map, widget, o
 - `GridPointProvider` and `NwsMetadataRepo` own NWS region metadata.
 - `BgHealthStore` owns durable background diagnostics.
 
+## Issue #367 location-context reuse policy
+
+`BackgroundLocationContextReusePolicy` is a pure scheduled-refresh contract; it does not restore, persist, or
+resolve a `LocationContext`. Its caller supplies authorization, cache state, movement evidence, and an explicit
+evaluation time.
+
+| Condition | Always authorization | When-In-Use authorization |
+| --- | --- | --- |
+| Complete cache; valid coordinates; age 0...90 minutes; accuracy `(0, 100]` meters; no movement evidence | Reuse cached context | Reuse cached context |
+| Missing, corrupt, incomplete, stale, future-dated, invalid-coordinate, or unacceptable-accuracy cache | Attempt a fresh location | Skip location-dependent work |
+| Significant-location change or explicit invalidation | Attempt a fresh location | Skip location-dependent work |
+| Denied, restricted, not-determined, or unknown authorization | Skip location-dependent work | Skip location-dependent work |
+
+The 90-minute cap is an explicit product privacy tolerance, not a bound on scheduler lateness. Apple's
+[`earliestBeginDate`](https://developer.apple.com/documentation/backgroundtasks/bgtaskrequest/earliestbegindate)
+only prevents an earlier launch and does not guarantee a launch at that time. A delayed launch after 90 minutes
+therefore deliberately skips location-dependent work under When-In-Use rather than presenting arbitrary stale
+location. The 100-meter inclusive accuracy ceiling matches the accepted update gate. A significant-location change or
+explicit invalidation wins over age and accuracy. When-In-Use never prescribes a fresh background fix or permission
+prompt; #366 may wire eligible reuse only after it adds durable context storage and restoration.
+
 ## Sequential execution
 
 | Order | Work item | Preferred implementer | Stop condition |
