@@ -98,3 +98,5 @@
   cadence, but never present `earliestBeginDate` delay as bounded. State any longer reuse window as an explicit
   product privacy tolerance and test the intentional skip behavior beyond it; a threshold that expires before the
   first scheduled successor is dead code for When-In-Use background refresh.
+- When cached metadata is combined with a newer snapshot, run eligibility policy against the exact composite returned.
+  If the composite fails, explicitly evaluate the original cached value before discarding an otherwise valid fallback.

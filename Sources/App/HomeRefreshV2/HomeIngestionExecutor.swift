@@ -126,6 +126,36 @@ protocol HomeContextPreparing: AnyObject, Sendable {
     ) async -> LocationContext?
 
     func currentPreparedContext() async -> LocationContext?
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext?
+}
+
+extension HomeContextPreparing {
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext? {
+        await prepareCurrentLocationContext(
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: false,
+            uploadSource: uploadSource,
+            uploadReason: uploadReason,
+            authorizationTimeout: authorizationTimeout,
+            locationTimeout: locationTimeout,
+            maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+            placemarkTimeout: placemarkTimeout
+        )
+    }
 }
 
 extension LocationSession: HomeContextPreparing {
@@ -231,6 +261,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         await progress.report(.started(.location(plan.lanes)))
         let context = await resolveContext(
             for: plan.locationRequest,
+            isScheduledBackgroundRefresh: plan.isScheduledBackgroundRefresh,
             uploadSource: uploadSource(for: plan),
             uploadReason: uploadReason(for: plan),
             using: environment.locationSession
@@ -351,10 +382,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private func resolveContext(
         for request: HomeIngestionLocationRequest,
+        isScheduledBackgroundRefresh: Bool,
         uploadSource: LocationUploadSource?,
         uploadReason: LocationUploadReason?,
         using locationSession: any HomeContextPreparing
     ) async -> LocationContext? {
+        if isScheduledBackgroundRefresh {
+            return await locationSession.prepareScheduledBackgroundLocationContext(
+                uploadSource: uploadSource,
+                uploadReason: uploadReason,
+                authorizationTimeout: 30,
+                locationTimeout: 12,
+                maximumAcceptedLocationAge: 5 * 60,
+                placemarkTimeout: 8
+            )
+        }
         switch request {
         case .currentPrepared:
             if let current = await locationSession.currentPreparedContext() {

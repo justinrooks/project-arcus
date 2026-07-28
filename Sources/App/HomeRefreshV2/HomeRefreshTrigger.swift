@@ -136,8 +136,12 @@ struct HomeIngestionPlan: Sendable, Equatable {
     var provenance: HomeIngestionProvenance
     var remoteAlertContext: HomeRemoteAlertContext?
     var isLocationBearing: Bool
+    /// Only a standalone scheduled app refresh may apply durable-context reuse.
+    /// Merges intentionally clear this intent so stronger foreground semantics win.
+    var isScheduledBackgroundRefresh: Bool
 
     init(request: HomeIngestionRequest) {
+        isScheduledBackgroundRefresh = request.trigger == .backgroundRefresh
         switch request.trigger {
         case .bootstrap:
             lanes = .all
@@ -204,6 +208,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
         if let locationContext = request.locationContext {
             locationRequest = .explicit(locationContext)
             isLocationBearing = true
+            isScheduledBackgroundRefresh = false
         }
 
         remoteAlertContext = request.remoteAlertContext
@@ -212,6 +217,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
     }
 
     mutating func merge(with newer: Self) {
+        isScheduledBackgroundRefresh = isScheduledBackgroundRefresh && newer.isScheduledBackgroundRefresh
         lanes.formUnion(newer.lanes)
         lanes.insert(.hotAlerts)
         forcedLanes.formUnion(newer.forcedLanes)

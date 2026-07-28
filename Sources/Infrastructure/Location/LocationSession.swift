@@ -32,6 +32,7 @@ final class LocationSession {
     private let locationManager: LocationManager
     private let locationContextResolver: any LocationContextResolving
     private let locationUploadCoordinator: any LocationUploadCoordinating
+    private let durableContextCache: any DurableLocationContextCaching
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
@@ -56,12 +57,14 @@ final class LocationSession {
         locationClient: LocationClient,
         locationManager: LocationManager,
         locationContextResolver: any LocationContextResolving,
-        locationUploadCoordinator: any LocationUploadCoordinating
+        locationUploadCoordinator: any LocationUploadCoordinating,
+        durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache()
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
         self.locationContextResolver = locationContextResolver
         self.locationUploadCoordinator = locationUploadCoordinator
+        self.durableContextCache = durableContextCache
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -120,6 +123,7 @@ final class LocationSession {
         placemarkTimeout: Double = 8
     ) async -> LocationContext? {
         syncAuthorizationStatus()
+        invalidateDurableContextIfMoved(by: currentSnapshot)
 
         if authorizationStatus.isLocationAuthorized == false && showsAuthorizationPrompt == false {
             currentContext = nil
@@ -141,7 +145,7 @@ final class LocationSession {
                 placemarkTimeout: placemarkTimeout
             )
             currentSnapshot = context.snapshot
-            currentContext = context
+            applyResolvedContext(context)
             if let uploadSource {
                 await locationUploadCoordinator.enqueue(
                     context,
@@ -155,6 +159,89 @@ final class LocationSession {
         } catch {
             currentContext = nil
             startupState = .failed(Self.failureCode(for: error))
+            return nil
+        }
+    }
+
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext? {
+        syncAuthorizationStatus()
+
+        let providerSnapshot = await locationClient.snapshot()
+        let latestSnapshot = reconcileCurrentSnapshot(with: providerSnapshot)
+
+        let cachedContext = durableContextCache.load()
+        let movementEvidence = movementEvidence(for: cachedContext, currentSnapshot: latestSnapshot)
+        if movementEvidence != .none {
+            durableContextCache.invalidate()
+        }
+
+        let policy = BackgroundLocationContextReusePolicy()
+        let authorization = reuseAuthorization(for: authorizationStatus)
+        let now = Date.now
+        let refreshedContext = cachedContext.map {
+            refreshedContextIfStable($0, snapshot: latestSnapshot)
+        }
+        let refreshedDecision = policy.decide(.init(
+            authorization: authorization,
+            cache: reuseCacheState(for: refreshedContext),
+            movementEvidence: movementEvidence,
+            now: now
+        ))
+        let reusableContext: LocationContext?
+        if refreshedDecision == .reuseCachedContext {
+            reusableContext = refreshedContext
+        } else if let cachedContext,
+                  refreshedContext?.snapshot != cachedContext.snapshot,
+                  policy.decide(.init(
+                      authorization: authorization,
+                      cache: reuseCacheState(for: cachedContext),
+                      movementEvidence: movementEvidence,
+                      now: now
+                  )) == .reuseCachedContext {
+            reusableContext = cachedContext
+        } else {
+            reusableContext = nil
+        }
+
+        if let context = reusableContext {
+            currentSnapshot = context.snapshot
+            applyResolvedContext(context)
+            if let uploadSource {
+                await locationUploadCoordinator.enqueue(
+                    context,
+                    source: uploadSource,
+                    reason: uploadReason ?? .locationResolved,
+                    forceUpload: false
+                )
+            }
+            startupState = .ready
+            return context
+        }
+
+        switch refreshedDecision {
+        case .reuseCachedContext:
+            return nil
+        case .attemptFreshLocation:
+            return await prepareCurrentLocationContext(
+                requiresFreshLocation: true,
+                showsAuthorizationPrompt: false,
+                uploadSource: uploadSource,
+                uploadReason: uploadReason,
+                authorizationTimeout: authorizationTimeout,
+                locationTimeout: locationTimeout,
+                maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+                placemarkTimeout: placemarkTimeout
+            )
+        case .skipLocationDependentWork:
+            currentContext = nil
+            startupState = .failed("location-context-unavailable")
             return nil
         }
     }
@@ -307,9 +394,71 @@ final class LocationSession {
         if currentSnapshot != context.snapshot {
             currentSnapshot = context.snapshot
         }
-
-        guard currentContext?.refreshKey != context.refreshKey else { return }
         currentContext = context
+        durableContextCache.save(context)
+    }
+
+    private func invalidateDurableContextIfMoved(by snapshot: LocationSnapshot?) {
+        guard let cachedContext = durableContextCache.load(),
+              movementEvidence(for: cachedContext, currentSnapshot: snapshot) != .none else {
+            return
+        }
+        durableContextCache.invalidate()
+    }
+
+    private func movementEvidence(
+        for cachedContext: LocationContext?,
+        currentSnapshot: LocationSnapshot?
+    ) -> BackgroundLocationContextReusePolicy.MovementEvidence {
+        guard let cachedContext, let currentSnapshot,
+              currentSnapshot.timestamp > cachedContext.snapshot.timestamp else {
+            return .none
+        }
+        guard currentSnapshot.h3Cell == cachedContext.h3Cell else {
+            return .significantLocationChange
+        }
+        return .none
+    }
+
+    private func reconcileCurrentSnapshot(with providerSnapshot: LocationSnapshot?) -> LocationSnapshot? {
+        guard let providerSnapshot else { return currentSnapshot }
+        guard let currentSnapshot, currentSnapshot.timestamp > providerSnapshot.timestamp else {
+            currentSnapshot = providerSnapshot
+            return providerSnapshot
+        }
+        return currentSnapshot
+    }
+
+    private func refreshedContextIfStable(_ context: LocationContext, snapshot: LocationSnapshot?) -> LocationContext {
+        guard let snapshot,
+              snapshot.timestamp > context.snapshot.timestamp,
+              snapshot.h3Cell == context.h3Cell else {
+            return context
+        }
+        return LocationContext(snapshot: snapshot, h3Cell: context.h3Cell, grid: context.grid)
+    }
+
+    private func reuseCacheState(
+        for context: LocationContext?
+    ) -> BackgroundLocationContextReusePolicy.CacheState {
+        guard let context else { return .missing }
+        return .available(.init(
+            coordinatesAreValid: CLLocationCoordinate2DIsValid(context.snapshot.coordinates),
+            timestamp: context.snapshot.timestamp,
+            horizontalAccuracy: context.snapshot.accuracy,
+            isComplete: context.grid.countyCode?.isEmpty == false && context.grid.fireZone?.isEmpty == false
+        ))
+    }
+
+    private func reuseAuthorization(for status: CLAuthorizationStatus) -> BackgroundLocationContextReusePolicy.Authorization {
+        switch status {
+        case .authorizedAlways: .always
+        case .authorizedWhenInUse: .whenInUse
+        case .denied: .denied
+        case .restricted: .restricted
+        case .notDetermined: .notDetermined
+        @unknown default: .unknown
+        }
     }
 
     private func shouldRefreshContext(for snapshot: LocationSnapshot) -> Bool {

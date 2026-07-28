@@ -407,7 +407,8 @@ final class Dependencies: Sendable {
             locationClient: makeLocationClient(provider: locationProvider),
             locationManager: locationManager,
             locationContextResolver: locationContextResolver,
-            locationUploadCoordinator: locationUploadCoordinator
+            locationUploadCoordinator: locationUploadCoordinator,
+            durableContextCache: DurableLocationContextCache()
         )
         logger.info("Location session initialized")
         Task { @MainActor in

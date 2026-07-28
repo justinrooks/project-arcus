@@ -135,6 +135,18 @@ location. The 100-meter inclusive accuracy ceiling matches the accepted update g
 explicit invalidation wins over age and accuracy. When-In-Use never prescribes a fresh background fix or permission
 prompt; #366 may wire eligible reuse only after it adds durable context storage and restoration.
 
+## Issue #366 durable context integration
+
+- Durable storage is a versioned `UserDefaults` record containing coordinates, timestamp, horizontal accuracy, H3,
+  and machine NWS grid/region identifiers required to reconstruct `LocationContext`.
+- It excludes placemark summaries, city/state, county/fire display labels, upload queue payloads, credentials, and
+  tokens. Corrupt, partial, future-dated, invalid-coordinate, and incomplete-region records are deleted.
+- Only `.backgroundRefresh` provenance invokes #367. An eligible record is returned directly; it must not trigger a
+  location refresh, reverse-geocode, or NWS metadata request. Foreground, manual, onboarding, and location-change
+  paths retain their existing resolver behavior.
+- A newer snapshot with a changed H3 identity invalidates the durable record before fallible resolution. A newer
+  snapshot with the same H3 identity can refresh recency and accuracy while preserving cached grid identifiers.
+
 ## Sequential execution
 
 | Order | Work item | Preferred implementer | Stop condition |

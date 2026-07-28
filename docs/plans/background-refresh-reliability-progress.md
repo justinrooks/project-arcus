@@ -269,10 +269,25 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #366 — 09: Reuse durable location and NWS region context
 
-- **Status:** Planned
+- **Status:** Implemented; simulator test finalization pending
 - **Goal:** Avoid unnecessary fresh-location and NWS metadata prerequisites when issue 08 allows reuse.
 - **Required proof:** process-relaunch cache restoration, stable-location reuse, invalid/moved context refresh,
   corrupted-cache fallback, and privacy-safe persistence.
+- **Implementation:** Added versioned `UserDefaults` durable context persistence in `LocationSnapshotCache.swift` and
+  wired it through `LocationSession`, `HomeIngestionExecutor`, and `Dependencies`. Scheduled refresh is selected only
+  from background provenance (never the shared `(true, false)` request shape), applies #367, directly restores an
+  eligible context, and skips resolver/geocoder/NWS calls. Any newer snapshot in a different H3 identity invalidates
+  the durable record before fallible resolution; a stable newer snapshot refreshes the persisted timestamp/accuracy
+  while retaining truthful cached NWS identifiers.
+- **Privacy:** The record includes only coordinates, timestamp, accuracy, H3, and machine NWS grid/region fields.
+  It excludes placemark summaries, city/state, county/fire display labels, notification payloads, credentials, and
+  upload-queue fields. Corrupt, partial, future-dated, invalid-coordinate, and incomplete-region records are removed.
+- **Tests:** Added durable-cache process-restoration, raw-persistence privacy, and invalid-record tests to
+  `LocationContextResolverTests.swift`. Debug build passed on iPhone 17, Debug. The focused simulator test command
+  created `/private/tmp/skyaware-results.8ggUPt/location-context.xcresult`, but the bundle remained in staging and
+  did not produce an inspectable final result; no pass/fail count is claimed. Full unit lane remains pending.
+- **Residual risk:** Physical-device behavior remains owned by #360. Finish simulator test finalization and the full
+  unit lane before closing the issue; no scheduler cadence or energy claim is supported by this implementation.
 - **Handoff:** Stop and re-plan before a schema migration or more than five production files.
 
 ### Issue #365 — 10: Record truthful background execution and scheduling diagnostics

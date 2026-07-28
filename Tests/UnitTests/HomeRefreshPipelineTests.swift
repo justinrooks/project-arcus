@@ -2259,6 +2259,42 @@ struct HomeRefreshPipelineTests {
         #expect(snapshot.refreshKey == currentContext.refreshKey)
     }
 
+    @Test("only a standalone scheduled refresh uses durable-context preparation")
+    func scheduledLocationPreparationPreservesMergedForegroundSemantics() async throws {
+        let scheduled = HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
+        let remote = HomeIngestionPlan(request: .init(trigger: .remoteHotAlertReceived))
+        let foregroundMerged = scheduled.merged(with: .init(request: .init(trigger: .foregroundActivate)))
+        let manualMerged = scheduled.merged(with: .init(request: .init(trigger: .manualRefresh)))
+
+        #expect(scheduled.isScheduledBackgroundRefresh)
+        #expect(remote.isScheduledBackgroundRefresh == false)
+        #expect(foregroundMerged.isScheduledBackgroundRefresh == false)
+        #expect(manualMerged.isScheduledBackgroundRefresh == false)
+
+        for testCase in [scheduled, remote, foregroundMerged, manualMerged] {
+            let locationSession = FakeLocationSession(currentContext: nil, preparedContext: makeContext())
+            let spc = FakeSpcProvider()
+            let alerts = FakeAlertProvider()
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: spc,
+                    arcusAlertSync: alerts,
+                    weatherClient: FakeWeatherClient(),
+                    locationSession: locationSession,
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    projectionStore: nil,
+                    widgetSnapshotRefresher: nil
+                )
+            )
+
+            _ = try await executor.run(plan: testCase)
+
+            #expect(locationSession.scheduledPrepareCallCount == (testCase.isScheduledBackgroundRefresh ? 1 : 0))
+            #expect(locationSession.prepareCalls.count == 1)
+        }
+    }
+
     private func makeEnvironment(
         spc: FakeSpcProvider = FakeSpcProvider(),
         alerts: FakeAlertProvider = FakeAlertProvider(),
@@ -2855,6 +2891,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     var currentContext: LocationContext?
     var preparedContext: LocationContext?
     var prepareCalls: [PrepareCall] = []
+    var scheduledPrepareCallCount = 0
 
     private let prepareGate: AsyncGate?
 
@@ -2894,6 +2931,27 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
 
     func currentPreparedContext() async -> LocationContext? {
         currentContext
+    }
+
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext? {
+        scheduledPrepareCallCount += 1
+        return await prepareCurrentLocationContext(
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: false,
+            uploadSource: uploadSource,
+            uploadReason: uploadReason,
+            authorizationTimeout: authorizationTimeout,
+            locationTimeout: locationTimeout,
+            maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+            placemarkTimeout: placemarkTimeout
+        )
     }
 }
 
