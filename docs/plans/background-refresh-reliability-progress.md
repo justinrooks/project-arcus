@@ -153,11 +153,29 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #372 — 06: Characterize background ingestion ownership at expiration
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Lock the ownership matrix before active-run cancellation semantics change.
-- **Required proof:** background-only, shared foreground/background, fire-and-forget, queued follow-up, and
-  finish/cancel ordering tests.
-- **Handoff:** Test characterization only unless a Debug-only observation seam is essential.
+- **Ownership matrix:**
+  - **Pre-canceled background waiter:** the waiter is removed with `CancellationError`; its accepted coordinator run
+    still completes today. #369 must resolve this through serialized state: cancel if removal leaves the final
+    background owner after submission, but preserve exactly-once success if completion wins first.
+  - **Only active background waiter canceled:** the waiter is removed and the executor remains uncanceled through
+    completion today. #369 must cancel this final cancelable background-owner case.
+  - **Compatible foreground waiter joins a background-originated run:** canceling the background waiter leaves the
+    foreground waiter to complete; the executor remains uncanceled. #369 must preserve this shared work.
+  - **Background fire-and-forget submission:** a joining foreground waiter may cancel, while the explicit submission
+    keeps the executor running. #369 must preserve explicit fire-and-forget work.
+  - **Queued background follow-up waiter canceled:** the waiter receives `CancellationError`, no later callbacks,
+    and its pending background plan still starts after the active run completes. #369 must retain the established
+    pending-plan behavior until it has explicit ownership evidence; this issue does not redesign queued work.
+  - **Finish-before-cancel and repeated cancel:** existing coordinator tests prove successful completion wins once
+    finish removes the waiter, and duplicate cancellation resumes a waiter only once while the shared executor stays
+    active. These remain invariants for #369.
+- **Validation:** Debug `SkyAware_Tests` focused coordinator and background-cadence suites passed **47 / 47** with
+  **0 failed, 0 skipped** on iPhone 17 / iOS 26.5. Result bundle:
+  `/private/tmp/skyaware-results.uyDHI4/background-ownership.xcresult`.
+- **Handoff:** Test-only characterization. No Debug seam was necessary; #369 owns the intentional transition for
+  the final background-only active owner.
 
 ### Issue #369 — 07: Cancel unowned background ingestion without disrupting shared runs
 
