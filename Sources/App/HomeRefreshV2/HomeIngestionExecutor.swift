@@ -316,6 +316,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
 
         let coreSnapshot = snapshot
+        guard try await shouldAdmitStormSetupEnrichment(executionMode: executionMode) else {
+            return coreSnapshot
+        }
         async let stormSetupRefreshTask = stormSetupIngestion.refresh(
             context: context,
             snapshot: coreSnapshot,
@@ -328,6 +331,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             executionMode: executionMode
         )
         let (stormSetupRefresh, airQualityOutcome) = await (stormSetupRefreshTask, airQualityTask)
+        try await throwIfBackgroundEnrichmentCancelled(executionMode: executionMode)
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
         snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup
@@ -661,6 +665,32 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private func throwIfBackgroundDeadlineExceeded() async throws {
         try await BackgroundRefreshExecutionContext.current?.deadlineState.throwIfExceeded()
+    }
+
+    private func shouldAdmitStormSetupEnrichment(executionMode: HTTPExecutionMode) async throws -> Bool {
+        guard executionMode == .background, let executionContext = BackgroundRefreshExecutionContext.current else {
+            return true
+        }
+
+        let admission = executionContext.budget.admission(
+            for: .seconds(environment.stormSetupForegroundTimeout),
+            at: ContinuousClock().now,
+            isCancelled: Task.isCancelled
+        )
+        switch admission {
+        case .admitted:
+            return true
+        case .cancelled:
+            throw CancellationError()
+        case .workDeadlineReached, .insufficientTime:
+            return false
+        }
+    }
+
+    private func throwIfBackgroundEnrichmentCancelled(executionMode: HTTPExecutionMode) async throws {
+        guard executionMode == .background else { return }
+        try Task.checkCancellation()
+        try await throwIfBackgroundDeadlineExceeded()
     }
 
     private func slowProductPersistenceDecision(

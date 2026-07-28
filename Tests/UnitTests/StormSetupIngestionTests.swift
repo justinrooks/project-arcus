@@ -454,6 +454,155 @@ struct StormSetupIngestionTests {
         #expect(await airQualityGate.cancelledWaitCount() == 1)
     }
 
+    @Test("background Storm Setup skips optional enrichment when less than its timeout estimate remains")
+    func backgroundStormSetupSkipsWhenBudgetIsInsufficient() async throws {
+        let context = makeContext()
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(context: context)
+        let executionContext = makeBackgroundExecutionContext(remainingWork: .seconds(4))
+
+        let snapshot = try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+            try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+                progress: HomeIngestionRunProgress(
+                    markHotAlertsCompleted: {},
+                    report: { _ in },
+                    publish: { publication in
+                        await publications.append(publication)
+                    }
+                )
+            )
+        }
+
+        #expect(await harness.query.requestCount() == 0)
+        #expect(snapshot.stormSetup == nil)
+        #expect(await publications.values().count == 1)
+        guard case .core = try #require(await publications.values().first).stage else {
+            Issue.record("Expected only the durable core publication")
+            return
+        }
+    }
+
+    @Test("background Storm Setup enriches when its timeout estimate fits the remaining budget")
+    func backgroundStormSetupEnrichesWhenBudgetIsSufficient() async throws {
+        let context = makeContext()
+        let dto = makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(response: .success(dto))
+        )
+        let executionContext = makeBackgroundExecutionContext(remainingWork: .seconds(10))
+
+        let snapshot = try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+            try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+                progress: HomeIngestionRunProgress(
+                    markHotAlertsCompleted: {},
+                    report: { _ in },
+                    publish: { publication in
+                        await publications.append(publication)
+                    }
+                )
+            )
+        }
+
+        #expect(await harness.query.requestCount() == 1)
+        #expect(await harness.query.executionModes() == [.background])
+        #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
+        #expect(snapshot.stormSetupRefreshResult == .success)
+        #expect(await publications.values().count == 2)
+    }
+
+    @Test("background parent cancellation during Storm Setup throws without final enrichment publication")
+    func backgroundStormSetupParentCancellationThrowsAndPreservesCachedPersistence() async throws {
+        let context = makeContext()
+        let cached = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(-60),
+            summary: "diagnostic cache"
+        )
+        let gate = CancellationGate()
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(
+                response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+                gate: gate
+            )
+        )
+        _ = try await harness.projectionStore.updateStormSetup(
+            cached.stormSetupCurrentResponse,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-600)
+        )
+        let executionContext = makeBackgroundExecutionContext(remainingWork: .seconds(10))
+        let task = Task { @MainActor in
+            try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                try await harness.executor.run(
+                    plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+                    progress: HomeIngestionRunProgress(
+                        markHotAlertsCompleted: {},
+                        report: { _ in },
+                        publish: { publication in
+                            await publications.append(publication)
+                        }
+                    )
+                )
+            }
+        }
+
+        #expect(await waitUntil(timeout: 5) { await harness.query.requestCount() == 1 })
+        task.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+
+        #expect(await gate.cancelledWaitCount() == 1)
+        #expect(await publications.values().count == 1)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.stormSetup == normalizedStormSetupDTO(cached))
+        #expect(persisted.lastStormSetupLoadAt == fixedNow.addingTimeInterval(-600))
+    }
+
+    @Test("background HTTP deadline during Storm Setup throws without final enrichment publication")
+    func backgroundStormSetupDeadlineThrowsWithoutFinalEnrichmentPublication() async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(
+                response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+                gate: gate,
+                marksBackgroundDeadlineAfterGate: true
+            )
+        )
+        let executionContext = makeBackgroundExecutionContext(remainingWork: .seconds(10))
+        let task = Task { @MainActor in
+            try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                try await harness.executor.run(
+                    plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+                    progress: HomeIngestionRunProgress(
+                        markHotAlertsCompleted: {},
+                        report: { _ in },
+                        publish: { publication in
+                            await publications.append(publication)
+                        }
+                    )
+                )
+            }
+        }
+
+        #expect(await waitUntil(timeout: 5) { await harness.query.requestCount() == 1 })
+        await gate.open()
+        await #expect(throws: CancellationError.self) {
+            try await task.value
+        }
+
+        #expect(await publications.values().count == 1)
+    }
+
     @Test("AQI executes only for foreground weather-lane triggers")
     func airQualityTriggerMatrixPreservesBackgroundAndNonWeatherPlans() async throws {
         let context = makeContext()
@@ -1497,6 +1646,18 @@ struct StormSetupIngestionTests {
         return LocationContext(snapshot: snapshot, h3Cell: snapshot.h3Cell ?? 123_456, grid: grid)
     }
 
+    private func makeBackgroundExecutionContext(remainingWork: Duration) -> BackgroundRefreshExecutionContext {
+        let clock = ContinuousClock()
+        let start = clock.now
+        return .init(
+            budget: .init(
+                start: start,
+                completionDeadline: start + remainingWork + .seconds(5),
+                finalizationReserve: .seconds(5)
+            )
+        )
+    }
+
     private func makeStormSetupDTO(
         h3Cell: Int64,
         expiresAt: Date,
@@ -2019,6 +2180,7 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
 
     private var response: Response
     private let gate: CancellationGate?
+    private let marksBackgroundDeadlineAfterGate: Bool
     private var requests: [QueryRecord] = []
 
     struct QueryRecord: Sendable, Equatable {
@@ -2026,9 +2188,14 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
         let executionMode: HTTPExecutionMode
     }
 
-    init(response: Response, gate: CancellationGate? = nil) {
+    init(
+        response: Response,
+        gate: CancellationGate? = nil,
+        marksBackgroundDeadlineAfterGate: Bool = false
+    ) {
         self.response = response
         self.gate = gate
+        self.marksBackgroundDeadlineAfterGate = marksBackgroundDeadlineAfterGate
     }
 
     func fetchCurrentStormSetup(h3Cell: Int64) async throws -> StormSetupCurrentResponse {
@@ -2036,6 +2203,10 @@ private actor StormSetupQueryingFake: StormSetupQuerying {
         await gate?.markStarted()
         if let gate {
             try await gate.wait()
+        }
+        if marksBackgroundDeadlineAfterGate {
+            await BackgroundRefreshExecutionContext.current?.deadlineState.markExceeded()
+            throw CancellationError()
         }
 
         switch response {

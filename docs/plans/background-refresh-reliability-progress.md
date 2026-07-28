@@ -178,10 +178,21 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #370 — 05: Make optional enrichment deadline-aware and cancellation-transparent
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Admit optional Storm Setup only with sufficient budget and preserve cancellation as cancellation.
 - **Required proof:** near-deadline skip, mid-request cancellation, successful enrichment, and core completion.
-- **Handoff:** AQI is already removed by issue 02; do not create detached enrichment.
+- **Implementation:** `HomeIngestionExecutor` now admits background Storm Setup using the configured five-second Storm
+  Setup timeout as the `BackgroundRefreshBudget` estimate. Insufficient work time returns the already-published core
+  snapshot without a provider request or enrichment publication. After joined optional work, background parent
+  cancellation and HTTP deadline exhaustion throw `CancellationError` before a nominal enrichment publication; the
+  foreground Storm Setup timeout and nonthrowing cancellation policy remain unchanged.
+- **Validation:** `StormSetupIngestionTests` and `BackgroundOrchestratorCadenceTests` passed **68 / 68** with
+  **0 failed, 0 skipped** on iPhone 17, iOS 26.5, Debug
+  (`/private/tmp/skyaware-results.oMZrlo/optional-enrichment.xcresult`). Full `SkyAwareTests` passed **965 / 965**
+  with **0 failed, 0 skipped** on the same simulator/configuration; the device-configuration counter reports
+  **972** parameterized runs (`/private/tmp/skyaware-results.DjzvwF/unit.xcresult`). Debug build passed on iPhone 17.
+- **Handoff:** AQI remains foreground-only; #369 still owns active-run ownership changes. No detached enrichment was
+  introduced.
 
 ### Issue #372 — 06: Characterize background ingestion ownership at expiration
 
@@ -248,7 +259,7 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 | 02 | Pending | Pending | Pending | Not required |
 | 03 | Pending | Pending | Pending | Deferred to #360 |
 | 04 | Pending | Pending | Pending | Deferred to #360 |
-| 05 | Pending | Pending | Pending | Deferred to #360 |
+| 05 | Passed (68/68) | Passed (965/965) | Passed | Deferred to #360 |
 | 06 | Pending | Not required unless production seam changes | Conditional | Not required |
 | 07 | Pending | Pending | Pending | Deferred to #360 |
 | 08 | Pending | Conditional | Conditional | Deferred to #360 |
