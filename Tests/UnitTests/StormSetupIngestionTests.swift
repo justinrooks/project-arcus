@@ -565,6 +565,30 @@ struct StormSetupIngestionTests {
         #expect(persisted.lastStormSetupLoadAt == fixedNow.addingTimeInterval(-600))
     }
 
+    @Test("coordinator cancellation reaches a blocked Storm Setup request")
+    func coordinatorCancellation_reachesBlockedStormSetupRequest() async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let harness = try makeHarness(
+            context: context,
+            query: StormSetupQueryingFake(
+                response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+                gate: gate
+            )
+        )
+        let coordinator = HomeIngestionCoordinator(executor: harness.executor)
+        let waiter = Task { @MainActor in
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+
+        await gate.waitForStartedCount(1)
+        waiter.cancel()
+        await gate.waitForCancelledWaitCount(1)
+        await #expect(throws: CancellationError.self) {
+            try await waiter.value
+        }
+    }
+
     @Test("background HTTP deadline during Storm Setup throws without final enrichment publication")
     func backgroundStormSetupDeadlineThrowsWithoutFinalEnrichmentPublication() async throws {
         let context = makeContext()
@@ -1756,9 +1780,12 @@ private actor CancellationGate {
     private var started = 0
     private var settledWaits = 0
     private var cancelledWaits = 0
+    private var startedContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var cancelledWaitContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
 
     func markStarted() {
         started += 1
+        resumeContinuations(&startedContinuations, whenCountReaches: started)
     }
 
     func wait() async throws {
@@ -1769,6 +1796,7 @@ private actor CancellationGate {
                 try await Task.sleep(for: .milliseconds(5))
             } catch {
                 cancelledWaits += 1
+                resumeContinuations(&cancelledWaitContinuations, whenCountReaches: cancelledWaits)
                 throw error
             }
         }
@@ -1782,12 +1810,37 @@ private actor CancellationGate {
         started
     }
 
+    func waitForStartedCount(_ expectedCount: Int) async {
+        guard started < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            startedContinuations[expectedCount, default: []].append(continuation)
+        }
+    }
+
     func cancelledWaitCount() -> Int {
         cancelledWaits
     }
 
+    func waitForCancelledWaitCount(_ expectedCount: Int) async {
+        guard cancelledWaits < expectedCount else { return }
+        await withCheckedContinuation { continuation in
+            cancelledWaitContinuations[expectedCount, default: []].append(continuation)
+        }
+    }
+
     func settledWaitCount() -> Int {
         settledWaits
+    }
+
+    private func resumeContinuations(
+        _ continuations: inout [Int: [CheckedContinuation<Void, Never>]],
+        whenCountReaches count: Int
+    ) {
+        let satisfiedCounts = continuations.keys.filter { $0 <= count }
+        for expectedCount in satisfiedCounts {
+            let pending = continuations.removeValue(forKey: expectedCount) ?? []
+            pending.forEach { $0.resume() }
+        }
     }
 }
 

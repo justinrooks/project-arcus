@@ -467,8 +467,8 @@ struct HomeIngestionCoordinatorTests {
         await executor.waitForCompletedRun(1)
     }
 
-    @Test("a pre-canceled background waiter is removed while its accepted run completes")
-    func preCanceledBackgroundWaiter_isRemovedWhileAcceptedRunCompletes() async {
+    @Test("a pre-canceled background waiter cancels its accepted run")
+    func preCanceledBackgroundWaiter_cancelsAcceptedRun() async {
         let submissionGate = AsyncGate()
         let executor = ControlledHomeIngestionExecutor()
         let coordinator = HomeIngestionCoordinator(executor: executor)
@@ -483,14 +483,12 @@ struct HomeIngestionCoordinatorTests {
         await executor.waitForStartedRun(1)
         await expectCancellation(waiter)
         #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
-
-        await executor.releaseRun(1)
         await executor.waitForCompletedRun(1)
-        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(await executor.wasCanceled(run: 1))
     }
 
-    @Test("canceling the only background waiter leaves its active executor running")
-    func canceledOnlyBackgroundWaiter_leavesActiveExecutorRunning() async {
+    @Test("canceling the only background waiter cancels its active executor")
+    func canceledOnlyBackgroundWaiter_cancelsActiveExecutor() async {
         let executor = ControlledHomeIngestionExecutor()
         let coordinator = HomeIngestionCoordinator(executor: executor)
 
@@ -504,10 +502,34 @@ struct HomeIngestionCoordinatorTests {
         backgroundWaiter.cancel()
         await expectCancellation(backgroundWaiter)
         #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1))
+    }
+
+    @Test("one active background waiter retains shared work after another cancels")
+    func remainingBackgroundWaiter_retainsSharedRunAfterPeerCancellation() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let firstWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let secondWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        firstWaiter.cancel()
+        await expectCancellation(firstWaiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 1)
 
         await executor.releaseRun(1)
         await executor.waitForCompletedRun(1)
         #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await secondWaiter.value == .empty)
     }
 
     @Test("a foreground waiter retains a background-originated compatible run")
@@ -534,6 +556,58 @@ struct HomeIngestionCoordinatorTests {
         await executor.waitForCompletedRun(1)
         #expect(await executor.wasCanceled(run: 1) == false)
         #expect(try await foregroundWaiter.value == .empty)
+    }
+
+    @Test("a remote-alert waiter retains a compatible background-originated run")
+    func remoteAlertWaiter_retainsBackgroundOriginatedCompatibleRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let remoteAlertContext = HomeRemoteAlertContext(alertID: "retained-alert")
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(
+                HomeIngestionRequest(trigger: .backgroundRefresh, remoteAlertContext: remoteAlertContext)
+            )
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let remoteWaiter = Task {
+            try await coordinator.enqueueAndWait(.remoteHotAlertReceived, remoteAlertContext: remoteAlertContext)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await remoteWaiter.value == .empty)
+    }
+
+    @Test("a location waiter retains a compatible background-originated run")
+    func locationWaiter_retainsBackgroundOriginatedCompatibleRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+
+        let locationWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundLocationChange, locationContext: context)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await locationWaiter.value == .empty)
     }
 
     @Test("background fire-and-forget ownership retains shared work after waiter cancellation")
@@ -589,6 +663,29 @@ struct HomeIngestionCoordinatorTests {
         #expect(await progressCallbacks.value() == 0)
         #expect(await publicationCallbacks.value() == 0)
 
+        await executor.releaseRun(2)
+        await executor.waitForCompletedRun(2)
+        #expect(await executor.wasCanceled(run: 2) == false)
+    }
+
+    @Test("queued fire-and-forget ownership survives a canceled background waiter")
+    func queuedFireAndForgetOwnership_retainsFollowUpAfterWaiterCancellation() async {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        await coordinator.enqueue(.backgroundRefresh)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+
+        await executor.releaseRun(1)
+        await executor.waitForStartedRun(2)
         await executor.releaseRun(2)
         await executor.waitForCompletedRun(2)
         #expect(await executor.wasCanceled(run: 2) == false)
@@ -1066,6 +1163,7 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
     private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
     private let startedRuns = AsyncCount()
     private let completedRuns = AsyncCount()
+    private let canceledRuns = AsyncCount()
     private var canceledRunNumbers: Set<Int> = []
 
     init(snapshot: HomeSnapshot = .empty) {
@@ -1078,12 +1176,23 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
         let run = progresses.count
         await startedRuns.record()
 
-        await withCheckedContinuation { continuation in
-            releaseContinuations[run] = continuation
-        }
-
-        if Task.isCancelled {
-            canceledRunNumbers.insert(run)
+        do {
+            try await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    releaseContinuations[run] = continuation
+                }
+                if Task.isCancelled {
+                    cancel(run)
+                }
+                try Task.checkCancellation()
+            } onCancel: {
+                Task {
+                    await self.cancel(run)
+                }
+            }
+        } catch {
+            await completedRuns.record()
+            throw error
         }
         await completedRuns.record()
         return snapshot
@@ -1120,6 +1229,11 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
 
     func wasCanceled(run: Int) -> Bool {
         canceledRunNumbers.contains(run)
+    }
+
+    private func cancel(_ run: Int) {
+        guard canceledRunNumbers.insert(run).inserted else { return }
+        releaseContinuations.removeValue(forKey: run)?.resume()
     }
 
     private func progress(for run: Int) -> HomeIngestionRunProgress {

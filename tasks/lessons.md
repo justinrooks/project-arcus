@@ -89,3 +89,8 @@
 - When background and foreground ingestion ownership can share a coordinator, never let deadline state fail a
   foreground waiter merely because plans are compatible; queue it for an unbudgeted follow-up and track waiter/run
   eligibility so the preceding background result cannot resolve it.
+- When deciding whether cancellation has removed the final owner of an actor-serialized run, count the remaining
+  active-run owners directly. Do not use a predicate that classifies them as cancelable, because a cancelable waiter
+  remains an owner until it is actually removed.
+- Test seams that expose terminal execution must acknowledge both success and cancellation before rethrowing; a
+  success-only completion counter turns cancellation tests into deadlocks.

@@ -53,11 +53,16 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         let publication: HomeIngestionPublicationHandler?
         let continuation: CheckedContinuation<HomeSnapshot, Error>
         var earliestRunNumber = 0
+
+        var isCancelableBackgroundOwner: Bool {
+            requestedPlan.provenance == .background
+        }
     }
 
     private struct PendingRun {
         let plan: HomeIngestionPlan
         let executionContext: BackgroundRefreshExecutionContext?
+        let hasFireAndForgetOwner: Bool
     }
 
     private let executor: any HomeIngestionExecuting
@@ -69,6 +74,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private var activeRunNumber = 0
     private var activeRunStartedAt: Date?
     private var activeRunCanAbsorbRemoteHotAlert = false
+    private var activeRunHasFireAndForgetOwner = false
     private var pendingRun: PendingRun?
     private var waiters: [UUID: Waiter] = [:]
 
@@ -127,6 +133,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private func submit(_ requestedPlan: HomeIngestionPlan, waiter: Waiter?) {
         let executionContext = BackgroundRefreshExecutionContext.current
+        let hasFireAndForgetOwner = waiter == nil
         if let activePlan,
            activePlan.satisfies(requestedPlan),
            activePlanCanSatisfy(requestedPlan),
@@ -134,6 +141,9 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
             logger.debug(
                 "Home ingestion request joined active run requested={\(requestedPlan.logDescription)} active={\(activePlan.logDescription)}"
             )
+            if hasFireAndForgetOwner {
+                activeRunHasFireAndForgetOwner = true
+            }
             store(waiter, earliestRunNumber: activeRunNumber)
             return
         }
@@ -151,20 +161,29 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                         pending: pendingRun.executionContext,
                         submittedPlan: requestedPlan,
                         submitted: executionContext
-                    )
+                    ),
+                    hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
                 )
             } else {
                 logger.debug(
                     "Home ingestion request queued as follow-up requested={\(requestedPlan.logDescription)}"
                 )
-                pendingRun = .init(plan: requestedPlan, executionContext: executionContext)
+                pendingRun = .init(
+                    plan: requestedPlan,
+                    executionContext: executionContext,
+                    hasFireAndForgetOwner: hasFireAndForgetOwner
+                )
             }
             store(waiter, earliestRunNumber: activeRunNumber + 1)
             return
         }
 
         store(waiter, earliestRunNumber: activeRunNumber + 1)
-        startRun(with: requestedPlan, executionContext: executionContext)
+        startRun(
+            with: requestedPlan,
+            executionContext: executionContext,
+            hasFireAndForgetOwner: hasFireAndForgetOwner
+        )
     }
 
     private func mergedExecutionContext(
@@ -194,9 +213,19 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func cancelWaiter(withID waiterID: UUID) {
         guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
         waiter.continuation.resume(throwing: CancellationError())
+        if waiter.earliestRunNumber == activeRunNumber,
+           waiter.isCancelableBackgroundOwner,
+           activeRunHasNoOwners {
+            activeTask?.cancel()
+        }
         #if DEBUG
         notifyWaiterCountObservers()
         #endif
+    }
+
+    private var activeRunHasNoOwners: Bool {
+        guard activeRunHasFireAndForgetOwner == false else { return false }
+        return waiters.values.contains { $0.earliestRunNumber == activeRunNumber } == false
     }
 
     #if DEBUG
@@ -239,7 +268,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private func startRun(
         with plan: HomeIngestionPlan,
-        executionContext: BackgroundRefreshExecutionContext?
+        executionContext: BackgroundRefreshExecutionContext?,
+        hasFireAndForgetOwner: Bool
     ) {
         let runID = UUID()
         activeRunNumber += 1
@@ -248,6 +278,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         activeExecutionContext = executionContext
         activeRunStartedAt = Date()
         activeRunCanAbsorbRemoteHotAlert = plan.forcedLanes.contains(.hotAlerts)
+        activeRunHasFireAndForgetOwner = hasFireAndForgetOwner
         logger.info("Home ingestion run started plan={\(plan.logDescription)}")
 
         let task = Task {
@@ -290,6 +321,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         activeExecutionContext = nil
         activeRunStartedAt = nil
         activeRunCanAbsorbRemoteHotAlert = false
+        activeRunHasFireAndForgetOwner = false
 
         let satisfiedWaiterIDs = waiters.compactMap { id, waiter in
             waiter.earliestRunNumber <= runNumber && plan.satisfies(waiter.requestedPlan) ? id : nil
@@ -324,7 +356,11 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
         self.pendingRun = nil
         logger.info("Starting queued follow-up home ingestion plan={\(pendingRun.plan.logDescription)}")
-        startRun(with: pendingRun.plan, executionContext: pendingRun.executionContext)
+        startRun(
+            with: pendingRun.plan,
+            executionContext: pendingRun.executionContext,
+            hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner
+        )
     }
 
     private func activePlanCanSatisfy(_ requestedPlan: HomeIngestionPlan) -> Bool {

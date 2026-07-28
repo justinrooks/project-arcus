@@ -222,11 +222,24 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #369 — 07: Cancel unowned background ingestion without disrupting shared runs
 
-- **Status:** Planned
+- **Status:** Implemented; simulator validation blocked (2026-07-28)
 - **Goal:** Stop a run after its final background owner cancels while retaining useful shared work.
 - **Required proof:** real executor cancellation reaches HTTP/enrichment; retained owners finish; continuations resume
   once; pending-plan semantics remain.
-- **Handoff:** Stop and justify Sol/high only if the issue 06 matrix exposes an uncontained multi-owner race.
+- **Implementation:** `HomeIngestionCoordinator` now classifies a plain background waiter as cancelable, records
+  explicit `enqueue(...)` ownership for active and pending runs, and cancels only the current active task after the
+  final cancelable active waiter disappears. Foreground, remote-alert, location, and explicit owners retain shared
+  work; pending plans and their execution contexts remain untouched until normal `finishRun` advancement.
+- **Tests:** Updated the two #372 expectations for pre-canceled and sole active background waiters. Added
+  foreground/remote-alert/location/explicit-pending retention coverage and a coordinator-to-blocked-Storm-Setup
+  cancellation test using actor acknowledgements.
+- **Validation:** Debug build completed on iPhone 17. The requested focused test invocation compiled and installed
+  the test bundle but the simulator runner remained at `wait_for_debugger`; its result bundles were not finalized
+  and `xcresulttool` could not inspect counts. Result directory:
+  `/private/tmp/skyaware-results.5twe3Z`. `git diff --check` passed.
+- **Handoff:** No ownership race requires Sol/high: the existing actor, active task, and run number serialize the
+  cancellation/completion path. Full-unit validation remains blocked on the simulator runner and must be rerun before
+  closing the issue; no physical-device claim is made.
 
 ### Issue #367 — 08: Define the background location-context reuse policy
 
