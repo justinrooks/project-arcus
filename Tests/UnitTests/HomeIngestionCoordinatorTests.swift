@@ -418,7 +418,7 @@ struct HomeIngestionCoordinatorTests {
         await executor.waitForStartedRun(1)
 
         let foregroundWaiter = Task {
-            try await coordinator.enqueueAndWait(.remoteHotAlertOpened)
+            try await coordinator.enqueueAndWait(.sessionTick)
         }
         await coordinator.waitForTestWaiterCount(atLeast: 2)
 

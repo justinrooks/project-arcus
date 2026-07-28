@@ -161,8 +161,8 @@ completed/caught outcomes and store a desired next date before scheduler submiss
     background owner after submission, but preserve exactly-once success if completion wins first.
   - **Only active background waiter canceled:** the waiter is removed and the executor remains uncanceled through
     completion today. #369 must cancel this final cancelable background-owner case.
-  - **Compatible foreground waiter joins a background-originated run:** canceling the background waiter leaves the
-    foreground waiter to complete; the executor remains uncanceled. #369 must preserve this shared work.
+  - **Compatible foreground session-tick waiter joins a background-originated run:** canceling the background waiter
+    leaves the foreground waiter to complete; the executor remains uncanceled. #369 must preserve this shared work.
   - **Background fire-and-forget submission:** a joining foreground waiter may cancel, while the explicit submission
     keeps the executor running. #369 must preserve explicit fire-and-forget work.
   - **Queued background follow-up waiter canceled:** the waiter receives `CancellationError`, no later callbacks,
@@ -173,7 +173,7 @@ completed/caught outcomes and store a desired next date before scheduler submiss
     active. These remain invariants for #369.
 - **Validation:** Debug `SkyAware_Tests` focused coordinator and background-cadence suites passed **47 / 47** with
   **0 failed, 0 skipped** on iPhone 17 / iOS 26.5. Result bundle:
-  `/private/tmp/skyaware-results.uyDHI4/background-ownership.xcresult`.
+  `/private/tmp/skyaware-results.2oCz5g/background-ownership.xcresult`.
 - **Handoff:** Test-only characterization. No Debug seam was necessary; #369 owns the intentional transition for
   the final background-only active owner.
 

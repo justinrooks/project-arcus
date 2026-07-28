@@ -78,3 +78,8 @@
   state, and configuration differences before changing the named test again.
 - Never let a persisted test fixture hard-code authorization or preference state while the operation under test reads
   that state from the simulator. Inject matching providers so a developer simulator cannot hide clean-Cloud behavior.
+
+## 2026-07-28
+
+- When characterizing coordinator compatibility, construct requests exactly as production does. A trigger without its
+  production-required context can bypass a compatibility guard and turn a queued request into a synthetic join.
