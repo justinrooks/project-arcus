@@ -106,11 +106,20 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #371 — 01: Schedule the next app refresh before ingestion
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Keep a successor request pending even if ingestion expires or fails.
 - **Required proof:** submission precedes blocked work; evaluated success may replace the fallback; cancellation and
   failure leave a valid successor.
-- **Handoff:** Do not change cadence bands or global work budgets.
+- **Implementation:** `BackgroundRefreshLifecycle` awaits conservative ensure scheduling before orchestration, then
+  submits the evaluated `Outcome.next` authoritatively. `BackgroundScheduler` now reports submission/preservation
+  outcomes and restores the prior request if an authoritative replacement is rejected.
+- **Validation:** `BackgroundSchedulerReplacementPolicyTests` and `BackgroundRefreshLifecycleTests` passed 12/12 on
+  iPhone 17, iOS 26.5, Debug (`/private/tmp/skyaware-results.9OwyAN/background-refresh-lifecycle.xcresult`). The
+  full `SkyAwareTests` lane passed 931/931 on the same simulator/configuration
+  (`/private/tmp/skyaware-results.b2ldLY/unit.xcresult`); the result bundle's per-configuration counter reports 938
+  parameterized runs. Debug build passed on iPhone 17.
+- **Residual risk:** System submission remains discretionary; physical-device cadence evidence remains deferred to
+  issue #360. Do not change cadence bands or global work budgets.
 
 ### Issue #374 — 02: Remove air quality from background ingestion
 
@@ -185,7 +194,7 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 | Issue | Focused tests | Full unit lane | Build | Physical-device evidence |
 | ---: | --- | --- | --- | --- |
-| 01 | Pending | Pending | Pending | Deferred to #360 |
+| 01 | Passed (12/12) | Passed (931/931) | Passed | Deferred to #360 |
 | 02 | Pending | Pending | Pending | Not required |
 | 03 | Pending | Pending | Pending | Deferred to #360 |
 | 04 | Pending | Pending | Pending | Deferred to #360 |

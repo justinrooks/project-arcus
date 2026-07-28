@@ -9,13 +9,59 @@ import Foundation
 import OSLog
 import BackgroundTasks
 
+protocol BackgroundSchedulingBackend: Sendable {
+    func pendingRequest(for id: String) async -> BackgroundScheduler.PendingRequest
+    func cancel(taskRequestWithIdentifier id: String) async
+    func submit(identifier: String, earliestBeginDate: Date) async throws
+}
+
+private struct SystemBackgroundSchedulingBackend: BackgroundSchedulingBackend {
+    func pendingRequest(for id: String) async -> BackgroundScheduler.PendingRequest {
+        await withCheckedContinuation { continuation in
+            BGTaskScheduler.shared.getPendingTaskRequests { requests in
+                let matching = requests.filter { $0.identifier == id }
+                guard matching.isEmpty == false else {
+                    continuation.resume(returning: .none)
+                    return
+                }
+
+                if matching.contains(where: { $0.earliestBeginDate == nil }) {
+                    continuation.resume(returning: .immediate)
+                    return
+                }
+
+                if let earliest = matching.compactMap(\.earliestBeginDate).min() {
+                    continuation.resume(returning: .at(earliest))
+                } else {
+                    continuation.resume(returning: .none)
+                }
+            }
+        }
+    }
+
+    func cancel(taskRequestWithIdentifier id: String) async {
+        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: id)
+    }
+
+    func submit(identifier: String, earliestBeginDate: Date) async throws {
+        let request = BGAppRefreshTaskRequest(identifier: identifier)
+        request.earliestBeginDate = earliestBeginDate
+        try BGTaskScheduler.shared.submit(request)
+    }
+}
+
 struct BackgroundScheduler {
     private let logger = Logger.backgroundScheduler
     private let appRefreshID: String
     private let replacementTolerance: TimeInterval = 120
+    private let backend: any BackgroundSchedulingBackend
     
-    init(refreshId: String) {
+    init(
+        refreshId: String,
+        backend: any BackgroundSchedulingBackend = SystemBackgroundSchedulingBackend()
+    ) {
         appRefreshID = refreshId
+        self.backend = backend
     }
     
     enum SchedulingIntent {
@@ -36,33 +82,53 @@ struct BackgroundScheduler {
         case replace(existing: Date)
     }
 
+    enum SchedulingOutcome: Sendable, Equatable {
+        case submitted
+        case preservedExisting
+        case preservedImmediate
+        case submissionFailed
+        case restoredPrevious
+        case restorationFailed
+
+        var preservesSuccessor: Bool {
+            switch self {
+            case .submitted, .preservedExisting, .preservedImmediate, .restoredPrevious:
+                return true
+            case .submissionFailed, .restorationFailed:
+                return false
+            }
+        }
+    }
+
     // MARK: - Schedule Next App Refresh
-    func scheduleEvaluatedNextAppRefresh(nextRun: Date) async {
+    func scheduleEvaluatedNextAppRefresh(nextRun: Date) async -> SchedulingOutcome {
         await schedule(nextRun: nextRun, intent: .authoritative)
     }
 
-    func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async {
+    func ensureScheduled(using policy: RefreshPolicy, now: Date = .now) async -> SchedulingOutcome {
         let next = policy.getNextRunTime(for: .short, now: now)
-        await schedule(nextRun: next, intent: .ensure)
+        return await schedule(nextRun: next, intent: .ensure)
     }
 
-    private func schedule(nextRun: Date, intent: SchedulingIntent) async {
+    private func schedule(nextRun: Date, intent: SchedulingIntent) async -> SchedulingOutcome {
         logger.debug("Checking for any pending app refreshes")
-        let pending = await pendingRequest(for: appRefreshID)
+        let pending = await backend.pendingRequest(for: appRefreshID)
 
         switch Self.decision(for: pending, requested: nextRun, intent: intent, minimumDifference: replacementTolerance) {
         case .submit:
-            submitRequest(nextRun: nextRun)
+            return await submitRequest(nextRun: nextRun)
         case .keepExisting:
             if case .at(let existing) = pending {
                 logger.debug("Keeping existing refresh task at \(existing, privacy: .public); requested \(nextRun, privacy: .public)")
             }
+            return .preservedExisting
         case .keepImmediate:
             logger.debug("Keeping existing immediate refresh task; requested \(nextRun, privacy: .public)")
+            return .preservedImmediate
         case .replace(let existing):
             logger.notice("Replacing refresh task from \(existing, privacy: .public) to \(nextRun, privacy: .public)")
-            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: appRefreshID)
-            submitRequest(nextRun: nextRun, restoreOnFailure: existing)
+            await backend.cancel(taskRequestWithIdentifier: appRefreshID)
+            return await submitRequest(nextRun: nextRun, restoreOnFailure: existing)
         }
     }
 
@@ -98,52 +164,28 @@ struct BackgroundScheduler {
         abs(existing.timeIntervalSince(requested)) > minimumAdvance
     }
     
-    private func submitRequest(nextRun: Date, restoreOnFailure previousRun: Date? = nil) {
-        let request = BGAppRefreshTaskRequest(identifier: appRefreshID)
-        request.earliestBeginDate = nextRun
-        
+    private func submitRequest(
+        nextRun: Date,
+        restoreOnFailure previousRun: Date? = nil
+    ) async -> SchedulingOutcome {
         do {
-            try BGTaskScheduler.shared.submit(request)
+            try await backend.submit(identifier: appRefreshID, earliestBeginDate: nextRun)
             logger.notice("Refresh task scheduled for: \(nextRun, privacy: .public)")
-            return
+            return .submitted
         }
         catch {
             logger.error("Error scheduling background task (\(appRefreshID, privacy: .public)): \(error.localizedDescription, privacy: .public)")
         }
         
-        guard let previousRun else { return }
-        let fallback = BGAppRefreshTaskRequest(identifier: appRefreshID)
-        fallback.earliestBeginDate = previousRun
+        guard let previousRun else { return .submissionFailed }
         
         do {
-            try BGTaskScheduler.shared.submit(fallback)
+            try await backend.submit(identifier: appRefreshID, earliestBeginDate: previousRun)
             logger.notice("Restored previous refresh task at \(previousRun, privacy: .public)")
+            return .restoredPrevious
         } catch {
             logger.error("Failed to restore previous background task (\(appRefreshID, privacy: .public)): \(error.localizedDescription, privacy: .public)")
-        }
-    }
-    
-    private func pendingRequest(for id: String) async -> PendingRequest {
-        await withCheckedContinuation { cont in
-            BGTaskScheduler.shared.getPendingTaskRequests { requests in
-                let matching = requests.filter { $0.identifier == id }
-                guard !matching.isEmpty else {
-                    cont.resume(returning: .none)
-                    return
-                }
-                
-                if matching.contains(where: { $0.earliestBeginDate == nil }) {
-                    cont.resume(returning: .immediate)
-                    return
-                }
-                
-                let earliest = matching.compactMap(\.earliestBeginDate).min()
-                if let earliest {
-                    cont.resume(returning: .at(earliest))
-                } else {
-                    cont.resume(returning: .none)
-                }
-            }
+            return .restorationFailed
         }
     }
 }

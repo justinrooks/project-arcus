@@ -113,12 +113,19 @@ struct SkyAwareApp: App {
         .modelContainer(deps.modelContainer)
         .backgroundTask(.appRefresh(deps.appRefreshID)) {
             logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
-            let result = await deps.orchestrator.run()
-            logger.notice("Background app refresh completed with result: \(String(describing: result), privacy: .public)")
-            
-            // Schedule the next run
-            await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: result.next)
-            logger.notice("Scheduled next app refresh at: \(result.next, privacy: .public)")
+            let lifecycle = BackgroundRefreshLifecycle(
+                scheduleFallback: {
+                    await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
+                },
+                runOrchestration: {
+                    await deps.orchestrator.run()
+                },
+                scheduleAuthoritative: { nextRun in
+                    await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: nextRun)
+                },
+                logger: logger
+            )
+            _ = await lifecycle.run()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard isUITestStaticHome == false else { return }
@@ -130,7 +137,7 @@ struct SkyAwareApp: App {
                 Task {
                     let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
                     logger.notice("App entered background; ensuring background refresh is seeded if needed")
-                    await scheduler.ensureScheduled(using: deps.refreshPolicy)
+                    _ = await scheduler.ensureScheduled(using: deps.refreshPolicy)
                 }
             case .inactive: // Swallow inactive state
                 break
@@ -151,8 +158,12 @@ struct SkyAwareApp: App {
                     Task(priority: .background) {
                         logger.notice("Seeding initial background task")
                         let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
-                        await scheduler.ensureScheduled(using: deps.refreshPolicy)
-                        logger.notice("Background refresh scheduled")
+                        let outcome = await scheduler.ensureScheduled(using: deps.refreshPolicy)
+                        if outcome.preservesSuccessor {
+                            logger.notice("Initial background refresh scheduling preserved a successor")
+                        } else {
+                            logger.error("Initial background refresh scheduling failed: \(String(describing: outcome), privacy: .public)")
+                        }
                     }
                 }
                 
