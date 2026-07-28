@@ -454,24 +454,84 @@ struct StormSetupIngestionTests {
         #expect(await airQualityGate.cancelledWaitCount() == 1)
     }
 
-    @Test("optional children preserve background mode and missing-context/provider behavior")
-    func optionalChildrenPreserveBackgroundModeAndMissingContextProviderBehavior() async throws {
+    @Test("AQI executes only for foreground weather-lane triggers")
+    func airQualityTriggerMatrixPreservesBackgroundAndNonWeatherPlans() async throws {
         let context = makeContext()
-        let query = StormSetupQueryingFake(
-            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)))
-        )
-        let airQuality = AirQualityQueryingFake()
-        let backgroundHarness = try makeHarness(
-            context: context,
-            query: query,
-            airQualityQuerying: airQuality
-        )
+        let airQualityResponse = try makeAirQualityResponse()
+        let cases: [(String, HomeRefreshTrigger, Int, HTTPExecutionMode?)] = [
+            ("background refresh", .backgroundRefresh, 0, nil),
+            ("background location change", .backgroundLocationChange, 0, nil),
+            ("bootstrap", .bootstrap, 1, .foreground),
+            ("foreground activate", .foregroundActivate, 1, .foreground),
+            ("manual refresh", .manualRefresh, 1, .foreground),
+            ("foreground location change", .foregroundLocationChange, 1, .foreground),
+            ("foreground prime", .foregroundPrime, 0, nil),
+            ("session tick", .sessionTick, 0, nil),
+            ("remote hot alert received", .remoteHotAlertReceived, 0, nil),
+            ("remote hot alert opened", .remoteHotAlertOpened, 0, nil)
+        ]
 
-        _ = try await backgroundHarness.executor.run(
-            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
-        )
-        #expect(await query.executionModes() == [.background])
-        #expect(await airQuality.executionModes() == [.background])
+        for testCase in cases {
+            let query = StormSetupQueryingFake(
+                response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)))
+            )
+            let airQuality = AirQualityQueryingFake(response: .success(airQualityResponse))
+            let publications = HomeIngestionPublicationRecorder()
+            let harness = try makeHarness(
+                context: context,
+                query: query,
+                airQualityQuerying: airQuality
+            )
+
+            let snapshot = try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: testCase.1)),
+                progress: HomeIngestionRunProgress(
+                    markHotAlertsCompleted: {},
+                    report: { _ in },
+                    publish: { publication in
+                        await publications.append(publication)
+                    }
+                )
+            )
+
+            #expect(await airQuality.requestCount() == testCase.2, "\(testCase.0)")
+            #expect(await airQuality.executionModes() == (testCase.3.map { [$0] } ?? []), "\(testCase.0)")
+            let enrichment = try #require(await publications.values().last, "\(testCase.0)")
+            guard case .enrichment(let value) = enrichment.stage else {
+                Issue.record("Expected optional enrichment publication for \(testCase.0)")
+                continue
+            }
+            #expect(
+                value.airQualityOutcome == (testCase.2 == 1 ? .replace(airQualityResponse) : .preserve),
+                "\(testCase.0)"
+            )
+            #expect(snapshot.airQuality == (testCase.2 == 1 ? airQualityResponse : nil), "\(testCase.0)")
+
+            if testCase.1 == .backgroundRefresh || testCase.1 == .backgroundLocationChange {
+                #expect(await query.executionModes() == [.background], "\(testCase.0)")
+                #expect(await harness.weather.callCount() == 1, "\(testCase.0)")
+            }
+        }
+    }
+
+    @Test("background-classified mixed provenance skips AQI without changing weather execution")
+    func backgroundClassifiedMixedProvenanceSkipsAirQuality() async throws {
+        let context = makeContext()
+        let airQuality = AirQualityQueryingFake(response: .success(try makeAirQualityResponse()))
+        let harness = try makeHarness(context: context, airQualityQuerying: airQuality)
+        let plan = HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            .merged(with: .init(request: .init(trigger: .backgroundRefresh)))
+
+        let snapshot = try await harness.executor.run(plan: plan)
+        #expect(await airQuality.requestCount() == 0)
+        #expect(await harness.query.executionModes() == [.background])
+        #expect(await harness.weather.callCount() == 1)
+        #expect(snapshot.airQuality == nil)
+    }
+
+    @Test("AQI preserves missing-context and missing-provider behavior")
+    func airQualityPreservesMissingContextAndProviderBehavior() async throws {
+        let context = makeContext()
 
         let missingContextAQI = AirQualityQueryingFake()
         let missingContextHarness = try makeHarness(

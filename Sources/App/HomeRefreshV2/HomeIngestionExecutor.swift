@@ -559,8 +559,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode
     ) async -> HomeAirQualityPublicationOutcome {
+        guard shouldRefreshAirQuality(for: plan, executionMode: executionMode) else { return .preserve }
         guard let context, let querying = environment.airQualityQuerying else { return .preserve }
-        guard shouldRefreshAirQuality(for: plan) else { return .preserve }
 
         do {
             let response = try await HTTPExecutionMode.$current.withValue(executionMode) {
@@ -578,8 +578,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
     }
 
-    private func shouldRefreshAirQuality(for plan: HomeIngestionPlan) -> Bool {
-        plan.lanes.contains(.weather)
+    private func shouldRefreshAirQuality(
+        for plan: HomeIngestionPlan,
+        executionMode: HTTPExecutionMode
+    ) -> Bool {
+        plan.lanes.contains(.weather) && executionMode == .foreground
     }
 
     private func persistProjection(

@@ -123,10 +123,18 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #374 — 02: Remove air quality from background ingestion
 
-- **Status:** Planned
+- **Status:** Completed (2026-07-28)
 - **Goal:** Make AQI foreground-only.
 - **Required proof:** scheduled refresh and background location change issue zero AQI requests; foreground activation,
   manual refresh, and location change retain existing AQI behavior.
+- **Implementation:** `HomeIngestionExecutor` now requests AQI only for weather-lane plans classified by its existing
+  execution-mode policy as foreground. Background plans continue through the same structured Storm Setup enrichment
+  and weather paths, while publishing AQI `.preserve` without querying the provider.
+- **Validation:** `StormSetupIngestionTests` passed 38/38 on iPhone 17, iOS 26.5, Debug
+  (`/private/tmp/skyaware-results.voWwAj/air-quality-background-policy.xcresult`). The full `SkyAwareTests` lane
+  passed 938/938 on the same simulator/configuration (`/private/tmp/skyaware-results.h2B6kg/unit.xcresult`); its
+  per-configuration counter reports 945 parameterized runs. Debug build passed on iPhone 17.
+- **Residual risk:** Physical-device runtime impact remains unproven; issue #360 owns that evidence.
 - **Handoff:** No AQI persistence, endpoint, DTO, or presentation changes.
 
 ### Issue #373 — 03: Define a global background refresh budget contract
