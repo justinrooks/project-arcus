@@ -177,7 +177,10 @@ struct BackgroundRefreshLifecycleTests {
 
         _ = await lifecycle.run()
 
-        let snapshot = try #require(await backgroundRun(id: "scheduled-run", in: container))
+        let snapshot = try #require(await waitForBackgroundRun(id: "scheduled-run", in: container) {
+            $0.fallbackSchedulingOutcome == .submissionFailed
+                && $0.authoritativeSchedulingOutcome == .restoredPrevious
+        })
         #expect(snapshot.fallbackSchedulingOutcome == .submissionFailed)
         #expect(snapshot.authoritativeSchedulingOutcome == .restoredPrevious)
     }
@@ -212,7 +215,9 @@ struct BackgroundRefreshLifecycleTests {
         let task = Task { await lifecycle.run() }
         await recorder.waitForOrchestrationStart()
 
-        let snapshot = try #require(await backgroundRun(id: runId, in: container))
+        let snapshot = try #require(await waitForBackgroundRun(id: runId, in: container) {
+            $0.fallbackSchedulingOutcome == .submitted
+        })
         #expect(snapshot.fallbackSchedulingOutcome == .submitted)
         #expect(snapshot.authoritativeSchedulingOutcome == nil)
 
@@ -258,6 +263,28 @@ struct BackgroundRefreshLifecycleTests {
 private func backgroundRun(id: String, in container: ModelContainer) throws -> LifecycleRunState? {
     let descriptor = FetchDescriptor<BgRunSnapshot>(predicate: #Predicate { $0.runId == id })
     return try ModelContext(container).fetch(descriptor).first.map(LifecycleRunState.init)
+}
+
+private func waitForBackgroundRun(
+    id: String,
+    in container: ModelContainer,
+    timeout: Duration = .seconds(1),
+    interval: Duration = .milliseconds(10),
+    matching predicate: @escaping @Sendable (LifecycleRunState) -> Bool
+) async throws -> LifecycleRunState? {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if let snapshot = try await backgroundRun(id: id, in: container),
+           predicate(snapshot) {
+            return snapshot
+        }
+        try? await Task.sleep(for: interval)
+    }
+    guard let snapshot = try await backgroundRun(id: id, in: container),
+          predicate(snapshot) else {
+        return nil
+    }
+    return snapshot
 }
 
 private struct LifecycleRunState: Sendable {

@@ -369,7 +369,9 @@ struct HTTPDataDownloaderTests {
         await #expect(throws: CancellationError.self) {
             try await requestTask.value
         }
-        #expect(HTTPTestURLProtocol.didStopLoading(for: url))
+        #expect(await waitUntil {
+            HTTPTestURLProtocol.didStopLoading(for: url)
+        })
     }
 
     @Test("Budgeted transient retry runs only while its delay fits")
@@ -580,4 +582,19 @@ struct HTTPDataDownloaderTests {
         let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Cache-Control": "max-age=3600"])!
         cache.storeCachedResponse(CachedURLResponse(response: response, data: body), for: request)
     }
+}
+
+private func waitUntil(
+    timeout: Duration = .seconds(1),
+    interval: Duration = .milliseconds(10),
+    _ condition: @escaping @Sendable () async -> Bool
+) async -> Bool {
+    let deadline = ContinuousClock.now + timeout
+    while ContinuousClock.now < deadline {
+        if await condition() {
+            return true
+        }
+        try? await Task.sleep(for: interval)
+    }
+    return await condition()
 }
