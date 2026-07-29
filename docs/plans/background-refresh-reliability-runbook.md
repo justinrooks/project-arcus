@@ -1,6 +1,6 @@
 # Background Refresh Reliability Runbook
 
-**Status:** Planned
+**Status:** Implementation complete; physical-device validation outstanding
 
 **Applies to:** SkyAware scheduled background app refresh, shared ingestion cancellation, location-context reuse,
 and background health diagnostics
@@ -8,6 +8,10 @@ and background health diagnostics
 **Project:** `SkyAware.xcodeproj`
 
 **Parent epic:** [#364](https://github.com/justinrooks/project-arcus/issues/364)
+
+All ten implementation children are closed. The parent epic remains open;
+[#360](https://github.com/justinrooks/project-arcus/issues/360) remains open and exclusively owns physical-device
+runtime evidence.
 
 ## Related documents
 
@@ -23,8 +27,8 @@ and background health diagnostics
 
 ## Purpose
 
-Restore the strongest background-refresh reliability SkyAware can achieve within Apple's discretionary scheduling
-model. Keep one successor request pending, fit essential alert/risk work inside an explicit budget, stop work that
+This completed campaign restores the strongest background-refresh reliability SkyAware can achieve within Apple's
+discretionary scheduling model. Keep one successor request pending, fit essential alert/risk work inside an explicit budget, stop work that
 loses its final owner, avoid optional AQI cost, reuse safe location context, and record evidence that distinguishes
 desired scheduling from actual execution.
 
@@ -43,7 +47,7 @@ or global retry policy.
 
 When these sources conflict, stop and record the contradiction. Do not silently broaden the active issue.
 
-## Required read order
+## Required read order for follow-up work
 
 1. `AGENTS.md` and `Sources/AGENTS.md`.
 2. The active child issue.
@@ -53,7 +57,7 @@ When these sources conflict, stop and record the contradiction. Do not silently 
 
 Do not repeat the original investigation or load unrelated Today, Map, widget, or server campaigns.
 
-## Minimal implementation prompt
+## Historical implementation prompt
 
 > Implement only the active child issue in the Background Refresh Reliability epic. Read the issue, this runbook,
 > and its progress entry. Preserve the locked invariants, add deterministic characterization before changing
@@ -133,7 +137,7 @@ only prevents an earlier launch and does not guarantee a launch at that time. A 
 therefore deliberately skips location-dependent work under When-In-Use rather than presenting arbitrary stale
 location. The 100-meter inclusive accuracy ceiling matches the accepted update gate. A significant-location change or
 explicit invalidation wins over age and accuracy. When-In-Use never prescribes a fresh background fix or permission
-prompt; #366 may wire eligible reuse only after it adds durable context storage and restoration.
+prompt; #366 wires eligible reuse through durable context storage and restoration.
 
 ## Issue #366 durable context integration
 
@@ -147,23 +151,24 @@ prompt; #366 may wire eligible reuse only after it adds durable context storage 
 - A newer snapshot with a changed H3 identity invalidates the durable record before fallible resolution. A newer
   snapshot with the same H3 identity can refresh recency and accuracy while preserving cached grid identifiers.
 
-## Sequential execution
+## Completed implementation sequence
 
-| Order | Work item | Preferred implementer | Stop condition |
+| Order | Work item | Status | Completed contract |
 | ---: | --- | --- | --- |
-| 01 | [#371](https://github.com/justinrooks/project-arcus/issues/371) — Schedule the next app refresh before ingestion | `GPT-5.6 Terra / medium` | A fallback request exists before blocked work and success may replace it authoritatively. |
-| 02 | [#374](https://github.com/justinrooks/project-arcus/issues/374) — Remove air quality from background ingestion | `GPT-5.6 Terra / medium` | Scheduled refresh and background location change make zero AQI requests; foreground behavior remains. |
-| 03 | [#373](https://github.com/justinrooks/project-arcus/issues/373) — Define a global background refresh budget contract | `GPT-5.6 Terra / medium` | One tested monotonic budget exposes work, finalization, and admission decisions without changing providers. |
-| 04 | [#368](https://github.com/justinrooks/project-arcus/issues/368) — Bound background HTTP retries by remaining task budget | `GPT-5.6 Terra / medium` | No background attempt or wait can cross the supplied deadline; foreground policy is unchanged. |
-| 05 | [#370](https://github.com/justinrooks/project-arcus/issues/370) — Make optional enrichment deadline-aware and cancellation-transparent | `GPT-5.6 Terra / medium` | Optional work skips near deadline and background cancellation cannot become nominal success. |
-| 06 | [#372](https://github.com/justinrooks/project-arcus/issues/372) — Characterize background ingestion ownership at expiration | `GPT-5.6 Terra / medium` | Tests lock background-only, shared, queued, and fire-and-forget ownership without production behavior changes. |
-| 07 | [#369](https://github.com/justinrooks/project-arcus/issues/369) — Cancel unowned background ingestion without disrupting shared runs | `GPT-5.6 Terra / medium` | Final background-owner cancellation stops its run; retained owners and pending merging remain correct. |
-| 08 | [#367](https://github.com/justinrooks/project-arcus/issues/367) — Define the background location-context reuse policy | `GPT-5.6 Terra / medium` | Authorization, age, movement, and missing-cache decisions are explicit and deterministically tested. |
-| 09 | [#366](https://github.com/justinrooks/project-arcus/issues/366) — Reuse durable location and NWS region context | `GPT-5.6 Terra / medium` | Eligible scheduled runs avoid fresh-location and redundant NWS prerequisites while invalid context refreshes safely. |
-| 10 | [#365](https://github.com/justinrooks/project-arcus/issues/365) — Record truthful background execution and scheduling diagnostics | `GPT-5.6 Terra / medium` | Start, phase, expiration, completion, and scheduler submission are distinguishable without private payloads. |
+| 01 | [#371](https://github.com/justinrooks/project-arcus/issues/371) — Schedule the next app refresh before ingestion | Closed | A fallback request exists before blocked work and success may replace it authoritatively. |
+| 02 | [#374](https://github.com/justinrooks/project-arcus/issues/374) — Remove air quality from background ingestion | Closed | Scheduled refresh and background location change make zero AQI requests; foreground behavior remains. |
+| 03 | [#373](https://github.com/justinrooks/project-arcus/issues/373) — Define a global background refresh budget contract | Closed | One tested monotonic budget exposes work, finalization, and admission decisions. |
+| 04 | [#368](https://github.com/justinrooks/project-arcus/issues/368) — Bound background HTTP retries by remaining task budget | Closed | No background attempt or wait can cross the supplied deadline; foreground policy is unchanged. |
+| 05 | [#370](https://github.com/justinrooks/project-arcus/issues/370) — Make optional enrichment deadline-aware and cancellation-transparent | Closed | Optional work skips near deadline and background cancellation cannot become nominal success. |
+| 06 | [#372](https://github.com/justinrooks/project-arcus/issues/372) — Characterize background ingestion ownership at expiration | Closed | Tests lock background-only, shared, queued, and fire-and-forget ownership. |
+| 07 | [#369](https://github.com/justinrooks/project-arcus/issues/369) — Cancel unowned background ingestion without disrupting shared runs | Closed | Final background-owner cancellation stops its run; retained owners and pending merging remain correct. |
+| 08 | [#367](https://github.com/justinrooks/project-arcus/issues/367) — Define the background location-context reuse policy | Closed | Authorization, age, movement, and missing-cache decisions are explicit and deterministically tested. |
+| 09 | [#366](https://github.com/justinrooks/project-arcus/issues/366) — Reuse durable location and NWS region context | Closed | Eligible scheduled runs avoid fresh-location and redundant NWS prerequisites while invalid context refreshes safely. |
+| 10 | [#365](https://github.com/justinrooks/project-arcus/issues/365) — Record truthful background execution and scheduling diagnostics | Closed | Start, phase, expiration, completion, and scheduler submission are distinguishable without private payloads. |
 
-Execute sequentially unless a child issue explicitly declares independence. Stop after each issue for human review.
-After issue 10, existing issue #360 owns physical-device Release evidence for backlog, expiration, and actual cadence.
+Implementation is complete at `ebc8dced995b334b969d31c1edeef78d140e0b73`; see the progress ledger for final
+post-fix simulator evidence and historical per-issue results. #360 now owns physical-device Release evidence for
+backlog, expiration, and observed cadence. It must not infer any of those results from simulator validation.
 
 ## Model guidance
 

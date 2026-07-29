@@ -5,7 +5,9 @@
 This ledger tracks the ordered campaign to make SkyAware background refresh recurring, bounded,
 cancellation-safe, location-efficient, and diagnostically truthful.
 
-**Epic status:** Planned
+**Epic status:** Implementation complete; physical-device validation outstanding. GitHub epic #364 remains open with
+all ten implementation children closed; [#360](https://github.com/justinrooks/project-arcus/issues/360) remains open
+and exclusively owns physical-device runtime evidence.
 
 **Primary GitHub epic:** [#364](https://github.com/justinrooks/project-arcus/issues/364)
 
@@ -24,16 +26,22 @@ cancellation-safe, location-efficient, and diagnostically truthful.
 
 ## Current state summary
 
-The app registers one SwiftUI `.appRefresh` task and reschedules only after `BackgroundOrchestrator.run()` returns.
-The orchestrator performs a bounded upload drain, unified all-lane ingestion, notification evaluation, health
-persistence, and cadence calculation. Unified ingestion requires fresh location, resolves NWS metadata, refreshes
-hot and slow products, optionally refreshes WeatherKit, commits the risk projection, and waits for Storm Setup and
-AQI enrichment.
+The app registers one SwiftUI `.appRefresh` task. `BackgroundRefreshLifecycle` first ensures a conservative
+successor request, runs `BackgroundOrchestrator`, then authoritatively submits the evaluated 20/40/60-minute
+successor. The desired cadence remains separate from scheduler submission; Apple's scheduling and launch timing are
+discretionary.
 
-The current background HTTP policy permits four attempts with 5/10/15-second retry delays. No global deadline
-connects the OS cancellation signal, HTTP retries, optional enrichment, and finalization. Canceling an ingestion
-waiter removes that waiter but intentionally leaves coordinator-owned work running. Diagnostics record only
-completed/caught outcomes and store a desired next date before scheduler submission occurs.
+`BackgroundOrchestrator` drains at most one pending upload within its five-second pre-drain, then carries one
+monotonic work budget through unified background ingestion, HTTP retry admission, and optional Storm Setup. The
+orchestrator races unified ingestion against its work deadline, reserves finalization time, records deadline expiry
+as an expired outcome, and persists phase and scheduler outcomes. AQI remains available to foreground flows but is
+excluded from scheduled refresh and background location-change ingestion.
+
+`HomeIngestionCoordinator` cancels an active run when its final cancelable background owner disappears, while
+foreground, remote-alert, location, and fire-and-forget ownership retain useful shared work. A pending follow-up
+with any foreground owner clears its background execution context, so foreground work cannot inherit or reattach a
+background deadline. Scheduled refresh may reuse an eligible privacy-safe durable location/NWS context; invalid or
+ineligible context follows the established authorization policy.
 
 ## Locked behavior invariants
 
@@ -51,17 +59,17 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 | Order | Issue | Preferred model / intelligence | Status | Dependency |
 | ---: | --- | --- | --- | --- |
-| 00 | [#364](https://github.com/justinrooks/project-arcus/issues/364) — Epic | Coordination | Planned | Investigation |
-| 01 | [#371](https://github.com/justinrooks/project-arcus/issues/371) — Schedule the next app refresh before ingestion | `GPT-5.6 Terra / medium` | Planned | #335 |
-| 02 | [#374](https://github.com/justinrooks/project-arcus/issues/374) — Remove air quality from background ingestion | `GPT-5.6 Terra / medium` | Planned | None |
-| 03 | [#373](https://github.com/justinrooks/project-arcus/issues/373) — Define a global background refresh budget contract | `GPT-5.6 Terra / medium` | Planned | 01 |
-| 04 | [#368](https://github.com/justinrooks/project-arcus/issues/368) — Bound background HTTP retries by remaining task budget | `GPT-5.6 Terra / medium` | Planned | 03 |
-| 05 | [#370](https://github.com/justinrooks/project-arcus/issues/370) — Make optional enrichment deadline-aware and cancellation-transparent | `GPT-5.6 Terra / medium` | Planned | 03, 04 |
-| 06 | [#372](https://github.com/justinrooks/project-arcus/issues/372) — Characterize background ingestion ownership at expiration | `GPT-5.6 Terra / medium` | Planned | #333, #335 |
-| 07 | [#369](https://github.com/justinrooks/project-arcus/issues/369) — Cancel unowned background ingestion without disrupting shared runs | `GPT-5.6 Terra / medium` | Planned | 06 |
-| 08 | [#367](https://github.com/justinrooks/project-arcus/issues/367) — Define the background location-context reuse policy | `GPT-5.6 Terra / medium` | Planned | 03 |
-| 09 | [#366](https://github.com/justinrooks/project-arcus/issues/366) — Reuse durable location and NWS region context | `GPT-5.6 Terra / medium` | Planned | 08 |
-| 10 | [#365](https://github.com/justinrooks/project-arcus/issues/365) — Record truthful background execution and scheduling diagnostics | `GPT-5.6 Terra / medium` | Planned | 01, 03-09 |
+| 00 | [#364](https://github.com/justinrooks/project-arcus/issues/364) — Epic | Coordination | Open; implementation complete | #360 physical-device evidence |
+| 01 | [#371](https://github.com/justinrooks/project-arcus/issues/371) — Schedule the next app refresh before ingestion | `GPT-5.6 Terra / medium` | Closed | #335 |
+| 02 | [#374](https://github.com/justinrooks/project-arcus/issues/374) — Remove air quality from background ingestion | `GPT-5.6 Terra / medium` | Closed | None |
+| 03 | [#373](https://github.com/justinrooks/project-arcus/issues/373) — Define a global background refresh budget contract | `GPT-5.6 Terra / medium` | Closed | 01 |
+| 04 | [#368](https://github.com/justinrooks/project-arcus/issues/368) — Bound background HTTP retries by remaining task budget | `GPT-5.6 Terra / medium` | Closed | 03 |
+| 05 | [#370](https://github.com/justinrooks/project-arcus/issues/370) — Make optional enrichment deadline-aware and cancellation-transparent | `GPT-5.6 Terra / medium` | Closed | 03, 04 |
+| 06 | [#372](https://github.com/justinrooks/project-arcus/issues/372) — Characterize background ingestion ownership at expiration | `GPT-5.6 Terra / medium` | Closed | #333, #335 |
+| 07 | [#369](https://github.com/justinrooks/project-arcus/issues/369) — Cancel unowned background ingestion without disrupting shared runs | `GPT-5.6 Terra / medium` | Closed | 06 |
+| 08 | [#367](https://github.com/justinrooks/project-arcus/issues/367) — Define the background location-context reuse policy | `GPT-5.6 Terra / medium` | Closed | 03 |
+| 09 | [#366](https://github.com/justinrooks/project-arcus/issues/366) — Reuse durable location and NWS region context | `GPT-5.6 Terra / medium` | Closed | 08 |
+| 10 | [#365](https://github.com/justinrooks/project-arcus/issues/365) — Record truthful background execution and scheduling diagnostics | `GPT-5.6 Terra / medium` | Closed | 01, 03-09 |
 
 ## Existing code map
 
@@ -86,21 +94,16 @@ completed/caught outcomes and store a desired next date before scheduler submiss
   `Tests/UnitTests/HTTPDataDownloaderTests.swift`,
   `Tests/UnitTests/LocationContextResolverTests.swift`
 
-## Investigation notes
+## Historical investigation notes
 
-- Apple recommends scheduling the successor at the beginning of recurring SwiftUI app-refresh work. Current code
-  schedules only after the entire orchestrator returns.
-- The current request graph can exceed a short app-refresh window before retry paths are considered.
-- AQI runs for every weather-lane plan even when WeatherKit freshness suppresses its own request. It is uncached,
-  inherits background retry policy, and blocks final snapshot completion.
-- Storm Setup and AQI run concurrently, but both remain a structured completion barrier after core publication.
+- Before #371, scheduling occurred only after the entire orchestrator returned.
+- Before #368 and final correction `ceb194a6`, the request graph was not bounded across unified ingestion.
+- Before #374, AQI ran for every weather-lane plan and blocked final snapshot completion.
+- Storm Setup remains structured optional enrichment after core publication; AQI no longer participates in background.
 - Risk-change evaluation itself is local and comparatively cheap. Do not remove it as a budget shortcut.
-- Background refresh requires a fresh location and accepts cached location only within five minutes. When-In-Use
-  authorization does not keep the location manager running in background.
-- `GridPointProvider` writes `lastSnapshot` but does not reuse it; region labels add sequential NWS dependencies.
-- Waiter cancellation is prompt after issue #333, but active coordinator work intentionally retains independent
-  ownership. Issue 07 changes only the final-owner case after issue 06 characterization.
-- Health records omit abrupt termination and conflate desired scheduling with successful scheduler submission.
+- Before #366, background refresh required a fresh location and did not reuse durable NWS context.
+- Before #369, removing a background waiter intentionally retained active coordinator work even after the final owner.
+- Before #365, health records did not distinguish abrupt terminal states and scheduler submission outcomes.
 
 ## Status ledger
 
@@ -222,7 +225,8 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #369 — 07: Cancel unowned background ingestion without disrupting shared runs
 
-- **Status:** Implemented; simulator validation blocked (2026-07-28)
+- **Status:** Completed; GitHub issue closed (2026-07-28). The earlier blocked simulator invocation below is
+  historical; final post-fix campaign validation is recorded after issue #365.
 - **Goal:** Stop a run after its final background owner cancels while retaining useful shared work.
 - **Required proof:** real executor cancellation reaches HTTP/enrichment; retained owners finish; continuations resume
   once; pending-plan semantics remain.
@@ -233,13 +237,13 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 - **Tests:** Updated the two #372 expectations for pre-canceled and sole active background waiters. Added
   foreground/remote-alert/location/explicit-pending retention coverage and a coordinator-to-blocked-Storm-Setup
   cancellation test using actor acknowledgements.
-- **Validation:** Debug build completed on iPhone 17. The requested focused test invocation compiled and installed
+- **Historical validation:** Debug build completed on iPhone 17. The requested focused test invocation compiled and installed
   the test bundle but the simulator runner remained at `wait_for_debugger`; its result bundles were not finalized
   and `xcresulttool` could not inspect counts. Result directory:
   `/private/tmp/skyaware-results.5twe3Z`. `git diff --check` passed.
 - **Handoff:** No ownership race requires Sol/high: the existing actor, active task, and run number serialize the
-  cancellation/completion path. Full-unit validation remains blocked on the simulator runner and must be rerun before
-  closing the issue; no physical-device claim is made.
+  cancellation/completion path. The final campaign bundle supersedes the unfinalized invocation; no physical-device
+  claim is made.
 
 ### Issue #367 — 08: Define the background location-context reuse policy
 
@@ -264,12 +268,13 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 - **Residual risk:** `earliestBeginDate` does not bound scheduler delay. A launch beyond the 90-minute product privacy
   tolerance intentionally skips location-dependent work under When-In-Use; this issue supplies no physical-device,
   persistence, resolver, or NWS-reuse evidence.
-- **Handoff:** #366 may map durable cache restoration into this input contract and invoke the result. No permission UX,
-  persistence, live resolver, trigger, ingestion, or NWS changes were included.
+- **Handoff:** Completed #366 maps durable cache restoration into this input contract. No permission UX, persistence,
+  live resolver, trigger, ingestion, or NWS changes were included in #367.
 
 ### Issue #366 — 09: Reuse durable location and NWS region context
 
-- **Status:** Implemented; simulator test finalization pending
+- **Status:** Completed; GitHub issue closed (2026-07-28). The unfinalized focused invocation below is historical;
+  final campaign unit validation is recorded after issue #365.
 - **Goal:** Avoid unnecessary fresh-location and NWS metadata prerequisites when issue 08 allows reuse.
 - **Required proof:** process-relaunch cache restoration, stable-location reuse, invalid/moved context refresh,
   corrupted-cache fallback, and privacy-safe persistence.
@@ -282,23 +287,25 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 - **Privacy:** The record includes only coordinates, timestamp, accuracy, H3, and machine NWS grid/region fields.
   It excludes placemark summaries, city/state, county/fire display labels, notification payloads, credentials, and
   upload-queue fields. Corrupt, partial, future-dated, invalid-coordinate, and incomplete-region records are removed.
-- **Tests:** Added durable-cache process-restoration, raw-persistence privacy, and invalid-record tests to
+- **Historical validation:** Added durable-cache process-restoration, raw-persistence privacy, and invalid-record tests to
   `LocationContextResolverTests.swift`. Debug build passed on iPhone 17, Debug. The focused simulator test command
   created `/private/tmp/skyaware-results.8ggUPt/location-context.xcresult`, but the bundle remained in staging and
-  did not produce an inspectable final result; no pass/fail count is claimed. Full unit lane remains pending.
-- **Residual risk:** Physical-device behavior remains owned by #360. Finish simulator test finalization and the full
-  unit lane before closing the issue; no scheduler cadence or energy claim is supported by this implementation.
+  did not produce an inspectable final result; no pass/fail count is claimed. At that historical point, the full unit
+  lane had not yet run.
+- **Residual risk:** Physical-device behavior remains owned by #360. The final unit lane validates this source state,
+  but it cannot establish scheduler cadence, energy, or device runtime behavior.
 - **Handoff:** Stop and re-plan before a schema migration or more than five production files.
 
 ### Issue #365 — 10: Record truthful background execution and scheduling diagnostics
 
-- **Status:** Implemented; focused simulator validation passed; full unit lane did not finalize.
+- **Status:** Completed; GitHub issue closed (2026-07-29). The earlier unfinalized full-unit invocation below is
+  historical; final campaign validation is recorded immediately after this section.
 - **Contract:** `BgHealthStore` persists a run ID at start, finalizes that same record with success, skip, failure,
   cancellation, or expiration, and retains unfinished starts. It separately stores the desired cadence date, fallback
   and authoritative scheduler outcomes, and categorical upload-drain and unified-ingestion phase results/durations.
 - **Privacy:** The persisted contract contains only the local diagnostic run ID, categorical states, dates, and
   durations; it contains no coordinates, placemarks, alert content, URLs, tokens, or credentials.
-- **Validation:** `BackgroundOrchestratorCadenceTests` and `BackgroundRefreshLifecycleTests` passed **36 / 36** with
+- **Historical validation:** `BackgroundOrchestratorCadenceTests` and `BackgroundRefreshLifecycleTests` passed **36 / 36** with
   **0 failed, 0 skipped** on iPhone 17, iOS 26.5, Debug
   (`/private/tmp/skyaware-results.3TQkO3/background-diagnostics-review.xcresult`). `BgHealthStoreTests` separately
   passed **5 / 5** with **0 failed, 0 skipped** on the same simulator and configuration, including current-schema
@@ -313,25 +320,49 @@ completed/caught outcomes and store a desired next date before scheduler submiss
   durable upload remainder. Keep device artifacts free of coordinates, alert content, requests, URLs, tokens, and
   identifiers other than the local diagnostic run ID.
 
+## Final campaign validation
+
+The final review corrections are present at the validated source SHA
+`ebc8dced995b334b969d31c1edeef78d140e0b73`:
+
+- `ceb194a6` — enforce the background deadline across unified ingestion. The orchestrator now races unified
+  ingestion against the shared work deadline and classifies deadline exhaustion as expired.
+- `ebc8dced` — fix mixed-owner pending-plan merging. A pending run with a foreground owner clears its background
+  execution context, preventing a foreground follow-up from inheriting or reattaching a background deadline.
+
+Post-fix simulator evidence for that exact SHA:
+
+- Focused coordinator bundle: `SkyAware_Tests` passed **30 / 30** with **0 failed, 0 skipped** on iPhone 17,
+  iOS 26.5, Debug (`/private/tmp/skyaware-results.h6GCUn/coordinator.xcresult`).
+- Full unit bundle: `SkyAware_Tests` passed **999 / 999** with **0 failed, 0 skipped** on iPhone 17, iOS 26.5,
+  Debug (`/private/tmp/skyaware-results.Pd4IOF/unit.xcresult`). Its configuration counter records **1006**
+  executions because three tests use dynamic parameters.
+
+These results supersede the earlier unfinalized simulator entries as final campaign evidence. They are deterministic
+simulator evidence only: they do not establish actual app-refresh cadence, energy improvement, dependable iOS launch
+timing, expiration behavior on hardware, or any other physical-device result. #360 remains open and exclusively
+owns that work.
+
 ## Verification ledger
 
 | Issue | Focused tests | Full unit lane | Build | Physical-device evidence |
 | ---: | --- | --- | --- | --- |
-| 01 | Passed (12/12) | Passed (931/931) | Passed | Deferred to #360 |
-| 02 | Pending | Pending | Pending | Not required |
-| 03 | Pending | Pending | Pending | Deferred to #360 |
-| 04 | Pending | Pending | Pending | Deferred to #360 |
-| 05 | Passed (68/68) | Passed (965/965) | Passed | Deferred to #360 |
-| 06 | Pending | Not required unless production seam changes | Conditional | Not required |
-| 07 | Pending | Pending | Pending | Deferred to #360 |
-| 08 | Pending | Conditional | Conditional | Deferred to #360 |
-| 09 | Pending | Pending | Pending | Deferred to #360 |
-| 10 | Pending | Pending | Pending | Required by #360 |
+| 01 | Passed (12/12, historical) | Passed (931/931, historical) | Passed | Outstanding: #360 |
+| 02 | Passed (38/38, historical) | Passed (938/938, historical) | Passed | Outstanding: #360 |
+| 03 | Passed (9/9, historical) | Final campaign: 999/999 | Passed | Outstanding: #360 |
+| 04 | Passed (15/15; 90/90; 25/25, historical) | Passed (961/961, historical); final campaign: 999/999 | Passed | Outstanding: #360 |
+| 05 | Passed (68/68, historical) | Passed (965/965, historical) | Passed | Outstanding: #360 |
+| 06 | Passed (47/47, historical) | Final campaign: 999/999 | Test characterization | Outstanding: #360 |
+| 07 | Earlier bundle unfinalized; final campaign: 30/30 | Final campaign: 999/999 | Historical Debug build passed | Outstanding: #360 |
+| 08 | Passed (10/10, historical) | Final campaign: 999/999 | Historical Debug build passed | Outstanding: #360 |
+| 09 | Earlier bundle unfinalized | Final campaign: 999/999 | Historical Debug build passed | Outstanding: #360 |
+| 10 | Passed (36/36 and 5/5, historical); final campaign: 30/30 | Final campaign: 999/999 | Historical focused validation passed | Required: #360 |
 
 ## Handoff notes
 
-- Implement one issue at a time and update its ledger section with exact files, behavior, test counts, result-bundle
-  paths, residual risk, and next dependency.
-- Do not begin issue #360's post-fix runtime capture until issues 01-10 are complete on one source SHA.
+- Issues 01-10 are complete on final source SHA `ebc8dced995b334b969d31c1edeef78d140e0b73`; preserve the detailed
+  entries above as historical implementation evidence and use the final-campaign section for closeout evidence.
+- #360 may now begin its post-fix runtime capture; it is still open and has no repository-recorded physical-device
+  result.
 - If issue #360 cannot observe scheduled-versus-actual cadence after issue 10, record the exact missing instrumentation
   rather than inferring reliability.
