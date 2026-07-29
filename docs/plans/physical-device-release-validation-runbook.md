@@ -145,7 +145,7 @@ explicitly approved tooling issue. Do not absorb it into the scenario.
 | 11 | [#357](https://github.com/justinrooks/project-arcus/issues/357) — Capture scroll reversal and partial header condense | `GPT-5.6 Terra / medium` | Header behavior, SwiftUI updates, hitches, and rendered identity are recorded. |
 | 12 | [#358](https://github.com/justinrooks/project-arcus/issues/358) — Capture refresh completion while scrolling | `GPT-5.6 Terra / medium` | Completion alignment, scroll stability, trace metrics, and video are recorded. |
 | 13 | [#359](https://github.com/justinrooks/project-arcus/issues/359) — Capture Reduce Motion and accessibility Dynamic Type | `GPT-5.6 Terra / medium` | Separate physical-device rendered evidence covers both settings. |
-| 14 | [#360](https://github.com/justinrooks/project-arcus/issues/360) — Capture background upload backlog and task-budget behavior | `GPT-5.6 Terra / medium` | Drain, ingestion, cancellation, outcome, and remainder are recorded or safely blocked. |
+| 14 | [#360](https://github.com/justinrooks/project-arcus/issues/360) — Capture background upload backlog and task-budget behavior | `GPT-5.6 Terra / medium` | One Release SHA's local diagnostic records drain/ingestion phases, terminal state, durable remainder, desired cadence (not an Apple launch claim), and fallback/authoritative scheduler outcomes—or the safe-capture blocker is exact. |
 | 15 | [#361](https://github.com/justinrooks/project-arcus/issues/361) — Qualify and close the physical-device evidence matrix | `GPT-5.6 Terra / medium` | Every scenario and artifact passes category, privacy, and comparability review. |
 
 Execute one child at a time. Issues 03-14 do not begin until issues 01 and 02 are complete.

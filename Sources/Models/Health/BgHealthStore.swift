@@ -2,73 +2,143 @@
 //  BgHealthStore.swift
 //  SkyAware
 //
-//  Created by Justin Rooks on 10/22/25.
-//
 
 import Foundation
-import SwiftData
-import CoreLocation
 import OSLog
+import SwiftData
+
+struct BgRunFinalization: Sendable {
+    let endedAt: Date
+    let outcome: BgRunOutcome
+    let didNotify: Bool
+    let reasonNoNotify: String?
+    let budgetSecUsed: Int
+    let desiredNextRunAt: Date
+    let cadence: Int
+    let cadenceReason: String?
+    let active: Duration
+    let uploadDrainDuration: Duration?
+    let uploadDrainOutcome: BgPhaseOutcome?
+    let ingestionDuration: Duration?
+    let ingestionOutcome: BgPhaseOutcome?
+}
 
 @ModelActor
 actor BgHealthStore {
     private let logger = Logger.backgroundOrchestrator
-    
-    func record(
-        runId: String,
-        startedAt: Date,
-        endedAt: Date,
-        outcomeCode: Int,
-        didNotify: Bool,
-        reasonNoNotify: String?,
-        budgetSecUsed: Int,
-        nextScheduledAt: Date,
-        cadence: Int,
-        cadenceReason: String?,
-        active: Duration
-    ) throws {
-        let snap = BgRunSnapshot(
-            runId: runId,
-            startedAt: startedAt,
-            endedAt: endedAt,
-            outcomeCode: outcomeCode,
-            didNotify: didNotify,
-            reasonNoNotify: reasonNoNotify,
-            budgetSecUsed: budgetSecUsed,
-            nextScheduledAt: nextScheduledAt,
-            cadence: cadence,
-            cadenceReason: cadenceReason,
-            active: active
-        )
-        
-        modelContext.insert(snap)
+
+    func start(runId: String, startedAt: Date) throws {
+        let descriptor = FetchDescriptor<BgRunSnapshot>(predicate: #Predicate { $0.runId == runId })
+        guard try modelContext.fetch(descriptor).isEmpty else {
+            return
+        }
+
+        modelContext.insert(BgRunSnapshot(runId: runId, startedAt: startedAt))
         try modelContext.save()
     }
-    
+
+    func finalize(runId: String, with finalization: BgRunFinalization) throws {
+        guard let snapshot = try snapshot(for: runId) else {
+            logger.error("Unable to finalize missing background diagnostic run")
+            return
+        }
+
+        snapshot.endedAt = finalization.endedAt
+        snapshot.outcomeRaw = finalization.outcome.rawValue
+        snapshot.outcomeCode = finalization.outcome == .success ? 0 : 2
+        snapshot.didNotify = finalization.didNotify
+        snapshot.reasonNoNotify = finalization.reasonNoNotify
+        snapshot.budgetSecUsed = finalization.budgetSecUsed
+        snapshot.nextScheduledAt = finalization.desiredNextRunAt
+        snapshot.cadence = finalization.cadence
+        snapshot.cadenceReason = finalization.cadenceReason
+        snapshot.activeSeconds = finalization.active.components.seconds
+        snapshot.uploadDrainDurationSeconds = finalization.uploadDrainDuration?.components.seconds
+        snapshot.uploadDrainOutcomeRaw = finalization.uploadDrainOutcome?.rawValue
+        snapshot.ingestionDurationSeconds = finalization.ingestionDuration?.components.seconds
+        snapshot.ingestionOutcomeRaw = finalization.ingestionOutcome?.rawValue
+        try modelContext.save()
+    }
+
+    func recordUploadDrain(
+        runId: String,
+        duration: Duration,
+        outcome: BgPhaseOutcome
+    ) throws {
+        guard let snapshot = try snapshot(for: runId) else {
+            logger.error("Unable to record upload-drain phase for missing background diagnostic run")
+            return
+        }
+
+        snapshot.uploadDrainDurationSeconds = duration.components.seconds
+        snapshot.uploadDrainOutcomeRaw = outcome.rawValue
+        try modelContext.save()
+    }
+
+    func recordIngestion(
+        runId: String,
+        duration: Duration,
+        outcome: BgPhaseOutcome
+    ) throws {
+        guard let snapshot = try snapshot(for: runId) else {
+            logger.error("Unable to record ingestion phase for missing background diagnostic run")
+            return
+        }
+
+        snapshot.ingestionDurationSeconds = duration.components.seconds
+        snapshot.ingestionOutcomeRaw = outcome.rawValue
+        try modelContext.save()
+    }
+
+    func recordScheduling(
+        runId: String,
+        phase: BgSchedulingPhase,
+        outcome: BgSchedulingOutcome
+    ) throws {
+        guard let snapshot = try snapshot(for: runId) else {
+            logger.error("Unable to record scheduling for missing background diagnostic run")
+            return
+        }
+
+        switch phase {
+        case .fallback:
+            snapshot.fallbackSchedulingOutcomeRaw = outcome.rawValue
+        case .authoritative:
+            snapshot.authoritativeSchedulingOutcomeRaw = outcome.rawValue
+        }
+        try modelContext.save()
+    }
+
     func latest() throws -> BgRunSnapshot? {
-        var d = FetchDescriptor<BgRunSnapshot>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
-        d.fetchLimit = 1
-        return try modelContext.fetch(d).first
+        var descriptor = FetchDescriptor<BgRunSnapshot>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
-    
+
     func recent(limit: Int = 10) throws -> [BgRunSnapshot] {
-        var d = FetchDescriptor<BgRunSnapshot>(sortBy: [SortDescriptor(\.endedAt, order: .reverse)])
-        d.fetchLimit = limit
-        return try modelContext.fetch(d)
+        var descriptor = FetchDescriptor<BgRunSnapshot>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+        descriptor.fetchLimit = limit
+        return try modelContext.fetch(descriptor)
     }
-    
+
     func purge(olderThan days: Int = 14, keepLast minKeep: Int = 200, now: Date = .now) throws {
         let all = try modelContext.fetch(FetchDescriptor<BgRunSnapshot>())
         guard all.count > minKeep else { return }
-        
-        let cutoff = Calendar(identifier: .gregorian)
-            .date(byAdding: .day, value: -days, to: now)!
+
+        let cutoff = Calendar(identifier: .gregorian).date(byAdding: .day, value: -days, to: now)!
         let doomed = all
-            .sorted { $0.endedAt > $1.endedAt }
+            .sorted { $0.startedAt > $1.startedAt }
             .dropFirst(minKeep)
-            .filter { $0.endedAt < cutoff }
-        
+            .filter { $0.startedAt < cutoff }
+
         doomed.forEach { modelContext.delete($0) }
-        if !doomed.isEmpty { try modelContext.save() }
+        if !doomed.isEmpty {
+            try modelContext.save()
+        }
+    }
+
+    private func snapshot(for runId: String) throws -> BgRunSnapshot? {
+        let descriptor = FetchDescriptor<BgRunSnapshot>(predicate: #Predicate { $0.runId == runId })
+        return try modelContext.fetch(descriptor).first
     }
 }

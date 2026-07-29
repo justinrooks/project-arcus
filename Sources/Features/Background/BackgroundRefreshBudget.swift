@@ -112,6 +112,10 @@ actor BackgroundRefreshDeadlineState {
         isExceeded = true
     }
 
+    func exceeded() -> Bool {
+        isExceeded
+    }
+
     func throwIfExceeded() throws {
         guard isExceeded else { return }
         throw CancellationError()

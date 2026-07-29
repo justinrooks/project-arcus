@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import SkyAware
 
@@ -108,10 +109,11 @@ struct BackgroundRefreshLifecycleTests {
         )
         let scheduler = BackgroundScheduler(refreshId: "test.refresh", backend: backend)
         let lifecycle = BackgroundRefreshLifecycle(
+            beginRun: { Self.transientRun() },
             scheduleFallback: {
                 await scheduler.ensureScheduled(using: RefreshPolicy(), now: .distantPast)
             },
-            runOrchestration: {
+            runOrchestration: { _ in
                 .init(next: nextRun, result: .failed, didNotify: false, feedsChanged: [])
             },
             scheduleAuthoritative: { nextRun in
@@ -144,17 +146,92 @@ struct BackgroundRefreshLifecycleTests {
         ])
     }
 
+    @Test("Lifecycle records fallback and authoritative results on the same run")
+    func lifecycle_recordsBothSchedulingOutcomesOnRun() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        try await store.start(runId: "scheduled-run", startedAt: .distantPast)
+        let run = BackgroundRefreshRun(
+            runId: "scheduled-run",
+            startedAt: .distantPast,
+            schedulingRecorder: { phase, outcome in
+                try? await store.recordScheduling(
+                    runId: "scheduled-run",
+                    phase: phase,
+                    outcome: outcome
+                )
+            }
+        )
+        let result = Outcome(
+            next: Date(timeIntervalSince1970: 1_000),
+            result: .success,
+            didNotify: false,
+            feedsChanged: []
+        )
+        let lifecycle = BackgroundRefreshLifecycle(
+            beginRun: { run },
+            scheduleFallback: { .submissionFailed },
+            runOrchestration: { _ in result },
+            scheduleAuthoritative: { _ in .restoredPrevious }
+        )
+
+        _ = await lifecycle.run()
+
+        let snapshot = try #require(await backgroundRun(id: "scheduled-run", in: container))
+        #expect(snapshot.fallbackSchedulingOutcome == .submissionFailed)
+        #expect(snapshot.authoritativeSchedulingOutcome == .restoredPrevious)
+    }
+
+    @Test("Fallback scheduling is durable before blocked orchestration finishes")
+    func fallbackScheduling_isDurableBeforeOrchestrationFinishes() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        let gate = LifecycleGate()
+        let recorder = LifecycleRecorder()
+        let runId = "interrupted-run"
+        let lifecycle = BackgroundRefreshLifecycle(
+            beginRun: {
+                try? await store.start(runId: runId, startedAt: .distantPast)
+                return BackgroundRefreshRun(
+                    runId: runId,
+                    startedAt: .distantPast,
+                    schedulingRecorder: { phase, outcome in
+                        try? await store.recordScheduling(runId: runId, phase: phase, outcome: outcome)
+                    }
+                )
+            },
+            scheduleFallback: { .submitted },
+            runOrchestration: { _ in
+                await recorder.recordOrchestrationStart()
+                await gate.wait()
+                return .init(next: .distantFuture, result: .success, didNotify: false, feedsChanged: [])
+            },
+            scheduleAuthoritative: { _ in .submitted }
+        )
+
+        let task = Task { await lifecycle.run() }
+        await recorder.waitForOrchestrationStart()
+
+        let snapshot = try #require(await backgroundRun(id: runId, in: container))
+        #expect(snapshot.fallbackSchedulingOutcome == .submitted)
+        #expect(snapshot.authoritativeSchedulingOutcome == nil)
+
+        await gate.open()
+        _ = await task.value
+    }
+
     private func makeLifecycle(
         recorder: LifecycleRecorder,
         gate: LifecycleGate?,
         outcome: Outcome
     ) -> BackgroundRefreshLifecycle {
         BackgroundRefreshLifecycle(
+            beginRun: { Self.transientRun() },
             scheduleFallback: {
                 await recorder.recordAcceptedFallback()
                 return .submitted
             },
-            runOrchestration: {
+            runOrchestration: { _ in
                 await recorder.recordOrchestrationStart()
                 if let gate {
                     await gate.wait()
@@ -170,6 +247,26 @@ struct BackgroundRefreshLifecycleTests {
 
     private func outcome(next: Date, result: Outcome.BackgroundResult) -> Outcome {
         .init(next: next, result: result, didNotify: false, feedsChanged: [])
+    }
+
+    private static func transientRun() -> BackgroundRefreshRun {
+        .init(runId: UUID().uuidString, startedAt: .now, schedulingRecorder: { _, _ in })
+    }
+}
+
+@MainActor
+private func backgroundRun(id: String, in container: ModelContainer) throws -> LifecycleRunState? {
+    let descriptor = FetchDescriptor<BgRunSnapshot>(predicate: #Predicate { $0.runId == id })
+    return try ModelContext(container).fetch(descriptor).first.map(LifecycleRunState.init)
+}
+
+private struct LifecycleRunState: Sendable {
+    let fallbackSchedulingOutcome: BgSchedulingOutcome?
+    let authoritativeSchedulingOutcome: BgSchedulingOutcome?
+
+    init(_ snapshot: BgRunSnapshot) {
+        fallbackSchedulingOutcome = snapshot.fallbackSchedulingOutcome
+        authoritativeSchedulingOutcome = snapshot.authoritativeSchedulingOutcome
     }
 }
 

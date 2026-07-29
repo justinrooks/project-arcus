@@ -81,6 +81,10 @@
 
 ## 2026-07-28
 
+- For durable background diagnostics, persist each completed phase at its boundary; terminal finalization is not a
+  substitute because process termination can occur between phases. Prove schema evolution against a legacy disk store,
+  not merely a current-schema reopen, and never synthesize a phase outcome for work that did not start.
+
 - When characterizing coordinator compatibility, construct requests exactly as production does. A trigger without its
   production-required context can bypass a compatibility guard and turn a queued request into a synthetic join.
 - For background deadlines, distinguish request admission from a hard in-flight transfer bound, propagate expiry as an

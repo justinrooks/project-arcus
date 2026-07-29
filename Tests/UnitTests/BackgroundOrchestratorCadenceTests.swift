@@ -369,6 +369,12 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(await uploadDrainer.drainCount() == 1)
         #expect(await uploadDrainer.legacyDrainCount() == 0)
         #expect(await uploadDrainer.boundedDrainCount() == 1)
+        let startedRecord = try #require(await latestBgRun(in: container))
+        #expect(startedRecord.isComplete == false)
+        #expect(startedRecord.endedAt == nil)
+        #expect(startedRecord.uploadDrainOutcome == .drained)
+        #expect(startedRecord.uploadDrainDurationSeconds != nil)
+        #expect(startedRecord.ingestionOutcome == nil)
 
         let recordedBudget = try #require(await uploadDrainer.recordedBudget())
         #expect(recordedBudget.budget.uploadQuota == 1)
@@ -472,7 +478,7 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(outcome.result == .cancelled)
         #expect(await uploadDrainer.observedCancellation())
         #expect(await coordinator.requestCount() == 0)
-        #expect(health.outcomeCode == 2)
+        #expect(health.outcome == .cancelled)
         #expect(health.cadence == Cadence.short.minutes)
     }
 
@@ -497,8 +503,28 @@ struct BackgroundOrchestratorCadenceTests {
         let health = try #require(await setup.latestHealthRecord())
 
         #expect(outcome.result == .cancelled)
-        #expect(health.outcomeCode == 2)
+        #expect(health.outcome == .cancelled)
         #expect(health.cadence == Cadence.short.minutes)
+    }
+
+    @Test("Deadline exhaustion records expired rather than cancelled")
+    func deadlineExhaustion_recordsExpiredOutcome() async throws {
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            marksBackgroundDeadline: true
+        )
+        let setup = try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
+            coordinator: coordinator
+        )
+
+        let outcome = await setup.orchestrator.run()
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
     }
 
     @Test("Active meso tightens cadence to short")
@@ -989,7 +1015,7 @@ private extension BackgroundOrchestratorCadenceTests {
         let spc: FakeSpcProvider
 
         struct HealthRecord: Sendable {
-            let outcomeCode: Int
+            let outcome: BgRunOutcome?
             let cadence: Int
         }
 
@@ -1014,7 +1040,7 @@ private extension BackgroundOrchestratorCadenceTests {
                 guard let health = try context.fetch(descriptor).first else {
                     return nil
                 }
-                return .init(outcomeCode: health.outcomeCode, cadence: health.cadence)
+                return .init(outcome: health.outcome, cadence: health.cadence)
             }
         }
     }
@@ -1340,16 +1366,19 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let snapshot: HomeSnapshot
     private let runGate: AsyncGate?
     private let suspendsUntilCancelled: Bool
+    private let marksBackgroundDeadline: Bool
     private var submittedRequests: [HomeIngestionRequest] = []
 
     init(
         snapshot: HomeSnapshot = .empty,
         runGate: AsyncGate? = nil,
-        suspendsUntilCancelled: Bool = false
+        suspendsUntilCancelled: Bool = false,
+        marksBackgroundDeadline: Bool = false
     ) {
         self.snapshot = snapshot
         self.runGate = runGate
         self.suspendsUntilCancelled = suspendsUntilCancelled
+        self.marksBackgroundDeadline = marksBackgroundDeadline
     }
 
     func enqueue(
@@ -1391,6 +1420,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         _ = progress
         _ = publication
         submittedRequests.append(request)
+        if marksBackgroundDeadline {
+            await BackgroundRefreshExecutionContext.current?.deadlineState.markExceeded()
+            throw CancellationError()
+        }
         if suspendsUntilCancelled {
             try await Task.sleep(for: .seconds(60))
         }
@@ -1440,6 +1473,13 @@ private actor CompletionFlag {
     func isFinished() -> Bool {
         finished
     }
+}
+
+@MainActor
+private func latestBgRun(in container: ModelContainer) throws -> BgRunState? {
+    var descriptor = FetchDescriptor<BgRunSnapshot>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+    descriptor.fetchLimit = 1
+    return try ModelContext(container).fetch(descriptor).first.map(BgRunState.init)
 }
 
 private actor RecordingPendingUploadDrainer: PendingLocationUploadDraining {
@@ -1850,6 +1890,249 @@ private actor FirstMorningOnlyGate: NotificationGating {
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
         defer { hasAllowed = true }
         return hasAllowed == false
+    }
+}
+
+@Suite("Background health persistence", .serialized)
+struct BgHealthStoreTests {
+    @Test("Started runs survive a disk-backed reopen as incomplete")
+    func startedRun_diskReopenRemainsIncomplete() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BgHealthStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+
+        do {
+            let container = try makeDiskContainer(url: storeURL)
+            try await BgHealthStore(modelContainer: container).start(runId: "started-run", startedAt: startedAt)
+        }
+
+        let reopened = try makeDiskContainer(url: storeURL)
+        let run = try #require(await healthRun(id: "started-run", in: reopened))
+        #expect(run.startedAt == startedAt)
+        #expect(run.isComplete == false)
+        #expect(run.endedAt == nil)
+        #expect(run.outcome == nil)
+    }
+
+    @Test("A legacy background health store migrates without losing terminal fields")
+    func legacyStore_migratesToCurrentBackgroundHealthSchema() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BgHealthStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        let endedAt = Date(timeIntervalSince1970: 1_010)
+        let nextScheduledAt = Date(timeIntervalSince1970: 2_200)
+
+        do {
+            let legacySchema = Schema(versionedSchema: BgRunSnapshotSchemaV1.self)
+            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
+            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
+            let legacyContext = ModelContext(legacyContainer)
+            legacyContext.insert(
+                BgRunSnapshotSchemaV1.BgRunSnapshot(
+                    runId: "legacy-run",
+                    startedAt: startedAt,
+                    endedAt: endedAt,
+                    outcomeCode: 0,
+                    didNotify: true,
+                    reasonNoNotify: nil,
+                    budgetSecUsed: 10,
+                    nextScheduledAt: nextScheduledAt,
+                    cadence: 20,
+                    cadenceReason: "legacy",
+                    activeSeconds: 8
+                )
+            )
+            try legacyContext.save()
+        }
+
+        let migrated = try makeDiskContainer(url: storeURL)
+        let run = try #require(await healthRun(id: "legacy-run", in: migrated))
+        #expect(run.startedAt == startedAt)
+        #expect(run.endedAt == endedAt)
+        #expect(run.outcome == .success)
+        #expect(run.nextScheduledAt == nextScheduledAt)
+        #expect(run.cadence == 20)
+    }
+
+    @Test("Finalization updates the started diagnostic record without inserting another")
+    func finalize_updatesOriginalRun() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        try await store.start(runId: "single-run", startedAt: .distantPast)
+        try await store.finalize(
+            runId: "single-run",
+            with: finalization(outcome: .success, desiredNextRunAt: Date(timeIntervalSince1970: 1_200))
+        )
+
+        let runs = try await healthRuns(in: container)
+        #expect(runs.count == 1)
+        #expect(runs[0].outcome == .success)
+        #expect(runs[0].uploadDrainOutcome == .remaining)
+        #expect(runs[0].ingestionOutcome == .completed)
+        #expect(runs[0].uploadDrainDurationSeconds == 2)
+        #expect(runs[0].ingestionDurationSeconds == 8)
+    }
+
+    @Test("Terminal outcomes preserve success skip failure cancellation and expiration distinctly")
+    func terminalOutcomes_remainDistinct() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        let outcomes: [BgRunOutcome] = [.success, .skipped, .failed, .cancelled, .expired]
+
+        for (index, outcome) in outcomes.enumerated() {
+            let runId = "run-\(index)"
+            try await store.start(runId: runId, startedAt: Date(timeIntervalSince1970: Double(index)))
+            try await store.finalize(runId: runId, with: finalization(outcome: outcome, desiredNextRunAt: .distantFuture))
+        }
+
+        let persisted = try await healthRuns(in: container).compactMap(\.outcome).sorted { $0.rawValue < $1.rawValue }
+        #expect(persisted == outcomes.sorted { $0.rawValue < $1.rawValue })
+    }
+
+    @Test("Desired cadence remains independent from failed scheduler submissions")
+    func schedulingFailure_doesNotReplaceDesiredCadence() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        let desiredNextRunAt = Date(timeIntervalSince1970: 1_200)
+        try await store.start(runId: "scheduling-run", startedAt: .distantPast)
+        try await store.finalize(
+            runId: "scheduling-run",
+            with: finalization(outcome: .failed, desiredNextRunAt: desiredNextRunAt)
+        )
+        try await store.recordScheduling(
+            runId: "scheduling-run",
+            phase: .fallback,
+            outcome: .submissionFailed
+        )
+        try await store.recordScheduling(
+            runId: "scheduling-run",
+            phase: .authoritative,
+            outcome: .restorationFailed
+        )
+
+        let run = try #require(await healthRun(id: "scheduling-run", in: container))
+        #expect(run.nextScheduledAt == desiredNextRunAt)
+        #expect(run.fallbackSchedulingOutcome == .submissionFailed)
+        #expect(run.authoritativeSchedulingOutcome == .restorationFailed)
+        #expect(run.authoritativeSchedulingOutcome?.preservesSuccessor == false)
+    }
+
+    private func finalization(outcome: BgRunOutcome, desiredNextRunAt: Date) -> BgRunFinalization {
+        .init(
+            endedAt: Date(timeIntervalSince1970: 1_100),
+            outcome: outcome,
+            didNotify: false,
+            reasonNoNotify: "deterministic test",
+            budgetSecUsed: 10,
+            desiredNextRunAt: desiredNextRunAt,
+            cadence: 20,
+            cadenceReason: "test",
+            active: .seconds(10),
+            uploadDrainDuration: .seconds(2),
+            uploadDrainOutcome: .remaining,
+            ingestionDuration: .seconds(8),
+            ingestionOutcome: .completed
+        )
+    }
+
+    private func makeDiskContainer(url: URL) throws -> ModelContainer {
+        let schema = Schema([BgRunSnapshot.self])
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: url)
+        return try ModelContainer(for: schema, configurations: configuration)
+    }
+}
+
+@MainActor
+private func healthRun(id: String, in container: ModelContainer) throws -> BgRunState? {
+    let descriptor = FetchDescriptor<BgRunSnapshot>(predicate: #Predicate { $0.runId == id })
+    return try ModelContext(container).fetch(descriptor).first.map(BgRunState.init)
+}
+
+@MainActor
+private func healthRuns(in container: ModelContainer) throws -> [BgRunState] {
+    try ModelContext(container).fetch(FetchDescriptor<BgRunSnapshot>()).map(BgRunState.init)
+}
+
+private struct BgRunState: Sendable {
+    let startedAt: Date
+    let endedAt: Date?
+    let isComplete: Bool
+    let outcome: BgRunOutcome?
+    let uploadDrainDurationSeconds: Int64?
+    let uploadDrainOutcome: BgPhaseOutcome?
+    let ingestionDurationSeconds: Int64?
+    let ingestionOutcome: BgPhaseOutcome?
+    let nextScheduledAt: Date?
+    let cadence: Int
+    let fallbackSchedulingOutcome: BgSchedulingOutcome?
+    let authoritativeSchedulingOutcome: BgSchedulingOutcome?
+
+    init(_ snapshot: BgRunSnapshot) {
+        startedAt = snapshot.startedAt
+        endedAt = snapshot.endedAt
+        isComplete = snapshot.isComplete
+        outcome = snapshot.outcome
+        uploadDrainDurationSeconds = snapshot.uploadDrainDurationSeconds
+        uploadDrainOutcome = snapshot.uploadDrainOutcome
+        ingestionDurationSeconds = snapshot.ingestionDurationSeconds
+        ingestionOutcome = snapshot.ingestionOutcome
+        nextScheduledAt = snapshot.nextScheduledAt
+        cadence = snapshot.cadence
+        fallbackSchedulingOutcome = snapshot.fallbackSchedulingOutcome
+        authoritativeSchedulingOutcome = snapshot.authoritativeSchedulingOutcome
+    }
+}
+
+enum BgRunSnapshotSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
+
+    static var models: [any PersistentModel.Type] { [BgRunSnapshot.self] }
+
+    @Model
+    final class BgRunSnapshot {
+        @Attribute(.unique) var runId: String
+        var startedAt: Date
+        var endedAt: Date
+        var outcomeCode: Int
+        var didNotify: Bool
+        var reasonNoNotify: String?
+        var budgetSecUsed: Int
+        var nextScheduledAt: Date
+        var cadence: Int
+        var cadenceReason: String?
+        var activeSeconds: Int64
+
+        init(
+            runId: String,
+            startedAt: Date,
+            endedAt: Date,
+            outcomeCode: Int,
+            didNotify: Bool,
+            reasonNoNotify: String?,
+            budgetSecUsed: Int,
+            nextScheduledAt: Date,
+            cadence: Int,
+            cadenceReason: String?,
+            activeSeconds: Int64
+        ) {
+            self.runId = runId
+            self.startedAt = startedAt
+            self.endedAt = endedAt
+            self.outcomeCode = outcomeCode
+            self.didNotify = didNotify
+            self.reasonNoNotify = reasonNoNotify
+            self.budgetSecUsed = budgetSecUsed
+            self.nextScheduledAt = nextScheduledAt
+            self.cadence = cadence
+            self.cadenceReason = cadenceReason
+            self.activeSeconds = activeSeconds
+        }
     }
 }
 

@@ -114,11 +114,14 @@ struct SkyAwareApp: App {
         .backgroundTask(.appRefresh(deps.appRefreshID)) {
             logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
             let lifecycle = BackgroundRefreshLifecycle(
+                beginRun: {
+                    await deps.orchestrator.beginRun()
+                },
                 scheduleFallback: {
                     await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
                 },
-                runOrchestration: {
-                    await deps.orchestrator.run()
+                runOrchestration: { run in
+                    await deps.orchestrator.run(run)
                 },
                 scheduleAuthoritative: { nextRun in
                     await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: nextRun)

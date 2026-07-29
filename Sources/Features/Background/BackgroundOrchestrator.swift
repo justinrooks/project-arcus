@@ -11,7 +11,7 @@ import OSLog
 enum Feed: String, CaseIterable { case outlookDay1, meso, watch, warning }
 
 struct Outcome: Sendable {
-    enum BackgroundResult: Sendable { case success, cancelled, failed, skipped }
+    enum BackgroundResult: Sendable { case success, cancelled, failed, skipped, expired }
     let next: Date
     let result: BackgroundResult
     let didNotify: Bool
@@ -79,8 +79,34 @@ actor BackgroundOrchestrator {
         logger.info("BackgroundOrchestrator initialized")
     }
     
+    func beginRun() async -> BackgroundRefreshRun {
+        let runId = UUID().uuidString
+        let startedAt = Date()
+        do {
+            try await healthStore.start(runId: runId, startedAt: startedAt)
+        } catch {
+            logger.error("Unable to persist started background diagnostic run: \(error.localizedDescription, privacy: .public)")
+        }
+        return BackgroundRefreshRun(
+            runId: runId,
+            startedAt: startedAt,
+            schedulingRecorder: { [healthStore] phase, outcome in
+                try? await healthStore.recordScheduling(
+                    runId: runId,
+                    phase: phase,
+                    outcome: outcome
+                )
+            }
+        )
+    }
+
     // MARK: Run Background Job
     func run() async -> Outcome {
+        let run = await beginRun()
+        return await self.run(run)
+    }
+
+    func run(_ run: BackgroundRefreshRun) async -> Outcome {
         logger.notice("Background run started")
         // Mark the entire background job
         let runInterval = signposter.beginInterval("Background Run")
@@ -88,8 +114,17 @@ actor BackgroundOrchestrator {
         let executionContext = BackgroundRefreshExecutionContext(
             budget: .standard(start: startInstant)
         )
-        let start = Date()
+        let runId = run.runId
         let recoveryCadence = Cadence.short.minutes
+
+        var uploadDrainDuration: Duration?
+        var uploadDrainOutcome: BgPhaseOutcome?
+        var ingestionDuration: Duration?
+        var ingestionOutcome: BgPhaseOutcome?
+
+        defer {
+            signposter.endInterval("Background Run", runInterval)
+        }
         
         return await withTaskCancellationHandler {
             var didMorningNotify = false
@@ -104,9 +139,21 @@ actor BackgroundOrchestrator {
                     uploadQuota: pendingUploadQuota,
                     deadline: clock.now + pendingUploadDrainDuration
                 )
+                let uploadDrainStart = clock.now
                 let pendingUploadDrainOutcome = await pendingUploadDrainer.drainPendingUploads(
                     using: pendingUploadDrainBudget
                 )
+                uploadDrainDuration = clock.now - uploadDrainStart
+                uploadDrainOutcome = Task.isCancelled
+                    ? .cancelled
+                    : pendingUploadDrainOutcome == .drained ? .drained : .remaining
+                if let uploadDrainDuration, let uploadDrainOutcome {
+                    try? await healthStore.recordUploadDrain(
+                        runId: runId,
+                        duration: uploadDrainDuration,
+                        outcome: uploadDrainOutcome
+                    )
+                }
                 if pendingUploadDrainOutcome == .remaining {
                     logger.notice("Background upload drain left durable requests remaining")
                 }
@@ -114,14 +161,41 @@ actor BackgroundOrchestrator {
                 try Task.checkCancellation()
                 let settings = await notificationSettingsProvider.current()
                 let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
-                let snapshot = try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
-                    try await coordinator.enqueueAndWait(
-                        .backgroundRefresh,
-                        locationContext: nil,
-                        remoteAlertContext: nil
-                    )
+                let ingestionStart = clock.now
+                let snapshot: HomeSnapshot
+                do {
+                    snapshot = try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                        try await coordinator.enqueueAndWait(
+                            .backgroundRefresh,
+                            locationContext: nil,
+                            remoteAlertContext: nil
+                        )
+                    }
+                    ingestionDuration = clock.now - ingestionStart
+                    ingestionOutcome = .completed
+                    if let ingestionDuration, let ingestionOutcome {
+                        try? await healthStore.recordIngestion(
+                            runId: runId,
+                            duration: ingestionDuration,
+                            outcome: ingestionOutcome
+                        )
+                    }
+                    signposter.endInterval("Unified Background Ingestion", ingestionInterval)
+                } catch {
+                    ingestionDuration = clock.now - ingestionStart
+                    ingestionOutcome = await executionContext.deadlineState.exceeded()
+                        ? .expired
+                        : error is CancellationError ? .cancelled : .failed
+                    if let ingestionDuration, let ingestionOutcome {
+                        try? await healthStore.recordIngestion(
+                            runId: runId,
+                            duration: ingestionDuration,
+                            outcome: ingestionOutcome
+                        )
+                    }
+                    signposter.endInterval("Unified Background Ingestion", ingestionInterval)
+                    throw error
                 }
-                signposter.endInterval("Unified Background Ingestion", ingestionInterval)
 
                 try Task.checkCancellation()
 
@@ -131,9 +205,23 @@ actor BackgroundOrchestrator {
                     let end = Date()
                     let active = clock.now - startInstant
                     
-                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.skipped, didNotify: false, notificationReason: "No location snapshot available. Rechecking in 20m", nextRun: nextRun, cadence: recoveryCadence, cadenceReason: "Early exit", active: active)
+                    try? await finalizeBgRun(
+                        runId: runId,
+                        end: end,
+                        result: .skipped,
+                        didNotify: false,
+                        notificationReason: "No location snapshot available. Rechecking in 20m",
+                        nextRun: nextRun,
+                        cadence: recoveryCadence,
+                        cadenceReason: "Early exit",
+                        active: active,
+                        uploadDrainDuration: uploadDrainDuration,
+                        uploadDrainOutcome: uploadDrainOutcome,
+                        ingestionDuration: ingestionDuration,
+                        ingestionOutcome: ingestionOutcome
+                    )
                     
-                    return .init(next: nextRun, result: Outcome.BackgroundResult.skipped, didNotify: false, feedsChanged: feedsChanged)
+                    return outcome(next: nextRun, result: .skipped, didNotify: false, feedsChanged: feedsChanged)
                 }
                 
                 guard
@@ -234,47 +322,86 @@ actor BackgroundOrchestrator {
                 let didNotify = didMorningNotify || didMesoNotify || didRiskChangeNotify
                 let reasonNoNotify = didNotify ? nil : noNotifyReasons.joined(separator: "; ")
 
-                try? await recordBgRun(
-                    start: start,
+                try? await finalizeBgRun(
+                    runId: runId,
                     end: end,
-                    result: Outcome.BackgroundResult.success,
+                    result: .success,
                     didNotify: didNotify,
                     notificationReason: reasonNoNotify,
                     nextRun: nextRun,
                     cadence: cadenceResult.cadence.minutes,
                     cadenceReason: cadenceResult.reason,
-                    active: active
+                    active: active,
+                    uploadDrainDuration: uploadDrainDuration,
+                    uploadDrainOutcome: uploadDrainOutcome,
+                    ingestionDuration: ingestionDuration,
+                    ingestionOutcome: ingestionOutcome
                 )
 
-                signposter.endInterval("Background Run", runInterval)
                 logger.notice("Background run finished with result: success")
-                return .init(next: nextRun, result: Outcome.BackgroundResult.success, didNotify: didNotify, feedsChanged: feedsChanged)
+                return outcome(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)
             } catch {
-                signposter.endInterval("Background Run", runInterval)
                 let nextRun = refreshPolicy.getNextRunTime(for: .short)
                 let end = Date()
                 let active = clock.now - startInstant
-                
-                if error is CancellationError {
+                let expired = await executionContext.deadlineState.exceeded()
+                let result: Outcome.BackgroundResult
+                let reason: String
+                if expired {
+                    result = .expired
+                    reason = "Background refresh work deadline reached"
+                } else if error is CancellationError {
+                    result = .cancelled
+                    reason = "Cancelled by iOS"
+                } else {
+                    result = .failed
+                    reason = "Error refreshing background data"
+                }
+
+                if result == .cancelled {
                     logger.notice("Background refresh was cancelled: \(error.localizedDescription, privacy: .public)")
-                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.cancelled, didNotify: false, notificationReason: "Cancelled by iOS", nextRun: nextRun, cadence: recoveryCadence, cadenceReason: "Background refresh cancelled", active: active)
-                    return .init(next: nextRun, result: Outcome.BackgroundResult.cancelled, didNotify: false, feedsChanged: feedsChanged)
                 } else {
                     logger.error("Error refreshing background data: \(error.localizedDescription, privacy: .public)")
-                    
-                    try? await recordBgRun(start: start, end: end, result: Outcome.BackgroundResult.failed, didNotify: false, notificationReason: "Error refreshing background data", nextRun: nextRun, cadence: recoveryCadence, cadenceReason: "Background refresh failed", active: active)
-                        
-                    return .init(next: nextRun, result: Outcome.BackgroundResult.failed, didNotify: false, feedsChanged: feedsChanged)
                 }
+
+                try? await finalizeBgRun(
+                    runId: runId,
+                    end: end,
+                    result: result,
+                    didNotify: false,
+                    notificationReason: reason,
+                    nextRun: nextRun,
+                    cadence: recoveryCadence,
+                    cadenceReason: result == .expired ? "Background refresh expired" : "Background refresh \(result)",
+                    active: active,
+                    uploadDrainDuration: uploadDrainDuration,
+                    uploadDrainOutcome: uploadDrainOutcome,
+                    ingestionDuration: ingestionDuration,
+                    ingestionOutcome: ingestionOutcome
+                )
+                return outcome(next: nextRun, result: result, didNotify: false, feedsChanged: feedsChanged)
             }
         } onCancel: {
             logger.notice("Background run cancelled")
         }
     }
     
-    // MARK: Convenience bg run record
-    private func recordBgRun(
-        start: Date,
+    private func outcome(
+        next: Date,
+        result: Outcome.BackgroundResult,
+        didNotify: Bool,
+        feedsChanged: Set<Feed>
+    ) -> Outcome {
+        Outcome(
+            next: next,
+            result: result,
+            didNotify: didNotify,
+            feedsChanged: feedsChanged
+        )
+    }
+
+    private func finalizeBgRun(
+        runId: String,
         end: Date,
         result: Outcome.BackgroundResult,
         didNotify: Bool,
@@ -282,25 +409,40 @@ actor BackgroundOrchestrator {
         nextRun: Date,
         cadence: Int,
         cadenceReason: String?,
-        active: Duration
+        active: Duration,
+        uploadDrainDuration: Duration?,
+        uploadDrainOutcome: BgPhaseOutcome?,
+        ingestionDuration: Duration?,
+        ingestionOutcome: BgPhaseOutcome?
     ) async throws {
-        let duration = Int(end.timeIntervalSince(start))
-        let outcome = result == .success ? 0 : 2
-        
-        try await healthStore
-            .record(
-                runId: UUID().uuidString,
-                startedAt: start,
+        try await healthStore.finalize(
+            runId: runId,
+            with: .init(
                 endedAt: end,
-                outcomeCode: outcome,
+                outcome: bgRunOutcome(for: result),
                 didNotify: didNotify,
                 reasonNoNotify: notificationReason,
-                budgetSecUsed: duration,
-                nextScheduledAt: nextRun,
+                budgetSecUsed: Int(active.components.seconds),
+                desiredNextRunAt: nextRun,
                 cadence: cadence,
                 cadenceReason: cadenceReason,
-                active: active
+                active: active,
+                uploadDrainDuration: uploadDrainDuration,
+                uploadDrainOutcome: uploadDrainOutcome,
+                ingestionDuration: ingestionDuration,
+                ingestionOutcome: ingestionOutcome
             )
+        )
+    }
+
+    private func bgRunOutcome(for result: Outcome.BackgroundResult) -> BgRunOutcome {
+        switch result {
+        case .success: .success
+        case .skipped: .skipped
+        case .failed: .failed
+        case .cancelled: .cancelled
+        case .expired: .expired
+        }
     }
 }
 

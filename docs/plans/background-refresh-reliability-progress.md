@@ -292,11 +292,26 @@ completed/caught outcomes and store a desired next date before scheduler submiss
 
 ### Issue #365 — 10: Record truthful background execution and scheduling diagnostics
 
-- **Status:** Planned
-- **Goal:** Distinguish desired cadence, actual submission, execution phases, expiration, and completion.
-- **Required proof:** incomplete/expired runs remain visible; submission failure cannot display as scheduled; persisted
-  diagnostics contain no coordinates, alert payloads, tokens, or user identifiers.
-- **Handoff:** Update issue #360's required evidence fields after the diagnostic contract lands.
+- **Status:** Implemented; focused simulator validation passed; full unit lane did not finalize.
+- **Contract:** `BgHealthStore` persists a run ID at start, finalizes that same record with success, skip, failure,
+  cancellation, or expiration, and retains unfinished starts. It separately stores the desired cadence date, fallback
+  and authoritative scheduler outcomes, and categorical upload-drain and unified-ingestion phase results/durations.
+- **Privacy:** The persisted contract contains only the local diagnostic run ID, categorical states, dates, and
+  durations; it contains no coordinates, placemarks, alert content, URLs, tokens, or credentials.
+- **Validation:** `BackgroundOrchestratorCadenceTests` and `BackgroundRefreshLifecycleTests` passed **36 / 36** with
+  **0 failed, 0 skipped** on iPhone 17, iOS 26.5, Debug
+  (`/private/tmp/skyaware-results.3TQkO3/background-diagnostics-review.xcresult`). `BgHealthStoreTests` separately
+  passed **5 / 5** with **0 failed, 0 skipped** on the same simulator and configuration, including current-schema
+  reopen and legacy-schema migration coverage
+  (`/private/tmp/skyaware-rereview-365.wsBH0A/health-store.xcresult`). The full `SkyAwareTests` lane compiled but did
+  not produce a finalized result bundle
+  (`/private/tmp/skyaware-results.i0pbM9/unit-review.xcresult`), so no full-lane count is claimed. `git diff --check`
+  passed.
+- **Handoff:** #360 must capture one post-fix Release SHA's local diagnostic record: started/ended timestamps and
+  terminal state; desired cadence date (not an Apple launch claim); fallback and authoritative scheduler outcomes;
+  upload-drain duration plus drained/remaining outcome; unified-ingestion duration plus terminal outcome; and any
+  durable upload remainder. Keep device artifacts free of coordinates, alert content, requests, URLs, tokens, and
+  identifiers other than the local diagnostic run ID.
 
 ## Verification ledger
 

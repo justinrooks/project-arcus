@@ -192,7 +192,10 @@ No campaign cohort has started. Issue 01 must append the first cohort manifest b
 
 - **Status:** Planned
 - **Goal:** Distinguish bounded drain, ingestion, cancellation, task outcome, and durable remainder.
-- **Required result:** Valid trace and deterministic evidence with privacy-safe backlog preparation.
+- **Required result:** Valid trace and deterministic evidence with privacy-safe backlog preparation. On one Release
+  SHA, record the local background diagnostic's start/end state, terminal outcome, desired cadence date (not an Apple
+  launch claim), fallback/authoritative scheduling outcomes, upload-drain and unified-ingestion durations/outcomes,
+  and durable upload remainder.
 - **Stop condition:** Reproduction requires unsafe location, upload-queue, preference, token, or server mutation.
 
 ### Issue #361 — 15: Qualify and close the physical-device evidence matrix
