@@ -543,11 +543,12 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(await deadlineState.exceeded())
     }
 
-    @Test("Ingestion finishing before its work deadline remains successful")
-    func ingestionBeforeWorkDeadline_remainsSuccessful() async throws {
+    @Test("Notification work finishing before its work deadline remains successful")
+    func notificationBeforeWorkDeadline_remainsSuccessful() async throws {
         let ingestionGate = AsyncGate()
         let deadlineWaiter = ManualDeadlineWaiter()
         let deadlineState = BackgroundRefreshDeadlineState()
+        let sender = RecordingRiskSender()
         let coordinator = RecordingHomeIngestionCoordinator(
             snapshot: Self.makeRiskSnapshot(change: nil),
             runGate: ingestionGate
@@ -555,7 +556,9 @@ struct BackgroundOrchestratorCadenceTests {
         let setup = try await makeDeadlineSystem(
             coordinator: coordinator,
             deadlineWaiter: deadlineWaiter,
-            deadlineState: deadlineState
+            deadlineState: deadlineState,
+            morningEngine: makeMorningEngine(sender: sender),
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
         )
 
         let runTask = Task { await setup.orchestrator.run() }
@@ -569,8 +572,45 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(outcome.result == .success)
         #expect(health.outcome == .success)
         #expect(health.ingestionOutcome == .completed)
+        #expect((await sender.sent()).count == 1)
         #expect(await deadlineWaiter.observedCancellation())
         #expect(await deadlineState.exceeded() == false)
+    }
+
+    @Test("Blocked notification sender expires at the work deadline")
+    func blockedNotificationSender_workDeadlineExpiresRun() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let sender = CancellationAwareBlockingNotificationSender()
+        let downstreamRiskSender = RecordingRiskSender()
+        let change = makeRiskChange(
+            previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: Self.makeRiskSnapshot(change: change))
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            morningEngine: makeMorningEngine(sender: sender),
+            riskChangeEngine: makeRiskChangeEngine(sender: downstreamRiskSender),
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await sender.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .completed)
+        #expect(health.cadence == Cadence.short.minutes)
+        #expect(await sender.observedCancellation())
+        #expect(await downstreamRiskSender.sent().isEmpty)
+        #expect(await deadlineState.exceeded())
     }
 
     @Test("Deadline reached before ingestion admission does not submit work")
@@ -1158,6 +1198,8 @@ private extension BackgroundOrchestratorCadenceTests {
         settings: NotificationSettings,
         pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator(),
         coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil,
+        morningEngine suppliedMorningEngine: MorningEngine? = nil,
+        riskChangeEngine suppliedRiskChangeEngine: RiskChangeEngine? = nil,
         executionContextFactory: @escaping @Sendable (
             ContinuousClock.Instant
         ) -> BackgroundRefreshExecutionContext = {
@@ -1196,7 +1238,7 @@ private extension BackgroundOrchestratorCadenceTests {
             )
         }
 
-        let morningEngine = MorningEngine(
+        let morningEngine = suppliedMorningEngine ?? MorningEngine(
             rule: NoopMorningRule(),
             gate: AllowAllGate(),
             composer: NoopComposer(),
@@ -1234,7 +1276,7 @@ private extension BackgroundOrchestratorCadenceTests {
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
-            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            riskChangeEngine: suppliedRiskChangeEngine ?? makeRiskChangeEngine(sender: NoopSender()),
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(settings: settings),
@@ -1250,13 +1292,18 @@ private extension BackgroundOrchestratorCadenceTests {
         coordinator: any HomeIngestionCoordinating,
         deadlineWaiter: ManualDeadlineWaiter,
         deadlineState: BackgroundRefreshDeadlineState,
-        workDeadlineAlreadyReached: Bool = false
+        workDeadlineAlreadyReached: Bool = false,
+        morningEngine: MorningEngine? = nil,
+        riskChangeEngine: RiskChangeEngine? = nil,
+        settings: NotificationSettings = .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
     ) async throws -> SystemUnderTest {
         try await makeSystem(
             activeMesos: [],
             activeAlerts: [],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
+            settings: settings,
             coordinator: coordinator,
+            morningEngine: morningEngine,
+            riskChangeEngine: riskChangeEngine,
             executionContextFactory: { start in
                 let budget = workDeadlineAlreadyReached
                     ? BackgroundRefreshBudget(
@@ -1766,6 +1813,32 @@ private actor RecordingRiskSender: NotificationSending {
 
     func sent() -> [SentNotification] {
         notifications
+    }
+}
+
+private actor CancellationAwareBlockingNotificationSender: NotificationSending {
+    private var didStart = false
+    private var didObserveCancellation = false
+
+    func send(title _: String, body _: String, subtitle _: String, id _: String) async -> Bool {
+        didStart = true
+        do {
+            try await Task.sleep(for: .seconds(60))
+            return true
+        } catch is CancellationError {
+            didObserveCancellation = true
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func hasStarted() -> Bool {
+        didStart
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
     }
 }
 

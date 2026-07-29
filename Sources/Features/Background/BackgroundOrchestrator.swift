@@ -127,20 +127,13 @@ actor BackgroundOrchestrator {
 
         var uploadDrainDuration: Duration?
         var uploadDrainOutcome: BgPhaseOutcome?
-        var ingestionDuration: Duration?
-        var ingestionOutcome: BgPhaseOutcome?
+        let phaseState = BackgroundWorkPhaseState()
 
         defer {
             signposter.endInterval("Background Run", runInterval)
         }
         
         return await withTaskCancellationHandler {
-            var didMorningNotify = false
-            var didMesoNotify = false
-            var didRiskChangeNotify = false
-            var noNotifyReasons: [String] = []
-            var feedsChanged: Set<Feed> = []
-            
             do {
                 try Task.checkCancellation()
                 let pendingUploadDrainBudget = PendingLocationUploadDrainBudget(
@@ -166,186 +159,44 @@ actor BackgroundOrchestrator {
                     logger.notice("Background upload drain left durable requests remaining")
                 }
 
-                try Task.checkCancellation()
-                let settings = await notificationSettingsProvider.current()
-                let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
-                let ingestionStart = clock.now
-                let snapshot: HomeSnapshot
-                do {
-                    snapshot = try await unifiedIngestion(using: executionContext)
-                    ingestionDuration = clock.now - ingestionStart
-                    ingestionOutcome = .completed
-                    if let ingestionDuration, let ingestionOutcome {
-                        try? await healthStore.recordIngestion(
-                            runId: runId,
-                            duration: ingestionDuration,
-                            outcome: ingestionOutcome
-                        )
-                    }
-                    signposter.endInterval("Unified Background Ingestion", ingestionInterval)
-                } catch {
-                    ingestionDuration = clock.now - ingestionStart
-                    ingestionOutcome = await executionContext.deadlineState.exceeded()
-                        ? .expired
-                        : error is CancellationError ? .cancelled : .failed
-                    if let ingestionDuration, let ingestionOutcome {
-                        try? await healthStore.recordIngestion(
-                            runId: runId,
-                            duration: ingestionDuration,
-                            outcome: ingestionOutcome
-                        )
-                    }
-                    signposter.endInterval("Unified Background Ingestion", ingestionInterval)
-                    throw error
-                }
-
-                try Task.checkCancellation()
-
-                guard let locationSnapshot = snapshot.locationSnapshot else {
-                    logger.info("No current location snapshot available; rechecking in 20m")
-                    let nextRun = refreshPolicy.getNextRunTime(for: .short)
-                    let end = Date()
-                    let active = clock.now - startInstant
-                    
-                    try? await finalizeBgRun(
-                        runId: runId,
-                        end: end,
-                        result: .skipped,
-                        didNotify: false,
-                        notificationReason: "No location snapshot available. Rechecking in 20m",
-                        nextRun: nextRun,
-                        cadence: recoveryCadence,
-                        cadenceReason: "Early exit",
-                        active: active,
-                        uploadDrainDuration: uploadDrainDuration,
-                        uploadDrainOutcome: uploadDrainOutcome,
-                        ingestionDuration: ingestionDuration,
-                        ingestionOutcome: ingestionOutcome
-                    )
-                    
-                    return outcome(next: nextRun, result: .skipped, didNotify: false, feedsChanged: feedsChanged)
-                }
-                
-                guard
-                    let stormRisk = snapshot.stormRisk,
-                    let severeRisk = snapshot.severeRisk,
-                    let fireRisk = snapshot.fireRisk
-                else {
-                    throw BackgroundOrchestratorError.missingLocationScopedSnapshot
-                }
-
-                if snapshot.latestOutlook != nil {
-                    feedsChanged.insert(.outlookDay1)
-                }
-                if snapshot.mesos.isEmpty == false {
-                    feedsChanged.insert(.meso)
-                }
-                if snapshot.alerts.isEmpty == false {
-                    feedsChanged.insert(.watch)
-                }
-
-                let outlook = snapshot.latestOutlook
-                let activeMesos = snapshot.mesos
-                let activeAlerts = snapshot.alerts
-                let inMeso = activeMesos.isEmpty == false
-                let inAlert = activeAlerts.isEmpty == false
-                
-                // TODO: Create a fireNotification flow
-                // TODO: Put the flow behind an options flag
-                
-                // MARK: Send the AM Notification
-                if settings.morningSummariesEnabled {
-                    signposter.emitEvent("Morning Summary Notification")
-                    didMorningNotify = await morningEngine.run(
-                        ctx: .init(
-                            now: .now,
-                            lastConvectiveIssue: outlook?.published,
-                            localTZ: .current,
-                            quietHours: nil,
-                            stormRisk: stormRisk,
-                            severeRisk: severeRisk,
-                            fireRisk: fireRisk,
-                            placeMark: locationSnapshot.placemarkSummary ?? "Unknown",
-                            riskProfileChange: settings.riskChangeNotificationsEnabled ? snapshot.riskProfileChange : nil
-                        )
-                    )
-                    if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
-                } else { noNotifyReasons.append("Morning summary disabled") }
-                
-                if settings.mesoNotificationsEnabled {
-                    // MARK: Send Meso Notification
-                    signposter.emitEvent("Meso Notification")
-                    didMesoNotify = await mesoEngine.run(
-                        ctx: .init(
-                            now: .now,
-                            localTZ: .current,
-                            location: locationSnapshot.coordinates,
-                            placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
-                        ),
-                        mesos: activeMesos
-                    )
-                    if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
-                } else { noNotifyReasons.append("Meso notification disabled") }
-
-                let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
-                    && didMorningNotify
-                    && snapshot.riskProfileChange != nil
-                if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
-                    await riskChangeEngine.coalesce(change: riskProfileChange)
-                }
-                didRiskChangeNotify = await riskChangeEngine.run(
-                    change: coalescedCurrentRiskChange ? nil : snapshot.riskProfileChange,
-                    isEnabled: settings.riskChangeNotificationsEnabled
+                let evaluation = try await evaluateWork(
+                    using: executionContext,
+                    runId: runId,
+                    phaseState: phaseState
                 )
-                if settings.riskChangeNotificationsEnabled {
-                    if !didRiskChangeNotify, !coalescedCurrentRiskChange {
-                        if snapshot.riskProfileChange == nil {
-                            noNotifyReasons.append("Risk change notification skipped (no change)")
-                        } else {
-                            noNotifyReasons.append("Risk change notification skipped")
-                        }
-                    }
-                } else {
-                    noNotifyReasons.append("Risk change notifications disabled")
-                }
-                                
-                // MARK: Cadence decision
-                let cadenceResult = cadence.decide(
-                    for: .init(
-                        categorical: stormRisk,
-                        inMeso: inMeso,
-                        inAlert: inAlert
-                    )
-                )
-                
-                let nextRun = refreshPolicy.getNextRunTime(for: cadenceResult.cadence)
+                let nextRun = refreshPolicy.getNextRunTime(for: evaluation.cadence)
                 let end = Date()
                 let active = clock.now - startInstant
-                let didNotify = didMorningNotify || didMesoNotify || didRiskChangeNotify
-                let reasonNoNotify = didNotify ? nil : noNotifyReasons.joined(separator: "; ")
+                let ingestion = await phaseState.ingestion()
 
                 try? await finalizeBgRun(
                     runId: runId,
                     end: end,
-                    result: .success,
-                    didNotify: didNotify,
-                    notificationReason: reasonNoNotify,
+                    result: evaluation.result,
+                    didNotify: evaluation.didNotify,
+                    notificationReason: evaluation.notificationReason,
                     nextRun: nextRun,
-                    cadence: cadenceResult.cadence.minutes,
-                    cadenceReason: cadenceResult.reason,
+                    cadence: evaluation.cadence.minutes,
+                    cadenceReason: evaluation.cadenceReason,
                     active: active,
                     uploadDrainDuration: uploadDrainDuration,
                     uploadDrainOutcome: uploadDrainOutcome,
-                    ingestionDuration: ingestionDuration,
-                    ingestionOutcome: ingestionOutcome
+                    ingestionDuration: ingestion?.duration,
+                    ingestionOutcome: ingestion?.outcome
                 )
 
-                logger.notice("Background run finished with result: success")
-                return outcome(next: nextRun, result: .success, didNotify: didNotify, feedsChanged: feedsChanged)
+                logger.notice("Background run finished with result: \(String(describing: evaluation.result), privacy: .public)")
+                return outcome(
+                    next: nextRun,
+                    result: evaluation.result,
+                    didNotify: evaluation.didNotify,
+                    feedsChanged: evaluation.feedsChanged
+                )
             } catch {
                 let nextRun = refreshPolicy.getNextRunTime(for: .short)
                 let end = Date()
                 let active = clock.now - startInstant
+                let ingestion = await phaseState.ingestion()
                 let expired = await executionContext.deadlineState.exceeded()
                 let result: Outcome.BackgroundResult
                 let reason: String
@@ -378,10 +229,10 @@ actor BackgroundOrchestrator {
                     active: active,
                     uploadDrainDuration: uploadDrainDuration,
                     uploadDrainOutcome: uploadDrainOutcome,
-                    ingestionDuration: ingestionDuration,
-                    ingestionOutcome: ingestionOutcome
+                    ingestionDuration: ingestion?.duration,
+                    ingestionOutcome: ingestion?.outcome
                 )
-                return outcome(next: nextRun, result: result, didNotify: false, feedsChanged: feedsChanged)
+                return outcome(next: nextRun, result: result, didNotify: false, feedsChanged: [])
             }
         } onCancel: {
             logger.notice("Background run cancelled")
@@ -402,26 +253,191 @@ actor BackgroundOrchestrator {
         )
     }
 
-    private func unifiedIngestion(
-        using executionContext: BackgroundRefreshExecutionContext
-    ) async throws -> HomeSnapshot {
+    private func evaluateWork(
+        using executionContext: BackgroundRefreshExecutionContext,
+        runId: String,
+        phaseState: BackgroundWorkPhaseState
+    ) async throws -> BackgroundWorkEvaluation {
         try Task.checkCancellation()
 
         let workDeadline = executionContext.budget.workDeadline
         guard clock.now < workDeadline else {
             await executionContext.deadlineState.markExceeded()
+            let evidence = BackgroundIngestionEvidence(duration: .zero, outcome: .expired)
+            await phaseState.record(ingestion: evidence)
+            try? await healthStore.recordIngestion(
+                runId: runId,
+                duration: evidence.duration,
+                outcome: evidence.outcome
+            )
             throw CancellationError()
         }
 
         let coordinator = coordinator
         let workDeadlineWaiter = workDeadlineWaiter
-        return try await withThrowingTaskGroup(of: HomeSnapshot?.self) { group in
+        let notificationSettingsProvider = notificationSettingsProvider
+        let signposter = signposter
+        let clock = clock
+        let healthStore = healthStore
+        let logger = logger
+        let morningEngine = morningEngine
+        let mesoEngine = mesoEngine
+        let riskChangeEngine = riskChangeEngine
+        let cadence = cadence
+        return try await withThrowingTaskGroup(of: BackgroundWorkEvaluation?.self) { group in
             group.addTask {
                 try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
-                    try await coordinator.enqueueAndWait(
-                        .backgroundRefresh,
-                        locationContext: nil,
-                        remoteAlertContext: nil
+                    let settings = await notificationSettingsProvider.current()
+                    try Task.checkCancellation()
+                    let ingestionInterval = signposter.beginInterval("Unified Background Ingestion")
+                    let ingestionStart = clock.now
+                    let snapshot: HomeSnapshot
+                    do {
+                        snapshot = try await BackgroundOrchestrator.unifiedIngestion(
+                            using: executionContext,
+                            coordinator: coordinator
+                        )
+                        try Task.checkCancellation()
+                        let evidence = BackgroundIngestionEvidence(
+                            duration: clock.now - ingestionStart,
+                            outcome: .completed
+                        )
+                        await phaseState.record(ingestion: evidence)
+                        try? await healthStore.recordIngestion(
+                            runId: runId,
+                            duration: evidence.duration,
+                            outcome: evidence.outcome
+                        )
+                        signposter.endInterval("Unified Background Ingestion", ingestionInterval)
+                    } catch {
+                        let evidence = BackgroundIngestionEvidence(
+                            duration: clock.now - ingestionStart,
+                            outcome: await executionContext.deadlineState.exceeded()
+                                ? .expired
+                                : error is CancellationError ? .cancelled : .failed
+                        )
+                        await phaseState.record(ingestion: evidence)
+                        try? await healthStore.recordIngestion(
+                            runId: runId,
+                            duration: evidence.duration,
+                            outcome: evidence.outcome
+                        )
+                        signposter.endInterval("Unified Background Ingestion", ingestionInterval)
+                        throw error
+                    }
+
+                    try Task.checkCancellation()
+
+                    guard let locationSnapshot = snapshot.locationSnapshot else {
+                        logger.info("No current location snapshot available; rechecking in 20m")
+                        return .init(
+                            result: .skipped,
+                            didNotify: false,
+                            notificationReason: "No location snapshot available. Rechecking in 20m",
+                            cadence: .short,
+                            cadenceReason: "Early exit",
+                            feedsChanged: []
+                        )
+                    }
+
+                    guard
+                        let stormRisk = snapshot.stormRisk,
+                        let severeRisk = snapshot.severeRisk,
+                        let fireRisk = snapshot.fireRisk
+                    else {
+                        throw BackgroundOrchestratorError.missingLocationScopedSnapshot
+                    }
+
+                    var feedsChanged: Set<Feed> = []
+                    if snapshot.latestOutlook != nil {
+                        feedsChanged.insert(.outlookDay1)
+                    }
+                    if snapshot.mesos.isEmpty == false {
+                        feedsChanged.insert(.meso)
+                    }
+                    if snapshot.alerts.isEmpty == false {
+                        feedsChanged.insert(.watch)
+                    }
+
+                    let outlook = snapshot.latestOutlook
+                    let activeMesos = snapshot.mesos
+                    let activeAlerts = snapshot.alerts
+                    let inMeso = activeMesos.isEmpty == false
+                    let inAlert = activeAlerts.isEmpty == false
+                    var didMorningNotify = false
+                    var didMesoNotify = false
+                    var didRiskChangeNotify = false
+                    var noNotifyReasons: [String] = []
+
+                    if settings.morningSummariesEnabled {
+                        signposter.emitEvent("Morning Summary Notification")
+                        didMorningNotify = await morningEngine.run(
+                            ctx: .init(
+                                now: .now,
+                                lastConvectiveIssue: outlook?.published,
+                                localTZ: .current,
+                                quietHours: nil,
+                                stormRisk: stormRisk,
+                                severeRisk: severeRisk,
+                                fireRisk: fireRisk,
+                                placeMark: locationSnapshot.placemarkSummary ?? "Unknown",
+                                riskProfileChange: settings.riskChangeNotificationsEnabled ? snapshot.riskProfileChange : nil
+                            )
+                        )
+                        if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
+                    } else { noNotifyReasons.append("Morning summary disabled") }
+                    try Task.checkCancellation()
+
+                    if settings.mesoNotificationsEnabled {
+                        signposter.emitEvent("Meso Notification")
+                        didMesoNotify = await mesoEngine.run(
+                            ctx: .init(
+                                now: .now,
+                                localTZ: .current,
+                                location: locationSnapshot.coordinates,
+                                placeMark: locationSnapshot.placemarkSummary ?? "Unknown"
+                            ),
+                            mesos: activeMesos
+                        )
+                        if !didMesoNotify { noNotifyReasons.append("Meso notification skipped") }
+                    } else { noNotifyReasons.append("Meso notification disabled") }
+                    try Task.checkCancellation()
+
+                    let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
+                        && didMorningNotify
+                        && snapshot.riskProfileChange != nil
+                    if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
+                        await riskChangeEngine.coalesce(change: riskProfileChange)
+                        try Task.checkCancellation()
+                    }
+                    didRiskChangeNotify = await riskChangeEngine.run(
+                        change: coalescedCurrentRiskChange ? nil : snapshot.riskProfileChange,
+                        isEnabled: settings.riskChangeNotificationsEnabled
+                    )
+                    try Task.checkCancellation()
+                    if settings.riskChangeNotificationsEnabled {
+                        if !didRiskChangeNotify, !coalescedCurrentRiskChange {
+                            noNotifyReasons.append(
+                                snapshot.riskProfileChange == nil
+                                    ? "Risk change notification skipped (no change)"
+                                    : "Risk change notification skipped"
+                            )
+                        }
+                    } else {
+                        noNotifyReasons.append("Risk change notifications disabled")
+                    }
+
+                    let cadenceResult = cadence.decide(
+                        for: .init(categorical: stormRisk, inMeso: inMeso, inAlert: inAlert)
+                    )
+                    let didNotify = didMorningNotify || didMesoNotify || didRiskChangeNotify
+                    return .init(
+                        result: .success,
+                        didNotify: didNotify,
+                        notificationReason: didNotify ? nil : noNotifyReasons.joined(separator: "; "),
+                        cadence: cadenceResult.cadence,
+                        cadenceReason: cadenceResult.reason,
+                        feedsChanged: feedsChanged
                     )
                 }
             }
@@ -446,6 +462,19 @@ actor BackgroundOrchestrator {
                 throw CancellationError()
             }
             return snapshot
+        }
+    }
+
+    nonisolated private static func unifiedIngestion(
+        using executionContext: BackgroundRefreshExecutionContext,
+        coordinator: any HomeIngestionCoordinating
+    ) async throws -> HomeSnapshot {
+        try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+            try await coordinator.enqueueAndWait(
+                .backgroundRefresh,
+                locationContext: nil,
+                remoteAlertContext: nil
+            )
         }
     }
 
@@ -497,4 +526,30 @@ actor BackgroundOrchestrator {
 
 private enum BackgroundOrchestratorError: Error {
     case missingLocationScopedSnapshot
+}
+
+private struct BackgroundWorkEvaluation: Sendable {
+    let result: Outcome.BackgroundResult
+    let didNotify: Bool
+    let notificationReason: String?
+    let cadence: Cadence
+    let cadenceReason: String
+    let feedsChanged: Set<Feed>
+}
+
+private struct BackgroundIngestionEvidence: Sendable {
+    let duration: Duration
+    let outcome: BgPhaseOutcome
+}
+
+private actor BackgroundWorkPhaseState {
+    private var ingestionEvidence: BackgroundIngestionEvidence?
+
+    func record(ingestion evidence: BackgroundIngestionEvidence) {
+        ingestionEvidence = evidence
+    }
+
+    func ingestion() -> BackgroundIngestionEvidence? {
+        ingestionEvidence
+    }
 }
