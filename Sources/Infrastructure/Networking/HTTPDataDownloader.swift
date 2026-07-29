@@ -137,7 +137,7 @@ public enum HTTPRequestHeaders {
     }
 }
 
-public struct HTTPResponse {
+public struct HTTPResponse: Sendable {
     public enum Source: Sendable, Equatable, CustomStringConvertible {
         case live
         case localCache
@@ -248,6 +248,8 @@ public final class URLSessionHTTPClient: HTTPClient {
     private let urlCache: URLCache
     private let sleepFor: @Sendable (TimeInterval) async throws -> Void
     private let now: @Sendable () -> Date
+    private let budgetNow: @Sendable () -> ContinuousClock.Instant
+    private let sleepForDeadline: @Sendable (Duration) async throws -> Void
 
     public init(
         observer: any HTTPResponseObserving = NoOpHTTPResponseObserver(),
@@ -257,7 +259,9 @@ public final class URLSessionHTTPClient: HTTPClient {
         foregroundSession: URLSession? = nil,
         backgroundSession: URLSession? = nil,
         sleepFor: @escaping @Sendable (TimeInterval) async throws -> Void = URLSessionHTTPClient.defaultSleep,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        budgetNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock().now },
+        sleepForDeadline: @escaping @Sendable (Duration) async throws -> Void = URLSessionHTTPClient.defaultDeadlineSleep
     ) {
         self.observer = observer
         self.foregroundPolicy = foregroundPolicy
@@ -267,6 +271,8 @@ public final class URLSessionHTTPClient: HTTPClient {
         self.backgroundSession = backgroundSession ?? Self.makeSession(policy: backgroundPolicy, cache: urlCache)
         self.sleepFor = sleepFor
         self.now = now
+        self.budgetNow = budgetNow
+        self.sleepForDeadline = sleepForDeadline
     }
 
     public func get(_ url: URL, headers: [String: String] = [:]) async throws -> HTTPResponse {
@@ -301,19 +307,33 @@ public final class URLSessionHTTPClient: HTTPClient {
         try await Task.sleep(nanoseconds: nanos)
     }
 
+    public static func defaultDeadlineSleep(_ duration: Duration) async throws {
+        try await Task.sleep(for: duration)
+    }
+
     private func request(url: URL, method: String, headers: [String: String], body: Data?) async throws -> HTTPResponse {
         let mode = HTTPExecutionMode.current
         let policy = policy(for: mode)
         let session = session(for: mode)
+        let executionContext = mode == .background ? BackgroundRefreshExecutionContext.current : nil
         let maxAttempts = policy.retryDelays.count + 1
 
         for attempt in 0..<maxAttempts {
             try Task.checkCancellation()
+            guard let requestTimeout = requestTimeout(policy: policy, executionContext: executionContext) else {
+                return try await deadlineFallbackOrThrow(
+                    method: method,
+                    url: url,
+                    policy: policy,
+                    executionContext: executionContext,
+                    reason: "deadline_before_attempt"
+                )
+            }
             do {
                 var req = URLRequest(url: url)
                 req.httpMethod = method
                 req.httpBody = body
-                req.timeoutInterval = policy.requestTimeout
+                req.timeoutInterval = requestTimeout
 
                 headers.forEach { header in
                     req.setValue(
@@ -323,7 +343,23 @@ public final class URLSessionHTTPClient: HTTPClient {
                 }
 
                 let metricsCollector = URLSessionTaskMetricsCollector()
-                let (data, response) = try await session.data(for: req, delegate: metricsCollector)
+                let (data, response) = try await data(
+                    for: req,
+                    session: session,
+                    metricsCollector: metricsCollector,
+                    executionContext: executionContext
+                )
+
+                try Task.checkCancellation()
+                guard hasRemainingWork(in: executionContext) else {
+                    return try await deadlineFallbackOrThrow(
+                        method: method,
+                        url: url,
+                        policy: policy,
+                        executionContext: executionContext,
+                        reason: "deadline_after_response"
+                    )
+                }
 
                 guard let http = response as? HTTPURLResponse else {
                     throw URLError(.badServerResponse)
@@ -358,8 +394,18 @@ public final class URLSessionHTTPClient: HTTPClient {
                             retryAfterSeconds: retryAfter,
                             policy: policy
                         ) {
+                            guard retryIsAdmitted(wait, in: executionContext) else {
+                                return try await deadlineFallbackOrThrow(
+                                    method: method,
+                                    url: url,
+                                    policy: policy,
+                                    executionContext: executionContext,
+                                    reason: "deadline_before_retry"
+                                )
+                            }
                             logger.debug("Retrying HTTP status \(liveResponse.status, privacy: .public) in \(wait, privacy: .public)s host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
                             try await sleepFor(wait)
+                            try Task.checkCancellation()
                             continue
                         }
                     }
@@ -385,8 +431,18 @@ public final class URLSessionHTTPClient: HTTPClient {
 
                 if isTransient(error) {
                     if let wait = retryInterval(attempt: attempt, retryAfterSeconds: nil, policy: policy) {
+                        guard retryIsAdmitted(wait, in: executionContext) else {
+                            return try await deadlineFallbackOrThrow(
+                                method: method,
+                                url: url,
+                                policy: policy,
+                                executionContext: executionContext,
+                                reason: "deadline_before_retry"
+                            )
+                        }
                         logger.debug("Retrying transient transport failure in \(wait, privacy: .public)s host=\(url.host ?? "unknown", privacy: .public) path=\(url.path, privacy: .public)")
                         try await sleepFor(wait)
+                        try Task.checkCancellation()
                         continue
                     }
 
@@ -441,6 +497,83 @@ public final class URLSessionHTTPClient: HTTPClient {
         let jitter = Double.random(in: policy.jitterMultiplierRange)
         let jittered = max(0, min(baseDelay * jitter, Double(policy.maxRetryAfterSeconds)))
         return jittered
+    }
+
+    private func requestTimeout(
+        policy: HTTPRequestPolicy,
+        executionContext: BackgroundRefreshExecutionContext?
+    ) -> TimeInterval? {
+        guard let executionContext else { return policy.requestTimeout }
+        let budget = executionContext.budget
+        let remaining = budget.remainingWork(at: budgetNow())
+        guard remaining > .zero else { return nil }
+        return min(policy.requestTimeout, timeInterval(for: remaining))
+    }
+
+    private func retryIsAdmitted(_ delay: TimeInterval, in executionContext: BackgroundRefreshExecutionContext?) -> Bool {
+        guard let executionContext else { return true }
+        return delay < timeInterval(for: executionContext.budget.remainingWork(at: budgetNow()))
+    }
+
+    private func hasRemainingWork(in executionContext: BackgroundRefreshExecutionContext?) -> Bool {
+        guard let executionContext else { return true }
+        return executionContext.budget.remainingWork(at: budgetNow()) > .zero
+    }
+
+    private func deadlineFallbackOrThrow(
+        method: String,
+        url: URL,
+        policy: HTTPRequestPolicy,
+        executionContext: BackgroundRefreshExecutionContext?,
+        reason: String
+    ) async throws -> HTTPResponse {
+        try Task.checkCancellation()
+        if hasRemainingWork(in: executionContext),
+           let fallback = cacheFallbackResponse(method: method, url: url, policy: policy, reason: reason) {
+            return fallback
+        }
+        await executionContext?.deadlineState.markExceeded()
+        throw CancellationError()
+    }
+
+    private func data(
+        for request: URLRequest,
+        session: URLSession,
+        metricsCollector: URLSessionTaskMetricsCollector,
+        executionContext: BackgroundRefreshExecutionContext?
+    ) async throws -> (Data, URLResponse) {
+        guard let executionContext else {
+            return try await session.data(for: request, delegate: metricsCollector)
+        }
+
+        let remaining = executionContext.budget.remainingWork(at: budgetNow())
+        guard remaining > .zero else {
+            await executionContext.deadlineState.markExceeded()
+            throw CancellationError()
+        }
+
+        return try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+            group.addTask {
+                try await session.data(for: request, delegate: metricsCollector)
+            }
+            group.addTask {
+                try await self.sleepForDeadline(remaining)
+                try Task.checkCancellation()
+                await executionContext.deadlineState.markExceeded()
+                throw CancellationError()
+            }
+
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else {
+                throw CancellationError()
+            }
+            return result
+        }
+    }
+
+    private func timeInterval(for duration: Duration) -> TimeInterval {
+        let components = duration.components
+        return Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
     }
 
     private func cacheFallbackResponse(

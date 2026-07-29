@@ -673,3 +673,86 @@ struct LocationContextResolverTests {
         )
     }
 }
+
+@Suite("DurableLocationContextCache")
+struct DurableLocationContextCacheTests {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    @Test("restores a complete context through a new cache instance without display labels")
+    func restoresAcrossCacheInstances() {
+        let suiteName = "DurableLocationContextCacheTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+        let cache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+        cache.save(makeContext())
+
+        let restored = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now }).load()
+        #expect(restored?.snapshot.placemarkSummary == nil)
+        #expect(restored?.grid.city == nil)
+        #expect(restored?.grid.state == nil)
+        #expect(restored?.grid.countyLabel == nil)
+        #expect(restored?.grid.fireZoneLabel == nil)
+        #expect(restored?.grid.countyCode == "COC031")
+        #expect(restored?.grid.fireZone == "COZ246")
+    }
+
+    @Test("persists no display labels or unrelated upload fields")
+    func persistedDataExcludesDisplayAndUploadFields() throws {
+        let suiteName = "DurableLocationContextCacheTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+
+        let cache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+        cache.save(makeContext())
+        let data = try #require(UserDefaults(suiteName: suiteName)?.data(forKey: "location.durableContext.v1"))
+        let raw = try #require(String(data: data, encoding: .utf8))
+
+        #expect(raw.contains("Denver County") == false)
+        #expect(raw.contains("East Central Colorado") == false)
+        #expect(raw.contains("Denver, CO") == false)
+        #expect(raw.contains("apnsToken") == false)
+        #expect(raw.contains("installationId") == false)
+    }
+
+    @Test("corrupt partial future invalid-coordinate and incomplete-region records fail closed")
+    func invalidRecordsFailClosed() throws {
+        let suiteName = "DurableLocationContextCacheTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let cache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+
+        for raw in [
+            "{not-json}",
+            "{\"version\":1}",
+            recordJSON(latitude: 100, timestamp: now),
+            recordJSON(latitude: 39.7392, timestamp: now.addingTimeInterval(1)),
+            recordJSON(latitude: 39.7392, timestamp: now, countyCode: "")
+        ] {
+            defaults.set(Data(raw.utf8), forKey: "location.durableContext.v1")
+            #expect(cache.load() == nil)
+            #expect(defaults.data(forKey: "location.durableContext.v1") == nil)
+        }
+    }
+
+    private func makeContext() -> LocationContext {
+        LocationContext(
+            snapshot: .init(
+                coordinates: .init(latitude: 39.7392, longitude: -104.9903), timestamp: now, accuracy: 20,
+                placemarkSummary: "Denver, CO", h3Cell: 0x882681b485fffff
+            ),
+            h3Cell: 0x882681b485fffff,
+            grid: .init(
+                nwsId: "https://api.weather.gov/points/39.7392,-104.9903", latitude: 39.7392, longitude: -104.9903,
+                gridId: "BOU", gridX: 56, gridY: 66, forecastURL: nil, forecastHourlyURL: nil,
+                forecastGridDataURL: nil, observationStationsURL: nil, city: "Denver", state: "CO",
+                timeZoneId: "America/Denver", radarStationId: "KFTG", forecastZone: "COZ039", countyCode: "COC031",
+                fireZone: "COZ246", countyLabel: "Denver County", fireZoneLabel: "East Central Colorado"
+            )
+        )
+    }
+
+    private func recordJSON(latitude: Double, timestamp: Date, countyCode: String = "COC031") -> String {
+        """
+        {"version":1,"latitude":\(latitude),"longitude":-104.9903,"timestamp":"\(ISO8601DateFormatter().string(from: timestamp))","accuracy":20,"h3Cell":613425092313120767,"nwsId":"id","gridId":"BOU","gridX":56,"gridY":66,"countyCode":"\(countyCode)","fireZone":"COZ246"}
+        """
+    }
+}

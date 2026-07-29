@@ -126,6 +126,36 @@ protocol HomeContextPreparing: AnyObject, Sendable {
     ) async -> LocationContext?
 
     func currentPreparedContext() async -> LocationContext?
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext?
+}
+
+extension HomeContextPreparing {
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext? {
+        await prepareCurrentLocationContext(
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: false,
+            uploadSource: uploadSource,
+            uploadReason: uploadReason,
+            authorizationTimeout: authorizationTimeout,
+            locationTimeout: locationTimeout,
+            maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+            placemarkTimeout: placemarkTimeout
+        )
+    }
 }
 
 extension LocationSession: HomeContextPreparing {
@@ -231,6 +261,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         await progress.report(.started(.location(plan.lanes)))
         let context = await resolveContext(
             for: plan.locationRequest,
+            isScheduledBackgroundRefresh: plan.isScheduledBackgroundRefresh,
             uploadSource: uploadSource(for: plan),
             uploadReason: uploadReason(for: plan),
             using: environment.locationSession
@@ -247,6 +278,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 await progress.report(.started(.lane(.hotAlerts)))
                 environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
                 await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
+                try await throwIfBackgroundDeadlineExceeded()
                 freshness.lastHotFeedSyncAt = now
                 await progress.report(.completed(.lane(.hotAlerts)))
                 environment.logger.debug("Finished home ingestion hot-alert sync")
@@ -264,6 +296,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 await progress.report(.started(.lane(.slowProducts)))
                 environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
                 slowProductMapSyncOutcome = await syncSlowFeeds(executionMode: executionMode)
+                try await throwIfBackgroundDeadlineExceeded()
                 if slowProductMapSyncOutcome == .accepted {
                     freshness.lastSlowFeedSyncAt = now
                 }
@@ -314,6 +347,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
 
         let coreSnapshot = snapshot
+        guard try await shouldAdmitStormSetupEnrichment(executionMode: executionMode) else {
+            return coreSnapshot
+        }
         async let stormSetupRefreshTask = stormSetupIngestion.refresh(
             context: context,
             snapshot: coreSnapshot,
@@ -326,6 +362,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             executionMode: executionMode
         )
         let (stormSetupRefresh, airQualityOutcome) = await (stormSetupRefreshTask, airQualityTask)
+        try await throwIfBackgroundEnrichmentCancelled(executionMode: executionMode)
         snapshot.stormSetupRefreshResult = stormSetupRefresh.result
         snapshot.stormSetupCurrentResponse = stormSetupRefresh.currentResponse
         snapshot.stormSetup = stormSetupRefresh.stormSetup
@@ -345,10 +382,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
     private func resolveContext(
         for request: HomeIngestionLocationRequest,
+        isScheduledBackgroundRefresh: Bool,
         uploadSource: LocationUploadSource?,
         uploadReason: LocationUploadReason?,
         using locationSession: any HomeContextPreparing
     ) async -> LocationContext? {
+        if isScheduledBackgroundRefresh {
+            return await locationSession.prepareScheduledBackgroundLocationContext(
+                uploadSource: uploadSource,
+                uploadReason: uploadReason,
+                authorizationTimeout: 30,
+                locationTimeout: 12,
+                maximumAcceptedLocationAge: 5 * 60,
+                placemarkTimeout: 8
+            )
+        }
         switch request {
         case .currentPrepared:
             if let current = await locationSession.currentPreparedContext() {
@@ -559,8 +607,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         plan: HomeIngestionPlan,
         executionMode: HTTPExecutionMode
     ) async -> HomeAirQualityPublicationOutcome {
+        guard shouldRefreshAirQuality(for: plan, executionMode: executionMode) else { return .preserve }
         guard let context, let querying = environment.airQualityQuerying else { return .preserve }
-        guard shouldRefreshAirQuality(for: plan) else { return .preserve }
 
         do {
             let response = try await HTTPExecutionMode.$current.withValue(executionMode) {
@@ -578,8 +626,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
     }
 
-    private func shouldRefreshAirQuality(for plan: HomeIngestionPlan) -> Bool {
-        plan.lanes.contains(.weather)
+    private func shouldRefreshAirQuality(
+        for plan: HomeIngestionPlan,
+        executionMode: HTTPExecutionMode
+    ) -> Bool {
+        plan.lanes.contains(.weather) && executionMode == .foreground
     }
 
     private func persistProjection(
@@ -652,6 +703,36 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return .background
         }
         return .foreground
+    }
+
+    private func throwIfBackgroundDeadlineExceeded() async throws {
+        try await BackgroundRefreshExecutionContext.current?.deadlineState.throwIfExceeded()
+    }
+
+    private func shouldAdmitStormSetupEnrichment(executionMode: HTTPExecutionMode) async throws -> Bool {
+        guard executionMode == .background, let executionContext = BackgroundRefreshExecutionContext.current else {
+            return true
+        }
+
+        let admission = executionContext.budget.admission(
+            for: .seconds(environment.stormSetupForegroundTimeout),
+            at: ContinuousClock().now,
+            isCancelled: Task.isCancelled
+        )
+        switch admission {
+        case .admitted:
+            return true
+        case .cancelled:
+            throw CancellationError()
+        case .workDeadlineReached, .insufficientTime:
+            return false
+        }
+    }
+
+    private func throwIfBackgroundEnrichmentCancelled(executionMode: HTTPExecutionMode) async throws {
+        guard executionMode == .background else { return }
+        try Task.checkCancellation()
+        try await throwIfBackgroundDeadlineExceeded()
     }
 
     private func slowProductPersistenceDecision(

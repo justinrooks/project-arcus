@@ -52,6 +52,18 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         let progress: HomeIngestionProgressHandler?
         let publication: HomeIngestionPublicationHandler?
         let continuation: CheckedContinuation<HomeSnapshot, Error>
+        var earliestRunNumber = 0
+
+        var isCancelableBackgroundOwner: Bool {
+            requestedPlan.provenance == .background
+        }
+    }
+
+    private struct PendingRun {
+        let plan: HomeIngestionPlan
+        let executionContext: BackgroundRefreshExecutionContext?
+        let hasForegroundOwner: Bool
+        let hasFireAndForgetOwner: Bool
     }
 
     private let executor: any HomeIngestionExecuting
@@ -59,9 +71,12 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
 
     private var activePlan: HomeIngestionPlan?
     private var activeTask: Task<HomeSnapshot, Error>?
+    private var activeExecutionContext: BackgroundRefreshExecutionContext?
+    private var activeRunNumber = 0
     private var activeRunStartedAt: Date?
     private var activeRunCanAbsorbRemoteHotAlert = false
-    private var pendingPlan: HomeIngestionPlan?
+    private var activeRunHasFireAndForgetOwner = false
+    private var pendingRun: PendingRun?
     private var waiters: [UUID: Waiter] = [:]
 
     #if DEBUG
@@ -118,37 +133,78 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private func submit(_ requestedPlan: HomeIngestionPlan, waiter: Waiter?) {
-        if let activePlan, activePlan.satisfies(requestedPlan), activePlanCanSatisfy(requestedPlan) {
+        let executionContext = BackgroundRefreshExecutionContext.current
+        let hasFireAndForgetOwner = waiter == nil
+        if let activePlan,
+           activePlan.satisfies(requestedPlan),
+           activePlanCanSatisfy(requestedPlan),
+           !(activeExecutionContext != nil && isForegroundOwner(requestedPlan)) {
             logger.debug(
                 "Home ingestion request joined active run requested={\(requestedPlan.logDescription)} active={\(activePlan.logDescription)}"
             )
-            store(waiter)
+            if hasFireAndForgetOwner {
+                activeRunHasFireAndForgetOwner = true
+            }
+            store(waiter, earliestRunNumber: activeRunNumber)
             return
         }
 
         if activeTask != nil {
-            if let pendingPlan {
-                let mergedPlan = pendingPlan.merged(with: requestedPlan)
+            if let pendingRun {
+                let mergedPlan = pendingRun.plan.merged(with: requestedPlan)
+                let hasForegroundOwner = pendingRun.hasForegroundOwner || isForegroundOwner(requestedPlan)
                 logger.debug(
-                    "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingPlan.logDescription)} merged={\(mergedPlan.logDescription)}"
+                    "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingRun.plan.logDescription)} merged={\(mergedPlan.logDescription)}"
                 )
-                self.pendingPlan = mergedPlan
+                self.pendingRun = .init(
+                    plan: mergedPlan,
+                    executionContext: mergedExecutionContext(
+                        pending: pendingRun.executionContext,
+                        submitted: executionContext,
+                        hasForegroundOwner: hasForegroundOwner
+                    ),
+                    hasForegroundOwner: hasForegroundOwner,
+                    hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
+                )
             } else {
                 logger.debug(
                     "Home ingestion request queued as follow-up requested={\(requestedPlan.logDescription)}"
                 )
-                pendingPlan = requestedPlan
+                pendingRun = .init(
+                    plan: requestedPlan,
+                    executionContext: isForegroundOwner(requestedPlan) ? nil : executionContext,
+                    hasForegroundOwner: isForegroundOwner(requestedPlan),
+                    hasFireAndForgetOwner: hasFireAndForgetOwner
+                )
             }
-            store(waiter)
+            store(waiter, earliestRunNumber: activeRunNumber + 1)
             return
         }
 
-        store(waiter)
-        startRun(with: requestedPlan)
+        store(waiter, earliestRunNumber: activeRunNumber + 1)
+        startRun(
+            with: requestedPlan,
+            executionContext: executionContext,
+            hasFireAndForgetOwner: hasFireAndForgetOwner
+        )
     }
 
-    private func store(_ waiter: Waiter?) {
-        guard let waiter else { return }
+    private func mergedExecutionContext(
+        pending: BackgroundRefreshExecutionContext?,
+        submitted: BackgroundRefreshExecutionContext?,
+        hasForegroundOwner: Bool
+    ) -> BackgroundRefreshExecutionContext? {
+        guard !hasForegroundOwner else { return nil }
+        return .merged(pending, submitted)
+    }
+
+    private func isForegroundOwner(_ plan: HomeIngestionPlan) -> Bool {
+        !plan.provenance.contains(.background)
+    }
+
+    private func store(_ waiter: Waiter?, earliestRunNumber: Int) {
+        guard var waiter else { return }
+        waiter.earliestRunNumber = earliestRunNumber
         waiters[waiter.id] = waiter
 
         #if DEBUG
@@ -159,9 +215,19 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func cancelWaiter(withID waiterID: UUID) {
         guard let waiter = waiters.removeValue(forKey: waiterID) else { return }
         waiter.continuation.resume(throwing: CancellationError())
+        if waiter.earliestRunNumber == activeRunNumber,
+           waiter.isCancelableBackgroundOwner,
+           activeRunHasNoOwners {
+            activeTask?.cancel()
+        }
         #if DEBUG
         notifyWaiterCountObservers()
         #endif
+    }
+
+    private var activeRunHasNoOwners: Bool {
+        guard activeRunHasFireAndForgetOwner == false else { return false }
+        return waiters.values.contains { $0.earliestRunNumber == activeRunNumber } == false
     }
 
     #if DEBUG
@@ -194,7 +260,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     func testPendingPlanForWaiterCharacterization() -> HomeIngestionPlan? {
-        pendingPlan
+        pendingRun?.plan
     }
 
     func testWaiterCountForWaiterCharacterization() -> Int {
@@ -202,53 +268,65 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
     #endif
 
-    private func startRun(with plan: HomeIngestionPlan) {
+    private func startRun(
+        with plan: HomeIngestionPlan,
+        executionContext: BackgroundRefreshExecutionContext?,
+        hasFireAndForgetOwner: Bool
+    ) {
         let runID = UUID()
+        activeRunNumber += 1
+        let runNumber = activeRunNumber
         activePlan = plan
+        activeExecutionContext = executionContext
         activeRunStartedAt = Date()
         activeRunCanAbsorbRemoteHotAlert = plan.forcedLanes.contains(.hotAlerts)
+        activeRunHasFireAndForgetOwner = hasFireAndForgetOwner
         logger.info("Home ingestion run started plan={\(plan.logDescription)}")
 
         let task = Task {
-            try await executor.run(
-                plan: plan,
-                progress: HomeIngestionRunProgress(
-                    runID: runID,
-                    markHotAlertsCompleted: {
-                        await self.markHotAlertsCompleted(for: plan)
-                    },
-                    report: { event in
-                        await self.reportProgress(event, for: plan)
-                    },
-                    publish: { publication in
-                        await self.publish(publication, for: plan, runID: runID)
-                    }
+            try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                try await executor.run(
+                    plan: plan,
+                    progress: HomeIngestionRunProgress(
+                        runID: runID,
+                        markHotAlertsCompleted: {
+                            await self.markHotAlertsCompleted(for: plan)
+                        },
+                        report: { event in
+                            await self.reportProgress(event, for: plan)
+                        },
+                        publish: { publication in
+                            await self.publish(publication, for: plan, runID: runID)
+                        }
+                    )
                 )
-            )
+            }
         }
         activeTask = task
 
         Task {
             do {
                 let snapshot = try await task.value
-                finishRun(plan: plan, result: .success(snapshot))
+                finishRun(plan: plan, runNumber: runNumber, result: .success(snapshot))
             } catch {
-                finishRun(plan: plan, result: .failure(error))
+                finishRun(plan: plan, runNumber: runNumber, result: .failure(error))
             }
         }
     }
 
-    private func finishRun(plan: HomeIngestionPlan, result: Result<HomeSnapshot, Error>) {
+    private func finishRun(plan: HomeIngestionPlan, runNumber: Int, result: Result<HomeSnapshot, Error>) {
         let durationMs = activeRunStartedAt.map { startedAt in
             Int(Date().timeIntervalSince(startedAt) * 1000)
         } ?? 0
         activePlan = nil
         activeTask = nil
+        activeExecutionContext = nil
         activeRunStartedAt = nil
         activeRunCanAbsorbRemoteHotAlert = false
+        activeRunHasFireAndForgetOwner = false
 
         let satisfiedWaiterIDs = waiters.compactMap { id, waiter in
-            plan.satisfies(waiter.requestedPlan) ? id : nil
+            waiter.earliestRunNumber <= runNumber && plan.satisfies(waiter.requestedPlan) ? id : nil
         }
 
         for waiterID in satisfiedWaiterIDs {
@@ -268,19 +346,23 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         switch result {
         case .success(let snapshot):
             logger.info(
-                "Home ingestion run finished plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) alerts=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public) pendingFollowUp=\((self.pendingPlan != nil), privacy: .public)"
+                "Home ingestion run finished plan={\(plan.logDescription)} result=success durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) alerts=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public) pendingFollowUp=\((self.pendingRun != nil), privacy: .public)"
             )
         case .failure(let error):
             logger.error(
-                "Home ingestion run finished plan={\(plan.logDescription)} result=failure durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) pendingFollowUp=\((self.pendingPlan != nil), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
+                "Home ingestion run finished plan={\(plan.logDescription)} result=failure durationMs=\(durationMs, privacy: .public) waitsSatisfied=\(satisfiedWaiterIDs.count, privacy: .public) pendingFollowUp=\((self.pendingRun != nil), privacy: .public) error=\(error.localizedDescription, privacy: .public)"
             )
         }
 
-        guard let pendingPlan else { return }
+        guard let pendingRun else { return }
 
-        self.pendingPlan = nil
-        logger.info("Starting queued follow-up home ingestion plan={\(pendingPlan.logDescription)}")
-        startRun(with: pendingPlan)
+        self.pendingRun = nil
+        logger.info("Starting queued follow-up home ingestion plan={\(pendingRun.plan.logDescription)}")
+        startRun(
+            with: pendingRun.plan,
+            executionContext: pendingRun.executionContext,
+            hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner
+        )
     }
 
     private func activePlanCanSatisfy(_ requestedPlan: HomeIngestionPlan) -> Bool {
@@ -306,7 +388,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         }
 
         let handlers = waiters.values.compactMap { waiter in
-            plan.satisfies(waiter.requestedPlan) ? waiter.progress : nil
+            waiter.earliestRunNumber <= activeRunNumber && plan.satisfies(waiter.requestedPlan) ? waiter.progress : nil
         }
         for handler in handlers {
             await handler(event)
@@ -320,7 +402,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     ) async {
         guard publication.runID == runID, activePlan == plan else { return }
         let handlers = waiters.values.compactMap { waiter in
-            plan.satisfies(waiter.requestedPlan) ? waiter.publication : nil
+            waiter.earliestRunNumber <= activeRunNumber && plan.satisfies(waiter.requestedPlan) ? waiter.publication : nil
         }
         for handler in handlers {
             await handler(publication)

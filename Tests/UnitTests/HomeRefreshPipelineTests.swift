@@ -2259,6 +2259,42 @@ struct HomeRefreshPipelineTests {
         #expect(snapshot.refreshKey == currentContext.refreshKey)
     }
 
+    @Test("only a standalone scheduled refresh uses durable-context preparation")
+    func scheduledLocationPreparationPreservesMergedForegroundSemantics() async throws {
+        let scheduled = HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
+        let remote = HomeIngestionPlan(request: .init(trigger: .remoteHotAlertReceived))
+        let foregroundMerged = scheduled.merged(with: .init(request: .init(trigger: .foregroundActivate)))
+        let manualMerged = scheduled.merged(with: .init(request: .init(trigger: .manualRefresh)))
+
+        #expect(scheduled.isScheduledBackgroundRefresh)
+        #expect(remote.isScheduledBackgroundRefresh == false)
+        #expect(foregroundMerged.isScheduledBackgroundRefresh == false)
+        #expect(manualMerged.isScheduledBackgroundRefresh == false)
+
+        for testCase in [scheduled, remote, foregroundMerged, manualMerged] {
+            let locationSession = FakeLocationSession(currentContext: nil, preparedContext: makeContext())
+            let spc = FakeSpcProvider()
+            let alerts = FakeAlertProvider()
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: spc,
+                    arcusAlertSync: alerts,
+                    weatherClient: FakeWeatherClient(),
+                    locationSession: locationSession,
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    projectionStore: nil,
+                    widgetSnapshotRefresher: nil
+                )
+            )
+
+            _ = try await executor.run(plan: testCase)
+
+            #expect(locationSession.scheduledPrepareCallCount == (testCase.isScheduledBackgroundRefresh ? 1 : 0))
+            #expect(locationSession.prepareCalls.count == 1)
+        }
+    }
+
     private func makeEnvironment(
         spc: FakeSpcProvider = FakeSpcProvider(),
         alerts: FakeAlertProvider = FakeAlertProvider(),
@@ -2485,6 +2521,35 @@ struct HomeRefreshPipelineTests {
                 validUntil: Date(timeIntervalSince1970: 600)
             )
         ]
+    }
+
+    @Test("background deadline exhaustion from a nonthrowing sync fails the executor")
+    func backgroundDeadlineExhaustionFromNonthrowingSyncFailsExecutor() async {
+        let context = makeContext()
+        let spc = FakeSpcProvider(marksBackgroundDeadlineDuringMesoSync: true)
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        let budget = BackgroundRefreshExecutionContext(budget: .standard(start: ContinuousClock().now))
+
+        await #expect(throws: CancellationError.self) {
+            try await BackgroundRefreshExecutionContext.$current.withValue(budget) {
+                try await executor.run(
+                    plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+                    progress: .none
+                )
+            }
+        }
     }
 }
 
@@ -2826,6 +2891,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     var currentContext: LocationContext?
     var preparedContext: LocationContext?
     var prepareCalls: [PrepareCall] = []
+    var scheduledPrepareCallCount = 0
 
     private let prepareGate: AsyncGate?
 
@@ -2866,6 +2932,27 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     func currentPreparedContext() async -> LocationContext? {
         currentContext
     }
+
+    func prepareScheduledBackgroundLocationContext(
+        uploadSource: LocationUploadSource?,
+        uploadReason: LocationUploadReason?,
+        authorizationTimeout: Double,
+        locationTimeout: Double,
+        maximumAcceptedLocationAge: TimeInterval,
+        placemarkTimeout: Double
+    ) async -> LocationContext? {
+        scheduledPrepareCallCount += 1
+        return await prepareCurrentLocationContext(
+            requiresFreshLocation: true,
+            showsAuthorizationPrompt: false,
+            uploadSource: uploadSource,
+            uploadReason: uploadReason,
+            authorizationTimeout: authorizationTimeout,
+            locationTimeout: locationTimeout,
+            maximumAcceptedLocationAge: maximumAcceptedLocationAge,
+            placemarkTimeout: placemarkTimeout
+        )
+    }
 }
 
 private actor FakeWeatherClient: HomeWeatherQuerying {
@@ -2897,6 +2984,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let syncMesoscaleGate: AsyncGate?
     private let mapSyncGate: AsyncGate?
     private let convectiveOutlookGate: AsyncGate?
+    private let marksBackgroundDeadlineDuringMesoSync: Bool
     private let mapSyncOutcome: SpcMapSyncOutcome
     private let stormRiskValue: StormRiskLevel
     private let severeRiskValue: SevereWeatherThreat
@@ -2920,6 +3008,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         syncMesoscaleGate: AsyncGate? = nil,
         mapSyncGate: AsyncGate? = nil,
         convectiveOutlookGate: AsyncGate? = nil,
+        marksBackgroundDeadlineDuringMesoSync: Bool = false,
         mapSyncOutcome: SpcMapSyncOutcome = .accepted,
         stormRiskValue: StormRiskLevel = .enhanced,
         severeRiskValue: SevereWeatherThreat = .hail(probability: 0.30),
@@ -2931,6 +3020,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.syncMesoscaleGate = syncMesoscaleGate
         self.mapSyncGate = mapSyncGate
         self.convectiveOutlookGate = convectiveOutlookGate
+        self.marksBackgroundDeadlineDuringMesoSync = marksBackgroundDeadlineDuringMesoSync
         self.mapSyncOutcome = mapSyncOutcome
         self.stormRiskValue = stormRiskValue
         self.severeRiskValue = severeRiskValue
@@ -2970,6 +3060,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let syncMesoscaleGate {
             await syncMesoscaleGate.wait()
+        }
+        if marksBackgroundDeadlineDuringMesoSync {
+            await BackgroundRefreshExecutionContext.current?.deadlineState.markExceeded()
         }
         if Task.isCancelled {
             cancelledSyncCalls += 1

@@ -118,6 +118,44 @@ struct LocationManagerTests {
 
 @Suite("LocationSession")
 struct LocationSessionTests {
+    private func durableContext(
+        timestamp: Date,
+        accuracy: Double = 20,
+        h3Cell: Int64 = 1
+    ) -> LocationContext {
+        LocationContext(
+            snapshot: .init(
+                coordinates: .init(latitude: 39.7392, longitude: -104.9903),
+                timestamp: timestamp,
+                accuracy: accuracy,
+                placemarkSummary: nil,
+                h3Cell: h3Cell
+            ),
+            h3Cell: h3Cell,
+            grid: .init(
+                nwsId: "id",
+                latitude: 39.7392,
+                longitude: -104.9903,
+                gridId: "BOU",
+                gridX: 1,
+                gridY: 1,
+                forecastURL: nil,
+                forecastHourlyURL: nil,
+                forecastGridDataURL: nil,
+                observationStationsURL: nil,
+                city: nil,
+                state: nil,
+                timeZoneId: nil,
+                radarStationId: nil,
+                forecastZone: nil,
+                countyCode: "COC031",
+                fireZone: "COZ246",
+                countyLabel: nil,
+                fireZoneLabel: nil
+            )
+        )
+    }
+
     private actor StubResolver: LocationContextResolving {
         let context: LocationContext?
         let error: LocationContextError?
@@ -687,6 +725,140 @@ struct LocationSessionTests {
         await session.drainPendingLocationUploads()
 
         #expect(await uploader.recordedDrainCount() == 1)
+    }
+
+    @MainActor
+    @Test("scheduled reuse evaluates a fresh same-cell composite instead of a stale durable snapshot")
+    func scheduledReuse_evaluatesFreshSameCellComposite() async throws {
+        let now = Date()
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let durableCache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+        let cachedContext = durableContext(timestamp: now.addingTimeInterval(-2 * 60 * 60))
+        durableCache.save(cachedContext)
+        let freshSnapshot = LocationSnapshot(
+            coordinates: cachedContext.snapshot.coordinates,
+            timestamp: now,
+            accuracy: 20,
+            placemarkSummary: nil,
+            h3Cell: cachedContext.h3Cell
+        )
+        let providerClient = LocationClient(
+            snapshot: { freshSnapshot },
+            updates: { AsyncStream { $0.finish() } }
+        )
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let session = LocationSession(
+            locationClient: providerClient,
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            durableContextCache: durableCache
+        )
+
+        let result = await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil,
+            uploadReason: nil,
+            authorizationTimeout: 1,
+            locationTimeout: 1,
+            maximumAcceptedLocationAge: 60,
+            placemarkTimeout: 1
+        )
+
+        #expect(result?.snapshot == freshSnapshot)
+        #expect(result?.grid == cachedContext.grid)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+        let persistedSnapshot = durableCache.load()?.snapshot
+        #expect(persistedSnapshot?.coordinates.latitude == freshSnapshot.coordinates.latitude)
+        #expect(persistedSnapshot?.coordinates.longitude == freshSnapshot.coordinates.longitude)
+        #expect(persistedSnapshot?.accuracy == freshSnapshot.accuracy)
+        #expect(abs((persistedSnapshot?.timestamp.timeIntervalSince(freshSnapshot.timestamp)) ?? .infinity) < 1)
+    }
+
+    @MainActor
+    @Test("scheduled reuse retains an eligible durable context when a same-cell composite is invalid")
+    func scheduledReuse_fallsBackWhenSameCellCompositeIsInvalid() async throws {
+        let now = Date()
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let durableCache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+        let cachedContext = durableContext(timestamp: now.addingTimeInterval(-60))
+        durableCache.save(cachedContext)
+        let inaccurateSnapshot = LocationSnapshot(
+            coordinates: cachedContext.snapshot.coordinates,
+            timestamp: now,
+            accuracy: BackgroundLocationContextReusePolicy.maximumHorizontalAccuracy + 1,
+            placemarkSummary: nil,
+            h3Cell: cachedContext.h3Cell
+        )
+        let providerClient = LocationClient(
+            snapshot: { inaccurateSnapshot },
+            updates: { AsyncStream { $0.finish() } }
+        )
+        let manager = LocationManager(
+            manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse),
+            onUpdate: { _ in }
+        )
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let session = LocationSession(
+            locationClient: providerClient,
+            locationManager: manager,
+            locationContextResolver: resolver,
+            locationUploadCoordinator: NoOpLocationUploadCoordinator(),
+            durableContextCache: durableCache
+        )
+
+        let result = await session.prepareScheduledBackgroundLocationContext(
+            uploadSource: nil,
+            uploadReason: nil,
+            authorizationTimeout: 1,
+            locationTimeout: 1,
+            maximumAcceptedLocationAge: 60,
+            placemarkTimeout: 1
+        )
+
+        #expect(result?.snapshot.coordinates.latitude == cachedContext.snapshot.coordinates.latitude)
+        #expect(result?.snapshot.coordinates.longitude == cachedContext.snapshot.coordinates.longitude)
+        #expect(result?.snapshot.accuracy == cachedContext.snapshot.accuracy)
+        #expect(abs((result?.snapshot.timestamp.timeIntervalSince(cachedContext.snapshot.timestamp)) ?? .infinity) < 1)
+        #expect(result?.grid == cachedContext.grid)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+        let persistedContext = durableCache.load()
+        #expect(persistedContext?.snapshot.coordinates.latitude == cachedContext.snapshot.coordinates.latitude)
+        #expect(persistedContext?.snapshot.coordinates.longitude == cachedContext.snapshot.coordinates.longitude)
+        #expect(persistedContext?.snapshot.accuracy == cachedContext.snapshot.accuracy)
+        #expect(
+            abs((persistedContext?.snapshot.timestamp.timeIntervalSince(cachedContext.snapshot.timestamp)) ?? .infinity)
+                < 1
+        )
+        #expect(persistedContext?.grid == cachedContext.grid)
+    }
+
+    @MainActor
+    @Test("scheduled reuse reads a newer moved provider snapshot before policy evaluation")
+    func scheduledReuse_readsMovedProviderSnapshotBeforePolicyEvaluation() async throws {
+        let now = Date()
+        let suiteName = "LocationSessionTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName) }
+        let durableCache = DurableLocationContextCache(suiteName: suiteName, nowProvider: { now })
+        let cachedContext = durableContext(timestamp: now.addingTimeInterval(-60))
+        durableCache.save(cachedContext)
+        let movedSnapshot = LocationSnapshot(coordinates: .init(latitude: 40, longitude: -105), timestamp: now, accuracy: 20, placemarkSummary: nil, h3Cell: 2)
+        let providerClient = LocationClient(snapshot: { movedSnapshot }, updates: { AsyncStream { $0.finish() } })
+        let manager = LocationManager(manager: LocationManagerTests.StubAuthorizationManager(status: .authorizedWhenInUse), onUpdate: { _ in })
+        let resolver = StubResolver(context: nil, error: .locationTimeout)
+        let session = LocationSession(locationClient: providerClient, locationManager: manager, locationContextResolver: resolver, locationUploadCoordinator: NoOpLocationUploadCoordinator(), durableContextCache: durableCache)
+        session.currentSnapshot = nil
+
+        let result = await session.prepareScheduledBackgroundLocationContext(uploadSource: nil, uploadReason: nil, authorizationTimeout: 1, locationTimeout: 1, maximumAcceptedLocationAge: 60, placemarkTimeout: 1)
+
+        #expect(result == nil)
+        #expect(await resolver.recordedPrepareCallCount() == 0)
+        #expect(durableCache.load() == nil)
     }
 
     @MainActor

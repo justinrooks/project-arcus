@@ -78,3 +78,29 @@
   state, and configuration differences before changing the named test again.
 - Never let a persisted test fixture hard-code authorization or preference state while the operation under test reads
   that state from the simulator. Inject matching providers so a developer simulator cannot hide clean-Cloud behavior.
+
+## 2026-07-28
+
+- For durable background diagnostics, persist each completed phase at its boundary; terminal finalization is not a
+  substitute because process termination can occur between phases. Prove schema evolution against a legacy disk store,
+  not merely a current-schema reopen, and never synthesize a phase outcome for work that did not start.
+
+- When characterizing coordinator compatibility, construct requests exactly as production does. A trigger without its
+  production-required context can bypass a compatibility guard and turn a queued request into a synthetic join.
+- For background deadlines, distinguish request admission from a hard in-flight transfer bound, propagate expiry as an
+  observable execution outcome rather than relying on task cancellation alone, and retain task-local budget context
+  with queued coordinator work instead of assuming later child tasks inherit the original caller's scope.
+- When background and foreground ingestion ownership can share a coordinator, never let deadline state fail a
+  foreground waiter merely because plans are compatible; queue it for an unbudgeted follow-up and track waiter/run
+  eligibility so the preceding background result cannot resolve it.
+- When deciding whether cancellation has removed the final owner of an actor-serialized run, count the remaining
+  active-run owners directly. Do not use a predicate that classifies them as cancelable, because a cancelable waiter
+  remains an owner until it is actually removed.
+- Test seams that expose terminal execution must acknowledge both success and cancellation before rethrowing; a
+  success-only completion counter turns cancellation tests into deadlocks.
+- For background cache-reuse policy, validate every freshness horizon against the actual 20/40/60-minute scheduling
+  cadence, but never present `earliestBeginDate` delay as bounded. State any longer reuse window as an explicit
+  product privacy tolerance and test the intentional skip behavior beyond it; a threshold that expires before the
+  first scheduled successor is dead code for When-In-Use background refresh.
+- When cached metadata is combined with a newer snapshot, run eligibility policy against the exact composite returned.
+  If the composite fails, explicitly evaluate the original cached value before discarding an otherwise valid fallback.

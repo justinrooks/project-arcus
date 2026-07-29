@@ -6,6 +6,110 @@ import OSLog
 import ArcusCore
 @testable import SkyAware
 
+@Suite("Background refresh budget")
+struct BackgroundRefreshBudgetTests {
+    private let clock = ContinuousClock()
+
+    @Test("Default policy reserves five seconds after twenty-five seconds of work")
+    func defaultPolicy_derivesExpectedDeadlines() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.completionDeadline == start + .seconds(30))
+        #expect(budget.workDeadline == start + .seconds(25))
+        #expect(budget.finalizationReserve == .seconds(5))
+    }
+
+    @Test("Work before its deadline is admitted when it fits")
+    func admission_beforeWorkDeadline_admitsFittingWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+        let instant = start + .seconds(20)
+
+        #expect(budget.remainingWork(at: instant) == .seconds(5))
+        #expect(budget.admission(for: .seconds(5), at: instant, isCancelled: false) == .admitted)
+    }
+
+    @Test("Work admission closes exactly at the work deadline")
+    func admission_atWorkDeadline_rejectsWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.remainingWork(at: budget.workDeadline) == .zero)
+        #expect(
+            budget.admission(for: .zero, at: budget.workDeadline, isCancelled: false) == .workDeadlineReached
+        )
+    }
+
+    @Test("Remaining durations never become negative after either deadline")
+    func remainingDurations_afterDeadlines_areZero() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.remainingWork(at: start + .seconds(26)) == .zero)
+        #expect(budget.remainingTotal(at: start + .seconds(31)) == .zero)
+    }
+
+    @Test("Finalization reserve closes work while total time remains")
+    func finalizationReserve_preservesTotalTimeAfterWorkCloses() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+        let instant = start + .seconds(27)
+
+        #expect(budget.remainingWork(at: instant) == .zero)
+        #expect(budget.remainingTotal(at: instant) == .seconds(3))
+        #expect(budget.admission(for: .seconds(1), at: instant, isCancelled: false) == .workDeadlineReached)
+    }
+
+    @Test("Work that exceeds the remaining window is rejected distinctly")
+    func admission_withInsufficientTime_rejectsWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(
+            budget.admission(for: .seconds(6), at: start + .seconds(20), isCancelled: false) == .insufficientTime
+        )
+    }
+
+    @Test("Cancellation rejects work before evaluating available time")
+    func admission_whenCancelled_rejectsWork() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget.standard(start: start)
+
+        #expect(budget.admission(for: .seconds(1), at: start, isCancelled: true) == .cancelled)
+    }
+
+    @Test("Injected deadlines derive deterministic work boundaries")
+    func injectedDeadline_derivesWorkDeadline() {
+        let start = clock.now
+        let completionDeadline = start + .seconds(12)
+        let budget = BackgroundRefreshBudget(
+            start: start,
+            completionDeadline: completionDeadline,
+            finalizationReserve: .seconds(4)
+        )
+
+        #expect(budget.completionDeadline == completionDeadline)
+        #expect(budget.workDeadline == start + .seconds(8))
+        #expect(budget.remainingWork(at: start) == .seconds(8))
+        #expect(budget.remainingTotal(at: start) == .seconds(12))
+    }
+
+    @Test("An oversized reserve produces no work time")
+    func oversizedReserve_clampsWorkDeadlineToStart() {
+        let start = clock.now
+        let budget = BackgroundRefreshBudget(
+            start: start,
+            completionDeadline: start + .seconds(3),
+            finalizationReserve: .seconds(5)
+        )
+
+        #expect(budget.workDeadline == start)
+        #expect(budget.remainingWork(at: start) == .zero)
+        #expect(budget.admission(for: .seconds(1), at: start, isCancelled: false) == .workDeadlineReached)
+    }
+}
+
 @Suite("BackgroundScheduler replacement policy", .serialized)
 struct BackgroundSchedulerReplacementPolicyTests {
     @Test("Replaces pending request when requested run is materially earlier")
@@ -265,6 +369,12 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(await uploadDrainer.drainCount() == 1)
         #expect(await uploadDrainer.legacyDrainCount() == 0)
         #expect(await uploadDrainer.boundedDrainCount() == 1)
+        let startedRecord = try #require(await latestBgRun(in: container))
+        #expect(startedRecord.isComplete == false)
+        #expect(startedRecord.endedAt == nil)
+        #expect(startedRecord.uploadDrainOutcome == .drained)
+        #expect(startedRecord.uploadDrainDurationSeconds != nil)
+        #expect(startedRecord.ingestionOutcome == nil)
 
         let recordedBudget = try #require(await uploadDrainer.recordedBudget())
         #expect(recordedBudget.budget.uploadQuota == 1)
@@ -368,33 +478,237 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(outcome.result == .cancelled)
         #expect(await uploadDrainer.observedCancellation())
         #expect(await coordinator.requestCount() == 0)
-        #expect(health.outcomeCode == 2)
+        #expect(health.outcome == .cancelled)
         #expect(health.cadence == Cadence.short.minutes)
     }
 
     @Test("Cancellation during unified ingestion records recovery promptly")
     func cancellationDuringUnifiedIngestion_recordsRecoveryPromptly() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
         let coordinator = RecordingHomeIngestionCoordinator(
             snapshot: Self.makeRiskSnapshot(change: nil),
             suspendsUntilCancelled: true
         )
-        let setup = try await makeSystem(
-            activeMesos: [],
-            activeAlerts: [],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
-            coordinator: coordinator
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
         )
 
         let runTask = Task { await setup.orchestrator.run() }
         #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
 
         runTask.cancel()
         let outcome = await runTask.value
         let health = try #require(await setup.latestHealthRecord())
 
         #expect(outcome.result == .cancelled)
-        #expect(health.outcomeCode == 2)
+        #expect(health.outcome == .cancelled)
+        #expect(health.ingestionOutcome == .cancelled)
         #expect(health.cadence == Cadence.short.minutes)
+        #expect(await coordinator.observedCancellation())
+        #expect(await deadlineWaiter.observedCancellation())
+        #expect(await deadlineState.exceeded() == false)
+    }
+
+    @Test("Blocked non-HTTP ingestion expires at the work deadline")
+    func blockedNonHTTPIngestion_workDeadlineExpiresRun() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            suspendsUntilCancelled: true
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .expired)
+        #expect(health.cadence == Cadence.short.minutes)
+        #expect(await coordinator.observedCancellation())
+        #expect(await deadlineState.exceeded())
+    }
+
+    @Test("Notification work finishing before its work deadline remains successful")
+    func notificationBeforeWorkDeadline_remainsSuccessful() async throws {
+        let ingestionGate = AsyncGate()
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let sender = RecordingRiskSender()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            runGate: ingestionGate
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            morningEngine: makeMorningEngine(sender: sender),
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
+
+        await ingestionGate.open()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .success)
+        #expect(health.outcome == .success)
+        #expect(health.ingestionOutcome == .completed)
+        #expect((await sender.sent()).count == 1)
+        #expect(await deadlineWaiter.observedCancellation())
+        #expect(await deadlineState.exceeded() == false)
+    }
+
+    @Test("Blocked notification sender expires at the work deadline")
+    func blockedNotificationSender_workDeadlineExpiresRun() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let sender = CancellationAwareBlockingNotificationSender()
+        let downstreamRiskSender = RecordingRiskSender()
+        let change = makeRiskChange(
+            previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+        )
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: Self.makeRiskSnapshot(change: change))
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            morningEngine: makeMorningEngine(sender: sender),
+            riskChangeEngine: makeRiskChangeEngine(sender: downstreamRiskSender),
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await sender.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .completed)
+        #expect(health.cadence == Cadence.short.minutes)
+        #expect(await sender.observedCancellation())
+        #expect(await downstreamRiskSender.sent().isEmpty)
+        #expect(await deadlineState.exceeded())
+    }
+
+    @Test("Delivered morning risk coalesces before work deadline expiration")
+    func deliveredMorningRisk_coalescesBeforeWorkDeadlineExpiration() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let morningSender = SuccessfulOnCancellationNotificationSender()
+        let riskSender = RecordingRiskSender()
+        let riskEngine = makeRiskChangeEngine(sender: riskSender)
+        let projectionKey = "projection:deadline"
+        let olderChange = makeRiskChange(
+            projectionKey: projectionKey,
+            previous: makeRiskProfile(storm: .allClear, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear)
+        )
+        let deliveredChange = makeRiskChange(
+            projectionKey: projectionKey,
+            previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+        )
+        #expect(await riskEngine.run(change: olderChange, isEnabled: false) == false)
+
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: deliveredChange)
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            morningEngine: makeMorningEngine(sender: morningSender),
+            riskChangeEngine: riskEngine,
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await morningSender.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        let outcome = await runTask.value
+
+        #expect(outcome.result == .expired)
+        #expect(await morningSender.observedCancellation())
+        #expect(await riskEngine.run(change: nil, isEnabled: true) == false)
+        #expect(await riskSender.sent().isEmpty)
+        #expect(await deadlineState.exceeded())
+    }
+
+    @Test("Deadline reached before ingestion admission does not submit work")
+    func deadlineBeforeIngestionAdmission_doesNotSubmitWork() async throws {
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: Self.makeRiskSnapshot(change: nil))
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            workDeadlineAlreadyReached: true
+        )
+
+        let outcome = await setup.orchestrator.run()
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .expired)
+        #expect(await coordinator.requestCount() == 0)
+        #expect(await deadlineWaiter.hasStarted() == false)
+        #expect(await deadlineState.exceeded())
+    }
+
+    @Test("Ingestion completing after the deadline is conservatively expired")
+    func ingestionCompletingAfterDeadline_isExpired() async throws {
+        let ingestionGate = AsyncGate()
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            runGate: ingestionGate
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        #expect(await waitUntil { await deadlineState.exceeded() })
+        await ingestionGate.open()
+
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .expired)
     }
 
     @Test("Active meso tightens cadence to short")
@@ -885,8 +1199,9 @@ private extension BackgroundOrchestratorCadenceTests {
         let spc: FakeSpcProvider
 
         struct HealthRecord: Sendable {
-            let outcomeCode: Int
+            let outcome: BgRunOutcome?
             let cadence: Int
+            let ingestionOutcome: BgPhaseOutcome?
         }
 
         func latestCadence() async throws -> Int? {
@@ -910,7 +1225,11 @@ private extension BackgroundOrchestratorCadenceTests {
                 guard let health = try context.fetch(descriptor).first else {
                     return nil
                 }
-                return .init(outcomeCode: health.outcomeCode, cadence: health.cadence)
+                return .init(
+                    outcome: health.outcome,
+                    cadence: health.cadence,
+                    ingestionOutcome: health.ingestionOutcome
+                )
             }
         }
     }
@@ -923,7 +1242,17 @@ private extension BackgroundOrchestratorCadenceTests {
         cachedSnapshotTimestamp: Date = Date(),
         settings: NotificationSettings,
         pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator(),
-        coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil
+        coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil,
+        morningEngine suppliedMorningEngine: MorningEngine? = nil,
+        riskChangeEngine suppliedRiskChangeEngine: RiskChangeEngine? = nil,
+        executionContextFactory: @escaping @Sendable (
+            ContinuousClock.Instant
+        ) -> BackgroundRefreshExecutionContext = {
+            BackgroundRefreshExecutionContext(budget: .standard(start: $0))
+        },
+        workDeadlineWaiter: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        }
     ) async throws -> SystemUnderTest {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
@@ -954,7 +1283,7 @@ private extension BackgroundOrchestratorCadenceTests {
             )
         }
 
-        let morningEngine = MorningEngine(
+        let morningEngine = suppliedMorningEngine ?? MorningEngine(
             rule: NoopMorningRule(),
             gate: AllowAllGate(),
             composer: NoopComposer(),
@@ -992,14 +1321,46 @@ private extension BackgroundOrchestratorCadenceTests {
             policy: RefreshPolicy(),
             engine: morningEngine,
             mesoEngine: mesoEngine,
-            riskChangeEngine: makeRiskChangeEngine(sender: NoopSender()),
+            riskChangeEngine: suppliedRiskChangeEngine ?? makeRiskChangeEngine(sender: NoopSender()),
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(settings: settings),
-            pendingUploadDrainer: pendingUploadDrainer
+            pendingUploadDrainer: pendingUploadDrainer,
+            executionContextFactory: executionContextFactory,
+            workDeadlineWaiter: workDeadlineWaiter
         )
 
         return .init(orchestrator: orchestrator, modelContainer: container, spc: spc)
+    }
+
+    func makeDeadlineSystem(
+        coordinator: any HomeIngestionCoordinating,
+        deadlineWaiter: ManualDeadlineWaiter,
+        deadlineState: BackgroundRefreshDeadlineState,
+        workDeadlineAlreadyReached: Bool = false,
+        morningEngine: MorningEngine? = nil,
+        riskChangeEngine: RiskChangeEngine? = nil,
+        settings: NotificationSettings = .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false)
+    ) async throws -> SystemUnderTest {
+        try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            settings: settings,
+            coordinator: coordinator,
+            morningEngine: morningEngine,
+            riskChangeEngine: riskChangeEngine,
+            executionContextFactory: { start in
+                let budget = workDeadlineAlreadyReached
+                    ? BackgroundRefreshBudget(
+                        start: start,
+                        completionDeadline: start + .seconds(5),
+                        finalizationReserve: .seconds(5)
+                    )
+                    : .standard(start: start)
+                return BackgroundRefreshExecutionContext(budget: budget, deadlineState: deadlineState)
+            },
+            workDeadlineWaiter: { try await deadlineWaiter.wait(until: $0) }
+        )
     }
 
     static func makeMeso() -> MdDTO {
@@ -1237,6 +1598,7 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let runGate: AsyncGate?
     private let suspendsUntilCancelled: Bool
     private var submittedRequests: [HomeIngestionRequest] = []
+    private var didObserveCancellation = false
 
     init(
         snapshot: HomeSnapshot = .empty,
@@ -1288,7 +1650,12 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         _ = publication
         submittedRequests.append(request)
         if suspendsUntilCancelled {
-            try await Task.sleep(for: .seconds(60))
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                didObserveCancellation = error is CancellationError
+                throw error
+            }
         }
         if let runGate {
             await runGate.wait()
@@ -1302,6 +1669,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
     }
 }
 
@@ -1336,6 +1707,47 @@ private actor CompletionFlag {
     func isFinished() -> Bool {
         finished
     }
+}
+
+private actor ManualDeadlineWaiter {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+    private var started = false
+    private var cancellationObserved = false
+
+    init() {
+        let pair = AsyncStream<Void>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+    }
+
+    func wait(until _: ContinuousClock.Instant) async throws {
+        started = true
+        for await _ in stream {
+            return
+        }
+        cancellationObserved = Task.isCancelled
+        try Task.checkCancellation()
+    }
+
+    func reachDeadline() {
+        continuation.yield()
+    }
+
+    func hasStarted() -> Bool {
+        started
+    }
+
+    func observedCancellation() -> Bool {
+        cancellationObserved
+    }
+}
+
+@MainActor
+private func latestBgRun(in container: ModelContainer) throws -> BgRunState? {
+    var descriptor = FetchDescriptor<BgRunSnapshot>(sortBy: [SortDescriptor(\.startedAt, order: .reverse)])
+    descriptor.fetchLimit = 1
+    return try ModelContext(container).fetch(descriptor).first.map(BgRunState.init)
 }
 
 private actor RecordingPendingUploadDrainer: PendingLocationUploadDraining {
@@ -1446,6 +1858,58 @@ private actor RecordingRiskSender: NotificationSending {
 
     func sent() -> [SentNotification] {
         notifications
+    }
+}
+
+private actor CancellationAwareBlockingNotificationSender: NotificationSending {
+    private var didStart = false
+    private var didObserveCancellation = false
+
+    func send(title _: String, body _: String, subtitle _: String, id _: String) async -> Bool {
+        didStart = true
+        do {
+            try await Task.sleep(for: .seconds(60))
+            return true
+        } catch is CancellationError {
+            didObserveCancellation = true
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func hasStarted() -> Bool {
+        didStart
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
+    }
+}
+
+private actor SuccessfulOnCancellationNotificationSender: NotificationSending {
+    private var didStart = false
+    private var didObserveCancellation = false
+
+    func send(title _: String, body _: String, subtitle _: String, id _: String) async -> Bool {
+        didStart = true
+        do {
+            try await Task.sleep(for: .seconds(60))
+            return false
+        } catch is CancellationError {
+            didObserveCancellation = true
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func hasStarted() -> Bool {
+        didStart
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
     }
 }
 
@@ -1746,6 +2210,249 @@ private actor FirstMorningOnlyGate: NotificationGating {
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
         defer { hasAllowed = true }
         return hasAllowed == false
+    }
+}
+
+@Suite("Background health persistence", .serialized)
+struct BgHealthStoreTests {
+    @Test("Started runs survive a disk-backed reopen as incomplete")
+    func startedRun_diskReopenRemainsIncomplete() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BgHealthStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+
+        do {
+            let container = try makeDiskContainer(url: storeURL)
+            try await BgHealthStore(modelContainer: container).start(runId: "started-run", startedAt: startedAt)
+        }
+
+        let reopened = try makeDiskContainer(url: storeURL)
+        let run = try #require(await healthRun(id: "started-run", in: reopened))
+        #expect(run.startedAt == startedAt)
+        #expect(run.isComplete == false)
+        #expect(run.endedAt == nil)
+        #expect(run.outcome == nil)
+    }
+
+    @Test("A legacy background health store migrates without losing terminal fields")
+    func legacyStore_migratesToCurrentBackgroundHealthSchema() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BgHealthStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let startedAt = Date(timeIntervalSince1970: 1_000)
+        let endedAt = Date(timeIntervalSince1970: 1_010)
+        let nextScheduledAt = Date(timeIntervalSince1970: 2_200)
+
+        do {
+            let legacySchema = Schema(versionedSchema: BgRunSnapshotSchemaV1.self)
+            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
+            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
+            let legacyContext = ModelContext(legacyContainer)
+            legacyContext.insert(
+                BgRunSnapshotSchemaV1.BgRunSnapshot(
+                    runId: "legacy-run",
+                    startedAt: startedAt,
+                    endedAt: endedAt,
+                    outcomeCode: 0,
+                    didNotify: true,
+                    reasonNoNotify: nil,
+                    budgetSecUsed: 10,
+                    nextScheduledAt: nextScheduledAt,
+                    cadence: 20,
+                    cadenceReason: "legacy",
+                    activeSeconds: 8
+                )
+            )
+            try legacyContext.save()
+        }
+
+        let migrated = try makeDiskContainer(url: storeURL)
+        let run = try #require(await healthRun(id: "legacy-run", in: migrated))
+        #expect(run.startedAt == startedAt)
+        #expect(run.endedAt == endedAt)
+        #expect(run.outcome == .success)
+        #expect(run.nextScheduledAt == nextScheduledAt)
+        #expect(run.cadence == 20)
+    }
+
+    @Test("Finalization updates the started diagnostic record without inserting another")
+    func finalize_updatesOriginalRun() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        try await store.start(runId: "single-run", startedAt: .distantPast)
+        try await store.finalize(
+            runId: "single-run",
+            with: finalization(outcome: .success, desiredNextRunAt: Date(timeIntervalSince1970: 1_200))
+        )
+
+        let runs = try await healthRuns(in: container)
+        #expect(runs.count == 1)
+        #expect(runs[0].outcome == .success)
+        #expect(runs[0].uploadDrainOutcome == .remaining)
+        #expect(runs[0].ingestionOutcome == .completed)
+        #expect(runs[0].uploadDrainDurationSeconds == 2)
+        #expect(runs[0].ingestionDurationSeconds == 8)
+    }
+
+    @Test("Terminal outcomes preserve success skip failure cancellation and expiration distinctly")
+    func terminalOutcomes_remainDistinct() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        let outcomes: [BgRunOutcome] = [.success, .skipped, .failed, .cancelled, .expired]
+
+        for (index, outcome) in outcomes.enumerated() {
+            let runId = "run-\(index)"
+            try await store.start(runId: runId, startedAt: Date(timeIntervalSince1970: Double(index)))
+            try await store.finalize(runId: runId, with: finalization(outcome: outcome, desiredNextRunAt: .distantFuture))
+        }
+
+        let persisted = try await healthRuns(in: container).compactMap(\.outcome).sorted { $0.rawValue < $1.rawValue }
+        #expect(persisted == outcomes.sorted { $0.rawValue < $1.rawValue })
+    }
+
+    @Test("Desired cadence remains independent from failed scheduler submissions")
+    func schedulingFailure_doesNotReplaceDesiredCadence() async throws {
+        let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
+        let store = BgHealthStore(modelContainer: container)
+        let desiredNextRunAt = Date(timeIntervalSince1970: 1_200)
+        try await store.start(runId: "scheduling-run", startedAt: .distantPast)
+        try await store.finalize(
+            runId: "scheduling-run",
+            with: finalization(outcome: .failed, desiredNextRunAt: desiredNextRunAt)
+        )
+        try await store.recordScheduling(
+            runId: "scheduling-run",
+            phase: .fallback,
+            outcome: .submissionFailed
+        )
+        try await store.recordScheduling(
+            runId: "scheduling-run",
+            phase: .authoritative,
+            outcome: .restorationFailed
+        )
+
+        let run = try #require(await healthRun(id: "scheduling-run", in: container))
+        #expect(run.nextScheduledAt == desiredNextRunAt)
+        #expect(run.fallbackSchedulingOutcome == .submissionFailed)
+        #expect(run.authoritativeSchedulingOutcome == .restorationFailed)
+        #expect(run.authoritativeSchedulingOutcome?.preservesSuccessor == false)
+    }
+
+    private func finalization(outcome: BgRunOutcome, desiredNextRunAt: Date) -> BgRunFinalization {
+        .init(
+            endedAt: Date(timeIntervalSince1970: 1_100),
+            outcome: outcome,
+            didNotify: false,
+            reasonNoNotify: "deterministic test",
+            budgetSecUsed: 10,
+            desiredNextRunAt: desiredNextRunAt,
+            cadence: 20,
+            cadenceReason: "test",
+            active: .seconds(10),
+            uploadDrainDuration: .seconds(2),
+            uploadDrainOutcome: .remaining,
+            ingestionDuration: .seconds(8),
+            ingestionOutcome: .completed
+        )
+    }
+
+    private func makeDiskContainer(url: URL) throws -> ModelContainer {
+        let schema = Schema([BgRunSnapshot.self])
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: url)
+        return try ModelContainer(for: schema, configurations: configuration)
+    }
+}
+
+@MainActor
+private func healthRun(id: String, in container: ModelContainer) throws -> BgRunState? {
+    let descriptor = FetchDescriptor<BgRunSnapshot>(predicate: #Predicate { $0.runId == id })
+    return try ModelContext(container).fetch(descriptor).first.map(BgRunState.init)
+}
+
+@MainActor
+private func healthRuns(in container: ModelContainer) throws -> [BgRunState] {
+    try ModelContext(container).fetch(FetchDescriptor<BgRunSnapshot>()).map(BgRunState.init)
+}
+
+private struct BgRunState: Sendable {
+    let startedAt: Date
+    let endedAt: Date?
+    let isComplete: Bool
+    let outcome: BgRunOutcome?
+    let uploadDrainDurationSeconds: Int64?
+    let uploadDrainOutcome: BgPhaseOutcome?
+    let ingestionDurationSeconds: Int64?
+    let ingestionOutcome: BgPhaseOutcome?
+    let nextScheduledAt: Date?
+    let cadence: Int
+    let fallbackSchedulingOutcome: BgSchedulingOutcome?
+    let authoritativeSchedulingOutcome: BgSchedulingOutcome?
+
+    init(_ snapshot: BgRunSnapshot) {
+        startedAt = snapshot.startedAt
+        endedAt = snapshot.endedAt
+        isComplete = snapshot.isComplete
+        outcome = snapshot.outcome
+        uploadDrainDurationSeconds = snapshot.uploadDrainDurationSeconds
+        uploadDrainOutcome = snapshot.uploadDrainOutcome
+        ingestionDurationSeconds = snapshot.ingestionDurationSeconds
+        ingestionOutcome = snapshot.ingestionOutcome
+        nextScheduledAt = snapshot.nextScheduledAt
+        cadence = snapshot.cadence
+        fallbackSchedulingOutcome = snapshot.fallbackSchedulingOutcome
+        authoritativeSchedulingOutcome = snapshot.authoritativeSchedulingOutcome
+    }
+}
+
+enum BgRunSnapshotSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
+
+    static var models: [any PersistentModel.Type] { [BgRunSnapshot.self] }
+
+    @Model
+    final class BgRunSnapshot {
+        @Attribute(.unique) var runId: String
+        var startedAt: Date
+        var endedAt: Date
+        var outcomeCode: Int
+        var didNotify: Bool
+        var reasonNoNotify: String?
+        var budgetSecUsed: Int
+        var nextScheduledAt: Date
+        var cadence: Int
+        var cadenceReason: String?
+        var activeSeconds: Int64
+
+        init(
+            runId: String,
+            startedAt: Date,
+            endedAt: Date,
+            outcomeCode: Int,
+            didNotify: Bool,
+            reasonNoNotify: String?,
+            budgetSecUsed: Int,
+            nextScheduledAt: Date,
+            cadence: Int,
+            cadenceReason: String?,
+            activeSeconds: Int64
+        ) {
+            self.runId = runId
+            self.startedAt = startedAt
+            self.endedAt = endedAt
+            self.outcomeCode = outcomeCode
+            self.didNotify = didNotify
+            self.reasonNoNotify = reasonNoNotify
+            self.budgetSecUsed = budgetSecUsed
+            self.nextScheduledAt = nextScheduledAt
+            self.cadence = cadence
+            self.cadenceReason = cadenceReason
+            self.activeSeconds = activeSeconds
+        }
     }
 }
 

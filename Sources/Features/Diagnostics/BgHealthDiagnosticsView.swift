@@ -13,7 +13,7 @@ import SwiftData
 struct BgHealthDiagnosticsView: View {
     // Latest first, capped to 50
     @Query(
-        sort: [SortDescriptor(\BgRunSnapshot.endedAt, order: .reverse)]
+        sort: [SortDescriptor(\BgRunSnapshot.startedAt, order: .reverse)]
     ) private var runs: [BgRunSnapshot]
     
     var body: some View {
@@ -66,8 +66,10 @@ private struct StatusHeader: View {
                 Text("Background Status: \(status.label)")
                     .font(.headline)
                 HStack(spacing: 12) {
-                    Label("Last \(relative(latest.endedAt, now: now))", systemImage: "clock")
-                    Label("Next \(timeOrDash(latest.nextScheduledAt))", systemImage: "calendar.badge.clock")
+                    Label("Started \(relative(latest.startedAt, now: now))", systemImage: "clock")
+                    if let desiredNextRunAt = latest.nextScheduledAt {
+                        Label("Desired \(timeOrDash(desiredNextRunAt))", systemImage: "calendar.badge.clock")
+                    }
                 }
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -78,26 +80,22 @@ private struct StatusHeader: View {
     }
     
     private func computeStatus(from latest: BgRunSnapshot, now: Date) -> (label: String, color: Color) {
-        // Tunable thresholds
-        let behindGrace: TimeInterval = 45 * 60 // 45m after nextScheduled → "Behind"
-        let stalledAfter: TimeInterval = 3 * 60 * 60 // 3h since last run → "Stalled"
-        
-        // Stalled if we haven't finished a run in a long while
-        if now.timeIntervalSince(latest.endedAt) > stalledAfter {
-            return ("Stalled", .orange)
+        let staleAfter: TimeInterval = 3 * 60 * 60
+        let lastActivityAt = latest.endedAt ?? latest.startedAt
+        if now.timeIntervalSince(lastActivityAt) > staleAfter {
+            return latest.isComplete ? ("Last run stale", .orange) : ("Unfinished and stale", .red)
         }
-        
-        // Behind if we're past our next scheduled time by > 45m
-        if now.timeIntervalSince(latest.nextScheduledAt) > behindGrace {
-            return ("Behind", .yellow)
+        if latest.isComplete == false {
+            return ("Unfinished", .orange)
         }
-        
-        // Error outcome escalates severity
-        if latest.outcomeCode >= 2 {
-            return ("Error", .red)
+        switch latest.outcome {
+        case .success: return ("Completed", .green)
+        case .skipped: return ("Skipped", .orange)
+        case .cancelled: return ("Cancelled", .orange)
+        case .expired: return ("Expired", .red)
+        case .failed: return ("Failed", .red)
+        case nil: return ("Unfinished", .orange)
         }
-        
-        return ("Ok", .green)
     }
 }
 
@@ -107,64 +105,113 @@ private struct RunRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\(endDate(snap.endedAt)) - \(endTime(snap.endedAt))")
+                Text(runDate(snap))
                     .font(.headline)
                 Spacer()
-                Text(outcomeLabel(snap.outcomeCode))
+                Text(outcomeLabel(snap))
                     .font(.subheadline)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
-                    .background(outcomeColor(snap.outcomeCode).opacity(0.15))
-                    .foregroundStyle(outcomeColor(snap.outcomeCode))
+                    .background(outcomeColor(snap).opacity(0.15))
+                    .foregroundStyle(outcomeColor(snap))
                     .clipShape(Capsule())
             }
             
-            HStack(spacing: 12) {
-                Label("\(formatSecondsInt64(snap.activeSeconds))", systemImage: "timer")
-                Label("Budget \(snap.budgetSecUsed)s", systemImage: "gauge.with.dots.needle.50percent")
-                if snap.didNotify {
-                    Label("Notified", systemImage: "bell.badge.fill")
-                } else {
-                    Label("No notify", systemImage: "bell.slash")
+            if snap.isComplete {
+                HStack(spacing: 12) {
+                    Label("\(formatSecondsInt64(snap.activeSeconds))", systemImage: "timer")
+                    Label("Budget \(snap.budgetSecUsed)s", systemImage: "gauge.with.dots.needle.50percent")
+                    if snap.didNotify {
+                        Label("Notified", systemImage: "bell.badge.fill")
+                    } else {
+                        Label("No notify", systemImage: "bell.slash")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+                if let reason = snap.reasonNoNotify, !reason.isEmpty {
+                    Text(reason)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                if let desiredNextRunAt = snap.nextScheduledAt {
+                    Text("Desired cadence date: \(timeOrDash(desiredNextRunAt))")
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-            }
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            
-            if let reason = snap.reasonNoNotify, !reason.isEmpty {
-                Text(reason)
+                Text("Desired cadence: \(snap.cadence)m")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                Text("Cadence Reason: \(snap.cadenceReason ?? "unknown")")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
-            
-            Text("Next: \(timeOrDash(snap.nextScheduledAt))")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Text("Cadence: \(snap.cadence)")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            Text("Cadence Reason: \(snap.cadenceReason ?? "unknown")")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+
+            schedulerOutcomeLabel("Fallback scheduler", outcome: snap.fallbackSchedulingOutcome)
+            schedulerOutcomeLabel("Authoritative scheduler", outcome: snap.authoritativeSchedulingOutcome)
+            phaseLabel("Upload drain", duration: snap.uploadDrainDurationSeconds, outcome: snap.uploadDrainOutcome)
+            phaseLabel("Unified ingestion", duration: snap.ingestionDurationSeconds, outcome: snap.ingestionOutcome)
         }
         
         .accessibilityElement(children: .combine)
     }
     
-    private func outcomeLabel(_ code: Int) -> String {
-        switch code {
-        case 0: return "Ok"
-        case 1: return "Partial"
-        default: return "Error"
+    private func runDate(_ snapshot: BgRunSnapshot) -> String {
+        let date = snapshot.endedAt ?? snapshot.startedAt
+        return "\(endDate(date)) - \(endTime(date))"
+    }
+
+    private func outcomeLabel(_ snapshot: BgRunSnapshot) -> String {
+        guard let outcome = snapshot.outcome else { return "Unfinished" }
+        switch outcome {
+        case .success: return "Success"
+        case .skipped: return "Skipped"
+        case .failed: return "Failed"
+        case .cancelled: return "Cancelled"
+        case .expired: return "Expired"
         }
     }
-    private func outcomeColor(_ code: Int) -> Color {
-        switch code {
-        case 0: return .green
-        case 1: return .orange
-        default: return .red
+    private func outcomeColor(_ snapshot: BgRunSnapshot) -> Color {
+        switch snapshot.outcome {
+        case .success: return .green
+        case .skipped, .cancelled, nil: return .orange
+        case .failed, .expired: return .red
+        }
+    }
+
+    @ViewBuilder
+    private func schedulerOutcomeLabel(_ title: String, outcome: BgSchedulingOutcome?) -> some View {
+        if let outcome {
+            Label(
+                "\(title): \(schedulerOutcomeText(outcome))",
+                systemImage: outcome.preservesSuccessor ? "checkmark.circle" : "exclamationmark.triangle"
+            )
+            .font(.footnote)
+            .foregroundStyle(outcome.preservesSuccessor ? Color.secondary : Color.red)
+        }
+    }
+
+    @ViewBuilder
+    private func phaseLabel(_ title: String, duration: Int64?, outcome: BgPhaseOutcome?) -> some View {
+        if let outcome {
+            Text("\(title): \(outcome.rawValue)\(duration.map { " (\(formatSecondsInt64($0)))" } ?? "")")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func schedulerOutcomeText(_ outcome: BgSchedulingOutcome) -> String {
+        switch outcome {
+        case .submitted: "submitted"
+        case .preservedExisting: "preserved existing request"
+        case .preservedImmediate: "preserved immediate request"
+        case .submissionFailed: "submission failed"
+        case .restoredPrevious: "restored previous request"
+        case .restorationFailed: "restoration failed"
         }
     }
 }

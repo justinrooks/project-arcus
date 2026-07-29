@@ -4,6 +4,135 @@ import Testing
 
 @Suite("Home Ingestion Coordinator", .serialized)
 struct HomeIngestionCoordinatorTests {
+    @Test("child executor task inherits the scoped background budget")
+    func childExecutorTaskInheritsScopedBackgroundBudget() async throws {
+        let executor = BudgetCapturingHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let clock = ContinuousClock()
+        let budget = BackgroundRefreshBudget.standard(start: clock.now)
+
+        _ = try await BackgroundRefreshExecutionContext.$current.withValue(.init(budget: budget)) {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+
+        #expect(await executor.sawBudget())
+    }
+
+    @Test("queued background follow-up retains its submitted budget")
+    func queuedBackgroundFollowUpRetainsSubmittedBudget() async {
+        let gate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let clock = ContinuousClock()
+
+        await coordinator.enqueue(.sessionTick)
+        let firstStarted = await waitUntil { await executor.runCount() == 1 }
+        #expect(firstStarted)
+
+        let context = BackgroundRefreshExecutionContext(budget: .standard(start: clock.now))
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await coordinator.enqueue(.backgroundRefresh)
+        }
+        await gate.open()
+
+        let followUpStarted = await waitUntil { await executor.runCount() == 2 }
+        #expect(followUpStarted)
+        #expect(await executor.observedBudgetContexts() == [false, true])
+    }
+
+    @Test("queued scheduled budget survives merging unbudgeted background work in either order")
+    func queuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge() async {
+        await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: true)
+        await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: false)
+    }
+
+    @Test("foreground participation permanently clears a queued background budget")
+    func foregroundParticipationPermanentlyClearsQueuedBackgroundBudget() async {
+        let gate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = BackgroundRefreshExecutionContext(
+            budget: .standard(start: ContinuousClock().now)
+        )
+
+        await coordinator.enqueue(.sessionTick)
+        #expect(await waitUntil { await executor.runCount() == 1 })
+
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await coordinator.enqueue(.backgroundRefresh)
+        }
+        await coordinator.enqueue(.foregroundActivate)
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await coordinator.enqueue(.backgroundRefresh)
+        }
+
+        await gate.open()
+        #expect(await waitUntil { await executor.runCount() == 2 })
+        #expect(await executor.observedBudgetContexts() == [false, false])
+    }
+
+    @Test("foreground waiter restarts outside a deadline-exhausted background run")
+    func foregroundWaiterRestartsOutsideDeadlineExhaustedBackgroundRun() async throws {
+        let gate = AsyncGate()
+        let executor = DeadlineExhaustingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = BackgroundRefreshExecutionContext(
+            budget: .standard(start: ContinuousClock().now)
+        )
+
+        let backgroundWaiter = Task {
+            try await BackgroundRefreshExecutionContext.$current.withValue(context) {
+                try await coordinator.enqueueAndWait(.backgroundRefresh)
+            }
+        }
+        #expect(await waitUntil { await executor.runCount() == 1 })
+
+        let foregroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        await gate.open()
+
+        await expectCancellation(backgroundWaiter)
+        #expect(try await foregroundWaiter.value == .empty)
+        #expect(await executor.observedBudgetContexts() == [true, false])
+    }
+
+    private func assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(
+        budgetedRequestFirst: Bool
+    ) async {
+        let gate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let executionContext = BackgroundRefreshExecutionContext(
+            budget: .standard(start: ContinuousClock().now)
+        )
+        let remoteContext = HomeRemoteAlertContext(
+            alertID: "queued-budget-merge",
+            revisionSent: Date(timeIntervalSince1970: 700)
+        )
+
+        await coordinator.enqueue(.sessionTick)
+        #expect(await waitUntil { await executor.runCount() == 1 })
+
+        if budgetedRequestFirst {
+            await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                await coordinator.enqueue(.backgroundRefresh)
+            }
+            await coordinator.enqueue(.remoteHotAlertReceived, remoteAlertContext: remoteContext)
+        } else {
+            await coordinator.enqueue(.remoteHotAlertReceived, remoteAlertContext: remoteContext)
+            await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                await coordinator.enqueue(.backgroundRefresh)
+            }
+        }
+
+        await gate.open()
+        #expect(await waitUntil { await executor.runCount() == 2 })
+        #expect(await executor.observedBudgetContexts() == [false, true])
+    }
+
     @Test("protocol conveniences forward complete requests and callbacks to the canonical operation")
     func protocolConveniences_forwardToCanonicalOperation() async throws {
         let recordingCoordinator = ForwardingHomeIngestionCoordinator()
@@ -363,6 +492,230 @@ struct HomeIngestionCoordinatorTests {
         await executor.waitForCompletedRun(1)
     }
 
+    @Test("a pre-canceled background waiter cancels its accepted run")
+    func preCanceledBackgroundWaiter_cancelsAcceptedRun() async {
+        let submissionGate = AsyncGate()
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let waiter = Task {
+            await submissionGate.wait()
+            return try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+
+        waiter.cancel()
+        await submissionGate.open()
+        await executor.waitForStartedRun(1)
+        await expectCancellation(waiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1))
+    }
+
+    @Test("canceling the only background waiter cancels its active executor")
+    func canceledOnlyBackgroundWaiter_cancelsActiveExecutor() async {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1))
+    }
+
+    @Test("one active background waiter retains shared work after another cancels")
+    func remainingBackgroundWaiter_retainsSharedRunAfterPeerCancellation() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let firstWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let secondWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        firstWaiter.cancel()
+        await expectCancellation(firstWaiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 1)
+
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await secondWaiter.value == .empty)
+    }
+
+    @Test("a foreground waiter retains a background-originated compatible run")
+    func foregroundWaiter_retainsBackgroundOriginatedCompatibleRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let foregroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 1)
+
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await foregroundWaiter.value == .empty)
+    }
+
+    @Test("a remote-alert waiter retains a compatible background-originated run")
+    func remoteAlertWaiter_retainsBackgroundOriginatedCompatibleRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let remoteAlertContext = HomeRemoteAlertContext(alertID: "retained-alert")
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(
+                HomeIngestionRequest(trigger: .backgroundRefresh, remoteAlertContext: remoteAlertContext)
+            )
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let remoteWaiter = Task {
+            try await coordinator.enqueueAndWait(.remoteHotAlertReceived, remoteAlertContext: remoteAlertContext)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await remoteWaiter.value == .empty)
+    }
+
+    @Test("a location waiter retains a compatible background-originated run")
+    func locationWaiter_retainsBackgroundOriginatedCompatibleRun() async throws {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = makeContext(latitude: 39.75, longitude: -104.44, timestamp: 100)
+
+        let locationWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundLocationChange, locationContext: context)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        await executor.waitForStartedRun(1)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 2)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+        #expect(try await locationWaiter.value == .empty)
+    }
+
+    @Test("background fire-and-forget ownership retains shared work after waiter cancellation")
+    func backgroundFireAndForget_retainsSharedWorkAfterWaiterCancellation() async {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        await coordinator.enqueue(.backgroundRefresh)
+        await executor.waitForStartedRun(1)
+
+        let foregroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.sessionTick)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+
+        foregroundWaiter.cancel()
+        await expectCancellation(foregroundWaiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+
+        await executor.releaseRun(1)
+        await executor.waitForCompletedRun(1)
+        #expect(await executor.wasCanceled(run: 1) == false)
+    }
+
+    @Test("a canceled queued background waiter leaves its follow-up plan running")
+    func canceledQueuedBackgroundWaiter_leavesFollowUpRunningWithoutCallbacks() async {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let progressCallbacks = AsyncCount()
+        let publicationCallbacks = AsyncCount()
+
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(
+                HomeIngestionRequest(trigger: .backgroundRefresh),
+                progress: { _ in await progressCallbacks.record() },
+                publication: { _ in await publicationCallbacks.record() }
+            )
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        #expect(await coordinator.testPendingPlanForWaiterCharacterization()?.provenance.contains(.background) == true)
+
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+        #expect(await coordinator.testWaiterCountForWaiterCharacterization() == 0)
+
+        await executor.releaseRun(1)
+        await executor.waitForStartedRun(2)
+        await executor.emitProgress(.started(.lane(.hotAlerts)), forRun: 2)
+        await executor.emitCorePublication(forRun: 2)
+        #expect(await progressCallbacks.value() == 0)
+        #expect(await publicationCallbacks.value() == 0)
+
+        await executor.releaseRun(2)
+        await executor.waitForCompletedRun(2)
+        #expect(await executor.wasCanceled(run: 2) == false)
+    }
+
+    @Test("queued fire-and-forget ownership survives a canceled background waiter")
+    func queuedFireAndForgetOwnership_retainsFollowUpAfterWaiterCancellation() async {
+        let executor = ControlledHomeIngestionExecutor()
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+
+        await coordinator.enqueue(.sessionTick)
+        await executor.waitForStartedRun(1)
+        await coordinator.enqueue(.backgroundRefresh)
+
+        let backgroundWaiter = Task {
+            try await coordinator.enqueueAndWait(.backgroundRefresh)
+        }
+        await coordinator.waitForTestWaiterCount(atLeast: 1)
+        backgroundWaiter.cancel()
+        await expectCancellation(backgroundWaiter)
+
+        await executor.releaseRun(1)
+        await executor.waitForStartedRun(2)
+        await executor.releaseRun(2)
+        await executor.waitForCompletedRun(2)
+        #expect(await executor.wasCanceled(run: 2) == false)
+    }
+
     @Test("canceling an active waiter suppresses later callbacks while work continues")
     func cancelBeforeFinish_activeWaiterThrowsAndSuppressesCallbacks() async {
         let executor = ControlledHomeIngestionExecutor()
@@ -588,6 +941,75 @@ struct HomeIngestionCoordinatorTests {
     }
 }
 
+private actor BudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
+    private var inheritedBudget = false
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        inheritedBudget = BackgroundRefreshExecutionContext.current != nil
+        return HomeSnapshot()
+    }
+
+    func sawBudget() -> Bool {
+        inheritedBudget
+    }
+}
+
+private actor QueuedBudgetCapturingHomeIngestionExecutor: HomeIngestionExecuting {
+    private let gate: AsyncGate
+    private var contexts: [Bool] = []
+
+    init(gate: AsyncGate) {
+        self.gate = gate
+    }
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        contexts.append(BackgroundRefreshExecutionContext.current != nil)
+        if contexts.count == 1 {
+            await gate.wait()
+        }
+        return HomeSnapshot()
+    }
+
+    func runCount() -> Int {
+        contexts.count
+    }
+
+    func observedBudgetContexts() -> [Bool] {
+        contexts
+    }
+}
+
+private actor DeadlineExhaustingHomeIngestionExecutor: HomeIngestionExecuting {
+    private let gate: AsyncGate
+    private var contexts: [Bool] = []
+
+    init(gate: AsyncGate) {
+        self.gate = gate
+    }
+
+    func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot {
+        contexts.append(BackgroundRefreshExecutionContext.current != nil)
+        if contexts.count == 1 {
+            await gate.wait()
+            guard let context = BackgroundRefreshExecutionContext.current else {
+                Issue.record("Expected the first run to have a background execution context")
+                return .empty
+            }
+            await context.deadlineState.markExceeded()
+            try await context.deadlineState.throwIfExceeded()
+        }
+        return .empty
+    }
+
+    func runCount() -> Int {
+        contexts.count
+    }
+
+    func observedBudgetContexts() -> [Bool] {
+        contexts
+    }
+}
+
 private actor FakeHomeIngestionExecutor: HomeIngestionExecuting {
     private let snapshot: HomeSnapshot
     private let beforeHotAlertsGate: AsyncGate?
@@ -766,6 +1188,7 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
     private var releaseContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
     private let startedRuns = AsyncCount()
     private let completedRuns = AsyncCount()
+    private let canceledRuns = AsyncCount()
     private var canceledRunNumbers: Set<Int> = []
 
     init(snapshot: HomeSnapshot = .empty) {
@@ -778,12 +1201,23 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
         let run = progresses.count
         await startedRuns.record()
 
-        await withCheckedContinuation { continuation in
-            releaseContinuations[run] = continuation
-        }
-
-        if Task.isCancelled {
-            canceledRunNumbers.insert(run)
+        do {
+            try await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    releaseContinuations[run] = continuation
+                }
+                if Task.isCancelled {
+                    cancel(run)
+                }
+                try Task.checkCancellation()
+            } onCancel: {
+                Task {
+                    await self.cancel(run)
+                }
+            }
+        } catch {
+            await completedRuns.record()
+            throw error
         }
         await completedRuns.record()
         return snapshot
@@ -820,6 +1254,11 @@ private actor ControlledHomeIngestionExecutor: HomeIngestionExecuting {
 
     func wasCanceled(run: Int) -> Bool {
         canceledRunNumbers.contains(run)
+    }
+
+    private func cancel(_ run: Int) {
+        guard canceledRunNumbers.insert(run).inserted else { return }
+        releaseContinuations.removeValue(forKey: run)?.resume()
     }
 
     private func progress(for run: Int) -> HomeIngestionRunProgress {
