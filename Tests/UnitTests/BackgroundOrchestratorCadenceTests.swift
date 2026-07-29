@@ -613,6 +613,51 @@ struct BackgroundOrchestratorCadenceTests {
         #expect(await deadlineState.exceeded())
     }
 
+    @Test("Delivered morning risk coalesces before work deadline expiration")
+    func deliveredMorningRisk_coalescesBeforeWorkDeadlineExpiration() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let morningSender = SuccessfulOnCancellationNotificationSender()
+        let riskSender = RecordingRiskSender()
+        let riskEngine = makeRiskChangeEngine(sender: riskSender)
+        let projectionKey = "projection:deadline"
+        let olderChange = makeRiskChange(
+            projectionKey: projectionKey,
+            previous: makeRiskProfile(storm: .allClear, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear)
+        )
+        let deliveredChange = makeRiskChange(
+            projectionKey: projectionKey,
+            previous: makeRiskProfile(storm: .marginal, severe: .allClear, fire: .clear),
+            current: makeRiskProfile(storm: .enhanced, severe: .allClear, fire: .clear)
+        )
+        #expect(await riskEngine.run(change: olderChange, isEnabled: false) == false)
+
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: deliveredChange)
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            morningEngine: makeMorningEngine(sender: morningSender),
+            riskChangeEngine: riskEngine,
+            settings: .init(morningSummariesEnabled: true, mesoNotificationsEnabled: false)
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await morningSender.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        let outcome = await runTask.value
+
+        #expect(outcome.result == .expired)
+        #expect(await morningSender.observedCancellation())
+        #expect(await riskEngine.run(change: nil, isEnabled: true) == false)
+        #expect(await riskSender.sent().isEmpty)
+        #expect(await deadlineState.exceeded())
+    }
+
     @Test("Deadline reached before ingestion admission does not submit work")
     func deadlineBeforeIngestionAdmission_doesNotSubmitWork() async throws {
         let deadlineState = BackgroundRefreshDeadlineState()
@@ -1828,6 +1873,32 @@ private actor CancellationAwareBlockingNotificationSender: NotificationSending {
         } catch is CancellationError {
             didObserveCancellation = true
             return false
+        } catch {
+            return false
+        }
+    }
+
+    func hasStarted() -> Bool {
+        didStart
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
+    }
+}
+
+private actor SuccessfulOnCancellationNotificationSender: NotificationSending {
+    private var didStart = false
+    private var didObserveCancellation = false
+
+    func send(title _: String, body _: String, subtitle _: String, id _: String) async -> Bool {
+        didStart = true
+        do {
+            try await Task.sleep(for: .seconds(60))
+            return false
+        } catch is CancellationError {
+            didObserveCancellation = true
+            return true
         } catch {
             return false
         }

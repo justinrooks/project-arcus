@@ -386,6 +386,13 @@ actor BackgroundOrchestrator {
                         )
                         if !didMorningNotify { noNotifyReasons.append("Morning summary skipped") }
                     } else { noNotifyReasons.append("Morning summary disabled") }
+
+                    let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
+                        && didMorningNotify
+                        && snapshot.riskProfileChange != nil
+                    if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
+                        await riskChangeEngine.coalesce(change: riskProfileChange)
+                    }
                     try Task.checkCancellation()
 
                     if settings.mesoNotificationsEnabled {
@@ -403,13 +410,6 @@ actor BackgroundOrchestrator {
                     } else { noNotifyReasons.append("Meso notification disabled") }
                     try Task.checkCancellation()
 
-                    let coalescedCurrentRiskChange = settings.riskChangeNotificationsEnabled
-                        && didMorningNotify
-                        && snapshot.riskProfileChange != nil
-                    if coalescedCurrentRiskChange, let riskProfileChange = snapshot.riskProfileChange {
-                        await riskChangeEngine.coalesce(change: riskProfileChange)
-                        try Task.checkCancellation()
-                    }
                     didRiskChangeNotify = await riskChangeEngine.run(
                         change: coalescedCurrentRiskChange ? nil : snapshot.riskProfileChange,
                         isEnabled: settings.riskChangeNotificationsEnabled
