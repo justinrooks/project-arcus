@@ -46,6 +46,31 @@ struct HomeIngestionCoordinatorTests {
         await assertQueuedScheduledBudgetSurvivesUnbudgetedBackgroundMerge(budgetedRequestFirst: false)
     }
 
+    @Test("foreground participation permanently clears a queued background budget")
+    func foregroundParticipationPermanentlyClearsQueuedBackgroundBudget() async {
+        let gate = AsyncGate()
+        let executor = QueuedBudgetCapturingHomeIngestionExecutor(gate: gate)
+        let coordinator = HomeIngestionCoordinator(executor: executor)
+        let context = BackgroundRefreshExecutionContext(
+            budget: .standard(start: ContinuousClock().now)
+        )
+
+        await coordinator.enqueue(.sessionTick)
+        #expect(await waitUntil { await executor.runCount() == 1 })
+
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await coordinator.enqueue(.backgroundRefresh)
+        }
+        await coordinator.enqueue(.foregroundActivate)
+        await BackgroundRefreshExecutionContext.$current.withValue(context) {
+            await coordinator.enqueue(.backgroundRefresh)
+        }
+
+        await gate.open()
+        #expect(await waitUntil { await executor.runCount() == 2 })
+        #expect(await executor.observedBudgetContexts() == [false, false])
+    }
+
     @Test("foreground waiter restarts outside a deadline-exhausted background run")
     func foregroundWaiterRestartsOutsideDeadlineExhaustedBackgroundRun() async throws {
         let gate = AsyncGate()

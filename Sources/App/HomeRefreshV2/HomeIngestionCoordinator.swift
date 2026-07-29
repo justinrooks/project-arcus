@@ -62,6 +62,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private struct PendingRun {
         let plan: HomeIngestionPlan
         let executionContext: BackgroundRefreshExecutionContext?
+        let hasForegroundOwner: Bool
         let hasFireAndForgetOwner: Bool
     }
 
@@ -151,17 +152,18 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         if activeTask != nil {
             if let pendingRun {
                 let mergedPlan = pendingRun.plan.merged(with: requestedPlan)
+                let hasForegroundOwner = pendingRun.hasForegroundOwner || isForegroundOwner(requestedPlan)
                 logger.debug(
                     "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingRun.plan.logDescription)} merged={\(mergedPlan.logDescription)}"
                 )
                 self.pendingRun = .init(
                     plan: mergedPlan,
                     executionContext: mergedExecutionContext(
-                        pendingPlan: pendingRun.plan,
                         pending: pendingRun.executionContext,
-                        submittedPlan: requestedPlan,
-                        submitted: executionContext
+                        submitted: executionContext,
+                        hasForegroundOwner: hasForegroundOwner
                     ),
+                    hasForegroundOwner: hasForegroundOwner,
                     hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
                 )
             } else {
@@ -170,7 +172,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                 )
                 pendingRun = .init(
                     plan: requestedPlan,
-                    executionContext: executionContext,
+                    executionContext: isForegroundOwner(requestedPlan) ? nil : executionContext,
+                    hasForegroundOwner: isForegroundOwner(requestedPlan),
                     hasFireAndForgetOwner: hasFireAndForgetOwner
                 )
             }
@@ -187,12 +190,11 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private func mergedExecutionContext(
-        pendingPlan: HomeIngestionPlan,
         pending: BackgroundRefreshExecutionContext?,
-        submittedPlan: HomeIngestionPlan,
-        submitted: BackgroundRefreshExecutionContext?
+        submitted: BackgroundRefreshExecutionContext?,
+        hasForegroundOwner: Bool
     ) -> BackgroundRefreshExecutionContext? {
-        guard !isForegroundOwner(pendingPlan), !isForegroundOwner(submittedPlan) else { return nil }
+        guard !hasForegroundOwner else { return nil }
         return .merged(pending, submitted)
     }
 
