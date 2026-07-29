@@ -484,19 +484,21 @@ struct BackgroundOrchestratorCadenceTests {
 
     @Test("Cancellation during unified ingestion records recovery promptly")
     func cancellationDuringUnifiedIngestion_recordsRecoveryPromptly() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
         let coordinator = RecordingHomeIngestionCoordinator(
             snapshot: Self.makeRiskSnapshot(change: nil),
             suspendsUntilCancelled: true
         )
-        let setup = try await makeSystem(
-            activeMesos: [],
-            activeAlerts: [],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
-            coordinator: coordinator
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
         )
 
         let runTask = Task { await setup.orchestrator.run() }
         #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
 
         runTask.cancel()
         let outcome = await runTask.value
@@ -504,20 +506,83 @@ struct BackgroundOrchestratorCadenceTests {
 
         #expect(outcome.result == .cancelled)
         #expect(health.outcome == .cancelled)
+        #expect(health.ingestionOutcome == .cancelled)
         #expect(health.cadence == Cadence.short.minutes)
+        #expect(await coordinator.observedCancellation())
+        #expect(await deadlineWaiter.observedCancellation())
+        #expect(await deadlineState.exceeded() == false)
     }
 
-    @Test("Deadline exhaustion records expired rather than cancelled")
-    func deadlineExhaustion_recordsExpiredOutcome() async throws {
+    @Test("Blocked non-HTTP ingestion expires at the work deadline")
+    func blockedNonHTTPIngestion_workDeadlineExpiresRun() async throws {
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
         let coordinator = RecordingHomeIngestionCoordinator(
             snapshot: Self.makeRiskSnapshot(change: nil),
-            marksBackgroundDeadline: true
+            suspendsUntilCancelled: true
         )
-        let setup = try await makeSystem(
-            activeMesos: [],
-            activeAlerts: [],
-            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
-            coordinator: coordinator
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .expired)
+        #expect(health.cadence == Cadence.short.minutes)
+        #expect(await coordinator.observedCancellation())
+        #expect(await deadlineState.exceeded())
+    }
+
+    @Test("Ingestion finishing before its work deadline remains successful")
+    func ingestionBeforeWorkDeadline_remainsSuccessful() async throws {
+        let ingestionGate = AsyncGate()
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            runGate: ingestionGate
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
+
+        await ingestionGate.open()
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+
+        #expect(outcome.result == .success)
+        #expect(health.outcome == .success)
+        #expect(health.ingestionOutcome == .completed)
+        #expect(await deadlineWaiter.observedCancellation())
+        #expect(await deadlineState.exceeded() == false)
+    }
+
+    @Test("Deadline reached before ingestion admission does not submit work")
+    func deadlineBeforeIngestionAdmission_doesNotSubmitWork() async throws {
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: Self.makeRiskSnapshot(change: nil))
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState,
+            workDeadlineAlreadyReached: true
         )
 
         let outcome = await setup.orchestrator.run()
@@ -525,6 +590,40 @@ struct BackgroundOrchestratorCadenceTests {
 
         #expect(outcome.result == .expired)
         #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .expired)
+        #expect(await coordinator.requestCount() == 0)
+        #expect(await deadlineWaiter.hasStarted() == false)
+        #expect(await deadlineState.exceeded())
+    }
+
+    @Test("Ingestion completing after the deadline is conservatively expired")
+    func ingestionCompletingAfterDeadline_isExpired() async throws {
+        let ingestionGate = AsyncGate()
+        let deadlineWaiter = ManualDeadlineWaiter()
+        let deadlineState = BackgroundRefreshDeadlineState()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: Self.makeRiskSnapshot(change: nil),
+            runGate: ingestionGate
+        )
+        let setup = try await makeDeadlineSystem(
+            coordinator: coordinator,
+            deadlineWaiter: deadlineWaiter,
+            deadlineState: deadlineState
+        )
+
+        let runTask = Task { await setup.orchestrator.run() }
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        #expect(await waitUntil { await deadlineWaiter.hasStarted() })
+
+        await deadlineWaiter.reachDeadline()
+        #expect(await waitUntil { await deadlineState.exceeded() })
+        await ingestionGate.open()
+
+        let outcome = await runTask.value
+        let health = try #require(await setup.latestHealthRecord())
+        #expect(outcome.result == .expired)
+        #expect(health.outcome == .expired)
+        #expect(health.ingestionOutcome == .expired)
     }
 
     @Test("Active meso tightens cadence to short")
@@ -1017,6 +1116,7 @@ private extension BackgroundOrchestratorCadenceTests {
         struct HealthRecord: Sendable {
             let outcome: BgRunOutcome?
             let cadence: Int
+            let ingestionOutcome: BgPhaseOutcome?
         }
 
         func latestCadence() async throws -> Int? {
@@ -1040,7 +1140,11 @@ private extension BackgroundOrchestratorCadenceTests {
                 guard let health = try context.fetch(descriptor).first else {
                     return nil
                 }
-                return .init(outcome: health.outcome, cadence: health.cadence)
+                return .init(
+                    outcome: health.outcome,
+                    cadence: health.cadence,
+                    ingestionOutcome: health.ingestionOutcome
+                )
             }
         }
     }
@@ -1053,7 +1157,15 @@ private extension BackgroundOrchestratorCadenceTests {
         cachedSnapshotTimestamp: Date = Date(),
         settings: NotificationSettings,
         pendingUploadDrainer: any PendingLocationUploadDraining = NoOpLocationUploadCoordinator(),
-        coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil
+        coordinator suppliedCoordinator: (any HomeIngestionCoordinating)? = nil,
+        executionContextFactory: @escaping @Sendable (
+            ContinuousClock.Instant
+        ) -> BackgroundRefreshExecutionContext = {
+            BackgroundRefreshExecutionContext(budget: .standard(start: $0))
+        },
+        workDeadlineWaiter: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        }
     ) async throws -> SystemUnderTest {
         let container = try await MainActor.run { try TestStore.container(for: [BgRunSnapshot.self]) }
         try await MainActor.run { try TestStore.reset(BgRunSnapshot.self, in: container) }
@@ -1126,10 +1238,37 @@ private extension BackgroundOrchestratorCadenceTests {
             health: healthStore,
             cadence: CadencePolicy(),
             notificationSettingsProvider: StaticSettingsProvider(settings: settings),
-            pendingUploadDrainer: pendingUploadDrainer
+            pendingUploadDrainer: pendingUploadDrainer,
+            executionContextFactory: executionContextFactory,
+            workDeadlineWaiter: workDeadlineWaiter
         )
 
         return .init(orchestrator: orchestrator, modelContainer: container, spc: spc)
+    }
+
+    func makeDeadlineSystem(
+        coordinator: any HomeIngestionCoordinating,
+        deadlineWaiter: ManualDeadlineWaiter,
+        deadlineState: BackgroundRefreshDeadlineState,
+        workDeadlineAlreadyReached: Bool = false
+    ) async throws -> SystemUnderTest {
+        try await makeSystem(
+            activeMesos: [],
+            activeAlerts: [],
+            settings: .init(morningSummariesEnabled: false, mesoNotificationsEnabled: false),
+            coordinator: coordinator,
+            executionContextFactory: { start in
+                let budget = workDeadlineAlreadyReached
+                    ? BackgroundRefreshBudget(
+                        start: start,
+                        completionDeadline: start + .seconds(5),
+                        finalizationReserve: .seconds(5)
+                    )
+                    : .standard(start: start)
+                return BackgroundRefreshExecutionContext(budget: budget, deadlineState: deadlineState)
+            },
+            workDeadlineWaiter: { try await deadlineWaiter.wait(until: $0) }
+        )
     }
 
     static func makeMeso() -> MdDTO {
@@ -1366,19 +1505,17 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
     private let snapshot: HomeSnapshot
     private let runGate: AsyncGate?
     private let suspendsUntilCancelled: Bool
-    private let marksBackgroundDeadline: Bool
     private var submittedRequests: [HomeIngestionRequest] = []
+    private var didObserveCancellation = false
 
     init(
         snapshot: HomeSnapshot = .empty,
         runGate: AsyncGate? = nil,
-        suspendsUntilCancelled: Bool = false,
-        marksBackgroundDeadline: Bool = false
+        suspendsUntilCancelled: Bool = false
     ) {
         self.snapshot = snapshot
         self.runGate = runGate
         self.suspendsUntilCancelled = suspendsUntilCancelled
-        self.marksBackgroundDeadline = marksBackgroundDeadline
     }
 
     func enqueue(
@@ -1420,12 +1557,13 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
         _ = progress
         _ = publication
         submittedRequests.append(request)
-        if marksBackgroundDeadline {
-            await BackgroundRefreshExecutionContext.current?.deadlineState.markExceeded()
-            throw CancellationError()
-        }
         if suspendsUntilCancelled {
-            try await Task.sleep(for: .seconds(60))
+            do {
+                try await Task.sleep(for: .seconds(60))
+            } catch {
+                didObserveCancellation = error is CancellationError
+                throw error
+            }
         }
         if let runGate {
             await runGate.wait()
@@ -1439,6 +1577,10 @@ private actor RecordingHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+
+    func observedCancellation() -> Bool {
+        didObserveCancellation
     }
 }
 
@@ -1472,6 +1614,40 @@ private actor CompletionFlag {
 
     func isFinished() -> Bool {
         finished
+    }
+}
+
+private actor ManualDeadlineWaiter {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+    private var started = false
+    private var cancellationObserved = false
+
+    init() {
+        let pair = AsyncStream<Void>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+    }
+
+    func wait(until _: ContinuousClock.Instant) async throws {
+        started = true
+        for await _ in stream {
+            return
+        }
+        cancellationObserved = Task.isCancelled
+        try Task.checkCancellation()
+    }
+
+    func reachDeadline() {
+        continuation.yield()
+    }
+
+    func hasStarted() -> Bool {
+        started
+    }
+
+    func observedCancellation() -> Bool {
+        cancellationObserved
     }
 }
 

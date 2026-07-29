@@ -50,6 +50,8 @@ actor BackgroundOrchestrator {
     private let cadence: CadencePolicy
     private let notificationSettingsProvider: NotificationSettingsProviding
     private let pendingUploadDrainer: any PendingLocationUploadDraining
+    private let executionContextFactory: @Sendable (ContinuousClock.Instant) -> BackgroundRefreshExecutionContext
+    private let workDeadlineWaiter: @Sendable (ContinuousClock.Instant) async throws -> Void
     
     private let clock = ContinuousClock()
     private let pendingUploadQuota = 1
@@ -64,7 +66,13 @@ actor BackgroundOrchestrator {
         health: BgHealthStore,
         cadence: CadencePolicy,
         notificationSettingsProvider: NotificationSettingsProviding,
-        pendingUploadDrainer: any PendingLocationUploadDraining
+        pendingUploadDrainer: any PendingLocationUploadDraining,
+        executionContextFactory: @escaping @Sendable (ContinuousClock.Instant) -> BackgroundRefreshExecutionContext = {
+            BackgroundRefreshExecutionContext(budget: .standard(start: $0))
+        },
+        workDeadlineWaiter: @escaping @Sendable (ContinuousClock.Instant) async throws -> Void = {
+            try await ContinuousClock().sleep(until: $0)
+        }
     ) {
         self.coordinator = coordinator
         morningEngine = engine
@@ -75,6 +83,8 @@ actor BackgroundOrchestrator {
         self.riskChangeEngine = riskChangeEngine
         self.notificationSettingsProvider = notificationSettingsProvider
         self.pendingUploadDrainer = pendingUploadDrainer
+        self.executionContextFactory = executionContextFactory
+        self.workDeadlineWaiter = workDeadlineWaiter
         signposter = OSSignposter(logger: logger)
         logger.info("BackgroundOrchestrator initialized")
     }
@@ -111,9 +121,7 @@ actor BackgroundOrchestrator {
         // Mark the entire background job
         let runInterval = signposter.beginInterval("Background Run")
         let startInstant = clock.now
-        let executionContext = BackgroundRefreshExecutionContext(
-            budget: .standard(start: startInstant)
-        )
+        let executionContext = executionContextFactory(startInstant)
         let runId = run.runId
         let recoveryCadence = Cadence.short.minutes
 
@@ -164,13 +172,7 @@ actor BackgroundOrchestrator {
                 let ingestionStart = clock.now
                 let snapshot: HomeSnapshot
                 do {
-                    snapshot = try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
-                        try await coordinator.enqueueAndWait(
-                            .backgroundRefresh,
-                            locationContext: nil,
-                            remoteAlertContext: nil
-                        )
-                    }
+                    snapshot = try await unifiedIngestion(using: executionContext)
                     ingestionDuration = clock.now - ingestionStart
                     ingestionOutcome = .completed
                     if let ingestionDuration, let ingestionOutcome {
@@ -398,6 +400,53 @@ actor BackgroundOrchestrator {
             didNotify: didNotify,
             feedsChanged: feedsChanged
         )
+    }
+
+    private func unifiedIngestion(
+        using executionContext: BackgroundRefreshExecutionContext
+    ) async throws -> HomeSnapshot {
+        try Task.checkCancellation()
+
+        let workDeadline = executionContext.budget.workDeadline
+        guard clock.now < workDeadline else {
+            await executionContext.deadlineState.markExceeded()
+            throw CancellationError()
+        }
+
+        let coordinator = coordinator
+        let workDeadlineWaiter = workDeadlineWaiter
+        return try await withThrowingTaskGroup(of: HomeSnapshot?.self) { group in
+            group.addTask {
+                try await BackgroundRefreshExecutionContext.$current.withValue(executionContext) {
+                    try await coordinator.enqueueAndWait(
+                        .backgroundRefresh,
+                        locationContext: nil,
+                        remoteAlertContext: nil
+                    )
+                }
+            }
+            group.addTask {
+                try await workDeadlineWaiter(workDeadline)
+                try Task.checkCancellation()
+                await executionContext.deadlineState.markExceeded()
+                return nil
+            }
+
+            defer { group.cancelAll() }
+            guard let firstCompleted = try await group.next() else {
+                throw CancellationError()
+            }
+            guard let snapshot = firstCompleted else {
+                throw CancellationError()
+            }
+
+            let deadlineWasExceeded = await executionContext.deadlineState.exceeded()
+            if clock.now >= workDeadline || deadlineWasExceeded {
+                await executionContext.deadlineState.markExceeded()
+                throw CancellationError()
+            }
+            return snapshot
+        }
     }
 
     private func finalizeBgRun(
