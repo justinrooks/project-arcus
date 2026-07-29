@@ -1,3 +1,17 @@
+SkyAware v1.1.0(108)
+
+Highlights:
+- Storm Setup should appear only for active qualifying severe-thunderstorm or tornado watches and warnings.
+- Background refresh now stops work when its shared time budget is reached or iOS cancels the task.
+- Background refresh can reuse durable location and NWS region context when it remains valid.
+- Scheduling and health diagnostics now provide clearer background lifecycle outcomes.
+- Regression coverage was expanded across Storm Setup and background refresh behavior.
+
+What to test:
+- Exercise Storm Setup with qualifying and non-qualifying alerts, including expired alerts, and confirm presentation eligibility.
+- Exercise a background refresh where feasible; confirm it stops cleanly when cancelled or when the task budget expires.
+- Review background scheduling and health diagnostics for truthful lifecycle outcomes.
+
 SkyAware v1.1.0(103)
 
 Highlights:
