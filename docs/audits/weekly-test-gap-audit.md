@@ -1,5 +1,16 @@
 # Weekly Test Gap Audit
 
+## 2026-07-28
+- Repository reviewed: project-arcus (`/Users/justin/Code/project-arcus`)
+- Commit window inspected: since last reliable audit marker `97028ac094ec5895d4db68c95c6a69990576eb66` through `c7ef927abac58519bb466482860aba46cac22f0c` (2026-07-22 through 2026-07-26); 5 commits inspected
+- High-risk areas inspected: Today ingestion plan merging, waiter cancellation, and staged publication; bounded durable location-upload draining and retry preservation; map warning overlay preservation across failure, empty, and cancellation outcomes; Storm Setup alert-title and active-interval eligibility, refresh gating, and presentation selection
+- Files inspected: `Sources/App/HomeRefreshPipeline.swift`, `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/App/HomeView+PresentationState.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `Sources/Features/Map/MapFeatureModel.swift`, `Sources/Features/Map/MapRenderPlan.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, `Sources/Models/StormSetup/StormSetupPreferences.swift`, and their adjacent unit tests
+- Existing relevant tests found: `Tests/UnitTests/HomeIngestionCoordinatorTests.swift`, `Tests/UnitTests/HomeRefreshPipelineTests.swift`, `Tests/UnitTests/HomeViewStateTests.swift`, `Tests/UnitTests/LocationProviderTests.swift`, `Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift`, `Tests/UnitTests/MapFeatureModelWarningsTests.swift`, `Tests/UnitTests/StormSetupAlertEligibilityTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, `Tests/UnitTests/StormSetupPolicyTests.swift`, `Tests/UnitTests/SummaryViewLoadingStateTests.swift`
+- Top recommended test: No test gap recommended. The inspected concurrency, durable-queue, map-warning, eligibility, refresh-gating, and presentation contracts have focused regression coverage in the same commit window.
+- Watchlist items: none
+- Implementation recommended: no
+- Out-of-scope repositories intentionally not scanned: all sibling repositories and external services; no cross-repository findings were evaluated or reported
+
 ## 2026-07-21
 - Repository reviewed: project-arcus (`/Users/justin/Code/project-arcus`)
 - Commit window inspected: since last reliable audit marker `d44cd790407ea3a9d0069a5f5490efd34178549f` through `97028ac094ec5895d4db68c95c6a69990576eb66` (2026-07-14 through 2026-07-20); 23 commits inspected

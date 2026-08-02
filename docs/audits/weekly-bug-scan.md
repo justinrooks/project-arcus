@@ -189,3 +189,45 @@
 - validation: Focused `xcodebuild test` passed for Home refresh, projection persistence, GeoJSON/map polygon,
   morning notification, and background cadence suites.
 - out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore
+
+## 2026-07-30T10:08:10-06:00
+- date: 2026-07-30T10:08:10-06:00
+- repository reviewed: project-arcus
+- workflow reviewed: Weekly bug scan (audit-only)
+- commit window inspected: 2026-07-23T10:09:07-06:00 through 2026-07-29T12:19:32-06:00
+  (`126cd521`, `c82bbfe5`, `a4f3b2cd`, `63ddc029`)
+- highest-risk changed areas:
+  - bounded background refresh execution, cancellation ownership, retry/deadline handling, scheduling, and diagnostics
+  - cached background location-context eligibility and privacy tolerance
+  - Storm Setup alert eligibility, refresh gating, and user-visible presentation
+- files inspected:
+  - /Users/justin/Code/project-arcus/Sources/App/BackgroundRefreshLifecycle.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift
+  - /Users/justin/Code/project-arcus/Sources/App/SkyAwareApp.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Background/BackgroundOrchestrator.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Background/BackgroundRefreshBudget.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Location/BackgroundLocationContextReusePolicy.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Location/LocationSession.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Networking/HTTPDataDownloader.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Scheduling/BackgroundScheduler.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/Health/BgHealthStore.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/StormSetup/StormSetupAlertEligibility.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/BackgroundLocationContextReusePolicyTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/BackgroundOrchestratorCadenceTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/BackgroundRefreshLifecycleTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeIngestionCoordinatorTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HTTPDataDownloaderTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/StormSetupAlertEligibilityTests.swift
+- findings table: No credible bugs found (High: 0, Medium: 0, Low: 0).
+- top finding: No credible bug confirmed; the deadline, cancellation, scheduler-successor, cached-location,
+  and Storm Setup eligibility behavior matched the focused regression coverage added in the same commit window.
+- top recommended fix: No fix recommended.
+- best next fix: No fix recommended.
+- watchlist: None; no low-confidence concern had enough local evidence to justify promotion.
+- implementation is recommended: No
+- validation: Unit-lane execution was attempted with the required iPhone 17 / iOS 26.5 destination, but
+  CoreSimulatorService and Xcode/SwiftPM cache access were unavailable in the sandbox. No `.xcresult` test summary
+  or pass/fail counts were produced.
+- out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore, all other sibling repositories,
+  and external services

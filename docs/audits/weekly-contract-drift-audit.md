@@ -408,3 +408,63 @@
 - Findings: 0 High, 0 Medium, 0 Low. Watchlist: 2.
 - No new implementation is recommended. Prior unresolved Storm Setup cache-version and location-source documentation recommendations remain valid but were not duplicated.
 - Updated only this project-arcus audit document; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
+
+## 2026-07-27
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- project-arcus / SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- project-arcus: `f8114459..c7ef927a` on `origin/main` (2026-07-22 through 2026-07-26). Contract-relevant changes were `0697e440` (Today refresh/location orchestration) and `c82bbfe5` (Storm Setup alert eligibility).
+- arcus-signal: `139f10b..254728f` on `origin/main` (2026-07-26). Contract-relevant changes were `c539de3` (NWS lifecycle and notification delivery) and `254728f` (24-hour presence freshness filtering).
+- ArcusCore: `977945d..origin/main` contains no commits. Current `main` at `977945d` was inspected for the top three high-risk shared surfaces: alert/APNs payloads, location freshness/H3 payloads, and Storm Setup responses.
+
+### Contract surfaces inspected
+- NWS alert lifecycle mapping, `expires`/`ends` precedence, persisted `Watch` active-state selection, alert response building, `DeviceAlertPayload`, normal versus terminal notification eligibility, and Storm Setup alert gating.
+- Device location snapshot queue persistence, `LocationSnapshotPushPayload`, `capturedAt`, 24-hour candidate freshness, H3/cell pairing, `LocationUploadSource`, and device-presence persistence.
+- APNs `HotAlertAPNsPayload` identifiers and ISO-8601 `revisionSent` encoding/decoding.
+- `GET /api/v1/storm-setup/current`, `StormSetupCurrentResponse`, nullable surface height, app mapping, package pins, and sampled-cache `StormSetupRulesVersion`.
+- Newly enabled NWS event strings and operator-dashboard snapshot additions were checked for scoped decoders or duplicated enums.
+
+### Highest-risk areas
+- Alert lifecycle was selected because both producer and consumer logic changed in the same window, and stale severe-weather state can affect alert presentation, notification behavior, and Storm Setup eligibility.
+- Location freshness/H3 targeting was selected because arcus-signal now excludes devices using a hard 24-hour cutoff while project-arcus changed upload orchestration.
+- APNs and Storm Setup remained high risk because notification dedupe and persisted severe-weather assessments depend on stable shared contracts.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| SkyAware and arcus-signal disagree on the terminal alert timestamp | project-arcus, arcus-signal, ArcusCore | Alert lifecycle fields and Storm Setup eligibility | NWS/server lifecycle -> shared `DeviceAlertPayload` -> app persistence and evaluator | arcus-signal commit `c539de3` changed `ArcusEvent.lifecycleState` to use the earliest non-null `expires` or `ends`; `NotificationSendJob.deliveryNoOpReason` independently suppresses normal delivery when either field is at or before evaluation time. `AlertSeriesRow.asDeviceAlertPayload()` publishes both fields through ArcusCore `DeviceAlertPayload`, where they remain independently optional. project-arcus commit `c82bbfe5` added `StormSetupAlertEligibility.qualifies`, but it checks only `alert.ends > now`; current `Watch.isActive`, `Watch.currentWatchesDescriptor`, `Watch.expiredWatchesDescriptor`, and `AlertRepo.isRenderableWarningLifecycle` also use only `ends`. `AlertRepo.makeWatch` requires `expires` and materializes missing `ends` from it, so both dates are available to the app. The new app test helper always sets `expires == ends`, leaving the divergent case untested. | A locally persisted Tornado or Severe Thunderstorm Watch/Warning with `expires <= now < ends` is inactive under the server's current contract but remains active in SkyAware until a terminal payload is reconciled or `ends` passes. It can remain visible, retain warning geometry, and trigger Storm Setup fetch/display eligibility after the server has suppressed normal notification delivery. Unfixed blast radius is users with a divergent-date alert during delayed, failed, or offline refresh. | High | Define the app's canonical terminal date as `min(expires, ends)` and apply it consistently to persisted active/purge predicates, warning geometry, and Storm Setup eligibility. Do not collapse or discard either wire field. Proposed-change blast radius is local lifecycle filtering only; no wire, server, persistence-schema, or shared-model migration is required. | Add a project-arcus lifecycle test and Storm Setup eligibility test with `expires <= now < ends`; assert the alert is excluded and cannot qualify. Add a cross-repo fixture test that encodes an arcus-signal/ArcusCore payload with divergent dates and verifies the app applies the same terminal cutoff. Preserve server tests for explicit cancel/all-clear delivery. |
+
+### Top recommended fix
+- Align SkyAware's local active-alert predicate with arcus-signal's earliest-terminal-date semantics.
+- This matters first because the mismatch can keep severe-weather state visible and can initiate Storm Setup work after the server considers the alert inactive.
+- Expected files touched:
+  - project-arcus `Sources/Models/Watches/Watch.swift`
+  - project-arcus `Sources/Repos/AlertRepo.swift`
+  - project-arcus `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`
+  - focused alert-repository and Storm Setup eligibility tests
+- Estimated churn: approximately 30-60 lines.
+- Regression risk: Low to Medium. The change is local and contract-aligning, but alert removal at the earlier timestamp affects several user-visible surfaces and deserves a divergent-date regression fixture.
+
+### Watchlist
+- arcus-signal added `inactive_or_expired_series` to the string-backed `NotificationSendNoOpReason` and exposed related operator metrics, but no project-arcus or ArcusCore decoder for that operator-only contract exists. Promote only if a scoped consumer appears with a closed enum or required-field decoder that rejects the new value/fields.
+- Newly enabled `Flood Advisory`, `Flood Statement`, and `Heat Advisory` values remain wire-safe because ArcusCore and SkyAware carry the event as `String`. Promote only if a scoped enum-based routing or presentation consumer is introduced and omits those values.
+- The previously reported `StormSetupRulesVersion.current == .tornadoIngredientV1` and stale location-source documentation remain unresolved but unchanged. They were not duplicated as new findings.
+
+### Files inspected
+- project-arcus: `SkyAware.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, `Sources/Models/Watches/Watch.swift`, `AlertDTO.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, `Sources/App/HomeRefreshV2/HomeStormSetupIngestion.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, `HTTPLocationSnapshotUploader.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Clients/StormSetupClient.swift`, `Sources/Models/StormSetup/StormSetupDTO.swift`, and focused alert, location, APNs, and Storm Setup tests.
+- arcus-signal: `Package.resolved`, `Sources/App/Clients/NwsClient.swift`, `Sources/App/Models/NWS/ArcusEvent.swift`, `Sources/App/Jobs/IngestNWSAlertsJob.swift`, `NotificationSendJob.swift`, `Sources/App/Controllers/AlertsController.swift`, `DeviceController.swift`, `Sources/App/Models/API/AlertSeriesRow.swift`, `Sources/App/Models/Device/DevicePresenceModel.swift`, `Sources/App/Infrastructure/Notifications/LocationFreshnessPolicy.swift`, `Sources/App/configure.swift`, `Sources/App/StormSetup/StormSetupRulesVersion.swift`, `StormSetupProvider.swift`, and focused NWS lifecycle, notification, location-candidate, APNs, and Storm Setup tests.
+- ArcusCore: `Sources/ArcusCore/DeviceAlertPayload.swift`, `HotAlertAPNsPayload.swift`, `LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, and focused shared-contract tests.
+
+### Out-of-scope and recommendation status
+- No repositories outside project-arcus, arcus-signal, and ArcusCore were inspected.
+- Deployed payloads/logs, upstream NWS runtime samples, and external Anvil schemas were unavailable; no finding relies on those boundaries.
+- Findings: 1 High, 0 Medium, 0 Low. Watchlist: 3.
+- Implementation is recommended for SkyAware alert-lifecycle alignment. No source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.

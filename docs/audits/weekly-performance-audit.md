@@ -195,3 +195,35 @@
 - measurement gap: quantify the cost of the combined widget's layered gradients and large blurred glow circles, and
   determine whether unchanged-risk ingestion causes materially redundant timeline renders.
 - implementation recommended: no
+
+## 2026-08-02
+- workflow reviewed: Settings and Diagnostics
+- why selected: This is the only named product workflow in the current app summary with no prior performance-audit
+  entry; Today, Alerts, Map, Outlooks, location, background work, launch, and widgets were all reviewed recently.
+  Its diagnostic lists and repeated refresh/filter actions also provide concrete SwiftUI update paths to inspect.
+- files inspected:
+  - docs/codebase/skyaware-app-summary.md
+  - Sources/Features/Settings/SettingsView.swift
+  - Sources/Features/Settings/SettingsDiagnosticsView.swift
+  - Sources/Features/Diagnostics/DiagnosticsView.swift
+  - Sources/Features/Diagnostics/BgHealthDiagnosticsView.swift
+  - Sources/Features/Diagnostics/LogViewerView.swift
+- performance risk summary: The main Settings surface is largely static and uses lazy layout. The Log Viewer has one
+  code-supported cancellation gap that can preserve superseded log scans during rapid filter or configuration changes.
+- findings:
+
+  | Finding | Evidence | Performance mechanism | Impact | Confidence | Evidence type | Change size | Regression risk | Recommended action |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Superseded log loads do not cancel their detached scans | `LogViewerView.triggerLoad` cancels `loadTask`, but `fetchLogs` creates a detached task and only that detached task's cancellation state is checked in its enumeration loop. The parent cancellation is not forwarded to it. | Rapid query, window, subsystem, or limit changes can leave multiple `OSLogStore` enumerations running and permit an older load to publish after a newer request. | Medium | High | Code-supported | S | Low | Wrap the detached scan in a cancellation handler that explicitly cancels it when the awaiting load is cancelled, and check cancellation before publishing fetched rows. |
+
+  - implementation completed: Propagated cancellation from `loadTask` into the detached `OSLogStore` scan in
+    `Sources/Features/Diagnostics/LogViewerView.swift`, rejected cancelled results before assigning `lines` and
+    `exportCache`, and protected loading-state ownership. Deterministic `LogViewerCancellationTests` pass 3/3; the
+    Debug build passed. The full unit lane reported 1 unrelated pre-existing failure and 1,003 passing tests.
+- measurement gap: Instrument active `OSLogStore` scan count, scan duration, and result-publication order while typing
+  into the filter with the 2-hour/2,000-entry configuration. No runtime trace or measured latency was available in
+  this audit.
+- watchlist: `DiagnosticsView` observes an unbounded, sorted `@Query` and maps every cached projection to a record on
+  each diagnostics recomputation even though it displays one projection. Record projection count, SwiftData fetch
+  frequency, and body recomputation cost before considering a narrower fetch; current user impact is not established.
+  - implementation recommended: completed, limited to the Log Viewer cancellation fix

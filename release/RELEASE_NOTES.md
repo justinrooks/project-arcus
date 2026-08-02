@@ -2,17 +2,17 @@
 
 ## v1.1.0(108)
 
-### Overview
+## Overview
 This build makes Storm Setup eligibility more precise and hardens recurring background refreshes with bounded work, cooperative cancellation, durable context reuse, and clearer scheduling diagnostics.
 
-### Highlights
+## Highlights
 - Storm Setup now presents only for active qualifying severe-thunderstorm or tornado watches and warnings.
 - Background refresh now applies a shared work deadline and cooperative cancellation across ingestion, retries, optional enrichment, and pending-upload draining.
 - Background refresh scheduling and health diagnostics now record lifecycle outcomes and preserve successor scheduling across fallback and authoritative scheduling.
 - Background refresh can reuse durable location and NWS region context when the cached context remains valid.
 - Regression coverage was expanded across Storm Setup eligibility, background lifecycle and cadence, cancellation, deadline-aware networking, location-context reuse, and ingestion coordination.
 
-### Maintenance
+## Maintenance
 - Background-refresh, Storm Setup, and physical-device validation runbooks and progress ledgers were updated to document the current implementation and remaining validation work.
 
 ## v1.1.0(103)
