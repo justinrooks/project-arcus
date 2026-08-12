@@ -231,3 +231,73 @@
   or pass/fail counts were produced.
 - out-of-scope repositories intentionally not scanned: arcus-signal, ArcusCore, all other sibling repositories,
   and external services
+
+## 2026-08-06T10:06:54-06:00
+- Date: 2026-08-06T10:06:54-06:00
+- Repository scanned: project-arcus
+- Default branch: main (`origin/main`)
+- Workflow reviewed: Weekly bug scan (audit-only)
+- Commit window: after the 2026-07-30T10:08:10-06:00 audit marker through
+  `63ddc0296592cf36ce26339d95d01b818d126c59` (2026-07-29T12:19:32-06:00); 0 commits.
+- Fallback strategy: bounded current-state inspection of the three highest-risk areas: alert lifecycle and
+  presentation, notification delivery/deduplication, and background refresh freshness/cancellation.
+- Files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Repos/AlertRepo.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Alert/AlertPresentationOrdering.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Meso/MesoGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Meso/MesoEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Watch/WatchGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Watch/WatchEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Background/BackgroundOrchestrator.swift
+  - /Users/justin/Code/project-arcus/Sources/App/BackgroundRefreshLifecycle.swift
+  - /Users/justin/Code/project-arcus/Sources/Infrastructure/Location/BackgroundLocationContextReusePolicy.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MorningNotificationTests.swift
+  - /Users/justin/Code/project-arcus/docs/plans/risk-profile-change-notifications-progress.md
+- High-risk areas inspected:
+  - alert terminal-state reconciliation, expiry filtering, geometry removal, and presentation order
+  - morning, mesoscale discussion, watch, and risk-change notification delivery state and retry behavior
+  - background work deadlines, cancellation recovery, successor scheduling, and cached-location freshness
+- Findings:
+  - Finding ID: BUG-ARCUS-NOTIFICATION-GATE-PREMATURE-DEDUPE
+    Fingerprint: weekly-bug-scan|project-arcus|notification-gates|dedupe-state-committed-before-scheduling
+    Repository: project-arcus
+    Audit type: Weekly Bug Scan
+    Title: Failed local notification scheduling permanently consumes the occurrence
+    Status: NEW
+    Severity: MEDIUM
+    Confidence: HIGH
+    First observed: 2026-08-06
+    Last verified: 2026-08-06
+    Affected files and symbols: `Sources/Notifications/Morning/MorningGate.swift` (`allow`),
+      `Sources/Notifications/Morning/MorningEngine.swift` (`run`), with the same mechanism in `MesoGate`/`MesoEngine`
+      and `WatchGate`/`WatchEngine`.
+    Failure mode: each gate persists its delivered/deduplication stamp before the engine awaits
+      `NotificationSending.send`; when scheduling returns `false`, the engine reports failure but the next eligible
+      run is rejected as already delivered. Morning summaries are suppressed for the rest of the local day; meso and
+      watch occurrences are suppressed indefinitely for the same event identity.
+    Evidence: `MorningGate.allow` writes `skyaware.lastMorningNotifyLocalDay` before returning `true`, then
+      `MorningEngine.run` awaits the sender. `MorningNotificationTests.engineReportsSchedulingFailure` proves the
+      sender can return `false` but does not exercise a retry. The local risk-notification progress ledger explicitly
+      records that morning, meso, and watch gates did not gain durable retry when risk-change delivery did.
+    Blast radius: any authorization denial or `UNUserNotificationCenter.add` failure can lose one morning summary,
+      mesoscale discussion, or watch notification on that device; no production or server data is corrupted.
+    Minimal fix strategy: give these gates claim/finish semantics equivalent to the bounded risk-change gate, retaining
+      failed occurrences for retry and marking them delivered only after scheduling succeeds. Keep each channel's
+      existing key and retention rules.
+    Required validation: deterministic failed-then-successful sender tests for morning, meso, and watch engines;
+      duplicate suppression after success; concurrent-run claim tests; focused notification and background suites.
+    Related GitHub issue: [#376](https://github.com/justinrooks/project-arcus/issues/376)
+- Watchlist: None.
+- Resolved findings: None.
+- Top finding: BUG-ARCUS-NOTIFICATION-GATE-PREMATURE-DEDUPE.
+- Best next fix: make notification delivery state reversible until local scheduling succeeds.
+- Implementation recommended: Yes; tracked by [#376](https://github.com/justinrooks/project-arcus/issues/376).
+- GitHub issues created: [#376](https://github.com/justinrooks/project-arcus/issues/376), labeled `bug`.
+- GitHub issues updated: None.
+- Existing issues referenced: None; connector-backed searches found no equivalent open or closed issue.
+- Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
+- Skipped evidence: No sibling repository or external runtime was inspected. GitHub issue and pull-request
+  deduplication was completed through the connected GitHub app because shell network access remained unavailable.

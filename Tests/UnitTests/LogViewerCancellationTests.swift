@@ -95,6 +95,63 @@ struct LogViewerCancellationTests {
         #expect(state.lines.map(\.message) == ["new"])
         #expect(state.exportCache == "new export")
     }
+
+    @MainActor
+    @Test("rapidly superseded loads cancel stale scans and only publish the newest result")
+    func rapidlySupersededLoadsCancelStaleScansAndPublishNewestResult() async {
+        let gate = SupersessionScanGate()
+        var state = LogViewerLoadState()
+
+        let olderRequest = state.startRequest()
+        let olderLoad = Task { @MainActor in
+            guard state.beginLoading(for: olderRequest) else { return }
+            defer { state.finish(olderRequest) }
+
+            do {
+                let lines = try await runDetachedLogScan {
+                    return try await gate.waitForResult(for: olderRequest)
+                }
+                _ = state.publish(lines, exportCache: "older export", for: olderRequest)
+            } catch is CancellationError {
+                // Expected when the newer request supersedes this one.
+            } catch {
+                Issue.record("Unexpected older load error: \(error).")
+            }
+        }
+
+        await gate.waitUntilReady(for: olderRequest)
+        olderLoad.cancel()
+
+        let newestRequest = state.startRequest()
+        let newestLoad = Task { @MainActor in
+            guard state.beginLoading(for: newestRequest) else { return }
+            defer { state.finish(newestRequest) }
+
+            do {
+                let lines = try await runDetachedLogScan {
+                    return try await gate.waitForResult(for: newestRequest)
+                }
+                _ = state.publish(lines, exportCache: "newest export", for: newestRequest)
+            } catch {
+                Issue.record("Unexpected newest load error: \(error).")
+            }
+        }
+
+        await gate.waitUntilReady(for: newestRequest)
+        await gate.waitUntilCancellation(for: olderRequest)
+        _ = await olderLoad.result
+
+        #expect(state.isLoading)
+        #expect(state.lines.isEmpty)
+        #expect(state.exportCache.isEmpty)
+
+        await gate.release([makeLogLine(message: "newest")], for: newestRequest)
+        _ = await newestLoad.result
+
+        #expect(!state.isLoading)
+        #expect(state.lines.map(\.message) == ["newest"])
+        #expect(state.exportCache == "newest export")
+    }
 }
 
 private actor LogScanGate {
@@ -173,6 +230,56 @@ private actor PartialResultGate {
     func release(_ result: [LogLine]) {
         resultContinuation?.resume(returning: result)
         resultContinuation = nil
+    }
+}
+
+private actor SupersessionScanGate {
+    private var readyRequestIDs: Set<Int> = []
+    private var readyWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var cancelledRequestIDs: Set<Int> = []
+    private var cancellationWaiters: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    private var resultContinuations: [Int: CheckedContinuation<[LogLine], Error>] = [:]
+
+    func waitForResult(for requestID: Int) async throws -> [LogLine] {
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { continuation in
+                resultContinuations[requestID] = continuation
+                readyRequestIDs.insert(requestID)
+                resumeReadyWaiters(for: requestID)
+            }
+        }, onCancel: {
+            Task { await self.observeCancellation(for: requestID) }
+        })
+    }
+
+    func waitUntilReady(for requestID: Int) async {
+        guard !readyRequestIDs.contains(requestID) else { return }
+        await withCheckedContinuation { continuation in
+            readyWaiters[requestID, default: []].append(continuation)
+        }
+    }
+
+    func waitUntilCancellation(for requestID: Int) async {
+        guard !cancelledRequestIDs.contains(requestID) else { return }
+        await withCheckedContinuation { continuation in
+            cancellationWaiters[requestID, default: []].append(continuation)
+        }
+    }
+
+    func release(_ result: [LogLine], for requestID: Int) {
+        resultContinuations.removeValue(forKey: requestID)?.resume(returning: result)
+    }
+
+    private func observeCancellation(for requestID: Int) {
+        cancelledRequestIDs.insert(requestID)
+        resultContinuations.removeValue(forKey: requestID)?.resume(throwing: CancellationError())
+        let waiters = cancellationWaiters.removeValue(forKey: requestID) ?? []
+        waiters.forEach { $0.resume() }
+    }
+
+    private func resumeReadyWaiters(for requestID: Int) {
+        let waiters = readyWaiters.removeValue(forKey: requestID) ?? []
+        waiters.forEach { $0.resume() }
     }
 }
 

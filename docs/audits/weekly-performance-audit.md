@@ -227,3 +227,71 @@
   each diagnostics recomputation even though it displays one projection. Record projection count, SwiftData fetch
   frequency, and body recomputation cost before considering a narrower fetch; current user impact is not established.
   - implementation recommended: completed, limited to the Log Viewer cancellation fix
+
+## 2026-08-09
+- Date: 2026-08-09
+- Repository reviewed: project-arcus
+- Workflow reviewed: Settings and Diagnostics
+- Workflow selection reason: This workflow changed materially after its 2026-08-02 audit: commit `5d7a51e0` implemented
+  cancellation propagation and stale-result ownership for the Log Viewer finding. Re-reviewing the same workflow was
+  therefore higher value than selecting an unchanged workflow because current `HEAD` can verify whether the recorded
+  performance mechanism was actually removed.
+- Previous workflow review: 2026-08-02
+- Commit window: `63ddc0296592cf36ce26339d95d01b818d126c59..5d7a51e0571686d8ab8c2524ec40fbd0352445b6`
+  (2026-08-02 through 2026-08-09); workflow-specific marker was the prior audit entry and its remediation commit.
+- Relevant commits: `5d7a51e0` (`Fix logging perf issue`).
+- Relevant changed files: `Sources/Features/Diagnostics/LogViewerView.swift`,
+  `Tests/UnitTests/LogViewerCancellationTests.swift`.
+- Files and symbols inspected:
+  - `docs/codebase/skyaware-app-summary.md` — Settings and Diagnostics product surface
+  - `Sources/Features/Diagnostics/LogViewerView.swift` — `LogViewerView.triggerLoad`, `load(requestID:)`,
+    `LogViewerLoadState`, `fetchLogs`, and `runDetachedLogScan`
+  - `Tests/UnitTests/LogViewerCancellationTests.swift` — parent cancellation, partial-result rejection, and stale-request
+    ownership tests
+- Tests, metrics, traces, or profiling inspected: Inspected the three deterministic cancellation tests introduced by
+  `5d7a51e0`. A fresh targeted `SkyAware_Tests` invocation was attempted on iPhone 17 / iOS 26.5 / Debug, but testing
+  did not start because the sandbox could not connect to CoreSimulatorService or write required SwiftPM/module caches;
+  no finalized result bundle or test counts were available. No profiler trace, timing metric, or device capture exists.
+- Findings: No new or recurring confirmed performance finding. No performance action recommended.
+- Measurement gaps: Runtime scan cancellation latency and active `OSLogStore` scan count remain unmeasured, but the
+  original unpropagated-cancellation mechanism is no longer present and does not justify a measurement issue by itself.
+- Watchlist: The unchanged 2026-08-02 `DiagnosticsView` unbounded-query concern was not re-added; no new evidence was
+  discovered in this workflow-specific commit window.
+- Resolved findings:
+  - Finding ID: `PERF-ARCUS-SETTINGS-LOG-SCAN-CANCELLATION`
+  - Fingerprint: `performance|project-arcus|settings-and-diagnostics|log-viewer|superseded-detached-scan`
+  - Repository: project-arcus
+  - Audit type: Weekly Workflow Performance Audit
+  - Workflow: Settings and Diagnostics
+  - Title: Superseded Log Viewer loads retain detached log scans
+  - Status: RESOLVED
+  - Severity: MEDIUM
+  - Confidence: HIGH
+  - Evidence class: CODE-SUPPORTED
+  - First observed: 2026-08-02
+  - Last verified: 2026-08-09
+  - Affected files and symbols: `Sources/Features/Diagnostics/LogViewerView.swift` — `triggerLoad`,
+    `load(requestID:)`, `runDetachedLogScan`, and `LogViewerLoadState`
+  - Execution path: A query or configuration change cancels the parent load task; `runDetachedLogScan` now forwards
+    that cancellation to the detached scan, enumeration checks cancellation, and request ownership rejects stale
+    publication or loading-state completion.
+  - Performance mechanism: The prior detached-task cancellation gap has been removed, so superseded loads no longer
+    have a code path that intentionally continues scanning or publishes stale results.
+  - User or operational impact: Rapid Log Viewer changes no longer retain superseded scans by construction, reducing
+    avoidable diagnostic CPU work and stale-result churn without changing the displayed log contract.
+  - Measurement evidence: None; resolution is established from the current execution path and deterministic test
+    coverage, not a measured latency or CPU improvement.
+  - Measurement gap: A device trace would be required to quantify cancellation latency or CPU savings.
+  - Minimal fix strategy: Completed in `5d7a51e0`; no further production change recommended.
+  - Required validation: Re-run `LogViewerCancellationTests` when simulator services are available; use Instruments
+    only if quantitative benefit or cancellation latency must be established.
+  - Related GitHub issue: None found or required for a resolved finding.
+- Top finding: The 2026-08-02 Log Viewer cancellation finding is resolved at current `HEAD`.
+- Best next action: No implementation or measurement issue; retain the deterministic cancellation coverage and allow a
+  future audit to select another workflow unless Settings and Diagnostics changes materially again.
+- Implementation recommended: no
+- Measurement recommended: no
+- GitHub issues created: none
+- GitHub issues updated: none
+- Existing issues referenced: none
+- Out-of-scope repositories: arcus-signal; ArcusCore

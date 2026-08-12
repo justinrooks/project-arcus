@@ -468,3 +468,115 @@
 - Deployed payloads/logs, upstream NWS runtime samples, and external Anvil schemas were unavailable; no finding relies on those boundaries.
 - Findings: 1 High, 0 Medium, 0 Low. Watchlist: 3.
 - Implementation is recommended for SkyAware alert-lifecycle alignment. No source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
+
+## 2026-08-03
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- project-arcus / SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- project-arcus: `c7ef927a..5d7a51e0` on the current `perf` checkout (three commits, 2026-07-29 through 2026-08-02). `a4f3b2cd` changed background refresh ownership, cancellation, location-context reuse, and enrichment deadlines; `63ddc029` was release documentation; local commit `5d7a51e0` changed diagnostics logging and audit/release documents without changing an app/server contract. `origin/main` ends at `63ddc029`.
+- arcus-signal: `254728f..51f4259` on `origin/main` (18 commits, 2026-07-28 through 2026-08-02). Contract-relevant work extracted H3 coverage, notification candidate/ledger persistence, NWS ingest persistence, Storm Setup attempt/evidence policy, bounded cache I/O, and a device-presence source-constraint repair while retaining the existing public DTOs.
+- ArcusCore: `977945d..origin/main` contains no commits. Current `main` at `977945d` was inspected as the shared-contract reference for location, APNs/alert, and Storm Setup payloads.
+
+### Contract surfaces inspected
+- Scheduled background location reuse and upload: `BackgroundLocationContextReusePolicy`, `LocationSession.prepareScheduledBackgroundLocationContext`, durable `LocationContext` persistence, `LocationSnapshotPusher.makeLocationPayload`, ArcusCore `LocationSnapshotPushPayload`/`LocationUploadSource`, `DeviceController.create`, `DevicePresenceModel`, `LocationFreshnessPolicy`, and `NotificationCandidateStore`.
+- H3/UGC targeting: `H3CoverageBuilder`, `TargetEventRevisionJob`, polygon-hole and multipolygon behavior, res8 cell identity, UGC fallback, device-presence H3 fields, and candidate-query cutoff behavior.
+- Alert/APNs lifecycle and dedupe: `ArcusEvent.lifecycleState`, `NWSIngestPersistence`, `AlertSeriesRow.asDeviceAlertPayload`, ArcusCore `DeviceAlertPayload`/`HotAlertAPNsPayload`, `NotificationCandidateStore`, `NotificationDeliveryStore`, `NotificationSendJob`, and SkyAware `RemoteHotAlertHandler` plus persisted alert predicates.
+- Storm Setup: `StormSetupProvider`, `StormSetupAnvilEvidencePolicy`, `StormSetupSnapshotCache`, `StormSetupRulesVersion`, `StormSetupCurrentResponse`, server/app ArcusCore pins, `StormSetupHTTPClient`, and SkyAware response mapping/optionality.
+- Device source compatibility: the newly registered `RepairDevicePresenceSourceConstraintForExpandedLocationUploadSources`, its migration test, shared source enum values, endpoint validation, and `docs/api-endpoints.md`.
+
+### Highest-risk areas
+- Background location reuse was highest risk because re-uploading a cached context must preserve its original capture time rather than make an old location appear current to notification targeting.
+- H3/UGC and notification persistence refactors were high risk because extraction across transaction/query owners could change “at location” targeting, freshness cutoffs, or the `(installation, series, revision)` dedupe boundary without changing a DTO.
+- Storm Setup evidence/cache orchestration remained high risk because optional profile evidence and persisted snapshots directly shape user-facing severe-weather confidence.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| No new confirmed contract drift | project-arcus, arcus-signal, ArcusCore | Changed background-location, H3/notification, NWS persistence, APNs, and Storm Setup surfaces | App request -> shared DTO -> server persistence/targeting; server response/APNs -> shared DTO -> app decoder | project-arcus `a4f3b2cd` permits reuse only for a complete, valid, at-most-90-minute-old context and `LocationSnapshotPusher` still emits the original `capturedAt` plus age at upload. ArcusCore keeps those fields required, while arcus-signal `DeviceController` persists them and `NotificationCandidateStore` filters on `captured_at` using `LocationFreshnessPolicy.hardStaleThreshold`; reuse therefore does not refresh location age semantically. arcus-signal commits `9fbb0f2`/`7feb0ad` extracted H3 coverage and moved it before the transaction, with golden polygon, multipolygon, hole, point-fallback, and failure tests preserving res8 behavior. Commits `7d0f7bc`, `ed27578`, `a89b32a`, and `f9b29d0` moved candidate, ledger, and NWS transaction ownership behind stores/test support without changing shared payload fields or dedupe identity. Both app and server remain pinned to ArcusCore `977945d`; Storm Setup profile analysis remains optional end to end. | No newly evidenced decoding failure, stale-location promotion, targeting semantic change, notification dedupe change, or Storm Setup response mismatch was established in this window. | — | No contract fix recommended. | Continue the existing location payload, H3 fallback, notification boundary, APNs encoding, and Storm Setup shared-response tests when these contracts next change. |
+
+### Top recommended fix
+- No contract fix recommended.
+- No new issue met the producer-plus-consumer evidence threshold. The unresolved 2026-07-27 SkyAware earliest-terminal-date recommendation remains applicable but is not duplicated because this window added no new lifecycle evidence, severity, or materially smaller fix.
+- Expected files touched for this run: none.
+- Estimated churn: none.
+- Regression risk: none from the audit.
+
+### Watchlist
+- The new `RepairDevicePresenceSourceConstraintForExpandedLocationUploadSources` is registered and tested against a recreated historical constraint, but repository evidence cannot prove that every deployed database has executed it. Promote this to an operational contract finding only if migration history or a live schema check shows the repair absent; until then, current code-side request, shared enum, and migration contracts align.
+- The previously confirmed `docs/api-endpoints.md` location-source list remains stale and the prior `StormSetupRulesVersion.current == .tornadoIngredientV1` recommendation remains unresolved. Neither is recounted as a new finding because this window produced no materially better fix or higher-severity evidence.
+
+### Files inspected
+- project-arcus: `Sources/Infrastructure/Location/BackgroundLocationContextReusePolicy.swift`, `LocationSession.swift`, `LocationSnapshotCache.swift`, `LocationSnapshotPusher.swift`, `HTTPLocationSnapshotUploader.swift`, `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift`, `HomeIngestionExecutor.swift`, `Sources/Features/Background/BackgroundOrchestrator.swift`, `BackgroundRefreshBudget.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Models/Watches/Watch.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, `Sources/Clients/StormSetupClient.swift`, `Sources/Models/StormSetup/StormSetupDTO.swift`, package resolution, and focused background/location/Storm Setup tests.
+- arcus-signal: `Sources/App/Jobs/H3CoverageBuilder.swift`, `TargetEventRevisionJob.swift`, `IngestNWSAlertsJob.swift`, `NotificationSendJob.swift`, `Sources/App/Services/NWSIngestPersistence.swift`, `Sources/App/Models/Notification/NotificationCandidateStore.swift`, `NotificationDeliveryStore.swift`, `Sources/App/Models/NWS/ArcusEvent.swift`, `Sources/App/Models/API/AlertSeriesRow.swift`, `Sources/App/Controllers/DeviceController.swift`, `Sources/App/Models/Device/DevicePresenceModel.swift`, `Sources/App/Infrastructure/Notifications/LocationFreshnessPolicy.swift`, `Sources/App/Migrations/RepairDevicePresenceSourceConstraintForExpandedLocationUploadSources.swift`, `Sources/App/StormSetup/StormSetupProvider.swift`, `StormSetupAnvilEvidencePolicy.swift`, `StormSetupSnapshotCache.swift`, `StormSetupRulesVersion.swift`, `Sources/App/Controllers/StormSetupController.swift`, package resolution, living architecture/API docs, and focused H3, notification, migration, and Storm Setup tests.
+- ArcusCore: `Sources/ArcusCore/LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, `HotAlertAPNsPayload.swift`, `DeviceAlertPayload.swift`, `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, and focused shared-contract tests.
+
+### Out-of-scope and recommendation status
+- No repositories outside project-arcus, arcus-signal, and ArcusCore were inspected.
+- Deployed database migration history, live API/APNs payloads, upstream NWS runtime samples, and the external Anvil service schema were unavailable; no confirmed finding relies on those boundaries.
+- Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 2 entries, including prior unresolved items without duplicating them.
+- No new implementation is recommended. Prior unresolved recommendations remain recorded in their original entries.
+- Updated only `project-arcus/docs/audits/weekly-contract-drift-audit.md`; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
+
+## 2026-08-10
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- project-arcus / SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- project-arcus: `5d7a51e0..HEAD` contains no commits; the current `perf` checkout remains at `5d7a51e0`. Current-state fallback inspection covered alert/APNs lifecycle, location freshness/H3, and the shared Storm Setup response.
+- arcus-signal: `51f4259..8985a4d` on `main` (seven commits, 2026-08-06 through 2026-08-10): `8ededc7`, `9821099`, `75ecea7`, `457b7e4`, `c2799c2`, `4749879`, and `8985a4d`. The window added pressure-artifact HTTP and whole-attempt deadlines, durable fenced failure completion, bounded acquisition retry, Redis startup recovery, and operator backlog health.
+- ArcusCore: `977945d..HEAD` contains no commits; current `main` remains at `977945d`. Current-state fallback inspection covered alert/APNs payloads, location snapshot/source contracts, and `StormSetupCurrentResponse`.
+
+### Contract surfaces inspected
+- Pressure-artifact queue payloads and consumers: `PressureArtifactWarmJobPayload`, its additive `acquisitionAttempt`, retry dispatch, `PressureArtifactFailureCompletionJobPayload`, queue registration, Redis `JobData` recovery, and worker startup ordering.
+- Pressure-artifact persistence and Storm Setup behavior: catalog status/source enums, claim token and lease fields, `markReady`/`markFailed`, timeout/failure completion, ready/stale lookup, Anvil evidence fallback, and public response composition.
+- Operator-dashboard stored/API payloads: additive stuck-warming and backlog-age fields, legacy stored-snapshot decoding defaults, response mapping, JSON/HTML rendering, and fixtures.
+- Shared client/server boundaries: ArcusCore package pins, `StormSetupCurrentResponse` optional profile/surface-height fields, SkyAware ISO-8601 decoding/mapping, location `capturedAt`/H3/source fields, APNs identifiers and `revisionSent`, and alert `expires`/`ends` lifecycle handling.
+
+### Highest-risk areas
+- Pressure-artifact retry and recovery were selected because queue payload evolution, Redis recovery, claim fencing, and persisted status must agree or Storm Setup evidence can remain unavailable or stale.
+- Storm Setup response composition was selected because pressure artifacts influence canonical ingredients and confidence, even when the public DTO does not change.
+- Alert/APNs and location targeting remained the highest-risk unchanged shared surfaces because stale severe-weather state, dedupe, and location freshness have direct user impact.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| No new confirmed contract drift | project-arcus, arcus-signal, ArcusCore | Pressure-artifact queue/persistence, operator metrics, shared Storm Setup, alert/APNs, and location payloads | Server queue producer -> queue consumer -> catalog -> Storm Setup response; shared model -> server/app | arcus-signal `PressureArtifactWarmJobPayload` decodes missing `acquisitionAttempt` as `0`, and focused legacy/retry tests cover the additive field. `ModelArtifactQueueRecoveryContract.knownJobNames` matches the warm, failure-completion, and cleanup jobs registered in `configure.swift`; startup recovery completes before consumers and schedules start. Catalog completion remains fenced by status and claim token, while lookup accepts only `ready` rows with usable files. The seven commits do not change `StormSetupProvider` response composition or ArcusCore `StormSetupCurrentResponse`; both project-arcus and arcus-signal remain pinned to ArcusCore `977945d`. Additive operator backlog fields use defaults when decoding legacy stored snapshots and have no scoped project-arcus/ArcusCore consumer. | No new decoding failure, queue-payload incompatibility, persistence mapping mismatch, stale-artifact promotion, or app/server response drift was established. | — | No contract fix recommended. | Retain the committed legacy queue-payload, retry/fencing, startup-recovery, dashboard legacy-decoding, shared Storm Setup decoding, location, and APNs contract tests. |
+
+### Top recommended fix
+- No contract fix recommended.
+- No new issue met the producer-plus-consumer evidence threshold. The 2026-07-27 SkyAware earliest-terminal-date finding remains unresolved and is not duplicated because this window added no lifecycle change, severity evidence, or materially better fix.
+- Expected files touched for this run: none.
+- Estimated churn: none.
+- Regression risk: none from the audit.
+
+### Watchlist
+- arcus-signal added required backlog fields to its operator-dashboard response, while legacy stored snapshots decode them with safe defaults. No project-arcus or ArcusCore consumer exists in scope. Promote only if a scoped external dashboard client/schema is found that rejects additive fields or requires an explicit API version boundary.
+- Startup recovery validates the Redis job envelope and known job name before returning abandoned work to waiting, but deployed Redis contents were unavailable. Promote only if deployed evidence shows valid envelopes containing incompatible payloads or repeated decode failures; current source and tests demonstrate backward compatibility for the only changed warm-job field.
+- Prior unresolved items—the SkyAware earliest-terminal-date mismatch, stale location-source documentation, and `StormSetupRulesVersion.current == .tornadoIngredientV1`—remain recorded in their original entries and are not recounted as new findings.
+
+### Files inspected
+- project-arcus: `SkyAware.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`, `Sources/Clients/StormSetupClient.swift`, `Sources/Models/StormSetup/StormSetupDTO.swift`, `StormSetupAlertEligibility.swift`, `Sources/Models/Watches/Watch.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/App/RemoteHotAlertHandler.swift`, `Sources/Infrastructure/Location/LocationSnapshotPusher.swift`, and focused shared-response, alert, location, and APNs tests.
+- arcus-signal: `Package.resolved`, `Sources/App/Jobs/PressureArtifactWarmJob.swift`, `PressureArtifactFailureCompletionJob.swift`, `Sources/App/Worker/ModelArtifactQueueRecovery.swift`, `WorkerRuntime.swift`, `Sources/App/StormSetup/PressureArtifactWarmingService.swift`, `PressureArtifactCatalogLookupService.swift`, `StormSetupConfiguration.swift`, `StormSetupProvider.swift`, `StormSetupRulesVersion.swift`, `Sources/App/Models/Data/PressureArtifactCatalogModel.swift`, `PressureArtifactCatalogStore.swift`, `Sources/App/Models/API/OperatorDashboardSnapshotResponse.swift`, `Sources/App/lib/OperatorDashboardSnapshotRefresher.swift`, `Sources/App/configure.swift`, and focused pressure-artifact, recovery, configuration, and dashboard tests.
+- ArcusCore: `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, `LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, `HotAlertAPNsPayload.swift`, `DeviceAlertPayload.swift`, and focused shared-contract tests.
+
+### Out-of-scope and recommendation status
+- No repositories outside project-arcus, arcus-signal, and ArcusCore were inspected.
+- Deployed Redis queue contents, deployed database migration history, external operator-dashboard consumers, live API/APNs payloads, upstream NWS samples, and the external Anvil schema were unavailable. No confirmed drift claim relies on those boundaries.
+- Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 3 entries, including prior unresolved items without duplicating them.
+- No contract fix recommended. Implementation is not recommended from this run.
+- Updated only this project-arcus audit document; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
