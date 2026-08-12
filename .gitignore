@@ -40,3 +40,7 @@ fastlane/test_output
 *.dSYM
 *.log
 .artifacts/
+
+
+# codex
+.codex/*

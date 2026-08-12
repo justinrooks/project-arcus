@@ -56,14 +56,12 @@ struct LogViewerView: View {
         let maxEntries: Int
     }
 
-    @State private var lines: [LogLine] = []
-    @State private var isLoading = false
+    @State private var loadState = LogViewerLoadState()
     @State private var window: Window = .thirtyMin
     @State private var query = ""
     @State private var includeAllSubsystems = false
     @State private var maxEntriesSelection = 250
     @State private var loadTask: Task<Void, Never>?
-    @State private var exportCache: String = ""
 
     private let dateFormatter = LogViewerView.makeDateFormatter()
     private var loadConfiguration: LoadConfiguration {
@@ -82,8 +80,8 @@ struct LogViewerView: View {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
 
-            if !lines.isEmpty {
-                ShareLink(item: exportCache, preview: .init("Logs", image: "doc.text"))
+            if !loadState.lines.isEmpty {
+                ShareLink(item: loadState.exportCache, preview: .init("Logs", image: "doc.text"))
             }
         }
     }
@@ -113,6 +111,7 @@ struct LogViewerView: View {
         }
         .onDisappear {
             loadTask?.cancel()
+            _ = loadState.startRequest()
             loadTask = nil
         }
     }
@@ -149,17 +148,17 @@ struct LogViewerView: View {
 
     private var contentList: some View {
         Group {
-            if isLoading {
+            if loadState.isLoading {
                 ProgressView("Loading logs…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-            } else if lines.isEmpty {
+            } else if loadState.lines.isEmpty {
                 ContentUnavailableView {
                     Label("No log entries", systemImage: "doc.text.magnifyingglass")
                 } description: {
                     Text("There are no log entries to display.")
                 }
             } else {
-                List(lines) { line in
+                List(loadState.lines) { line in
                     LogRowView(line: line, includeSubsystem: includeAllSubsystems, dateFormatter: dateFormatter)
                 }
                 .listStyle(.plain)
@@ -171,9 +170,10 @@ struct LogViewerView: View {
 
     // MARK: - Loading
 
-    private func load() async {
-        isLoading = true
-        defer { isLoading = false }
+    private func load(requestID: Int) async {
+        guard loadState.beginLoading(for: requestID) else { return }
+        defer { loadState.finish(requestID) }
+
         do {
             let fetched = try await fetchLogs(
                 since: window.rawValue,
@@ -181,11 +181,15 @@ struct LogViewerView: View {
                 contains: query.isEmpty ? nil : query,
                 maxEntries: maxEntriesSelection
             )
-            lines = fetched
-            exportCache = exportText()
+            try Task.checkCancellation()
+            guard loadState.owns(requestID) else { return }
+            let export = exportText(for: fetched)
+            _ = loadState.publish(fetched, exportCache: export, for: requestID)
+        } catch is CancellationError {
+            return
         } catch {
-            lines = []
-            exportCache = ""
+            guard !Task.isCancelled, loadState.owns(requestID) else { return }
+            _ = loadState.fail(requestID)
             // You can also surface a toast here.
             logger.error("Failed to read logs: \(error.localizedDescription, privacy: .public)")
         }
@@ -193,7 +197,7 @@ struct LogViewerView: View {
 
     // MARK: - Helpers
 
-    private func exportText() -> String {
+    private func exportText(for lines: [LogLine]) -> String {
         lines.map { line in
             "[\(dateFormatter.string(from: line.date))] [\(line.level.rawValue)] [\(line.subsystem):\(line.category)] \(line.message)"
         }.joined(separator: "\n")
@@ -201,13 +205,60 @@ struct LogViewerView: View {
 
     private func triggerLoad(debounced: Bool) {
         loadTask?.cancel()
-        loadTask = Task {
+        let requestID = loadState.startRequest()
+        loadTask = Task { [requestID] in
             if debounced {
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                if Task.isCancelled { return }
+                do {
+                    try await Task.sleep(nanoseconds: 400_000_000)
+                } catch {
+                    return
+                }
             }
-            await load()
+            await load(requestID: requestID)
         }
+    }
+}
+
+@MainActor
+struct LogViewerLoadState {
+    private(set) var lines: [LogLine] = []
+    private(set) var isLoading = false
+    private(set) var exportCache = ""
+
+    private var activeRequestID = 0
+
+    mutating func startRequest() -> Int {
+        activeRequestID += 1
+        return activeRequestID
+    }
+
+    func owns(_ requestID: Int) -> Bool {
+        requestID == activeRequestID
+    }
+
+    mutating func beginLoading(for requestID: Int) -> Bool {
+        guard owns(requestID), !Task.isCancelled else { return false }
+        isLoading = true
+        return true
+    }
+
+    mutating func publish(_ lines: [LogLine], exportCache: String, for requestID: Int) -> Bool {
+        guard owns(requestID), !Task.isCancelled else { return false }
+        self.lines = lines
+        self.exportCache = exportCache
+        return true
+    }
+
+    mutating func fail(_ requestID: Int) -> Bool {
+        guard owns(requestID), !Task.isCancelled else { return false }
+        lines = []
+        exportCache = ""
+        return true
+    }
+
+    mutating func finish(_ requestID: Int) {
+        guard owns(requestID) else { return }
+        isLoading = false
     }
 }
 
@@ -276,7 +327,8 @@ private func fetchLogs(since seconds: TimeInterval,
                        contains: String?,
                        maxEntries: Int) async throws -> [LogLine] {
     // OSLogStore is sync; wrap in Task to avoid blocking main.
-    try await Task.detached(priority: .utility) {
+    try await runDetachedLogScan {
+        try Task.checkCancellation()
         let store = try OSLogStore(scope: .currentProcessIdentifier)
         let start = store.position(date: Date().addingTimeInterval(-seconds))
         let entries = try store.getEntries(at: start)
@@ -285,7 +337,7 @@ private func fetchLogs(since seconds: TimeInterval,
         result.reserveCapacity(256)
 
         for case let e as OSLogEntryLog in entries {
-            if Task.isCancelled { break }
+            try Task.checkCancellation()
             if let subsystem, e.subsystem != subsystem { continue }
             if let contains, !e.composedMessage.localizedCaseInsensitiveContains(contains) { continue }
             result.append(LogLine(
@@ -297,7 +349,27 @@ private func fetchLogs(since seconds: TimeInterval,
             ))
             if result.count >= maxEntries { break }
         }
+        try Task.checkCancellation()
         // Newest last from the store; reverse so newest appears first in UI if you prefer.
-        return result.reversed()
-    }.value
+        return Array(result.reversed())
+    }
+}
+
+func runDetachedLogScan(
+    _ scan: @escaping @Sendable () async throws -> [LogLine]
+) async throws -> [LogLine] {
+    let scanTask = Task.detached(priority: .utility) {
+        try Task.checkCancellation()
+        let result = try await scan()
+        try Task.checkCancellation()
+        return result
+    }
+
+    return try await withTaskCancellationHandler(operation: {
+        let result = try await scanTask.value
+        try Task.checkCancellation()
+        return result
+    }, onCancel: {
+        scanTask.cancel()
+    })
 }
