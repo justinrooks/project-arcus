@@ -10,10 +10,10 @@ import OSLog
 
 struct WatchGate: NotificationGating {
     private let logger = Logger.notificationsWatchGate
-    private let store: NotificationStateStoring
+    private let claims: NotificationClaimState
 
     init(store: NotificationStateStoring) {
-        self.store = store
+        claims = NotificationClaimState(store: store, retention: .all)
     }
 
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
@@ -24,25 +24,18 @@ struct WatchGate: NotificationGating {
             return false
         }
 
-        var notifiedWatchIDs = Self.decode(await store.lastStamp())
-        guard notifiedWatchIDs.contains(watchId) == false else {
+        guard await claims.claim(watchId) else {
             logger.debug("Already sent a notification for watch \(watchId, privacy: .public)")
             return false
         }
 
-        notifiedWatchIDs.insert(watchId)
-        await store.setLastStamp(Self.encode(notifiedWatchIDs))
         logger.notice("Passed the gate")
         return true
     }
 
-    private static func decode(_ stamp: String?) -> Set<String> {
-        guard let stamp, stamp.isEmpty == false else { return [] }
-        return Set(stamp.split(separator: "\n").map(String.init))
-    }
-
-    private static func encode(_ watchIDs: Set<String>) -> String {
-        watchIDs.sorted().joined(separator: "\n")
+    func finish(_ event: NotificationEvent, didSchedule: Bool) async {
+        guard let watchId = event.payload["watchId"] as? String, watchId.isEmpty == false else { return }
+        await claims.finish(watchId, didSchedule: didSchedule)
     }
 }
 

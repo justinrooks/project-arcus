@@ -91,8 +91,9 @@ struct MesoNotificationTests {
     }
     
     @Test
-    func gateBlocksDuplicateEvents() async {
-        let gate = MesoGate(store: InMemoryMesoStore())
+    func gateClaimsOnceRetriesFailureAndCommitsSuccess() async {
+        let store = InMemoryMesoStore()
+        let gate = MesoGate(store: store)
         let event = NotificationEvent(
             kind: .mesoNotification,
             key: "meso:2026-01-02-1234",
@@ -102,11 +103,28 @@ struct MesoNotificationTests {
             ]
         )
         
-        let firstPass = await gate.allow(event, now: .now)
-        let secondPass = await gate.allow(event, now: .now)
-        
-        #expect(firstPass == true)
-        #expect(secondPass == false)
+        async let firstPass = gate.allow(event, now: .now)
+        async let secondPass = gate.allow(event, now: .now)
+        let claimCount = await [firstPass, secondPass].filter { $0 }.count
+
+        #expect(claimCount == 1)
+        await gate.finish(event, didSchedule: false)
+        #expect(await gate.allow(event, now: .now))
+        await gate.finish(event, didSchedule: true)
+        #expect(await gate.allow(event, now: .now) == false)
+        #expect(await MesoGate(store: store).allow(event, now: .now) == false)
+    }
+
+    @Test("gate reads the existing meso stamp")
+    func gateReadsExistingStamp() async {
+        let event = NotificationEvent(
+            kind: .mesoNotification,
+            key: "meso:2026-01-02-1234",
+            payload: ["mesoId": 1234]
+        )
+        let gate = MesoGate(store: InMemoryMesoStore(stamp: event.key))
+
+        #expect(await gate.allow(event, now: .now) == false)
     }
 
     @Test
@@ -213,15 +231,16 @@ struct MesoNotificationTests {
         #expect(message.body.localizedCaseInsensitiveContains("unknown") == false)
     }
 
-    @Test("engine reports scheduling failure")
-    func engineReportsSchedulingFailure() async {
-        let now = makeDate(year: 2026, month: 1, day: 2, hour: 15, tz: centralTime)
+    @Test("engine retries a scheduling failure and suppresses the successful occurrence")
+    func engineRetriesSchedulingFailure() async {
+        let now = Date.now
         let meso = makeMeso(issued: now.addingTimeInterval(-3_600), validEnd: now.addingTimeInterval(3_600))
+        let sender = SequencedMesoSender(results: [false, true])
         let engine = MesoEngine(
             rule: MesoRule(),
             gate: MesoGate(store: InMemoryMesoStore()),
             composer: MesoComposer(),
-            sender: FailingMesoSender(),
+            sender: sender,
             spc: UnusedMesoQuery()
         )
         let context = NotificationContext(
@@ -232,6 +251,9 @@ struct MesoNotificationTests {
         )
 
         #expect(await engine.run(ctx: context, mesos: [meso]) == false)
+        #expect(await engine.run(ctx: context, mesos: [meso]))
+        #expect(await engine.run(ctx: context, mesos: [meso]) == false)
+        #expect(await sender.attemptCount() == 2)
     }
 }
 
@@ -239,13 +261,29 @@ struct MesoNotificationTests {
 
 actor InMemoryMesoStore: NotificationStateStoring {
     private var stamp: String?
+
+    init(stamp: String? = nil) {
+        self.stamp = stamp
+    }
     
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }
 
-private struct FailingMesoSender: NotificationSending {
-    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
+private actor SequencedMesoSender: NotificationSending {
+    private var results: [Bool]
+    private var attempts = 0
+
+    init(results: [Bool]) {
+        self.results = results
+    }
+
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
+        attempts += 1
+        return results.removeFirst()
+    }
+
+    func attemptCount() -> Int { attempts }
 }
 
 private struct UnusedMesoQuery: SpcRiskQuerying {
