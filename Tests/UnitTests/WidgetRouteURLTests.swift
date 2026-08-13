@@ -42,20 +42,44 @@ struct WidgetRouteURLTests {
 
 @Suite("Web content policy")
 struct WebContentPolicyTests {
-    @Test("allows https URLs in-app")
-    func allowsHTTPSInApp() throws {
+    @Test("allows an exact trusted host in-app")
+    func allowsExactTrustedHostInApp() throws {
+        let url = try #require(URL(string: "https://weather.gov"))
+
+        #expect(WebContentPolicy.decision(for: url) == .inApp)
+        #expect(WebContentPolicy.canOpenInApp(url))
+    }
+
+    @Test("allows trusted source URLs in-app")
+    func allowsTrustedSourceURLInApp() throws {
         let url = try #require(URL(string: "https://www.spc.noaa.gov/products/outlook/day1otlk.html"))
 
         #expect(WebContentPolicy.decision(for: url) == .inApp)
         #expect(WebContentPolicy.canOpenInApp(url))
     }
 
-    @Test("allows http URLs in-app")
-    func allowsHTTPInApp() throws {
-        let url = try #require(URL(string: "http://example.com/reference"))
+    @Test("allows an intended trusted subdomain in-app")
+    func allowsTrustedSubdomainInApp() throws {
+        let url = try #require(URL(string: "https://api.weather.gov/alerts/123"))
 
         #expect(WebContentPolicy.decision(for: url) == .inApp)
         #expect(WebContentPolicy.canOpenInApp(url))
+    }
+
+    @Test("routes unrelated web hosts externally")
+    func routesUnrelatedWebHostExternally() throws {
+        let url = try #require(URL(string: "https://example.com/reference"))
+
+        #expect(WebContentPolicy.decision(for: url) == .external)
+        #expect(WebContentPolicy.canOpenInApp(url) == false)
+    }
+
+    @Test("rejects deceptive lookalike hosts")
+    func rejectsDeceptiveLookalikeHost() throws {
+        let url = try #require(URL(string: "https://weather.gov.example.com/reference"))
+
+        #expect(WebContentPolicy.decision(for: url) == .external)
+        #expect(WebContentPolicy.canOpenInApp(url) == false)
     }
 
     @Test("rejects malformed web URL")
