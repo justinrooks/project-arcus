@@ -32,6 +32,11 @@ enum WebContentNavigationDecision: Sendable, Equatable {
 
 enum WebContentPolicy {
     private static let inAppSchemes: Set<String> = ["http", "https"]
+    private static let trustedDomains: Set<String> = [
+        "weather.gov",
+        "spc.noaa.gov",
+        "weatherkit.apple.com"
+    ]
     private static let externalSchemes: Set<String> = [
         "mailto", "tel", "sms", "maps", "facetime", "facetime-audio", "itms-apps", "itms-appss"
     ]
@@ -42,10 +47,10 @@ enum WebContentPolicy {
         }
 
         if inAppSchemes.contains(scheme) {
-            guard url.host?.isEmpty == false else {
+            guard let host = url.host?.lowercased(), host.isEmpty == false else {
                 return .unsupported
             }
-            return .inApp
+            return isTrusted(host: host) ? .inApp : .external
         }
 
         if externalSchemes.contains(scheme) {
@@ -57,5 +62,9 @@ enum WebContentPolicy {
 
     static func canOpenInApp(_ url: URL) -> Bool {
         decision(for: url) == .inApp
+    }
+
+    private static func isTrusted(host: String) -> Bool {
+        trustedDomains.contains { host == $0 || host.hasSuffix("." + $0) }
     }
 }
