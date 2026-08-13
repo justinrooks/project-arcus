@@ -40,6 +40,7 @@ struct MorningEngine: Sendable {
         
         logger.info("Sending notification")
         let didSchedule = await sender.send(title: msg.title, body: msg.body, subtitle: msg.subtitle, id: event.key)
+        await gate.finish(event, didSchedule: didSchedule)
         
         if didSchedule { logger.notice("Notification scheduled") }
         return didSchedule

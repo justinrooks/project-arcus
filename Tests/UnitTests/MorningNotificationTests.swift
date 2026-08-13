@@ -82,8 +82,9 @@ struct MorningNotificationTests {
     }
     
     @Test
-    func gateBlocksDuplicateEvents() async {
-        let gate = MorningGate(store: InMemoryMorningStore())
+    func gateClaimsOnceRetriesFailureAndCommitsSuccess() async {
+        let store = InMemoryMorningStore()
+        let gate = MorningGate(store: store)
         let event = NotificationEvent(
             kind: .morningOutlook,
             key: "morning:2026-01-02",
@@ -92,11 +93,29 @@ struct MorningNotificationTests {
             ]
         )
         
-        let firstPass = await gate.allow(event, now: .now)
-        let secondPass = await gate.allow(event, now: .now)
-        
-        #expect(firstPass == true)
-        #expect(secondPass == false)
+        async let firstPass = gate.allow(event, now: .now)
+        async let secondPass = gate.allow(event, now: .now)
+        let claimCount = await [firstPass, secondPass].filter { $0 }.count
+
+        #expect(claimCount == 1)
+        await gate.finish(event, didSchedule: false)
+        #expect(await gate.allow(event, now: .now))
+        await gate.finish(event, didSchedule: true)
+        #expect(await gate.allow(event, now: .now) == false)
+        #expect(await MorningGate(store: store).allow(event, now: .now) == false)
+    }
+
+    @Test("gate reads the existing morning stamp")
+    func gateReadsExistingStamp() async {
+        let store = InMemoryMorningStore(stamp: "2026-01-02")
+        let gate = MorningGate(store: store)
+        let event = NotificationEvent(
+            kind: .morningOutlook,
+            key: "morning:2026-01-02",
+            payload: ["localDay": "2026-01-02"]
+        )
+
+        #expect(await gate.allow(event, now: .now) == false)
     }
 
     @Test("composer preserves the normal morning summary without a risk change")
@@ -167,14 +186,15 @@ struct MorningNotificationTests {
         """)
     }
 
-    @Test("engine reports scheduling failure")
-    func engineReportsSchedulingFailure() async {
+    @Test("engine retries a scheduling failure and suppresses the successful occurrence")
+    func engineRetriesSchedulingFailure() async {
         let now = makeDate(year: 2026, month: 1, day: 2, hour: 8, tz: centralTime)
+        let sender = SequencedMorningSender(results: [false, true])
         let engine = MorningEngine(
             rule: AmRangeLocalRule(window: 7..<11),
             gate: MorningGate(store: InMemoryMorningStore()),
             composer: MorningComposer(),
-            sender: FailingMorningSender()
+            sender: sender
         )
         let context = MorningContext(
             now: now,
@@ -188,6 +208,9 @@ struct MorningNotificationTests {
         )
 
         #expect(await engine.run(ctx: context) == false)
+        #expect(await engine.run(ctx: context))
+        #expect(await engine.run(ctx: context) == false)
+        #expect(await sender.attemptCount() == 2)
     }
 }
 
@@ -195,11 +218,27 @@ struct MorningNotificationTests {
 
 actor InMemoryMorningStore: NotificationStateStoring {
     private var stamp: String?
+
+    init(stamp: String? = nil) {
+        self.stamp = stamp
+    }
     
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }
 }
 
-private struct FailingMorningSender: NotificationSending {
-    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
+private actor SequencedMorningSender: NotificationSending {
+    private var results: [Bool]
+    private var attempts = 0
+
+    init(results: [Bool]) {
+        self.results = results
+    }
+
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
+        attempts += 1
+        return results.removeFirst()
+    }
+
+    func attemptCount() -> Int { attempts }
 }

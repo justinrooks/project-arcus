@@ -10,10 +10,10 @@ import OSLog
 
 struct MesoGate: NotificationGating {
     private let logger = Logger.notificationsMesoGate
-    private let store: NotificationStateStoring
+    private let claims: NotificationClaimState
     
     init(store: NotificationStateStoring) {
-        self.store = store
+        claims = NotificationClaimState(store: store, retention: .latest)
     }
     
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
@@ -28,17 +28,18 @@ struct MesoGate: NotificationGating {
             return false
         }
   
-        let last = await store.lastStamp()
-        guard last != event.key else {
-        logger.debug("Already sent a notification for meso \(mesoId, privacy: .public) today")
+        guard await claims.claim(event.key) else {
+            logger.debug("Already sent a notification for meso \(mesoId, privacy: .public) today")
             return false
         }
-        
-        logger.debug("Updating the store stamp")
-        await store.setLastStamp(event.key)
-        
+
         logger.notice("Passed the gate")
         return true
+    }
+
+    func finish(_ event: NotificationEvent, didSchedule: Bool) async {
+        guard event.payload["mesoId"] is Int else { return }
+        await claims.finish(event.key, didSchedule: didSchedule)
     }
 }
 

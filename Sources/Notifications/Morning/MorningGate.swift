@@ -10,10 +10,10 @@ import OSLog
 
 struct MorningGate: NotificationGating {
     private let logger = Logger.notificationsMorningGate
-    private let store: NotificationStateStoring
+    private let claims: NotificationClaimState
     
     init(store: NotificationStateStoring) {
-        self.store = store
+        claims = NotificationClaimState(store: store, retention: .latest)
     }
     
     func allow(_ event: NotificationEvent, now: Date) async -> Bool {
@@ -23,17 +23,18 @@ struct MorningGate: NotificationGating {
             return false
         }
         
-        let last = await store.lastStamp()
-        guard last != day else {
+        guard await claims.claim(day) else {
             logger.debug("Already sent a notification for today")
             return false
         }
-        
-        logger.debug("Updating the morning store stamp")
-        await store.setLastStamp(day)
-        
+
         logger.notice("Passed the gate")
         return true
+    }
+
+    func finish(_ event: NotificationEvent, didSchedule: Bool) async {
+        guard let day = event.payload["localDay"] as? String else { return }
+        await claims.finish(day, didSchedule: didSchedule)
     }
 }
 

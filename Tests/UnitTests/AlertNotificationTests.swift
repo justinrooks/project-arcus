@@ -39,25 +39,50 @@ struct AlertNotificationTests {
         #expect(event.payload["title"] as? String == newerAlert.title)
     }
 
-    @Test("gate blocks duplicate alert notifications")
-    func gateBlocksDuplicateAlertNotifications() async {
-        let gate = WatchGate(store: InMemoryNotificationStore())
+    @Test("gate claims once, retries failure, and commits success")
+    func gateClaimsOnceRetriesFailureAndCommitsSuccess() async {
+        let store = InMemoryNotificationStore()
+        let gate = WatchGate(store: store)
         let event = NotificationEvent(
             kind: .watchNotification,
             key: "watch:abc123",
             payload: ["watchId": "abc123"]
         )
 
-        let firstPass = await gate.allow(event, now: .now)
-        let secondPass = await gate.allow(event, now: .now)
+        async let firstPass = gate.allow(event, now: .now)
+        async let secondPass = gate.allow(event, now: .now)
+        let claimCount = await [firstPass, secondPass].filter { $0 }.count
 
-        #expect(firstPass)
-        #expect(secondPass == false)
+        #expect(claimCount == 1)
+        await gate.finish(event, didSchedule: false)
+        #expect(await gate.allow(event, now: .now))
+        await gate.finish(event, didSchedule: true)
+        #expect(await gate.allow(event, now: .now) == false)
+        #expect(await WatchGate(store: store).allow(event, now: .now) == false)
+    }
+
+    @Test("gate reads the existing newline-separated watch stamps")
+    func gateReadsExistingWatchStamps() async {
+        let gate = WatchGate(store: InMemoryNotificationStore(stamp: "first\nsecond"))
+        let firstEvent = NotificationEvent(
+            kind: .watchNotification,
+            key: "watch:first",
+            payload: ["watchId": "first"]
+        )
+        let secondEvent = NotificationEvent(
+            kind: .watchNotification,
+            key: "watch:second",
+            payload: ["watchId": "second"]
+        )
+
+        #expect(await gate.allow(firstEvent, now: .now) == false)
+        #expect(await gate.allow(secondEvent, now: .now) == false)
     }
 
     @Test("gate remembers more than the most recent alert id")
     func gateRemembersMoreThanMostRecentAlertID() async {
-        let gate = WatchGate(store: InMemoryNotificationStore())
+        let store = InMemoryNotificationStore()
+        let gate = WatchGate(store: store)
         let firstEvent = NotificationEvent(
             kind: .watchNotification,
             key: "watch:first",
@@ -70,8 +95,14 @@ struct AlertNotificationTests {
         )
 
         #expect(await gate.allow(firstEvent, now: .now))
+        await gate.finish(firstEvent, didSchedule: true)
         #expect(await gate.allow(secondEvent, now: .now))
+        await gate.finish(secondEvent, didSchedule: true)
         #expect(await gate.allow(firstEvent, now: .now) == false)
+
+        let reloadedGate = WatchGate(store: store)
+        #expect(await reloadedGate.allow(firstEvent, now: .now) == false)
+        #expect(await reloadedGate.allow(secondEvent, now: .now) == false)
     }
 
     @Test("engine sends a single notification for a new alert")
@@ -100,24 +131,30 @@ struct AlertNotificationTests {
         #expect(sent[0].id == "watch:abc123")
     }
 
-    @Test("watch engine reports scheduling failure")
-    func watchEngineReportsSchedulingFailure() async {
+    @Test("watch engine retries scheduling failure and suppresses the successful occurrence")
+    func watchEngineRetriesSchedulingFailure() async {
+        let sender = SequencedWatchSender(results: [false, true])
         let engine = WatchEngine(
             rule: WatchRule(),
             gate: WatchGate(store: InMemoryNotificationStore()),
             composer: WatchComposer(),
-            sender: FailingWatchSender()
+            sender: sender
         )
 
-        #expect(await engine.run(
-            ctx: .init(
-                now: .now,
-                localTZ: centralTime,
-                location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
-                placeMark: "Oklahoma City, OK"
-            ),
-            alerts: [makeAlert(id: "failed", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))]
-        ) == false)
+        let context = NotificationContext(
+            now: .now,
+            localTZ: centralTime,
+            location: CLLocationCoordinate2D(latitude: 35.4676, longitude: -97.5164),
+            placeMark: "Oklahoma City, OK"
+        )
+        let alerts = [
+            makeAlert(id: "failed", issued: .now.addingTimeInterval(-300), ends: .now.addingTimeInterval(3_600))
+        ]
+
+        #expect(await engine.run(ctx: context, alerts: alerts) == false)
+        #expect(await engine.run(ctx: context, alerts: alerts))
+        #expect(await engine.run(ctx: context, alerts: alerts) == false)
+        #expect(await sender.attemptCount() == 2)
     }
 
     @Test("composer uses server-aligned wording for known alert event types")
@@ -494,8 +531,20 @@ private struct NoopSender: NotificationSending {
     func send(title: String, body: String, subtitle: String, id: String) async -> Bool { true }
 }
 
-private struct FailingWatchSender: NotificationSending {
-    func send(title: String, body: String, subtitle: String, id: String) async -> Bool { false }
+private actor SequencedWatchSender: NotificationSending {
+    private var results: [Bool]
+    private var attempts = 0
+
+    init(results: [Bool]) {
+        self.results = results
+    }
+
+    func send(title: String, body: String, subtitle: String, id: String) async -> Bool {
+        attempts += 1
+        return results.removeFirst()
+    }
+
+    func attemptCount() -> Int { attempts }
 }
 
 private func makeRiskChangeEngine<Sender: NotificationSending>(
@@ -512,6 +561,10 @@ private func makeRiskChangeEngine<Sender: NotificationSending>(
 
 actor InMemoryNotificationStore: NotificationStateStoring {
     private var stamp: String?
+
+    init(stamp: String? = nil) {
+        self.stamp = stamp
+    }
 
     func lastStamp() async -> String? { stamp }
     func setLastStamp(_ stamp: String) async { self.stamp = stamp }

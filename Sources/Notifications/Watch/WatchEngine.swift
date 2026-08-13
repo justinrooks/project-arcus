@@ -48,6 +48,7 @@ struct WatchEngine: Sendable {
 
         logger.info("Sending watch notification")
         let didSchedule = await sender.send(title: message.title, body: message.body, subtitle: message.subtitle, id: event.key)
+        await gate.finish(event, didSchedule: didSchedule)
 
         if didSchedule { logger.notice("Watch notification scheduled") }
         return didSchedule
