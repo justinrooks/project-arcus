@@ -1735,6 +1735,144 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncMapProductsCount() == 2)
     }
 
+    @Test("rejected convective domain preserves expired values while accepted fire clears and retries")
+    func slowProductRefresh_rejectedConvectivePreservesBaselineAndRetriesWithoutReversal() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let widgetRecorder = RecordingWidgetSnapshotRefresher()
+
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: .init(convective: .rejected, fire: .accepted),
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: widgetRecorder
+            )
+        )
+
+        let first = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        #expect(first.stormRisk == .slight)
+        #expect(first.severeRisk == .tornado(probability: 0.15))
+        #expect(first.fireRisk == .clear)
+        #expect(first.riskProfileChange?.changedDimensions == [.fire])
+        let partialProjection = try #require(await projectionStore.projection(for: context))
+        #expect(partialProjection.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
+
+        await spc.configureMapSync(
+            outcome: .accepted,
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .clear
+        )
+        let retry = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(projection.stormRisk == .slight)
+        #expect(projection.severeRisk == .tornado(probability: 0.15))
+        #expect(projection.fireRisk == .clear)
+        #expect(retry.riskProfileChange == nil)
+        #expect(await spc.syncMapProductsCount() == 2)
+        #expect(widgetRecorder.refreshCallCount() == 2)
+    }
+
+    @Test("accepted convective all-clear preserves an unavailable rejected fire domain")
+    func slowProductRefresh_acceptedConvectiveAllClearPreservesRejectedFire() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.15),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: .init(convective: .accepted, fire: .rejected),
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        let projection = try #require(await projectionStore.projection(for: context))
+        #expect(snapshot.stormRisk == .allClear)
+        #expect(snapshot.severeRisk == .allClear)
+        #expect(snapshot.fireRisk == .critical)
+        #expect(snapshot.riskProfileChange?.changedDimensions == [.storm, .severe])
+        #expect(projection.stormRisk == .allClear)
+        #expect(projection.severeRisk == .allClear)
+        #expect(projection.fireRisk == .critical)
+        #expect(projection.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
+
+        await spc.configureMapSync(
+            outcome: .accepted,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .critical
+        )
+        let retry = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        let retriedProjection = try #require(await projectionStore.projection(for: context))
+        #expect(retry.fireRisk == .critical)
+        #expect(retry.riskProfileChange == nil)
+        #expect(retriedProjection.fireRisk == .critical)
+        #expect(await spc.syncMapProductsCount() == 2)
+    }
+
     @Test("hot-alert providers overlap and join before completion")
     func hotAlertSync_overlapsProvidersAndJoinsBeforeCompletion() async throws {
         let context = makeContext()
@@ -2985,10 +3123,10 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let mapSyncGate: AsyncGate?
     private let convectiveOutlookGate: AsyncGate?
     private let marksBackgroundDeadlineDuringMesoSync: Bool
-    private let mapSyncOutcome: SpcMapSyncOutcome
-    private let stormRiskValue: StormRiskLevel
-    private let severeRiskValue: SevereWeatherThreat
-    private let fireRiskValue: FireRiskLevel
+    private var mapSyncOutcome: SpcMapSyncOutcome
+    private var stormRiskValue: StormRiskLevel
+    private var severeRiskValue: SevereWeatherThreat
+    private var fireRiskValue: FireRiskLevel
 
     private var syncMapProductsCalls = 0
     private var syncConvectiveOutlooksCalls = 0
@@ -3043,6 +3181,18 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
             cancelledSyncCalls += 1
         }
         return mapSyncOutcome
+    }
+
+    func configureMapSync(
+        outcome: SpcMapSyncOutcome,
+        stormRisk: StormRiskLevel,
+        severeRisk: SevereWeatherThreat,
+        fireRisk: FireRiskLevel
+    ) {
+        mapSyncOutcome = outcome
+        stormRiskValue = stormRisk
+        severeRiskValue = severeRisk
+        fireRiskValue = fireRisk
     }
 
     func syncTextProducts() async {}

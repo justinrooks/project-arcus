@@ -52,7 +52,7 @@ extension SpcProvider: SpcSyncing {
         defer {
             signposter.endInterval("Spc Sync Map Products", runInterval)
             mapSyncTask = nil
-            if !Task.isCancelled && mapSyncOutcome == .accepted {
+            if !Task.isCancelled && mapSyncOutcome.isFullyAccepted {
                 lastMapSyncFinishedAt = Date()
             }
             logger.info(
@@ -63,13 +63,7 @@ extension SpcProvider: SpcSyncing {
         if Task.isCancelled { return .failed }
 
         let stagedBatch = await stageMapProducts(now: Date())
-        let allSucceeded = await persistStagedMapProducts(stagedBatch)
-
-        if stagedBatch.validation.convective.isRejected && stagedBatch.validation.fire.isRejected {
-            mapSyncOutcome = .rejected
-        } else {
-            mapSyncOutcome = allSucceeded ? .accepted : .failed
-        }
+        mapSyncOutcome = await persistStagedMapProducts(stagedBatch)
         return mapSyncOutcome
     }
     
@@ -162,6 +156,10 @@ extension SpcProvider: SpcSyncing {
     }
 
     private static func mapSyncOutcomeLogName(_ outcome: SpcMapSyncOutcome) -> String {
+        "convective=\(mapSyncDomainOutcomeLogName(outcome.convective)),fire=\(mapSyncDomainOutcomeLogName(outcome.fire))"
+    }
+
+    private static func mapSyncDomainOutcomeLogName(_ outcome: SpcMapSyncDomainOutcome) -> String {
         switch outcome {
         case .accepted:
             return "accepted"
@@ -248,9 +246,8 @@ extension SpcProvider: SpcSyncing {
         return StagedSpcMapProductBatch(products: stagedProducts, validation: validation)
     }
 
-    private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> Bool {
-        var allSucceeded = true
-
+    private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> SpcMapSyncOutcome {
+        let convectiveOutcome: SpcMapSyncDomainOutcome
         switch batch.validation.convective {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
@@ -270,7 +267,7 @@ extension SpcProvider: SpcSyncing {
             logger.info(
                 "spc_map_convective_persistence result=\(succeeded ? "committed" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
             )
-            allSucceeded = allSucceeded && succeeded
+            convectiveOutcome = succeeded ? .accepted : .failed
         case .acceptedAllClear(let syncTime):
             let succeeded = await Self.runMapProductSync(
                 named: "accepted_all_clear_convective_batch_transaction",
@@ -285,13 +282,15 @@ extension SpcProvider: SpcSyncing {
             logger.info(
                 "spc_map_convective_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
-            allSucceeded = allSucceeded && succeeded
+            convectiveOutcome = succeeded ? .accepted : .failed
         case .rejected(let reason):
             logger.info(
                 "spc_map_convective_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
             )
+            convectiveOutcome = .rejected
         }
 
+        let fireOutcome: SpcMapSyncDomainOutcome
         switch batch.validation.fire {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
@@ -310,7 +309,7 @@ extension SpcProvider: SpcSyncing {
             logger.info(
                 "spc_map_fire_persistence result=\(succeeded ? "committed" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
             )
-            allSucceeded = allSucceeded && succeeded
+            fireOutcome = succeeded ? .accepted : .failed
         case .acceptedAllClear(let syncTime):
             let succeeded = await Self.runMapProductSync(
                 named: "accepted_all_clear_fire_batch_transaction",
@@ -322,14 +321,15 @@ extension SpcProvider: SpcSyncing {
             logger.info(
                 "spc_map_fire_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
-            allSucceeded = allSucceeded && succeeded
+            fireOutcome = succeeded ? .accepted : .failed
         case .rejected(let reason):
             logger.info(
                 "spc_map_fire_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
             )
+            fireOutcome = .rejected
         }
 
-        return allSucceeded
+        return SpcMapSyncOutcome(convective: convectiveOutcome, fire: fireOutcome)
     }
 
     private func fetchStagedMapProduct(
@@ -687,13 +687,6 @@ private enum StagedSpcMapDomainValidation: Sendable {
     case accepted(anchorIssued: Date, anchorValid: Date, anchorExpires: Date)
     case acceptedAllClear(syncTime: Date)
     case rejected(reason: String)
-
-    var isRejected: Bool {
-        if case .rejected = self {
-            return true
-        }
-        return false
-    }
 }
 
 private struct StagedProductWindowMetadata: Sendable, Equatable {

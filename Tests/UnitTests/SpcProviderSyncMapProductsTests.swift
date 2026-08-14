@@ -62,8 +62,8 @@ struct SpcProviderSyncMapProductsTests {
         #expect(calls == 5 || calls == 10)
     }
 
-    @Test("Partially accepted map product run still triggers cooldown")
-    func partiallyAcceptedRunTriggersCooldown() async throws {
+    @Test("Partially accepted map product run remains eligible for immediate retry")
+    func partiallyAcceptedRunRemainsEligibleForImmediateRetry() async throws {
         let container = try await makeMapSyncContainer()
         let client = CountingMapSyncClient(failingProduct: .hail)
         let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
@@ -72,7 +72,7 @@ struct SpcProviderSyncMapProductsTests {
         await provider.syncMapProducts()
 
         let calls = await client.geoJsonCallCount()
-        #expect(calls == 5)
+        #expect(calls == 10)
     }
 
     @Test("All-empty valid map batch is accepted and clears active persisted risks")
@@ -504,7 +504,8 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .accepted)
+        #expect(outcome.fire == .rejected)
         let activeStorm = try await stormRepo.active(
             asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
@@ -538,7 +539,8 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .rejected)
+        #expect(outcome.fire == .accepted)
         let active = try await stormRepo.active(
             asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
@@ -585,7 +587,8 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .accepted)
+        #expect(outcome.fire == .rejected)
         let activeStorm = try await stormRepo.active(
             asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
@@ -641,7 +644,8 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .rejected)
+        #expect(outcome.fire == .accepted)
         #expect(
             try await stormRepo.active(
                 asOf: now,
@@ -699,7 +703,8 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .accepted)
+        #expect(outcome.fire == .rejected)
         #expect(
             try await stormRepo.active(
                 asOf: now,
@@ -729,7 +734,8 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .rejected)
+        #expect(outcome.fire == .accepted)
         let active = try await stormRepo.active(
             asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)

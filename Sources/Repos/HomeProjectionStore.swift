@@ -152,15 +152,21 @@ struct RiskProfileChange: Sendable, Equatable {
 struct HomeProjectionCoreCommit: Sendable {
     let weather: SummaryWeather??
     let slowProducts: (stormRisk: StormRiskLevel?, severeRisk: SevereWeatherThreat?, fireRisk: FireRiskLevel?)?
+    let updatesConvectiveRisk: Bool
+    let updatesFireRisk: Bool
     let hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])?
 
     init(
         weather: SummaryWeather?? = nil,
         slowProducts: (stormRisk: StormRiskLevel?, severeRisk: SevereWeatherThreat?, fireRisk: FireRiskLevel?)? = nil,
+        updatesConvectiveRisk: Bool = true,
+        updatesFireRisk: Bool = true,
         hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])? = nil
     ) {
         self.weather = weather
         self.slowProducts = slowProducts
+        self.updatesConvectiveRisk = updatesConvectiveRisk
+        self.updatesFireRisk = updatesFireRisk
         self.hotAlerts = hotAlerts
     }
 }
@@ -320,10 +326,16 @@ actor HomeProjectionStore {
             projection.lastWeatherLoadAt = loadedAt
         }
         if let slowProducts = commit.slowProducts {
-            projection.stormRisk = slowProducts.stormRisk
-            projection.severeRisk = slowProducts.severeRisk
-            projection.fireRisk = slowProducts.fireRisk
-            projection.lastSlowProductsLoadAt = loadedAt
+            if commit.updatesConvectiveRisk {
+                projection.stormRisk = slowProducts.stormRisk
+                projection.severeRisk = slowProducts.severeRisk
+            }
+            if commit.updatesFireRisk {
+                projection.fireRisk = slowProducts.fireRisk
+            }
+            if commit.updatesConvectiveRisk && commit.updatesFireRisk {
+                projection.lastSlowProductsLoadAt = loadedAt
+            }
         }
         if let hotAlerts = commit.hotAlerts {
             projection.activeAlerts = hotAlerts.alerts
@@ -335,11 +347,11 @@ actor HomeProjectionStore {
         try saveProjection(named: "Projection Core Save")
         return RiskProfileChange(
             previous: previousProfile,
-            current: commit.slowProducts.flatMap {
+            current: commit.slowProducts.flatMap { _ in
                 RiskProfile(
-                    stormRisk: $0.stormRisk,
-                    severeRisk: $0.severeRisk,
-                    fireRisk: $0.fireRisk
+                    stormRisk: projection.stormRisk,
+                    severeRisk: projection.severeRisk,
+                    fireRisk: projection.fireRisk
                 )
             },
             projectionKey: projection.projectionKey,

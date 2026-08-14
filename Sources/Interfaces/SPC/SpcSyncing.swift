@@ -7,11 +7,29 @@
 
 import Foundation
 
-enum SpcMapSyncOutcome: Sendable, Equatable {
+enum SpcMapSyncDomainOutcome: Sendable, Equatable {
     case accepted
     case rejected
     case skipped
     case failed
+
+    var authorizesProjection: Bool {
+        self == .accepted || self == .skipped
+    }
+}
+
+struct SpcMapSyncOutcome: Sendable, Equatable {
+    let convective: SpcMapSyncDomainOutcome
+    let fire: SpcMapSyncDomainOutcome
+
+    static let accepted = SpcMapSyncOutcome(convective: .accepted, fire: .accepted)
+    static let rejected = SpcMapSyncOutcome(convective: .rejected, fire: .rejected)
+    static let skipped = SpcMapSyncOutcome(convective: .skipped, fire: .skipped)
+    static let failed = SpcMapSyncOutcome(convective: .failed, fire: .failed)
+
+    var isFullyAccepted: Bool {
+        convective == .accepted && fire == .accepted
+    }
 }
 
 protocol SpcSyncing: Sendable {//where Self: Actor {

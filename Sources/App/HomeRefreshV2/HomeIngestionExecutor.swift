@@ -170,8 +170,14 @@ protocol HomeIngestionExecuting: Sendable {
 
 actor HomeIngestionExecutor: HomeIngestionExecuting {
     private struct SlowProductPersistenceDecision: Sendable {
-        let shouldUpdateProjection: Bool
+        let updatesConvective: Bool
+        let updatesFire: Bool
+        let reconcilesRejectedDomains: Bool
         let shouldRefreshRiskWidgets: Bool
+
+        var shouldUpdateProjection: Bool {
+            updatesConvective || updatesFire
+        }
     }
 
     struct Environment: Sendable {
@@ -297,8 +303,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
                 slowProductMapSyncOutcome = await syncSlowFeeds(executionMode: executionMode)
                 try await throwIfBackgroundDeadlineExceeded()
-                if slowProductMapSyncOutcome == .accepted {
+                if slowProductMapSyncOutcome?.isFullyAccepted == true {
                     freshness.lastSlowFeedSyncAt = now
+                } else if slowProductMapSyncOutcome != .skipped {
+                    freshness.lastSlowFeedSyncAt = nil
                 }
                 await progress.report(.completed(.lane(.slowProducts)))
                 environment.logger.debug("Finished home ingestion slow-product sync")
@@ -326,6 +334,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             let slowProductDecision = slowProductPersistenceDecision(
                 plan: plan,
                 mapSyncOutcome: slowProductMapSyncOutcome
+            )
+            snapshot = await reconcilingRejectedRiskDomains(
+                in: snapshot,
+                for: context,
+                decision: slowProductDecision
             )
             let riskProfileChange = await persistProjection(
                 for: plan,
@@ -664,7 +677,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
             if weather != nil || slowProducts != nil || hotAlerts != nil {
                 riskProfileChange = try await projectionStore.commitCore(
-                    .init(weather: weather, slowProducts: slowProducts, hotAlerts: hotAlerts),
+                    .init(
+                        weather: weather,
+                        slowProducts: slowProducts,
+                        updatesConvectiveRisk: slowProductDecision.updatesConvective,
+                        updatesFireRisk: slowProductDecision.updatesFire,
+                        hotAlerts: hotAlerts
+                    ),
                     for: context,
                     loadedAt: loadedAt
                 )
@@ -696,6 +715,34 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
 
         return riskProfileChange
+    }
+
+    private func reconcilingRejectedRiskDomains(
+        in snapshot: HomeSnapshot,
+        for context: LocationContext,
+        decision: SlowProductPersistenceDecision
+    ) async -> HomeSnapshot {
+        guard decision.reconcilesRejectedDomains else { return snapshot }
+
+        var reconciled = snapshot
+        let projection: HomeProjectionRecord?
+        do {
+            projection = try await environment.projectionStore?.projection(for: context)
+        } catch {
+            projection = nil
+            environment.logger.error(
+                "Failed to load prior home projection while preserving rejected SPC domains: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+
+        if decision.updatesConvective == false {
+            reconciled.stormRisk = projection?.stormRisk
+            reconciled.severeRisk = projection?.severeRisk
+        }
+        if decision.updatesFire == false {
+            reconciled.fireRisk = projection?.fireRisk
+        }
+        return reconciled
     }
 
     private func httpExecutionMode(for plan: HomeIngestionPlan) -> HTTPExecutionMode {
@@ -742,7 +789,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let shouldUpdateSlowProjection = plan.lanes.contains(.slowProducts) || plan.isLocationBearing
         guard shouldUpdateSlowProjection else {
             let decision = SlowProductPersistenceDecision(
-                shouldUpdateProjection: false,
+                updatesConvective: false,
+                updatesFire: false,
+                reconcilesRejectedDomains: false,
                 shouldRefreshRiskWidgets: true
             )
             logSlowProductPersistenceDecision(
@@ -755,7 +804,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
         guard plan.lanes.contains(.slowProducts) else {
             let decision = SlowProductPersistenceDecision(
-                shouldUpdateProjection: true,
+                updatesConvective: true,
+                updatesFire: true,
+                reconcilesRejectedDomains: false,
                 shouldRefreshRiskWidgets: true
             )
             logSlowProductPersistenceDecision(
@@ -768,7 +819,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
         guard let mapSyncOutcome else {
             let decision = SlowProductPersistenceDecision(
-                shouldUpdateProjection: true,
+                updatesConvective: true,
+                updatesFire: true,
+                reconcilesRejectedDomains: false,
                 shouldRefreshRiskWidgets: true
             )
             logSlowProductPersistenceDecision(
@@ -779,20 +832,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             return decision
         }
 
-        let decision: SlowProductPersistenceDecision
-        let reason: String
-        switch mapSyncOutcome {
-        case .accepted, .skipped:
-            decision = .init(shouldUpdateProjection: true, shouldRefreshRiskWidgets: true)
-            reason = mapSyncOutcome == .accepted ? "map_sync_accepted" : "map_sync_skipped"
-        case .rejected, .failed:
-            decision = .init(shouldUpdateProjection: false, shouldRefreshRiskWidgets: false)
-            reason = mapSyncOutcome == .rejected ? "map_sync_rejected" : "map_sync_failed"
-        }
+        let updatesConvective = mapSyncOutcome.convective.authorizesProjection
+        let updatesFire = mapSyncOutcome.fire.authorizesProjection
+        let decision = SlowProductPersistenceDecision(
+            updatesConvective: updatesConvective,
+            updatesFire: updatesFire,
+            reconcilesRejectedDomains: updatesConvective == false || updatesFire == false,
+            shouldRefreshRiskWidgets: updatesConvective || updatesFire
+        )
         logSlowProductPersistenceDecision(
             mapSyncOutcome: mapSyncOutcome,
             decision: decision,
-            reason: reason
+            reason: "map_sync_domain_authority"
         )
         return decision
     }
@@ -804,11 +855,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     ) {
         let outcome = mapSyncOutcome.map(Self.logName(for:)) ?? "none"
         environment.logger.info(
-            "spc_map_persistence_projection_decision mapSyncOutcome=\(outcome, privacy: .public) reason=\(reason, privacy: .public) projection=\(decision.shouldUpdateProjection ? "updated" : "preserved", privacy: .public) widgets=\(decision.shouldRefreshRiskWidgets ? "updated" : "preserved", privacy: .public)"
+            "spc_map_persistence_projection_decision mapSyncOutcome=\(outcome, privacy: .public) reason=\(reason, privacy: .public) convective=\(decision.updatesConvective ? "updated" : "preserved", privacy: .public) fire=\(decision.updatesFire ? "updated" : "preserved", privacy: .public) widgets=\(decision.shouldRefreshRiskWidgets ? "updated" : "preserved", privacy: .public)"
         )
     }
 
     private static func logName(for outcome: SpcMapSyncOutcome) -> String {
+        "convective=\(logName(for: outcome.convective)),fire=\(logName(for: outcome.fire))"
+    }
+
+    private static func logName(for outcome: SpcMapSyncDomainOutcome) -> String {
         switch outcome {
         case .accepted:
             return "accepted"
