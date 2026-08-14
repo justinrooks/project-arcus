@@ -248,6 +248,7 @@ extension SpcProvider: SpcSyncing {
 
     private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> SpcMapSyncOutcome {
         let convectiveOutcome: SpcMapSyncDomainOutcome
+        let convectiveSource: SpcMapSourceIdentity?
         switch batch.validation.convective {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
@@ -268,6 +269,9 @@ extension SpcProvider: SpcSyncing {
                 "spc_map_convective_persistence result=\(succeeded ? "committed" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
             )
             convectiveOutcome = succeeded ? .accepted : .failed
+            convectiveSource = succeeded
+                ? .forecast(issued: anchorIssued, valid: anchorValid, expires: anchorExpires)
+                : nil
         case .acceptedAllClear(let syncTime):
             let succeeded = await Self.runMapProductSync(
                 named: "accepted_all_clear_convective_batch_transaction",
@@ -283,14 +287,17 @@ extension SpcProvider: SpcSyncing {
                 "spc_map_convective_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
             convectiveOutcome = succeeded ? .accepted : .failed
+            convectiveSource = succeeded ? .acceptedAllClear(at: syncTime) : nil
         case .rejected(let reason):
             logger.info(
                 "spc_map_convective_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
             )
             convectiveOutcome = .rejected
+            convectiveSource = nil
         }
 
         let fireOutcome: SpcMapSyncDomainOutcome
+        let fireSource: SpcMapSourceIdentity?
         switch batch.validation.fire {
         case .accepted(let anchorIssued, let anchorValid, let anchorExpires):
             let stagedClient = StagedMapSyncClient(stagedProducts: batch.products)
@@ -310,6 +317,9 @@ extension SpcProvider: SpcSyncing {
                 "spc_map_fire_persistence result=\(succeeded ? "committed" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) anchorIssued=\(Self.isoTimestamp(anchorIssued), privacy: .public) anchorValid=\(Self.isoTimestamp(anchorValid), privacy: .public) anchorExpires=\(Self.isoTimestamp(anchorExpires), privacy: .public)"
             )
             fireOutcome = succeeded ? .accepted : .failed
+            fireSource = succeeded
+                ? .forecast(issued: anchorIssued, valid: anchorValid, expires: anchorExpires)
+                : nil
         case .acceptedAllClear(let syncTime):
             let succeeded = await Self.runMapProductSync(
                 named: "accepted_all_clear_fire_batch_transaction",
@@ -322,14 +332,21 @@ extension SpcProvider: SpcSyncing {
                 "spc_map_fire_persistence result=\(succeeded ? "committed_all_clear" : "failed", privacy: .public) committed=\(succeeded, privacy: .public) syncTime=\(Self.isoTimestamp(syncTime), privacy: .public)"
             )
             fireOutcome = succeeded ? .accepted : .failed
+            fireSource = succeeded ? .acceptedAllClear(at: syncTime) : nil
         case .rejected(let reason):
             logger.info(
                 "spc_map_fire_persistence result=skipped reason=\(reason, privacy: .public) committed=false"
             )
             fireOutcome = .rejected
+            fireSource = nil
         }
 
-        return SpcMapSyncOutcome(convective: convectiveOutcome, fire: fireOutcome)
+        return SpcMapSyncOutcome(
+            convective: convectiveOutcome,
+            fire: fireOutcome,
+            convectiveSource: convectiveSource,
+            fireSource: fireSource
+        )
     }
 
     private func fetchStagedMapProduct(

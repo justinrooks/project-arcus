@@ -174,6 +174,10 @@ final class HomeProjection {
     var stormRisk: StormRiskLevel?
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
+    var convectiveRiskComparisonLocationKey: String?
+    var convectiveRiskComparisonSourceKey: String?
+    var fireRiskComparisonLocationKey: String?
+    var fireRiskComparisonSourceKey: String?
     var activeAlerts: [AlertDTO]
     var activeMesos: [MdDTO]
 
@@ -206,6 +210,10 @@ final class HomeProjection {
         stormRisk = nil
         severeRisk = nil
         fireRisk = nil
+        convectiveRiskComparisonLocationKey = nil
+        convectiveRiskComparisonSourceKey = nil
+        fireRiskComparisonLocationKey = nil
+        fireRiskComparisonSourceKey = nil
         activeAlerts = []
         activeMesos = []
         lastHotAlertsLoadAt = nil
@@ -224,6 +232,17 @@ extension HomeProjection {
             "fire:\(normalizedKeyComponent(context.grid.fireZone))"
         ]
         return components.joined(separator: "|")
+    }
+
+    /// Risk comparisons require both the coarse projection and the existing E4 coordinate bucket.
+    /// A different identity seeds a baseline instead of treating movement as a forecast change.
+    static func riskComparisonLocationKey(for context: LocationContext) -> String {
+        let gridKey = context.refreshKey.gridKey
+        return [
+            projectionKey(for: context),
+            "latitudeE4:\(gridKey.latitudeE4)",
+            "longitudeE4:\(gridKey.longitudeE4)"
+        ].joined(separator: "|")
     }
 
     var record: HomeProjectionRecord {

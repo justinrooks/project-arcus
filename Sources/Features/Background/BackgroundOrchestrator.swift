@@ -412,7 +412,8 @@ actor BackgroundOrchestrator {
 
                     didRiskChangeNotify = await riskChangeEngine.run(
                         change: coalescedCurrentRiskChange ? nil : snapshot.riskProfileChange,
-                        isEnabled: settings.riskChangeNotificationsEnabled
+                        isEnabled: settings.riskChangeNotificationsEnabled,
+                        activeLocationKey: snapshot.riskComparisonLocationKey
                     )
                     try Task.checkCancellation()
                     if settings.riskChangeNotificationsEnabled {

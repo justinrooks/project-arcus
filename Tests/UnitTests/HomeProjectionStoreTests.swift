@@ -326,6 +326,11 @@ struct HomeProjectionStoreTests {
         #expect(persisted.createdAt == createdAt)
         #expect(persisted.stormSetupCurrentResponse == nil)
         #expect(persisted.stormSetup == nil)
+        let migratedModel = try #require(ModelContext(container).fetch(FetchDescriptor<HomeProjection>()).first)
+        #expect(migratedModel.convectiveRiskComparisonLocationKey == nil)
+        #expect(migratedModel.convectiveRiskComparisonSourceKey == nil)
+        #expect(migratedModel.fireRiskComparisonLocationKey == nil)
+        #expect(migratedModel.fireRiskComparisonSourceKey == nil)
     }
 
     @Test("updating slow products seeds a baseline without a change and preserves existing slices")
@@ -404,6 +409,8 @@ struct HomeProjectionStoreTests {
             stormRisk: .marginal,
             severeRisk: .tornado(probability: 0.02),
             fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 500)
         )
@@ -412,6 +419,8 @@ struct HomeProjectionStoreTests {
             stormRisk: .marginal,
             severeRisk: .allClear,
             fireRisk: .clear,
+            convectiveSource: makeSource(revision: 2),
+            fireSource: makeSource(revision: 2),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 560)
         ))
@@ -435,6 +444,226 @@ struct HomeProjectionStoreTests {
         let updated = try #require(await store.projection(for: context))
         #expect(updated.severeRisk == .allClear)
         #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 560))
+    }
+
+    @Test("coordinate movement within one projection rebases unchanged-source risk without a change")
+    func updateSlowProducts_sameProjectionMovementDoesNotCreateRiskChange() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let first = makeContext(latitude: 39.7500, longitude: -104.4400, timestamp: 100)
+        let moved = makeContext(latitude: 39.7509, longitude: -104.4409, timestamp: 200)
+        let source = makeSource(revision: 1)
+
+        #expect(HomeProjection.projectionKey(for: first) == HomeProjection.projectionKey(for: moved))
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: source,
+            fireSource: source,
+            for: first
+        )
+
+        let movedChange = try await store.updateSlowProducts(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: source,
+            fireSource: source,
+            for: moved
+        )
+        let revisitChange = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: source,
+            fireSource: source,
+            for: first
+        )
+
+        #expect(movedChange == nil)
+        #expect(revisitChange == nil)
+    }
+
+    @Test("stable comparison location emits a change for a newer accepted source")
+    func updateSlowProducts_stableLocationWithNewSourceCreatesRiskChange() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: context
+        )
+        let sameSourceChange = try await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: context
+        )
+        let change = try #require(await store.updateSlowProducts(
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 2),
+            fireSource: makeSource(revision: 2),
+            for: context
+        ))
+
+        #expect(sameSourceChange == nil)
+        #expect(change.changedDimensions == [.storm])
+        #expect(change.previous.stormRisk == .slight)
+        #expect(change.current.stormRisk == .enhanced)
+    }
+
+    @Test("leaving and revisiting a projection seeds before later accepted changes")
+    func updateSlowProducts_revisitedProjectionDoesNotUseHistoricalBaseline() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let first = makeContext(h3Cell: 123_456)
+        let second = makeContext(
+            latitude: 40.02,
+            longitude: -104.87,
+            timestamp: 200,
+            countyCode: "COC007",
+            forecastZone: "COZ041",
+            fireZone: "COZ217",
+            h3Cell: 654_321
+        )
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: first
+        )
+        let newLocation = try await store.updateSlowProducts(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: second
+        )
+        let revisit = try await store.updateSlowProducts(
+            stormRisk: .enhanced,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 2),
+            fireSource: makeSource(revision: 2),
+            for: first
+        )
+        let stableChange = try #require(await store.updateSlowProducts(
+            stormRisk: .moderate,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 3),
+            fireSource: makeSource(revision: 3),
+            for: first
+        ))
+
+        #expect(newLocation == nil)
+        #expect(revisit == nil)
+        #expect(stableChange.changedDimensions == [.storm])
+    }
+
+    @Test("domain-local changes do not require the other domain to be available")
+    func updateSlowProducts_partialProfilesEmitForAuthoritativeDomain() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let convectiveContext = makeContext()
+        let fireContext = makeContext(h3Cell: 654_321)
+
+        _ = try await store.commitCore(
+            .init(
+                slowProducts: (.marginal, .allClear, nil),
+                updatesConvectiveRisk: true,
+                updatesFireRisk: false,
+                convectiveSource: makeSource(revision: 1)
+            ),
+            for: convectiveContext
+        )
+        let convectiveChange = try #require(await store.commitCore(
+            .init(
+                slowProducts: (.slight, .wind(probability: 0.15), nil),
+                updatesConvectiveRisk: true,
+                updatesFireRisk: false,
+                convectiveSource: makeSource(revision: 2)
+            ),
+            for: convectiveContext
+        ))
+
+        _ = try await store.commitCore(
+            .init(
+                slowProducts: (nil, nil, .clear),
+                updatesConvectiveRisk: false,
+                updatesFireRisk: true,
+                fireSource: makeSource(revision: 1)
+            ),
+            for: fireContext
+        )
+        let fireChange = try #require(await store.commitCore(
+            .init(
+                slowProducts: (nil, nil, .critical),
+                updatesConvectiveRisk: false,
+                updatesFireRisk: true,
+                fireSource: makeSource(revision: 2)
+            ),
+            for: fireContext
+        ))
+
+        #expect(convectiveChange.changedDimensions == [.storm, .severe])
+        #expect(fireChange.changedDimensions == [.fire])
+    }
+
+    @Test("failed saves roll back risk values and comparison metadata")
+    func updateSlowProducts_failedSaveRollsBackBaseline() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: context
+        )
+        await store.failNextSaveForTesting()
+        await #expect(throws: (any Error).self) {
+            try await store.updateSlowProducts(
+                stormRisk: .enhanced,
+                severeRisk: .tornado(probability: 0.30),
+                fireRisk: .critical,
+                convectiveSource: makeSource(revision: 2),
+                fireSource: makeSource(revision: 2),
+                for: context
+            )
+        }
+        _ = try await store.updateWeather(makeWeather(), for: context)
+
+        let change = try #require(await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .allClear,
+            fireRisk: .elevated,
+            convectiveSource: makeSource(revision: 2),
+            fireSource: makeSource(revision: 2),
+            for: context
+        ))
+
+        #expect(change.previous.stormRisk == .marginal)
+        #expect(change.previous.severeRisk == .allClear)
+        #expect(change.previous.fireRisk == .clear)
+        #expect(change.changedDimensions == [.storm, .fire])
     }
 
     @Test("risk profile fingerprints normalize severe probabilities to whole percentages")
@@ -715,13 +944,19 @@ struct HomeProjectionStoreTests {
             .init(
                 weather: makeWeather(),
                 slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                convectiveSource: makeSource(revision: 1),
+                fireSource: makeSource(revision: 1),
                 hotAlerts: (alerts: [originalAlert], mesos: [MD.sampleDiscussionDTOs[0]])
             ),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 500)
         )
         let change = try #require(await store.commitCore(
-            .init(slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated)),
+            .init(
+                slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated),
+                convectiveSource: makeSource(revision: 2),
+                fireSource: makeSource(revision: 2)
+            ),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 600)
         ))
@@ -814,6 +1049,14 @@ struct HomeProjectionStoreTests {
             fireZoneLabel: "Front Range"
         )
         return LocationContext(snapshot: snapshot, h3Cell: snapshot.h3Cell ?? h3Cell, grid: grid)
+    }
+
+    private func makeSource(revision: TimeInterval) -> SpcMapSourceIdentity {
+        .forecast(
+            issued: Date(timeIntervalSince1970: revision * 100),
+            valid: Date(timeIntervalSince1970: revision * 100 + 10),
+            expires: Date(timeIntervalSince1970: revision * 100 + 90)
+        )
     }
 
     private func makeWeather(

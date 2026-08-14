@@ -1689,6 +1689,8 @@ struct HomeRefreshPipelineTests {
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.15),
             fireRisk: .critical,
+            convectiveSource: testMapSource(revision: 1),
+            fireSource: testMapSource(revision: 1),
             for: context,
             loadedAt: previousTimestamp
         )
@@ -1746,6 +1748,8 @@ struct HomeRefreshPipelineTests {
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.15),
             fireRisk: .critical,
+            convectiveSource: testMapSource(revision: 1),
+            fireSource: testMapSource(revision: 1),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 200)
         )
@@ -1753,7 +1757,11 @@ struct HomeRefreshPipelineTests {
         let spc = FakeSpcProvider(
             activeMesos: [],
             outlooks: sampleOutlooks(),
-            mapSyncOutcome: .init(convective: .rejected, fire: .accepted),
+            mapSyncOutcome: .init(
+                convective: .rejected,
+                fire: .accepted,
+                fireSource: testMapSource(revision: 2)
+            ),
             stormRiskValue: .allClear,
             severeRiskValue: .allClear,
             fireRiskValue: .clear
@@ -1785,7 +1793,7 @@ struct HomeRefreshPipelineTests {
         #expect(partialProjection.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
 
         await spc.configureMapSync(
-            outcome: .accepted,
+            outcome: acceptedMapSyncOutcome(revision: 3),
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.15),
             fireRisk: .clear
@@ -1814,6 +1822,8 @@ struct HomeRefreshPipelineTests {
             stormRisk: .slight,
             severeRisk: .tornado(probability: 0.15),
             fireRisk: .critical,
+            convectiveSource: testMapSource(revision: 1),
+            fireSource: testMapSource(revision: 1),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 200)
         )
@@ -1821,7 +1831,11 @@ struct HomeRefreshPipelineTests {
         let spc = FakeSpcProvider(
             activeMesos: [],
             outlooks: sampleOutlooks(),
-            mapSyncOutcome: .init(convective: .accepted, fire: .rejected),
+            mapSyncOutcome: .init(
+                convective: .accepted,
+                fire: .rejected,
+                convectiveSource: testMapSource(revision: 2)
+            ),
             stormRiskValue: .allClear,
             severeRiskValue: .allClear,
             fireRiskValue: .clear
@@ -1856,7 +1870,7 @@ struct HomeRefreshPipelineTests {
         #expect(projection.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
 
         await spc.configureMapSync(
-            outcome: .accepted,
+            outcome: acceptedMapSyncOutcome(revision: 3),
             stormRisk: .allClear,
             severeRisk: .allClear,
             fireRisk: .critical
@@ -1871,6 +1885,58 @@ struct HomeRefreshPipelineTests {
         #expect(retry.riskProfileChange == nil)
         #expect(retriedProjection.fireRisk == .critical)
         #expect(await spc.syncMapProductsCount() == 2)
+    }
+
+    @Test("background coordinate movement within one projection does not publish a risk change")
+    func backgroundLocationChange_sameProjectionAndSourceRebasesWithoutRiskChange() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let firstContext = makeContext(latitude: 39.7500, longitude: -104.4400, timestamp: 100)
+        let movedContext = makeContext(latitude: 39.7509, longitude: -104.4409, timestamp: 200)
+        let locationSession = FakeLocationSession(currentContext: firstContext, preparedContext: firstContext)
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: acceptedMapSyncOutcome(revision: 1),
+            stormRiskValue: .marginal,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: locationSession,
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let baseline = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+        locationSession.currentContext = movedContext
+        locationSession.preparedContext = movedContext
+        await spc.configureMapSync(
+            outcome: acceptedMapSyncOutcome(revision: 1),
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear
+        )
+        let moved = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundLocationChange)),
+            progress: .none
+        )
+
+        #expect(HomeProjection.projectionKey(for: firstContext) == HomeProjection.projectionKey(for: movedContext))
+        #expect(baseline.riskProfileChange == nil)
+        #expect(moved.riskProfileChange == nil)
+        #expect(moved.stormRisk == .allClear)
     }
 
     @Test("hot-alert providers overlap and join before completion")
@@ -3339,6 +3405,24 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     func queryCount() -> Int { queryCalls }
     func observedHTTPModes() -> [HTTPExecutionMode] { observedHTTPModeValues }
     func cancelledSyncCount() -> Int { cancelledSyncCalls }
+}
+
+private func testMapSource(revision: TimeInterval) -> SpcMapSourceIdentity {
+    .forecast(
+        issued: Date(timeIntervalSince1970: revision * 100),
+        valid: Date(timeIntervalSince1970: revision * 100 + 10),
+        expires: Date(timeIntervalSince1970: revision * 100 + 90)
+    )
+}
+
+private func acceptedMapSyncOutcome(revision: TimeInterval) -> SpcMapSyncOutcome {
+    let source = testMapSource(revision: revision)
+    return .init(
+        convective: .accepted,
+        fire: .accepted,
+        convectiveSource: source,
+        fireSource: source
+    )
 }
 
 @MainActor

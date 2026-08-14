@@ -54,6 +54,89 @@ struct RiskChangeNotificationTests {
         #expect((await sender.sent()).count == 1)
     }
 
+    @Test("pending occurrence is discarded when the active comparison location changes")
+    func pendingOccurrenceIsDiscardedAfterLocationRebase() async {
+        let locationA = "projection:alpha|latitudeE4:397500|longitudeE4:-1044400"
+        let movedLocations = [
+            "projection:alpha|latitudeE4:397509|longitudeE4:-1044409",
+            "projection:bravo|latitudeE4:400200|longitudeE4:-1048700"
+        ]
+
+        for movedLocation in movedLocations {
+            let sender = RiskChangeRecordingSender()
+            let engine = makeEngine(sender: sender)
+            #expect(await engine.run(
+                change: makeChange(comparisonLocationKey: locationA),
+                isEnabled: false,
+                activeLocationKey: locationA
+            ) == false)
+            #expect(await engine.run(
+                change: nil,
+                isEnabled: true,
+                activeLocationKey: movedLocation
+            ) == false)
+            #expect((await sender.sent()).isEmpty)
+        }
+    }
+
+    @Test("pending occurrence survives a stable comparison location retry")
+    func pendingOccurrenceSurvivesStableLocationRetry() async {
+        let sender = RiskChangeRecordingSender()
+        let engine = makeEngine(sender: sender)
+        let location = "projection:alpha|latitudeE4:397500|longitudeE4:-1044400"
+
+        #expect(await engine.run(
+            change: makeChange(comparisonLocationKey: location),
+            isEnabled: false,
+            activeLocationKey: location
+        ) == false)
+        #expect(await engine.run(
+            change: nil,
+            isEnabled: true,
+            activeLocationKey: location
+        ))
+        #expect((await sender.sent()).count == 1)
+    }
+
+    @Test("failed occurrence is discarded after a location rebase")
+    func failedOccurrenceIsDiscardedAfterLocationRebase() async {
+        let sender = RiskChangeOutcomeSender(outcomes: [false, true])
+        let engine = makeEngine(sender: sender)
+        let locationA = "projection:alpha|latitudeE4:397500|longitudeE4:-1044400"
+        let locationB = "projection:bravo|latitudeE4:400200|longitudeE4:-1048700"
+
+        #expect(await engine.run(
+            change: makeChange(comparisonLocationKey: locationA),
+            activeLocationKey: locationA
+        ) == false)
+        #expect(await engine.run(
+            change: nil,
+            activeLocationKey: locationB
+        ) == false)
+        #expect(await sender.attemptCount() == 1)
+    }
+
+    @Test("coalescing at a new location discards stale pending delivery")
+    func coalescingAtNewLocationDiscardsStalePendingDelivery() async {
+        let sender = RiskChangeRecordingSender()
+        let engine = makeEngine(sender: sender)
+        let locationA = "projection:alpha|latitudeE4:397500|longitudeE4:-1044400"
+        let locationB = "projection:bravo|latitudeE4:400200|longitudeE4:-1048700"
+
+        _ = await engine.run(
+            change: makeChange(comparisonLocationKey: locationA),
+            isEnabled: false,
+            activeLocationKey: locationA
+        )
+        await engine.coalesce(change: makeChange(
+            projectionKey: "projection:bravo",
+            comparisonLocationKey: locationB
+        ))
+
+        #expect(await engine.run(change: nil, activeLocationKey: locationB) == false)
+        #expect((await sender.sent()).isEmpty)
+    }
+
     @Test("failed scheduling retains occurrence and reports false until retry succeeds")
     func failedSchedulingRetainsOccurrenceUntilRetrySucceeds() async {
         let sender = RiskChangeOutcomeSender(outcomes: [false, true])
@@ -216,6 +299,7 @@ private func makeEngine<Sender: NotificationSending>(
 
 private func makeChange(
     projectionKey: String = "projection:alpha",
+    comparisonLocationKey: String? = nil,
     previous: RiskProfile = makeProfile(storm: .marginal, severe: .allClear, fire: .clear),
     current: RiskProfile = makeProfile(storm: .enhanced, severe: .allClear, fire: .clear),
     locationSummary: String? = "Bennett, CO",
@@ -225,6 +309,7 @@ private func makeChange(
         previous: previous,
         current: current,
         projectionKey: projectionKey,
+        comparisonLocationKey: comparisonLocationKey,
         locationSummary: locationSummary,
         occurrenceID: occurrenceID
     )!

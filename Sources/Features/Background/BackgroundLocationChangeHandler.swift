@@ -66,7 +66,8 @@ actor BackgroundLocationChangeHandler {
                 let settings = await notificationSettingsProvider.current()
                 _ = await riskChangeEngine.run(
                     change: snapshot.riskProfileChange,
-                    isEnabled: settings.riskChangeNotificationsEnabled
+                    isEnabled: settings.riskChangeNotificationsEnabled,
+                    activeLocationKey: snapshot.riskComparisonLocationKey
                 )
             } catch {
                 logger.error(

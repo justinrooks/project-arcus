@@ -172,6 +172,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private struct SlowProductPersistenceDecision: Sendable {
         let updatesConvective: Bool
         let updatesFire: Bool
+        let convectiveSource: SpcMapSourceIdentity?
+        let fireSource: SpcMapSourceIdentity?
         let reconcilesRejectedDomains: Bool
         let shouldRefreshRiskWidgets: Bool
 
@@ -331,6 +333,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
         snapshot.weatherRefreshResult = weatherRefresh
         if let context {
+            snapshot.riskComparisonLocationKey = HomeProjection.riskComparisonLocationKey(for: context)
             let slowProductDecision = slowProductPersistenceDecision(
                 plan: plan,
                 mapSyncOutcome: slowProductMapSyncOutcome
@@ -682,6 +685,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                         slowProducts: slowProducts,
                         updatesConvectiveRisk: slowProductDecision.updatesConvective,
                         updatesFireRisk: slowProductDecision.updatesFire,
+                        convectiveSource: slowProductDecision.convectiveSource,
+                        fireSource: slowProductDecision.fireSource,
                         hotAlerts: hotAlerts
                     ),
                     for: context,
@@ -791,6 +796,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             let decision = SlowProductPersistenceDecision(
                 updatesConvective: false,
                 updatesFire: false,
+                convectiveSource: nil,
+                fireSource: nil,
                 reconcilesRejectedDomains: false,
                 shouldRefreshRiskWidgets: true
             )
@@ -806,6 +813,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             let decision = SlowProductPersistenceDecision(
                 updatesConvective: true,
                 updatesFire: true,
+                convectiveSource: nil,
+                fireSource: nil,
                 reconcilesRejectedDomains: false,
                 shouldRefreshRiskWidgets: true
             )
@@ -821,6 +830,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             let decision = SlowProductPersistenceDecision(
                 updatesConvective: true,
                 updatesFire: true,
+                convectiveSource: nil,
+                fireSource: nil,
                 reconcilesRejectedDomains: false,
                 shouldRefreshRiskWidgets: true
             )
@@ -837,6 +848,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let decision = SlowProductPersistenceDecision(
             updatesConvective: updatesConvective,
             updatesFire: updatesFire,
+            convectiveSource: mapSyncOutcome.convective == .accepted ? mapSyncOutcome.convectiveSource : nil,
+            fireSource: mapSyncOutcome.fire == .accepted ? mapSyncOutcome.fireSource : nil,
             reconcilesRejectedDomains: updatesConvective == false || updatesFire == false,
             shouldRefreshRiskWidgets: updatesConvective || updatesFire
         )

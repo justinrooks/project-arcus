@@ -30,6 +30,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var severeRisk: SevereWeatherThreat?
     var fireRisk: FireRiskLevel?
     var riskProfileChange: RiskProfileChange?
+    var riskComparisonLocationKey: String?
     var mesos: [MdDTO]
     var alerts: [AlertDTO]
     var outlooks: [ConvectiveOutlookDTO]
@@ -49,6 +50,7 @@ struct HomeSnapshot: Sendable, Equatable {
         severeRisk: SevereWeatherThreat? = nil,
         fireRisk: FireRiskLevel? = nil,
         riskProfileChange: RiskProfileChange? = nil,
+        riskComparisonLocationKey: String? = nil,
         mesos: [MdDTO] = [],
         alerts: [AlertDTO] = [],
         outlooks: [ConvectiveOutlookDTO] = [],
@@ -67,6 +69,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.severeRisk = severeRisk
         self.fireRisk = fireRisk
         self.riskProfileChange = riskProfileChange
+        self.riskComparisonLocationKey = riskComparisonLocationKey
         self.mesos = mesos
         self.alerts = alerts
         self.outlooks = outlooks

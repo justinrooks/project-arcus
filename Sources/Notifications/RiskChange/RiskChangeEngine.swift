@@ -28,7 +28,11 @@ struct RiskChangeEngine: Sendable {
         self.sender = sender
     }
 
-    func run(change: RiskProfileChange?, isEnabled: Bool = true) async -> Bool {
+    func run(
+        change: RiskProfileChange?,
+        isEnabled: Bool = true,
+        activeLocationKey: String? = nil
+    ) async -> Bool {
         var preferredEventKey: String?
         if let change {
             let context = RiskChangeContext(change: change)
@@ -40,7 +44,11 @@ struct RiskChangeEngine: Sendable {
             }
         }
 
-        guard let delivery = await gate.claim(preferredEventKey: preferredEventKey, isEnabled: isEnabled) else {
+        guard let delivery = await gate.claim(
+            preferredEventKey: preferredEventKey,
+            isEnabled: isEnabled,
+            activeLocationKey: activeLocationKey
+        ) else {
             return false
         }
 

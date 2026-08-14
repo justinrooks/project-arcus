@@ -91,7 +91,10 @@ struct SpcProviderSyncMapProductsTests {
         try await fireRepo.refreshFireRisk(using: FireMockClient(fireData: makeFireData()))
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .accepted)
+        #expect(outcome.fire == .accepted)
+        #expect(outcome.convectiveSource != nil)
+        #expect(outcome.fireSource != nil)
 
         let activeStorm = try await stormRepo.active(
             asOf: Date(),
@@ -143,7 +146,10 @@ struct SpcProviderSyncMapProductsTests {
         try await severeRepo.refreshTornadoRisk(using: MockClient(mode: .success(makeTornadoData())))
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .accepted)
+        #expect(outcome.fire == .accepted)
+        #expect(outcome.convectiveSource != nil)
+        #expect(outcome.fireSource != nil)
 
         let activeStorm = try await stormRepo.active(
             asOf: now,
@@ -308,7 +314,10 @@ struct SpcProviderSyncMapProductsTests {
         )
 
         let outcome = await provider.syncMapProductsOutcome()
-        #expect(outcome == .accepted)
+        #expect(outcome.convective == .accepted)
+        #expect(outcome.fire == .accepted)
+        #expect(outcome.convectiveSource != nil)
+        #expect(outcome.fireSource != nil)
 
         let active = try await severeRepo.active(
             asOf: now,
@@ -506,6 +515,12 @@ struct SpcProviderSyncMapProductsTests {
         let outcome = await provider.syncMapProductsOutcome()
         #expect(outcome.convective == .accepted)
         #expect(outcome.fire == .rejected)
+        #expect(outcome.convectiveSource == .forecast(
+            issued: try #require(acceptedIssue.asUTCDate()),
+            valid: try #require(acceptedValid.asUTCDate()),
+            expires: try #require(acceptedExpire.asUTCDate())
+        ))
+        #expect(outcome.fireSource == nil)
         let activeStorm = try await stormRepo.active(
             asOf: now,
             for: CLLocationCoordinate2D(latitude: 39.5, longitude: -104.5)
