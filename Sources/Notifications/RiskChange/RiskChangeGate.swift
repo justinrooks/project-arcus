@@ -20,6 +20,7 @@ actor RiskChangeGate {
     private struct Pending: Codable {
         let delivery: Delivery
         let projectionKey: String
+        let comparisonLocationKey: String?
         let registrationOrder: Int64
         let registeredAt: Date
     }
@@ -67,6 +68,9 @@ actor RiskChangeGate {
         await loadIfNeeded()
         guard let change = event.payload["change"] as? RiskProfileChange else { return }
         var didChange = purgeExpired(now: now)
+        if let comparisonLocationKey = change.comparisonLocationKey {
+            didChange = discardPending(outside: comparisonLocationKey) || didChange
+        }
         guard state.pending[event.key] == nil, state.delivered[event.key] == nil else {
             if didChange { await persist() }
             return
@@ -82,6 +86,7 @@ actor RiskChangeGate {
         state.pending[event.key] = Pending(
             delivery: Delivery(eventKey: event.key, title: message.title, body: message.body, subtitle: message.subtitle),
             projectionKey: change.projectionKey,
+            comparisonLocationKey: change.comparisonLocationKey,
             registrationOrder: state.nextRegistrationOrder,
             registeredAt: now
         )
@@ -93,6 +98,9 @@ actor RiskChangeGate {
         await loadIfNeeded()
         guard let change = event.payload["change"] as? RiskProfileChange else { return }
         var didChange = purgeExpired(now: now)
+        if let comparisonLocationKey = change.comparisonLocationKey {
+            didChange = discardPending(outside: comparisonLocationKey) || didChange
+        }
 
         for key in state.pending.keys where
             state.pending[key]?.projectionKey == change.projectionKey && inFlightEventKeys.contains(key) == false {
@@ -111,9 +119,18 @@ actor RiskChangeGate {
     }
 
     /// Claims one pending occurrence. The claim is recorded before the sender is awaited.
-    func claim(preferredEventKey: String?, isEnabled: Bool, now: Date = .now) async -> Delivery? {
+    func claim(
+        preferredEventKey: String?,
+        isEnabled: Bool,
+        activeLocationKey: String? = nil,
+        now: Date = .now
+    ) async -> Delivery? {
         await loadIfNeeded()
-        if purgeExpired(now: now) { await persist() }
+        var didChange = purgeExpired(now: now)
+        if let activeLocationKey {
+            didChange = discardPending(outside: activeLocationKey) || didChange
+        }
+        if didChange { await persist() }
         guard isEnabled else { return nil }
 
         let eventKey: String?
@@ -167,6 +184,17 @@ actor RiskChangeGate {
         }
         expiredKeys.forEach { state.pending.removeValue(forKey: $0) }
         return expiredKeys.isEmpty == false
+    }
+
+    private func discardPending(outside activeLocationKey: String) -> Bool {
+        let staleKeys: [String] = state.pending.compactMap { entry in
+            let (key, pending) = entry
+            guard inFlightEventKeys.contains(key) == false,
+                  pending.comparisonLocationKey != activeLocationKey else { return nil }
+            return key
+        }
+        staleKeys.forEach { state.pending.removeValue(forKey: $0) }
+        return staleKeys.isEmpty == false
     }
 
     private func trimDeliveredTombstones() {

@@ -1344,13 +1344,16 @@ struct StormSetupIngestionTests {
             severeRisk: .tornado(probability: 0.30),
             fireRisk: .critical,
             activeAlerts: [],
-            activeMesos: []
+            activeMesos: [],
+            mapSyncOutcome: acceptedStormSetupMapSyncOutcome(revision: 2)
         )
 
         _ = try await harness.projectionStore.updateSlowProducts(
             stormRisk: .slight,
             severeRisk: .wind(probability: 0.10),
             fireRisk: .elevated,
+            convectiveSource: stormSetupMapSource(revision: 1),
+            fireSource: stormSetupMapSource(revision: 1),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 200)
         )
@@ -1423,6 +1426,8 @@ struct StormSetupIngestionTests {
                 stormRisk: .slight,
                 severeRisk: .wind(probability: 0.10),
                 fireRisk: .elevated,
+                convectiveSource: stormSetupMapSource(revision: 1),
+                fireSource: stormSetupMapSource(revision: 1),
                 for: context,
                 loadedAt: Date(timeIntervalSince1970: 200)
             )
@@ -1449,7 +1454,69 @@ struct StormSetupIngestionTests {
             #expect(persisted.severeRisk == .wind(probability: 0.10))
             #expect(persisted.fireRisk == .elevated)
             #expect(persisted.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
+
+            let acceptedHarness = try makeHarness(
+                context: context,
+                projectionStore: projectionStore,
+                stormRisk: .enhanced,
+                severeRisk: .tornado(probability: 0.30),
+                fireRisk: .critical,
+                activeAlerts: [],
+                activeMesos: [],
+                mapSyncOutcome: acceptedStormSetupMapSyncOutcome(revision: 2)
+            )
+            let acceptedSnapshot = try await acceptedHarness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+            )
+            #expect(acceptedSnapshot.riskProfileChange?.changedDimensions == [.storm, .severe, .fire])
         }
+    }
+
+    @Test("skipped map sync rebases values without replacing the accepted source")
+    func skippedMapSyncPreservesAcceptedSourceIdentity() async throws {
+        let context = makeContext()
+        let projectionStore = try makeProjectionStore()
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: stormSetupMapSource(revision: 1),
+            fireSource: stormSetupMapSource(revision: 1),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+        let skippedHarness = try makeHarness(
+            context: context,
+            projectionStore: projectionStore,
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.10),
+            fireRisk: .elevated,
+            activeAlerts: [],
+            activeMesos: [],
+            mapSyncOutcome: .skipped
+        )
+
+        let skippedSnapshot = try await skippedHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+        )
+        #expect(skippedSnapshot.riskProfileChange == nil)
+
+        let acceptedHarness = try makeHarness(
+            context: context,
+            projectionStore: projectionStore,
+            stormRisk: .enhanced,
+            severeRisk: .tornado(probability: 0.30),
+            fireRisk: .critical,
+            activeAlerts: [],
+            activeMesos: [],
+            mapSyncOutcome: acceptedStormSetupMapSyncOutcome(revision: 2)
+        )
+        let acceptedSnapshot = try await acceptedHarness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+        )
+
+        #expect(acceptedSnapshot.riskProfileChange?.changedDimensions == [.storm, .severe, .fire])
+        #expect(acceptedSnapshot.riskProfileChange?.previous.stormRisk == .slight)
     }
 
     @Test("missing or failed risk persistence cannot fabricate a delta")
@@ -2043,6 +2110,8 @@ private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
         stormRisk _: StormRiskLevel?,
         severeRisk _: SevereWeatherThreat?,
         fireRisk _: FireRiskLevel?,
+        convectiveSource _: SpcMapSourceIdentity?,
+        fireSource _: SpcMapSourceIdentity?,
         for context: LocationContext,
         loadedAt: Date
     ) async throws -> RiskProfileChange? {
@@ -2117,6 +2186,8 @@ private actor AtomicHomeProjectionStore: HomeProjectionPersisting {
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
         fireRisk: FireRiskLevel?,
+        convectiveSource _: SpcMapSourceIdentity?,
+        fireSource _: SpcMapSourceIdentity?,
         for context: LocationContext,
         loadedAt: Date
     ) async throws -> RiskProfileChange? {
@@ -2350,6 +2421,24 @@ private func makeAggregateProfileAnalysisResponse() -> AnvilAnalyzeProfileRespon
         lapserate03km: nil,
         threeCapeJkg: nil,
         quality: .init(profileLevelCount: 36, warnings: [])
+    )
+}
+
+private func stormSetupMapSource(revision: TimeInterval) -> SpcMapSourceIdentity {
+    .forecast(
+        issued: Date(timeIntervalSince1970: revision * 100),
+        valid: Date(timeIntervalSince1970: revision * 100 + 10),
+        expires: Date(timeIntervalSince1970: revision * 100 + 90)
+    )
+}
+
+private func acceptedStormSetupMapSyncOutcome(revision: TimeInterval) -> SpcMapSyncOutcome {
+    let source = stormSetupMapSource(revision: revision)
+    return .init(
+        convective: .accepted,
+        fire: .accepted,
+        convectiveSource: source,
+        fireSource: source
     )
 }
 

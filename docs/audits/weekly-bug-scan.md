@@ -301,3 +301,71 @@
 - Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
 - Skipped evidence: No sibling repository or external runtime was inspected. GitHub issue and pull-request
   deduplication was completed through the connected GitHub app because shell network access remained unavailable.
+
+## 2026-08-13T10:08:19-06:00
+- Date: 2026-08-13T10:08:19-06:00
+- Repository scanned: project-arcus
+- Default branch: main (`origin/main`)
+- Workflow reviewed: Weekly bug scan (audit-only)
+- Commit window: after the 2026-08-06T10:06:54-06:00 audit marker through
+  `f222fdff802452119be82192cd49d8615c8c50f3` (2026-08-13T08:18:19-06:00); 2 commits
+  (`5985b91d`, `f222fdff`).
+- Files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Features/Diagnostics/LogViewerView.swift
+  - /Users/justin/Code/project-arcus/Sources/Interfaces/Notification/NotificationGating.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Morning/MorningEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Meso/MesoGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Meso/MesoEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Watch/WatchGate.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Watch/WatchEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/Sender.swift
+  - /Users/justin/Code/project-arcus/Sources/App/Dependencies.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/LogViewerCancellationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MorningNotificationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/MesoNotificationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/AlertNotificationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/UserDefaultsLocationUploadQueueStoreTests.swift
+- High-risk areas inspected:
+  - Log Viewer task ownership, detached-work cancellation, stale-result publication, and loading-state recovery
+  - morning, mesoscale discussion, and watch notification claim, retry, persistence, and duplicate suppression
+  - persisted location-upload queue round-trip coverage
+- Findings: No new credible bugs found (HIGH: 0, MEDIUM: 0, LOW: 0).
+- Watchlist: None.
+- Resolved findings:
+  - Finding ID: BUG-ARCUS-NOTIFICATION-GATE-PREMATURE-DEDUPE
+    Fingerprint: weekly-bug-scan|project-arcus|notification-gates|dedupe-state-committed-before-scheduling
+    Repository: project-arcus
+    Audit type: Weekly Bug Scan
+    Title: Failed local notification scheduling permanently consumes the occurrence
+    Status: RESOLVED
+    Severity: MEDIUM
+    Confidence: HIGH
+    First observed: 2026-08-06
+    Last verified: 2026-08-13
+    Affected files and symbols: `NotificationClaimState.claim`/`finish`, `MorningGate`, `MesoGate`, `WatchGate`,
+      and their engines' `run` methods.
+    Failure mode: The former implementation persisted deduplication before scheduling. Commit `f222fdff` replaces
+      that path with in-flight claims which are persisted only after the sender reports success and released after
+      failure.
+    Evidence: Current `origin/main` engines call `finish` with the sender result; current gates delegate claim and
+      finish state to `NotificationClaimState`; focused tests cover failed-then-successful retry, duplicate suppression
+      after success, concurrent claim exclusion, and legacy persisted stamps.
+    Blast radius: The prior lost-notification mechanism no longer exists on current `origin/main`; the remediation is
+      limited to local morning, meso, and watch delivery state.
+    Minimal fix strategy: Completed by `f222fdff`; no further fix recommended.
+    Required validation: The focused simulator test run was attempted but could not start because the sandbox denied
+      CoreSimulatorService and SwiftPM/Xcode cache access. No `.xcresult` counts were produced.
+    Related GitHub issue: [#376](https://github.com/justinrooks/project-arcus/issues/376)
+- Top finding: No credible new bug confirmed in the inspected commit window.
+- Best next fix: No fix recommended.
+- Implementation recommended: No.
+- GitHub issues created: None.
+- GitHub issues updated: None.
+- Existing issues referenced: [#376](https://github.com/justinrooks/project-arcus/issues/376) for the resolved finding.
+- Validation: Focused `SkyAware_Tests` execution was attempted for Log Viewer, morning, meso, and alert notification
+  suites on iPhone 17 / iOS 26.5 / Debug. `xcodebuild` exited 74 before tests started because the sandbox denied
+  CoreSimulatorService and SwiftPM/Xcode cache access. Result path:
+  `/private/tmp/skyaware-results.GyseJx/weekly-bug-scan.xcresult`; no passed/failed/skipped counts were available.
+- Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
+- Skipped evidence: No sibling repository, external service, physical device, or runtime behavior was inspected.

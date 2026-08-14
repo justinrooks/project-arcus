@@ -33,7 +33,7 @@ enum RiskProfileChangeFormatting {
     static func transitionLines(for change: RiskProfileChange) -> [String] {
         change.changedDimensions
             .sorted(by: dimensionSort)
-            .map { formatTransition(for: $0, change: change) }
+            .compactMap { formatTransition(for: $0, change: change) }
     }
 
     private static func dimensionSort(_ lhs: RiskProfileDimension, _ rhs: RiskProfileDimension) -> Bool {
@@ -51,14 +51,17 @@ enum RiskProfileChangeFormatting {
         }
     }
 
-    private static func formatTransition(for dimension: RiskProfileDimension, change: RiskProfileChange) -> String {
+    private static func formatTransition(for dimension: RiskProfileDimension, change: RiskProfileChange) -> String? {
         switch dimension {
         case .storm:
-            return "Storm Risk: \(stormText(change.previous.stormRisk)) → \(stormText(change.current.stormRisk))"
+            guard let previous = change.previous.stormRisk, let current = change.current.stormRisk else { return nil }
+            return "Storm Risk: \(stormText(previous)) → \(stormText(current))"
         case .severe:
-            return "Severe Risk: \(severeText(change.previous.severeRisk)) → \(severeText(change.current.severeRisk))"
+            guard let previous = change.previous.severeRisk, let current = change.current.severeRisk else { return nil }
+            return "Severe Risk: \(severeText(previous)) → \(severeText(current))"
         case .fire:
-            return "Fire Risk: \(fireText(change.previous.fireRisk)) → \(fireText(change.current.fireRisk))"
+            guard let previous = change.previous.fireRisk, let current = change.current.fireRisk else { return nil }
+            return "Fire Risk: \(fireText(previous)) → \(fireText(current))"
         }
     }
 
