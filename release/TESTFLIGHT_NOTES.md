@@ -1,3 +1,17 @@
+SkyAware v1.1.0(113)
+
+Highlights:
+- Log Viewer should no longer publish stale results after rapid refreshes, superseded scans, or cancellation-heavy view transitions.
+- Trusted source links can still stay in the in-app viewer, while other web destinations should leave SkyAware and open externally.
+- Failed morning, meso, or watch notification scheduling should no longer burn the underlying occurrence; a later run can retry after transient failure.
+- Risk-change notifications should no longer send false clear-and-restore transitions when one SPC domain is rejected or temporarily unavailable.
+- Location movement alone should no longer produce a risk-change notification without a new qualifying forecast revision.
+
+What to test:
+- Rapidly refresh or leave the Log Viewer mid-load and confirm older scans do not overwrite newer state.
+- Open a trusted source link and an unrelated web destination; confirm the trusted content stays in-app while the unrelated destination opens externally.
+- Exercise notification flows where scheduling fails or location/SPC context changes; confirm failed attempts remain retryable and no false risk-change alerts are delivered.
+
 SkyAware v1.1.0(108)
 
 Highlights:

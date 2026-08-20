@@ -295,3 +295,90 @@
 - GitHub issues updated: none
 - Existing issues referenced: none
 - Out-of-scope repositories: arcus-signal; ArcusCore
+
+## 2026-08-20
+- Date: 2026-08-20
+- Repository reviewed: project-arcus
+- Workflow reviewed: Today refresh and presentation
+- Workflow selection reason: Commit `56fa92a4` materially changed the shared Today ingestion and projection path after
+  the 2026-06-07 foreground-refresh audit by adding per-domain risk comparison baselines. Today remains the primary,
+  frequently refreshed user surface, and the new persistence work runs before its coherent core publication.
+- Previous workflow review: 2026-06-07 (`Foreground Refresh and UI State Propagation`)
+- Commit window: `ab86f7efed5583e6b555ce1c7f5a7c05f53375d4..56fa92a44162761a4426de5962f0bf7e7acc58da`
+  (2026-06-07 through 2026-08-20), using the prior workflow audit date because no workflow-specific commit marker was
+  recorded.
+- Relevant commits: `56fa92a4` (`Prevent false risk-change notifications from partial syncs and movement`),
+  `126cd521` (`Simplify SkyAware refresh architecture and document validation`), and `0697e440` (`Improve Today refresh
+  pipeline and stabilize presentation`).
+- Relevant changed files: `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`,
+  `Sources/Repos/HomeProjectionStore.swift`, `Sources/App/HomeView.swift`, `Tests/UnitTests/HomeProjectionStoreTests.swift`,
+  and `Tests/UnitTests/HomeRefreshPipelineTests.swift`.
+- Files and symbols inspected:
+  - `docs/codebase/skyaware-app-summary.md` — unified ingestion, persistence, and Today presentation workflow
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — `run`, `persistProjection`,
+    `reconcilingRejectedRiskDomains`, and `slowProductPersistenceDecision`
+  - `Sources/Repos/HomeProjectionStore.swift` — `commitCore`, `advancesComparisonBaseline`,
+    `activeComparisonSourceKey`, `invalidateOtherComparisonBaselines`, and `fetchProjection`
+  - `Sources/App/HomeView.swift` — `cachedProjections` and `presentationSnapshot(now:)`
+  - `Tests/UnitTests/HomeProjectionStoreTests.swift` and `Tests/UnitTests/HomeRefreshPipelineTests.swift` — accepted,
+    rejected, mixed-domain, persistence, and publication coverage
+- Tests, metrics, traces, or profiling inspected: Current deterministic tests cover risk-baseline correctness but do
+  not count projection fetches or vary retained projection volume. Historical Release/device evidence in
+  `docs/plans/today-refresh-performance-progress.md` includes refresh duration, save intervals, body updates, and
+  hitches, but it does not record retained projection count or isolate baseline-scan cost. No new trace or test run was
+  required for this audit-only measurement finding.
+- Findings:
+  - Finding ID: `PERF-ARCUS-TODAY-PROJECTION-SCAN-SCALING`
+  - Fingerprint: `performance|project-arcus|today-refresh-and-presentation|home-projection|unbounded-baseline-and-query-scan`
+  - Repository: project-arcus
+  - Audit type: Weekly Workflow Performance Audit
+  - Workflow: Today refresh and presentation
+  - Title: Projection-count scaling is unknown for risk baseline maintenance and Today observation
+  - Status: MEASUREMENT REQUIRED
+  - Severity: MEDIUM
+  - Confidence: MEDIUM
+  - Evidence class: MEASUREMENT GAP
+  - First observed: 2026-08-20
+  - Last verified: 2026-08-20
+  - Affected files and symbols: `Sources/Repos/HomeProjectionStore.swift` — `activeComparisonSourceKey` and
+    `invalidateOtherComparisonBaselines`; `Sources/App/HomeView.swift` — `cachedProjections` and
+    `presentationSnapshot(now:)`
+  - Execution path: An accepted slow-product refresh reaches `HomeProjectionStore.commitCore`; each accepted domain
+    advances its comparison baseline, may scan all projections for an inherited source, and always fetches all
+    projections to clear competing baselines before the core save. The save invalidates `HomeView`'s unbounded sorted
+    projection query, whose presentation derivation maps every retained projection to a record.
+  - Performance mechanism: Work is structurally proportional to the total retained `HomeProjection` collection, and
+    an accepted convective-plus-fire commit invokes baseline invalidation once per domain. No projection retention or
+    purge bound was found. Material runtime impact is not established because current traces do not report projection
+    count or isolate these fetches.
+  - User or operational impact: If projection history grows through travel, foreground publication and background
+    ingestion may accumulate avoidable SwiftData fetch/mutation work before Today publication. The likely frequency is
+    accepted slow-product refreshes; the real-world row-count distribution and latency remain unknown.
+  - Measurement evidence: Historical Release/device traces provide end-to-end timing only; there is no row-count
+    scaling series, query count, or isolated baseline-scan duration.
+  - Measurement gap: Measure 1, 10, 100, and 1,000 retained projections under the same accepted slow-product refresh;
+    record fetch count, rows fetched/mutated, core-commit duration, commit-to-render duration, body updates, and hitches.
+  - Minimal fix strategy: Do not select an optimization yet. If measurement confirms material scaling, prefer a
+    bounded/predicate baseline update and a narrowed Today projection input without changing risk-notification or
+    location/source semantics.
+  - Required validation: Deterministic seeded-store scaling measurement first, followed by a Release physical-device
+    trace only when the measured trend is material.
+  - Related GitHub issue: Creation attempted on 2026-08-20 as `[Performance Measurement] Today refresh: quantify
+    projection scan scaling`; the GitHub connector rejected the write because approval is disabled, so no issue exists.
+- Measurement gaps: `PERF-ARCUS-TODAY-PROJECTION-SCAN-SCALING` is the sole promoted measurement gap for this run.
+- Watchlist: Partial-domain rejection now performs an extra projection lookup in
+  `HomeIngestionExecutor.reconcilingRejectedRiskDomains` before `commitCore` fetches the same projection. Rejected
+  syncs are not a credible hot path and no latency evidence exists; promote only if rejection telemetry shows material
+  frequency or profiling attributes meaningful time to the duplicate lookup.
+- Resolved findings: none
+- Top finding: `PERF-ARCUS-TODAY-PROJECTION-SCAN-SCALING` (MEASUREMENT REQUIRED, MEDIUM confidence).
+- Best next action: Run the bounded seeded-store scaling measurement before choosing any retention, predicate-fetch,
+  baseline-ownership, or SwiftUI-query optimization.
+- Implementation recommended: no
+- Measurement recommended: yes
+- GitHub issues created: none; measurement issue creation failed because the GitHub connector required approval while
+  this automation's approval policy is `never`.
+- GitHub issues updated: none
+- Existing issues referenced: closed issues #318, #319, #320, and #345 provide historical Today performance context
+  but do not measure retained-projection scaling and are not duplicates.
+- Out-of-scope repositories: arcus-signal; ArcusCore

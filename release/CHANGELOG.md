@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.1.0(113)
+
+### UI / UX
+- Log Viewer now suppresses stale results from superseded or cancelled scans during rapid refreshes and view transitions.
+<!-- evidence: 5985b91d -->
+- Trusted-source web links can still stay in the in-app viewer, but other web destinations now open externally instead of continuing navigation inside SkyAware.
+<!-- evidence: e0d61412 -->
+
+### Reliability
+- Failed local notification scheduling no longer consumes morning, meso, or watch occurrences, allowing later retries after transient authorization or scheduling failures.
+<!-- evidence: f222fdff -->
+- Risk-change notifications no longer fire false clear-and-restore transitions when an SPC domain is rejected or temporarily unavailable, or when movement changes the sampled risk without a new qualifying forecast revision.
+<!-- evidence: 56fa92a4 -->
+
+### Tests / QA
+- Regression coverage was expanded for Log Viewer cancellation and supersession, persisted upload-queue storage, trusted web-routing policy, notification retry and duplicate suppression, SPC sync and projection persistence, Storm Setup ingestion, and risk-change delivery.
+<!-- evidence: 5985b91d, f222fdff, e0d61412, 56fa92a4 -->
+
+### Maintenance / Cleanup
+- Weekly audit documentation was refreshed alongside the current validation and release-readiness work.
+<!-- evidence: 5985b91d, 56fa92a4 -->
+
 ## v1.1.0(108)
 
 ### UI / UX

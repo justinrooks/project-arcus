@@ -1,5 +1,20 @@
 # Release Notes
 
+## v1.1.0(113)
+
+## Overview
+This build makes diagnostics and notifications more trustworthy by preventing stale Log Viewer publishes, preserving notification retries after failed scheduling, and blocking false risk-change alerts caused by partial SPC syncs or movement. It also tightens the in-app web viewer so only trusted source content stays embedded.
+
+## Highlights
+- Log Viewer now suppresses stale results from superseded or cancelled scans during rapid refreshes and view transitions.
+- Trusted source links can still stay in the in-app viewer, while other web destinations now open externally instead of continuing navigation inside SkyAware.
+- Failed local notification scheduling no longer consumes morning, meso, or watch occurrences, allowing later retries after transient authorization or scheduling failures.
+- Risk-change notifications no longer fire false clear-and-restore transitions when an SPC domain is rejected or temporarily unavailable, or when movement changes the sampled risk without a new qualifying forecast revision.
+- Regression coverage was expanded across Log Viewer cancellation and supersession, persisted upload queues, trusted web routing, notification retry and duplicate suppression, SPC sync and projection persistence, Storm Setup ingestion, and risk-change delivery.
+
+## Maintenance
+- Weekly audit documentation was refreshed alongside the current validation and release-readiness work.
+
 ## v1.1.0(108)
 
 ## Overview
