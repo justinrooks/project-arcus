@@ -4,60 +4,58 @@ import SwiftUI
 import Testing
 @testable import SkyAware
 
-@Suite("SummaryView Empty Resolving")
+@Suite("Today Resolving Surface State")
 @MainActor
-struct SummaryViewEmptyResolvingTests {
+struct TodayResolvingSurfaceStateTests {
     @Test("no content with active refresh shows full-screen resolving")
     func showsEmptyResolving_noContentActiveRefresh() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .stormRisk, sections: [.stormRisk])
-
         #expect(
-            SummaryView.showsEmptyResolving(
+            TodayContentState.from(
                 readinessState: .ready,
-                resolutionState: resolutionState,
-                hasMeaningfulContent: false,
-                isLocationUnavailable: false
-            )
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: false
+            ).showsResolvingSurface
         )
     }
 
     @Test("no content while loading local data shows full-screen resolving")
     func showsEmptyResolving_noContentLoadingLocalData() {
         #expect(
-            SummaryView.showsEmptyResolving(
+            TodayContentState.from(
                 readinessState: .loadingLocalData,
-                resolutionState: SummaryResolutionState(),
-                hasMeaningfulContent: false,
-                isLocationUnavailable: false
-            )
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ).showsResolvingSurface
         )
     }
 
     @Test("meaningful content suppresses full-screen resolving even during refresh")
     func showsEmptyResolving_contentDuringRefresh() {
-        var resolutionState = SummaryResolutionState()
-        resolutionState.begin(task: .alerts, sections: [.alerts])
-
         #expect(
-            SummaryView.showsEmptyResolving(
+            TodayContentState.from(
                 readinessState: .loadingLocalData,
-                resolutionState: resolutionState,
-                hasMeaningfulContent: true,
-                isLocationUnavailable: false
-            ) == false
+                hasCachedContent: true,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: false
+            ).showsResolvingSurface == false
         )
     }
 
     @Test("location unavailable suppresses full-screen resolving")
     func showsEmptyResolving_locationUnavailable() {
         #expect(
-            SummaryView.showsEmptyResolving(
+            TodayContentState.from(
                 readinessState: .locationUnavailable,
-                resolutionState: SummaryResolutionState(),
-                hasMeaningfulContent: false,
-                isLocationUnavailable: true
-            ) == false
+                hasCachedContent: false,
+                hasLiveContent: false,
+                isRefreshing: false,
+                isOffline: false
+            ).showsResolvingSurface == false
         )
     }
 }

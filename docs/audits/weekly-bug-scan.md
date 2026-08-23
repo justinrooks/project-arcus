@@ -369,3 +369,50 @@
   `/private/tmp/skyaware-results.GyseJx/weekly-bug-scan.xcresult`; no passed/failed/skipped counts were available.
 - Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
 - Skipped evidence: No sibling repository, external service, physical device, or runtime behavior was inspected.
+
+## 2026-08-20T10:07:42-06:00
+- Date: 2026-08-20T10:07:42-06:00
+- Repository scanned: project-arcus
+- Default branch: main (`origin/main`)
+- Workflow reviewed: Weekly bug scan (audit-only)
+- Commit window: after the 2026-08-13T10:08:19-06:00 audit marker through
+  `57b73e3a604c14c0d0e4d1791dc4e5464e81d47e` (2026-08-20T08:40:32-06:00); 3 commits
+  (`e0d61412`, `56fa92a4`, `57b73e3a`).
+- Files inspected:
+  - /Users/justin/Code/project-arcus/Sources/Utilities/Core/WebContentRoute.swift
+  - /Users/justin/Code/project-arcus/Sources/Interfaces/SPC/SpcSyncing.swift
+  - /Users/justin/Code/project-arcus/Sources/Providers/SPC/SpcProvider+Syncing.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift
+  - /Users/justin/Code/project-arcus/Sources/App/HomeRefreshV2/HomeSnapshot.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/Home/HomeProjection.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/HomeProjectionStore.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeComposer.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeEngine.swift
+  - /Users/justin/Code/project-arcus/Sources/Notifications/RiskChange/RiskChangeGate.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/WidgetRouteURLTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeProjectionStoreTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeRefreshPipelineTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/RiskChangeNotificationTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/SpcProviderSyncMapProductsTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/StormSetupIngestionTests.swift
+- High-risk areas inspected:
+  - trusted-domain routing for the in-app web viewer, including subdomain and lookalike-host handling
+  - per-domain SPC acceptance, rejection, persistence authority, freshness, and authoritative all-clear behavior
+  - risk projection source/location identity, movement rebasing, notification coalescing, retry, and stale-pending removal
+- Findings: No new credible bugs found (HIGH: 0, MEDIUM: 0, LOW: 0).
+- Watchlist: None; no concern had enough local evidence to justify promotion.
+- Resolved findings: None newly evaluated in this window.
+- Top finding: No credible new bug confirmed in the inspected commit window.
+- Best next fix: No fix recommended.
+- Implementation recommended: No.
+- GitHub issues created: None.
+- GitHub issues updated: None.
+- Existing issues referenced: None.
+- Validation: Focused `SkyAware_Tests` execution was attempted for web-content policy, home projection/refresh,
+  risk-change notification, SPC map sync, and Storm Setup ingestion on iPhone 17 / iOS 26.5 / Debug.
+  `xcodebuild` exited 74 before tests started because the sandbox denied CoreSimulatorService and Xcode/SwiftPM
+  cache access. Result path: `/private/tmp/skyaware-results.Mxt0Io/weekly-bug-scan.xcresult`; no finalized bundle
+  or passed/failed/skipped counts were available.
+- Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
+- Skipped evidence: No sibling repository, external service, physical device, or runtime behavior was inspected.
+  Release-document-only changes in `57b73e3a` were reviewed for scope but did not introduce executable behavior.

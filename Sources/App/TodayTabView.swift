@@ -79,45 +79,50 @@ struct TodayTabView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                SummaryView(
-                    snap: snap,
-                    stormSetup: stormSetup,
-                    stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
-                    stormSetupPreferences: stormSetupPreferences,
-                    stormRisk: stormRisk,
-                    severeRisk: severeRisk,
-                    fireRisk: fireRisk,
-                    mesos: mesos,
-                    alerts: alerts,
-                    outlook: outlook,
-                    weather: visibleWeather,
-                    airQuality: airQuality,
-                    locationTimeZone: locationTimeZone,
-                    todayContentState: todayContentState,
-                    localAlertsDisplayState: localAlertsDisplayState,
-                    readinessState: readinessState,
-                    resolutionState: resolutionState,
-                    isRefreshInFlight: isRefreshInFlight,
-                    showsOfflineToken: showsOfflineToken,
-                    headerCondenseState: headerCondenseState,
-                    locationReliabilityRailState: locationReliabilityRailState,
-                    onOpenMapLayer: onOpenMapLayer,
-                    onOpenAlerts: onOpenAlerts,
-                    onOpenOutlooks: onOpenOutlooks
-                )
+            if todayContentState.showsResolvingSurface {
+                LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
                     .toolbar(.hidden, for: .navigationBar)
-                    .background(.skyAwareBackground)
-            }
-            .accessibilityIdentifier("summary-scroll")
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentOffset.y + geometry.contentInsets.top
-            } action: { _, newValue in
-                headerCondenseState.update(scrollOffset: newValue)
-            }
-            .background(Color(.skyAwareBackground).ignoresSafeArea())
-            .refreshable {
-                await refreshAction()
+            } else {
+                ScrollView {
+                    SummaryView(
+                        snap: snap,
+                        stormSetup: stormSetup,
+                        stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
+                        stormSetupPreferences: stormSetupPreferences,
+                        stormRisk: stormRisk,
+                        severeRisk: severeRisk,
+                        fireRisk: fireRisk,
+                        mesos: mesos,
+                        alerts: alerts,
+                        outlook: outlook,
+                        weather: visibleWeather,
+                        airQuality: airQuality,
+                        locationTimeZone: locationTimeZone,
+                        todayContentState: todayContentState,
+                        localAlertsDisplayState: localAlertsDisplayState,
+                        readinessState: readinessState,
+                        resolutionState: resolutionState,
+                        isRefreshInFlight: isRefreshInFlight,
+                        showsOfflineToken: showsOfflineToken,
+                        headerCondenseState: headerCondenseState,
+                        locationReliabilityRailState: locationReliabilityRailState,
+                        onOpenMapLayer: onOpenMapLayer,
+                        onOpenAlerts: onOpenAlerts,
+                        onOpenOutlooks: onOpenOutlooks
+                    )
+                        .toolbar(.hidden, for: .navigationBar)
+                        .background(.skyAwareBackground)
+                }
+                .accessibilityIdentifier("summary-scroll")
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.y + geometry.contentInsets.top
+                } action: { _, newValue in
+                    headerCondenseState.update(scrollOffset: newValue)
+                }
+                .background(Color(.skyAwareBackground).ignoresSafeArea())
+                .refreshable {
+                    await refreshAction()
+                }
             }
         }
         .background(Color(.skyAwareBackground).ignoresSafeArea())

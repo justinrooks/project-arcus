@@ -12,7 +12,6 @@ import Foundation
 import ArcusCore
 
 struct HomeView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dependencies) private var dependencies
     @Environment(LocationSession.self) private var locationSession
@@ -310,15 +309,12 @@ struct HomeView: View {
         let stormSetupProfileAnalysisResponse = stormSetupPreferences.effectiveDetailedIngredientsEnabled
             ? presentation.stormSetupCurrentResponse?.profileAnalysis
             : nil
-        let isEmptyResolvingSummary = todayContentState.showsResolvingSurface
-
         homeBody(
             presentation: presentation,
             readinessState: readinessState,
             todayContentState: todayContentState,
             localAlertsDisplayState: localAlertsDisplayState,
-            stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse,
-            isEmptyResolvingSummary: isEmptyResolvingSummary
+            stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse
         )
     }
 
@@ -328,8 +324,7 @@ struct HomeView: View {
         readinessState: SummaryReadinessState,
         todayContentState: TodayContentState,
         localAlertsDisplayState: LocalAlertsDisplayState,
-        stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?,
-        isEmptyResolvingSummary: Bool
+        stormSetupProfileAnalysisResponse: AnvilAnalyzeProfileResponse?
     ) -> some View {
         ZStack {
             Color(.skyAwareBackground).ignoresSafeArea()
@@ -364,18 +359,8 @@ struct HomeView: View {
             }
             .background(Color(.skyAwareBackground).ignoresSafeArea())
             .toolbarBackground(.visible, for: .tabBar)
-            .toolbarBackground(.skyAwareBackground.opacity(isEmptyResolvingSummary ? 0.68 : 1.0), for: .tabBar)
-            .animation(SkyAwareMotion.settle(reduceMotion), value: isEmptyResolvingSummary)
+            .toolbarBackground(.skyAwareBackground, for: .tabBar)
             .ignoresSafeArea(edges: .bottom)
-
-            if isEmptyResolvingSummary {
-                RoundedRectangle(cornerRadius: SkyAwareRadius.section, style: .continuous)
-                    .fill(Color.skyAwareBackground.opacity(0.28))
-                    .frame(height: 96)
-                    .ignoresSafeArea(edges: .bottom)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
         }
         .tint(.skyAwareAccent)
         .task {

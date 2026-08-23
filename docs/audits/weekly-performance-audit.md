@@ -296,6 +296,7 @@
 - Existing issues referenced: none
 - Out-of-scope repositories: arcus-signal; ArcusCore
 
+
 ## 2026-08-20
 - Date: 2026-08-20
 - Repository reviewed: project-arcus
@@ -381,4 +382,97 @@
 - GitHub issues updated: none
 - Existing issues referenced: closed issues #318, #319, #320, and #345 provide historical Today performance context
   but do not measure retained-projection scaling and are not duplicates.
+- Out-of-scope repositories: arcus-signal; ArcusCore
+
+## 2026-08-23
+- Date: 2026-08-23
+- Repository reviewed: project-arcus
+- Workflow reviewed: Layered Risk Map
+- Workflow selection reason: No production workflow changed after the 2026-08-20 Today audit, so selection fell back
+  to review age and impact. The Layered Risk Map was last reviewed on 2026-06-14, is the oldest un-reverified complex
+  product surface, and performs MapKit geometry construction on a frequently interactive path.
+- Previous workflow review: 2026-06-14
+- Commit window: `59893c99e4648105d07a98257075afa4ae020050..57b73e3a604c14c0d0e4d1791dc4e5464e81d47e`
+  (2026-06-14 through 2026-08-23), using the prior audit date because the earlier entry recorded no workflow-specific
+  commit marker. No production commits landed after 2026-08-20; the end commit only updates release documentation.
+- Relevant commits: `6e5327e8` (precompute warning legend data), `3bc13be1` (decompose map model and render planning),
+  `8bf056f7` (preserve polygon holes), and `126cd521` (refresh-architecture simplification touching Map composition).
+- Relevant changed files: `Sources/Features/Map/MapFeatureModel.swift`,
+  `Sources/Features/Map/MapRenderPlan.swift`, `Sources/Features/Map/MapScenePlanner.swift`,
+  `Sources/Features/Map/MapCanvasView.swift`, `Sources/Features/Map/MapCoordinator.swift`, and Map unit-test suites.
+- Files and symbols inspected:
+  - `docs/codebase/skyaware-app-summary.md` — Map product surface and G5 runtime ownership
+  - `Sources/Features/Map/MapScreenView.swift` — activation reload, layer selection, warning toggle, and content rendering
+  - `Sources/Features/Map/MapFeatureModel.swift` — `reload`, `performReload`, `applySelectedLayer`,
+    `setWarningGeometryVisible`, `scheduleWarmRemainingScenes`, and scene caches
+  - `Sources/Features/Map/MapScenePlanner.swift` and `Sources/Features/Map/MapRenderPlan.swift` — render-plan construction
+    and main-actor `MapSceneMaterializer.materialize`
+  - `Sources/Features/Map/MapCanvasView.swift` and `Sources/Features/Map/MapCoordinator.swift` — revision-gated overlay
+    synchronization and stable overlay reuse
+  - `Sources/Features/Map/MapPolygonMapper.swift`, `MapAccessibilitySupport.swift`, and `MapLegendView.swift` — geometry,
+    summary, and warning-legend derivation
+  - `Tests/UnitTests/MapFeatureModelTests.swift`, `MapFeatureModelSceneTests.swift`,
+    `MapFeatureModelWarningsTests.swift`, `MapPolygonMapperTests.swift`, and `MapLegendAccessibilityTests.swift`
+- Tests, metrics, traces, or profiling inspected: Current deterministic tests establish layer/warning composition,
+  overlay ordering and stable keys, polygon-hole preservation, revision stability, and accessibility output. No test,
+  benchmark, signpost capture, Time Profiler trace, Allocations capture, or physical-device measurement compares eager
+  inactive-scene warming with lazy materialization. No test run was required because this audit changed documentation
+  only and did not claim runtime validation.
+- Findings:
+  - Finding ID: `PERF-ARCUS-MAP-SCENE-WARMING`
+  - Fingerprint: `performance|project-arcus|layered-risk-map|map-feature-model|eager-inactive-scene-materialization`
+  - Repository: project-arcus
+  - Audit type: Weekly Workflow Performance Audit
+  - Workflow: Layered Risk Map
+  - Title: Inactive map-scene warming cost and layer-switch benefit are unmeasured
+  - Status: MEASUREMENT REQUIRED
+  - Severity: MEDIUM
+  - Confidence: MEDIUM
+  - Evidence class: MEASUREMENT GAP
+  - First observed: 2026-08-23
+  - Last verified: 2026-08-23
+  - Affected files and symbols: `Sources/Features/Map/MapFeatureModel.swift` — `performReload`,
+    `setWarningGeometryVisible`, and `scheduleWarmRemainingScenes`; `Sources/Features/Map/MapRenderPlan.swift` —
+    `MapSceneMaterializer.materialize`
+  - Execution path: A Map activation reload fetches five data domains concurrently, builds plans for every layer,
+    materializes the selected scene, then starts a main-actor task that materializes and caches every inactive layer.
+    Changing warning visibility clears all cached scenes, rematerializes the selected scene, and repeats the inactive
+    warming pass.
+  - Performance mechanism: Each inactive-scene materialization builds a polygon lookup, constructs overlay wrappers,
+    hashes every overlay revision, and derives warning legend items. The work is proportional to overlay volume and is
+    performed for four inactive layers on every successful reload or warning-toggle cache reset, but it may reduce
+    the first-switch latency enough to be worthwhile.
+  - User or operational impact: Eager warming can add main-thread CPU and retained overlay memory immediately after Map
+    refresh while the user is interacting with the selected layer. Removing it without evidence could instead move
+    that cost into a visible layer switch, so current impact and the correct tradeoff remain unknown.
+  - Measurement evidence: None. Code establishes the eager repeated work, while current tests establish behavioral
+    contracts only; no timing, allocation, hitch, or layer-switch baseline exists.
+  - Measurement gap: Compare current eager warming with an instrumentation-only lazy baseline using small, typical,
+    and high polygon-count fixtures in a physical-device Release build. Record selected-scene time, per-inactive-layer
+    warm time, overlay counts, peak and retained memory, hitches, and first layer-switch latency with warnings on/off.
+  - Minimal fix strategy: Do not select an optimization yet. If measurement shows material eager cost without a
+    meaningful switch benefit, prefer bounded or demand-driven warming while preserving scene identity, warning
+    composition, cancellation, and overlay ordering.
+  - Required validation: Signpost or benchmark scene materialization by layer and overlay count, capture Time Profiler
+    and Allocations during reload and first layer switches, and use the existing deterministic Map suites as the
+    behavioral regression gate.
+  - Related GitHub issue: Creation attempted on 2026-08-23 as `[Performance Measurement] Map: quantify inactive scene
+    warming`; the GitHub connector rejected the write because approval is disabled, so no issue exists.
+- Measurement gaps: `PERF-ARCUS-MAP-SCENE-WARMING` is the sole promoted measurement gap for this run.
+- Watchlist: `MapAccessibilitySummary.make` still walks rendered overlays when `MapScreenContent` recomputes, but the
+  prior duplicate warning-legend derivation is gone and no trace establishes meaningful summary cost. Promote only if
+  SwiftUI instrumentation shows repeated summary work on unrelated state changes with material overlay counts.
+- Resolved findings: The 2026-06-14 duplicate warning-legend/accessibility derivation mechanism remains resolved:
+  warning legend items are materialized once into `MapLayerScene`, and MapKit overlay updates are revision-gated with
+  stable key/signature reuse. No new quantitative resolution claim is made.
+- Top finding: `PERF-ARCUS-MAP-SCENE-WARMING` (MEASUREMENT REQUIRED, MEDIUM confidence).
+- Best next action: Measure eager inactive-scene warming against first layer-switch latency before changing the cache
+  or materialization policy.
+- Implementation recommended: no
+- Measurement recommended: yes
+- GitHub issues created: none; measurement issue creation failed because the GitHub connector required approval while
+  this automation's approval policy is `never`.
+- GitHub issues updated: none
+- Existing issues referenced: closed issues #137 and #297 document warning composition and preservation of warming,
+  but neither measures or owns the eager-warming performance tradeoff.
 - Out-of-scope repositories: arcus-signal; ArcusCore

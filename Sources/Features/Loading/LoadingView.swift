@@ -34,15 +34,11 @@ struct LoadingView: View {
                     .foregroundStyle(.secondary.opacity(0.95))
                     .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
-            .padding(.horizontal, 18)
+            .safeAreaPadding(.horizontal, 24)
+            .safeAreaPadding(.vertical, 20)
             .shadow(color: .black.opacity(colorScheme == .dark ? 0.20 : 0.08), radius: 6, x: 0, y: 3)
         }
-        .frame(maxWidth: .infinity, minHeight: 500)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 14)
-        .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.hero, style: .continuous))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .transition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: message)
         .task(id: reduceMotion) {
@@ -114,6 +110,7 @@ struct LoadingView: View {
                 endPoint: .center
             )
         }
+        .ignoresSafeArea()
         .overlay {
             LinearGradient(
                 colors: [
