@@ -723,6 +723,49 @@ struct HomeProjectionStoreTests {
         #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 370))
     }
 
+    @Test("disk-backed projections reopen every severe risk variant")
+    func updateSlowProducts_diskContainerReopensEverySevereRiskVariant() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let schema = Schema([HomeProjection.self])
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
+        let values: [SevereWeatherThreat] = [
+            .allClear,
+            .wind(probability: 0.20),
+            .hail(probability: 0.35),
+            .tornado(probability: 0.70)
+        ]
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let store = HomeProjectionStore(modelContainer: container)
+
+            for (index, value) in values.enumerated() {
+                let context = makeContext(h3Cell: Int64(123_456 + index))
+                _ = try await store.updateSlowProducts(
+                    stormRisk: .slight,
+                    severeRisk: value,
+                    fireRisk: .critical,
+                    for: context,
+                    loadedAt: Date(timeIntervalSince1970: TimeInterval(100 + index))
+                )
+            }
+        }
+
+        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
+
+        for (index, value) in values.enumerated() {
+            let context = makeContext(h3Cell: Int64(123_456 + index))
+            let persisted = try #require(await reopenedStore.projection(for: context))
+            #expect(persisted.severeRisk == value)
+        }
+    }
+
     @Test("updating hot alerts with empty arrays still creates a projection snapshot")
     func updateHotAlerts_emptySlicesStillCreateProjection() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
