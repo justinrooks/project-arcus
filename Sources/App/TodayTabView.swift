@@ -82,6 +82,7 @@ struct TodayTabView: View {
             if todayContentState.showsResolvingSurface {
                 LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
                     .toolbar(.hidden, for: .navigationBar)
+                    .accessibilityIdentifier("today-no-cache-resolving")
             } else {
                 ScrollView {
                     SummaryView(

@@ -73,6 +73,16 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testNoCacheResolvingFixturePresentsOutsideSummaryInLightAndDarkAppearance() throws {
+        let lightApp = launchNoCacheResolvingFixtureApp(colorScheme: "light")
+        assertNoCacheResolvingPresentation(in: lightApp, appearance: "light")
+        lightApp.terminate()
+
+        let darkApp = launchNoCacheResolvingFixtureApp(colorScheme: "dark")
+        assertNoCacheResolvingPresentation(in: darkApp, appearance: "dark")
+    }
+
+    @MainActor
     func testMapLayerPickerCyclesThroughEveryLayerAndIgnoresDuplicateSelection() throws {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
@@ -1070,6 +1080,14 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    private func attachScreenshot(_ app: XCUIApplication, named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    @MainActor
     private func launchHomeForLocationPermissionScenario(mode: String) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
@@ -1106,6 +1124,41 @@ final class SkyAwareUITests: XCTestCase {
 
         app.launch()
         return app
+    }
+
+    @MainActor
+    private func launchNoCacheResolvingFixtureApp(colorScheme: String?) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_NO_CACHE_RESOLVING"] = "1"
+
+        if let colorScheme {
+            app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = colorScheme
+        }
+
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func assertNoCacheResolvingPresentation(in app: XCUIApplication, appearance: String) {
+        let resolvingSurface = app.otherElements["today-no-cache-resolving"]
+        XCTAssertTrue(
+            resolvingSurface.waitForExistence(timeout: 10),
+            "Expected the no-cache resolving surface in \(appearance) appearance."
+        )
+        let alertsTab = app.tabBars.buttons["Alerts"]
+        XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected the tab bar to remain available while resolving.")
+        XCTAssertTrue(app.staticTexts["Getting your conditions ready"].exists, "Expected the resolving title.")
+        XCTAssertTrue(app.staticTexts["Finding your location…"].exists, "Expected the active resolving message.")
+        XCTAssertFalse(app.scrollViews["summary-scroll"].exists, "Summary content must remain absent while resolving.")
+        attachScreenshot(app, named: "today-no-cache-resolving-\(appearance)")
+
+        alertsTab.tap()
+        XCTAssertTrue(app.navigationBars["Active Alerts"].waitForExistence(timeout: 10), "Expected navigation away from Today.")
     }
 
     @MainActor
