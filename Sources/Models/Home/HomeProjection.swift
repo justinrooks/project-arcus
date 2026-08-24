@@ -172,7 +172,8 @@ final class HomeProjection {
     var weatherPayload: HomeProjectionWeatherPayload?
     var stormSetupCurrentResponseData: Data?
     var stormRisk: StormRiskLevel?
-    var severeRisk: SevereWeatherThreat?
+    var severeRiskKindRawValue: String?
+    var severeRiskProbability: Double?
     var fireRisk: FireRiskLevel?
     var convectiveRiskComparisonLocationKey: String?
     var convectiveRiskComparisonSourceKey: String?
@@ -208,7 +209,8 @@ final class HomeProjection {
         weatherPayload = nil
         stormSetupCurrentResponseData = nil
         stormRisk = nil
-        severeRisk = nil
+        severeRiskKindRawValue = nil
+        severeRiskProbability = nil
         fireRisk = nil
         convectiveRiskComparisonLocationKey = nil
         convectiveRiskComparisonSourceKey = nil
@@ -224,6 +226,27 @@ final class HomeProjection {
 }
 
 extension HomeProjection {
+    var severeRisk: SevereWeatherThreat? {
+        get {
+            guard let severeRiskKindRawValue else { return nil }
+            return SevereWeatherThreatStorage.decode(
+                kindRawValue: severeRiskKindRawValue,
+                probability: severeRiskProbability
+            )
+        }
+        set {
+            guard let newValue else {
+                severeRiskKindRawValue = nil
+                severeRiskProbability = nil
+                return
+            }
+
+            let storage = SevereWeatherThreatStorage.encode(newValue)
+            severeRiskKindRawValue = storage.kindRawValue
+            severeRiskProbability = storage.probability
+        }
+    }
+
     static func projectionKey(for context: LocationContext) -> String {
         let components = [
             "h3:\(context.h3Cell)",

@@ -12,6 +12,110 @@ enum SevereWeatherThreat: Comparable, Codable {
     case wind(probability: Double)
     case hail(probability: Double)
     case tornado(probability: Double)
+
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case probability
+    }
+
+    private enum Kind: String {
+        case allClear
+        case wind
+        case hail
+        case tornado
+    }
+
+    private enum LegacyCodingKeys: String, CodingKey {
+        case allClear
+        case wind
+        case hail
+        case tornado
+    }
+
+    private enum LegacyProbabilityCodingKeys: String, CodingKey {
+        case probability
+    }
+
+    /// SwiftData requires the enum's single active case at the top level, but rejects nested Codable discriminators.
+    /// Match the synthesized enum shape while writing only primitive associated values.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: LegacyCodingKeys.self)
+
+        switch self {
+        case .allClear:
+            _ = container.nestedContainer(
+                keyedBy: LegacyProbabilityCodingKeys.self,
+                forKey: .allClear
+            )
+        case .wind(let probability):
+            var values = container.nestedContainer(
+                keyedBy: LegacyProbabilityCodingKeys.self,
+                forKey: .wind
+            )
+            try values.encode(probability, forKey: .probability)
+        case .hail(let probability):
+            var values = container.nestedContainer(
+                keyedBy: LegacyProbabilityCodingKeys.self,
+                forKey: .hail
+            )
+            try values.encode(probability, forKey: .probability)
+        case .tornado(let probability):
+            var values = container.nestedContainer(
+                keyedBy: LegacyProbabilityCodingKeys.self,
+                forKey: .tornado
+            )
+            try values.encode(probability, forKey: .probability)
+        }
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.kind) {
+            let rawKind = try container.decode(String.self, forKey: .kind)
+            guard let kind = Kind(rawValue: rawKind) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .kind,
+                    in: container,
+                    debugDescription: "Unknown severe weather threat kind: \(rawKind)."
+                )
+            }
+
+            switch kind {
+            case .allClear:
+                self = .allClear
+            case .wind:
+                self = .wind(probability: try container.decode(Double.self, forKey: .probability))
+            case .hail:
+                self = .hail(probability: try container.decode(Double.self, forKey: .probability))
+            case .tornado:
+                self = .tornado(probability: try container.decode(Double.self, forKey: .probability))
+            }
+            return
+        }
+
+        let legacyContainer = try decoder.container(keyedBy: LegacyCodingKeys.self)
+        if legacyContainer.contains(.allClear) {
+            self = .allClear
+        } else if legacyContainer.contains(.wind) {
+            self = .wind(probability: try Self.legacyProbability(for: .wind, in: legacyContainer))
+        } else if legacyContainer.contains(.hail) {
+            self = .hail(probability: try Self.legacyProbability(for: .hail, in: legacyContainer))
+        } else if legacyContainer.contains(.tornado) {
+            self = .tornado(probability: try Self.legacyProbability(for: .tornado, in: legacyContainer))
+        } else {
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "Unknown severe weather threat encoding.")
+            )
+        }
+    }
+
+    private static func legacyProbability(
+        for key: LegacyCodingKeys,
+        in container: KeyedDecodingContainer<LegacyCodingKeys>
+    ) throws -> Double {
+        let values = try container.nestedContainer(keyedBy: LegacyProbabilityCodingKeys.self, forKey: key)
+        return try values.decode(Double.self, forKey: .probability)
+    }
     
     var probability: Double {
         switch self {

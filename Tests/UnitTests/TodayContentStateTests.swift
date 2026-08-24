@@ -196,14 +196,6 @@ struct TodaySurfaceStateFlowTests {
         #expect(state.showsResolvingSurface)
         #expect(state.showsCalmUpdatingCue == false)
         #expect(state.allowsSectionResolvingTreatment)
-        #expect(
-            SummaryView.showsEmptyResolving(
-                readinessState: .loadingLocalData,
-                resolutionState: SummaryResolutionState(),
-                hasMeaningfulContent: false,
-                isLocationUnavailable: false
-            )
-        )
     }
 
     @Test("valid cached launch stays on content and avoids resolving theater")
@@ -220,14 +212,6 @@ struct TodaySurfaceStateFlowTests {
         #expect(state.showsResolvingSurface == false)
         #expect(state.showsCalmUpdatingCue == false)
         #expect(state.suppressesRoutineRefreshMotion == false)
-        #expect(
-            SummaryView.showsEmptyResolving(
-                readinessState: .ready,
-                resolutionState: SummaryResolutionState(),
-                hasMeaningfulContent: true,
-                isLocationUnavailable: false
-            ) == false
-        )
     }
 
     @Test("cached refresh keeps the page calm and suppresses full-content transitions")
@@ -237,14 +221,6 @@ struct TodaySurfaceStateFlowTests {
         #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
         #expect(TodayContentState.cachedRefreshing.showsResolvingSurface == false)
         #expect(TodayContentState.staleRefreshing.suppressesRoutineRefreshMotion == false)
-        #expect(
-            SummaryView.showsEmptyResolving(
-                readinessState: .ready,
-                resolutionState: SummaryResolutionState(),
-                hasMeaningfulContent: true,
-                isLocationUnavailable: false
-            ) == false
-        )
     }
 
     @Test("stale cache keeps useful content visible during offline refresh")

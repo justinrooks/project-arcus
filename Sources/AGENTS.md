@@ -30,11 +30,32 @@
 - Avoid live SPC, NWS, WeatherKit, or other network-backed dependencies in tests.
 - When changing user-facing flows, favor focused tests on behavior rather than implementation details.
 - Keep accessibility identifiers stable when UI tests depend on them.
+- Create tests and testing infrastructure that is compatible and efficient with xcode cloud.
 
 ## Local Notes and Gotchas
 - Background refresh is coordinated centrally; do not reintroduce competing orchestration paths in features or views.
 - Location-driven behavior can change based on authorization state, accuracy, and app lifecycle.
 - Changes that affect notifications, background work, or location should call out assumptions and validation gaps clearly.
+
+## SwiftData Persistence Guardrails
+- Do not persist associated-value enums or arbitrary custom `Codable` domain types
+  directly in an `@Model` without disk-backed SwiftData compatibility evidence.
+- Prefer primitive persisted fields with a computed domain-model interface when the
+  domain type has associated values, custom encoding, or evolving cases.
+- JSONEncoder and JSONDecoder tests do not validate SwiftData compatibility.
+- Any change to an `@Model`, a persisted `Codable` type, or its custom encoding must
+  include real `ModelContainer` tests covering:
+  - insert and save;
+  - fetch and value reconstruction;
+  - store close and reopen;
+  - every enum case and relevant nil/default state;
+  - compatibility with the previous production schema when the type already shipped.
+- In-memory-only SwiftData tests are insufficient for schema, encoding, migration, or
+  reopen compatibility.
+- Schema changes require an explicit migration strategy or a documented, narrowly scoped
+  cache-invalidation decision. Never delete a shared store as a routine workaround.
+- Before accepting a persistence change, run its focused test suite repeatedly and the
+  full unit lane at least once, then inspect the resulting `.xcresult` and crash artifacts.
 
 ## Instruction Precedence
 - This file supplements the repo-level `../AGENTS.md` with the more specific rules for code under `Sources/`.

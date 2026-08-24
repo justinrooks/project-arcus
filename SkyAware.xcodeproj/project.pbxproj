@@ -66,6 +66,7 @@
 		D03E61212EB2A57400611081 /* Exceptions for "Tests" folder in "SkyAware" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				SkyAware_UI_Smoke.xctestplan,
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/AirQualityHTTPClientTests.swift,
@@ -94,7 +95,6 @@
 				UnitTests/LocationContextResolverTests.swift,
 				UnitTests/LocationManagerTests.swift,
 				UnitTests/LocationProviderTests.swift,
-				UnitTests/UserDefaultsLocationUploadQueueStoreTests.swift,
 				UnitTests/LogViewerCancellationTests.swift,
 				UnitTests/MapDataFreshnessRepoTests.swift,
 				UnitTests/MapFeatureModelSceneTests.swift,
@@ -138,6 +138,7 @@
 				UnitTests/SummaryViewLocalAlertsStateTests.swift,
 				UnitTests/TestStore.swift,
 				UnitTests/TodayContentStateTests.swift,
+				UnitTests/UserDefaultsLocationUploadQueueStoreTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,
@@ -146,6 +147,14 @@
 				UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift,
 				UnitTests/WidgetSnapshotStoreTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
+			);
+			target = D095EFA22E16F5690074F867 /* SkyAware */;
+		};
+		D2A000012F60000100AA1001 /* Exceptions for "tools" folder in "SkyAware" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ci/README.md,
+				ci/run_test_lane.sh,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};
@@ -178,7 +187,6 @@
 				UnitTests/LocationContextResolverTests.swift,
 				UnitTests/LocationManagerTests.swift,
 				UnitTests/LocationProviderTests.swift,
-				UnitTests/UserDefaultsLocationUploadQueueStoreTests.swift,
 				UnitTests/LogViewerCancellationTests.swift,
 				UnitTests/MapDataFreshnessRepoTests.swift,
 				UnitTests/MapFeatureModelSceneTests.swift,
@@ -221,6 +229,7 @@
 				UnitTests/SummaryViewLocalAlertsStateTests.swift,
 				UnitTests/TestStore.swift,
 				UnitTests/TodayContentStateTests.swift,
+				UnitTests/UserDefaultsLocationUploadQueueStoreTests.swift,
 				UnitTests/WatchRowDTOTests.swift,
 				UnitTests/WidgetFreshnessFormatterTests.swift,
 				UnitTests/WidgetGalleryMetadataTests.swift,
@@ -285,6 +294,9 @@
 		};
 		D048DFB42F21395F0037C3D4 /* tools */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D2A000012F60000100AA1001 /* Exceptions for "tools" folder in "SkyAware" target */,
+			);
 			path = tools;
 			sourceTree = "<group>";
 		};

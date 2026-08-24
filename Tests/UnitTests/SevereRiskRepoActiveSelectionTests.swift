@@ -274,6 +274,85 @@ struct SevereRiskRepoActiveSelectionTests {
         let active = try await repo.active(asOf: asOf, for: point)
         #expect(active == .wind(probability: 0.15))
     }
+
+    @Test("Severe risks save and reopen every threat variant")
+    @MainActor
+    func severeRisks_saveAndReopenEveryThreatVariant() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SevereRiskRepoActiveSelectionTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let schema = Schema([SevereRisk.self])
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
+        let initialValues: [(ThreatType, ThreatProbability, SevereWeatherThreat)] = [
+            (.unknown, .percent(0), .allClear),
+            (.wind, .percent(0.20), .wind(probability: 0.20)),
+            (.hail, .percent(0.35), .hail(probability: 0.35)),
+            (.tornado, .significant(10), .tornado(probability: 0.10))
+        ]
+        let updatedValues: [(ThreatProbability, SevereWeatherThreat)] = [
+            (.percent(0), .allClear),
+            (.significant(15), .wind(probability: 0.15)),
+            (.percent(0.25), .hail(probability: 0.25)),
+            (.percent(0.05), .tornado(probability: 0.05))
+        ]
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let context = ModelContext(container)
+
+            for (index, value) in initialValues.enumerated() {
+                context.insert(
+                    SevereRisk(
+                        type: value.0,
+                        probability: value.1,
+                        threatLevel: value.2,
+                        issued: Date(timeIntervalSince1970: TimeInterval(100 + index)),
+                        valid: Date(timeIntervalSince1970: 100),
+                        expires: Date(timeIntervalSince1970: 200),
+                        dn: index,
+                        stroke: nil,
+                        fill: nil,
+                        polygons: [],
+                        label: value.0.rawValue
+                    )
+                )
+            }
+            try context.save()
+
+            let saved = try context.fetch(FetchDescriptor<SevereRisk>())
+            #expect(saved.count == initialValues.count)
+            for value in initialValues {
+                #expect(saved.contains { $0.threatLevel == value.2 })
+                #expect(saved.contains { $0.probability == value.1 })
+            }
+        }
+
+        do {
+            let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+            let context = ModelContext(reopenedContainer)
+            let descriptor = FetchDescriptor<SevereRisk>(sortBy: [SortDescriptor(\.issued)])
+            let reopened = try context.fetch(descriptor)
+            #expect(reopened.count == initialValues.count)
+
+            for (risk, value) in zip(reopened, updatedValues) {
+                risk.probability = value.0
+                risk.threatLevel = value.1
+            }
+            try context.save()
+        }
+
+        let updatedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let descriptor = FetchDescriptor<SevereRisk>(sortBy: [SortDescriptor(\.issued)])
+        let updated = try ModelContext(updatedContainer).fetch(descriptor)
+        #expect(updated.count == updatedValues.count)
+        for (risk, value) in zip(updated, updatedValues) {
+            #expect(risk.probability == value.0)
+            #expect(risk.threatLevel == value.1)
+        }
+    }
 }
 
 private func makeFeatureCollection(features: [GeoJSONFeature]) -> GeoJSONFeatureCollection {

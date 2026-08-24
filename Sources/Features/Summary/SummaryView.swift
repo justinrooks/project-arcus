@@ -251,25 +251,6 @@ struct SummaryView: View {
         localAlertsDisplayState.presentationState
     }
 
-    private var hasMeaningfulContent: Bool {
-        snap != nil ||
-        weather != nil ||
-        stormRisk != nil ||
-        severeRisk != nil ||
-        fireRisk != nil ||
-        outlook != nil ||
-        hasActiveAlerts
-    }
-
-    private var showsEmptyResolving: Bool {
-        Self.showsEmptyResolving(
-            readinessState: readinessState,
-            resolutionState: resolutionState,
-            hasMeaningfulContent: hasMeaningfulContent,
-            isLocationUnavailable: isLocationUnavailable
-        )
-    }
-
     private var severeMapLayer: MapLayer {
         switch severeRisk ?? .allClear {
         case .allClear:
@@ -436,19 +417,14 @@ struct SummaryView: View {
         let _ = recordPerformanceRenderIfNeeded()
         let now = Date()
         VStack(spacing: 18) {
-            if todayContentState.showsResolvingSurface {
-                LoadingView(message: resolutionState.primaryActiveMessage ?? readinessState.statusText)
-            } else {
-                summaryContent(now: now)
-                    .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
-            }
+            summaryContent(now: now)
+                .transition(.summaryContentEntrance(reduceMotion: reduceMotion))
 
             Spacer(minLength: 14)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
         .padding(.bottom, 20)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: todayContentState.showsResolvingSurface)
     }
 
     private func recordPerformanceRenderIfNeeded() {
@@ -721,18 +697,6 @@ struct SummaryView: View {
             stormSetupSlot: stormSetupSlot,
             hasLocationReliabilityRail: hasLocationReliabilityRail
         )
-    }
-
-    static func showsEmptyResolving(
-        readinessState: SummaryReadinessState,
-        resolutionState: SummaryResolutionState,
-        hasMeaningfulContent: Bool,
-        isLocationUnavailable: Bool
-    ) -> Bool {
-        isLocationUnavailable == false &&
-        hasMeaningfulContent == false &&
-        ((readinessState == .loadingLocation || readinessState == .resolvingLocalContext || readinessState == .loadingLocalData)
-            || resolutionState.isRefreshing)
     }
 
     static func showsRiskResolvingPlaceholder(

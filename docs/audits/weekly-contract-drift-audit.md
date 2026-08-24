@@ -580,3 +580,59 @@
 - Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 3 entries, including prior unresolved items without duplicating them.
 - No contract fix recommended. Implementation is not recommended from this run.
 - Updated only this project-arcus audit document; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
+
+## 2026-08-24
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- project-arcus / SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- The configured audit document has no reliable 2026-08-17 marker, so the skill's seven-day fallback was used: 2026-08-17 09:01 MDT through 2026-08-24.
+- project-arcus: `56fa92a4..c976aa59` on the current `fixGettingReadyScreen` checkout (four commits, 2026-08-20 through 2026-08-23). `57b73e3a` updated release/audit documents; `eae40a51` and `fb5224c9` changed the Today no-cache resolving UI and its deterministic UI-test path; `c976aa59` introduced explicit backward-decodable persistence encoding for `SevereWeatherThreat`. `origin/main` is `57b73e3a`.
+- arcus-signal: no commits in the fallback window; current `main`/`origin/main` is `563bdb0d` (2026-08-13). Current-state fallback inspection covered location-presence reconciliation and H3/UGC targeting, alert lifecycle/APNs delivery, and shared package contracts.
+- ArcusCore: no commits in the fallback window; current `main`/`origin/main` remains `977945d8` (2026-07-12). Current-state fallback inspection covered location snapshots/source values, alert/APNs payloads, and shared Storm Setup response models.
+
+### Contract surfaces inspected
+- App-local persisted severe-risk state: `SevereWeatherThreat`'s new `kind`/`probability` wire representation, legacy synthesized-enum decoding, `HomeProjectionStore`, and focused Codable/SwiftData round-trip tests.
+- Device presence and location-driven alert reconciliation: SkyAware `PersistedLocationContext` and `LocationSnapshotPusher.makeLocationPayload`; ArcusCore `LocationSnapshotPushPayload` and `LocationUploadSource`; arcus-signal `DeviceController`, `DevicePresenceModel`, `PresenceReconciliationTrigger`, `PresenceReconciliationOutboxStore`, `ReconcileInstallationAlertsJob`, `NotificationCandidateStore`, and focused partial/stale/movement tests.
+- Alert lifecycle and APNs: arcus-signal `ArcusEvent.lifecycleState`, `AlertSeriesRow`, `NotificationSendJob`, ISO-8601 APNs encoders, and active-alert matching; ArcusCore `DeviceAlertPayload` and `HotAlertAPNsPayload`; SkyAware `Watch`, `AlertRepo`, `StormSetupAlertEligibility`, and `RemoteHotAlertHandler`.
+- Shared model/version boundaries: both app and server package resolutions remain pinned to ArcusCore `977945d8`; current `StormSetupCurrentResponse`, location, and alert payload shapes were checked for required/optional-field drift.
+
+### Highest-risk areas
+- The `SevereWeatherThreat` persistence encoding changed in the only contract-relevant commit, so backward readability of already-persisted user state was the highest-risk changed surface.
+- Location-driven reconciliation was selected because a fresh location can now immediately enqueue alerts and must preserve capture time, H3 versus UGC meaning, subscription state, and installation-scoped dedupe.
+- Alert lifecycle/APNs remained high risk because divergent `expires`/`ends` semantics or identifier/date encoding can leave severe-weather state stale or break notification reconciliation.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| No new confirmed contract drift | project-arcus, arcus-signal, ArcusCore | Persisted severe-risk state; location presence/reconciliation; alert lifecycle/APNs; shared DTO pins | App persistence; app request -> shared DTO -> server persistence/targeting; server payload/APNs -> shared DTO -> app decoder | project-arcus commit `c976aa59` writes one explicit `SevereWeatherThreat.kind` plus optional `probability` and retains decoding for all four prior synthesized cases; focused tests cover the new JSON representation, legacy JSON fixtures, and current in-memory persistence. SkyAware's upload path preserves original `capturedAt` and emits a concrete res8 H3 cell from `PersistedLocationContext`; ArcusCore keeps capture time required and targeting fields optional; arcus-signal rejects older captures, derives reconciliation from the persisted fingerprint, filters stale presence, constrains reconciliation sends to one installation, and tests H3/UGC, partial, stale-to-usable, inactive, expired, ended, retry, and idempotency paths. arcus-signal and SkyAware both use ArcusCore `977945d8`; APNs dates remain ISO-8601 end to end. | No new runtime decoding failure, persistence mapping mismatch, stale-location promotion, targeting identity change, notification contract break, or app/server DTO disagreement was established. | — | No contract fix recommended. | Retain the committed persistence compatibility tests and the existing location-reconciliation, shared DTO, lifecycle, APNs encoding/decoding, and installation-scoped delivery tests. |
+
+### Top recommended fix
+- No new contract fix recommended.
+- The previously recorded 2026-07-27 earliest-terminal-date mismatch remains the standing priority: SkyAware still filters local active alerts and Storm Setup eligibility by `ends`, while arcus-signal treats either `expires` or `ends` as terminal. It is not counted again because this window adds no new lifecycle change, severity, or materially better minimal fix.
+- Standing expected files: project-arcus `Sources/Models/Watches/Watch.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, and focused lifecycle tests.
+- Standing estimated churn: approximately 30-60 lines.
+- Standing regression risk: Low to Medium; the wire and persistence schemas remain unchanged, but earlier local removal is user-visible.
+
+### Watchlist
+- `c976aa59` proves legacy `SevereWeatherThreat` decoding with JSON fixtures and proves current persistence round trips, but it does not load an archived pre-change on-disk SwiftData store. Promote only if a pre-change store fixture or migration test fails to decode existing `HomeProjection` rows; this is app-local persistence compatibility, not confirmed cross-repo drift.
+- The prior earliest-terminal-date mismatch, stale location-source documentation, and `StormSetupRulesVersion.current == .tornadoIngredientV1` remain recorded in their original entries and are not duplicated as new findings.
+
+### Files inspected
+- project-arcus: `Sources/Models/Severe/SevereWeatherThreat.swift`, `Sources/Models/Home/HomeProjection.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Sources/Infrastructure/Location/LocationUploadPersistenceModels.swift`, `LocationSnapshotPusher.swift`, `Sources/Models/Watches/Watch.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, `Sources/App/RemoteHotAlertHandler.swift`, package resolution, and focused persistence/location/alert/APNs tests.
+- arcus-signal: `Sources/App/Controllers/DeviceController.swift`, `Sources/App/Infrastructure/Notifications/PresenceReconciliationTrigger.swift`, `Sources/App/Jobs/ReconcileInstallationAlertsJob.swift`, `NotificationSendJob.swift`, `Sources/App/Models/Notification/PresenceReconciliationOutboxStore.swift`, `NotificationCandidateStore.swift`, `Sources/App/Models/NWS/ArcusEvent.swift`, `Sources/App/Models/API/AlertSeriesRow.swift`, `Sources/App/configure.swift`, package resolution, and focused device/reconciliation/active-alert/APNs tests.
+- ArcusCore: `Sources/ArcusCore/LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, `DeviceAlertPayload.swift`, `HotAlertAPNsPayload.swift`, `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, and focused shared-contract tests.
+
+### Out-of-scope and recommendation status
+- No repositories outside project-arcus, arcus-signal, and ArcusCore were inspected. Existing uncommitted work in the three repositories was preserved and was not treated as committed-window evidence.
+- Archived pre-change SwiftData stores, deployed database/Redis state, live API/APNs payloads, upstream NWS samples, and external consumers were unavailable. No confirmed drift claim relies on those boundaries.
+- Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 2 entries, including prior unresolved items without duplication.
+- No contract fix recommended from this run. The prior earliest-terminal-date implementation recommendation remains standing.
+- Updated only this project-arcus audit document; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.

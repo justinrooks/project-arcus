@@ -36,6 +36,10 @@ struct SkyAwareApp: App {
     private var isUITestStaticHome: Bool {
         ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
     }
+
+    private var isUITestNoCacheResolving: Bool {
+        isUITestStaticHome && ProcessInfo.processInfo.environment["UI_TESTS_NO_CACHE_RESOLVING"] == "1"
+    }
     
     // App Storage
     @AppStorage(
@@ -207,7 +211,9 @@ private extension SkyAwareApp {
 
     @ViewBuilder
     var currentHomeView: some View {
-        if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1" {
+        if isUITestNoCacheResolving {
+            HomeView()
+        } else if isUITestStaticHome {
             if let fixture = Self.uiTestStormSetupFixture {
                 HomeView(
                     initialStormSetup: fixture.stormSetup,

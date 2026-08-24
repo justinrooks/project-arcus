@@ -61,6 +61,38 @@ struct SevereWeatherThreatTests {
         #expect(SevereWeatherThreat.hail(probability: 0.1).with(probability: 0.9) == .hail(probability: 0.9))
         #expect(SevereWeatherThreat.tornado(probability: 0.1).with(probability: 0.9) == .tornado(probability: 0.9))
     }
+
+    @Test("Codable encoding uses one active case without null values")
+    func codableEncoding_usesExplicitCaseWithoutNullValues() throws {
+        let values: [SevereWeatherThreat] = [
+            .allClear,
+            .wind(probability: 0.20),
+            .hail(probability: 0.35),
+            .tornado(probability: 0.70)
+        ]
+
+        for value in values {
+            let data = try JSONEncoder().encode(value)
+            let payload = try #require(String(data: data, encoding: .utf8))
+
+            #expect(payload.contains("null") == false)
+            #expect(try JSONDecoder().decode(SevereWeatherThreat.self, from: data) == value)
+        }
+    }
+
+    @Test("Codable decoding accepts the prior synthesized enum representation")
+    func codableDecoding_acceptsLegacyRepresentation() throws {
+        let payloads: [(String, SevereWeatherThreat)] = [
+            ("{\"allClear\":{}}", .allClear),
+            ("{\"wind\":{\"probability\":0.20}}", .wind(probability: 0.20)),
+            ("{\"hail\":{\"probability\":0.35}}", .hail(probability: 0.35)),
+            ("{\"tornado\":{\"probability\":0.70}}", .tornado(probability: 0.70))
+        ]
+
+        for (payload, expected) in payloads {
+            #expect(try JSONDecoder().decode(SevereWeatherThreat.self, from: Data(payload.utf8)) == expected)
+        }
+    }
 }
 
 @Suite("LocationReliability")
