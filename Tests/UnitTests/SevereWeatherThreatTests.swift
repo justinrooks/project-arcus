@@ -62,7 +62,7 @@ struct SevereWeatherThreatTests {
         #expect(SevereWeatherThreat.tornado(probability: 0.1).with(probability: 0.9) == .tornado(probability: 0.9))
     }
 
-    @Test("Codable encoding uses one explicit case without null values")
+    @Test("Codable encoding uses one active case without null values")
     func codableEncoding_usesExplicitCaseWithoutNullValues() throws {
         let values: [SevereWeatherThreat] = [
             .allClear,
@@ -75,7 +75,6 @@ struct SevereWeatherThreatTests {
             let data = try JSONEncoder().encode(value)
             let payload = try #require(String(data: data, encoding: .utf8))
 
-            #expect(payload.contains("\"kind\""))
             #expect(payload.contains("null") == false)
             #expect(try JSONDecoder().decode(SevereWeatherThreat.self, from: data) == value)
         }

@@ -723,8 +723,8 @@ struct HomeProjectionStoreTests {
         #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 370))
     }
 
-    @Test("disk-backed projections reopen every severe risk variant")
-    func updateSlowProducts_diskContainerReopensEverySevereRiskVariant() async throws {
+    @Test("projections save and reopen every severe risk variant")
+    func updateSlowProducts_savesAndReopensEverySevereRiskVariant() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -754,6 +754,12 @@ struct HomeProjectionStoreTests {
                     loadedAt: Date(timeIntervalSince1970: TimeInterval(100 + index))
                 )
             }
+
+            for (index, value) in values.enumerated() {
+                let context = makeContext(h3Cell: Int64(123_456 + index))
+                let persisted = try #require(await store.projection(for: context))
+                #expect(persisted.severeRisk == value)
+            }
         }
 
         let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
@@ -763,6 +769,49 @@ struct HomeProjectionStoreTests {
             let context = makeContext(h3Cell: Int64(123_456 + index))
             let persisted = try #require(await reopenedStore.projection(for: context))
             #expect(persisted.severeRisk == value)
+        }
+    }
+
+    @Test("pre-change on-disk projections reopen every severe risk variant")
+    func projection_preChangeStoreReopensEverySevereRiskVariant() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let values: [(HomeProjectionSchemaV1.SevereWeatherThreat, SevereWeatherThreat)] = [
+            (.allClear, .allClear),
+            (.wind(probability: 0.20), .wind(probability: 0.20)),
+            (.hail(probability: 0.35), .hail(probability: 0.35)),
+            (.tornado(probability: 0.70), .tornado(probability: 0.70))
+        ]
+
+        do {
+            let legacySchema = Schema(versionedSchema: HomeProjectionSchemaV1.self)
+            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
+            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
+            let legacyContext = ModelContext(legacyContainer)
+
+            for (index, value) in values.enumerated() {
+                let context = makeContext(h3Cell: Int64(223_456 + index))
+                let projection = HomeProjectionSchemaV1.HomeProjection(context: context)
+                projection.severeRisk = value.0
+                legacyContext.insert(projection)
+            }
+            try legacyContext.save()
+        }
+
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
+        let store = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+
+        for (index, value) in values.enumerated() {
+            let context = makeContext(h3Cell: Int64(223_456 + index))
+            let persisted = try #require(await store.projection(for: context))
+            #expect(persisted.severeRisk == value.1)
         }
     }
 
@@ -1355,6 +1404,13 @@ enum HomeProjectionSchemaV1: VersionedSchema {
 
     static var models: [any PersistentModel.Type] { [HomeProjection.self] }
 
+    enum SevereWeatherThreat: Codable {
+        case allClear
+        case wind(probability: Double)
+        case hail(probability: Double)
+        case tornado(probability: Double)
+    }
+
     @Model
     final class HomeProjection {
         var id: UUID
@@ -1377,7 +1433,7 @@ enum HomeProjectionSchemaV1: VersionedSchema {
         var weatherPayload: HomeProjectionWeatherPayload?
         var stormSetupCurrentResponse: StormSetupCurrentResponse?
         var stormRisk: StormRiskLevel?
-        var severeRisk: SevereWeatherThreat?
+        var severeRisk: HomeProjectionSchemaV1.SevereWeatherThreat?
         var fireRisk: FireRiskLevel?
         var activeAlerts: [AlertDTO]
         var activeMesos: [MdDTO]
