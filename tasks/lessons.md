@@ -107,6 +107,12 @@
 
 ## 2026-08-24
 
+- Do not infer an Xcode Cloud workflow's selected Xcode, runtime, or destination matrix from local Xcode evidence.
+  Inspect the actual configured workflow or ask the owner before documenting or changing its topology; external
+  workflow state can conflict with an issue's proposed target configuration.
+- When an issue's proposed CI topology conflicts with the established Xcode Cloud job, preserve the job unless the
+  user explicitly authorizes changing it. Make result validation matrix-aware instead of forcing a local-canonical
+  topology onto Cloud.
 - Do not construct legacy and current SwiftData containers with same-named versioned `@Model` types inside a unit
   process that is also creating current-schema containers in parallel. SwiftData's global entity registration can
   cross-wire the model metadata nondeterministically. Validate migration from a frozen disk fixture or a genuinely

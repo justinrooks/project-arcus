@@ -36,6 +36,9 @@
          <TestPlanReference
             reference = "container:Tests/SkyAware_All_Tests.xctestplan">
          </TestPlanReference>
+         <TestPlanReference
+            reference = "container:Tests/SkyAware_UI_Smoke.xctestplan">
+         </TestPlanReference>
       </TestPlans>
       <Testables>
          <TestableReference
