@@ -739,6 +739,12 @@ struct HomeProjectionStoreTests {
             .hail(probability: 0.35),
             .tornado(probability: 0.70)
         ]
+        let updatedValues: [SevereWeatherThreat] = [
+            .wind(probability: 0.15),
+            .hail(probability: 0.25),
+            .tornado(probability: 0.05),
+            .allClear
+        ]
 
         do {
             let container = try ModelContainer(for: schema, configurations: configuration)
@@ -762,56 +768,31 @@ struct HomeProjectionStoreTests {
             }
         }
 
-        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
-        let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
-
-        for (index, value) in values.enumerated() {
-            let context = makeContext(h3Cell: Int64(123_456 + index))
-            let persisted = try #require(await reopenedStore.projection(for: context))
-            #expect(persisted.severeRisk == value)
-        }
-    }
-
-    @Test("pre-change on-disk projections reopen every severe risk variant")
-    func projection_preChangeStoreReopensEverySevereRiskVariant() async throws {
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("HomeProjectionStoreTests")
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-
-        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
-        let values: [(HomeProjectionSchemaV1.SevereWeatherThreat, SevereWeatherThreat)] = [
-            (.allClear, .allClear),
-            (.wind(probability: 0.20), .wind(probability: 0.20)),
-            (.hail(probability: 0.35), .hail(probability: 0.35)),
-            (.tornado(probability: 0.70), .tornado(probability: 0.70))
-        ]
-
         do {
-            let legacySchema = Schema(versionedSchema: HomeProjectionSchemaV1.self)
-            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
-            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
-            let legacyContext = ModelContext(legacyContainer)
+            let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+            let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
 
-            for (index, value) in values.enumerated() {
-                let context = makeContext(h3Cell: Int64(223_456 + index))
-                let projection = HomeProjectionSchemaV1.HomeProjection(context: context)
-                projection.severeRisk = value.0
-                legacyContext.insert(projection)
+            for (index, value) in updatedValues.enumerated() {
+                let context = makeContext(h3Cell: Int64(123_456 + index))
+                let persisted = try #require(await reopenedStore.projection(for: context))
+                #expect(persisted.severeRisk == values[index])
+                _ = try await reopenedStore.updateSlowProducts(
+                    stormRisk: persisted.stormRisk,
+                    severeRisk: value,
+                    fireRisk: persisted.fireRisk,
+                    for: context,
+                    loadedAt: Date(timeIntervalSince1970: TimeInterval(200 + index))
+                )
             }
-            try legacyContext.save()
         }
 
-        let schema = Schema([HomeProjection.self])
-        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
-        let store = HomeProjectionStore(
-            modelContainer: try ModelContainer(for: schema, configurations: configuration)
-        )
+        let updatedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let updatedStore = HomeProjectionStore(modelContainer: updatedContainer)
 
-        for (index, value) in values.enumerated() {
-            let context = makeContext(h3Cell: Int64(223_456 + index))
-            let persisted = try #require(await store.projection(for: context))
-            #expect(persisted.severeRisk == value.1)
+        for (index, value) in updatedValues.enumerated() {
+            let context = makeContext(h3Cell: Int64(123_456 + index))
+            let persisted = try #require(await updatedStore.projection(for: context))
+            #expect(persisted.severeRisk == value)
         }
     }
 

@@ -286,18 +286,24 @@ struct SevereRiskRepoActiveSelectionTests {
         let schema = Schema([SevereRisk.self])
         let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
         let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
-        let values: [(ThreatType, ThreatProbability, SevereWeatherThreat)] = [
+        let initialValues: [(ThreatType, ThreatProbability, SevereWeatherThreat)] = [
             (.unknown, .percent(0), .allClear),
             (.wind, .percent(0.20), .wind(probability: 0.20)),
             (.hail, .percent(0.35), .hail(probability: 0.35)),
-            (.tornado, .percent(0.70), .tornado(probability: 0.70))
+            (.tornado, .significant(10), .tornado(probability: 0.10))
+        ]
+        let updatedValues: [(ThreatProbability, SevereWeatherThreat)] = [
+            (.percent(0), .allClear),
+            (.significant(15), .wind(probability: 0.15)),
+            (.percent(0.25), .hail(probability: 0.25)),
+            (.percent(0.05), .tornado(probability: 0.05))
         ]
 
         do {
             let container = try ModelContainer(for: schema, configurations: configuration)
             let context = ModelContext(container)
 
-            for (index, value) in values.enumerated() {
+            for (index, value) in initialValues.enumerated() {
                 context.insert(
                     SevereRisk(
                         type: value.0,
@@ -317,17 +323,34 @@ struct SevereRiskRepoActiveSelectionTests {
             try context.save()
 
             let saved = try context.fetch(FetchDescriptor<SevereRisk>())
-            #expect(saved.count == values.count)
-            for value in values {
+            #expect(saved.count == initialValues.count)
+            for value in initialValues {
                 #expect(saved.contains { $0.threatLevel == value.2 })
+                #expect(saved.contains { $0.probability == value.1 })
             }
         }
 
-        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
-        let reopened = try ModelContext(reopenedContainer).fetch(FetchDescriptor<SevereRisk>())
-        #expect(reopened.count == values.count)
-        for value in values {
-            #expect(reopened.contains { $0.threatLevel == value.2 })
+        do {
+            let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+            let context = ModelContext(reopenedContainer)
+            let descriptor = FetchDescriptor<SevereRisk>(sortBy: [SortDescriptor(\.issued)])
+            let reopened = try context.fetch(descriptor)
+            #expect(reopened.count == initialValues.count)
+
+            for (risk, value) in zip(reopened, updatedValues) {
+                risk.probability = value.0
+                risk.threatLevel = value.1
+            }
+            try context.save()
+        }
+
+        let updatedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let descriptor = FetchDescriptor<SevereRisk>(sortBy: [SortDescriptor(\.issued)])
+        let updated = try ModelContext(updatedContainer).fetch(descriptor)
+        #expect(updated.count == updatedValues.count)
+        for (risk, value) in zip(updated, updatedValues) {
+            #expect(risk.probability == value.0)
+            #expect(risk.threatLevel == value.1)
         }
     }
 }

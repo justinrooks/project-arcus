@@ -104,3 +104,12 @@
   first scheduled successor is dead code for When-In-Use background refresh.
 - When cached metadata is combined with a newer snapshot, run eligibility policy against the exact composite returned.
   If the composite fails, explicitly evaluate the original cached value before discarding an otherwise valid fallback.
+
+## 2026-08-24
+
+- Do not construct legacy and current SwiftData containers with same-named versioned `@Model` types inside a unit
+  process that is also creating current-schema containers in parallel. SwiftData's global entity registration can
+  cross-wire the model metadata nondeterministically. Validate migration from a frozen disk fixture or a genuinely
+  isolated test process, then prove the complete parallel unit plan—not only a focused lane or one lucky full run.
+- Confirm whether a persistence shape has actually shipped before designing a migration graph. For unreleased,
+  developer-only schemas, prefer a clean store reset and keep production free of speculative compatibility code.

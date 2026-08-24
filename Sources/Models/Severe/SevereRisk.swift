@@ -50,8 +50,10 @@ final class SevereRisk {
     var id: UUID
     @Attribute(.unique) var key: String
     var type: ThreatType
-    var probability: ThreatProbability
-    var threatLevel: SevereWeatherThreat
+    var probabilityKindRawValue: String
+    var probabilityValue: Double
+    var threatKindRawValue: String
+    var threatProbability: Double?
     var issued: Date
     var valid: Date
     var expires: Date
@@ -85,8 +87,12 @@ final class SevereRisk {
         }
         
         self.type = type
-        self.probability = probability
-        self.threatLevel = threatLevel
+        let probabilityStorage = ThreatProbabilityStorage.encode(probability)
+        probabilityKindRawValue = probabilityStorage.kindRawValue
+        probabilityValue = probabilityStorage.value
+        let threatStorage = SevereWeatherThreatStorage.encode(threatLevel)
+        threatKindRawValue = threatStorage.kindRawValue
+        threatProbability = threatStorage.probability
         self.issued = issued
         self.valid = valid
         self.expires = expires
@@ -114,5 +120,35 @@ final class SevereRisk {
         }
 
         return nil
+    }
+}
+
+extension SevereRisk {
+    var probability: ThreatProbability {
+        get {
+            ThreatProbabilityStorage.decode(
+                kindRawValue: probabilityKindRawValue,
+                value: probabilityValue
+            ) ?? .percent(0)
+        }
+        set {
+            let storage = ThreatProbabilityStorage.encode(newValue)
+            probabilityKindRawValue = storage.kindRawValue
+            probabilityValue = storage.value
+        }
+    }
+
+    var threatLevel: SevereWeatherThreat {
+        get {
+            SevereWeatherThreatStorage.decode(
+                kindRawValue: threatKindRawValue,
+                probability: threatProbability
+            ) ?? .allClear
+        }
+        set {
+            let storage = SevereWeatherThreatStorage.encode(newValue)
+            threatKindRawValue = storage.kindRawValue
+            threatProbability = storage.probability
+        }
     }
 }
