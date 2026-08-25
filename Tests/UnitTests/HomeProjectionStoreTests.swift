@@ -575,6 +575,46 @@ struct HomeProjectionStoreTests {
         #expect(stableChange.changedDimensions == [.storm])
     }
 
+    @Test("accepted source clears every other active or partial comparison baseline")
+    func updateSlowProducts_acceptedSourceClearsCorruptComparisonBaselines() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let target = makeContext(h3Cell: 123_456)
+        let locationOnly = makeContext(h3Cell: 654_321)
+        let sourceOnly = makeContext(h3Cell: 987_654)
+        let modelContext = ModelContext(container)
+        let targetProjection = HomeProjection(context: target, createdAt: Date(timeIntervalSince1970: 100))
+        let locationProjection = HomeProjection(context: locationOnly, createdAt: Date(timeIntervalSince1970: 101))
+        let sourceProjection = HomeProjection(context: sourceOnly, createdAt: Date(timeIntervalSince1970: 102))
+        let source = makeSource(revision: 1).persistenceToken
+
+        locationProjection.convectiveRiskComparisonLocationKey = HomeProjection.riskComparisonLocationKey(for: locationOnly)
+        sourceProjection.convectiveRiskComparisonSourceKey = source
+        modelContext.insert(targetProjection)
+        modelContext.insert(locationProjection)
+        modelContext.insert(sourceProjection)
+        try modelContext.save()
+
+        let store = HomeProjectionStore(modelContainer: container)
+        _ = try await store.commitCore(
+            .init(
+                slowProducts: (.slight, .allClear, nil),
+                updatesConvectiveRisk: true,
+                updatesFireRisk: false,
+                convectiveSource: makeSource(revision: 2)
+            ),
+            for: target,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let projections = try ModelContext(container).fetch(FetchDescriptor<HomeProjection>())
+        let current = try #require(projections.first { $0.projectionKey == targetProjection.projectionKey })
+        #expect(current.convectiveRiskComparisonLocationKey == HomeProjection.riskComparisonLocationKey(for: target))
+        #expect(current.convectiveRiskComparisonSourceKey == makeSource(revision: 2).persistenceToken)
+        #expect(projections.filter { $0.id != current.id }.allSatisfy {
+            $0.convectiveRiskComparisonLocationKey == nil && $0.convectiveRiskComparisonSourceKey == nil
+        })
+    }
+
     @Test("domain-local changes do not require the other domain to be available")
     func updateSlowProducts_partialProfilesEmitForAuthoritativeDomain() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
