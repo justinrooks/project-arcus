@@ -296,6 +296,48 @@
 - Existing issues referenced: none
 - Out-of-scope repositories: arcus-signal; ArcusCore
 
+## 2026-08-24 — Measurement Result: `PERF-ARCUS-TODAY-PROJECTION-SCAN-SCALING`
+
+- Related issue: [#393](https://github.com/justinrooks/project-arcus/issues/393)
+- Status: SEEDED SCALING CONFIRMED; RELEASE DEVICE TRACE REQUIRED BEFORE OPTIMIZATION
+- Evidence class: Deterministic Debug simulator measurement. This establishes the scaling mechanism and its
+  approximate magnitude in the seeded store; it is not physical-device or Release performance evidence.
+- Environment: Debug, `SkyAware_Tests` / `Configuration 1`, iPhone 17 simulator, iOS 26.5, arm64.
+- Store: fresh in-memory `ModelContainer` for every sample. Each fixture contains exactly 1, 10, 100, or 1,000
+  `HomeProjection` rows with distinct location/projection keys, persisted risk values, display-ready timestamps, and
+  one existing comparison baseline where the population permits it.
+- Protocol: One untimed warm-up followed by nine timed repetitions for each population/scenario. Timed core commits
+  use identical accepted source inputs; fixture creation is outside the timed interval. Presentation timing fetches
+  the observed collection before the interval, then measures only `map(\.record)` plus current-context selection.
+- Instrumentation: Debug-only store counters report SwiftData fetches, fetched rows, comparison-baseline write
+  attempts, comparison-baseline value changes, and successful saves. Correctness coverage at every population proves
+  inherited source selection (with the single-row fixture seeded directly because it has no alternate row), competing
+  baseline invalidation, accepted/rejected domain isolation, and current-context selection.
+
+| Retained rows | Scenario | Timed samples (ms, sorted) | Median / p95 (ms) | Fetches / rows fetched | Baseline writes / changed rows | Saves |
+| ---: | --- | --- | ---: | ---: | ---: | ---: |
+| 1 | Convective only | 0.987, 1.009, 1.046, 1.054, 1.148, 1.193, 1.265, 1.308, 1.521 | 1.148 / 1.521 | 3 / 3 | 1 / 1 | 1 |
+| 1 | Convective + fire | 1.076, 1.106, 1.130, 1.214, 1.266, 1.295, 1.332, 1.353, 1.421 | 1.266 / 1.421 | 5 / 5 | 2 / 2 | 1 |
+| 1 | Presentation convert + select | 0.013, 0.013, 0.013, 0.013, 0.013, 0.014, 0.015, 0.024, 1.639 | 0.013 / 1.639 | — | — | — |
+| 10 | Convective only | 2.945, 3.128, 3.155, 3.213, 3.298, 3.399, 3.408, 3.497, 3.713 | 3.298 / 3.713 | 3 / 21 | 10 / 2 | 1 |
+| 10 | Convective + fire | 3.530, 3.641, 3.693, 3.759, 3.888, 3.942, 3.943, 3.982, 3.987 | 3.888 / 3.987 | 5 / 41 | 20 / 4 | 1 |
+| 10 | Presentation convert + select | 0.128, 0.128, 0.128, 0.129, 0.129, 0.129, 0.130, 0.132, 0.135 | 0.129 / 0.135 | — | — | — |
+| 100 | Convective only | 22.757, 22.994, 23.008, 23.057, 23.214, 23.699, 24.251, 24.719, 25.316 | 23.214 / 25.316 | 3 / 201 | 100 / 2 | 1 |
+| 100 | Convective + fire | 29.072, 29.442, 29.531, 30.091, 30.611, 30.941, 31.084, 31.097, 32.972 | 30.611 / 32.972 | 5 / 401 | 200 / 4 | 1 |
+| 100 | Presentation convert + select | 1.244, 1.245, 1.246, 1.256, 1.269, 1.294, 1.309, 1.312, 1.351 | 1.269 / 1.351 | — | — | — |
+| 1,000 | Convective only | 202.315, 212.774, 214.155, 224.640, 232.036, 237.595, 247.009, 263.295, 269.068 | 232.036 / 269.068 | 3 / 2,001 | 1,000 / 2 | 1 |
+| 1,000 | Convective + fire | 276.898, 277.152, 279.860, 281.011, 282.152, 295.778, 322.818, 323.245, 326.002 | 282.152 / 326.002 | 5 / 4,001 | 2,000 / 4 | 1 |
+| 1,000 | Presentation convert + select | 13.268, 13.291, 13.386, 13.521, 13.528, 13.539, 13.627, 13.789, 13.939 | 13.528 / 13.939 | — | — | — |
+
+- Trend: Fetch count and save count remain constant, but fetched rows and baseline-write attempts grow linearly:
+  convective-only performs `2N + 1` fetched rows and `N` writes; convective-plus-fire performs `4N + 1` fetched rows
+  and `2N` writes. The 1,000-row median is 232.036 ms for convective-only and 282.152 ms for convective-plus-fire,
+  before provider work and Today observation/rendering. Conversion and current-context selection alone reach a
+  13.528 ms median at 1,000 rows.
+- Decision: The seeded trend is material enough to justify a focused Release physical-device trace, but not an
+  optimization decision. Capture the retained-row count and baseline-scan/save/presentation signposts on the same
+  device and scenario before proposing any retention, predicate-fetch, baseline-ownership, or query change.
+- Production behavior: Unchanged. The only app-source addition is Debug-only measurement counters used by this test.
 
 ## 2026-08-20
 - Date: 2026-08-20
@@ -476,3 +518,71 @@
 - Existing issues referenced: closed issues #137 and #297 document warning composition and preservation of warming,
   but neither measures or owns the eager-warming performance tradeoff.
 - Out-of-scope repositories: arcus-signal; ArcusCore
+
+## 2026-08-25 — Follow-up Audit: Today Refresh and Projection Persistence
+
+- Workflow selected: Today refresh from `HomeRefreshTrigger` through `HomeIngestionCoordinator`,
+  `HomeIngestionExecutor`, `HomeProjectionStore.commitCore`, `HomeRefreshPipeline`, and `HomeView` presentation.
+  This is the primary user surface and issue #393 established retained-projection scaling in its persistence and
+  presentation path.
+- Files inspected: `Sources/App/HomeRefreshV2/HomeRefreshTrigger.swift`,
+  `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift`,
+  `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/App/HomeRefreshPipeline.swift`,
+  `Sources/Repos/HomeProjectionStore.swift`, `Sources/App/HomeView.swift`, and
+  `Sources/App/HomeView+PresentationState.swift`.
+- Current flow: triggers merge into one plan; the coordinator coalesces compatible work; the executor synchronizes
+  hot/slow/weather lanes, reads snapshot domains concurrently, atomically commits core state, publishes it, and later
+  publishes optional enrichment. `HomeView` observes every retained projection, maps every model to a record, then
+  selects the current or newest display-ready record.
+- Findings:
+  - `PERF-ARCUS-TODAY-BASELINE-SCAN` — HIGH impact, HIGH confidence. During accepted commits,
+    `advancesComparisonBaseline` can scan the entire projection store even when the accepted source already supplies
+    the needed identity; `invalidateOtherComparisonBaselines` also fetches and rewrites every retained projection to
+    clear fields that are almost always nil. #393’s seeded Debug measurements reached 2,001 fetched rows / 232 ms
+    median for convective-only and 4,001 rows / 282 ms for convective-plus-fire at 1,000 retained projections, while
+    only two or four rows actually changed. Recommended implementation slice: resolve source as accepted → previous
+    → inherited, and predicate-fetch only other projections with an active baseline for the relevant domain. Preserve
+    full clearing of corrupted multiple-active-baseline rows and all source/location notification semantics.
+  - `PERF-ARCUS-TODAY-FULL-QUERY` — MEDIUM-HIGH impact, HIGH confidence. `HomeView` has an unbounded `@Query` and
+    maps the entire retained history on each observed save. #393 measured its map/select operation at 13.5 ms median
+    at 1,000 retained rows. Investigate a current-key observation only after the persistence change; it must retain
+    an explicit newest-record startup/time-zone fallback and preserve cache, movement, and staged-publication paths.
+  - `PERF-ARCUS-TODAY-RETENTION` — MEDIUM impact, HIGH confidence. No HomeProjection retention bound exists. This is
+    a product/data-lifecycle decision, not an appropriate first performance fix; establish real retained-row
+    distribution and cache/travel requirements before proposing it.
+- Best next fix: the narrow comparison-baseline change. It removes demonstrably wasted store work without changing
+  refresh ownership, snapshot concurrency, or user-visible policy. Do not refactor the coordinator or pipeline;
+  their coalescing and staged-publication behavior is structurally sound.
+- Required decision gate: capture a Release physical-device trace at representative retained counts before changing
+  behavior. Record existing Today signposts and retained count, then inspect SwiftUI Update Groups/Long View Body
+  Updates, Time Profiler, Hangs, and Hitches. Re-run the same trace after the baseline fix; pursue the Home query
+  change only if it remains material.
+- Validation requirements for the baseline slice: deterministic tests for accepted source, inherited source,
+  rejected domains, source/location changes, and corrupted multiple baselines; retain #393’s seeded measurement as
+  a comparative guardrail; add Release device evidence rather than treating simulator timing as product proof.
+- Watchlist: rejected slow-domain reconciliation performs a keyed projection lookup before `commitCore` performs its
+  own keyed lookup. It is correct and likely rarer than the promoted finding; measure before optimizing.
+- Implementation recommended: conditional yes — after the Release-device decision gate confirms that the measured
+  store cost is user-visible or meaningfully consumes refresh budget. The proposed first slice is moderate risk
+  because it protects notification-baseline correctness established by #386.
+
+## 2026-08-25 — Result: Targeted Today Comparison-Baseline Scan
+
+- Implemented the promoted `PERF-ARCUS-TODAY-BASELINE-SCAN` slice in `HomeProjectionStore`: accepted source identity
+  now short-circuits inherited-source lookup; source inheritance only fetches the newest projection with a source;
+  and baseline clearing fetches only other projections with either active baseline field for that domain.
+- Correctness guardrail: a deterministic SwiftData test seeds multiple malformed partial baselines and verifies that an
+  accepted source clears every noncurrent row while establishing the target baseline. Existing movement, revisit,
+  partial-domain, rejected-domain, atomic-commit, and rollback tests remain green.
+- Debug iPhone 17 simulator measurement, seeded 1,000 retained projections, nine samples after one warmup:
+  - Convective-only: median 10.784 ms, 2 fetches / 2 fetched rows / 2 baseline writes, versus the pre-change
+    232.036 ms, 3 fetches / 2,001 rows / 1,000 writes.
+  - Convective-plus-fire: median 2.598 ms, 3 fetches / 3 fetched rows / 4 baseline writes, versus the pre-change
+    282.152 ms, 5 fetches / 4,001 rows / 2,000 writes.
+  - Presentation convert/select remains proportional to retained history: 12.467 ms median at 1,000 rows. This slice
+    deliberately does not change `HomeView` observation or conversion work.
+- Validation: focused `HomeProjectionStoreTests` passed 31/31; full `SkyAware_Tests` simulator lane passed 1,031/1,031
+  with a finalized Debug iPhone 17 (iOS 26.5) result bundle.
+- Decision: this removes the known persistence scaling mechanism. Release physical-device tracing is no longer needed
+  to justify this narrow fix, but remains the evidence gate before claiming end-to-end Today responsiveness or changing
+  the separate full-history presentation query.

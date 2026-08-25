@@ -249,9 +249,18 @@ actor HomeProjectionStore {
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
 #if DEBUG
     private var failsNextSaveForTesting = false
+    private var operationMetrics = HomeProjectionStoreOperationMetrics()
 
     func failNextSaveForTesting() {
         failsNextSaveForTesting = true
+    }
+
+    func resetOperationMetricsForTesting() {
+        operationMetrics = HomeProjectionStoreOperationMetrics()
+    }
+
+    func operationMetricsForTesting() -> HomeProjectionStoreOperationMetrics {
+        operationMetrics
     }
 #endif
 
@@ -424,7 +433,14 @@ actor HomeProjectionStore {
         let previousLocationKey = comparisonLocationKey(for: domain, projection: projection)
         let previousSourceKey = comparisonSourceKey(for: domain, projection: projection)
         let acceptedSourceKey = acceptedSource?.persistenceToken
-        let inheritedSourceKey = try previousSourceKey ?? activeComparisonSourceKey(for: domain)
+        let sourceKey: String?
+        if let acceptedSourceKey {
+            sourceKey = acceptedSourceKey
+        } else if let previousSourceKey {
+            sourceKey = previousSourceKey
+        } else {
+            sourceKey = try activeComparisonSourceKey(for: domain)
+        }
         let advances = previousLocationKey == locationKey
             && previousSourceKey != nil
             && acceptedSourceKey != nil
@@ -435,19 +451,35 @@ actor HomeProjectionStore {
             for: domain,
             projection: projection,
             locationKey: locationKey,
-            sourceKey: acceptedSourceKey ?? inheritedSourceKey
+            sourceKey: sourceKey
         )
         return advances
     }
 
     private func activeComparisonSourceKey(for domain: RiskComparisonDomain) throws -> String? {
-        let descriptor = FetchDescriptor<HomeProjection>(
-            sortBy: [
-                SortDescriptor(\.updatedAt, order: .reverse),
-                SortDescriptor(\.projectionKey, order: .forward)
-            ]
-        )
-        return try modelContext.fetch(descriptor).lazy.compactMap {
+        var descriptor: FetchDescriptor<HomeProjection>
+        switch domain {
+        case .convective:
+            descriptor = FetchDescriptor(
+                predicate: #Predicate { $0.convectiveRiskComparisonSourceKey != nil },
+                sortBy: [
+                    SortDescriptor(\.updatedAt, order: .reverse),
+                    SortDescriptor(\.projectionKey, order: .forward)
+                ]
+            )
+        case .fire:
+            descriptor = FetchDescriptor(
+                predicate: #Predicate { $0.fireRiskComparisonSourceKey != nil },
+                sortBy: [
+                    SortDescriptor(\.updatedAt, order: .reverse),
+                    SortDescriptor(\.projectionKey, order: .forward)
+                ]
+            )
+        }
+        descriptor.fetchLimit = 1
+        let projections = try modelContext.fetch(descriptor)
+        recordFetchedRows(projections.count)
+        return projections.lazy.compactMap {
             self.comparisonSourceKey(for: domain, projection: $0)
         }.first
     }
@@ -456,7 +488,24 @@ actor HomeProjectionStore {
         for domain: RiskComparisonDomain,
         keeping projection: HomeProjection
     ) throws {
-        for other in try modelContext.fetch(FetchDescriptor<HomeProjection>()) where other.id != projection.id {
+        let descriptor: FetchDescriptor<HomeProjection>
+        switch domain {
+        case .convective:
+            descriptor = FetchDescriptor(
+                predicate: #Predicate {
+                    $0.convectiveRiskComparisonLocationKey != nil || $0.convectiveRiskComparisonSourceKey != nil
+                }
+            )
+        case .fire:
+            descriptor = FetchDescriptor(
+                predicate: #Predicate {
+                    $0.fireRiskComparisonLocationKey != nil || $0.fireRiskComparisonSourceKey != nil
+                }
+            )
+        }
+        let projections = try modelContext.fetch(descriptor)
+        recordFetchedRows(projections.count)
+        for other in projections where other.id != projection.id {
             setComparisonBaseline(for: domain, projection: other, locationKey: nil, sourceKey: nil)
         }
     }
@@ -484,14 +533,20 @@ actor HomeProjectionStore {
         locationKey: String?,
         sourceKey: String?
     ) {
+        let didChange: Bool
         switch domain {
         case .convective:
+            didChange = projection.convectiveRiskComparisonLocationKey != locationKey
+                || projection.convectiveRiskComparisonSourceKey != sourceKey
             projection.convectiveRiskComparisonLocationKey = locationKey
             projection.convectiveRiskComparisonSourceKey = sourceKey
         case .fire:
+            didChange = projection.fireRiskComparisonLocationKey != locationKey
+                || projection.fireRiskComparisonSourceKey != sourceKey
             projection.fireRiskComparisonLocationKey = locationKey
             projection.fireRiskComparisonSourceKey = sourceKey
         }
+        recordComparisonBaselineWrite(didChange: didChange)
     }
 
     private func fetchOrCreateModel(
@@ -527,6 +582,7 @@ actor HomeProjectionStore {
             }
 #endif
             try modelContext.save()
+            recordSave()
         } catch {
             modelContext.rollback()
             throw error
@@ -542,7 +598,9 @@ actor HomeProjectionStore {
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
         descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first
+        let projections = try modelContext.fetch(descriptor)
+        recordFetchedRows(projections.count)
+        return projections.first
     }
 
     private func fetchLatestProjection() throws -> HomeProjection? {
@@ -554,11 +612,43 @@ actor HomeProjectionStore {
             ]
         )
         descriptor.fetchLimit = 1
-        return try modelContext.fetch(descriptor).first
+        let projections = try modelContext.fetch(descriptor)
+        recordFetchedRows(projections.count)
+        return projections.first
+    }
+
+    private func recordFetchedRows(_ count: Int) {
+#if DEBUG
+        operationMetrics.fetchCount += 1
+        operationMetrics.rowsFetched += count
+#endif
+    }
+
+    private func recordComparisonBaselineWrite(didChange: Bool) {
+#if DEBUG
+        operationMetrics.comparisonBaselineWriteCount += 1
+        if didChange {
+            operationMetrics.comparisonBaselineChangedCount += 1
+        }
+#endif
+    }
+
+    private func recordSave() {
+#if DEBUG
+        operationMetrics.saveCount += 1
+#endif
     }
 }
 
 #if DEBUG
+struct HomeProjectionStoreOperationMetrics: Sendable, Equatable {
+    var fetchCount = 0
+    var rowsFetched = 0
+    var comparisonBaselineWriteCount = 0
+    var comparisonBaselineChangedCount = 0
+    var saveCount = 0
+}
+
 private enum HomeProjectionStoreTestingError: Error {
     case injectedSaveFailure
 }
