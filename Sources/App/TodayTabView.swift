@@ -1,33 +1,8 @@
 import ArcusCore
 import Foundation
-import Observation
 import SwiftUI
 
-@MainActor
-@Observable
-final class TodayHeaderCondenseState {
-    private(set) var progress: CGFloat = 0
-
-    init(progress: CGFloat = 0) {
-        self.progress = min(max(progress, 0), 1)
-    }
-
-    @discardableResult
-    func update(scrollOffset: CGFloat) -> Bool {
-        let normalizedProgress = Self.normalizedProgress(for: scrollOffset)
-        guard progress != normalizedProgress else { return false }
-
-        progress = normalizedProgress
-        return true
-    }
-
-    static func normalizedProgress(for scrollOffset: CGFloat) -> CGFloat {
-        min(max((scrollOffset - 6) / 68, 0), 1)
-    }
-}
-
 struct TodayTabView: View {
-    @State private var headerCondenseState = TodayHeaderCondenseState()
     @State private var visibleWeatherState = TodayVisibleWeatherState()
 
     let snap: LocationSnapshot?
@@ -105,7 +80,6 @@ struct TodayTabView: View {
                         resolutionState: resolutionState,
                         isRefreshInFlight: isRefreshInFlight,
                         showsOfflineToken: showsOfflineToken,
-                        headerCondenseState: headerCondenseState,
                         locationReliabilityRailState: locationReliabilityRailState,
                         onOpenMapLayer: onOpenMapLayer,
                         onOpenAlerts: onOpenAlerts,
@@ -115,11 +89,6 @@ struct TodayTabView: View {
                         .background(.skyAwareBackground)
                 }
                 .accessibilityIdentifier("summary-scroll")
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentOffset.y + geometry.contentInsets.top
-                } action: { _, newValue in
-                    headerCondenseState.update(scrollOffset: newValue)
-                }
                 .background(Color(.skyAwareBackground).ignoresSafeArea())
                 .refreshable {
                     await refreshAction()

@@ -148,7 +148,6 @@ struct SummaryView: View {
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
     let showsOfflineToken: Bool
-    let headerCondenseState: TodayHeaderCondenseState
     let locationReliabilityRailState: LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
@@ -179,7 +178,6 @@ struct SummaryView: View {
         resolutionState: SummaryResolutionState,
         isRefreshInFlight: Bool = false,
         showsOfflineToken: Bool,
-        headerCondenseState: TodayHeaderCondenseState,
         locationReliabilityRailState: LocationReliabilityRailState? = nil,
         onOpenMapLayer: @escaping (MapLayer) -> Void,
         onOpenAlerts: @escaping () -> Void,
@@ -204,7 +202,6 @@ struct SummaryView: View {
         self.resolutionState = resolutionState
         self.isRefreshInFlight = isRefreshInFlight
         self.showsOfflineToken = showsOfflineToken
-        self.headerCondenseState = headerCondenseState
         self.locationReliabilityRailState = locationReliabilityRailState
         self.onOpenMapLayer = onOpenMapLayer
         self.onOpenAlerts = onOpenAlerts
@@ -468,7 +465,6 @@ struct SummaryView: View {
                 todayContentState: todayContentState,
                 showsOfflineToken: showsOfflineToken,
                 isLocationUnavailable: isLocationUnavailable,
-                condenseState: headerCondenseState
             )
 
         case .primaryAwareness:
