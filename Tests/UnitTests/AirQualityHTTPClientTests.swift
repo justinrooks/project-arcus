@@ -18,7 +18,7 @@ struct AirQualityHTTPClientTests {
         #expect(response?.aqi == 121)
         #expect(response?.category?.identifier == 3)
         #expect(response?.primaryPollutant == "PM2.5")
-        #expect(http.url?.path == "/api/v1/air-quality/current")
+        #expect(http.url?.path == "/v1/air-quality/current")
         #expect(URLComponents(url: try #require(http.url), resolvingAgainstBaseURL: false)?.queryItems?.first?.value == "613160066540896255")
     }
 }
