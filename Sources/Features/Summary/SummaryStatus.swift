@@ -157,7 +157,7 @@ struct SummaryStatus: View {
                 .font(locationFont)
                 .foregroundStyle(.primary)
                 .contentTransition(.opacity)
-                .lineLimit(adaptiveLayout.usesStackedHeroTiles ? 2 : 1)
+                .lineLimit(adaptiveLayout.usesStackedHeroTiles ? nil : 1)
                 .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(

@@ -140,6 +140,18 @@ Pass criteria:
 Pass criteria:
 - You know exactly how SkyAware behaves in the states real users will hit.
 
+Optional accessibility smoke for releases that change Today, Local Alerts, or Storm Setup:
+
+- [ ] On a physical device, enable an accessibility Dynamic Type size and confirm current, resolving, alerts, empty,
+  and Storm Setup content remains readable and reachable by scrolling.
+- [ ] Exercise pull-to-refresh and open one Local Alert and Storm Setup detail; confirm controls remain reachable and
+  no text overlaps adjacent content.
+- [ ] Enable Reduce Motion, repeat the Today resolving and refresh paths, and confirm ambient movement stops and
+  spatial transitions simplify without structural jumps.
+- [ ] Restore Dynamic Type and Reduce Motion to their original device settings.
+
+This is a release smoke check, not a completion gate or timing measurement.
+
 ### 11. Validate remote push open behavior
 
 - [x] Send a remote notification to a test device.

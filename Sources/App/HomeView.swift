@@ -128,7 +128,11 @@ struct HomeView: View {
             readinessState: readinessState,
             hasCachedContent: presentation.projection != nil,
             hasLiveContent: (presentation.projection == nil && presentation.isCurrentContextResolvedInPipeline) || (
-                isUITestStaticMode && (!refreshPipeline.mesos.isEmpty || !refreshPipeline.alerts.isEmpty)
+                isUITestStaticMode && (
+                    !refreshPipeline.mesos.isEmpty ||
+                    !refreshPipeline.alerts.isEmpty ||
+                    presentation.stormSetup != nil
+                )
             ),
             isRefreshing: refreshPipeline.isRefreshInFlight,
             isOffline: runtimeConnectivityState.isOffline
