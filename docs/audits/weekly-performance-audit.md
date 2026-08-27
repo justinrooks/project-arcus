@@ -586,3 +586,59 @@
 - Decision: this removes the known persistence scaling mechanism. Release physical-device tracing is no longer needed
   to justify this narrow fix, but remains the evidence gate before claiming end-to-end Today responsiveness or changing
   the separate full-history presentation query.
+
+## 2026-08-27 — Result: Map Inactive-Scene Warming Measurement
+
+- Source and environment: issue #394 working tree based on `48eeff95cbef169276c3ceec880076db6dba65e2`;
+  Xcode 26.6 (17F113); Debug `SkyAware_Tests`; iPhone 17 simulator (arm64), iOS 26.5 (23F77). The focused
+  `.xcresult` finalized as Passed with 1/1 tests and 10 non-zero XCTest performance iterations.
+- Harness: `MapSceneWarmingMeasurementTests` constructs fixed synthetic render plans for all six layers, verifies
+  production-shaped categorical, severe, meso, fire, and warning titles, subtitles, keys, style metadata, and overlay
+  kinds with warnings on and off. It verifies that composition, overlay counts, keys, revisions, and warning legends,
+  performs one explicit warm-up, then records exactly 10 manual subscenario iterations independently of XCTest's 10
+  reported performance iterations. Each manual sample records wall time, process CPU time, cached scenes, cached
+  overlays, min/median/mean/p95/max, sample standard deviation, and coefficient of variation. The harness isolates scene
+  materialization from fetch, planner, rendering, and task-scheduling costs; the eager totals therefore exclude the
+  production loop's `Task.yield` boundaries between inactive layers.
+- Fixtures:
+  - Small: one risk polygon per layer, one warning per scene, four vertices, no holes.
+  - Representative synthetic mix: categorical 5, wind 8, hail 8, tornado 6, meso 3, and fire 4 risk polygons;
+    four warnings per scene; 12 exterior vertices; every third risk polygon has an interior ring.
+  - High volume: categorical 80, wind 120, hail 120, tornado 80, meso 40, and fire 60 risk polygons;
+    25 warnings per scene; 48 exterior vertices; every fourth risk polygon has an interior ring.
+- Representative medians, warnings off / on:
+  - Selected scene: 0.246 / 0.265 ms.
+  - Five inactive scenes: 1.301 ms (CV 0.032) / 1.389 ms (CV 0.258).
+  - Selected plus eager warming: 1.558 ms (CV 0.085) / 1.651 ms (CV 0.089), retaining 34 / 58 overlays across
+    six scenes.
+  - Selected plus first cold wind switch: 0.608 / 0.626 ms, retaining 13 / 21 overlays across two scenes.
+  - First cold wind switch alone: 0.361 / 0.373 ms; first warm switch: 0.0015 / 0.0017 ms.
+- High-volume medians, warnings off / on:
+  - Selected scene: 4.494 / 4.094 ms.
+  - Five inactive scenes: 21.423 ms (CV 0.037) / 21.175 ms (CV 0.029).
+  - Selected plus eager warming: 25.769 ms (CV 0.077) / 25.296 ms (CV 0.033), retaining 500 / 650 overlays
+    across six scenes.
+  - Selected plus first cold wind switch: 10.050 / 10.435 ms, retaining 200 / 250 overlays across two scenes.
+  - First cold wind switch alone: 5.895 / 5.867 ms; first warm switch: 0.0023 / 0.0024 ms.
+- Metric interpretation: high-volume aggregate wall-time variance is stable. Representative eager totals are also
+  stable, while the representative warnings-on inactive aggregate includes one visible outlier (CV 0.258); its absolute
+  cost remains small and does not drive the conclusion. Per-segment process CPU samples are materially noisier (for
+  example, high-volume eager CV 0.173 / 0.161), so CPU is retained as secondary evidence rather than used for the
+  conclusion. An XCTest memory metric was not run because heap deltas for these short-lived simulator segments would not
+  isolate per-layer retained memory; exact cached-scene and overlay counts are the stable retained-work evidence.
+  Small-fixture timings are below a reliable optimization threshold.
+- Hitch/flash evidence: the materialization-only harness cannot render or reproduce the reported intermittent visual
+  flash, so it establishes no correlation with cold materialization, eager warming, or a distinct overlay-identity
+  defect. No separate rendering issue is justified by this run.
+- Validation: the focused measurement passed 1/1 with 10 non-zero performance iterations, and the focused deterministic
+  Map regression lane passed 82/82. The full unit lane was attempted but did not pass: its finalized result reported
+  747/1,032 passed and 285 failures after SwiftData terminated the test process with `NSUnknownKeyException` in the
+  existing `HomeProjectionStoreTests.updateWeather_preservesExistingRiskAndAlertSlices()` path because
+  `HomeProjection` lacked the `stormSetupCurrentResponse` key. The new measurement completed successfully before that
+  unrelated persistence crash; the lane was not retried or serialized to mask it.
+- Decision: **materially unfavorable at high volume**. Eager warming performs about 21.2–21.4 ms of cumulative
+  main-actor inactive materialization and retains four additional scenes with 300–400 additional overlays, to avoid about
+  5.9 ms on one first wind switch. Representative absolute costs remain small, so this Debug simulator result is
+  not a universal device threshold, but the high-volume asymmetry is sufficient to open the bounded cache/warming-policy
+  optimization follow-up [#399](https://github.com/justinrooks/project-arcus/issues/399). Issue #394 itself makes no
+  production behavior change.
