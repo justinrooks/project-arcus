@@ -41,7 +41,6 @@ struct SummaryStatus: View {
     let todayContentState: TodayContentState
     let showsOfflineToken: Bool
     let isLocationUnavailable: Bool
-    let condenseState: TodayHeaderCondenseState
 
     private static let temperatureFormatter: MeasurementFormatter = {
         let formatter = MeasurementFormatter()
@@ -58,48 +57,8 @@ struct SummaryStatus: View {
         return formatTemperature(visibleWeather.temperature)
     }
 
-    private var clampedCondenseProgress: CGFloat {
-        condenseState.progress
-    }
-
-    private var headerSpacing: CGFloat {
-        10 - (2 * clampedCondenseProgress)
-    }
-
-    private var contentSpacing: CGFloat {
-        10 - (2 * clampedCondenseProgress)
-    }
-
-    private var verticalPadding: CGFloat {
-        12 - (3 * clampedCondenseProgress)
-    }
-
-    private var cardCornerRadius: CGFloat {
-        SkyAwareRadius.section - clampedCondenseProgress
-    }
-
-    private var cardShadowOpacity: Double {
-        0.08 - (0.03 * clampedCondenseProgress)
-    }
-
-    private var cardShadowRadius: CGFloat {
-        8 - (2 * clampedCondenseProgress)
-    }
-
-    private var cardShadowY: CGFloat {
-        3 - clampedCondenseProgress
-    }
-
-    private var titleFont: Font {
-        clampedCondenseProgress > 0.5 ? .subheadline.weight(.semibold) : .headline.weight(.semibold)
-    }
-
     private var locationFont: Font {
         .headline.weight(.bold)
-    }
-
-    private var settledConditionOpacity: Double {
-        1 - (0.55 * clampedCondenseProgress)
     }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
@@ -107,7 +66,7 @@ struct SummaryStatus: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8 - (2 * clampedCondenseProgress)) {
+        VStack(alignment: .leading, spacing: 8) {
             header
             if isLocationUnavailable {
                 locationUnavailableCard
@@ -116,12 +75,12 @@ struct SummaryStatus: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, verticalPadding)
+        .padding(.vertical, 12)
         .cardBackground(
-            cornerRadius: cardCornerRadius,
-            shadowOpacity: cardShadowOpacity,
-            shadowRadius: cardShadowRadius,
-            shadowY: cardShadowY
+            cornerRadius: SkyAwareRadius.section,
+            shadowOpacity: 0.08,
+            shadowRadius: 8,
+            shadowY: 3
         )
     }
 
@@ -145,9 +104,9 @@ struct SummaryStatus: View {
     }
 
     private var header: some View {
-        HStack(spacing: headerSpacing) {
+        HStack(spacing: 10) {
             Text("Current Conditions")
-                .font(titleFont)
+                .font(.headline.weight(.semibold))
                 .foregroundStyle(.primary)
 
             Spacer(minLength: 12)
@@ -183,7 +142,7 @@ struct SummaryStatus: View {
                     weatherContent
                 }
             } else {
-                HStack(alignment: .top, spacing: contentSpacing) {
+                HStack(alignment: .top, spacing: 10) {
                     statusContent
                     Spacer(minLength: 8)
                     weatherContent
@@ -245,7 +204,6 @@ struct SummaryStatus: View {
                 )
             }
             .font(.footnote)
-            .opacity(settledConditionOpacity)
             .multilineTextAlignment(adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
             .lineLimit(1)
             .frame(minHeight: 18, alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing)
@@ -253,7 +211,7 @@ struct SummaryStatus: View {
         .font(.subheadline.weight(.semibold))
         .foregroundStyle(.primary)
         .frame(
-            minWidth: adaptiveLayout.usesStackedHeroTiles ? 0 : 80 - (8 * clampedCondenseProgress),
+            minWidth: adaptiveLayout.usesStackedHeroTiles ? 0 : 80,
             alignment: adaptiveLayout.usesStackedHeroTiles ? .leading : .trailing
         )
         .contentTransition(.opacity)
@@ -456,7 +414,6 @@ private struct SummarySettledConditionLine: View {
             todayContentState: .current,
             showsOfflineToken: false,
             isLocationUnavailable: false,
-            condenseState: TodayHeaderCondenseState(progress: 0)
         )
         SummaryStatus(
             statusText: "Topeka, KS",
@@ -483,7 +440,6 @@ private struct SummarySettledConditionLine: View {
             todayContentState: .current,
             showsOfflineToken: true,
             isLocationUnavailable: false,
-            condenseState: TodayHeaderCondenseState(progress: 0.75)
         )
         SummaryStatus(
             statusText: "Location not available",
@@ -492,7 +448,6 @@ private struct SummarySettledConditionLine: View {
             todayContentState: .noCacheResolving,
             showsOfflineToken: false,
             isLocationUnavailable: true,
-            condenseState: TodayHeaderCondenseState(progress: 0.75)
         )
     }
 }
