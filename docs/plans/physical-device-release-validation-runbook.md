@@ -1,12 +1,27 @@
 # Physical-Device Release Validation Runbook
 
-**Status:** Planned
+**Status:** Retired — superseded by targeted workflow validation
 
 **Applies to:** SkyAware iOS Today and background physical-device Release validation
 
 **Project:** `SkyAware.xcodeproj`
 
 **Parent epic:** [#346](https://github.com/justinrooks/project-arcus/issues/346)
+
+## Retirement decision
+
+This campaign was retired on 2026-08-26 and epic #346 was closed as **not planned**. Repeated physical-device attempts
+established that the combined SwiftUI, hitch, signpost, privacy, cohort, and genuine-provider-state evidence contract
+was disproportionate and often unreproducible. Closing the campaign does not convert incomplete traces into successful
+evidence and does not create a new performance claim.
+
+Issues #347, #348, #352-#356, #360, and #361 were closed as not planned. Issues #349-#351 and #357-#359 were retained
+as independent, targeted-validation candidates using deterministic tests, fixture-driven rendered evidence, and
+repeatable XCTest metrics where stable. Physical-device profiling is now optional and should begin only from a concrete
+workflow question supported by a user report, production diagnostic, code-level mechanism, or repeatable measurement.
+
+The procedures below remain preserved as historical evidence and privacy/comparability guidance. They are not a
+current release gate or an instruction to resume the full scenario matrix.
 
 ## Related documents
 
@@ -86,6 +101,16 @@ new cohort. Do not silently merge cohorts.
 USB is preferred for this campaign because it keeps CoreDevice and Instruments available while Wi-Fi conditions are
 changed. Record the transport and do not switch between USB and wireless inside a cohort.
 
+## Separate native screen-recording transfer workflow
+
+Rendered evidence is a separate, non-concurrent pass; it is never recorded while Instruments is tracing. Before
+starting, confirm that the visible state contains no private coordinates, location-derived endpoints, alert content,
+tokens, or identifiers. Start and stop the device's native Control Center screen recording manually, then review the
+recording on-device before transfer. Transfer the approved clip over the locked USB connection using Finder or Image
+Capture into the cohort's external artifact root, with a UTC scenario identifier. Do not use cloud sharing, add the
+recording to source control, or delete the device copy without explicit approval. Record the clip as **Rendered**
+evidence only; it does not establish trace timing or performance.
+
 ## Required guardrails
 
 - Preserve cached-first and resolve-forward Today behavior.
@@ -96,7 +121,11 @@ changed. Record the transport and do not switch between USB and wireless inside 
 - Preserve lifecycle supersession and background upload budget semantics.
 - Keep all trace, analysis, result-bundle, and recording artifacts outside source control.
 - Use the physical device and Release configuration for runtime evidence.
-- Use the SwiftUI template with a signpost-only instrument if the privacy smoke proves it does not collect app logs.
+- Use the SwiftUI template with a signpost-only instrument only if the privacy smoke proves it does not collect an
+  app-log store. An `os-log` or `os-log-arg` schema is a privacy failure; do not inspect log entries or payloads.
+- Create the signpost-only instrument through Instruments' native template editor: start from SwiftUI, add only
+  `os_signposts`, filter it to subsystem `com.skyaware.app` and category `app.homeRefresh`, and save the template
+  outside the repository. Do not add Points of Interest or any Logging instrument.
 - Capture screen recordings separately when concurrent recording could perturb performance.
 - Analyze and validate every trace before starting the next scenario.
 - Keep coordinates, endpoints derived from location, alert content, tokens, and user identifiers out of artifacts and

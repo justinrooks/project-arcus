@@ -416,3 +416,83 @@
 - Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
 - Skipped evidence: No sibling repository, external service, physical device, or runtime behavior was inspected.
   Release-document-only changes in `57b73e3a` were reviewed for scope but did not introduce executable behavior.
+
+## 2026-08-27T10:08:42-06:00
+- Date: 2026-08-27T10:08:42-06:00
+- Repository scanned: project-arcus
+- Default branch: main (`origin/main`)
+- Workflow reviewed: Weekly bug scan (audit-only)
+- Commit window: after the 2026-08-20T10:07:42-06:00 audit marker through
+  `18421274e7d58f700b466d69cc56c029524ce5a5` (2026-08-25T09:40:46-06:00); 2 commits
+  (`b489e0ff`, `18421274`).
+- Files inspected:
+  - /Users/justin/Code/project-arcus/Sources/App/HomeView.swift
+  - /Users/justin/Code/project-arcus/Sources/App/SkyAwareApp.swift
+  - /Users/justin/Code/project-arcus/Sources/App/TodayTabView.swift
+  - /Users/justin/Code/project-arcus/Sources/App/Dependencies.swift
+  - /Users/justin/Code/project-arcus/Sources/Features/Summary/SummaryView.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/Home/HomeProjection.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/Severe/SevereRisk.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/Severe/SevereWeatherStorage.swift
+  - /Users/justin/Code/project-arcus/Sources/Models/Severe/SevereWeatherThreat.swift
+  - /Users/justin/Code/project-arcus/Sources/Repos/HomeProjectionStore.swift
+  - /Users/justin/Code/project-arcus/Tests/UITests/SkyAwareUITests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/HomeProjectionStoreTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/SevereRiskRepoActiveSelectionTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/SevereWeatherThreatTests.swift
+  - /Users/justin/Code/project-arcus/Tests/UnitTests/SummaryViewLoadingStateTests.swift
+- High-risk areas inspected:
+  - SwiftData compatibility for the new primitive severe-weather persistence representation
+  - HomeProjection baseline lookup, source/location identity, and scan-scaling changes
+  - no-cache Today resolving state and user-visible severe-weather presentation
+- Findings:
+  - Finding ID: BUG-ARCUS-SEVERE-RISK-SCHEMA-MIGRATION
+    Fingerprint: weekly-bug-scan|project-arcus|SevereRisk|required-primitive-fields-without-store-migration
+    Repository: project-arcus
+    Audit type: Weekly Bug Scan
+    Title: SevereRisk schema change can prevent upgraded installs from launching
+    Status: NEW
+    Severity: HIGH
+    Confidence: HIGH
+    First observed: 2026-08-27
+    Last verified: 2026-08-27
+    Affected files and symbols: `Sources/Models/Severe/SevereRisk.swift` (`SevereRisk` persisted fields),
+      `Sources/App/Dependencies.swift` (`Dependencies.live`), and
+      `Tests/UnitTests/SevereRiskRepoActiveSelectionTests.swift`
+      (`severeRisks_saveAndReopenEveryThreatVariant`).
+    Failure mode: commit `b489e0ff` replaces the persisted `probability` and `threatLevel` fields with four
+      primitive fields. `probabilityKindRawValue`, `probabilityValue`, and `threatKindRawValue` are required and have
+      no persisted defaults, but the live app still opens an unversioned combined schema without a
+      `SchemaMigrationPlan`. An existing store containing `SevereRisk` rows has no mapping or backfill for those
+      required destination attributes; container creation can fail and `Dependencies.live` converts the error into
+      a fatal launch termination.
+    Evidence: the production container includes `SevereRisk.self` and calls
+      `ModelContainer(for:configurations:)` without a migration plan. The new disk-backed SevereRisk test creates
+      and reopens only the current schema; it never creates a pre-change store containing legacy rows. The separate
+      HomeProjection legacy fixture does not exercise `SevereRisk` and leaves its own legacy severe-risk field nil.
+      Fresh-schema round trips therefore do not establish upgrade compatibility.
+    Blast radius: upgrading users with cached SPC severe-risk rows may be unable to launch the app, blocking all
+      severe-weather awareness surfaces until store recovery or reinstall. Fresh installs are unaffected.
+    Minimal fix strategy: introduce an explicit versioned migration that maps every legacy probability/threat case
+      into the primitive fields, or use a documented narrowly scoped cache invalidation boundary that preserves all
+      unrelated models in the shared store. Do not delete the shared store as routine recovery.
+    Required validation: create an exact disk-backed pre-change `SevereRisk` schema with every enum case; save,
+      close, open it through the production container configuration, verify reconstructed values and unrelated-model
+      preservation, reopen again, then run the focused persistence suites and full unit lane with finalized non-zero
+      `.xcresult` evidence.
+    Related GitHub issue: creation attempted after connector searches found no matching open/closed issue or merged
+      pull request; the write was blocked because this automation's approval policy is `never`.
+- Watchlist: None; no lower-confidence concern had enough local evidence to retain.
+- Resolved findings: None newly evaluated in this window.
+- Top finding: BUG-ARCUS-SEVERE-RISK-SCHEMA-MIGRATION.
+- Best next fix: add and prove a production-format migration for existing `SevereRisk` rows before release.
+- Implementation recommended: Yes; promotion to a bounded `bug` issue is recommended.
+- GitHub issues created: None; connector issue creation was blocked by the automation approval policy.
+- GitHub issues updated: None.
+- Existing issues referenced: None; connector searches found no equivalent issue or merged pull request.
+- Validation: audit-only static verification against current `origin/main`; tests were not run because the active
+  checkout is a separate feature branch and this automation is prohibited from creating branches or modifying code.
+- Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
+- Skipped evidence: no sibling repository, external service, deployed store, physical device, or runtime behavior
+  was inspected. Unrelated modified planning files in the active checkout were left untouched.
