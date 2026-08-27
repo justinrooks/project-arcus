@@ -109,6 +109,10 @@ struct MapFeatureModelWarningsTests {
         await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
         #expect(overlayKeys(in: model.activeScene).count == 2)
 
+        model.selectLayer(.fire)
+        #expect(overlayKeys(in: model.activeScene).last?.contains("warn|") == true)
+
+        model.selectLayer(.categorical)
         model.setWarningGeometryVisible(false)
         #expect(overlayKeys(in: model.activeScene).count == 1)
         #expect(overlayKeys(in: model.activeScene).first?.contains("cat|") == true)

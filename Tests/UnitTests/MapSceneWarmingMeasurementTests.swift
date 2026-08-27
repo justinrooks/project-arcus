@@ -217,17 +217,22 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
         )
 
         let selectedThenCold = timed {
-            var cachedScenes = [
-                Self.selectedLayer: materialize(
+            var cache = MapSceneCache()
+            cache.insert(
+                materialize(
                     plan: fixture.plan(for: Self.selectedLayer),
                     showsWarningGeometry: showsWarningGeometry
-                )
-            ]
-            cachedScenes[Self.firstSwitchLayer] = materialize(
-                plan: fixture.plan(for: Self.firstSwitchLayer),
-                showsWarningGeometry: showsWarningGeometry
+                ),
+                for: Self.selectedLayer
             )
-            return cachedScenes
+            cache.insert(
+                materialize(
+                    plan: fixture.plan(for: Self.firstSwitchLayer),
+                    showsWarningGeometry: showsWarningGeometry
+                ),
+                for: Self.firstSwitchLayer
+            )
+            return cache
         }
         observations.append(
             observation(
@@ -235,17 +240,18 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
                 showsWarningGeometry: showsWarningGeometry,
                 scenario: "selected-plus-first-cold-switch",
                 timing: selectedThenCold.timing,
-                cachedScenes: selectedThenCold.value
+                cache: selectedThenCold.value
             )
         )
 
-        var coldCache = [Self.selectedLayer: selected.value]
+        var coldCache = MapSceneCache()
+        coldCache.insert(selected.value, for: Self.selectedLayer)
         let coldSwitch = timed {
             let scene = materialize(
                 plan: fixture.plan(for: Self.firstSwitchLayer),
                 showsWarningGeometry: showsWarningGeometry
             )
-            coldCache[Self.firstSwitchLayer] = scene
+            coldCache.insert(scene, for: Self.firstSwitchLayer)
             return scene
         }
         observations.append(
@@ -254,16 +260,11 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
                 showsWarningGeometry: showsWarningGeometry,
                 scenario: "first-cold-switch",
                 timing: coldSwitch.timing,
-                cachedScenes: coldCache
+                cache: coldCache
             )
         )
 
-        var warmCache = eager.value
-        let warmSwitch = timed {
-            let scene = warmCache[Self.firstSwitchLayer]
-            warmCache[Self.firstSwitchLayer] = scene
-            return scene
-        }
+        let warmSwitch = timed { coldCache.scene(for: Self.firstSwitchLayer) }
         XCTAssertNotNil(warmSwitch.value)
         observations.append(
             observation(
@@ -271,7 +272,7 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
                 showsWarningGeometry: showsWarningGeometry,
                 scenario: "first-warm-switch",
                 timing: warmSwitch.timing,
-                cachedScenes: warmCache
+                cache: coldCache
             )
         )
 
@@ -303,6 +304,23 @@ final class MapSceneWarmingMeasurementTests: XCTestCase {
             timing: timing,
             cachedSceneCount: cachedScenes.count,
             cachedOverlayCount: cachedScenes.values.reduce(0) { $0 + $1.canvasState.overlays.count }
+        )
+    }
+
+    private func observation(
+        fixture: MapSceneMeasurementFixture,
+        showsWarningGeometry: Bool,
+        scenario: String,
+        timing: MapSceneMeasurementTiming,
+        cache: MapSceneCache
+    ) -> MapSceneMeasurementObservation {
+        MapSceneMeasurementObservation(
+            fixture: fixture.profile.name,
+            warnings: showsWarningGeometry ? "on" : "off",
+            scenario: scenario,
+            timing: timing,
+            cachedSceneCount: cache.retainedSceneCount,
+            cachedOverlayCount: cache.retainedOverlayCount
         )
     }
 

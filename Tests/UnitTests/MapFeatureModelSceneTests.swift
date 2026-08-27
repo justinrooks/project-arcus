@@ -10,8 +10,27 @@ import Testing
 struct MapFeatureModelSceneTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
-    @Test("selectLayer switches to another prepared scene without a reload")
-    func selectLayer_switchesToPreparedScene() async {
+    @Test("scene cache retains only the two most recently used layers")
+    func sceneCache_retainsTwoMostRecentlyUsedLayers() {
+        var cache = MapSceneCache()
+
+        cache.insert(.placeholder(for: .categorical), for: .categorical)
+        cache.insert(.placeholder(for: .wind), for: .wind)
+        #expect(cache.layers == [.categorical, .wind])
+
+        #expect(cache.scene(for: .categorical)?.legendState.layer == .categorical)
+        #expect(cache.layers == [.wind, .categorical])
+
+        cache.insert(.placeholder(for: .hail), for: .hail)
+
+        #expect(cache.layers == [.categorical, .hail])
+        #expect(cache.scene(for: .wind) == nil)
+        #expect(cache.scene(for: .categorical)?.legendState.layer == .categorical)
+        #expect(cache.scene(for: .hail)?.legendState.layer == .hail)
+    }
+
+    @Test("selectLayer reuses cached scenes and rematerializes deterministic evictions")
+    func selectLayer_reusesCachedScenesAndRematerializesEvictions() async throws {
         let model = MapFeatureModel()
         let service = StubSpcMapData(
             severeRisks: .success([]),
@@ -35,6 +54,7 @@ struct MapFeatureModelSceneTests {
         let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
 
         await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+        let initialCategoricalOverlay = try #require(model.activeScene.canvasState.overlays.first?.overlay)
         model.selectLayer(.fire)
 
         let scene = model.activeScene
@@ -42,6 +62,28 @@ struct MapFeatureModelSceneTests {
         #expect(scene.legendState.fireItems.map(\.riskLevel) == [8])
         #expect(scene.canvasState.overlays.count == 1)
         #expect(scene.canvasState.overlays.first?.key.contains("fire|8|") == true)
+
+        let initialFireOverlay = try #require(scene.canvasState.overlays.first?.overlay)
+        model.selectLayer(.categorical)
+        let cachedCategoricalOverlay = try #require(model.activeScene.canvasState.overlays.first?.overlay)
+        #expect(
+            ObjectIdentifier(cachedCategoricalOverlay as AnyObject) ==
+                ObjectIdentifier(initialCategoricalOverlay as AnyObject)
+        )
+
+        model.selectLayer(.fire)
+        let cachedFireOverlay = try #require(model.activeScene.canvasState.overlays.first?.overlay)
+        #expect(
+            ObjectIdentifier(cachedFireOverlay as AnyObject) == ObjectIdentifier(initialFireOverlay as AnyObject)
+        )
+
+        model.selectLayer(.wind)
+        model.selectLayer(.categorical)
+        let rematerializedCategoricalOverlay = try #require(model.activeScene.canvasState.overlays.first?.overlay)
+        #expect(
+            ObjectIdentifier(rematerializedCategoricalOverlay as AnyObject) !=
+                ObjectIdentifier(initialCategoricalOverlay as AnyObject)
+        )
     }
 
     @Test("categorical overlays preserve low-to-high severity stacking")
