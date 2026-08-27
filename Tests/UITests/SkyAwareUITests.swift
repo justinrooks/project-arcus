@@ -74,7 +74,7 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testNoCacheResolvingFixturePresentsOutsideSummaryInLightAndDarkAppearance() throws {
-        let lightApp = launchNoCacheResolvingFixtureApp(colorScheme: "light")
+        let lightApp = launchNoCacheResolvingFixtureApp(colorScheme: "light", accessibilityTextSize: true)
         assertNoCacheResolvingPresentation(in: lightApp, appearance: "light")
         lightApp.terminate()
 
@@ -538,6 +538,33 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testTodayLocalAlertsRefreshAndScrollingRemainUsableAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
+        app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
+        app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        app.launch()
+
+        let summaryScrollView = app.scrollViews["summary-scroll"]
+        XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected the Today scroll view at accessibility text sizes.")
+        XCTAssertTrue(app.staticTexts["Current Conditions"].waitForExistence(timeout: 10))
+
+        summaryScrollView.swipeDown()
+        XCTAssertTrue(summaryScrollView.exists, "Expected pull-to-refresh interaction to preserve the Today surface.")
+
+        let warningRow = app.buttons["watches & warnings-row-ui-test-warning-001"]
+        scrollUntilHittable(warningRow, in: summaryScrollView)
+        XCTAssertTrue(warningRow.isHittable, "Expected the seeded Local Alerts warning to remain reachable by scrolling.")
+        XCTAssertGreaterThanOrEqual(warningRow.frame.size.height, 44, "Expected the warning row touch target to remain at least 44 points tall.")
+
+        XCTAssertTrue(app.tabBars.buttons["Today"].isHittable, "Expected the Today tab to remain reachable after refreshing and scrolling.")
+
+        attachScreenshot(app, named: "today-current-alerts-ax")
+    }
+
+    @MainActor
     func testStormSetupSummaryOpensDetail() throws {
         let app = launchStormSetupFixtureApp(colorScheme: nil)
 
@@ -554,7 +581,10 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(localAlert.waitForExistence(timeout: 10), "Expected seeded local alert to appear in Summary.")
         XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to appear in Summary.")
         XCTAssertLessThan(localAlert.frame.minY, stormSetupCard.frame.minY, "Expected local alerts to appear before Storm Setup.")
-        XCTAssertFalse(app.otherElements["summary-atmospheric-conditions"].exists, "Did not expect Atmospheric Conditions when Storm Setup is selected.")
+        XCTAssertTrue(
+            app.otherElements["summary-atmospheric-conditions"].exists,
+            "Expected Atmospheric Conditions to remain available alongside Storm Setup."
+        )
         XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))
         XCTAssertTrue((stormSetupCard.value as? String ?? "").contains("Supportive"))
 
@@ -568,15 +598,14 @@ final class SkyAwareUITests: XCTestCase {
         let detailScrollView = app.scrollViews["storm-setup-detail"]
         XCTAssertTrue(detailScrollView.waitForExistence(timeout: 10), "Expected Storm Setup detail scroll view to exist.")
 
-        let readableIngredients = app.staticTexts["Readable ingredients"]
-        XCTAssertTrue(readableIngredients.waitForExistence(timeout: 10), "Expected readable ingredients section to appear.")
+        let ingredientsHeading = app.staticTexts["Ingredients"]
+        scrollUntilHittable(ingredientsHeading, in: detailScrollView)
+        XCTAssertTrue(ingredientsHeading.exists, "Expected ingredients section to appear.")
 
-        let advancedDetails = app.otherElements["storm-setup-advanced-details"]
-        scrollUntilHittable(advancedDetails, in: detailScrollView)
-        XCTAssertTrue(app.staticTexts["Advanced Details"].exists, "Expected Advanced Details section to remain reachable.")
-        XCTAssertTrue(app.staticTexts["MLCAPE — J/kg"].exists, "Expected representative advanced ingredients to appear.")
-        XCTAssertTrue(app.staticTexts["1,825"].exists, "Expected representative advanced values to appear.")
-        XCTAssertTrue(app.staticTexts["SCP signal"].exists, "Expected representative advanced signal rows to appear.")
+        let fuelAndInstability = app.staticTexts["Fuel & Instability"]
+        scrollUntilHittable(fuelAndInstability, in: detailScrollView)
+        XCTAssertTrue(fuelAndInstability.exists, "Expected detailed ingredient groups to remain reachable.")
+        XCTAssertTrue(app.otherElements["Mixed-layer CAPE. 1,825."].exists, "Expected representative detailed ingredients to appear.")
 
         let guidanceInfo = app.buttons["storm-setup-guidance-info"]
         XCTAssertTrue(guidanceInfo.waitForExistence(timeout: 10), "Expected the guidance info action to appear.")
@@ -701,7 +730,11 @@ final class SkyAwareUITests: XCTestCase {
 
     @MainActor
     func testStormSetupRemainsUsableAtAccessibilityTextSize() throws {
-        let app = launchStormSetupFixtureApp(colorScheme: nil, accessibilityTextSize: true)
+        let app = launchStormSetupFixtureApp(
+            colorScheme: nil,
+            accessibilityTextSize: true,
+            emptyAlerts: true
+        )
 
         let todayTab = app.tabBars.buttons["Today"]
         XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist at accessibility text sizes.")
@@ -709,11 +742,15 @@ final class SkyAwareUITests: XCTestCase {
         let summaryScrollView = app.scrollViews["summary-scroll"]
         XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist at accessibility text sizes.")
 
-        let localAlert = app.buttons["watches & warnings-row-ui-test-warning-001"]
+        let emptyAlertsRail = app.staticTexts["summary-local-alerts-no-active-rail"]
         let stormSetupCard = app.buttons["summary-storm-setup-card"]
-        scrollUntilHittable(localAlert, in: summaryScrollView)
+        scrollUntilHittable(emptyAlertsRail, in: summaryScrollView)
         scrollUntilHittable(stormSetupCard, in: summaryScrollView)
-        XCTAssertTrue(localAlert.waitForExistence(timeout: 10), "Expected local alert to remain reachable at accessibility text sizes.")
+        XCTAssertTrue(emptyAlertsRail.waitForExistence(timeout: 10), "Expected the empty Local Alerts state at accessibility text sizes.")
+        XCTAssertTrue(
+            emptyAlertsRail.label.contains("No active alerts for your location"),
+            "Expected the complete empty-state message to remain accessible."
+        )
         XCTAssertTrue(stormSetupCard.waitForExistence(timeout: 10), "Expected Storm Setup card to remain reachable at accessibility text sizes.")
         XCTAssertTrue(stormSetupCard.label.contains("Storm Setup"))
         XCTAssertTrue((stormSetupCard.value as? String ?? "").contains("Supportive"))
@@ -726,14 +763,17 @@ final class SkyAwareUITests: XCTestCase {
         let detailScrollView = app.scrollViews["storm-setup-detail"]
         XCTAssertTrue(detailScrollView.waitForExistence(timeout: 10), "Expected Storm Setup detail scroll view to exist at accessibility text sizes.")
 
-        let readableIngredients = app.staticTexts["Readable ingredients"]
-        XCTAssertTrue(readableIngredients.waitForExistence(timeout: 10), "Expected readable ingredients to remain present at accessibility text sizes.")
+        let ingredientsHeading = app.staticTexts["Ingredients"]
+        scrollUntilHittable(ingredientsHeading, in: detailScrollView)
+        XCTAssertTrue(ingredientsHeading.exists, "Expected ingredients to remain present at accessibility text sizes.")
 
-        let advancedDetails = app.otherElements["storm-setup-advanced-details"]
-        scrollUntilHittable(advancedDetails, in: detailScrollView)
-        XCTAssertTrue(advancedDetails.exists, "Expected Advanced Details to remain reachable by scrolling at accessibility text sizes.")
-        XCTAssertTrue(app.staticTexts["MLCAPE — J/kg"].exists, "Expected ingredient labels to remain present at accessibility text sizes.")
-        XCTAssertTrue(app.staticTexts["1,825"].exists, "Expected ingredient values to remain present at accessibility text sizes.")
+        let fuelAndInstability = app.staticTexts["Fuel & Instability"]
+        scrollUntilHittable(fuelAndInstability, in: detailScrollView)
+        XCTAssertTrue(fuelAndInstability.exists, "Expected detailed ingredients to remain reachable by scrolling at accessibility text sizes.")
+        XCTAssertTrue(
+            app.otherElements["Mixed-layer CAPE. 1,825."].exists,
+            "Expected detailed ingredient labels and values to remain accessible at accessibility text sizes."
+        )
 
         let guidanceInfo = app.buttons["storm-setup-guidance-info"]
         XCTAssertTrue(guidanceInfo.waitForExistence(timeout: 10), "Expected guidance info to remain reachable at accessibility text sizes.")
@@ -1101,6 +1141,7 @@ final class SkyAwareUITests: XCTestCase {
     private func launchStormSetupFixtureApp(
         colorScheme: String?,
         accessibilityTextSize: Bool = false,
+        emptyAlerts: Bool = false,
         stormSetupEnabled: Bool = true,
         forceDisplay: Bool = false
     ) -> XCUIApplication {
@@ -1113,6 +1154,7 @@ final class SkyAwareUITests: XCTestCase {
         app.launchEnvironment["UI_TESTS_STORM_SETUP_ENABLED"] = stormSetupEnabled ? "1" : "0"
         app.launchEnvironment["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"] = "1"
         app.launchEnvironment["UI_TESTS_STORM_SETUP_FORCE_DISPLAY"] = forceDisplay ? "1" : "0"
+        app.launchEnvironment["UI_TESTS_EMPTY_ALERTS"] = emptyAlerts ? "1" : "0"
 
         if let colorScheme {
             app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = colorScheme
@@ -1127,7 +1169,10 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
-    private func launchNoCacheResolvingFixtureApp(colorScheme: String?) -> XCUIApplication {
+    private func launchNoCacheResolvingFixtureApp(
+        colorScheme: String?,
+        accessibilityTextSize: Bool = false
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
@@ -1137,6 +1182,10 @@ final class SkyAwareUITests: XCTestCase {
 
         if let colorScheme {
             app.launchEnvironment["UI_TESTS_COLOR_SCHEME"] = colorScheme
+        }
+
+        if accessibilityTextSize {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         }
 
         app.launch()
@@ -1179,11 +1228,10 @@ final class SkyAwareUITests: XCTestCase {
         in app: XCUIApplication,
         detailScrollView: XCUIElement
     ) {
-        let profileAnalysisCard = app.otherElements["storm-setup-profile-analysis"]
-        scrollUntilHittable(profileAnalysisCard, in: detailScrollView)
+        let profileQualityHeading = app.staticTexts["Profile Quality"]
+        scrollUntilHittable(profileQualityHeading, in: detailScrollView)
 
-        XCTAssertTrue(profileAnalysisCard.exists, "Expected the Profile Analysis section to appear after scrolling.")
-        XCTAssertTrue(app.staticTexts["Profile Analysis"].exists, "Expected the Profile Analysis heading to appear.")
+        XCTAssertTrue(profileQualityHeading.exists, "Expected the final profile-derived detail group to appear after scrolling.")
         XCTAssertTrue(
             app.otherElements["Supercell composite parameter. 0.7."].exists,
             "Expected a representative composite row to appear."
@@ -1201,13 +1249,15 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Some profile details are limited."].exists, "Expected the generic profile-analysis note to appear.")
         XCTAssertFalse(app.staticTexts["pressure-level diagnostics trimmed"].exists, "Did not expect the raw profile-analysis warning text to appear.")
 
-        let mLCAPE = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLCAPE — J/kg"))
-        let mLCIN = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLCIN — J/kg"))
-        let mLLCL = app.staticTexts.matching(NSPredicate(format: "label == %@", "MLLCL — m"))
+        let mLCAPE = app.otherElements.matching(NSPredicate(format: "label == %@", "Mixed-layer CAPE. 1,825."))
+        let mLCIN = app.otherElements.matching(NSPredicate(format: "label == %@", "Mixed-layer CIN. -38."))
+        let mLLCL = app.otherElements.matching(
+            NSPredicate(format: "label == %@", "Mixed-layer lifted condensation level. 965.")
+        )
 
-        XCTAssertEqual(mLCAPE.count, 1, "Expected MLCAPE to appear only in Advanced Details.")
-        XCTAssertEqual(mLCIN.count, 1, "Expected MLCIN to appear only in Advanced Details.")
-        XCTAssertEqual(mLLCL.count, 1, "Expected MLLCL to appear only in Advanced Details.")
+        XCTAssertEqual(mLCAPE.count, 1, "Expected MLCAPE to appear in exactly one detail group.")
+        XCTAssertEqual(mLCIN.count, 1, "Expected MLCIN to appear in exactly one detail group.")
+        XCTAssertEqual(mLLCL.count, 1, "Expected MLLCL to appear in exactly one detail group.")
     }
 
     @MainActor
