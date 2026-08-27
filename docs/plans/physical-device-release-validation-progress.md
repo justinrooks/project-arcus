@@ -41,7 +41,7 @@ Every remaining scenario is currently blocked, fixture-qualified, or non-compara
 | Order | Issue | Status | Dependency |
 | ---: | --- | --- | --- |
 | 00 | [#346](https://github.com/justinrooks/project-arcus/issues/346) — Epic | Planned | #345 handoff |
-| 01 | [#347](https://github.com/justinrooks/project-arcus/issues/347) — Establish a privacy-safe physical-device evidence lane | Planned | None |
+| 01 | [#347](https://github.com/justinrooks/project-arcus/issues/347) — Establish a privacy-safe physical-device evidence lane | Blocked | Privacy-safe signpost-only template |
 | 02 | [#348](https://github.com/justinrooks/project-arcus/issues/348) — Lock scenario preparation and evidence classification | Planned | 01 |
 | 03 | [#349](https://github.com/justinrooks/project-arcus/issues/349) — Capture cold launch with no usable Today cache | Planned | 01, 02 |
 | 04 | [#350](https://github.com/justinrooks/project-arcus/issues/350) — Capture warm cached launch and foreground activation | Planned | 03 |
@@ -74,11 +74,12 @@ Every remaining scenario is currently blocked, fixture-qualified, or non-compara
 
 ## Capture cohort ledger
 
-No campaign cohort has started. Issue 01 must append the first cohort manifest before scenario preparation.
+Issue #347 opened the first cohort but did not establish a usable evidence lane. Its raw trace was discarded because
+the trace schema included an app-log store; it is not scenario evidence and cannot be compared with a later cohort.
 
 | Cohort | Source / worktree | Xcode / SDK | Release app / signing | Device / OS / transport | Template | Artifact root |
 | --- | --- | --- | --- | --- | --- | --- |
-| Pending | Not captured | Not captured | Not captured | Not captured | Not proven | Not created |
+| 347-20260825-01 (blocked) | `18421274e7d58f700b466d69cc56c029524ce5a5`; clean `394-performance-measurement-map-quantify-inactive-scene-warming` worktree | Xcode 26.6 (17F113); iPhoneOS 26.5 SDK | Release `com.skyaware.app` 1.1.0 (80) at `/private/tmp/physical-device-release-validation-deriveddata-347/Build/Products/Release-iphoneos/SkyAware.app`; executable SHA-256 `4354b9997e27779767c656b7b4df5e70d072bc036d8f92da764e24b949fe5f59`; Apple Development: JUSTIN WILLIAM ROOKS (4Q89P996K7); installed with `xcrun devicectl device install app --device 00008120-001A744E1193C01E /private/tmp/physical-device-release-validation-deriveddata-347/Build/Products/Release-iphoneos/SkyAware.app` | Js14Max, iPhone 14 Pro Max (iPhone15,3), `00008120-001A744E1193C01E`, iOS 26.6.1 (23G83), paired/manual, wired USB | SwiftUI + Points of Interest; **failed**: `os-log`/`os-log-arg` present and no `com.skyaware.app` signposts | `/private/tmp/physical-device-release-validation/2026-08-25T191820Z-issue-347` (external; invalid trace discarded) |
 
 ## Investigation notes
 
@@ -95,10 +96,28 @@ No campaign cohort has started. Issue 01 must append the first cohort manifest b
 
 ### Issue #347 — 01: Establish a privacy-safe physical-device evidence lane
 
-- **Status:** Planned
+- **Status:** Blocked — privacy-safe signpost-only template unavailable
 - **Goal:** Prove the common device, Release, signpost, SwiftUI, hitch, analysis, recording, and privacy workflow.
 - **Required result:** A warm smoke trace exposes the required lanes and payload-free signposts without app logs.
 - **Stop condition:** Any capture path includes private log payloads or lacks required physical-device lanes.
+- **Attempt (2026-08-25 19:18:31Z):** Installed and warm-launched the recorded Release build on the paired wired
+  device, then attached `xctrace` for a 16.080-second `SwiftUI + Points of Interest` smoke trace. The analyzer listed
+  SwiftUI and hitch schemas, but also `os-log` and `os-log-arg`; filtered `com.skyaware.app` signposts returned zero
+  intervals and zero events. No log entries or payloads were queried.
+- **Evidence classification:** **Blocker** only. The trace is not valid timing, rendered, deterministic, or
+  fixture-qualified evidence.
+- **External tools:** `record_trace.py` SHA-256
+  `7d9c33de1146a274f6ca45790a25f4421ea697893e18a0a6b2ccfb401e245891`; `analyze_trace.py` SHA-256
+  `f40d49cfd4b5afcea717560787c34dcef1574f831a55a7d846303910df539636`.
+- **Native recording workflow:** Defined in the runbook; no screen recording was made.
+- **Template follow-up (2026-08-25):** Approval to create the template was received. A hand-authored external
+  `.instrpkg` using only the `os-signpost` schema did not load through `xctrace`; the native SwiftUI template is a
+  keyed archive, so the supported path is Instruments' template editor. This session lacks macOS assistive access for
+  that UI (`System Events` error `-1719`). No permission was changed.
+- **Next required condition:** Explicit approval to grant Codex/`osascript` macOS assistive access, or a user-created
+  native template configured as SwiftUI plus only `os_signposts` filtered to `com.skyaware.app` / `app.homeRefresh`.
+  The resulting trace must prove SwiftUI/hitch lanes and SkyAware signposts without `os-log`/`os-log-arg`. Do not
+  begin #348 or any scenario capture until that lane is proven.
 
 ### Issue #348 — 02: Lock scenario preparation and evidence classification
 
@@ -211,6 +230,8 @@ No campaign cohort has started. Issue 01 must append the first cohort manifest b
 | Date | Issue | Validation | Result |
 | --- | --- | --- | --- |
 | 2026-07-26 | #346 | Epic/child link and label inspection; stale-placeholder search; `git diff --check`; source/test/project/CI diff guard | Passed: #346 open with 15 linked unchecked children (#347-#361); no stale GitHub placeholders; documentation-only campaign files |
+| 2026-08-25 | #347 | Read-only device/template discovery; Release build/install provenance; 16.080-second wired-device SwiftUI + Points of Interest smoke trace; `--list-runs`, filtered `--list-signposts`, and full JSON/Markdown analysis | Blocked: trace contained `os-log`/`os-log-arg` and zero `com.skyaware.app` signposts. No logs/payloads inspected; invalid external raw trace discarded. |
+| 2026-08-25 | #347 | Approved signpost-template creation; external `os-signpost` package probe; native Instruments editor capability check | Blocked: `xctrace` did not load the hand-authored package and macOS denied assistive access (`-1719`) needed for native template editing. No macOS permission was changed. |
 
 ## Handoff notes
 
