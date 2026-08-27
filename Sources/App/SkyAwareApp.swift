@@ -219,13 +219,13 @@ private extension SkyAwareApp {
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupCurrentResponse: fixture.currentResponse,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
-                    initialMesos: Self.uiTestSeedMesos,
-                    initialAlerts: Self.uiTestSeedWatches
+                    initialMesos: Self.uiTestLaunchMesos,
+                    initialAlerts: Self.uiTestLaunchWatches
                 )
             } else {
                 HomeView(
-                    initialMesos: Self.uiTestSeedMesos,
-                    initialAlerts: Self.uiTestSeedWatches
+                    initialMesos: Self.uiTestLaunchMesos,
+                    initialAlerts: Self.uiTestLaunchWatches
                 )
             }
         } else {
@@ -495,6 +495,14 @@ private extension SkyAwareApp {
 
     static var uiTestSeedMesos: [MdDTO] {
         MD.sampleDiscussionDTOs
+    }
+
+    static var uiTestLaunchWatches: [AlertDTO] {
+        ProcessInfo.processInfo.environment["UI_TESTS_EMPTY_ALERTS"] == "1" ? [] : uiTestSeedWatches
+    }
+
+    static var uiTestLaunchMesos: [MdDTO] {
+        ProcessInfo.processInfo.environment["UI_TESTS_EMPTY_ALERTS"] == "1" ? [] : uiTestSeedMesos
     }
 
     static var uiTestPreferredColorScheme: ColorScheme? {

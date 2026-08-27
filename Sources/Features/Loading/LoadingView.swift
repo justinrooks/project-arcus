@@ -19,6 +19,10 @@ struct LoadingView: View {
     @State private var glowPulseScale: CGFloat = 1.0
     @State private var ghostOpacity: Double = 0.58
 
+    nonisolated static func shouldAnimateAmbientEffects(reduceMotion: Bool) -> Bool {
+        reduceMotion == false
+    }
+
     var body: some View {
         ZStack {
             atmosphericBackground
@@ -42,7 +46,7 @@ struct LoadingView: View {
         .transition(.opacity)
         .animation(SkyAwareMotion.message(reduceMotion), value: message)
         .task(id: reduceMotion) {
-            guard reduceMotion == false else {
+            guard Self.shouldAnimateAmbientEffects(reduceMotion: reduceMotion) else {
                 glowDrift = .zero
                 glowOpacity = 0.24
                 glowPulseOpacity = 0.74
