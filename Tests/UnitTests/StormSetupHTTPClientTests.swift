@@ -77,7 +77,7 @@ struct StormSetupHTTPClientTests {
         #expect(request.method == "GET")
         #expect(components.scheme == "https")
         #expect(components.host == "api.skyaware.app")
-        #expect(components.path == "/api/v1/storm-setup/current")
+        #expect(components.path == "/v1/storm-setup/current")
         #expect(components.queryItems?.first(where: { $0.name == "h3" })?.value == "613160066540896255")
         #expect(request.headers["Accept"] == "application/json")
         #expect(request.headers["User-Agent"]?.isEmpty == false)

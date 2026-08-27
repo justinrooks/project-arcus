@@ -18,7 +18,7 @@ struct ArcusHttpClient: ArcusClient {
     private let baseURL: URL
     private let reachabilityReporter: any ArcusSignalReachabilityReporting
     private let logger = Logger.providersArcusClient
-    // https://api.skyaware.app/api/v2/alerts?county=COC001&fire=COZ245&forecast=COZ045&h3=613167714648719359
+    // https://api.skyaware.app/v2/alerts?county=COC001&fire=COZ245&forecast=COZ045&h3=613167714648719359
     
     init(
         baseURL: URL = ArcusSignalConfiguration.baseURL(),
