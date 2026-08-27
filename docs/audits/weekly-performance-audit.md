@@ -642,3 +642,28 @@
   not a universal device threshold, but the high-volume asymmetry is sufficient to open the bounded cache/warming-policy
   optimization follow-up [#399](https://github.com/justinrooks/project-arcus/issues/399). Issue #394 itself makes no
   production behavior change.
+
+## 2026-08-27 — Result: Map Bounded Scene Cache
+
+- Source and environment: issue #399 working-tree test binary; Xcode 26.6 (17F113); Debug `SkyAware_Tests`; iPhone 17
+  simulator (arm64), iOS 26.5 (23F77). The focused `.xcresult` finalized as Passed with 1/1 tests and 10 non-zero
+  XCTest performance iterations.
+- Policy: `MapFeatureModel` now materializes only the selected layer and uses a two-scene least-recently-used cache. A
+  selection materializes a missing scene, cache hits refresh recency, and a third distinct selection evicts the least
+  recently used scene. Reload and warning-geometry visibility changes clear the cache before rematerializing the selected
+  current plan; no inactive-scene task remains.
+- Representative medians, warnings off / on: eager selected-plus-warming measured 1.598 / 1.704 ms while retaining
+  34 / 58 overlays across six scenes. The bounded selected-plus-first-cold-switch path measured 0.628 / 0.655 ms while
+  retaining 13 / 21 overlays across two scenes. First cold wind selection measured 0.375 / 0.387 ms; a two-scene cache
+  hit measured 0.0014 / 0.0015 ms.
+- High-volume medians, warnings off / on: eager selected-plus-warming measured 25.959 / 26.061 ms while retaining
+  500 / 650 overlays across six scenes. The bounded selected-plus-first-cold-switch path measured 10.107 / 10.680 ms
+  while retaining 200 / 250 overlays across two scenes. First cold wind selection measured 6.063 / 6.303 ms; a two-scene
+  cache hit measured 0.0018 / 0.0020 ms.
+- Interpretation: the bounded policy removes about 16 / 15 ms of high-volume immediate main-actor work and retains
+  300 / 400 fewer overlays after the first switch, in exchange for one cold first-layer selection. These Debug-simulator
+  timings are comparative evidence only, not production timing assertions or a physical-device baseline. The
+  materialization-only harness again did not reproduce the intermittent flash.
+- Validation: focused cache-policy/scene tests passed 26/26; deterministic Map regression suites passed 82/82; the updated
+  materialization benchmark passed 1/1 with 10 non-zero performance iterations. The focused benchmark's warm-switch
+  scenario now records the production two-scene cache rather than a synthetic six-scene eager cache.

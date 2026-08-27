@@ -18,8 +18,7 @@ final class MapFeatureModel {
     private let polygonMapper = MapPolygonMapper()
     private let planner = MapScenePlanner()
     private var renderPlans: [MapLayer: MapLayerRenderPlan] = [:]
-    private var cachedScenes: [MapLayer: MapLayerScene] = [:]
-    private var warmScenesTask: Task<Void, Never>?
+    private var sceneCache = MapSceneCache()
     private var currentSelectedLayer: MapLayer = .categorical
     private var showsWarningGeometry = true
     private var isLoading = false
@@ -109,13 +108,10 @@ final class MapFeatureModel {
 
         guard !Task.isCancelled else { return false }
 
-        warmScenesTask?.cancel()
-        warmScenesTask = nil
         renderPlans = plannedScenes
-        cachedScenes.removeAll(keepingCapacity: true)
+        sceneCache.removeAll()
 
         applySelectedLayer(currentSelectedLayer)
-        scheduleWarmRemainingScenes()
         return true
     }
 
@@ -128,11 +124,8 @@ final class MapFeatureModel {
         guard showsWarningGeometry != isVisible else { return }
 
         showsWarningGeometry = isVisible
-        cachedScenes.removeAll(keepingCapacity: true)
-        warmScenesTask?.cancel()
-        warmScenesTask = nil
+        sceneCache.removeAll()
         applySelectedLayer(currentSelectedLayer)
-        scheduleWarmRemainingScenes()
     }
 
     func captureInitialCenterCoordinateIfNeeded(_ coordinate: CLLocationCoordinate2D?) {
@@ -141,18 +134,13 @@ final class MapFeatureModel {
         initialCenterCoordinate = coordinate
         activeScene = activeScene.withInitialCenterCoordinateIfNeeded(coordinate)
 
-        for (layer, scene) in cachedScenes {
-            cachedScenes[layer] = scene.withInitialCenterCoordinateIfNeeded(coordinate)
+        sceneCache.updateScenes { scene in
+            scene.withInitialCenterCoordinateIfNeeded(coordinate)
         }
     }
 
-    func cancelWork() {
-        warmScenesTask?.cancel()
-        warmScenesTask = nil
-    }
-
     private func showRefreshStateForCurrentSelection() {
-        if let scene = cachedScenes[currentSelectedLayer] ?? renderPlans[currentSelectedLayer].map({ MapSceneMaterializer.materialize(
+        if let scene = sceneCache.scene(for: currentSelectedLayer) ?? renderPlans[currentSelectedLayer].map({ MapSceneMaterializer.materialize(
             plan: $0,
             initialCenterCoordinate: initialCenterCoordinate,
             showsWarningGeometry: showsWarningGeometry
@@ -180,7 +168,7 @@ final class MapFeatureModel {
             return
         }
 
-        if let cachedScene = cachedScenes[layer] {
+        if let cachedScene = sceneCache.scene(for: layer) {
             activeScene = cachedScene
             return
         }
@@ -190,32 +178,8 @@ final class MapFeatureModel {
             initialCenterCoordinate: initialCenterCoordinate,
             showsWarningGeometry: showsWarningGeometry
         )
-        cachedScenes[layer] = scene
+        sceneCache.insert(scene, for: layer)
         activeScene = scene
-    }
-
-    private func scheduleWarmRemainingScenes() {
-        warmScenesTask?.cancel()
-
-        let layersToWarm = MapLayer.allCases.filter { $0 != currentSelectedLayer }
-        guard !layersToWarm.isEmpty else { return }
-
-        warmScenesTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-
-            for layer in layersToWarm {
-                if Task.isCancelled { return }
-                guard self.cachedScenes[layer] == nil, let plan = self.renderPlans[layer] else { continue }
-
-                self.cachedScenes[layer] = MapSceneMaterializer.materialize(
-                    plan: plan,
-                    initialCenterCoordinate: self.initialCenterCoordinate,
-                    showsWarningGeometry: self.showsWarningGeometry
-                )
-
-                await Task.yield()
-            }
-        }
     }
 
     private func fetchSevereRiskShapes(using service: any SpcMapData) async -> MapFetchOutcome<[SevereRiskShapeDTO]> {
@@ -321,5 +285,47 @@ final class MapFeatureModel {
                 ]]
             )
         )
+    }
+}
+
+struct MapSceneCache {
+    static let capacity = 2
+
+    private var scenes: [MapLayer: MapLayerScene] = [:]
+    private(set) var layers: [MapLayer] = []
+
+    var retainedSceneCount: Int { scenes.count }
+    var retainedOverlayCount: Int {
+        scenes.values.reduce(0) { $0 + $1.canvasState.overlays.count }
+    }
+
+    mutating func scene(for layer: MapLayer) -> MapLayerScene? {
+        guard let scene = scenes[layer] else { return nil }
+
+        touch(layer)
+        return scene
+    }
+
+    mutating func insert(_ scene: MapLayerScene, for layer: MapLayer) {
+        scenes[layer] = scene
+        touch(layer)
+
+        while layers.count > Self.capacity {
+            scenes.removeValue(forKey: layers.removeFirst())
+        }
+    }
+
+    mutating func removeAll() {
+        scenes.removeAll(keepingCapacity: true)
+        layers.removeAll(keepingCapacity: true)
+    }
+
+    mutating func updateScenes(_ transform: (MapLayerScene) -> MapLayerScene) {
+        scenes = scenes.mapValues(transform)
+    }
+
+    private mutating func touch(_ layer: MapLayer) {
+        layers.removeAll { $0 == layer }
+        layers.append(layer)
     }
 }

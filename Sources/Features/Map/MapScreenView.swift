@@ -55,7 +55,6 @@ struct MapScreenView: View {
         .onDisappear {
             reloadTask?.cancel()
             reloadTask = nil
-            model.cancelWork()
         }
     }
     
