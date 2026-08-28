@@ -633,7 +633,32 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             guard let response else {
                 return .preserve
             }
-            return .replace(response)
+            guard let projectionStore = environment.projectionStore else {
+                environment.logger.error("AQI persistence unavailable; publishing live response")
+                return .replace(response)
+            }
+
+            do {
+                let accepted = try await projectionStore.updateAirQuality(
+                    response,
+                    for: context,
+                    loadedAt: .now
+                )
+                guard let acceptedAirQuality = accepted.airQuality else {
+                    environment.logger.error(
+                        "AQI persistence returned no accepted response; publishing live response"
+                    )
+                    return .replace(response)
+                }
+                return .replace(acceptedAirQuality)
+            } catch is CancellationError {
+                return .preserve
+            } catch {
+                environment.logger.error(
+                    "AQI persistence unavailable; publishing live response error=\(String(describing: error), privacy: .public)"
+                )
+                return .replace(response)
+            }
         } catch is CancellationError {
             return .preserve
         } catch {
