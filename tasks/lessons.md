@@ -119,3 +119,10 @@
   isolated test process, then prove the complete parallel unit plan—not only a focused lane or one lucky full run.
 - Confirm whether a persistence shape has actually shipped before designing a migration graph. For unreleased,
   developer-only schemas, prefer a clean store reset and keep production free of speculative compatibility code.
+
+## 2026-08-27
+
+- When persisting a response with an optional nested value, store presence independently from that value's optional
+  fields. Otherwise `nil` and an empty-but-present nested value collapse into the same persisted state.
+- Label frozen migration fixtures by the exact schema provenance they represent. Immediate-pre-change evidence is not
+  evidence for the latest shipped release unless generated from that release.

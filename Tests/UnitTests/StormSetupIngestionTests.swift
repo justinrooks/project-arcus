@@ -2106,6 +2106,14 @@ private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
         makeProjectionRecord(context: context, updatedAt: loadedAt)
     }
 
+    func updateAirQuality(
+        _ airQuality: AirQualityCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        makeProjectionRecord(context: context, updatedAt: loadedAt)
+    }
+
     func updateSlowProducts(
         stormRisk _: StormRiskLevel?,
         severeRisk _: SevereWeatherThreat?,
@@ -2176,6 +2184,14 @@ private actor AtomicHomeProjectionStore: HomeProjectionPersisting {
 
     func updateWeather(
         _ weather: SummaryWeather?,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord {
+        throw TestError.failed
+    }
+
+    func updateAirQuality(
+        _ airQuality: AirQualityCurrentResponse,
         for context: LocationContext,
         loadedAt: Date
     ) async throws -> HomeProjectionRecord {

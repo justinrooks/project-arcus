@@ -200,6 +200,12 @@ protocol HomeProjectionPersisting: Sendable {
         loadedAt: Date
     ) async throws -> HomeProjectionRecord
 
+    func updateAirQuality(
+        _ airQuality: AirQualityCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date
+    ) async throws -> HomeProjectionRecord
+
     func updateSlowProducts(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
@@ -295,6 +301,26 @@ actor HomeProjectionStore {
         projection.lastWeatherLoadAt = loadedAt
         projection.updatedAt = loadedAt
         try saveProjection(named: "Projection Weather Save")
+        return projection.record
+    }
+
+    func updateAirQuality(
+        _ airQuality: AirQualityCurrentResponse,
+        for context: LocationContext,
+        loadedAt: Date = .now
+    ) throws -> HomeProjectionRecord {
+        let projectionKey = HomeProjection.projectionKey(for: context)
+        if let existing = try fetchProjection(withKey: projectionKey),
+           let observedAt = existing.airQualityObservedAt,
+           airQuality.observedAt < observedAt {
+            return existing.record
+        }
+
+        let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
+        projection.setAirQuality(airQuality)
+        projection.lastAirQualityLoadAt = loadedAt
+        projection.updatedAt = loadedAt
+        try saveProjection(named: "Projection Air Quality Save")
         return projection.record
     }
 
