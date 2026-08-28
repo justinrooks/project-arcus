@@ -52,6 +52,152 @@ struct HomeProjectionStoreTests {
         #expect(projection.stormSetupCurrentResponse == nil)
         #expect(projection.stormSetup == nil)
         #expect(projection.lastStormSetupLoadAt == nil)
+        #expect(projection.airQuality == nil)
+        #expect(projection.lastAirQualityLoadAt == nil)
+    }
+
+    @Test("updating AQI reconstructs every response field and rejects older observations")
+    func updateAirQuality_persistsResponseAndRejectsOlderObservation() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let newer = makeAirQualityResponse(
+            aqi: 121,
+            categoryIdentifier: 3,
+            categoryName: "Unhealthy for Sensitive Groups",
+            primaryPollutant: "PM2.5",
+            observedAt: 900,
+            sourceIdentifier: "airnow"
+        )
+        let older = makeAirQualityResponse(
+            aqi: 42,
+            categoryIdentifier: nil,
+            categoryName: nil,
+            primaryPollutant: nil,
+            observedAt: 800,
+            sourceIdentifier: "older-source"
+        )
+
+        _ = try await store.updateAirQuality(newer, for: context, loadedAt: Date(timeIntervalSince1970: 950))
+        let rejected = try await store.updateAirQuality(older, for: context, loadedAt: Date(timeIntervalSince1970: 960))
+
+        #expect(rejected.airQuality == newer)
+        #expect(rejected.lastAirQualityLoadAt == Date(timeIntervalSince1970: 950))
+        #expect(rejected.updatedAt == Date(timeIntervalSince1970: 950))
+    }
+
+    @Test("equal AQI observations replace the cached payload")
+    func updateAirQuality_equalObservationReplacesCachedPayload() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let observedAt = Date(timeIntervalSince1970: 900)
+        let first = AirQualityCurrentResponse(
+            aqi: 50, category: nil, primaryPollutant: "O3", observedAt: observedAt, sourceIdentifier: "first"
+        )
+        let replacement = AirQualityCurrentResponse(
+            aqi: 125, category: .init(identifier: 3, name: "Unhealthy for Sensitive Groups"),
+            primaryPollutant: "PM2.5", observedAt: observedAt, sourceIdentifier: "replacement"
+        )
+
+        _ = try await store.updateAirQuality(first, for: context, loadedAt: Date(timeIntervalSince1970: 950))
+        let updated = try await store.updateAirQuality(replacement, for: context, loadedAt: Date(timeIntervalSince1970: 960))
+
+        #expect(updated.airQuality == replacement)
+        #expect(updated.lastAirQualityLoadAt == Date(timeIntervalSince1970: 960))
+        #expect(updated.updatedAt == Date(timeIntervalSince1970: 960))
+    }
+
+    @Test("AQI preserves optional category presence through disk reopen")
+    func updateAirQuality_preservesOptionalCategoryPresence() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: root.appendingPathComponent("SkyAware_Data.sqlite"))
+        let absentContext = makeContext(h3Cell: 1)
+        let emptyContext = makeContext(h3Cell: 2)
+        let populatedContext = makeContext(h3Cell: 3)
+        let responses = [
+            (absentContext, AirQualityCurrentResponse(aqi: 50, category: nil, primaryPollutant: nil, observedAt: .now, sourceIdentifier: "airnow")),
+            (emptyContext, AirQualityCurrentResponse(aqi: 75, category: .init(identifier: nil, name: nil), primaryPollutant: "O3", observedAt: .now, sourceIdentifier: "airnow")),
+            (populatedContext, makeAirQualityResponse(aqi: 125, observedAt: 900))
+        ]
+
+        do {
+            let store = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+            for (context, response) in responses {
+                _ = try await store.updateAirQuality(response, for: context)
+            }
+        }
+
+        let store = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+        for (context, response) in responses {
+            #expect(try #require(await store.projection(for: context)).airQuality == response)
+        }
+    }
+
+    @Test("updating AQI preserves all non-AQI projection slices and timestamps")
+    func updateAirQuality_preservesExistingSlicesAndTimestamps() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let alert = Watch.sampleWatchRows[0]
+        let meso = MD.sampleDiscussionDTOs[0]
+        let stormSetup = makeStormSetupCurrentResponse()
+
+        _ = try await store.updateWeather(makeWeather(), for: context, loadedAt: Date(timeIntervalSince1970: 300))
+        _ = try await store.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .tornado(probability: 0.10),
+            fireRisk: .critical,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 400)
+        )
+        _ = try await store.updateHotAlerts(alerts: [alert], mesos: [meso], for: context, loadedAt: Date(timeIntervalSince1970: 500))
+        _ = try await store.updateStormSetup(stormSetup, for: context, loadedAt: Date(timeIntervalSince1970: 600))
+
+        let updated = try await store.updateAirQuality(
+            makeAirQualityResponse(observedAt: 700),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 800)
+        )
+
+        #expect(updated.weather == makeWeather())
+        #expect(updated.stormRisk == .slight)
+        #expect(updated.severeRisk == .tornado(probability: 0.10))
+        #expect(updated.fireRisk == .critical)
+        #expect(updated.activeAlerts == [alert])
+        #expect(updated.activeMesos == [meso])
+        #expect(updated.stormSetupCurrentResponse == stormSetup)
+        #expect(updated.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
+        #expect(updated.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 400))
+        #expect(updated.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
+        #expect(updated.lastStormSetupLoadAt == Date(timeIntervalSince1970: 600))
+        #expect(updated.lastAirQualityLoadAt == Date(timeIntervalSince1970: 800))
+    }
+
+    @Test("AQI survives an on-disk current-schema reopen for independent projection keys")
+    func updateAirQuality_diskContainerReopensIndependentProjections() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: root.appendingPathComponent("SkyAware_Data.sqlite"))
+        let first = makeContext(h3Cell: 123_456)
+        let second = makeContext(h3Cell: 654_321)
+        let firstResponse = makeAirQualityResponse(aqi: 52, observedAt: 700)
+        let secondResponse = makeAirQualityResponse(aqi: 152, observedAt: 800)
+
+        do {
+            let store = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+            _ = try await store.updateAirQuality(firstResponse, for: first, loadedAt: Date(timeIntervalSince1970: 900))
+            _ = try await store.updateAirQuality(secondResponse, for: second, loadedAt: Date(timeIntervalSince1970: 950))
+        }
+
+        let reopenedStore = HomeProjectionStore(modelContainer: try ModelContainer(for: schema, configurations: configuration))
+        #expect(try #require(await reopenedStore.projection(for: first)).airQuality == firstResponse)
+        #expect(try #require(await reopenedStore.projection(for: second)).airQuality == secondResponse)
     }
 
     @Test("updating Storm Setup stores the aggregate payload and load timestamp")
@@ -287,13 +433,15 @@ struct HomeProjectionStoreTests {
 
         #expect(persisted.stormSetupCurrentResponse == nil)
         #expect(persisted.stormSetup == nil)
+        #expect(persisted.airQuality == nil)
+        #expect(persisted.lastAirQualityLoadAt == nil)
         #expect(persisted.weather == weather)
         #expect(persisted.lastWeatherLoadAt == Date(timeIntervalSince1970: 300))
         #expect(persisted.lastStormSetupLoadAt == Date(timeIntervalSince1970: 600))
     }
 
-    @Test("a pre-change store migrates without losing unrelated projection data")
-    func projection_preChangeStoreMigratesWithoutStormSetupCache() async throws {
+    @Test("the immediate pre-AQI store migrates without losing unrelated projection data")
+    func projection_immediatePreAQIStoreMigratesWithoutAirQualityCache() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -303,18 +451,13 @@ struct HomeProjectionStoreTests {
         let context = makeContext()
         let weather = makeWeather()
         let createdAt = Date(timeIntervalSince1970: 100)
-
-        do {
-            let legacySchema = Schema(versionedSchema: HomeProjectionSchemaV1.self)
-            let legacyConfiguration = ModelConfiguration("SkyAware_Data", schema: legacySchema, url: storeURL)
-            let legacyContainer = try ModelContainer(for: legacySchema, configurations: legacyConfiguration)
-            let legacyContext = ModelContext(legacyContainer)
-            let legacyProjection = HomeProjectionSchemaV1.HomeProjection(context: context, createdAt: createdAt)
-            legacyProjection.weatherPayload = HomeProjectionWeatherPayload(summary: weather)
-            legacyProjection.lastWeatherLoadAt = Date(timeIntervalSince1970: 300)
-            legacyContext.insert(legacyProjection)
-            try legacyContext.save()
-        }
+        let fixtureURL = try #require(
+            Bundle(for: HomeProjectionFixtureBundleLocator.self).url(
+                forResource: "SkyAware_Data",
+                withExtension: "sqlite"
+            )
+        )
+        try FileManager.default.copyItem(at: fixtureURL, to: storeURL)
 
         let schema = Schema([HomeProjection.self])
         let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
@@ -326,12 +469,15 @@ struct HomeProjectionStoreTests {
         #expect(persisted.createdAt == createdAt)
         #expect(persisted.stormSetupCurrentResponse == nil)
         #expect(persisted.stormSetup == nil)
+        #expect(persisted.airQuality == nil)
+        #expect(persisted.lastAirQualityLoadAt == nil)
         let migratedModel = try #require(ModelContext(container).fetch(FetchDescriptor<HomeProjection>()).first)
         #expect(migratedModel.convectiveRiskComparisonLocationKey == nil)
         #expect(migratedModel.convectiveRiskComparisonSourceKey == nil)
         #expect(migratedModel.fireRiskComparisonLocationKey == nil)
         #expect(migratedModel.fireRiskComparisonSourceKey == nil)
     }
+
 
     @Test("updating slow products seeds a baseline without a change and preserves existing slices")
     func updateSlowProducts_seedsBaselineWithoutChangeAndPreservesExistingSlices() async throws {
@@ -1191,6 +1337,23 @@ struct HomeProjectionStoreTests {
         )
     }
 
+    private func makeAirQualityResponse(
+        aqi: Int = 121,
+        categoryIdentifier: Int? = 3,
+        categoryName: String? = "Unhealthy for Sensitive Groups",
+        primaryPollutant: String? = "PM2.5",
+        observedAt: TimeInterval = 700,
+        sourceIdentifier: String = "airnow"
+    ) -> AirQualityCurrentResponse {
+        AirQualityCurrentResponse(
+            aqi: aqi,
+            category: .init(identifier: categoryIdentifier, name: categoryName),
+            primaryPollutant: primaryPollutant,
+            observedAt: Date(timeIntervalSince1970: observedAt),
+            sourceIdentifier: sourceIdentifier
+        )
+    }
+
     private func makeStormSetupDTO(
         h3Cell: Int64 = 123_456,
         surfaceHeightMslM: Double = 1_132.4,
@@ -1418,77 +1581,7 @@ struct HomeProjectionStoreTests {
             effectiveLayer: nil,
             stormMotion: nil
         )
-    }
-
-enum HomeProjectionSchemaV1: VersionedSchema {
-    static var versionIdentifier: Schema.Version { .init(1, 0, 0) }
-
-    static var models: [any PersistentModel.Type] { [HomeProjection.self] }
-
-    enum SevereWeatherThreat: Codable {
-        case allClear
-        case wind(probability: Double)
-        case hail(probability: Double)
-        case tornado(probability: Double)
-    }
-
-    @Model
-    final class HomeProjection {
-        var id: UUID
-        var projectionKey: String
-
-        var latitude: Double
-        var longitude: Double
-        var h3Cell: Int64
-        var countyCode: String
-        var forecastZone: String?
-        var fireZone: String
-        var placemarkSummary: String?
-        var timeZoneId: String?
-
-        var locationTimestamp: Date
-        var createdAt: Date
-        var updatedAt: Date
-        var lastViewedAt: Date?
-
-        var weatherPayload: HomeProjectionWeatherPayload?
-        var stormSetupCurrentResponse: StormSetupCurrentResponse?
-        var stormRisk: StormRiskLevel?
-        var severeRisk: HomeProjectionSchemaV1.SevereWeatherThreat?
-        var fireRisk: FireRiskLevel?
-        var activeAlerts: [AlertDTO]
-        var activeMesos: [MdDTO]
-
-        var lastHotAlertsLoadAt: Date?
-        var lastSlowProductsLoadAt: Date?
-        var lastWeatherLoadAt: Date?
-
-        init(context: LocationContext, createdAt: Date = .now, lastViewedAt: Date? = nil) {
-            id = UUID()
-            projectionKey = SkyAware.HomeProjection.projectionKey(for: context)
-            latitude = context.snapshot.coordinates.latitude
-            longitude = context.snapshot.coordinates.longitude
-            h3Cell = context.h3Cell
-            countyCode = context.grid.countyCode ?? ""
-            forecastZone = context.grid.forecastZone
-            fireZone = context.grid.fireZone ?? ""
-            placemarkSummary = context.snapshot.placemarkSummary
-            timeZoneId = context.grid.timeZoneId
-            locationTimestamp = context.snapshot.timestamp
-            self.createdAt = createdAt
-            updatedAt = createdAt
-            self.lastViewedAt = lastViewedAt
-            weatherPayload = nil
-            stormSetupCurrentResponse = nil
-            stormRisk = nil
-            severeRisk = nil
-            fireRisk = nil
-            activeAlerts = []
-            activeMesos = []
-            lastHotAlertsLoadAt = nil
-            lastSlowProductsLoadAt = nil
-            lastWeatherLoadAt = nil
-        }
-    }
 }
+
+private final class HomeProjectionFixtureBundleLocator {}
 }

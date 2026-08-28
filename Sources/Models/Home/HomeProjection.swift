@@ -74,11 +74,13 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let fireRisk: FireRiskLevel?
     let activeAlerts: [AlertDTO]
     let activeMesos: [MdDTO]
+    let airQuality: AirQualityCurrentResponse?
     let stormSetupCurrentResponse: StormSetupCurrentResponse?
     let stormSetup: StormSetupDTO?
     let lastHotAlertsLoadAt: Date?
     let lastSlowProductsLoadAt: Date?
     let lastWeatherLoadAt: Date?
+    let lastAirQualityLoadAt: Date?
     let lastStormSetupLoadAt: Date?
 
     init(
@@ -105,6 +107,8 @@ struct HomeProjectionRecord: Sendable, Equatable {
         lastHotAlertsLoadAt: Date?,
         lastSlowProductsLoadAt: Date?,
         lastWeatherLoadAt: Date?,
+        airQuality: AirQualityCurrentResponse? = nil,
+        lastAirQualityLoadAt: Date? = nil,
         stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         stormSetup: StormSetupDTO? = nil,
         lastStormSetupLoadAt: Date? = nil
@@ -129,11 +133,13 @@ struct HomeProjectionRecord: Sendable, Equatable {
         self.fireRisk = fireRisk
         self.activeAlerts = activeAlerts
         self.activeMesos = activeMesos
+        self.airQuality = airQuality
         self.stormSetupCurrentResponse = stormSetupCurrentResponse
         self.stormSetup = stormSetup
         self.lastHotAlertsLoadAt = lastHotAlertsLoadAt
         self.lastSlowProductsLoadAt = lastSlowProductsLoadAt
         self.lastWeatherLoadAt = lastWeatherLoadAt
+        self.lastAirQualityLoadAt = lastAirQualityLoadAt
         self.lastStormSetupLoadAt = lastStormSetupLoadAt
     }
 }
@@ -181,10 +187,18 @@ final class HomeProjection {
     var fireRiskComparisonSourceKey: String?
     var activeAlerts: [AlertDTO]
     var activeMesos: [MdDTO]
+    var airQualityAQI: Int?
+    var airQualityCategoryIdentifier: Int?
+    var airQualityCategoryName: String?
+    var airQualityCategoryIsPresent: Bool?
+    var airQualityPrimaryPollutant: String?
+    var airQualityObservedAt: Date?
+    var airQualitySourceIdentifier: String?
 
     var lastHotAlertsLoadAt: Date?
     var lastSlowProductsLoadAt: Date?
     var lastWeatherLoadAt: Date?
+    var lastAirQualityLoadAt: Date?
     var lastStormSetupLoadAt: Date?
 
     init(
@@ -218,9 +232,17 @@ final class HomeProjection {
         fireRiskComparisonSourceKey = nil
         activeAlerts = []
         activeMesos = []
+        airQualityAQI = nil
+        airQualityCategoryIdentifier = nil
+        airQualityCategoryName = nil
+        airQualityCategoryIsPresent = nil
+        airQualityPrimaryPollutant = nil
+        airQualityObservedAt = nil
+        airQualitySourceIdentifier = nil
         lastHotAlertsLoadAt = nil
         lastSlowProductsLoadAt = nil
         lastWeatherLoadAt = nil
+        lastAirQualityLoadAt = nil
         lastStormSetupLoadAt = nil
     }
 }
@@ -245,6 +267,33 @@ extension HomeProjection {
             severeRiskKindRawValue = storage.kindRawValue
             severeRiskProbability = storage.probability
         }
+    }
+
+    var airQuality: AirQualityCurrentResponse? {
+        guard let airQualityAQI,
+              let airQualityObservedAt,
+              let airQualitySourceIdentifier else {
+            return nil
+        }
+        return AirQualityCurrentResponse(
+            aqi: airQualityAQI,
+            category: airQualityCategoryIsPresent == true
+                ? .init(identifier: airQualityCategoryIdentifier, name: airQualityCategoryName)
+                : nil,
+            primaryPollutant: airQualityPrimaryPollutant,
+            observedAt: airQualityObservedAt,
+            sourceIdentifier: airQualitySourceIdentifier
+        )
+    }
+
+    func setAirQuality(_ response: AirQualityCurrentResponse) {
+        airQualityAQI = response.aqi
+        airQualityCategoryIdentifier = response.category?.identifier
+        airQualityCategoryName = response.category?.name
+        airQualityCategoryIsPresent = response.category != nil
+        airQualityPrimaryPollutant = response.primaryPollutant
+        airQualityObservedAt = response.observedAt
+        airQualitySourceIdentifier = response.sourceIdentifier
     }
 
     static func projectionKey(for context: LocationContext) -> String {
@@ -294,6 +343,8 @@ extension HomeProjection {
             lastHotAlertsLoadAt: lastHotAlertsLoadAt,
             lastSlowProductsLoadAt: lastSlowProductsLoadAt,
             lastWeatherLoadAt: lastWeatherLoadAt,
+            airQuality: airQuality,
+            lastAirQualityLoadAt: lastAirQualityLoadAt,
             stormSetupCurrentResponse: stormSetupCurrentResponse,
             stormSetup: stormSetupCurrentResponse.map(StormSetupDTO.init(response:)),
             lastStormSetupLoadAt: lastStormSetupLoadAt
