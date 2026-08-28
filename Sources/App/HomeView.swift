@@ -74,6 +74,7 @@ struct HomeView: View {
             pipelineMesos: refreshPipeline.mesos,
             pipelineAlerts: refreshPipeline.alerts,
             resolvedLocationScopedRefreshKey: refreshPipeline.lastResolvedLocationScopedRefreshKey,
+            airQualityRefreshKey: refreshPipeline.airQualityRefreshKey,
             alertSnapshotRefreshKey: refreshPipeline.alertSnapshotRefreshKey,
             pipelineStormSetup: refreshPipeline.stormSetup,
             pipelineStormSetupCurrentResponse: refreshPipeline.stormSetupCurrentResponse,

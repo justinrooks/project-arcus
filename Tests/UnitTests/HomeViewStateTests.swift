@@ -578,6 +578,7 @@ struct HomeViewProjectionLaunchTests {
         context: LocationContext,
         updatedAt: Date,
         stormSetup: StormSetupDTO? = nil,
+        airQuality: AirQualityCurrentResponse? = nil,
         timeZoneId: String? = nil,
         activeAlerts: [AlertDTO] = [],
         activeMesos: [MdDTO] = []
@@ -606,6 +607,8 @@ struct HomeViewProjectionLaunchTests {
             lastHotAlertsLoadAt: updatedAt,
             lastSlowProductsLoadAt: updatedAt,
             lastWeatherLoadAt: updatedAt,
+            airQuality: airQuality,
+            lastAirQualityLoadAt: airQuality == nil ? nil : updatedAt,
             stormSetup: stormSetup,
             lastStormSetupLoadAt: stormSetup == nil ? nil : updatedAt
         )
@@ -745,9 +748,14 @@ struct HomeViewAlertOwnershipTests {
         let pipelineAlert = Watch.sampleWatchRows[1]
         let cachedMeso = MD.sampleDiscussionDTOs[0]
         let pipelineMeso = MD.sampleDiscussionDTOs[1]
+        let cachedAirQuality = try DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(#"{"aqi":61,"category":{"identifier":2,"name":"Moderate"},"primaryPollutant":"PM2.5","observedAt":"2026-07-12T20:00:00Z","sourceIdentifier":"airnow"}"#.utf8)
+        )
         let projection = makeProjectionRecord(
             context: currentContext,
             updatedAt: Date(timeIntervalSince1970: 100),
+            airQuality: cachedAirQuality,
             activeAlerts: [cachedAlert],
             activeMesos: [cachedMeso]
         )
@@ -769,7 +777,7 @@ struct HomeViewAlertOwnershipTests {
         #expect(stale.projection == projection)
         #expect(stale.alerts == [cachedAlert])
         #expect(stale.mesos == [cachedMeso])
-        #expect(stale.airQuality == nil)
+        #expect(stale.airQuality == cachedAirQuality)
 
         let committed = makePresentationSnapshot(
             projections: [projection],
@@ -779,6 +787,7 @@ struct HomeViewAlertOwnershipTests {
             pipelineMesos: [],
             pipelineAlerts: [],
             resolvedLocationScopedRefreshKey: currentContext.refreshKey,
+            airQualityRefreshKey: currentContext.refreshKey,
             alertSnapshotRefreshKey: currentContext.refreshKey
         )
         #expect(committed.isCurrentContextResolvedInPipeline)
@@ -786,6 +795,47 @@ struct HomeViewAlertOwnershipTests {
         #expect(committed.alerts.isEmpty)
         #expect(committed.mesos.isEmpty)
         #expect(committed.airQuality?.aqi == 121)
+
+        let preserved = makePresentationSnapshot(
+            projections: [projection],
+            newestStartupProjection: projection,
+            currentContext: currentContext,
+            resolvedLocationScopedRefreshKey: currentContext.refreshKey,
+            alertSnapshotRefreshKey: currentContext.refreshKey
+        )
+        #expect(preserved.airQuality == cachedAirQuality)
+
+        let newLocationAirQuality = try DecoderFactory.iso8601.decode(
+            AirQualityCurrentResponse.self,
+            from: Data(#"{"aqi":42,"category":{"identifier":1,"name":"Good"},"primaryPollutant":"O3","observedAt":"2026-07-12T20:30:00Z","sourceIdentifier":"airnow"}"#.utf8)
+        )
+        let newLocationProjection = makeProjectionRecord(
+            context: previousContext,
+            updatedAt: Date(timeIntervalSince1970: 200),
+            airQuality: newLocationAirQuality
+        )
+        let locationChanged = makePresentationSnapshot(
+            projections: [projection, newLocationProjection],
+            newestStartupProjection: newLocationProjection,
+            currentContext: previousContext,
+            pipelineAirQuality: airQuality,
+            resolvedLocationScopedRefreshKey: previousContext.refreshKey,
+            airQualityRefreshKey: currentContext.refreshKey,
+            alertSnapshotRefreshKey: previousContext.refreshKey
+        )
+        #expect(locationChanged.projection == newLocationProjection)
+        #expect(locationChanged.airQuality == newLocationAirQuality)
+
+        let locationChangedWithoutCache = makePresentationSnapshot(
+            projections: [projection, makeProjectionRecord(context: previousContext, updatedAt: Date(timeIntervalSince1970: 200))],
+            newestStartupProjection: newLocationProjection,
+            currentContext: previousContext,
+            pipelineAirQuality: airQuality,
+            resolvedLocationScopedRefreshKey: previousContext.refreshKey,
+            airQualityRefreshKey: currentContext.refreshKey,
+            alertSnapshotRefreshKey: previousContext.refreshKey
+        )
+        #expect(locationChangedWithoutCache.airQuality == nil)
 
         let staticOverride = makePresentationSnapshot(
             projections: [projection],
@@ -808,6 +858,7 @@ struct HomeViewAlertOwnershipTests {
         pipelineMesos: [MdDTO] = [],
         pipelineAlerts: [AlertDTO] = [],
         resolvedLocationScopedRefreshKey: LocationContext.RefreshKey? = nil,
+        airQualityRefreshKey: LocationContext.RefreshKey? = nil,
         alertSnapshotRefreshKey: LocationContext.RefreshKey? = nil,
         isUITestStaticMode: Bool = false
     ) -> HomeView.HomePresentationSnapshot {
@@ -824,6 +875,7 @@ struct HomeViewAlertOwnershipTests {
             pipelineMesos: pipelineMesos,
             pipelineAlerts: pipelineAlerts,
             resolvedLocationScopedRefreshKey: resolvedLocationScopedRefreshKey,
+            airQualityRefreshKey: airQualityRefreshKey,
             alertSnapshotRefreshKey: alertSnapshotRefreshKey,
             pipelineStormSetup: nil,
             pipelineStormSetupCurrentResponse: nil,

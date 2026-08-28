@@ -88,7 +88,7 @@ final class HomeRefreshPipeline {
     private(set) var lastResolvedLocationScopedRefreshKey: LocationContext.RefreshKey?
     private(set) var stormSetupRefreshKey: LocationContext.RefreshKey?
     private(set) var alertSnapshotRefreshKey: LocationContext.RefreshKey?
-    private var airQualityRefreshKey: LocationContext.RefreshKey?
+    private(set) var airQualityRefreshKey: LocationContext.RefreshKey?
     private var foregroundTimerTask: Task<Void, Never>?
     private var lastHandledScenePhase: ScenePhase?
     private var deferredContextRefreshKey: LocationContext.RefreshKey?

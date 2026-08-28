@@ -107,13 +107,29 @@ cannot provide stale-while-revalidate publication.
 
 ### Issue #407 — 03: Roll cached AQI forward in Today
 
-- **Status:** Planned
+- **Status:** Awaiting human review
 - **Goal:** Use the selected projection AQI until matching pipeline AQI becomes available.
 - **Expected production files:** `HomeView+PresentationState.swift`; `HomeView.swift` only if the pure selector needs an
   additional copied input.
 - **Required proof:** startup cache; cache during delayed enrichment; fresh replacement; same-location preserve;
   location switch isolation; existing preference threshold behavior; no missing-value flash in manual validation.
-- **Stop condition:** Presentation tests, full unit lane, Debug build, navigation smoke, and warm-launch check pass.
+- **Completed:** Presentation now returns the selected projection's cached AQI until a matching AQI refresh key's
+  pipeline response replaces it. A pipeline AQI is never used before its own refresh key resolves, preserving
+  location isolation during scene-active primes.
+  No metric identity, animation, or presentation-preference code changed.
+- **Focused proof:** `HomeViewAlertOwnershipTests` passed 1/1 on iPhone 17, iOS 26.5, Debug. The regression coverage
+  proves cached startup, delayed-enrichment retention, fresh replacement, same-location preservation, and rejection
+  of prior-location pipeline AQI. Finalized result bundle:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.zyHwkp/unit.xcresult`.
+- **Build:** Debug simulator build passed on iPhone 17, iOS 26.5.
+- **Full unit lane:** passed 1,040/1,040 on iPhone 17, iOS 26.5, Debug. Finalized result bundle:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.PHRybw/unit.xcresult`.
+- **Navigation smoke:** passed 1/1 on iPhone 17, iOS 26.5, Debug. Finalized result bundle:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.TAgtbG/ui-navigation.xcresult`.
+- **Manual follow-up:** The delayed-AQI warm launch and cached-location-switch checks remain for human review; the
+  XcodeBuildMCP UI-control connector was unavailable in this session.
+- **Stop condition:** Automated presentation, build, unit, and navigation proof pass; complete the two manual checks
+  during human review before approving publication.
 
 ## Verification ledger
 
