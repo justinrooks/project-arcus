@@ -36,6 +36,85 @@ enum SummaryStormSetupSlot: Sendable, Equatable {
     }
 }
 
+enum StormSetupSummaryState: Sendable, Equatable {
+    case hidden
+    case analyzing
+    case guidance
+    case noNotableSetup
+    case analysisNotNeeded
+    case unavailable
+
+    var reservesSection: Bool {
+        self != .hidden
+    }
+
+    var sectionSlot: SummaryStormSetupSlot {
+        switch self {
+        case .hidden:
+            .hidden
+        case .guidance:
+            .visible
+        case .analyzing, .noNotableSetup, .analysisNotNeeded, .unavailable:
+            .loading
+        }
+    }
+
+    static func select(_ input: StormSetupSummaryStateInput) -> Self {
+        guard input.isLocationUnavailable == false else {
+            return .hidden
+        }
+
+        if input.hasDisplayableGuidance, input.isForcedPresentation {
+            return .guidance
+        }
+
+        guard input.policyInput.preferences.stormSetupEnabled else {
+            return .hidden
+        }
+
+        if input.hasDisplayableGuidance {
+            return .guidance
+        }
+
+        if input.hasFreshGuidance {
+            return .noNotableSetup
+        }
+
+        if StormSetupFetchPolicy.shouldFetch(input.policyInput) {
+            return input.isRefreshInFlight ? .analyzing : .unavailable
+        }
+
+        return .analysisNotNeeded
+    }
+}
+
+struct StormSetupSummaryStateInput: Sendable, Equatable {
+    let policyInput: StormSetupPolicyInput
+    let hasDisplayableGuidance: Bool
+    let isRefreshInFlight: Bool
+    let isLocationUnavailable: Bool
+    let isForcedPresentation: Bool
+
+    init(
+        policyInput: StormSetupPolicyInput,
+        hasDisplayableGuidance: Bool,
+        isRefreshInFlight: Bool,
+        isLocationUnavailable: Bool,
+        isForcedPresentation: Bool = false
+    ) {
+        self.policyInput = policyInput
+        self.hasDisplayableGuidance = hasDisplayableGuidance
+        self.isRefreshInFlight = isRefreshInFlight
+        self.isLocationUnavailable = isLocationUnavailable
+        self.isForcedPresentation = isForcedPresentation
+    }
+
+    var hasFreshGuidance: Bool {
+        policyInput.payloadExpiresAt.map { $0 > policyInput.now } == true &&
+            policyInput.assessmentOverall != nil
+    }
+}
+
 struct SummarySectionPlan: Sendable, Equatable {
     let sections: [SummarySectionKind]
 
