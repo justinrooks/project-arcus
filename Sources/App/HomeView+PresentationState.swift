@@ -35,6 +35,7 @@ extension HomeView {
             pipelineMesos: [MdDTO],
             pipelineAlerts: [AlertDTO],
             resolvedLocationScopedRefreshKey: LocationContext.RefreshKey?,
+            airQualityRefreshKey: LocationContext.RefreshKey?,
             alertSnapshotRefreshKey: LocationContext.RefreshKey?,
             pipelineStormSetup: StormSetupDTO?,
             pipelineStormSetupCurrentResponse: StormSetupCurrentResponse?,
@@ -45,6 +46,7 @@ extension HomeView {
             let projection = HomeView.selectProjection(from: projections, currentContext: currentContext)
             let currentRefreshKey = currentContext?.refreshKey
             let isResolved = currentRefreshKey == resolvedLocationScopedRefreshKey && currentRefreshKey != nil
+            let isAirQualityResolved = currentRefreshKey == airQualityRefreshKey && currentRefreshKey != nil
             let currentAlertsAreCommitted = currentRefreshKey == alertSnapshotRefreshKey && currentRefreshKey != nil
             let response = HomeView.selectStormSetupCurrentResponse(
                 projection: projection,
@@ -80,7 +82,9 @@ extension HomeView {
                 pipelineValue: pipelineWeather,
                 prefersPipelineValue: isResolved
             )
-            self.airQuality = isResolved ? pipelineAirQuality : nil
+            self.airQuality = isAirQualityResolved
+                ? pipelineAirQuality ?? projection?.airQuality
+                : projection?.airQuality
             self.mesos = isUITestStaticMode && !pipelineMesos.isEmpty
                 ? pipelineMesos
                 : (currentAlertsAreCommitted ? pipelineMesos : projection?.activeMesos ?? [])
