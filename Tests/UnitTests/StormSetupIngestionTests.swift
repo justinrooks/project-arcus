@@ -155,6 +155,9 @@ struct StormSetupIngestionTests {
             return
         }
         #expect(value.airQualityOutcome == .preserve)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.airQuality == nil)
+        #expect(persisted.lastAirQualityLoadAt == nil)
     }
 
     @Test("executor publishes persisted core before joined optional enrichment")
@@ -224,6 +227,7 @@ struct StormSetupIngestionTests {
         #expect(persistedCore.lastWeatherLoadAt != nil)
         #expect(persistedCore.lastSlowProductsLoadAt != nil)
         #expect(persistedCore.lastHotAlertsLoadAt != nil)
+        #expect(persistedCore.airQuality == nil)
 
         await stormGate.open()
         let stormSettled = await waitUntil(timeout: 5) {
@@ -250,6 +254,84 @@ struct StormSetupIngestionTests {
         #expect(snapshot.stormSetup == normalizedStormSetupDTO(dto))
         #expect(snapshot.stormSetupRefreshResult == .success)
         #expect(snapshot.airQuality == airQualityResponse)
+        let persistedEnrichment = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persistedEnrichment.airQuality == airQualityResponse)
+        #expect(persistedEnrichment.lastAirQualityLoadAt != nil)
+    }
+
+    @Test("AQI enrichment publishes the newer value accepted by durable storage")
+    func airQualityEnrichmentPublishesStoreAcceptedValue() async throws {
+        let context = makeContext()
+        let olderResponse = try makeAirQualityResponse()
+        let acceptedResponse = AirQualityCurrentResponse(
+            aqi: 42,
+            category: .init(identifier: 1, name: "Good"),
+            primaryPollutant: "O3",
+            observedAt: olderResponse.observedAt.addingTimeInterval(60),
+            sourceIdentifier: "airnow"
+        )
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(
+            context: context,
+            airQualityQuerying: AirQualityQueryingFake(response: .success(olderResponse))
+        )
+        _ = try await harness.projectionStore.updateAirQuality(
+            acceptedResponse,
+            for: context,
+            loadedAt: fixedNow.addingTimeInterval(-60)
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)),
+            progress: HomeIngestionRunProgress(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in
+                    await publications.append(publication)
+                }
+            )
+        )
+
+        #expect(snapshot.airQuality == acceptedResponse)
+        let enrichment = try #require(await publications.values().last)
+        guard case .enrichment(let value) = enrichment.stage else {
+            Issue.record("Expected optional enrichment publication")
+            return
+        }
+        #expect(value.airQualityOutcome == .replace(acceptedResponse))
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.airQuality == acceptedResponse)
+    }
+
+    @Test("AQI persistence failure still publishes the live response")
+    func airQualityPersistenceFailurePublishesLiveResponse() async throws {
+        let context = makeContext()
+        let response = try makeAirQualityResponse()
+        let publications = HomeIngestionPublicationRecorder()
+        let harness = try makeHarness(
+            context: context,
+            airQualityQuerying: AirQualityQueryingFake(response: .success(response)),
+            projectionStore: ThrowingHomeProjectionStore()
+        )
+
+        let snapshot = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)),
+            progress: HomeIngestionRunProgress(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in
+                    await publications.append(publication)
+                }
+            )
+        )
+
+        #expect(snapshot.airQuality == response)
+        let enrichment = try #require(await publications.values().last)
+        guard case .enrichment(let value) = enrichment.stage else {
+            Issue.record("Expected optional enrichment publication")
+            return
+        }
+        #expect(value.airQualityOutcome == .replace(response))
     }
 
     @Test("AQI release alone does not return the snapshot while Storm Setup is blocked")
@@ -355,6 +437,8 @@ struct StormSetupIngestionTests {
         #expect(value.airQualityOutcome == .preserve)
         let persisted = try #require(await harness.projectionStore.projection(for: context))
         #expect(persisted.stormSetup == normalizedStormSetupDTO(dto))
+        #expect(persisted.airQuality == nil)
+        #expect(persisted.lastAirQualityLoadAt == nil)
     }
 
     @Test("successful empty AQI response publishes preservation")
@@ -384,6 +468,9 @@ struct StormSetupIngestionTests {
             return
         }
         #expect(value.airQualityOutcome == .preserve)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.airQuality == nil)
+        #expect(persisted.lastAirQualityLoadAt == nil)
     }
 
     @Test("fresh or ineligible Storm Setup does not prevent AQI execution")
@@ -452,6 +539,9 @@ struct StormSetupIngestionTests {
         #expect(snapshot.stormSetupRefreshResult == .cancelled)
         #expect(await stormGate.cancelledWaitCount() == 1)
         #expect(await airQualityGate.cancelledWaitCount() == 1)
+        let persisted = try #require(await harness.projectionStore.projection(for: context))
+        #expect(persisted.airQuality == nil)
+        #expect(persisted.lastAirQualityLoadAt == nil)
     }
 
     @Test("background Storm Setup skips optional enrichment when less than its timeout estimate remains")
@@ -679,6 +769,9 @@ struct StormSetupIngestionTests {
                 "\(testCase.0)"
             )
             #expect(snapshot.airQuality == (testCase.2 == 1 ? airQualityResponse : nil), "\(testCase.0)")
+            let persisted = try #require(await harness.projectionStore.projection(for: context), "\(testCase.0)")
+            #expect(persisted.airQuality == (testCase.2 == 1 ? airQualityResponse : nil), "\(testCase.0)")
+            #expect((persisted.lastAirQualityLoadAt != nil) == (testCase.2 == 1), "\(testCase.0)")
 
             if testCase.1 == .backgroundRefresh || testCase.1 == .backgroundLocationChange {
                 #expect(await query.executionModes() == [.background], "\(testCase.0)")
@@ -2111,7 +2204,7 @@ private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
         for context: LocationContext,
         loadedAt: Date
     ) async throws -> HomeProjectionRecord {
-        makeProjectionRecord(context: context, updatedAt: loadedAt)
+        throw TestError.failed
     }
 
     func updateSlowProducts(

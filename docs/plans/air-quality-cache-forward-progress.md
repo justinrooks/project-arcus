@@ -89,11 +89,20 @@ cannot provide stale-while-revalidate publication.
 
 ### Issue #406 — 02: Persist accepted AQI enrichment
 
-- **Status:** Planned
+- **Status:** Ready for commit
 - **Goal:** Write successful foreground AQI enrichment through the projection store and publish the accepted value.
 - **Expected production files:** `HomeIngestionExecutor.swift`; protocol test conformers only as required by issue 01.
 - **Required proof:** success persists; older candidates publish the accepted cache; nil/failure/cancellation/hot-only
   preserve without a write; persistence failure still publishes the live response; core publication remains first.
+- **Completed:** Successful foreground AQI responses now call `updateAirQuality(_:for:loadedAt:)` and publish the
+  response returned by durable storage. Rejected older observations therefore publish the newer stored response.
+  Persistence errors are logged as degraded durability and retain the valid live response. Unavailable, nil,
+  cancelled, background, and hot-only paths continue to publish `.preserve` without an AQI write.
+- **Focused proof:** `StormSetupIngestionTests` passed 46/46 on iPhone 17, iOS 26.5, Debug. Finalized result bundle:
+  `/private/tmp/issue406-focused-rereview.xcresult`.
+- **Build:** Debug simulator build passed.
+- **Full unit lane:** passed 1,040/1,040 on iPhone 17, iOS 26.5, Debug. Finalized result bundle:
+  `/private/tmp/issue406-full-rereview.xcresult`.
 - **Stop condition:** Ingestion tests prove persistence and publication semantics without changing presentation.
 
 ### Issue #407 — 03: Roll cached AQI forward in Today
