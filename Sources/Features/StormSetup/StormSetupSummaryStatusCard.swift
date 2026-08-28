@@ -50,6 +50,7 @@ struct StormSetupSummaryStatusCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Storm Setup")
         .accessibilityValue(presentation.accessibilityValue)
+        .accessibilityIdentifier("summary-storm-setup-status-card")
     }
 
     @ViewBuilder

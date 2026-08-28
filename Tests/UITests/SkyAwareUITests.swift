@@ -671,6 +671,46 @@ final class SkyAwareUITests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testStormSetupCompactStatesExposeNoninteractiveSemantics() throws {
+        let cases: [(fixture: String, title: String, detailedIngredientsEnabled: Bool, colorScheme: String?, accessibilityTextSize: Bool, reduceMotion: Bool)] = [
+            ("analyzing", "Analyzing your storm setup", false, nil, false, true),
+            ("weak", "No notable storm setup", false, nil, true, false),
+            ("analysis-not-needed", "Analysis not needed", false, nil, false, false),
+            ("unavailable", "Storm Setup unavailable", false, "dark", false, false)
+        ]
+
+        for testCase in cases {
+            let app = launchStormSetupFixtureApp(
+                colorScheme: testCase.colorScheme,
+                accessibilityTextSize: testCase.accessibilityTextSize,
+                emptyAlerts: true,
+                detailedIngredientsEnabled: testCase.detailedIngredientsEnabled,
+                reduceMotion: testCase.reduceMotion,
+                fixture: testCase.fixture
+            )
+            let summaryScrollView = app.scrollViews["summary-scroll"]
+            let statusCard = app.otherElements.matching(
+                NSPredicate(format: "label == %@ AND value CONTAINS[c] %@", "Storm Setup", testCase.title)
+            ).firstMatch
+
+            XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view for \(testCase.fixture).")
+            summaryScrollView.swipeUp()
+            XCTAssertTrue(statusCard.exists, "Expected the \(testCase.fixture) Storm Setup status card.")
+            scrollUntilHittable(statusCard, in: summaryScrollView)
+            XCTAssertEqual(statusCard.label, "Storm Setup")
+            XCTAssertTrue(
+                String(describing: statusCard.value).contains(testCase.title),
+                "Expected the status value to name \(testCase.title)."
+            )
+            XCTAssertFalse(app.buttons["summary-storm-setup-card"].exists, "Status cards must not expose a navigation control.")
+
+            statusCard.tap()
+            XCTAssertFalse(app.navigationBars["Storm Setup"].exists, "Status cards must not navigate to Storm Setup detail.")
+            app.terminate()
+        }
+    }
+
 //  TODO: This test is broken and have tried to fix it multiple times with 5.4 mini and 5.4.
 //        Spend some time looking at this later, and determine if/how to fix. We may not need
 //        it since I'm debating actually showing atmospheric conditions and storm setup.
@@ -1143,16 +1183,19 @@ final class SkyAwareUITests: XCTestCase {
         accessibilityTextSize: Bool = false,
         emptyAlerts: Bool = false,
         stormSetupEnabled: Bool = true,
-        forceDisplay: Bool = false
+        forceDisplay: Bool = false,
+        detailedIngredientsEnabled: Bool = true,
+        reduceMotion: Bool = false,
+        fixture: String = "supportive"
     ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UI_TESTS_FORCE_ONBOARDING_COMPLETE"] = "1"
         app.launchEnvironment["UI_TESTS_LOCATION_AUTH_MODE"] = "authorized"
         app.launchEnvironment["UI_TESTS_SUPPRESS_LOCATION_RESTRICTED_SHEET"] = "1"
         app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
-        app.launchEnvironment["UI_TESTS_STORM_SETUP_FIXTURE"] = "supportive"
+        app.launchEnvironment["UI_TESTS_STORM_SETUP_FIXTURE"] = fixture
         app.launchEnvironment["UI_TESTS_STORM_SETUP_ENABLED"] = stormSetupEnabled ? "1" : "0"
-        app.launchEnvironment["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"] = "1"
+        app.launchEnvironment["UI_TESTS_DETAILED_INGREDIENTS_ENABLED"] = detailedIngredientsEnabled ? "1" : "0"
         app.launchEnvironment["UI_TESTS_STORM_SETUP_FORCE_DISPLAY"] = forceDisplay ? "1" : "0"
         app.launchEnvironment["UI_TESTS_EMPTY_ALERTS"] = emptyAlerts ? "1" : "0"
 
@@ -1162,6 +1205,10 @@ final class SkyAwareUITests: XCTestCase {
 
         if accessibilityTextSize {
             app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
+
+        if reduceMotion {
+            app.launchArguments += ["-UIAccessibilityReduceMotionEnabled", "YES"]
         }
 
         app.launch()

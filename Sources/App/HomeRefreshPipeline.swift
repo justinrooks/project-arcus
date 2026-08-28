@@ -132,6 +132,7 @@ final class HomeRefreshPipeline {
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
         initialOutlook: ConvectiveOutlookDTO? = nil,
+        initialRefreshInFlight: Bool = false,
         foregroundTimerInterval: Duration = .seconds(120)
     ) {
         self.snap = initialSnap
@@ -153,6 +154,7 @@ final class HomeRefreshPipeline {
             outlooks: initialOutlooks,
             outlook: initialOutlook
         )
+        self.activeRefreshCount = initialRefreshInFlight ? 1 : 0
         self.outlookRefreshStatus = initialOutlooks.isEmpty && initialOutlook == nil ? .loading : .success(hasContent: true)
         self.foregroundTimerInterval = foregroundTimerInterval
     }
