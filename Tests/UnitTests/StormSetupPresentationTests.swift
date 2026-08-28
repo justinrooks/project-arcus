@@ -57,6 +57,26 @@ struct StormSetupPresentationTests {
         }
     }
 
+    @Test("compact status presentations keep state semantics distinct")
+    func compactStatusPresentations_keepStateSemanticsDistinct() {
+        let cases: [(StormSetupSummaryState, String, Bool)] = [
+            (.analyzing, "Analyzing your storm setup", true),
+            (.noNotableSetup, "No notable storm setup", false),
+            (.analysisNotNeeded, "Analysis not needed", false),
+            (.unavailable, "Storm Setup unavailable", false)
+        ]
+
+        for (state, title, showsProgress) in cases {
+            let presentation = try! #require(state.statusPresentation)
+            #expect(presentation.title == title)
+            #expect(presentation.showsProgress == showsProgress)
+            #expect(presentation.accessibilityValue.contains("Loading") == false)
+        }
+
+        #expect(StormSetupSummaryState.hidden.statusPresentation == nil)
+        #expect(StormSetupSummaryState.guidance.statusPresentation == nil)
+    }
+
     @Test("detailed ingredients follow the existing effective policy")
     func summaryStateContract_detailedIngredientsFollowEffectivePolicy() {
         let disabled = makeStateInput(

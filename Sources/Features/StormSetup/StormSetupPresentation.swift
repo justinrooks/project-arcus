@@ -23,14 +23,14 @@ enum SummarySectionKind: String, Identifiable, Sendable, Equatable {
 
 enum SummaryStormSetupSlot: Sendable, Equatable {
     case hidden
-    case loading
+    case status
     case visible
 
     var reservesSection: Bool {
         switch self {
         case .hidden:
             false
-        case .loading, .visible:
+        case .status, .visible:
             true
         }
     }
@@ -55,7 +55,39 @@ enum StormSetupSummaryState: Sendable, Equatable {
         case .guidance:
             .visible
         case .analyzing, .noNotableSetup, .analysisNotNeeded, .unavailable:
-            .loading
+            .status
+        }
+    }
+
+    var statusPresentation: StormSetupSummaryStatusPresentation? {
+        switch self {
+        case .hidden, .guidance:
+            nil
+        case .analyzing:
+            .init(
+                title: "Analyzing your storm setup",
+                message: "Checking local ingredients and guidance for your area.",
+                symbolName: "cloud.bolt.fill",
+                showsProgress: true
+            )
+        case .noNotableSetup:
+            .init(
+                title: "No notable storm setup",
+                message: "Current guidance does not show a notable storm setup for your area.",
+                symbolName: "checkmark.circle"
+            )
+        case .analysisNotNeeded:
+            .init(
+                title: "Analysis not needed",
+                message: "Current conditions do not call for a Storm Setup analysis.",
+                symbolName: "cloud.sun"
+            )
+        case .unavailable:
+            .init(
+                title: "Storm Setup unavailable",
+                message: "Storm Setup guidance is not available right now.",
+                symbolName: "exclamationmark.circle"
+            )
         }
     }
 
@@ -85,6 +117,24 @@ enum StormSetupSummaryState: Sendable, Equatable {
         }
 
         return .analysisNotNeeded
+    }
+}
+
+struct StormSetupSummaryStatusPresentation: Sendable, Equatable {
+    let title: String
+    let message: String
+    let symbolName: String
+    let showsProgress: Bool
+
+    init(title: String, message: String, symbolName: String, showsProgress: Bool = false) {
+        self.title = title
+        self.message = message
+        self.symbolName = symbolName
+        self.showsProgress = showsProgress
+    }
+
+    var accessibilityValue: String {
+        "\(title). \(message)"
     }
 }
 
@@ -290,22 +340,6 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         accessibilityValue = accessibilityParts.joined(separator: ". ")
         accessibilityHint = "Opens Storm Setup details."
     }
-
-    static let loadingPlaceholder = StormSetupSummaryPresentation(
-        overallTitle: "Analyzing setup",
-        summaryProse: "Checking ingredients, local context, and guidance so this card can resolve smoothly.",
-        ingredientRows: [
-            .init(kind: .instability, title: "Instability", value: "Loading"),
-            .init(kind: .rotation, title: "Rotation", value: "Loading"),
-            .init(kind: .cloudBases, title: "Cloud bases", value: "Loading")
-        ],
-        limiterText: nil,
-        freshnessText: nil,
-        sourceLine: "Loading guidance",
-        accessibilityLabel: "Storm Setup",
-        accessibilityValue: "Loading storm setup details.",
-        accessibilityHint: "Storm setup guidance is loading."
-    )
 
     static func readableTitle(for signal: StormSetupSignal) -> String {
         switch signal {
