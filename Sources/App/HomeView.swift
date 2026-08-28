@@ -132,7 +132,8 @@ struct HomeView: View {
                 isUITestStaticMode && (
                     !refreshPipeline.mesos.isEmpty ||
                     !refreshPipeline.alerts.isEmpty ||
-                    presentation.stormSetup != nil
+                    presentation.stormSetup != nil ||
+                    ProcessInfo.processInfo.environment["UI_TESTS_STORM_SETUP_FIXTURE"] != nil
                 )
             ),
             isRefreshing: refreshPipeline.isRefreshInFlight,
@@ -166,7 +167,8 @@ struct HomeView: View {
         initialMesos: [MdDTO] = [],
         initialAlerts: [AlertDTO] = [],
         initialOutlooks: [ConvectiveOutlookDTO] = [],
-        initialOutlook: ConvectiveOutlookDTO? = nil
+        initialOutlook: ConvectiveOutlookDTO? = nil,
+        initialRefreshInFlight: Bool = false
     ) {
         _refreshPipeline = State(
             initialValue: HomeRefreshPipeline(
@@ -180,7 +182,8 @@ struct HomeView: View {
                 initialMesos: initialMesos,
                 initialAlerts: initialAlerts,
                 initialOutlooks: initialOutlooks,
-                initialOutlook: initialOutlook
+                initialOutlook: initialOutlook,
+                initialRefreshInFlight: initialRefreshInFlight
             )
         )
     }

@@ -10,6 +10,12 @@ struct StormSetupPresentationTests {
     func summaryStateContract_selectsEveryTerminalState() {
         let cases: [(String, StormSetupSummaryStateInput, StormSetupSummaryState)] = [
             ("disabled", makeStateInput(stormSetupEnabled: false), .hidden),
+            ("disabled during refresh", makeStateInput(stormSetupEnabled: false, isRefreshInFlight: true), .hidden),
+            ("disabled after a late supportive result", makeStateInput(
+                stormSetupEnabled: false,
+                assessmentOverall: .supportive,
+                hasDisplayableGuidance: true
+            ), .hidden),
             ("location unavailable", makeStateInput(isLocationUnavailable: true), .hidden),
             ("forced real presentation", makeStateInput(
                 stormSetupEnabled: false,
@@ -92,6 +98,35 @@ struct StormSetupPresentationTests {
 
         #expect(StormSetupSummaryState.select(disabled) == .hidden)
         #expect(StormSetupSummaryState.select(enabled) == .unavailable)
+    }
+
+    @Test("Detailed Ingredients transitions preserve the enabled Storm Setup section")
+    func summaryStateContract_detailedIngredientsTransitionsPreserveEnabledSection() {
+        let detailedIngredientsOffPolicy = stormSetupPolicyInput(
+            stormSetupEnabled: true,
+            detailedIngredientsEnabled: false,
+            assessmentOverall: .weak
+        )
+        let detailedIngredientsOnPolicy = stormSetupPolicyInput(
+            stormSetupEnabled: true,
+            detailedIngredientsEnabled: true,
+            assessmentOverall: .weak
+        )
+        let detailedIngredientsOff = StormSetupSummaryStateInput(
+            policyInput: detailedIngredientsOffPolicy,
+            hasDisplayableGuidance: StormSetupDisplayPolicy.shouldShow(detailedIngredientsOffPolicy),
+            isRefreshInFlight: false,
+            isLocationUnavailable: false
+        )
+        let detailedIngredientsOn = StormSetupSummaryStateInput(
+            policyInput: detailedIngredientsOnPolicy,
+            hasDisplayableGuidance: StormSetupDisplayPolicy.shouldShow(detailedIngredientsOnPolicy),
+            isRefreshInFlight: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(StormSetupSummaryState.select(detailedIngredientsOff) == .noNotableSetup)
+        #expect(StormSetupSummaryState.select(detailedIngredientsOn) == .guidance)
     }
 
     @Test("ArcusCore support values and limiter copy render cleanly")
@@ -531,6 +566,27 @@ private func makeStateInput(
         isRefreshInFlight: isRefreshInFlight,
         isLocationUnavailable: isLocationUnavailable,
         isForcedPresentation: isForcedPresentation
+    )
+}
+
+private func stormSetupPolicyInput(
+    stormSetupEnabled: Bool,
+    detailedIngredientsEnabled: Bool,
+    assessmentOverall: StormSetupSignal
+) -> StormSetupPolicyInput {
+    let now = date("2026-06-01T18:00:00Z")
+    return .init(
+        preferences: .init(
+            stormSetupEnabled: stormSetupEnabled,
+            detailedIngredientsEnabled: detailedIngredientsEnabled
+        ),
+        stormRisk: .marginal,
+        severeRisk: nil,
+        hasQualifyingConvectiveAlert: false,
+        hasActiveMeso: false,
+        assessmentOverall: assessmentOverall,
+        payloadExpiresAt: date("2026-06-01T19:00:00Z"),
+        now: now
     )
 }
 

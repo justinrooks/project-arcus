@@ -216,11 +216,13 @@ private extension SkyAwareApp {
         } else if isUITestStaticHome {
             if let fixture = Self.uiTestStormSetupFixture {
                 HomeView(
+                    initialStormRisk: fixture.stormRisk,
                     initialStormSetup: fixture.stormSetup,
                     initialStormSetupCurrentResponse: fixture.currentResponse,
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
                     initialMesos: Self.uiTestLaunchMesos,
-                    initialAlerts: Self.uiTestLaunchWatches
+                    initialAlerts: Self.uiTestLaunchWatches,
+                    initialRefreshInFlight: fixture.isRefreshInFlight
                 )
             } else {
                 HomeView(
@@ -525,11 +527,14 @@ private extension SkyAwareApp {
             return nil
         }
 
-        guard ProcessInfo.processInfo.environment["UI_TESTS_STORM_SETUP_FIXTURE"] == "supportive" else {
-            return nil
+        return switch ProcessInfo.processInfo.environment["UI_TESTS_STORM_SETUP_FIXTURE"] {
+        case "supportive": .supportive
+        case "weak": .weak
+        case "analyzing": .analyzing
+        case "unavailable": .unavailable
+        case "analysis-not-needed": .analysisNotNeeded
+        default: nil
         }
-
-        return .supportive
     }
 
     private static func applyUITestBooleanOverride(
@@ -552,11 +557,13 @@ private extension SkyAwareApp {
 
 private struct UITestStormSetupFixture {
     let context: LocationContext
-    let stormSetup: StormSetupDTO
-    let profileAnalysis: AnvilAnalyzeProfileResponse
+    let stormSetup: StormSetupDTO?
+    let profileAnalysis: AnvilAnalyzeProfileResponse?
+    let stormRisk: StormRiskLevel?
+    let isRefreshInFlight: Bool
 
-    var currentResponse: StormSetupCurrentResponse {
-        stormSetup.stormSetupCurrentResponse(profileAnalysis: profileAnalysis)
+    var currentResponse: StormSetupCurrentResponse? {
+        stormSetup.map { $0.stormSetupCurrentResponse(profileAnalysis: profileAnalysis) }
     }
 
     static let supportive = UITestStormSetupFixture(
@@ -658,7 +665,69 @@ private struct UITestStormSetupFixture {
             centroid: .init(latitude: 39.6, longitude: -104.0),
             surfaceHeightMslM: 1600
         ),
-        profileAnalysis: Self.makeProfileAnalysisResponse()
+        profileAnalysis: Self.makeProfileAnalysisResponse(),
+        stormRisk: .marginal,
+        isRefreshInFlight: false
+    )
+
+    static var weak: UITestStormSetupFixture {
+        let setup = supportive.stormSetup!
+        return .init(
+            context: supportive.context,
+            stormSetup: .init(
+                h3Cell: setup.h3Cell,
+                freshness: setup.freshness,
+                source: setup.source,
+                raw: setup.raw,
+                assessment: .init(
+                    overall: "weak",
+                    summary: "The setup has limited support for a notable severe-weather threat.",
+                    instability: setup.assessment.instability,
+                    moisture: setup.assessment.moisture,
+                    lowLevelRotation: setup.assessment.lowLevelRotation,
+                    deepShear: setup.assessment.deepShear,
+                    cloudBase: setup.assessment.cloudBase,
+                    capInhibition: setup.assessment.capInhibition,
+                    limitingFactors: setup.assessment.limitingFactors,
+                    confidence: setup.assessment.confidence,
+                    primaryDrivers: setup.assessment.primaryDrivers,
+                    stormMode: setup.assessment.stormMode,
+                    stormModeHint: setup.assessment.stormModeHint,
+                    trend: setup.assessment.trend,
+                    compositeSignal: setup.assessment.compositeSignal
+                ),
+                anvilEvidence: setup.anvilEvidence,
+                centroid: setup.centroid,
+                surfaceHeightMslM: setup.surfaceHeightMslM
+            ),
+            profileAnalysis: nil,
+            stormRisk: .marginal,
+            isRefreshInFlight: false
+        )
+    }
+
+    static let analyzing = UITestStormSetupFixture(
+        context: supportive.context,
+        stormSetup: nil,
+        profileAnalysis: nil,
+        stormRisk: .marginal,
+        isRefreshInFlight: true
+    )
+
+    static let unavailable = UITestStormSetupFixture(
+        context: supportive.context,
+        stormSetup: nil,
+        profileAnalysis: nil,
+        stormRisk: .marginal,
+        isRefreshInFlight: false
+    )
+
+    static let analysisNotNeeded = UITestStormSetupFixture(
+        context: supportive.context,
+        stormSetup: nil,
+        profileAnalysis: nil,
+        stormRisk: nil,
+        isRefreshInFlight: false
     )
 
     private static func makeProfileAnalysisResponse() -> AnvilAnalyzeProfileResponse {
@@ -780,7 +849,9 @@ private extension StormSetupDTO {
             ),
             profileAnalysis: profileAnalysis,
             tornadoViability: .init(
-                overall: .supportive,
+                overall: assessment.overall?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "weak"
+                    ? .weak
+                    : .supportive,
                 realization: .realized,
                 primaryFailureMode: .none,
                 confidence: .moderate,

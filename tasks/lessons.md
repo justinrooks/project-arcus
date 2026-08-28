@@ -126,3 +126,9 @@
   fields. Otherwise `nil` and an empty-but-present nested value collapse into the same persisted state.
 - Label frozen migration fixtures by the exact schema provenance they represent. Immediate-pre-change evidence is not
   evidence for the latest shipped release unless generated from that release.
+
+## 2026-08-28
+
+- Keep targeted `SkyAware_UI_Smoke` evidence distinct from the entire UI smoke suite. Do not infer the full suite’s
+  health from selected UI tests, and do not classify a one-off CLI unit-lane crash as a branch blocker after a human
+  has reproduced the complete `SkyAware_Tests` plan successfully in Xcode.

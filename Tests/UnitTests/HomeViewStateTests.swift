@@ -489,6 +489,15 @@ struct HomeViewProjectionLaunchTests {
 
         let cases: [(String, StormSetupPreferences, StormSetupPreferences, Bool, Bool, Bool, Bool)] = [
             ("Storm Setup enable with context", .init(), .init(stormSetupEnabled: true), true, false, false, true),
+            (
+                "Storm Setup re-enable preserves stored Detailed Ingredients",
+                .init(detailedIngredientsEnabled: true),
+                .init(stormSetupEnabled: true, detailedIngredientsEnabled: true),
+                true,
+                false,
+                false,
+                true
+            ),
             ("Storm Setup enable without context", .init(), .init(stormSetupEnabled: true), false, false, false, false),
             ("Storm Setup disable", .init(stormSetupEnabled: true), .init(), true, false, false, false),
             ("unchanged Storm Setup", .init(stormSetupEnabled: true), .init(stormSetupEnabled: true), true, false, false, false),
