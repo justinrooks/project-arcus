@@ -84,6 +84,7 @@
 				UnitTests/BackgroundRefreshLifecycleTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/DeviceAlertPayloadTests.swift,
+				UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite,
 				UnitTests/GeoJsonParserTests.swift,
 				UnitTests/HomeIngestionCoordinatorTests.swift,
 				UnitTests/HomeProjectionStoreScalingMeasurementTests.swift,
@@ -151,7 +152,6 @@
 				UnitTests/WidgetSnapshotRefreshCoordinatorTests.swift,
 				UnitTests/WidgetSnapshotStoreTests.swift,
 				UnitTests/WidgetSnapshotTests.swift,
-				UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite,
 			);
 			target = D095EFA22E16F5690074F867 /* SkyAware */;
 		};

@@ -6,6 +6,74 @@ import Testing
 
 @Suite("Storm Setup Presentation")
 struct StormSetupPresentationTests {
+    @Test("summary state contract selects every terminal state")
+    func summaryStateContract_selectsEveryTerminalState() {
+        let cases: [(String, StormSetupSummaryStateInput, StormSetupSummaryState)] = [
+            ("disabled", makeStateInput(stormSetupEnabled: false), .hidden),
+            ("location unavailable", makeStateInput(isLocationUnavailable: true), .hidden),
+            ("forced real presentation", makeStateInput(
+                stormSetupEnabled: false,
+                hasDisplayableGuidance: true,
+                isForcedPresentation: true
+            ), .guidance),
+            ("forced presentation with unavailable location", makeStateInput(
+                stormSetupEnabled: false,
+                hasDisplayableGuidance: true,
+                isLocationUnavailable: true,
+                isForcedPresentation: true
+            ), .hidden),
+            ("fresh displayable guidance during refresh", makeStateInput(
+                hasDisplayableGuidance: true,
+                isRefreshInFlight: true
+            ), .guidance),
+            ("fresh suppressed guidance", makeStateInput(
+                assessmentOverall: .weak
+            ), .noNotableSetup),
+            ("eligible refresh without guidance", makeStateInput(
+                assessmentOverall: nil,
+                isRefreshInFlight: true
+            ), .analyzing),
+            ("ineligible inputs", makeStateInput(
+                stormRisk: .allClear,
+                assessmentOverall: nil
+            ), .analysisNotNeeded),
+            ("eligible idle without guidance", makeStateInput(
+                assessmentOverall: nil,
+                isRefreshInFlight: false
+            ), .unavailable)
+        ]
+
+        for (_, input, expected) in cases {
+            let state = StormSetupSummaryState.select(input)
+            let plan = SummarySectionPlan.make(
+                localAlertsDisplayState: .current(content: .empty, source: .cached),
+                stormSetupSlot: state.sectionSlot,
+                hasLocationReliabilityRail: true
+            )
+
+            #expect(state == expected)
+            #expect(state.reservesSection == (expected != .hidden))
+            #expect(plan.sections.contains(.stormSetup) == state.reservesSection)
+        }
+    }
+
+    @Test("detailed ingredients follow the existing effective policy")
+    func summaryStateContract_detailedIngredientsFollowEffectivePolicy() {
+        let disabled = makeStateInput(
+            stormSetupEnabled: false,
+            detailedIngredientsEnabled: true,
+            assessmentOverall: nil
+        )
+        let enabled = makeStateInput(
+            stormSetupEnabled: true,
+            detailedIngredientsEnabled: true,
+            assessmentOverall: nil
+        )
+
+        #expect(StormSetupSummaryState.select(disabled) == .hidden)
+        #expect(StormSetupSummaryState.select(enabled) == .unavailable)
+    }
+
     @Test("ArcusCore support values and limiter copy render cleanly")
     func arcusCoreSupportValuesAndLimiterCopyRenderCleanly() {
         let presentation = StormSetupSummaryPresentation(
@@ -402,6 +470,47 @@ private func makeDTO(
         anvilEvidence: nil,
         centroid: .init(latitude: 39.5, longitude: -100.0),
         surfaceHeightMslM: surfaceHeightMslM
+    )
+}
+
+private func makeStateInput(
+    stormSetupEnabled: Bool = true,
+    detailedIngredientsEnabled: Bool = false,
+    stormRisk: StormRiskLevel? = .marginal,
+    severeRisk: SevereWeatherThreat? = nil,
+    hasQualifyingConvectiveAlert: Bool = false,
+    hasActiveMeso: Bool = false,
+    assessmentOverall: StormSetupSignal? = nil,
+    hasFreshPayload: Bool? = nil,
+    hasDisplayableGuidance: Bool = false,
+    isRefreshInFlight: Bool = false,
+    isLocationUnavailable: Bool = false,
+    isForcedPresentation: Bool = false
+) -> StormSetupSummaryStateInput {
+    let now = date("2026-06-01T18:00:00Z")
+    let payloadExpiresAt = (hasFreshPayload ?? (assessmentOverall != nil))
+        ? date("2026-06-01T19:00:00Z")
+        : nil
+    let policyInput = StormSetupPolicyInput(
+        preferences: .init(
+            stormSetupEnabled: stormSetupEnabled,
+            detailedIngredientsEnabled: detailedIngredientsEnabled
+        ),
+        stormRisk: stormRisk,
+        severeRisk: severeRisk,
+        hasQualifyingConvectiveAlert: hasQualifyingConvectiveAlert,
+        hasActiveMeso: hasActiveMeso,
+        assessmentOverall: assessmentOverall,
+        payloadExpiresAt: payloadExpiresAt,
+        now: now
+    )
+
+    return .init(
+        policyInput: policyInput,
+        hasDisplayableGuidance: hasDisplayableGuidance,
+        isRefreshInFlight: isRefreshInFlight,
+        isLocationUnavailable: isLocationUnavailable,
+        isForcedPresentation: isForcedPresentation
     )
 }
 
