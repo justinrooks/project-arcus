@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+## v1.1.1(131)
+
+### UI / UX
+- Today now uses a dedicated edge-to-edge resolving surface when no meaningful cached or live content is available, while keeping the tab bar accessible.
+<!-- evidence: b489e0ff -->
+- The Today header remains fully expanded while scrolling instead of condensing and restyling during the scroll.
+<!-- evidence: 083c3e72 -->
+- Storm Setup now keeps a stable Today section with compact, truthful status states while analysis is pending or unavailable, and only fresh guidance opens the detail view.
+<!-- evidence: c615608c, e81eaf39, 00331d44 -->
+- Today status text now wraps at accessibility Dynamic Type sizes, and the resolving surface respects Reduce Motion.
+<!-- evidence: 32ef32fa -->
+
+### Reliability
+- Map layer scenes now use a bounded two-scene cache, materializing uncached layers on demand and reusing recently selected scenes.
+<!-- evidence: 4d57fed5 -->
+- Air-quality observations now persist in the Home projection and carry forward for the selected location while matching fresh enrichment is pending, before fresh data replaces them.
+<!-- evidence: ebb330b1, b5f13c23, 1e96953f -->
+- Arcus API requests now use corrected endpoint paths without the redundant `/api` prefix.
+<!-- evidence: 03e5a674 -->
+
+### Tests / QA
+- Regression and accessibility coverage was expanded for Today resolving and header behavior, Storm Setup state transitions and accessibility, Map scene caching, AQI persistence and cache-forward behavior, Arcus endpoint paths, and related projection boundaries.
+<!-- evidence: b489e0ff, 18421274, 083c3e72, 32ef32fa, f4a784e4, 4d57fed5, 03e5a674, ebb330b1, b5f13c23, 1e96953f, c615608c, e81eaf39, 00331d44 -->
+
+### Maintenance / Cleanup
+- Internal performance measurements, release-readiness documentation, runbooks, and validation ledgers were updated alongside the implementation work.
+<!-- evidence: 18421274, f4a784e4, c615608c, e81eaf39, 00331d44 -->
+
 ## v1.1.0(113)
 
 ### UI / UX

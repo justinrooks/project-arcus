@@ -1,5 +1,24 @@
 # Release Notes
 
+## Unreleased
+
+## v1.1.1(131)
+
+## Overview
+This build improves Today and Storm Setup stability and accessibility, reduces retained Map work through bounded caching, preserves air-quality data while enrichment completes, and corrects Arcus endpoint paths.
+
+## Highlights
+- Today uses a dedicated edge-to-edge resolving surface when no meaningful cached or live content is available, while keeping the tab bar accessible.
+- The Today header remains fully expanded while scrolling, and status text wraps at accessibility Dynamic Type sizes while the resolving surface respects Reduce Motion.
+- Storm Setup keeps a stable Today section with compact, truthful status states while analysis is pending or unavailable; only fresh guidance opens the detail view.
+- Map layer scenes use a bounded two-scene cache, materializing uncached layers on demand and reusing recently selected scenes.
+- Air-quality observations persist in the Home projection and carry forward for the selected location while matching fresh enrichment is pending, before fresh data replaces them.
+- Arcus API requests use corrected endpoint paths without the redundant `/api` prefix.
+- Regression and accessibility coverage was expanded across these Today, Storm Setup, Map, AQI, and Arcus paths.
+
+## Maintenance
+- Internal performance measurements, release-readiness documentation, runbooks, and validation ledgers were updated alongside the implementation work.
+
 ## v1.1.0(113)
 
 ## Overview

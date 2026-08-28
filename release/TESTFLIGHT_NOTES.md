@@ -1,3 +1,19 @@
+SkyAware v1.1.1(131)
+
+Highlights:
+- Today uses a dedicated edge-to-edge resolving surface when no meaningful cached or live content is available, while keeping the tab bar accessible.
+- The Today header remains fully expanded while scrolling; accessibility-sized status text wraps instead of truncating, and the resolving surface respects Reduce Motion.
+- Storm Setup keeps a stable Today section with compact status states while analysis is pending or unavailable; only fresh guidance opens the detail view.
+- Map layer scenes use a bounded two-scene cache and reuse recently selected scenes.
+- Air-quality data persists and remains visible for the selected location while matching fresh enrichment is pending, before fresh data replaces it.
+- Arcus requests use corrected endpoint paths without the redundant `/api` prefix.
+
+What to test:
+- Exercise Today with no cached or live content, rapid scrolling, accessibility Dynamic Type, and Reduce Motion.
+- Exercise Storm Setup through enabled, analyzing, unavailable, and fresh-guidance states; confirm only fresh guidance is navigable.
+- Switch Map layers repeatedly and verify recently selected layers return without unnecessary reload work.
+- Delay or retry air-quality enrichment and switch locations; confirm cached data remains tied to the selected location and fresh data replaces it when available.
+
 SkyAware v1.1.0(113)
 
 Highlights:
