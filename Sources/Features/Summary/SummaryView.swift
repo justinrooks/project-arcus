@@ -225,15 +225,15 @@ struct SummaryView: View {
 
     enum StormSetupSlotState: Equatable {
         case hidden
-        case loading
+        case status(StormSetupSummaryState)
         case visible(StormSetupDetailPresentation)
 
         var sectionSlot: SummaryStormSetupSlot {
             switch self {
             case .hidden:
                 .hidden
-            case .loading:
-                .loading
+            case .status:
+                .status
             case .visible(_):
                 SummaryStormSetupSlot.visible
             }
@@ -487,16 +487,10 @@ struct SummaryView: View {
                 case .hidden:
                     EmptyView()
 
-                case .loading:
-                    StormSetupSummaryCard(
-                        presentation: .loadingPlaceholder,
-                        isLoading: true
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .padding(.vertical, 8)
-                    .contentShape(Rectangle())
-                    .accessibilityIdentifier("summary-storm-setup-card-loading")
-                    .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .center)))
+                case .status(let state):
+                    if let presentation = state.statusPresentation {
+                        StormSetupSummaryStatusCard(presentation: presentation)
+                    }
 
                 case .visible(let presentation):
                     NavigationLink {
@@ -629,58 +623,46 @@ struct SummaryView: View {
         let isForcedPresentation = false
 #endif
 
+        let presentation = stormSetupDetailPresentation(now: now)
+        let policyInput = StormSetupPolicyInput(
+            preferences: stormSetupPreferences,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            hasQualifyingConvectiveAlert: StormSetupAlertEligibility.hasQualifyingAlert(in: alerts, now: now),
+            hasActiveMeso: !mesos.isEmpty,
+            assessmentOverall: stormSetup.map { StormSetupAssessment(dto: $0).assessment.overall },
+            payloadExpiresAt: stormSetup?.freshness.expiresAt,
+            now: now
+        )
+
         return Self.stormSetupSlotState(
-            presentation: stormSetupDetailPresentation(now: now),
-            hasStormSetup: stormSetup != nil,
-            stormSetupEnabled: stormSetupPreferences.stormSetupEnabled,
-            isForcedPresentation: isForcedPresentation,
-            isRefreshInFlight: isRefreshInFlight,
-            isLocationUnavailable: isLocationUnavailable
+            summaryState: .select(.init(
+                policyInput: policyInput,
+                hasDisplayableGuidance: presentation != nil,
+                isRefreshInFlight: isRefreshInFlight,
+                isLocationUnavailable: isLocationUnavailable,
+                isForcedPresentation: isForcedPresentation
+            )),
+            presentation: presentation
         )
     }
 
     static func stormSetupSlotState(
-        presentation: StormSetupDetailPresentation?,
-        hasStormSetup: Bool,
-        stormSetupEnabled: Bool,
-        isForcedPresentation: Bool = false,
-        isRefreshInFlight: Bool,
-        isLocationUnavailable: Bool
+        summaryState: StormSetupSummaryState,
+        presentation: StormSetupDetailPresentation?
     ) -> StormSetupSlotState {
-        guard isLocationUnavailable == false else {
-            return .hidden
-        }
-
-        if let presentation,
-           Self.shouldShowStormSetupPresentation(
-               hasPresentation: true,
-               stormSetupEnabled: stormSetupEnabled,
-               isForcedPresentation: isForcedPresentation,
-               isLocationUnavailable: isLocationUnavailable
-           ) {
+        if summaryState == .guidance, let presentation {
             return .visible(presentation)
         }
 
-        guard stormSetupEnabled else {
+        switch summaryState {
+        case .hidden:
             return .hidden
+        case .guidance:
+            return .status(.unavailable)
+        case .analyzing, .noNotableSetup, .analysisNotNeeded, .unavailable:
+            return .status(summaryState)
         }
-
-        if hasStormSetup == false, isRefreshInFlight {
-            return .loading
-        }
-
-        return .hidden
-    }
-
-    static func shouldShowStormSetupPresentation(
-        hasPresentation: Bool,
-        stormSetupEnabled: Bool,
-        isForcedPresentation: Bool,
-        isLocationUnavailable: Bool
-    ) -> Bool {
-        hasPresentation &&
-        isLocationUnavailable == false &&
-        (stormSetupEnabled || isForcedPresentation)
     }
 
     static func sectionPlan(

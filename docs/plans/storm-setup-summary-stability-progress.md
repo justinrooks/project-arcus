@@ -86,10 +86,11 @@ campaign changes the enabled-state visibility contract and therefore does not du
 
 ### Issue #413 — 02: Render compact enabled Storm Setup states on Today
 
-- Status: Planned
+- Status: Awaiting human review
 - Goal: Render the contract in the stable `.stormSetup` section and remove the redacted full-card loading state.
 - Expected files: Summary composition, Storm Setup card rendering, previews, and focused state/section tests.
-- Handoff: Pending issue 01.
+- Handoff: Replaced the redacted full-card placeholder with compact, noninteractive status cards for analyzing,
+  no-notable-setup, analysis-not-needed, and unavailable states. Full fresh guidance remains the only navigation link.
 
 ### Issue #414 — 03: Verify Storm Setup settings transitions and accessibility
 
@@ -104,7 +105,7 @@ campaign changes the enabled-state visibility contract and therefore does not du
 | Issue | Focused tests | Debug build | Full unit lane | UI/accessibility evidence | Result bundle |
 | --- | --- | --- | --- | --- | --- |
 | 01 | 22 passed, 0 failed, 0 skipped | Compiled in focused Debug test lane | Deferred to issue 02 | Not required | `skyaware-results.2vqC6y/unit.xcresult` |
-| 02 | Pending | Required | Required | Preview/render review | Pending |
+| 02 | 18 passed, 0 failed, 0 skipped | Succeeded (iPhone 17, iOS 26.5) | 1,038 passed, 0 failed, 0 skipped | Self-contained light/dark, accessibility Dynamic Type, and Reduce Motion previews added | `skyaware-results.bm2W20/unit.xcresult`; `skyaware-results.4tX22Y/unit.xcresult` |
 | 03 | Pending | Required if test support changes | Required | Required | Pending |
 
 ## Handoff Notes

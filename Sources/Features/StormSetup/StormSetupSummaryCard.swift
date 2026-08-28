@@ -10,10 +10,7 @@ import SwiftUI
 struct StormSetupSummaryCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let presentation: StormSetupSummaryPresentation
-    let isLoading: Bool
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -35,7 +32,6 @@ struct StormSetupSummaryCard: View {
 
     var body: some View {
         cardContent
-            .placeholder(isLoading, animated: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -47,7 +43,6 @@ struct StormSetupSummaryCard: View {
                 shadowRadius: colorScheme == .dark ? 8 : 10,
                 shadowY: colorScheme == .dark ? 3 : 4
             )
-            .animation(SkyAwareMotion.settle(reduceMotion), value: isLoading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
         .accessibilityValue(presentation.accessibilityValue)
@@ -140,12 +135,8 @@ struct StormSetupSummaryCard: View {
         }
     }
 
-    init(
-        presentation: StormSetupSummaryPresentation = .loadingPlaceholder,
-        isLoading: Bool = false
-    ) {
+    init(presentation: StormSetupSummaryPresentation) {
         self.presentation = presentation
-        self.isLoading = isLoading
     }
 
     @ViewBuilder
@@ -215,19 +206,6 @@ struct StormSetupSummaryCard: View {
                     timeZone: .current,
                     now: StormSetupPreviewData.now
                 )
-            )
-            .padding()
-        }
-        .background(.skyAwareBackground)
-    }
-}
-
-#Preview("Storm Setup - Loading") {
-    NavigationStack {
-        ScrollView {
-            StormSetupSummaryCard(
-                presentation: .loadingPlaceholder,
-                isLoading: true
             )
             .padding()
         }

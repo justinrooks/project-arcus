@@ -6,17 +6,17 @@ import Testing
 @Suite("Summary Section Plan")
 @MainActor
 struct SummarySectionPlanTests {
-    @Test("loading and visible Storm Setup share the same ordered section slot")
-    func loadingToVisiblePreservesOrderAndIdentity() {
-        let loading = makePlan(stormSetupSlot: .loading, hasLocationReliabilityRail: true)
+    @Test("status and visible Storm Setup share the same ordered section slot")
+    func statusToVisiblePreservesOrderAndIdentity() {
+        let status = makePlan(stormSetupSlot: .status, hasLocationReliabilityRail: true)
         let visible = makePlan(
             stormSetupSlot: SummaryStormSetupSlot.visible,
             hasLocationReliabilityRail: true
         )
 
-        #expect(loading.sections == visible.sections)
-        #expect(loading.sections[4] == .stormSetup)
-        #expect(loading.sections[4].id == visible.sections[4].id)
+        #expect(status.sections == visible.sections)
+        #expect(status.sections[4] == .stormSetup)
+        #expect(status.sections[4].id == visible.sections[4].id)
     }
 
     @Test("section plan retains the Storm Setup slot during cached refresh")
@@ -51,7 +51,7 @@ struct SummarySectionPlanTests {
             for hasLocationReliabilityRail in [false, true] {
                 let plan = makePlan(
                     localAlertsDisplayState: state,
-                    stormSetupSlot: .loading,
+                    stormSetupSlot: .status,
                     hasLocationReliabilityRail: hasLocationReliabilityRail
                 )
                 let stormSetupIndex = plan.sections.firstIndex(of: .stormSetup)
