@@ -314,7 +314,11 @@ final class Dependencies: Sendable {
             : ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
         let container: ModelContainer
         do {
-            container = try ModelContainer(for: schema, configurations: config)
+            container = if isUITestStaticHome {
+                try ModelContainer(for: schema, configurations: config)
+            } else {
+                try SkyAwarePersistentStoreBootstrap.open(schema: schema, configuration: config)
+            }
             Logger.appMain.debug("ModelContainer created for schema: SkyAware_Data")
         } catch {
             Logger.appMain.critical("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")

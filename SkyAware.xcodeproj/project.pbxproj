@@ -11,6 +11,7 @@
 		D0C1A4C42F4BF00100AA1001 /* SwiftyH3 in Frameworks */ = {isa = PBXBuildFile; productRef = D0C1A4C52F4BF00100AA1001 /* SwiftyH3 */; };
 		D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D2A000032F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */; };
+		D2A000052F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +63,7 @@
 		D0F000062F50000100AA1001 /* Sources/AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Sources/AGENTS.md; sourceTree = "<group>"; };
 		D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SkyAwareWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite; sourceTree = "<group>"; };
+		D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -84,6 +86,7 @@
 				UnitTests/BackgroundRefreshLifecycleTests.swift,
 				UnitTests/ConvectiveOutlookRepoTests.swift,
 				UnitTests/DeviceAlertPayloadTests.swift,
+				UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite,
 				UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite,
 				UnitTests/GeoJsonParserTests.swift,
 				UnitTests/HomeIngestionCoordinatorTests.swift,
@@ -415,6 +418,7 @@
 			children = (
 				D0F000062F50000100AA1001 /* Sources/AGENTS.md */,
 				D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */,
+				D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -578,6 +582,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D2A000032F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite in Resources */,
+				D2A000052F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
