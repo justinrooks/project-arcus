@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.1.1(133)
+## v1.1.1(134)
 
 ## Overview
 This build fixes a launch-time crash by quarantining incompatible SwiftData cache files and reopening a current store when the older cache is present.
