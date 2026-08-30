@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.1.1(133)
+## v1.1.1(134)
 
 ### Reliability
 - Launch now quarantines incompatible SwiftData cache files and reopens a current store instead of crashing at startup when an older store is present.
