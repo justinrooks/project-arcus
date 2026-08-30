@@ -1,3 +1,16 @@
+Unreleased
+
+SkyAware ## v1.1.1(131)
+
+Highlights:
+- Launch should no longer crash when an older incompatible SwiftData cache is present.
+- The app now quarantines the incompatible cache and opens a current store instead.
+- Regression coverage now includes recovery from the older production store fixture, marker-less current stores, rollback failures, and quarantine retention pruning.
+
+What to test:
+- Launch with an older on-disk store and confirm the app opens normally.
+- Relaunch after recovery and confirm the quarantined cache remains isolated while the current store reopens cleanly.
+
 SkyAware v1.1.1(131)
 
 Highlights:

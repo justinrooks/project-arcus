@@ -667,3 +667,94 @@
 - Validation: focused cache-policy/scene tests passed 26/26; deterministic Map regression suites passed 82/82; the updated
   materialization benchmark passed 1/1 with 10 non-zero performance iterations. The focused benchmark's warm-switch
   scenario now records the production two-scene cache rather than a synthetic six-scene eager cache.
+
+## 2026-08-30
+
+- Date: 2026-08-30
+- Repository reviewed: project-arcus
+- Workflow reviewed: Today Storm Setup presentation
+- Workflow selection reason: Today changed materially after its 2026-08-25 workflow review. Commits `c615608c`,
+  `e81eaf39`, and `00331d44` added a stable Storm Setup summary-state contract, compact enabled states, and settings
+  transition behavior on the app's primary surface, making that newly changed path the highest-priority re-review.
+- Previous workflow review: 2026-08-25 (Today refresh and projection persistence); Storm Setup presentation had not
+  previously received a focused performance review.
+- Commit window: `18421274ebeb31a19975e20434fe1c4e0f9525de..1481bfa49fb434df4915627752349ef8d678dcf2`
+  (2026-08-25 through 2026-08-30). The previous Today audit and its baseline-scan remediation provided the start
+  marker; current `HEAD` provided the end marker.
+- Relevant commits: `c615608c` (stable Storm Setup summary-state contract), `e81eaf39` (compact enabled Today states),
+  and `00331d44` (settings transitions and accessibility verification).
+- Relevant changed files: `Sources/Features/StormSetup/StormSetupPresentation.swift`,
+  `Sources/Features/StormSetup/StormSetupSummaryCard.swift`,
+  `Sources/Features/StormSetup/StormSetupSummaryStatusCard.swift`, `Sources/Features/Summary/SummaryView.swift`,
+  `Sources/App/HomeView.swift`, and `Sources/App/HomeRefreshPipeline.swift`.
+- Files and symbols inspected:
+  - `docs/codebase/skyaware-app-summary.md` — Today workflow inventory and current G5 presentation boundary
+  - `Sources/Features/Summary/SummaryView.swift` — `body`, `summaryContent(now:)`, `stormSetupDetailPresentation(now:)`,
+    `stormSetupSlotState(now:)`, and Storm Setup section rendering
+  - `Sources/Features/StormSetup/StormSetupDetailPresentation.swift` — response and DTO initializers
+  - `Sources/Features/StormSetup/StormSetupPresentation.swift` — `StormSetupSummaryState`,
+    `StormSetupSummaryPresentation`, and `SummarySectionPlan`
+  - `Sources/Features/StormSetup/StormSetupSummaryCard.swift` and
+    `Sources/Features/StormSetup/StormSetupSummaryStatusCard.swift` — compact summary rendering
+  - `Sources/App/HomeView.swift` and `Sources/App/HomeView+PresentationState.swift` — Today input selection and state flow
+  - `Tests/UnitTests/StormSetupPresentationTests.swift`, `Tests/UnitTests/SummarySectionPlanTests.swift`, and
+    `Tests/UnitTests/HomeViewStateTests.swift` — state, identity, and settings-transition coverage
+- Tests, metrics, traces, or profiling inspected: Existing deterministic tests cover Storm Setup state selection,
+  section identity, formatted summary content, persisted/live selection, and settings-trigger behavior. No constructor
+  timing, allocation measurement, SwiftUI Update Groups capture, Time Profiler trace, or physical-device Release
+  evidence measures this path. No tests were run because this audit changed documentation only and makes no runtime
+  correctness claim.
+- Findings:
+  - Finding ID: `PERF-ARCUS-TODAY-STORM-DETAIL-PRESENTATION`
+  - Fingerprint: `performance|project-arcus|today-storm-setup|summary-view|eager-detail-presentation-reconstruction`
+  - Repository: project-arcus
+  - Audit type: Weekly Workflow Performance Audit
+  - Workflow: Today Storm Setup presentation
+  - Title: Full Storm Setup detail presentation is rebuilt during Summary renders
+  - Status: MEASUREMENT REQUIRED
+  - Severity: LOW
+  - Confidence: MEDIUM
+  - Evidence class: MEASUREMENT GAP
+  - First observed: 2026-08-30
+  - Last verified: 2026-08-30 at `1481bfa49fb434df4915627752349ef8d678dcf2`
+  - Affected files and symbols: `Sources/Features/Summary/SummaryView.swift` — `body`,
+    `stormSetupSlotState(now:)`, and `stormSetupDetailPresentation(now:)`;
+    `Sources/Features/StormSetup/StormSetupDetailPresentation.swift` — `init(dto:preferences:forecastLocationTimeZone:profileAnalysisResponse:now:)`.
+  - Execution path: Each `SummaryView.body` evaluation calls `summaryContent(now:)`, which calls
+    `stormSetupSlotState(now:)`. When a displayable Storm Setup DTO exists, that path constructs the complete
+    `StormSetupDetailPresentation` before rendering the compact summary card, even when the user does not navigate to
+    detail. The initializer derives summary text plus ingredient, advanced, profile-analysis, provenance, and grouped
+    detail rows. The same pass also constructs `StormSetupAssessment` again for policy selection.
+  - Performance mechanism: Unchanged guidance can repeatedly pay synchronous formatting, array construction, mapping,
+    filtering, and assessment derivation on the main-actor SwiftUI render path. The work is broader than the compact
+    card requires, but current evidence does not establish render frequency or material duration.
+  - User or operational impact: If constructor cost is material, unrelated Today state updates could add main-thread
+    work and increase update latency while Storm Setup guidance is visible. No hitch, latency, CPU, or allocation impact
+    has been measured, so severity remains Low.
+  - Measurement evidence: None.
+  - Measurement gap: Measure `StormSetupDetailPresentation` construction count and duration together with
+    `SummaryView` Update Groups during a foreground refresh and unrelated Today state transitions using a Release build
+    on a physical device with representative detailed-ingredient and profile-analysis payloads.
+  - Minimal fix strategy: Only if measurement is material, separate the compact summary presentation from the full
+    detail presentation and derive the latter at a stable input boundary or on detail navigation. Reuse one assessment
+    for policy and presentation derivation. Avoid a generic cache or broad state-management refactor.
+  - Required validation: Before/after constructor count and duration under the same scenario; SwiftUI Update Groups and
+    Time Profiler comparison; deterministic tests preserving all summary states, navigation content, preference
+    transitions, time-zone formatting, and accessibility output.
+  - Related GitHub issue: none; issue search and creation were unavailable because repository policy requires the
+    GitHub connector, which was not available in this run. The automation did not fall back to `gh`.
+- Measurement gaps: `PERF-ARCUS-TODAY-STORM-DETAIL-PRESENTATION` requires bounded measurement before selecting an
+  optimization. This is the only promoted performance concern from the workflow.
+- Watchlist: `StormSetupAlertEligibility.hasQualifyingAlert(in:now:)` and `StormSetupAssessment(dto:)` are each invoked
+  more than once while deriving the slot, but their independent cost and contribution are likely small. Promote only
+  if the same trace attributes material time to those duplicate policy derivations.
+- Resolved findings: none in this selected workflow.
+- Top finding: `PERF-ARCUS-TODAY-STORM-DETAIL-PRESENTATION` (MEASUREMENT REQUIRED, MEDIUM confidence).
+- Best next action: Add a bounded Release-device measurement of full detail-presentation construction during Today
+  renders; do not change production presentation ownership until the trace establishes meaningful cost.
+- Implementation recommended: no
+- Measurement recommended: yes
+- GitHub issues created: none; GitHub connector unavailable, and repository policy prohibits `gh` fallback.
+- GitHub issues updated: none
+- Existing issues referenced: none; remote issue deduplication could not be performed without the required connector.
+- Out-of-scope repositories: arcus-signal; ArcusCore

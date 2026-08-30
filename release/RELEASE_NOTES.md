@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v1.1.1(133)
+
+## Overview
+This build fixes a launch-time crash by quarantining incompatible SwiftData cache files and reopening a current store when the older cache is present.
+
+## Highlights
+- Launch now quarantines incompatible SwiftData cache files and reopens a current store instead of crashing at startup when an older store is present.
+- Regression coverage now exercises recovery from the v1.1.0(113) production store fixture, marker-less current stores, quarantine rollback failures, and quarantine retention pruning.
+
 ## v1.1.1(131)
 
 ## Overview
