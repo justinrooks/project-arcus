@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v1.1.1(133)
+
+### Reliability
+- Launch now quarantines incompatible SwiftData cache files and reopens a current store instead of crashing at startup when an older store is present.
+<!-- evidence: d3c8f5c2 -->
+
+### Tests / QA
+- Regression coverage now exercises recovery from the v1.1.0(113) production store fixture, marker-less current stores, quarantine rollback failures, and quarantine retention pruning.
+<!-- evidence: d3c8f5c2 -->
+
 ## v1.1.1(131)
 
 ### UI / UX
