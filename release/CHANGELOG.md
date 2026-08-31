@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.1.1(136)
+## v1.1.1(137)
 
 ### Reliability
 - New installs and updates now use an isolated versioned SwiftData cache, bypassing incompatible stores from earlier builds; if persistent storage cannot open safely, the app continues with a transient in-memory store instead of terminating at launch.
