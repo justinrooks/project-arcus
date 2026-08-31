@@ -93,7 +93,8 @@ struct SkyAwareApp: App {
                 coordinator: deps.homeIngestionCoordinator,
                 arcusAlerts: deps.arcusProvider,
                 presentationState: remoteAlertPresentationState,
-                widgetSnapshotRefreshDriver: remoteAlertWidgetSnapshotRefreshDriver
+                widgetSnapshotRefreshDriver: remoteAlertWidgetSnapshotRefreshDriver,
+                allowsBackgroundIngestion: deps.allowsBackgroundPersistence
             )
         )
 #if DEBUG
@@ -116,23 +117,34 @@ struct SkyAwareApp: App {
         }
         .modelContainer(deps.modelContainer)
         .backgroundTask(.appRefresh(deps.appRefreshID)) {
-            logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
-            let lifecycle = BackgroundRefreshLifecycle(
-                beginRun: {
-                    await deps.orchestrator.beginRun()
-                },
+            await BackgroundRefreshExecution.run(
+                allowsBackgroundPersistence: deps.allowsBackgroundPersistence,
                 scheduleFallback: {
-                    await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
+                    let outcome = await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
+                    if outcome.preservesSuccessor == false {
+                        logger.error("Skipped background refresh could not preserve a successor")
+                    }
                 },
-                runOrchestration: { run in
-                    await deps.orchestrator.run(run)
-                },
-                scheduleAuthoritative: { nextRun in
-                    await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: nextRun)
-                },
-                logger: logger
+                runPersistentLifecycle: {
+                    logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
+                    let lifecycle = BackgroundRefreshLifecycle(
+                        beginRun: {
+                            await deps.orchestrator.beginRun()
+                        },
+                        scheduleFallback: {
+                            await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
+                        },
+                        runOrchestration: { run in
+                            await deps.orchestrator.run(run)
+                        },
+                        scheduleAuthoritative: { nextRun in
+                            await deps.scheduler.scheduleEvaluatedNextAppRefresh(nextRun: nextRun)
+                        },
+                        logger: logger
+                    )
+                    _ = await lifecycle.run()
+                }
             )
-            _ = await lifecycle.run()
         }
         .onChange(of: scenePhase) { _, newPhase in
             guard isUITestStaticHome == false else { return }
@@ -187,6 +199,20 @@ struct SkyAwareApp: App {
                 break
             }
         }
+    }
+}
+
+enum BackgroundRefreshExecution {
+    static func run(
+        allowsBackgroundPersistence: @Sendable () async -> Bool,
+        scheduleFallback: @Sendable () async -> Void,
+        runPersistentLifecycle: @Sendable () async -> Void
+    ) async {
+        guard await allowsBackgroundPersistence() else {
+            await scheduleFallback()
+            return
+        }
+        await runPersistentLifecycle()
     }
 }
 

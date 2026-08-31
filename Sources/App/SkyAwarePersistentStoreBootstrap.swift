@@ -2,10 +2,46 @@ import Foundation
 import OSLog
 import SwiftData
 
+enum SkyAwarePersistenceSchema: VersionedSchema {
+    static let versionIdentifier = Schema.Version(3, 0, 0)
+
+    static let models: [any PersistentModel.Type] = [
+        ConvectiveOutlook.self,
+        MD.self,
+        StormRisk.self,
+        SevereRisk.self,
+        BgRunSnapshot.self,
+        Watch.self,
+        FireRisk.self,
+        HomeProjection.self
+    ]
+}
+
+enum SkyAwarePersistenceMigrationPlan: SchemaMigrationPlan {
+    static let schemas: [any VersionedSchema.Type] = [SkyAwarePersistenceSchema.self]
+    static let stages: [MigrationStage] = []
+}
+
 @MainActor
 enum SkyAwarePersistentStoreBootstrap {
-    static let currentGeneration = 2
-    static let generationKey = "skyAwarePersistentStoreGeneration"
+    enum Mode: Equatable, Sendable {
+        case persistent
+        case transient
+    }
+
+    struct Result: Sendable {
+        let container: ModelContainer
+        let mode: Mode
+    }
+
+    typealias ContainerFactory = @MainActor (
+        _ schema: Schema,
+        _ configuration: ModelConfiguration,
+        _ migrationPlan: (any SchemaMigrationPlan.Type)?
+    ) throws -> ModelContainer
+
+    static let storeName = "SkyAware_Data_v3"
+    static let storeFileName = "SkyAware_Data_v3.store"
     static let quarantineDirectoryName = "IncompatibleStores"
     static let quarantineRetentionInterval: TimeInterval = 7 * 24 * 60 * 60
     static let maximumRetainedQuarantines = 1
@@ -13,37 +49,72 @@ enum SkyAwarePersistentStoreBootstrap {
     static func open(
         schema: Schema,
         configuration: ModelConfiguration,
-        defaults: UserDefaults = .standard,
+        migrationPlan: (any SchemaMigrationPlan.Type)? = nil,
+        isProtectedDataAvailable: Bool,
         fileManager: FileManager = .default,
         logger: Logger = .appMain,
-        now: Date = .now
-    ) throws -> ModelContainer {
+        now: Date = .now,
+        makeContainer: ContainerFactory? = nil
+    ) throws -> Result {
+        let factory = makeContainer ?? { schema, configuration, migrationPlan in
+            try ModelContainer(
+                for: schema,
+                migrationPlan: migrationPlan,
+                configurations: configuration
+            )
+        }
+
+        guard isProtectedDataAvailable else {
+            logger.error("Protected data is locked; using transient SwiftData storage")
+            return try transientResult(
+                schema: schema,
+                migrationPlan: migrationPlan,
+                factory: factory
+            )
+        }
+
         do {
-            let container = try ModelContainer(for: schema, configurations: configuration)
-            defaults.set(currentGeneration, forKey: generationKey)
+            let container = try factory(schema, configuration, migrationPlan)
             maintainQuarantines(
                 for: configuration.url,
                 fileManager: fileManager,
                 logger: logger,
                 now: now
             )
-            return container
+            return Result(container: container, mode: .persistent)
         } catch let initialError {
-            let recordedGeneration = defaults.integer(forKey: generationKey)
             let storeURL = configuration.url
-            guard recordedGeneration < currentGeneration,
-                  storeFiles(at: storeURL, fileManager: fileManager).isEmpty == false else {
-                throw initialError
+
+            guard storeFiles(at: storeURL, fileManager: fileManager).isEmpty == false else {
+                logger.error(
+                    "Persistent SwiftData failed without store files; using transient storage. error=\(String(describing: initialError), privacy: .public)"
+                )
+                return try transientResult(
+                    schema: schema,
+                    migrationPlan: migrationPlan,
+                    factory: factory
+                )
             }
 
-            let backupURL = try quarantineStore(at: storeURL, fileManager: fileManager)
-            logger.error(
-                "Quarantined incompatible SwiftData cache generation=\(recordedGeneration, privacy: .public) backup=\(backupURL.lastPathComponent, privacy: .public)"
-            )
+            let backupURL: URL
+            do {
+                backupURL = try quarantineStore(at: storeURL, fileManager: fileManager)
+                logger.error(
+                    "Quarantined unreadable SwiftData cache backup=\(backupURL.lastPathComponent, privacy: .public) error=\(String(describing: initialError), privacy: .public)"
+                )
+            } catch {
+                logger.error(
+                    "Could not quarantine unreadable SwiftData cache; using transient storage. openError=\(String(describing: initialError), privacy: .public) quarantineError=\(String(describing: error), privacy: .public)"
+                )
+                return try transientResult(
+                    schema: schema,
+                    migrationPlan: migrationPlan,
+                    factory: factory
+                )
+            }
 
             do {
-                let container = try ModelContainer(for: schema, configurations: configuration)
-                defaults.set(currentGeneration, forKey: generationKey)
+                let container = try factory(schema, configuration, migrationPlan)
                 maintainQuarantines(
                     for: configuration.url,
                     retaining: backupURL,
@@ -52,17 +123,38 @@ enum SkyAwarePersistentStoreBootstrap {
                     now: now
                 )
                 logger.notice(
-                    "Recovered SwiftData cache with generation=\(currentGeneration, privacy: .public)"
+                    "Recovered persistent SwiftData cache"
                 )
-                return container
+                return Result(container: container, mode: .persistent)
             } catch let retryError {
-                throw RecoveryError(
-                    initialError: initialError,
-                    retryError: retryError,
-                    backupURL: backupURL
+                logger.error(
+                    "Persistent SwiftData recovery failed; using transient storage. initialError=\(String(describing: initialError), privacy: .public) retryError=\(String(describing: retryError), privacy: .public)"
+                )
+                return try transientResult(
+                    schema: schema,
+                    migrationPlan: migrationPlan,
+                    factory: factory
                 )
             }
         }
+    }
+
+    static func storeURL(applicationSupportDirectory: URL = .applicationSupportDirectory) -> URL {
+        applicationSupportDirectory.appendingPathComponent(storeFileName, isDirectory: false)
+    }
+
+    private static func transientResult(
+        schema: Schema,
+        migrationPlan: (any SchemaMigrationPlan.Type)?,
+        factory: ContainerFactory
+    ) throws -> Result {
+        let configuration = ModelConfiguration(
+            "\(storeName)_Transient",
+            schema: schema,
+            isStoredInMemoryOnly: true
+        )
+        let container = try factory(schema, configuration, migrationPlan)
+        return Result(container: container, mode: .transient)
     }
 
     static func quarantineRootURL(for storeURL: URL) -> URL {
@@ -195,17 +287,6 @@ enum SkyAwarePersistentStoreBootstrap {
 }
 
 extension SkyAwarePersistentStoreBootstrap {
-    struct RecoveryError: LocalizedError {
-        let initialError: any Error
-        let retryError: any Error
-        let backupURL: URL
-
-        var errorDescription: String? {
-            "SwiftData cache recovery failed after preserving the incompatible store at " +
-            "\(backupURL.lastPathComponent). Initial error: \(initialError). Retry error: \(retryError)."
-        }
-    }
-
     struct QuarantineError: LocalizedError {
         let moveError: any Error
         let rollbackErrors: [any Error]

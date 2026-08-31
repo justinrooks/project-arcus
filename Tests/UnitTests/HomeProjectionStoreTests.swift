@@ -7,8 +7,8 @@ import Testing
 @Suite("Home Projection Store")
 @MainActor
 struct HomeProjectionStoreTests {
-    @Test("the v1.1.0(113) store is quarantined once and replaced with a reopenable current store")
-    func productionStoreFixture_recoversOnceAndReopensCurrentSchema() async throws {
+    @Test("build 113 upgrades use an isolated versioned store and leave the legacy cache untouched")
+    func productionStoreFixture_opensIsolatedVersionedStore() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -20,86 +20,225 @@ struct HomeProjectionStoreTests {
                 withExtension: "sqlite"
             )
         )
-        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
-        try FileManager.default.copyItem(at: fixtureURL, to: storeURL)
+        let legacyStoreURL = root.appendingPathComponent("SkyAware_Data.store")
+        try FileManager.default.copyItem(at: fixtureURL, to: legacyStoreURL)
+        let legacyStoreData = try Data(contentsOf: legacyStoreURL)
 
-        let defaultsSuite = "HomeProjectionStoreTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: defaultsSuite))
-        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
-
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
+        #expect(storeURL != legacyStoreURL)
         let schema = productionSchema()
-        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
-        try await recoverAndPopulateStore(
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
+        let result = try SkyAwarePersistentStoreBootstrap.open(
             schema: schema,
             configuration: configuration,
-            defaults: defaults
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true
         )
 
-        #expect(
-            defaults.integer(forKey: SkyAwarePersistentStoreBootstrap.generationKey) ==
-                SkyAwarePersistentStoreBootstrap.currentGeneration
-        )
-
-        let quarantineRoot = SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL)
-        let backups = try FileManager.default.contentsOfDirectory(
-            at: quarantineRoot,
-            includingPropertiesForKeys: nil
-        )
-        let backup = try #require(backups.first)
-        #expect(backups.count == 1)
-        #expect(FileManager.default.fileExists(atPath: backup.appendingPathComponent(storeURL.lastPathComponent).path))
-        #expect(
-            try quarantineRoot.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true
-        )
-        #expect(try backup.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+        #expect(result.mode == .persistent)
+        #expect(FileManager.default.fileExists(atPath: storeURL.path))
+        #expect(try Data(contentsOf: legacyStoreURL) == legacyStoreData)
+        #expect(FileManager.default.fileExists(atPath: storeURL.path + "-wal"))
 
         let reopened = try SkyAwarePersistentStoreBootstrap.open(
             schema: schema,
             configuration: configuration,
-            defaults: defaults
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true
         )
-        #expect(try ModelContext(reopened).fetchCount(FetchDescriptor<SevereRisk>()) == 1)
-        #expect(try ModelContext(reopened).fetchCount(FetchDescriptor<HomeProjection>()) == 1)
-        #expect(
-            try FileManager.default.contentsOfDirectory(
-                at: quarantineRoot,
-                includingPropertiesForKeys: nil
-            ).count == 1
-        )
+        #expect(reopened.mode == .persistent)
     }
 
-    @Test("a valid current store is preserved when its generation marker is absent")
-    func currentStoreWithoutMarker_opensWithoutQuarantineOrDataLoss() throws {
+    @Test("a healthy versioned store reopens without quarantine or data loss")
+    func currentStore_reopensWithoutQuarantineOrDataLoss() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
         let schema = productionSchema()
-        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
         try createCurrentStore(schema: schema, configuration: configuration)
-
-        let defaultsSuite = "HomeProjectionStoreTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: defaultsSuite))
-        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
 
         let opened = try SkyAwarePersistentStoreBootstrap.open(
             schema: schema,
             configuration: configuration,
-            defaults: defaults
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true
         )
 
-        #expect(try ModelContext(opened).fetchCount(FetchDescriptor<SevereRisk>()) == 1)
-        #expect(
-            defaults.integer(forKey: SkyAwarePersistentStoreBootstrap.generationKey) ==
-                SkyAwarePersistentStoreBootstrap.currentGeneration
-        )
+        #expect(opened.mode == .persistent)
+        #expect(try ModelContext(opened.container).fetchCount(FetchDescriptor<SevereRisk>()) == 1)
         #expect(
             FileManager.default.fileExists(
                 atPath: SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL).path
             ) == false
         )
+    }
+
+    @Test("locked protected data falls back to memory without mutating the persistent store")
+    func protectedDataUnavailable_preservesStoreAndUsesTransientContainer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
+        let originalData = Data("protected-store".utf8)
+        try originalData.write(to: storeURL)
+        let schema = productionSchema()
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
+        var persistentAttempts = 0
+
+        let result = try SkyAwarePersistentStoreBootstrap.open(
+            schema: schema,
+            configuration: configuration,
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: false,
+            makeContainer: { schema, configuration, migrationPlan in
+                if configuration.isStoredInMemoryOnly == false {
+                    persistentAttempts += 1
+                    throw PersistenceBootstrapTestError.openFailed
+                }
+                return try ModelContainer(
+                    for: schema,
+                    migrationPlan: migrationPlan,
+                    configurations: configuration
+                )
+            }
+        )
+
+        #expect(result.mode == .transient)
+        #expect(persistentAttempts == 0)
+        #expect(try Data(contentsOf: storeURL) == originalData)
+        #expect(
+            FileManager.default.fileExists(
+                atPath: SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL).path
+            ) == false
+        )
+    }
+
+    @Test("an unreadable current store is quarantined and recreated persistently")
+    func unreadableCurrentStore_isQuarantinedAndRecreated() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
+        let originalData = Data("unreadable-store".utf8)
+        try originalData.write(to: storeURL)
+        let schema = productionSchema()
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
+        var persistentAttempts = 0
+
+        let result = try SkyAwarePersistentStoreBootstrap.open(
+            schema: schema,
+            configuration: configuration,
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true
+        ) { schema, configuration, migrationPlan in
+            if configuration.isStoredInMemoryOnly == false {
+                persistentAttempts += 1
+                if persistentAttempts == 1 {
+                    throw PersistenceBootstrapTestError.openFailed
+                }
+            }
+            return try ModelContainer(
+                for: schema,
+                migrationPlan: migrationPlan,
+                configurations: configuration
+            )
+        }
+
+        #expect(result.mode == .persistent)
+        #expect(persistentAttempts == 2)
+        let quarantineRoot = SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL)
+        let backup = try #require(
+            FileManager.default.contentsOfDirectory(at: quarantineRoot, includingPropertiesForKeys: nil).first
+        )
+        #expect(try Data(contentsOf: backup.appendingPathComponent(storeURL.lastPathComponent)) == originalData)
+        #expect(FileManager.default.fileExists(atPath: storeURL.path))
+    }
+
+    @Test("persistent recovery failure falls back to a usable transient container")
+    func persistentRecoveryFailure_usesTransientContainer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
+        try Data("unreadable-store".utf8).write(to: storeURL)
+        let schema = productionSchema()
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
+
+        let result = try SkyAwarePersistentStoreBootstrap.open(
+            schema: schema,
+            configuration: configuration,
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true,
+            makeContainer: failingPersistentContainerFactory()
+        )
+
+        #expect(result.mode == .transient)
+        let context = ModelContext(result.container)
+        context.insert(makeCurrentSevereRisk())
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<SevereRisk>()) == 1)
+    }
+
+    @Test("quarantine failure preserves the store and falls back to transient storage")
+    func quarantineFailure_preservesStoreAndUsesTransientContainer() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
+        let originalData = Data("unreadable-store".utf8)
+        try originalData.write(to: storeURL)
+        try Data("blocks-quarantine-directory".utf8).write(
+            to: SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL)
+        )
+        let schema = productionSchema()
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
+
+        let result = try SkyAwarePersistentStoreBootstrap.open(
+            schema: schema,
+            configuration: configuration,
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true,
+            makeContainer: failingPersistentContainerFactory()
+        )
+
+        #expect(result.mode == .transient)
+        #expect(try Data(contentsOf: storeURL) == originalData)
     }
 
     @Test("an incomplete quarantine rollback retains every component that could not be restored")
@@ -109,7 +248,7 @@ struct HomeProjectionStoreTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let storeURL = root.appendingPathComponent("SkyAware_Data_v3.store")
         let sharedMemoryURL = URL(fileURLWithPath: storeURL.path + "-shm")
         try Data("store".utf8).write(to: storeURL)
         try Data("shared-memory".utf8).write(to: sharedMemoryURL)
@@ -140,11 +279,6 @@ struct HomeProjectionStoreTests {
                     atPath: error.backupURL.appendingPathComponent(storeURL.lastPathComponent).path
                 )
             )
-            #expect(
-                try error.backupURL.resourceValues(
-                    forKeys: [.isExcludedFromBackupKey]
-                ).isExcludedFromBackup == true
-            )
         } catch {
             Issue.record("Unexpected error: \(error)")
         }
@@ -157,11 +291,7 @@ struct HomeProjectionStoreTests {
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
-        let schema = productionSchema()
-        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
-        try createCurrentStore(schema: schema, configuration: configuration)
-
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
         let quarantineRoot = SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL)
         try FileManager.default.createDirectory(at: quarantineRoot, withIntermediateDirectories: true)
         let now = Date(timeIntervalSince1970: 2_000_000)
@@ -180,14 +310,9 @@ struct HomeProjectionStoreTests {
             )
         }
 
-        let defaultsSuite = "HomeProjectionStoreTests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: defaultsSuite))
-        defer { defaults.removePersistentDomain(forName: defaultsSuite) }
-
-        _ = try SkyAwarePersistentStoreBootstrap.open(
-            schema: schema,
-            configuration: configuration,
-            defaults: defaults,
+        try SkyAwarePersistentStoreBootstrap.pruneQuarantines(
+            for: storeURL,
+            fileManager: .default,
             now: now
         )
 
@@ -1507,42 +1632,7 @@ struct HomeProjectionStoreTests {
     }
 
     private func productionSchema() -> Schema {
-        Schema([
-            ConvectiveOutlook.self,
-            MD.self,
-            StormRisk.self,
-            SevereRisk.self,
-            BgRunSnapshot.self,
-            Watch.self,
-            FireRisk.self,
-            HomeProjection.self
-        ])
-    }
-
-    private func recoverAndPopulateStore(
-        schema: Schema,
-        configuration: ModelConfiguration,
-        defaults: UserDefaults
-    ) async throws {
-        let container = try SkyAwarePersistentStoreBootstrap.open(
-            schema: schema,
-            configuration: configuration,
-            defaults: defaults
-        )
-        #expect(try ModelContext(container).fetchCount(FetchDescriptor<SevereRisk>()) == 0)
-        #expect(try ModelContext(container).fetchCount(FetchDescriptor<HomeProjection>()) == 0)
-
-        let context = ModelContext(container)
-        context.insert(makeCurrentSevereRisk())
-        try context.save()
-        let projectionStore = HomeProjectionStore(modelContainer: container)
-        _ = try await projectionStore.updateSlowProducts(
-            stormRisk: .enhanced,
-            severeRisk: .tornado(probability: 0.10),
-            fireRisk: .critical,
-            for: makeContext(),
-            loadedAt: Date(timeIntervalSince1970: 300)
-        )
+        Schema(versionedSchema: SkyAwarePersistenceSchema.self)
     }
 
     private func createCurrentStore(
@@ -1569,6 +1659,23 @@ struct HomeProjectionStoreTests {
             polygons: [],
             label: "0.10"
         )
+    }
+
+    private func failingPersistentContainerFactory() -> SkyAwarePersistentStoreBootstrap.ContainerFactory {
+        { schema, configuration, migrationPlan in
+            guard configuration.isStoredInMemoryOnly else {
+                throw PersistenceBootstrapTestError.openFailed
+            }
+            return try ModelContainer(
+                for: schema,
+                migrationPlan: migrationPlan,
+                configurations: configuration
+            )
+        }
+    }
+
+    private enum PersistenceBootstrapTestError: Error {
+        case openFailed
     }
 
     private enum QuarantineTestError: Error {

@@ -41,6 +41,7 @@ actor RemoteHotAlertHandler {
     private let arcusAlerts: any ArcusAlertQuerying
     private let presentationState: RemoteAlertPresentationState
     private let widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)?
+    private let allowsBackgroundIngestion: @Sendable () async -> Bool
     private let logger: Logger
 
     init(
@@ -48,16 +49,23 @@ actor RemoteHotAlertHandler {
         arcusAlerts: any ArcusAlertQuerying,
         presentationState: RemoteAlertPresentationState,
         widgetSnapshotRefreshDriver: (any WidgetSnapshotRefreshDriving)? = nil,
+        allowsBackgroundIngestion: @escaping @Sendable () async -> Bool = { true },
         logger: Logger = .notificationsRemote
     ) {
         self.coordinator = coordinator
         self.arcusAlerts = arcusAlerts
         self.presentationState = presentationState
         self.widgetSnapshotRefreshDriver = widgetSnapshotRefreshDriver
+        self.allowsBackgroundIngestion = allowsBackgroundIngestion
         self.logger = logger
     }
 
     func handleRemoteNotification(_ remoteAlertContext: HomeRemoteAlertContext) async -> UIBackgroundFetchResult {
+        guard await allowsBackgroundIngestion() else {
+            logger.error("Skipping remote hot-alert ingestion because persistent storage is unavailable")
+            return .failed
+        }
+
         do {
             let previousAlert = try await arcusAlerts.getAlert(id: remoteAlertContext.alertID)
             _ = try await coordinator.enqueueAndWait(

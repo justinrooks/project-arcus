@@ -155,6 +155,54 @@ struct RemoteHotAlertHandlerTests {
         #expect(result == .failed)
     }
 
+    @Test("background receipt skips ingestion while persistence is transient")
+    func backgroundReceipt_transientPersistenceSkipsIngestion() async {
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let alertStore = StubArcusAlertStore(alerts: [])
+        let widgetDriver = RecordingWidgetSnapshotRefreshDriver()
+        let presentationState = await MainActor.run { RemoteAlertPresentationState() }
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator,
+            arcusAlerts: alertStore,
+            presentationState: presentationState,
+            widgetSnapshotRefreshDriver: widgetDriver,
+            allowsBackgroundIngestion: { false }
+        )
+
+        let result = await handler.handleRemoteNotification(
+            .init(alertID: "alert-123", revisionSent: nil)
+        )
+
+        #expect(result == .failed)
+        #expect(await coordinator.requests().isEmpty)
+        #expect(await widgetDriver.refreshCallCount() == 0)
+    }
+
+    @Test("background receipt rechecks protected data after an unlocked launch")
+    func backgroundReceipt_lockedAfterLaunchSkipsIngestion() async {
+        let permission = MutableBackgroundIngestionPermission(isAllowed: true)
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let alertStore = StubArcusAlertStore(alerts: [])
+        let widgetDriver = RecordingWidgetSnapshotRefreshDriver()
+        let presentationState = await MainActor.run { RemoteAlertPresentationState() }
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator,
+            arcusAlerts: alertStore,
+            presentationState: presentationState,
+            widgetSnapshotRefreshDriver: widgetDriver,
+            allowsBackgroundIngestion: { await permission.isAllowed() }
+        )
+        await permission.setAllowed(false)
+
+        let result = await handler.handleRemoteNotification(
+            .init(alertID: "alert-123", revisionSent: nil)
+        )
+
+        #expect(result == .failed)
+        #expect(await coordinator.requests().isEmpty)
+        #expect(await widgetDriver.refreshCallCount() == 0)
+    }
+
     @Test("notification open publishes a focus request for the targeted alert after unified ingestion")
     func notificationOpen_publishesFocusRequest() async throws {
         let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
@@ -182,6 +230,32 @@ struct RemoteHotAlertHandlerTests {
             #expect(presentationState.focusRequest?.alert == alert)
         }
         #expect(await widgetDriver.refreshCallCount() == 1)
+    }
+
+    @Test("foreground notification open remains functional while persistence is transient")
+    func notificationOpen_transientPersistenceStillHandlesForegroundIntent() async throws {
+        let revisionSent = Date(timeIntervalSince1970: 1_776_438_000)
+        let alert = makeAlert(id: "alert-open", revisionSent: revisionSent)
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let alertStore = StubArcusAlertStore(alerts: [alert])
+        let presentationState = await MainActor.run { RemoteAlertPresentationState() }
+        let handler = RemoteHotAlertHandler(
+            coordinator: coordinator,
+            arcusAlerts: alertStore,
+            presentationState: presentationState,
+            allowsBackgroundIngestion: { false }
+        )
+
+        await handler.handleNotificationOpen(
+            .init(alertID: "alert-open", revisionSent: revisionSent)
+        )
+
+        let request = try #require(await coordinator.requests().first)
+        #expect(request.trigger == .remoteHotAlertOpened)
+        await MainActor.run {
+            #expect(presentationState.focusRequest?.alertID == "alert-open")
+            #expect(presentationState.focusRequest?.alert == alert)
+        }
     }
 
     @Test("presentation state clears the matching focus request after it is consumed")
@@ -264,6 +338,22 @@ struct RemoteHotAlertHandlerTests {
             flashFloodDetection: nil,
             flashFloodDamageThreat: nil
         )
+    }
+}
+
+private actor MutableBackgroundIngestionPermission {
+    private var allowed: Bool
+
+    init(isAllowed: Bool) {
+        allowed = isAllowed
+    }
+
+    func isAllowed() -> Bool {
+        allowed
+    }
+
+    func setAllowed(_ isAllowed: Bool) {
+        allowed = isAllowed
     }
 }
 

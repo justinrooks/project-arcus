@@ -242,6 +242,37 @@ struct AlertNotificationTests {
         #expect((await sender.sent()).count == 1)
     }
 
+    @Test("background location change skips ingestion when persistent storage is unavailable")
+    func backgroundLocationChange_transientPersistenceSkipsIngestion() async {
+        let watchSender = RecordingSender()
+        let riskSender = RecordingSender()
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let handler = BackgroundLocationChangeHandler(
+            coordinator: coordinator,
+            watchEngine: WatchEngine(
+                rule: WatchRule(),
+                gate: WatchGate(store: InMemoryNotificationStore()),
+                composer: WatchComposer(),
+                sender: watchSender
+            ),
+            riskChangeEngine: makeRiskChangeEngine(sender: riskSender),
+            notificationSettingsProvider: StaticSettingsProvider(
+                settings: .init(
+                    morningSummariesEnabled: false,
+                    mesoNotificationsEnabled: false,
+                    riskChangeNotificationsEnabled: true
+                )
+            ),
+            allowsBackgroundIngestion: { false }
+        )
+
+        await handler.handleLocationChange()
+
+        #expect(await coordinator.requestCount() == 0)
+        #expect((await watchSender.sent()).isEmpty)
+        #expect((await riskSender.sent()).isEmpty)
+    }
+
     @Test("duplicate background location changes do not re-notify the same alert")
     func duplicateBackgroundLocationChangesDoNotRenotifySameAlert() async {
         let sender = RecordingSender()
