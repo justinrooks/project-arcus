@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## v1.1.1(136)
+
+### Reliability
+- New installs and updates now use an isolated versioned SwiftData cache, bypassing incompatible stores from earlier builds; if persistent storage cannot open safely, the app continues with a transient in-memory store instead of terminating at launch.
+<!-- evidence: 79592aea -->
+- Background refresh, silent alert processing, and significant-location ingestion now recheck protected-data availability before persistence work, skip safely while storage is unavailable, and preserve future background scheduling.
+<!-- evidence: 79592aea -->
+
+### Tests / QA
+- Regression coverage now exercises the shipped build 113 store path, current-store reopening, locked and corrupt stores, quarantine failures, transient foreground behavior, and persistence-safe background execution.
+<!-- evidence: 79592aea -->
+
 ## v1.1.1(134)
 
 ### Reliability

@@ -1,6 +1,19 @@
 Unreleased
 
-SkyAware ## v1.1.1(134)
+SkyAware v1.1.1(136)
+
+Highlights:
+- New installs and updates use an isolated versioned cache that bypasses incompatible stores from earlier builds.
+- The app remains usable with temporary in-memory storage instead of terminating when persistent data is locked or unavailable.
+- Background refresh, silent alerts, and significant-location handling skip persistence work safely when protected data is unavailable and preserve future background scheduling.
+- Regression coverage includes build 113 updates, current-store reopening, locked and corrupt stores, recovery failures, foreground fallback, and background execution.
+
+What to test:
+- Update over builds 113 or 134 and confirm the app launches normally and refreshes current weather data.
+- Cold-launch while the device is unlocked, then relaunch and confirm the current cache reopens normally.
+- Where feasible, exercise background refresh, silent alerts, or significant-location handling while the device is locked and confirm the app remains stable.
+
+SkyAware v1.1.1(134)
 
 Highlights:
 - Launch should no longer crash when an older incompatible SwiftData cache is present.
