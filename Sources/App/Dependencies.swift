@@ -8,12 +8,15 @@
 import Foundation
 import OSLog
 import SwiftData
+import UIKit
 
 final class Dependencies: Sendable {
     // MARK: Core config
 
     let appRefreshID: String
     let logger: Logger
+    let persistenceMode: SkyAwarePersistentStoreBootstrap.Mode
+    let allowsBackgroundPersistence: @Sendable () async -> Bool
     
     // MARK: Data / persistence
     
@@ -241,6 +244,8 @@ final class Dependencies: Sendable {
     init(
         appRefreshID: String,
         logger: Logger,
+        persistenceMode: SkyAwarePersistentStoreBootstrap.Mode,
+        allowsBackgroundPersistence: @escaping @Sendable () async -> Bool,
         modelContainer: ModelContainer?,
         outlookRepo: ConvectiveOutlookRepo?,
         mesoRepo: MesoRepo?,
@@ -266,6 +271,8 @@ final class Dependencies: Sendable {
     ) {
         self.appRefreshID = appRefreshID
         self.logger = logger
+        self.persistenceMode = persistenceMode
+        self.allowsBackgroundPersistence = allowsBackgroundPersistence
         self._modelContainer = modelContainer
         self._outlookRepo = outlookRepo
         self._mesoRepo = mesoRepo
@@ -299,30 +306,44 @@ final class Dependencies: Sendable {
         let isUITestStaticHome = ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
         
         // Shared SwiftData context
-        let schema = Schema([
-            ConvectiveOutlook.self,
-            MD.self,
-            StormRisk.self,
-            SevereRisk.self,
-            BgRunSnapshot.self,
-            Watch.self,
-            FireRisk.self,
-            HomeProjection.self
-        ])
+        let schema = Schema(versionedSchema: SkyAwarePersistenceSchema.self)
         let config = isUITestStaticHome
             ? ModelConfiguration(isStoredInMemoryOnly: true)
-            : ModelConfiguration("SkyAware_Data", schema: schema) //isStoredInMemoryOnly: false)
+            : ModelConfiguration(
+                SkyAwarePersistentStoreBootstrap.storeName,
+                schema: schema,
+                url: SkyAwarePersistentStoreBootstrap.storeURL()
+            )
         let container: ModelContainer
+        let persistenceMode: SkyAwarePersistentStoreBootstrap.Mode
         do {
-            container = if isUITestStaticHome {
-                try ModelContainer(for: schema, configurations: config)
+            if isUITestStaticHome {
+                container = try ModelContainer(for: schema, configurations: config)
+                persistenceMode = .transient
             } else {
-                try SkyAwarePersistentStoreBootstrap.open(schema: schema, configuration: config)
+                let result = try SkyAwarePersistentStoreBootstrap.open(
+                    schema: schema,
+                    configuration: config,
+                    migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+                    isProtectedDataAvailable: UIApplication.shared.isProtectedDataAvailable
+                )
+                container = result.container
+                persistenceMode = result.mode
             }
-            Logger.appMain.debug("ModelContainer created for schema: SkyAware_Data")
+            Logger.appMain.notice(
+                "ModelContainer created mode=\(String(describing: persistenceMode), privacy: .public)"
+            )
         } catch {
-            Logger.appMain.critical("Failed to create ModelContainer: \(error.localizedDescription, privacy: .public)")
-            fatalError("Could not create ModelContainer: \(error)")
+            Logger.appMain.critical(
+                "Failed to create persistent and transient ModelContainer: \(String(describing: error), privacy: .public)"
+            )
+            preconditionFailure("Could not create any ModelContainer: \(error)")
+        }
+        let allowsBackgroundPersistence: @Sendable () async -> Bool = {
+            guard persistenceMode == .persistent else { return false }
+            return await MainActor.run {
+                UIApplication.shared.isProtectedDataAvailable
+            }
         }
         
         // Configure the network cache
@@ -520,7 +541,8 @@ final class Dependencies: Sendable {
             coordinator: homeIngestionCoordinator,
             watchEngine: watchEngine,
             riskChangeEngine: riskChangeEngine,
-            notificationSettingsProvider: notificationSettingsProvider
+            notificationSettingsProvider: notificationSettingsProvider,
+            allowsBackgroundIngestion: allowsBackgroundPersistence
         )
 
         locationManager.setBackgroundLocationChangeHandler {
@@ -545,6 +567,8 @@ final class Dependencies: Sendable {
         return Dependencies(
             appRefreshID: appRefreshID,
             logger: logger,
+            persistenceMode: persistenceMode,
+            allowsBackgroundPersistence: allowsBackgroundPersistence,
             modelContainer: container,
             outlookRepo: outlookRepo,
             mesoRepo: mesoRepo,
@@ -572,6 +596,8 @@ final class Dependencies: Sendable {
     
     static var unconfigured: Dependencies { Dependencies(appRefreshID: "UNCONFIGURED",
                                                          logger: Logger(subsystem: "SkyAware", category: "UnconfiguredDeps"),
+                                                         persistenceMode: .transient,
+                                                         allowsBackgroundPersistence: { false },
                                                          modelContainer: nil,
                                                          outlookRepo: nil,
                                                          mesoRepo: nil,

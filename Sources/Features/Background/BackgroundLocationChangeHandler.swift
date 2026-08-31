@@ -14,21 +14,29 @@ actor BackgroundLocationChangeHandler {
     private let watchEngine: WatchEngine
     private let riskChangeEngine: RiskChangeEngine
     private let notificationSettingsProvider: NotificationSettingsProviding
+    private let allowsBackgroundIngestion: @Sendable () async -> Bool
     private var activeTask: Task<Void, Never>?
 
     init(
         coordinator: any HomeIngestionCoordinating,
         watchEngine: WatchEngine,
         riskChangeEngine: RiskChangeEngine,
-        notificationSettingsProvider: NotificationSettingsProviding
+        notificationSettingsProvider: NotificationSettingsProviding,
+        allowsBackgroundIngestion: @escaping @Sendable () async -> Bool = { true }
     ) {
         self.coordinator = coordinator
         self.watchEngine = watchEngine
         self.riskChangeEngine = riskChangeEngine
         self.notificationSettingsProvider = notificationSettingsProvider
+        self.allowsBackgroundIngestion = allowsBackgroundIngestion
     }
 
     func handleLocationChange() async {
+        guard await allowsBackgroundIngestion() else {
+            logger.error("Skipping background location-change ingestion because persistent storage is unavailable")
+            return
+        }
+
         if let activeTask {
             logger.debug("Background location-change sync already in flight; joining existing task")
             await activeTask.value

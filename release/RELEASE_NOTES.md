@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v1.1.1(137)
+
+## Overview
+This build prevents SwiftData launch crashes by moving new installs and updates to an isolated versioned cache, while keeping the app usable with transient storage when persistent data is locked or unavailable.
+
+## Highlights
+- New installs and updates now use an isolated versioned SwiftData cache that bypasses incompatible stores from earlier builds.
+- If persistent storage cannot open safely, the app continues with a transient in-memory store instead of terminating at launch.
+- Background refresh, silent alert processing, and significant-location ingestion recheck protected-data availability, skip persistence work safely when necessary, and preserve future background scheduling.
+- Regression coverage now includes the shipped build 113 store path, current-store reopening, locked and corrupt stores, quarantine failures, transient foreground behavior, and persistence-safe background execution.
+
 ## v1.1.1(134)
 
 ## Overview

@@ -5,6 +5,40 @@ import Testing
 
 @Suite("Background refresh lifecycle", .serialized)
 struct BackgroundRefreshLifecycleTests {
+    @Test("Locked execution preserves a successor without starting persistence work")
+    func lockedExecutionSchedulesFallbackWithoutRunningLifecycle() async {
+        let recorder = LifecycleRecorder()
+
+        await BackgroundRefreshExecution.run(
+            allowsBackgroundPersistence: { false },
+            scheduleFallback: {
+                await recorder.recordAcceptedFallback()
+            },
+            runPersistentLifecycle: {
+                await recorder.recordOrchestrationStart()
+            }
+        )
+
+        #expect(await recorder.events() == ["fallback-complete"])
+    }
+
+    @Test("Unlocked execution runs the persistent lifecycle")
+    func unlockedExecutionRunsPersistentLifecycle() async {
+        let recorder = LifecycleRecorder()
+
+        await BackgroundRefreshExecution.run(
+            allowsBackgroundPersistence: { true },
+            scheduleFallback: {
+                await recorder.recordAcceptedFallback()
+            },
+            runPersistentLifecycle: {
+                await recorder.recordOrchestrationStart()
+            }
+        )
+
+        #expect(await recorder.events() == ["orchestration-start"])
+    }
+
     @Test("Fallback scheduling completes before blocked orchestration starts")
     func fallbackCompletesBeforeBlockedOrchestrationStarts() async {
         let recorder = LifecycleRecorder()
