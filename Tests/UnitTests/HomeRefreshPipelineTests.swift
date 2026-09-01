@@ -3271,7 +3271,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         }
     }
 
-    func syncMesoscaleDiscussions() async {
+    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
         syncMesoscaleCalls += 1
         observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let syncMesoscaleGate {
@@ -3282,7 +3282,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         }
         if Task.isCancelled {
             cancelledSyncCalls += 1
+            return .cancelled
         }
+        return .accepted
     }
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
@@ -3372,7 +3374,7 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         self.syncGate = syncGate
     }
 
-    func sync(context: LocationContext) async {
+    func sync(context: LocationContext) async -> ArcusLocationSyncOutcome {
         syncCalls += 1
         observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let syncGate {
@@ -3380,12 +3382,15 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         }
         if Task.isCancelled {
             cancelledSyncCalls += 1
+            return .cancelled
         }
+        return .accepted
     }
 
-    func syncRemoteAlert(id: String, revisionSent: Date?) async {
+    func syncRemoteAlert(id: String, revisionSent: Date?) async -> ArcusRemoteAlertSyncOutcome {
         syncCalls += 1
         observedHTTPModeValues.append(HTTPExecutionMode.current)
+        return .accepted
     }
 
     func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {

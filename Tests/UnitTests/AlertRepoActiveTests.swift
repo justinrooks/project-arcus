@@ -14,6 +14,30 @@ private struct UnavailableArcusClient: ArcusClient {
     }
 }
 
+private struct MalformedArcusClient: ArcusClient {
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
+        Data("not-json".utf8)
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        Data("not-json".utf8)
+    }
+}
+
+private struct FallbackArcusClient: ArcusClient {
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
+        Data("[]".utf8)
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        Data("[]".utf8)
+    }
+
+    func fetchAlertResponse(id: String, revisionSent: Date?) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: Data("[]".utf8), source: .cacheFallback)
+    }
+}
+
 @Suite("AlertRepo active()")
 struct AlertRepoActiveTests {
     let container: ModelContainer
@@ -541,6 +565,21 @@ struct AlertRepoActiveTests {
 
         #expect(geometries.map(\.id) == ["provider-warning"])
         #expect(geometries.first?.geometry == geometry)
+    }
+
+    @Test("Targeted provider sync reports rejected, failed, and fallback outcomes")
+    func targetedProviderSync_reportsTypedOutcomes() async {
+        let unavailableProvider = ArcusAlertProvider(alertRepo: repo, client: UnavailableArcusClient())
+        let malformedProvider = ArcusAlertProvider(alertRepo: repo, client: MalformedArcusClient())
+        let fallbackProvider = ArcusAlertProvider(alertRepo: repo, client: FallbackArcusClient())
+
+        let unavailableOutcome = await unavailableProvider.syncRemoteAlert(id: "test", revisionSent: nil)
+        let malformedOutcome = await malformedProvider.syncRemoteAlert(id: "test", revisionSent: nil)
+        let fallbackOutcome = await fallbackProvider.syncRemoteAlert(id: "test", revisionSent: nil)
+
+        #expect(unavailableOutcome == .failed)
+        #expect(malformedOutcome == .rejected)
+        #expect(fallbackOutcome == .fallback)
     }
 
     private func testPolygonGeometry() -> DeviceAlertGeometry {

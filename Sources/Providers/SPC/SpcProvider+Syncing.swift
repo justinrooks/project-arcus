@@ -70,7 +70,7 @@ extension SpcProvider: SpcSyncing {
     func syncTextProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Text")
         async let convectiveSync: Void = syncConvectiveOutlooks()
-        async let mesoSync: Void = syncMesoscaleDiscussions()
+        async let mesoSync = syncMesoscaleDiscussions()
         _ = await (convectiveSync, mesoSync)
         signposter.endInterval("Background Run", runInterval)
     }
@@ -100,22 +100,23 @@ extension SpcProvider: SpcSyncing {
         }
     }
 
-    func syncMesoscaleDiscussions() async {
+    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
         if let inFlight = mesoSyncTask {
             logger.debug("SPC meso sync already in-flight; joining existing task")
-            await inFlight.value
-            return
+            let outcome = await inFlight.value
+            return Task.isCancelled ? .cancelled : outcome
         }
 
         logger.info("SPC meso sync started")
-        let task = Task { [self] in
+        let task = Task { [self] () -> SpcMesoSyncOutcome in
             await runMesoscaleDiscussionSync()
         }
         mesoSyncTask = task
-        await task.value
+        let outcome = await task.value
+        return Task.isCancelled ? .cancelled : outcome
     }
 
-    private func runMesoscaleDiscussionSync() async {
+    private func runMesoscaleDiscussionSync() async -> SpcMesoSyncOutcome {
         let runInterval = signposter.beginInterval("Spc Sync Mesos")
         defer {
             signposter.endInterval("Background Run", runInterval)
@@ -123,12 +124,28 @@ extension SpcProvider: SpcSyncing {
         }
 
         do {
-            try await mesoRepo.refreshMesoscaleDiscussions(using: client)
-            logger.info("SPC meso sync finished result=success")
+            let source = try await mesoRepo.refreshMesoscaleDiscussions(using: client)
+            let outcome = Self.mesoOutcome(for: source)
+            logger.info("SPC meso sync finished result=\(String(describing: outcome), privacy: .public)")
+            return outcome
         } catch is CancellationError {
             logger.notice("Mesoscale discussion sync cancelled")
+            return .cancelled
+        } catch SpcError.parsingError {
+            logger.error("Mesoscale discussion sync rejected")
+            return .rejected
         } catch {
             logger.error("Error syncing mesoscale discussion text products: \(error.localizedDescription, privacy: .public)")
+            return .failed
+        }
+    }
+
+    private static func mesoOutcome(for source: HTTPResponse.Source) -> SpcMesoSyncOutcome {
+        switch source {
+        case .live, .cacheRevalidated304:
+            .accepted
+        case .localCache, .cacheFallback:
+            .fallback
         }
     }
     

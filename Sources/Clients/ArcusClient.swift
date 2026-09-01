@@ -11,6 +11,32 @@ import OSLog
 protocol ArcusClient: Sendable {
     func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data
     func fetchAlert(id: String, revisionSent: Date?) async throws -> Data
+    func fetchActiveAlertsResponse(
+        for county: String,
+        and fire: String,
+        and forecast: String,
+        in cell: Int64?
+    ) async throws -> HTTPResponse
+    func fetchAlertResponse(id: String, revisionSent: Date?) async throws -> HTTPResponse
+}
+
+extension ArcusClient {
+    func fetchActiveAlertsResponse(
+        for county: String,
+        and fire: String,
+        and forecast: String,
+        in cell: Int64?
+    ) async throws -> HTTPResponse {
+        .init(
+            status: 200,
+            headers: [:],
+            data: try await fetchActiveAlerts(for: county, and: fire, and: forecast, in: cell)
+        )
+    }
+
+    func fetchAlertResponse(id: String, revisionSent: Date?) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: try await fetchAlert(id: id, revisionSent: revisionSent))
+    }
 }
 
 struct ArcusHttpClient: ArcusClient {
@@ -31,6 +57,17 @@ struct ArcusHttpClient: ArcusClient {
     }
     
     func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
+        let response = try await fetchActiveAlertsResponse(for: county, and: fire, and: forecast, in: cell)
+        guard let data = response.data else { throw ArcusError.missingData }
+        return data
+    }
+
+    func fetchActiveAlertsResponse(
+        for county: String,
+        and fire: String,
+        and forecast: String,
+        in cell: Int64?
+    ) async throws -> HTTPResponse {
         guard let cell else {
             logger.error("Missing required h3 cell address")
             throw ArcusError.missingH3Cell
@@ -48,10 +85,16 @@ struct ArcusHttpClient: ArcusClient {
             "Arcus request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) queryScope=location-context"
         )
         
-        return try await fetch(from: url)
+        return try await fetchResponse(from: url)
     }
 
     func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        let response = try await fetchAlertResponse(id: id, revisionSent: revisionSent)
+        guard let data = response.data else { throw ArcusError.missingData }
+        return data
+    }
+
+    func fetchAlertResponse(id: String, revisionSent: Date?) async throws -> HTTPResponse {
         var queryItems = [URLQueryItem(name: "id", value: id)]
         if let revisionSent {
             queryItems.append(
@@ -70,14 +113,14 @@ struct ArcusHttpClient: ArcusClient {
             "Arcus request started endpoint=\(url.path, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) queryScope=targeted-alert"
         )
 
-        return try await fetch(from: url)
+        return try await fetchResponse(from: url)
     }
     
     private var requestHeaders: [String: String] {
         HTTPRequestHeaders.arcus()
     }
     
-    private func fetch(from url: URL) async throws -> Data {
+    private func fetchResponse(from url: URL) async throws -> HTTPResponse {
         do {
             try Task.checkCancellation()
 
@@ -108,7 +151,7 @@ struct ArcusHttpClient: ArcusClient {
                 logger.info(
                     "Arcus request completed endpoint=\(url.path, privacy: .public) status=\(resp.status, privacy: .public) source=\(resp.source.description, privacy: .public) bytes=\(data.count, privacy: .public)"
                 )
-                return data
+                return resp
             case .rateLimited(let retryAfter):
                 let error = ArcusError.rateLimited(retryAfterSeconds: retryAfter)
                 logFailure(error: error, endpoint: url.path, status: resp.status)

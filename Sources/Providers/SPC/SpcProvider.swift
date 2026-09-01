@@ -25,7 +25,7 @@ actor SpcProvider {
     var latestConvective: Date?
     var convectiveContinuations: [UUID: AsyncStream<Date>.Continuation] = [:]
     var mapSyncTask: Task<SpcMapSyncOutcome, Never>?
-    var mesoSyncTask: Task<Void, Never>?
+    var mesoSyncTask: Task<SpcMesoSyncOutcome, Never>?
     var lastMapSyncFinishedAt: Date?
     private let mapSyncCooldownSeconds: TimeInterval = 20
     

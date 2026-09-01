@@ -1484,8 +1484,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         syncConvectiveOutlooksCalls += 1
         syncExecutionModeValues.append(HTTPExecutionMode.current)
     }
-    func syncMesoscaleDiscussions() async {
+    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
         syncExecutionModeValues.append(HTTPExecutionMode.current)
+        return .accepted
     }
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
@@ -1539,9 +1540,9 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
         self.activeAlerts = activeAlerts
     }
 
-    func sync(context: LocationContext) async {}
+    func sync(context: LocationContext) async -> ArcusLocationSyncOutcome { .accepted }
 
-    func syncRemoteAlert(id: String, revisionSent: Date?) async {}
+    func syncRemoteAlert(id: String, revisionSent: Date?) async -> ArcusRemoteAlertSyncOutcome { .accepted }
 
     func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
         activeAlerts

@@ -533,16 +533,16 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         if let remoteAlertContext = plan.remoteAlertContext {
             await HTTPExecutionMode.$current.withValue(executionMode) {
                 await withTaskGroup(of: Void.self) { group in
-                    group.addTask { await self.environment.spcSync.syncMesoscaleDiscussions() }
+                    group.addTask { _ = await self.environment.spcSync.syncMesoscaleDiscussions() }
                     group.addTask {
-                        await self.environment.arcusAlertSync.syncRemoteAlert(
+                        _ = await self.environment.arcusAlertSync.syncRemoteAlert(
                             id: remoteAlertContext.alertID,
                             revisionSent: remoteAlertContext.revisionSent
                         )
                     }
 
                     if plan.lanes != [.hotAlerts], let context {
-                        group.addTask { await self.environment.arcusAlertSync.sync(context: context) }
+                        group.addTask { _ = await self.environment.arcusAlertSync.sync(context: context) }
                     }
 
                     await group.waitForAll()
@@ -553,8 +553,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
         guard let context else { return }
         await HTTPExecutionMode.$current.withValue(executionMode) {
-            async let mesoSync: Void = environment.spcSync.syncMesoscaleDiscussions()
-            async let alertSync: Void = environment.arcusAlertSync.sync(context: context)
+            async let mesoSync = environment.spcSync.syncMesoscaleDiscussions()
+            async let alertSync = environment.arcusAlertSync.sync(context: context)
             _ = await (mesoSync, alertSync)
         }
     }
