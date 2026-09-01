@@ -366,7 +366,9 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
             stormRisk: .enhanced,
             severeRisk: .tornado(probability: 0.2),
             alerts: [makeRemoteAlert(id: "alert-1", revisionSent: generatedAt)],
-            mesos: []
+            mesos: [],
+            updatedAt: Date(timeIntervalSince1970: 2_400),
+            lastHotAlertsLoadAt: Date(timeIntervalSince1970: 2_100)
         )
         let projectionReader = StubLatestProjectionReader(latest: projection)
         let widgetRefresher = RecordingWidgetSnapshotRefresher()
@@ -380,7 +382,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         let call = try #require(widgetRefresher.lastCall())
         #expect(call.scope == .activeAlertProjection)
         #expect(call.input.generatedAt == generatedAt)
-        #expect(call.input.snapshotTimestamp == projection.updatedAt)
+        #expect(call.input.snapshotTimestamp == projection.lastHotAlertsLoadAt)
         #expect(call.input.stormRisk == projection.stormRisk)
         #expect(call.input.severeRisk == projection.severeRisk)
         #expect(call.input.alerts == projection.activeAlerts)
@@ -401,11 +403,33 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
         #expect(widgetRefresher.refreshCallCount() == 0)
     }
 
+    @Test("does not refresh widgets when the latest projection lacks an accepted hot timestamp")
+    func refreshFromLatestProjection_withoutAcceptedHotTimestamp_skipsRefresh() async throws {
+        let projection = makeProjection(
+            stormRisk: .enhanced,
+            severeRisk: .tornado(probability: 0.2),
+            alerts: [makeRemoteAlert(id: "alert-1", revisionSent: Date(timeIntervalSince1970: 2_000))],
+            mesos: [],
+            lastHotAlertsLoadAt: nil
+        )
+        let widgetRefresher = RecordingWidgetSnapshotRefresher()
+        let driver = RemoteAlertWidgetSnapshotRefreshDriver(
+            projectionStore: StubLatestProjectionReader(latest: projection),
+            widgetSnapshotRefresher: widgetRefresher
+        )
+
+        try await driver.refreshFromLatestProjection(generatedAt: Date(timeIntervalSince1970: 2_600))
+
+        #expect(widgetRefresher.refreshCallCount() == 0)
+    }
+
     private func makeProjection(
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
         alerts: [AlertDTO],
-        mesos: [MdDTO]
+        mesos: [MdDTO],
+        updatedAt: Date = Date(timeIntervalSince1970: 2_100),
+        lastHotAlertsLoadAt: Date? = Date(timeIntervalSince1970: 2_100)
     ) -> HomeProjectionRecord {
         HomeProjectionRecord(
             id: UUID(),
@@ -420,7 +444,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
             timeZoneId: "America/Denver",
             locationTimestamp: Date(timeIntervalSince1970: 2_000),
             createdAt: Date(timeIntervalSince1970: 2_000),
-            updatedAt: Date(timeIntervalSince1970: 2_100),
+            updatedAt: updatedAt,
             lastViewedAt: nil,
             weather: nil,
             stormRisk: stormRisk,
@@ -428,7 +452,7 @@ struct RemoteAlertWidgetSnapshotRefreshDriverTests {
             fireRisk: nil,
             activeAlerts: alerts,
             activeMesos: mesos,
-            lastHotAlertsLoadAt: Date(timeIntervalSince1970: 2_100),
+            lastHotAlertsLoadAt: lastHotAlertsLoadAt,
             lastSlowProductsLoadAt: Date(timeIntervalSince1970: 2_080),
             lastWeatherLoadAt: Date(timeIntervalSince1970: 2_050)
         )
