@@ -31,8 +31,8 @@ final class ConvectiveOutlook {
         summary: String,
         day: Int?,
         riskLevel: String?,
-        issued: Date,
-        validUntil: Date
+        issued: Date?,
+        validUntil: Date?
     ) {
         self.id = UUID()
         self.title = title

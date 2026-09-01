@@ -33,15 +33,34 @@ enum MDParser {
         return first(text, reSummary) ?? ""
     }
     
-    // TODO: MOVE OUT TO REUSE?
-    // Parse Valid range (Z times) relative to issued date (UTC). Handles crossing 00Z boundary.
+    // Parses SPC's current DDHHmmZ form and the legacy HHmmZ form relative to the issue date.
     static func parseValid(_ text: String, issued: Date) -> (Date, Date)? {
-        let reValid = try! Regex(#"(?im)^\s*Valid\s+(\d{2})(\d{2})Z\s*-\s*(\d{2})(\d{2})Z\s*$"#)
+        let reValid = try! Regex(#"(?im)^\s*Valid\s+(\d{4}|\d{6})Z\s*-\s*(\d{4}|\d{6})Z\s*$"#)
         guard let m = text.firstMatch(of: reValid) else { return nil }
-        let sH = Int(String(text[m.output[1].range!]))!
-        let sM = Int(String(text[m.output[2].range!]))!
-        let eH = Int(String(text[m.output[3].range!]))!
-        let eM = Int(String(text[m.output[4].range!]))!
+        let startText = String(text[m.output[1].range!])
+        let endText = String(text[m.output[2].range!])
+
+        if startText.count == 6, endText.count == 6 {
+            guard
+                let start = parseStrictSPCValidTime(startText, relativeTo: issued),
+                let end = parseStrictSPCValidTime(endText, relativeTo: issued),
+                isPlausibleValidityRange(start: start, end: end, issued: issued)
+            else { return nil }
+            return (start, end)
+        }
+
+        guard
+            startText.count == 4,
+            endText.count == 4,
+            let sH = Int(startText.prefix(2)),
+            let sM = Int(startText.suffix(2)),
+            let eH = Int(endText.prefix(2)),
+            let eM = Int(endText.suffix(2)),
+            (0..<24).contains(sH),
+            (0..<60).contains(sM),
+            (0..<24).contains(eH),
+            (0..<60).contains(eM)
+        else { return nil }
 
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -62,7 +81,48 @@ enum MDParser {
                                                  hour: eH, minute: eM))!
         // If end before start, roll to next day
         if end < start { end = cal.date(byAdding: .day, value: 1, to: end)! }
+        guard isPlausibleValidityRange(start: start, end: end, issued: issued) else { return nil }
         return (start, end)
+    }
+
+    private static func parseStrictSPCValidTime(_ text: String, relativeTo issued: Date) -> Date? {
+        guard
+            let day = Int(text.prefix(2)),
+            let hour = Int(text.dropFirst(2).prefix(2)),
+            let minute = Int(text.suffix(2)),
+            (1...31).contains(day),
+            (0..<24).contains(hour),
+            (0..<60).contains(minute)
+        else { return nil }
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .utc
+        let issueComponents = calendar.dateComponents([.year, .month], from: issued)
+        let candidates = (-1...1).compactMap { monthOffset -> Date? in
+            guard let year = issueComponents.year, let month = issueComponents.month else { return nil }
+            let components = DateComponents(
+                calendar: calendar,
+                timeZone: .utc,
+                year: year,
+                month: month + monthOffset,
+                day: day,
+                hour: hour,
+                minute: minute
+            )
+            guard let candidate = calendar.date(from: components) else { return nil }
+            let resolved = calendar.dateComponents(in: .utc, from: candidate)
+            guard resolved.day == day, resolved.hour == hour, resolved.minute == minute else { return nil }
+            return candidate
+        }
+
+        return candidates.min { abs($0.timeIntervalSince(issued)) < abs($1.timeIntervalSince(issued)) }
+    }
+
+    private static func isPlausibleValidityRange(start: Date, end: Date, issued: Date) -> Bool {
+        let maximumInterval: TimeInterval = 24 * 60 * 60
+        return end > start &&
+            end.timeIntervalSince(start) <= maximumInterval &&
+            abs(start.timeIntervalSince(issued)) <= maximumInterval
     }
 
     // Parse watch probability + concerning line

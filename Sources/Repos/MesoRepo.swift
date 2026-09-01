@@ -23,14 +23,18 @@ actor MesoRepo {
         }
         
         guard let channel = rss.channel else {
-            logger.error("Mesoscale RSS parsed without a channel; leaving persisted mesos unchanged")
-            return
+            logger.error("Mesoscale RSS parsed without a channel")
+            throw SpcError.parsingError
         }
         
-        // Filters out some odd contents
-        let mesos = channel.items
+        let recognizedMesos = channel.items
             .filter { ($0.title ?? "").contains("SPC MD ") }
-            .compactMap { makeMD(from: $0) }
+        let mesos = recognizedMesos.compactMap { makeMD(from: $0) }
+
+        guard mesos.count == recognizedMesos.count else {
+            logger.error("Mesoscale RSS contained malformed recognized discussions")
+            throw SpcError.parsingError
+        }
         
         try upsert(mesos)
         logger.debug("Persisted mesoscale discussion refresh count=\(mesos.count, privacy: .public)")
@@ -152,24 +156,28 @@ actor MesoRepo {
             let title = rssItem.title,
             let linkString = rssItem.link,
             let link = URL(string: linkString),
+            let scheme = link.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            link.host != nil,
             let pubDateString = rssItem.pubDate,
             let rawText = rssItem.description, // SPC MD free text lives here in your feed
-            let issued = pubDateString.fromRFC822()
+            let issued = pubDateString.fromRFC822(),
+            let validPair = MDParser.parseValid(rawText, issued: issued)
         else { return nil }
 
-        let mdNumber = MDParser.parseMDNumber(from: link) ?? {
+        guard let mdNumber = MDParser.parseMDNumber(from: link) ?? {
             // Fallback: try to read from title if present
             if let r = title.range(of: #"\b(\d{3,4})\b"#, options: .regularExpression) { return Int(title[r]) } else { return nil }
-        }() ?? -1
+        }() else {
+            return nil
+        }
 
         // Areas / Summary (block captures)
         let areasAffected = MDParser.parseAreas(rawText)
 //        let summaryParsed = MDParser.parseSummary(rawText)
 
-        // Valid range (UTC), fallback to issued+2h if missing
-        let validPair = MDParser.parseValid(rawText, issued: issued)
-        let validStart = validPair?.0 ?? issued
-        let validEnd   = validPair?.1 ?? Calendar.current.date(byAdding: .hour, value: 2, to: issued)!
+        let validStart = validPair.0
+        let validEnd = validPair.1
 
         // Watch probability + concerning
         let (watchProb, concerningLine) = MDParser.parseWatchFields(rawText)

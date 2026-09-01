@@ -35,7 +35,7 @@ private enum TestError: Error { case boom }
 
 // MARK: - Sample RSS payloads
 private let sampleValidRSS: String = {
-    // Two valid Convective Outlook items (Day 1, Day 2), one non-matching title, and one malformed item
+    // Two valid Convective Outlook items (Day 1, Day 2) and one non-matching title.
     return """
     <rss version=\"2.0\">
       <channel>
@@ -61,12 +61,6 @@ private let sampleValidRSS: String = {
           <link>https://www.spc.noaa.gov/products/other.html</link>
           <pubDate>Wed, 12 Nov 2025 10:00:00 GMT</pubDate>
           <description>Other product not matching filter</description>
-        </item>
-        <item>
-          <title>Day 3 Convective Outlook</title>
-          <link>bad url</link>
-          <pubDate>not a date</pubDate>
-          <description>Malformed item should be dropped</description>
         </item>
       </channel>
     </rss>
@@ -94,6 +88,63 @@ private let sampleMalformedRSS: String = {
     <rss version=\"2.0\"><channel></channel></rss>
     """
 }()
+
+private let sampleValidMesoRSS = """
+<rss version=\"2.0\"><channel>
+  <item>
+    <title>SPC MD 1234</title>
+    <link>https://www.spc.noaa.gov/products/md/md1234.html</link>
+    <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
+    <description><![CDATA[Valid 121200Z - 121800Z]]></description>
+  </item>
+</channel></rss>
+"""
+
+private let missingChannelRSS = "<rss version=\"2.0\"></rss>"
+
+private let malformedOutlookRSS = """
+<rss version=\"2.0\"><channel><item>
+  <title>Day 1 Convective Outlook</title>
+  <link>products/outlook/day1otlk.html</link>
+  <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
+  <description>Outlook text without parsed timestamps remains otherwise valid.</description>
+</item></channel></rss>
+"""
+
+private let malformedMesoRSS = """
+<rss version=\"2.0\"><channel><item>
+  <title>SPC MD 1234</title>
+  <link>https://www.spc.noaa.gov/products/md/md1234.html</link>
+  <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
+  <description>Valid 122400Z - 130100Z</description>
+</item></channel></rss>
+"""
+
+private let emptyMesoRSS = "<rss version=\"2.0\"><channel></channel></rss>"
+
+private let previousMonthMesoRSS = """
+<rss version=\"2.0\"><channel><item>
+  <title>SPC MD 2345</title>
+  <link>https://www.spc.noaa.gov/products/md/md2345.html</link>
+  <pubDate>Thu, 01 Jan 2026 00:30:00 GMT</pubDate>
+  <description>Valid 312330Z - 010200Z</description>
+</item></channel></rss>
+"""
+
+@MainActor
+private func makeDiskContainer(for models: [any PersistentModel.Type]) throws -> (ModelContainer, URL) {
+    let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("ConvectiveOutlookRepoTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+    let schema = Schema(models)
+    let configuration = ModelConfiguration(
+        "ConvectiveOutlookRepoTests",
+        schema: schema,
+        url: directory.appendingPathComponent("SkyAware.sqlite")
+    )
+    return (try ModelContainer(for: schema, configurations: configuration), directory)
+}
 
 // MARK: - Tests
 @Suite("ConvectiveOutlookRepo", .serialized)
@@ -123,9 +174,9 @@ struct ConvectiveOutlookRepoTests {
         #expect(d1.summary.isEmpty == false)
         #expect(d1.fullText.isEmpty == false)
         #expect(d1.day == 1)
-        // Risk/issued/validUntil are parsed by OutlookParser; we just assert non-nil where applicable
-        #expect(d1.issued != .distantPast)
-        #expect(d1.validUntil != .distantPast)
+        // This compact fixture intentionally omits parseable issue and valid-until headers.
+        #expect(d1.issued == nil)
+        #expect(d1.validUntil == nil)
     }
 
     @Test("refresh propagates client failure and does not insert")
@@ -149,22 +200,167 @@ struct ConvectiveOutlookRepoTests {
         #expect(results.isEmpty)
     }
 
-    @Test("refresh with malformed but parseable channel yields zero upserts")
-    func refresh_malformedItemsFilteredOut() async throws {
-        let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
-        try await MainActor.run { try TestStore.reset(ConvectiveOutlook.self, in: container) }
+    @Test("outlook channel without a recognized product rejects and preserves accepted rows")
+    func refresh_unrecognizedChannelPreservesAcceptedOutlooks() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [ConvectiveOutlook.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
         let repo = ConvectiveOutlookRepo(modelContainer: container)
 
+        try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(try #require(sampleValidRSS.data(using: .utf8)))))
         let data = try #require(sampleOnlyNonMatchingTitlesRSS.data(using: .utf8))
         let client = FakeSpcClient(mode: .success(data))
 
-        try await repo.refreshConvectiveOutlooks(using: client)
+        do {
+            try await repo.refreshConvectiveOutlooks(using: client)
+            Issue.record("Expected channel without a recognized outlook to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
 
-        // No items matched the title filter
-        let d1 = try await repo.fetchConvectiveOutlooks(for: 1)
-        let d2 = try await repo.fetchConvectiveOutlooks(for: 2)
-        #expect(d1.isEmpty)
-        #expect(d2.isEmpty)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 1).count == 1)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 2).count == 1)
+    }
+
+    @Test("missing RSS channel rejects the refresh and preserves accepted outlooks")
+    func refresh_missingChannelPreservesOutlooks() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [ConvectiveOutlook.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+
+        try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(try #require(sampleValidRSS.data(using: .utf8)))))
+
+        do {
+            try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(try #require(missingChannelRSS.data(using: .utf8)))))
+            Issue.record("Expected missing channel to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        #expect(try await repo.fetchConvectiveOutlooks(for: 1).count == 1)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 2).count == 1)
+    }
+
+    @Test("recognized outlook with a relative link rejects and preserves accepted outlooks")
+    func refresh_relativeOutlookLinkPreservesAcceptedRows() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [ConvectiveOutlook.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+
+        try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(try #require(sampleValidRSS.data(using: .utf8)))))
+
+        do {
+            try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(try #require(malformedOutlookRSS.data(using: .utf8)))))
+            Issue.record("Expected relative outlook link to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        let outlook = try #require(await repo.fetchConvectiveOutlooks(for: 1).first)
+        #expect(outlook.title == "Day 1 Convective Outlook")
+        #expect(outlook.issued == nil)
+        #expect(outlook.validUntil == nil)
+    }
+
+    @Test("missing RSS channel rejects meso refresh and preserves accepted discussions")
+    func refresh_missingChannelPreservesMesos() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [MD.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = MesoRepo(modelContainer: container)
+
+        try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(try #require(sampleValidMesoRSS.data(using: .utf8)))))
+
+        do {
+            try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(try #require(missingChannelRSS.data(using: .utf8)))))
+            Issue.record("Expected missing channel to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        #expect(try await repo.getLatestMapData(asOf: utcDate(2025, 11, 12, 13)).count == 1)
+    }
+
+    @Test("meso with an invalid valid range rejects and valid empty meso remains accepted")
+    func refresh_invalidMesoValidRangePreservesAcceptedRowsAndEmptyMesoSucceeds() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [MD.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = MesoRepo(modelContainer: container)
+
+        try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(try #require(sampleValidMesoRSS.data(using: .utf8)))))
+
+        do {
+            try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(try #require(malformedMesoRSS.data(using: .utf8)))))
+            Issue.record("Expected meso with an invalid valid range to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(try #require(emptyMesoRSS.data(using: .utf8)))))
+        #expect(try await repo.getLatestMapData(asOf: utcDate(2025, 11, 12, 13)).count == 1)
+    }
+
+    @Test("meso DDHHmmZ validity parses across month and year boundaries")
+    func mesoValidityParsesSixDigitRangeAcrossMonthAndYearBoundaries() throws {
+        let issued = utcDate(2025, 1, 31, 22)
+        let validRange = try #require(MDParser.parseValid("Valid 312300Z - 010200Z", issued: issued))
+
+        #expect(validRange.0 == utcDate(2025, 1, 31, 23))
+        #expect(validRange.1 == utcDate(2025, 2, 1, 2))
+
+        let yearIssued = utcDate(2025, 12, 31, 22)
+        let yearRange = try #require(MDParser.parseValid("Valid 312300Z - 010200Z", issued: yearIssued))
+        #expect(yearRange.0 == utcDate(2025, 12, 31, 23))
+        #expect(yearRange.1 == utcDate(2026, 1, 1, 2))
+
+        let previousMonthIssued = utcDate(2026, 1, 1, 0, 30)
+        let previousMonthRange = try #require(
+            MDParser.parseValid("Valid 312330Z - 010200Z", issued: previousMonthIssued)
+        )
+        #expect(previousMonthRange.0 == utcDate(2025, 12, 31, 23, 30))
+        #expect(previousMonthRange.1 == utcDate(2026, 1, 1, 2))
+    }
+
+    @Test("meso DDHHmmZ validity rejects invalid or reversed ranges")
+    func mesoValidityRejectsMalformedSixDigitRanges() {
+        let issued = utcDate(2025, 1, 12, 12)
+
+        for text in [
+            "Valid 002300Z - 002359Z",
+            "Valid 122400Z - 130100Z",
+            "Valid 121860Z - 121900Z",
+            "Valid 121800Z - 121200Z",
+            "Valid 121200Z - 311200Z",
+            "Valid 311200Z - 311300Z"
+        ] {
+            #expect(MDParser.parseValid(text, issued: issued) == nil)
+        }
+    }
+
+    @Test("meso crossing into the issue month is accepted from a disk-backed feed")
+    func refresh_previousMonthMesoRangeIsAccepted() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [MD.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = MesoRepo(modelContainer: container)
+
+        try await repo.refreshMesoscaleDiscussions(
+            using: FakeSpcClient(mode: .success(try #require(previousMonthMesoRSS.data(using: .utf8))))
+        )
+
+        let meso = try #require(await repo.getLatestMapData(asOf: utcDate(2026, 1, 1, 1)).first)
+        #expect(meso.number == 2345)
+        #expect(meso.validStart == utcDate(2025, 12, 31, 23, 30))
+        #expect(meso.validEnd == utcDate(2026, 1, 1, 2))
     }
 
     @Test("current returns the most recently published outlook")

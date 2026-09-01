@@ -636,3 +636,60 @@
 - Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 2 entries, including prior unresolved items without duplication.
 - No contract fix recommended from this run. The prior earliest-terminal-date implementation recommendation remains standing.
 - Updated only this project-arcus audit document; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.
+
+## 2026-08-31
+
+### Audit mode
+- Cross-repo orchestration mode.
+
+### Repositories scanned
+- project-arcus / SkyAware (`/Users/justin/Code/project-arcus`)
+- arcus-signal (`/Users/justin/Code/arcus-signal`)
+- ArcusCore (`/Users/justin/Code/ArcusCore`)
+
+### Commit window inspected
+- project-arcus: the prior recorded head `c976aa59` is not an ancestor of current `main`, so inspected default-branch commits after the 2026-08-24 09:01 MDT run through `28d85436` (2026-08-24 through 2026-08-30). Contract-relevant commits were `03e5a674` (canonical Arcus API paths), `ebb330b1`/`b5f13c23`/`1e96953f` (AQI persistence, ingestion, and cache-forward presentation), and `1c565121` (production SwiftData-store recovery). The severe-weather persistence work merged as `b489e0ff` was rechecked because its current-main tree differs from the previously inspected branch commit.
+- arcus-signal: `563bdb0d..fadeeaae` on `main` (two commits, 2026-08-26 through 2026-08-27). `fadeeaae` added canonical `/v1` and `/v2` routes while retaining `/api` aliases; `e957a45` changed subprocess pipe cleanup without changing a scoped external contract.
+- ArcusCore: `977945d8..HEAD` contains no commits. Current `main` at `977945d8` was inspected as the shared DTO reference for AQI, location freshness/H3, alert/APNs, and Storm Setup contracts.
+
+### Contract surfaces inspected
+- Canonical and legacy API routing for alerts, device location snapshots, device preferences, Storm Setup, and AQI, including SkyAware path constants/call sites, arcus-signal route registration, and route/client tests.
+- `AirQualityCurrentResponse` producer normalization, ArcusCore shared fields and optionality, SkyAware ISO-8601 decoding, primitive SwiftData persistence, monotonic `observedAt` acceptance, location-scoped cache-forward presentation, and disk-reopen tests.
+- SwiftData schema compatibility for the current `HomeProjection`, including primitive severe-weather/AQI storage, the frozen `v1.1.0(113)` production-store fixture, one-time quarantine/rebuild, and reopen behavior.
+- Current shared-package pins, alert lifecycle `expires`/`ends` semantics, APNs identifiers/date encoding, location snapshot/H3/source fields, and the standing Storm Setup cache rules-version boundary.
+
+### Highest-risk areas
+- API-root migration was selected because every app/server call fails if the client switches to `/v1` before the server exposes the canonical aliases.
+- AQI persistence was selected because a shared server response is now reconstructed from primitive local fields and rolled forward while fresh enrichment is pending; optional-category presence and observation ordering must survive that boundary.
+- SwiftData bootstrap was selected because an incompatible production cache previously caused launch failure and recovery now deliberately invalidates only the incompatible cache after preserving it for bounded quarantine.
+- Alert/APNs and location contracts remained the highest-risk unchanged shared surfaces because stale severe-weather state, notification dedupe, and targeting freshness directly affect users.
+
+### Findings
+
+| Finding | Repositories | Contract surface | Contract direction | Evidence | Impact | Confidence | Minimal fix | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| No new confirmed contract drift | project-arcus, arcus-signal, ArcusCore | API paths; AQI DTO/persistence; SwiftData compatibility; alert/APNs and location reference contracts | App request -> server route; server response -> shared DTO -> app decoder/persistence; prior store -> current model | project-arcus `03e5a674` uses `/v2/alerts` and `/v1/...` for the four v1 endpoints; arcus-signal `fadeeaae` registers those exact canonical routes plus legacy `/api` aliases through `registerOnAPIRoots`, with an exact route-set test and canonical alert response test. Both repositories remain pinned to ArcusCore `0.4.4` (`977945d8`). ArcusCore's AQI DTO requires `aqi`, `observedAt`, and `sourceIdentifier` while keeping `category` and `primaryPollutant` optional; arcus-signal constructs that DTO and SkyAware decodes it with ISO-8601 dates. SkyAware persists each field primitively, records category presence separately, rejects older observations, and tests absent/empty/populated categories plus disk reopen. `1c565121` adds a frozen production-store recovery test that preserves the incompatible files, rebuilds the cache, and reopens the current schema. | No newly evidenced route failure, decoding failure, optionality collapse, stale AQI rollback, persistence mapping mismatch, launch-time schema failure, APNs break, or location-contract disagreement remains in current source. | — | No contract fix recommended. | Retain canonical/legacy route registration and canonical response tests; client path tests; ArcusCore Codable tests; AQI absent/empty/populated, observation-ordering, migration, and disk-reopen tests; production-store bootstrap fixture; existing alert/APNs/location contract tests. |
+
+### Top recommended fix
+- No new contract fix recommended.
+- The standing 2026-07-27 priority remains unchanged: align SkyAware local alert activity and Storm Setup eligibility with arcus-signal's earliest-of-`expires`/`ends` terminal semantics. It is not counted again because this window adds no lifecycle change, higher-severity evidence, or materially better fix.
+- Standing expected files: project-arcus `Sources/Models/Watches/Watch.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, and focused divergent-date tests.
+- Standing estimated churn: approximately 30-60 lines.
+- Standing regression risk: Low to Medium; wire and persistence schemas stay unchanged, but earlier local removal affects user-visible severe-weather state.
+
+### Watchlist
+- Deployment ordering and live route availability are outside repository evidence. Current app and server heads align, and legacy routes remain registered. Promote only if deployed route inventory or a live contract check shows `/v1/air-quality/current`, `/v1/storm-setup/current`, `/v1/devices/...`, or `/v2/alerts` returning an unexpected `404`.
+- The prior earliest-terminal-date mismatch, stale location-source documentation/Postman values, and `StormSetupRulesVersion.current == .tornadoIngredientV1` remain recorded in their original entries and are not duplicated as new findings.
+- The prior archived-store watchlist is closed by `1c565121`: the repository now contains a frozen `v1.1.0(113)` SQLite fixture and a test that quarantines it once, creates a current store, and reopens it. No current persistence concern met the finding threshold.
+
+### Files inspected
+- project-arcus: `Sources/App/ArcusSignalConfiguration.swift`, `Dependencies.swift`, `SkyAwarePersistentStoreBootstrap.swift`, `HomeRefreshPipeline.swift`, `HomeView+PresentationState.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`, `Sources/Clients/ArcusClient.swift`, `AirQualityClient.swift`, `StormSetupClient.swift`, `Sources/Infrastructure/Location/HTTPLocationSnapshotUploader.swift`, `HTTPDevicePreferenceSyncUploader.swift`, `Sources/Models/Home/HomeProjection.swift`, `Sources/Repos/HomeProjectionStore.swift`, `Sources/Models/Watches/Watch.swift`, `Sources/Repos/AlertRepo.swift`, `Sources/Models/StormSetup/StormSetupAlertEligibility.swift`, package resolution, and focused route, AQI, persistence, lifecycle, APNs, and location tests/fixtures.
+- arcus-signal: `Sources/App/apiRoutes.swift`, alert/device/notification/Storm Setup/AQI controllers, `Sources/App/AirQuality/AirQualityProvider.swift`, `Sources/App/Models/NWS/ArcusEvent.swift`, `Sources/App/Jobs/NotificationSendJob.swift`, `Sources/App/StormSetup/StormSetupRulesVersion.swift`, package resolution, `docs/api-endpoints.md`, Postman location fixtures, and focused route/AQI/alert/APNs/location tests.
+- ArcusCore: `Sources/ArcusCore/AirQualityCurrentResponse.swift`, `LocationSnapshotPushPayload.swift`, `LocationUploadSource.swift`, `DeviceAlertPayload.swift`, `HotAlertAPNsPayload.swift`, `Sources/ArcusCore/StormSetup/StormSetupCurrentResponse.swift`, and focused shared Codable tests.
+
+### Out-of-scope and recommendation status
+- No repositories outside project-arcus, arcus-signal, and ArcusCore were inspected. Existing uncommitted edits in arcus-signal `docs/Sql/Device.sql` and ArcusCore `docs/audits/weekly-test-gap-audit.md` were preserved and were not treated as committed-window evidence.
+- Deployed route inventory, live API/APNs payloads, deployed database/Redis state, upstream NWS samples, and external consumers were unavailable. No confirmed finding relies on those boundaries.
+- Findings: 0 High, 0 Medium, 0 Low. The table records the no-new-drift outcome rather than a counted finding. Watchlist: 3 entries, including prior unresolved items without duplication and one closed prior item.
+- No contract fix recommended from this run. The prior earliest-terminal-date implementation recommendation remains standing.
+- Updated only `project-arcus/docs/audits/weekly-contract-drift-audit.md`; no source files, tests, branches, commits, pushes, PRs, or GitHub issues were created or modified by this audit.

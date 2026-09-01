@@ -23,14 +23,22 @@ actor ConvectiveOutlookRepo {
         }
         
         guard let channel = rss.channel else {
-            logger.error("Convective RSS parsed without a channel; leaving persisted outlooks unchanged")
-            return
+            logger.error("Convective RSS parsed without a channel")
+            throw SpcError.parsingError
         }
         
-        // Filters out some odd contents
-        let outlooks = channel.items
+        let recognizedOutlooks = channel.items
             .filter { ($0.title ?? "").contains(" Convective Outlook") }
-            .compactMap { makeConvectiveOutlook(from: $0) }
+        guard recognizedOutlooks.isEmpty == false else {
+            logger.error("Convective RSS contained no recognized outlooks")
+            throw SpcError.parsingError
+        }
+        let outlooks = recognizedOutlooks.compactMap { makeConvectiveOutlook(from: $0) }
+
+        guard outlooks.count == recognizedOutlooks.count else {
+            logger.error("Convective RSS contained malformed recognized outlooks")
+            throw SpcError.parsingError
+        }
         
         try upsert(outlooks)
         logger.debug("Persisted convective outlook refresh count=\(outlooks.count, privacy: .public)")
@@ -115,6 +123,9 @@ actor ConvectiveOutlookRepo {
             let title = rssItem.title,
             let linkString = rssItem.link,
             let link = URL(string: linkString),
+            let scheme = link.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            link.host != nil,
             let pubDateString = rssItem.pubDate,
             let fullText = rssItem.description,
             let published = pubDateString.fromRFC822()
@@ -126,8 +137,8 @@ actor ConvectiveOutlookRepo {
             title.contains("Day 3") ? 3 : nil
         
         let summary = outlookParser.extractSummary(fullText) ?? "Summary not found"
-        let issued = outlookParser.extractIssuedDate(fullText) ?? Date()
-        let validUntil = outlookParser.extractValidUntilDate(fullText) ?? Date()
+        let issued = outlookParser.extractIssuedDate(fullText)
+        let validUntil = outlookParser.extractValidUntilDate(fullText)
         let riskLevel:String? = outlookParser.extractRiskLevel(fullText)
         
         return ConvectiveOutlook(
