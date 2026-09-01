@@ -48,8 +48,8 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Missing RSS channels and malformed recognized SPC text products now reject without replacing accepted rows; valid empty meso remains accepted and outlook dates stay nil when absent.
 
 ### [#429](https://github.com/justinrooks/project-arcus/issues/429) — Add typed Arcus and meso sync outcomes
-- Status: Pending
-- Handoff: Distinguish targeted from complete location-scoped Arcus refresh.
+- Status: Implemented — awaiting human review
+- Handoff: Location-scoped Arcus, targeted Arcus, and meso syncs now return distinct typed outcomes for acceptance, fallback, rejection, failure, and cancellation while preserving in-flight joining.
 
 ### [#430](https://github.com/justinrooks/project-arcus/issues/430) — Require coherent hot-feed acceptance
 - Status: Pending
@@ -78,3 +78,4 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 ## Verification Ledger
 
 - #428: `ConvectiveOutlookRepoTests` disk-backed acceptance coverage passed (13 tests); Debug iPhone 17 simulator build passed; `git diff --check` passed.
+- #429: Focused `AlertRepoActiveTests` and `SpcProviderSyncMapProductsTests` passed (36 tests); full unit lane passed (1,062 tests); Debug iPhone 17 simulator build and `git diff --check` passed.

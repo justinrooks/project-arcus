@@ -15,8 +15,10 @@ actor MesoRepo {
     private let logger = Logger.reposMeso
     private let parser: RSSFeedParser = RSSFeedParser()
  
-    func refreshMesoscaleDiscussions(using client: SpcClient) async throws {
-        let data = try await client.fetchRssData(for: .meso)
+    @discardableResult
+    func refreshMesoscaleDiscussions(using client: SpcClient) async throws -> HTTPResponse.Source {
+        let response = try await client.fetchRssResponse(for: .meso)
+        guard let data = response.data else { throw SpcError.missingData }
                 
         guard let rss = try parser.parse(data: data) else {
             throw SpcError.parsingError
@@ -38,6 +40,7 @@ actor MesoRepo {
         
         try upsert(mesos)
         logger.debug("Persisted mesoscale discussion refresh count=\(mesos.count, privacy: .public)")
+        return response.source
     }
     
     func active(at date: Date, point: CLLocationCoordinate2D) throws -> [MdDTO] {

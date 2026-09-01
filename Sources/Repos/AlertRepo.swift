@@ -87,8 +87,10 @@ actor AlertRepo {
         return try modelContext.fetch(descriptor).first.map(AlertDTO.init(from:))
     }
 
-    func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, and forecastZone: String, in cell: Int64?) async throws {
-        let data = try await client.fetchActiveAlerts(for: countyCode, and: fireZone, and: forecastZone, in: cell)
+    @discardableResult
+    func refresh(using client: any ArcusClient, for countyCode: String, and fireZone: String, and forecastZone: String, in cell: Int64?) async throws -> HTTPResponse.Source {
+        let response = try await client.fetchActiveAlertsResponse(for: countyCode, and: fireZone, and: forecastZone, in: cell)
+        guard let data = response.data else { throw ArcusError.missingData }
 
         guard let decoded = decodePayloads(from: data) else {
             logger.error("Alert payload decode failed; leaving persisted watches unchanged")
@@ -118,10 +120,13 @@ actor AlertRepo {
         logger.debug(
             "Persisted alert refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
         )
+        return response.source
     }
 
-    func refreshAlert(using client: any ArcusClient, id: String, revisionSent: Date?) async throws {
-        let data = try await client.fetchAlert(id: id, revisionSent: revisionSent)
+    @discardableResult
+    func refreshAlert(using client: any ArcusClient, id: String, revisionSent: Date?) async throws -> HTTPResponse.Source {
+        let response = try await client.fetchAlertResponse(id: id, revisionSent: revisionSent)
+        guard let data = response.data else { throw ArcusError.missingData }
 
         guard let decoded = decodePayloads(from: data) else {
             logger.error("Targeted Arcus alert payload decode failed; leaving persisted watches unchanged")
@@ -151,6 +156,7 @@ actor AlertRepo {
         logger.debug(
             "Persisted targeted Arcus alert refresh count=\(watches.count, privacy: .public) reconciledTerminal=\(reconciledTerminalCount, privacy: .public)"
         )
+        return response.source
     }
 
     /// Removes any expired watches from the database

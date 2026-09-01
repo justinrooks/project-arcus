@@ -2601,8 +2601,9 @@ private actor StormSetupTestSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlook
         syncConvectiveOutlooksCalls += 1
     }
 
-    func syncMesoscaleDiscussions() async {
+    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
         syncMesoscaleCalls += 1
+        return .accepted
     }
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
@@ -2645,11 +2646,12 @@ private actor StormSetupTestArcusProvider: ArcusAlertSyncing, ArcusAlertQuerying
         self.activeAlerts = activeAlerts
     }
 
-    func sync(context: LocationContext) async {
+    func sync(context: LocationContext) async -> ArcusLocationSyncOutcome {
         syncCalls += 1
+        return .accepted
     }
 
-    func syncRemoteAlert(id: String, revisionSent: Date?) async {}
+    func syncRemoteAlert(id: String, revisionSent: Date?) async -> ArcusRemoteAlertSyncOutcome { .accepted }
 
     func getActiveAlerts(context: LocationContext) async throws -> [AlertDTO] {
         queryCalls += 1

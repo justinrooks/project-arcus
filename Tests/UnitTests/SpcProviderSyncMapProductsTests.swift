@@ -75,6 +75,20 @@ struct SpcProviderSyncMapProductsTests {
         #expect(calls == 10)
     }
 
+    @Test("Meso provider sync reports accepted, rejected, failed, and fallback outcomes")
+    func mesoSync_reportsTypedOutcomes() async throws {
+        let container = try await makeMapSyncContainer()
+        let acceptedProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .accepted))
+        let rejectedProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .rejected))
+        let failedProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .failed))
+        let fallbackProvider = makeSpcProviderForMapSyncTests(container: container, client: MesoSyncClient(mode: .fallback))
+
+        #expect(await acceptedProvider.syncMesoscaleDiscussions() == .accepted)
+        #expect(await rejectedProvider.syncMesoscaleDiscussions() == .rejected)
+        #expect(await failedProvider.syncMesoscaleDiscussions() == .failed)
+        #expect(await fallbackProvider.syncMesoscaleDiscussions() == .fallback)
+    }
+
     @Test("All-empty valid map batch is accepted and clears active persisted risks")
     func allEmptyBatchAcceptedAndClearsActivePersistedRisks() async throws {
         let container = try await makeMapSyncContainer()
@@ -981,6 +995,37 @@ private struct ScriptedMapSyncClient: SpcClient {
             throw SpcError.missingGeoJsonData
         }
         return data
+    }
+}
+
+private struct MesoSyncClient: SpcClient {
+    enum Mode {
+        case accepted
+        case rejected
+        case failed
+        case fallback
+    }
+
+    let mode: Mode
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        switch mode {
+        case .accepted, .fallback:
+            return Data("<rss><channel><title>SPC</title></channel></rss>".utf8)
+        case .rejected:
+            return Data("not-xml".utf8)
+        case .failed:
+            throw SpcError.networkError(status: 503)
+        }
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        throw SpcError.missingGeoJsonData
+    }
+
+    func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
+        let data = try await fetchRssData(for: product)
+        return .init(status: 200, headers: [:], data: data, source: mode == .fallback ? .cacheFallback : .live)
     }
 }
 

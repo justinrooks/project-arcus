@@ -55,7 +55,7 @@ extension MockSpcService: SpcSyncing {
     func syncMapProducts() async {}
     func syncMapProductsOutcome() async -> SpcMapSyncOutcome { .accepted }
     func syncConvectiveOutlooks() async {}
-    func syncMesoscaleDiscussions() async {}
+    func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome { .accepted }
 }
 
 extension MockSpcService: SpcRiskQuerying {

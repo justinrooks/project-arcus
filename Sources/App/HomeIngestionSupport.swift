@@ -27,8 +27,8 @@ enum IngestionSupport {
         context: LocationContext
     ) async {
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await spcSync.syncMesoscaleDiscussions() }
-            group.addTask { await arcusSync.sync(context: context) }
+            group.addTask { _ = await spcSync.syncMesoscaleDiscussions() }
+            group.addTask { _ = await arcusSync.sync(context: context) }
             await group.waitForAll()
         }
     }
