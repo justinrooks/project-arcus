@@ -52,8 +52,8 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Location-scoped Arcus, targeted Arcus, and meso syncs now return distinct typed outcomes for acceptance, fallback, rejection, failure, and cancellation while preserving in-flight joining.
 
 ### [#430](https://github.com/justinrooks/project-arcus/issues/430) — Require coherent hot-feed acceptance
-- Status: Pending
-- Handoff: Partial canonical success must not relabel the projected hot slice.
+- Status: Implemented — awaiting human review
+- Handoff: Projected hot alerts and freshness now advance only after both location-scoped Arcus and meso syncs accept; targeted remote sync does not replace the coherent slice.
 
 ### [#433](https://github.com/justinrooks/project-arcus/issues/433) — Add typed outlook outcome and in-flight joining
 - Status: Pending

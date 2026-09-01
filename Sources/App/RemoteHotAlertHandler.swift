@@ -136,7 +136,8 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
     }
 
     func refreshFromLatestProjection(generatedAt: Date) async throws {
-        guard let latestProjection = try await projectionStore.latestProjectionForWidgetSnapshotRefresh() else {
+        guard let latestProjection = try await projectionStore.latestProjectionForWidgetSnapshotRefresh(),
+              let hotSnapshotTimestamp = latestProjection.lastHotAlertsLoadAt else {
             return
         }
 
@@ -144,7 +145,7 @@ actor RemoteAlertWidgetSnapshotRefreshDriver: RemoteHotAlertHandler.WidgetSnapsh
             scope: .activeAlertProjection,
             input: .init(
                 generatedAt: generatedAt,
-                snapshotTimestamp: latestProjection.updatedAt,
+                snapshotTimestamp: hotSnapshotTimestamp,
                 stormRisk: latestProjection.stormRisk,
                 severeRisk: latestProjection.severeRisk,
                 alerts: latestProjection.activeAlerts,

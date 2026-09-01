@@ -1999,6 +1999,159 @@ struct HomeRefreshPipelineTests {
         #expect(hotAlertModes == [.foreground])
     }
 
+    @Test("hot projection advances only after complete location-scoped acceptance")
+    func hotProjection_requiresCompleteLocationScopedAcceptance() async throws {
+        let cases: [(String, SpcMesoSyncOutcome, ArcusLocationSyncOutcome, Bool)] = [
+            ("accepted", .accepted, .accepted, true),
+            ("meso failure", .failed, .accepted, false),
+            ("Arcus failure", .accepted, .failed, false),
+            ("meso cancellation", .cancelled, .accepted, false),
+            ("Arcus cancellation", .accepted, .cancelled, false)
+        ]
+
+        for (name, mesoOutcome, alertOutcome, acceptsHotSnapshot) in cases {
+            let container = try TestStore.container(for: [HomeProjection.self])
+            let projectionStore = HomeProjectionStore(modelContainer: container)
+            let context = makeContext()
+            let originalAlert = Watch.sampleWatchRows[0]
+            let originalMeso = MD.sampleDiscussionDTOs[0]
+            let refreshedAlert = Watch.sampleWatchRows[1]
+            let refreshedMeso = MD.sampleDiscussionDTOs[1]
+            let priorLoadAt = Date(timeIntervalSince1970: 200)
+
+            _ = try await projectionStore.updateHotAlerts(
+                alerts: [originalAlert],
+                mesos: [originalMeso],
+                for: context,
+                loadedAt: priorLoadAt
+            )
+
+            let spc = FakeSpcProvider(
+                activeMesos: [refreshedMeso],
+                mesoSyncOutcome: mesoOutcome
+            )
+            let alerts = FakeAlertProvider(
+                activeAlerts: [refreshedAlert],
+                locationSyncOutcome: alertOutcome
+            )
+            let widgetRecorder = RecordingWidgetSnapshotRefresher()
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: spc,
+                    arcusAlertSync: alerts,
+                    weatherClient: FakeWeatherClient(),
+                    locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    projectionStore: projectionStore,
+                    widgetSnapshotRefresher: widgetRecorder
+                )
+            )
+
+            let snapshot = try await executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .sessionTick))
+            )
+            let projection = try #require(await projectionStore.projection(for: context), "\(name)")
+
+            #expect(projection.activeAlerts == (acceptsHotSnapshot ? [refreshedAlert] : [originalAlert]), "\(name)")
+            #expect(projection.activeMesos == (acceptsHotSnapshot ? [refreshedMeso] : [originalMeso]), "\(name)")
+            #expect((projection.lastHotAlertsLoadAt != priorLoadAt) == acceptsHotSnapshot, "\(name)")
+            #expect((snapshot.freshness.lastHotFeedSyncAt != nil) == acceptsHotSnapshot, "\(name)")
+            #expect(widgetRecorder.refreshCallCount() == (acceptsHotSnapshot ? 1 : 0), "\(name)")
+        }
+    }
+
+    @Test("risk widget refresh preserves the coherent hot slice after partial hot acceptance")
+    func riskWidgetRefresh_preservesCoherentHotSliceAfterPartialHotAcceptance() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let originalAlert = Watch.sampleWatchRows[0]
+        let originalMeso = MD.sampleDiscussionDTOs[0]
+        _ = try await projectionStore.updateHotAlerts(
+            alerts: [originalAlert],
+            mesos: [originalMeso],
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 200)
+        )
+
+        let spc = FakeSpcProvider(activeMesos: [MD.sampleDiscussionDTOs[1]])
+        let alerts = FakeAlertProvider(
+            activeAlerts: [Watch.sampleWatchRows[1]],
+            locationSyncOutcome: .failed
+        )
+        let widgetRecorder = RecordingWidgetSnapshotRefresher()
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: widgetRecorder
+            )
+        )
+
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh, locationContext: context))
+        )
+
+        let input = try #require(widgetRecorder.lastInput())
+        #expect(input.alerts == [originalAlert])
+        #expect(input.mesos == [originalMeso])
+        #expect(input.snapshotTimestamp == Date(timeIntervalSince1970: 200))
+    }
+
+    @Test("targeted remote hot ingestion does not advance the coherent hot projection")
+    func targetedRemoteHotIngestion_preservesCoherentHotProjection() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let originalAlert = Watch.sampleWatchRows[0]
+        let originalMeso = MD.sampleDiscussionDTOs[0]
+        let priorLoadAt = Date(timeIntervalSince1970: 200)
+
+        _ = try await projectionStore.updateHotAlerts(
+            alerts: [originalAlert],
+            mesos: [originalMeso],
+            for: context,
+            loadedAt: priorLoadAt
+        )
+
+        let spc = FakeSpcProvider(activeMesos: [MD.sampleDiscussionDTOs[1]])
+        let alerts = FakeAlertProvider(activeAlerts: [Watch.sampleWatchRows[1]])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(
+            plan: HomeIngestionPlan(
+                request: .init(
+                    trigger: .remoteHotAlertReceived,
+                    locationContext: context,
+                    remoteAlertContext: .init(alertID: Watch.sampleWatchRows[1].id)
+                )
+            )
+        )
+        let projection = try #require(await projectionStore.projection(for: context))
+
+        #expect(projection.activeAlerts == [originalAlert])
+        #expect(projection.activeMesos == [originalMeso])
+        #expect(projection.lastHotAlertsLoadAt == priorLoadAt)
+        #expect(snapshot.freshness.lastHotFeedSyncAt == nil)
+    }
+
     @Test("slow-product providers overlap, join, and preserve map outcome")
     func slowProductSync_overlapsProvidersAndPreservesMapOutcome() async throws {
         let context = makeContext()
@@ -3186,6 +3339,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let outlookValues: [ConvectiveOutlookDTO]
     private let locationReadError: Error?
     private let syncMesoscaleGate: AsyncGate?
+    private let mesoSyncOutcome: SpcMesoSyncOutcome
     private let mapSyncGate: AsyncGate?
     private let convectiveOutlookGate: AsyncGate?
     private let marksBackgroundDeadlineDuringMesoSync: Bool
@@ -3210,6 +3364,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         outlooks: [ConvectiveOutlookDTO] = [],
         locationReadError: Error? = nil,
         syncMesoscaleGate: AsyncGate? = nil,
+        mesoSyncOutcome: SpcMesoSyncOutcome = .accepted,
         mapSyncGate: AsyncGate? = nil,
         convectiveOutlookGate: AsyncGate? = nil,
         marksBackgroundDeadlineDuringMesoSync: Bool = false,
@@ -3222,6 +3377,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.outlookValues = outlooks
         self.locationReadError = locationReadError
         self.syncMesoscaleGate = syncMesoscaleGate
+        self.mesoSyncOutcome = mesoSyncOutcome
         self.mapSyncGate = mapSyncGate
         self.convectiveOutlookGate = convectiveOutlookGate
         self.marksBackgroundDeadlineDuringMesoSync = marksBackgroundDeadlineDuringMesoSync
@@ -3284,7 +3440,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
             cancelledSyncCalls += 1
             return .cancelled
         }
-        return .accepted
+        return mesoSyncOutcome
     }
 
     func getStormRisk(for point: CLLocationCoordinate2D) async throws -> StormRiskLevel {
@@ -3344,11 +3500,13 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, WidgetSnapshotRefreshing {
     private let lock = NSLock()
     private var calls = 0
+    private var inputs: [WidgetSnapshotRefreshInput] = []
 
     func refresh(scope: WidgetSnapshotChangeScope, input: WidgetSnapshotRefreshInput) throws {
         lock.lock()
         defer { lock.unlock() }
         calls += 1
+        inputs.append(input)
     }
 
     func refreshCallCount() -> Int {
@@ -3356,11 +3514,18 @@ private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, Widge
         defer { lock.unlock() }
         return calls
     }
+
+    func lastInput() -> WidgetSnapshotRefreshInput? {
+        lock.lock()
+        defer { lock.unlock() }
+        return inputs.last
+    }
 }
 
 private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     private let activeAlerts: [AlertDTO]
     private let syncGate: AsyncGate?
+    private let locationSyncOutcome: ArcusLocationSyncOutcome
     private var syncCalls = 0
     private var queryCalls = 0
     private var observedHTTPModeValues: [HTTPExecutionMode] = []
@@ -3368,10 +3533,12 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
 
     init(
         activeAlerts: [AlertDTO] = [Watch.sampleWatchRows[0]],
-        syncGate: AsyncGate? = nil
+        syncGate: AsyncGate? = nil,
+        locationSyncOutcome: ArcusLocationSyncOutcome = .accepted
     ) {
         self.activeAlerts = activeAlerts
         self.syncGate = syncGate
+        self.locationSyncOutcome = locationSyncOutcome
     }
 
     func sync(context: LocationContext) async -> ArcusLocationSyncOutcome {
@@ -3384,7 +3551,7 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
             cancelledSyncCalls += 1
             return .cancelled
         }
-        return .accepted
+        return locationSyncOutcome
     }
 
     func syncRemoteAlert(id: String, revisionSent: Date?) async -> ArcusRemoteAlertSyncOutcome {

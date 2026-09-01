@@ -169,6 +169,20 @@ protocol HomeIngestionExecuting: Sendable {
 }
 
 actor HomeIngestionExecutor: HomeIngestionExecuting {
+    private enum HotFeedSyncOutcome: Sendable, Equatable {
+        case completeLocationScopedAcceptance
+        case incomplete
+        case targeted
+
+        var advancesFreshness: Bool {
+            self == .completeLocationScopedAcceptance
+        }
+
+        var invalidatesFreshness: Bool {
+            self == .incomplete
+        }
+    }
+
     private struct SlowProductPersistenceDecision: Sendable {
         let updatesConvective: Bool
         let updatesFire: Bool
@@ -281,13 +295,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             "Home ingestion context resolution finished available=\((context != nil), privacy: .public) mode=\(executionMode.logName, privacy: .public)"
         )
 
+        var hotFeedSyncOutcome: HotFeedSyncOutcome?
         if plan.lanes.contains(.hotAlerts) {
             if shouldSyncHotFeeds(plan: plan, now: now) {
                 await progress.report(.started(.lane(.hotAlerts)))
                 environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
-                await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
+                hotFeedSyncOutcome = await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
                 try await throwIfBackgroundDeadlineExceeded()
-                freshness.lastHotFeedSyncAt = now
+                if hotFeedSyncOutcome?.advancesFreshness == true {
+                    freshness.lastHotFeedSyncAt = now
+                } else if hotFeedSyncOutcome?.invalidatesFreshness == true {
+                    freshness.lastHotFeedSyncAt = nil
+                }
                 await progress.report(.completed(.lane(.hotAlerts)))
                 environment.logger.debug("Finished home ingestion hot-alert sync")
             } else {
@@ -349,7 +368,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 snapshot: snapshot,
                 weatherRefreshResult: weatherRefresh,
                 loadedAt: now,
-                slowProductDecision: slowProductDecision
+                slowProductDecision: slowProductDecision,
+                acceptsHotFeedSnapshot: hotFeedSyncOutcome?.advancesFreshness == true
             )
             snapshot.riskProfileChange = riskProfileChange
         }
@@ -529,7 +549,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         plan: HomeIngestionPlan,
         context: LocationContext?,
         executionMode: HTTPExecutionMode
-    ) async {
+    ) async -> HotFeedSyncOutcome {
         if let remoteAlertContext = plan.remoteAlertContext {
             await HTTPExecutionMode.$current.withValue(executionMode) {
                 await withTaskGroup(of: Void.self) { group in
@@ -548,14 +568,17 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     await group.waitForAll()
                 }
             }
-            return
+            return .targeted
         }
 
-        guard let context else { return }
-        await HTTPExecutionMode.$current.withValue(executionMode) {
+        guard let context else { return .incomplete }
+        return await HTTPExecutionMode.$current.withValue(executionMode) {
             async let mesoSync = environment.spcSync.syncMesoscaleDiscussions()
             async let alertSync = environment.arcusAlertSync.sync(context: context)
-            _ = await (mesoSync, alertSync)
+            let (mesoOutcome, alertOutcome) = await (mesoSync, alertSync)
+            return mesoOutcome == .accepted && alertOutcome == .accepted
+                ? .completeLocationScopedAcceptance
+                : .incomplete
         }
     }
 
@@ -680,7 +703,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         snapshot: HomeSnapshot,
         weatherRefreshResult: HomeWeatherRefreshResult,
         loadedAt: Date,
-        slowProductDecision: SlowProductPersistenceDecision
+        slowProductDecision: SlowProductPersistenceDecision,
+        acceptsHotFeedSnapshot: Bool
     ) async -> RiskProfileChange? {
         guard let projectionStore = environment.projectionStore else { return nil }
         var riskProfileChange: RiskProfileChange?
@@ -699,7 +723,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     fireRisk: snapshot.fireRisk
                 )
                 : nil
-            let hotAlerts = plan.lanes.contains(.hotAlerts)
+            let hotAlerts = acceptsHotFeedSnapshot
                 ? (alerts: snapshot.alerts, mesos: snapshot.mesos)
                 : nil
 
@@ -726,14 +750,22 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 if case .riskOrLocationProjection = scope, slowProductDecision.shouldRefreshRiskWidgets == false {
                     return riskProfileChange
                 }
+                if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
+                    return riskProfileChange
+                }
+                guard let projection = try await projectionStore.projection(for: context),
+                      let hotSnapshotTimestamp = projection.lastHotAlertsLoadAt else {
+                    return riskProfileChange
+                }
                 try widgetSnapshotRefresher.refresh(
                     scope: scope,
                     input: .init(
                         generatedAt: loadedAt,
+                        snapshotTimestamp: hotSnapshotTimestamp,
                         stormRisk: snapshot.stormRisk,
                         severeRisk: snapshot.severeRisk,
-                        alerts: snapshot.alerts,
-                        mesos: snapshot.mesos,
+                        alerts: projection.activeAlerts,
+                        mesos: projection.activeMesos,
                         locationSummary: snapshot.locationSnapshot?.placemarkSummary
                     )
                 )
