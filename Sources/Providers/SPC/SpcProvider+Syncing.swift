@@ -69,34 +69,196 @@ extension SpcProvider: SpcSyncing {
     
     func syncTextProducts() async {
         let runInterval = signposter.beginInterval("Spc Sync Text")
-        async let convectiveSync: Void = syncConvectiveOutlooks()
+        async let convectiveSync = syncConvectiveOutlooks()
         async let mesoSync = syncMesoscaleDiscussions()
         _ = await (convectiveSync, mesoSync)
         signposter.endInterval("Background Run", runInterval)
     }
 
-    func syncConvectiveOutlooks() async {
-        let runInterval = signposter.beginInterval("Spc Sync Convective Outlooks")
+    func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome {
+        let waiterID = UUID()
+        let executionMode = HTTPExecutionMode.current
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                addOutlookSyncWaiter(
+                    withID: waiterID,
+                    continuation: continuation,
+                    executionMode: executionMode
+                )
+            }
+        } onCancel: {
+            Task {
+                await self.cancelOutlookSyncWaiter(withID: waiterID)
+            }
+        }
+    }
+
+    private func addOutlookSyncWaiter(
+        withID waiterID: UUID,
+        continuation: CheckedContinuation<SpcOutlookSyncOutcome, Never>,
+        executionMode: HTTPExecutionMode
+    ) {
+        let waiter = OutlookSyncWaiter(continuation: continuation, executionMode: executionMode)
+
+        if outlookSyncTask != nil, outlookSyncWaiters.isEmpty {
+            pendingOutlookSyncWaiters[waiterID] = waiter
+            pendingOutlookSyncWaiterOrder.append(waiterID)
+            #if DEBUG
+            notifyPendingOutlookSyncWaiterCountObservers()
+            #endif
+            logger.debug("SPC convective outlook sync is cancelling; queueing a new request")
+            return
+        }
+
+        outlookSyncWaiters[waiterID] = waiter
+        #if DEBUG
+        notifyOutlookSyncWaiterCountObservers()
+        #endif
+
+        if outlookSyncTask != nil {
+            logger.debug("SPC convective outlook sync already in-flight; joining existing task")
+            return
+        }
+
         logger.info("SPC convective outlook sync started")
+        let runID = UUID()
+        let task = Task { [self] () -> SpcOutlookSyncOutcome in
+            await HTTPExecutionMode.$current.withValue(executionMode) {
+                await runConvectiveOutlookSync()
+            }
+        }
+        outlookSyncTask = task
+        outlookSyncRunID = runID
+
+        Task { [self] in
+            let outcome = await task.value
+            finishOutlookSync(outcome, runID: runID)
+        }
+    }
+
+    private func cancelOutlookSyncWaiter(withID waiterID: UUID) {
+        if let waiter = pendingOutlookSyncWaiters.removeValue(forKey: waiterID) {
+            pendingOutlookSyncWaiterOrder.removeAll { $0 == waiterID }
+            waiter.continuation.resume(returning: .cancelled)
+            #if DEBUG
+            notifyPendingOutlookSyncWaiterCountObservers()
+            #endif
+            return
+        }
+
+        guard let waiter = outlookSyncWaiters.removeValue(forKey: waiterID) else { return }
+        waiter.continuation.resume(returning: .cancelled)
+        #if DEBUG
+        notifyOutlookSyncWaiterCountObservers()
+        #endif
+
+        if outlookSyncWaiters.isEmpty {
+            outlookSyncTask?.cancel()
+        }
+    }
+
+    private func finishOutlookSync(_ outcome: SpcOutlookSyncOutcome, runID: UUID) {
+        guard outlookSyncRunID == runID else { return }
+
+        let waiters = outlookSyncWaiters.values
+        outlookSyncWaiters.removeAll()
+        outlookSyncTask = nil
+        outlookSyncRunID = nil
+        waiters.forEach { $0.continuation.resume(returning: outcome) }
+        #if DEBUG
+        notifyOutlookSyncWaiterCountObservers()
+        #endif
+
+        startPendingOutlookSyncIfNeeded()
+    }
+
+    private func startPendingOutlookSyncIfNeeded() {
+        guard pendingOutlookSyncWaiters.isEmpty == false else { return }
+
+        let waiters = pendingOutlookSyncWaiters
+        let waiterOrder = pendingOutlookSyncWaiterOrder
+        pendingOutlookSyncWaiters.removeAll()
+        pendingOutlookSyncWaiterOrder.removeAll()
+        #if DEBUG
+        notifyPendingOutlookSyncWaiterCountObservers()
+        #endif
+
+        for waiterID in waiterOrder {
+            guard let waiter = waiters[waiterID] else { continue }
+            addOutlookSyncWaiter(
+                withID: waiterID,
+                continuation: waiter.continuation,
+                executionMode: waiter.executionMode
+            )
+        }
+    }
+
+    #if DEBUG
+    func waitForOutlookSyncWaiterCount(atLeast count: Int) async {
+        guard outlookSyncWaiters.count < count else { return }
+        await withCheckedContinuation { continuation in
+            outlookSyncWaiterCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    private func notifyOutlookSyncWaiterCountObservers() {
+        let satisfiedCounts = outlookSyncWaiterCountContinuations.keys.filter { $0 <= outlookSyncWaiters.count }
+        for count in satisfiedCounts {
+            let continuations = outlookSyncWaiterCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
+        }
+    }
+
+    func waitForPendingOutlookSyncWaiterCount(atLeast count: Int) async {
+        guard pendingOutlookSyncWaiters.count < count else { return }
+        await withCheckedContinuation { continuation in
+            pendingOutlookSyncWaiterCountContinuations[count, default: []].append(continuation)
+        }
+    }
+
+    private func notifyPendingOutlookSyncWaiterCountObservers() {
+        let satisfiedCounts = pendingOutlookSyncWaiterCountContinuations.keys.filter {
+            $0 <= pendingOutlookSyncWaiters.count
+        }
+        for count in satisfiedCounts {
+            let continuations = pendingOutlookSyncWaiterCountContinuations.removeValue(forKey: count) ?? []
+            continuations.forEach { $0.resume() }
+        }
+    }
+    #endif
+
+    private func runConvectiveOutlookSync() async -> SpcOutlookSyncOutcome {
+        let runInterval = signposter.beginInterval("Spc Sync Convective Outlooks")
+        defer {
+            signposter.endInterval("Background Run", runInterval)
+        }
+
         do {
-            try await outlookRepo.refreshConvectiveOutlooks(using: client)
+            let source = try await outlookRepo.refreshConvectiveOutlooks(using: client)
+            try Task.checkCancellation()
+            let outcome = Self.outlookOutcome(for: source)
             
             // After refresh, fetch the latest and publish (keeps it simple and reactive)
-            if let d = try? await latestIssue(for: .convective) {
+            if let d = try await latestIssue(for: .convective) {
+                await beforeOutlookPublication()
+                try Task.checkCancellation()
                 logger.info(
-                    "SPC convective outlook sync finished result=success latestPersistedPublished=\(d, privacy: .public)"
+                    "SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) latestPersistedPublished=\(d, privacy: .public)"
                 )
                 publishConvectiveIssue(d)
             } else {
-                logger.info("SPC convective outlook sync finished result=success latestPersistedPublished=none")
+                logger.info("SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) latestPersistedPublished=none")
             }
-            signposter.endInterval("Background Run", runInterval)
+            return outcome
         } catch is CancellationError {
-            signposter.endInterval("Background Run", runInterval)
             logger.notice("Convective outlook sync cancelled")
+            return .cancelled
+        } catch SpcError.parsingError {
+            logger.error("Convective outlook sync rejected")
+            return .rejected
         } catch {
-            signposter.endInterval("Background Run", runInterval)
             logger.error("Error syncing convective outlook text products: \(error.localizedDescription, privacy: .public)")
+            return .failed
         }
     }
 
@@ -141,6 +303,15 @@ extension SpcProvider: SpcSyncing {
     }
 
     private static func mesoOutcome(for source: HTTPResponse.Source) -> SpcMesoSyncOutcome {
+        switch source {
+        case .live, .cacheRevalidated304:
+            .accepted
+        case .localCache, .cacheFallback:
+            .fallback
+        }
+    }
+
+    private static func outlookOutcome(for source: HTTPResponse.Source) -> SpcOutlookSyncOutcome {
         switch source {
         case .live, .cacheRevalidated304:
             .accepted

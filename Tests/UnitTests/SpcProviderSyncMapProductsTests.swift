@@ -89,6 +89,155 @@ struct SpcProviderSyncMapProductsTests {
         #expect(await fallbackProvider.syncMesoscaleDiscussions() == .fallback)
     }
 
+    @Test("Convective outlook provider sync maps each response source and failure outcome")
+    func outlookSync_reportsTypedOutcomes() async throws {
+        let container = try await makeMapSyncContainer()
+        let acceptedProvider = makeSpcProviderForMapSyncTests(container: container, client: OutlookSyncClient(mode: .accepted))
+        let revalidatedProvider = makeSpcProviderForMapSyncTests(container: container, client: OutlookSyncClient(mode: .revalidated))
+        let rejectedProvider = makeSpcProviderForMapSyncTests(container: container, client: OutlookSyncClient(mode: .rejected))
+        let failedProvider = makeSpcProviderForMapSyncTests(container: container, client: OutlookSyncClient(mode: .failed))
+        let fallbackProvider = makeSpcProviderForMapSyncTests(container: container, client: OutlookSyncClient(mode: .fallback))
+        let localCacheProvider = makeSpcProviderForMapSyncTests(container: container, client: OutlookSyncClient(mode: .localCache))
+
+        #expect(await acceptedProvider.syncConvectiveOutlooks() == .accepted)
+        #expect(await revalidatedProvider.syncConvectiveOutlooks() == .accepted)
+        #expect(await rejectedProvider.syncConvectiveOutlooks() == .rejected)
+        #expect(await failedProvider.syncConvectiveOutlooks() == .failed)
+        #expect(await fallbackProvider.syncConvectiveOutlooks() == .fallback)
+        #expect(await localCacheProvider.syncConvectiveOutlooks() == .fallback)
+    }
+
+    @Test("Concurrent convective outlook calls share one in-flight run")
+    func concurrentOutlookCallsShareOneRun() async throws {
+        let container = try await makeMapSyncContainer()
+        let gate = OutlookSyncGate()
+        let client = OutlookSyncClient(mode: .accepted, responseGate: gate)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        let first = Task { await provider.syncConvectiveOutlooks() }
+        await client.waitForRssResponseStart()
+        let second = Task { await provider.syncConvectiveOutlooks() }
+        await provider.waitForOutlookSyncWaiterCount(atLeast: 2)
+        await gate.open()
+
+        #expect(await client.rssResponseCallCount() == 1)
+        #expect(await first.value == .accepted)
+        #expect(await second.value == .accepted)
+    }
+
+    @Test("Cancelling the final convective outlook owner cancels the shared run")
+    func cancellingFinalOutlookOwner_cancelsSharedRun() async throws {
+        let container = try await makeMapSyncContainer()
+        let gate = OutlookSyncGate()
+        let client = OutlookSyncClient(
+            mode: .accepted,
+            responseGate: gate,
+            ignoresCancellationAfterGate: true
+        )
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        let task = Task { await provider.syncConvectiveOutlooks() }
+        await client.waitForRssResponseStart()
+        task.cancel()
+
+        #expect(await task.value == .cancelled)
+        await gate.open()
+        await client.waitForRssResponseCompletion()
+        #expect(await client.rssResponseCallCount() == 1)
+        let outlooks = try await ConvectiveOutlookRepo(modelContainer: container).fetchConvectiveOutlooks()
+        #expect(outlooks.isEmpty)
+        #expect(await provider.latestConvective == nil)
+    }
+
+    @Test("Cancelling one convective outlook joiner preserves the remaining owner")
+    func cancellingOneOutlookJoiner_preservesRemainingOwner() async throws {
+        let container = try await makeMapSyncContainer()
+        let gate = OutlookSyncGate()
+        let client = OutlookSyncClient(mode: .accepted, responseGate: gate)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        let first = Task { await provider.syncConvectiveOutlooks() }
+        await client.waitForRssResponseStart()
+        let second = Task { await provider.syncConvectiveOutlooks() }
+        await provider.waitForOutlookSyncWaiterCount(atLeast: 2)
+        first.cancel()
+
+        #expect(await first.value == .cancelled)
+        await gate.open()
+        #expect(await second.value == .accepted)
+        #expect(await client.rssResponseCallCount() == 1)
+    }
+
+    @Test("A fresh convective outlook request waits for a cancelled run to terminate")
+    func freshOutlookRequest_afterFinalOwnerCancellation_startsNewRun() async throws {
+        let container = try await makeMapSyncContainer()
+        let gate = OutlookSyncGate()
+        let client = OutlookSyncClient(mode: .accepted, responseGate: gate)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        let cancelledOwner = Task { await provider.syncConvectiveOutlooks() }
+        await client.waitForRssResponseStart()
+        cancelledOwner.cancel()
+        #expect(await cancelledOwner.value == .cancelled)
+
+        let freshOwner = Task { await provider.syncConvectiveOutlooks() }
+        await provider.waitForPendingOutlookSyncWaiterCount(atLeast: 1)
+        #expect(await client.rssResponseCallCount() == 1)
+
+        await gate.open()
+        #expect(await freshOwner.value == .accepted)
+        #expect(await client.rssResponseCallCount() == 2)
+        #expect(await client.maxConcurrentRssResponseCalls() == 1)
+    }
+
+    @Test("A promoted outlook sync retains the fresh request's HTTP execution mode")
+    func freshOutlookRequest_afterCancellation_usesFreshExecutionMode() async throws {
+        let container = try await makeMapSyncContainer()
+        let gate = OutlookSyncGate()
+        let client = OutlookSyncClient(mode: .accepted, responseGate: gate)
+        let provider = makeSpcProviderForMapSyncTests(container: container, client: client)
+
+        let cancelledOwner = Task {
+            await HTTPExecutionMode.$current.withValue(.background) {
+                await provider.syncConvectiveOutlooks()
+            }
+        }
+        await client.waitForRssResponseStart()
+        cancelledOwner.cancel()
+        #expect(await cancelledOwner.value == .cancelled)
+
+        let freshOwner = Task {
+            await HTTPExecutionMode.$current.withValue(.foreground) {
+                await provider.syncConvectiveOutlooks()
+            }
+        }
+        await provider.waitForPendingOutlookSyncWaiterCount(atLeast: 1)
+        await gate.open()
+
+        #expect(await freshOwner.value == .accepted)
+        #expect(await client.executionModes() == [.background, .foreground])
+    }
+
+    @Test("Cancelling the final owner after persistence prevents outlook publication")
+    func cancellingFinalOutlookOwner_afterPersistence_preventsPublication() async throws {
+        let container = try await makeMapSyncContainer()
+        let publicationGate = OutlookSyncGate()
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: OutlookSyncClient(mode: .accepted),
+            beforeOutlookPublication: { await publicationGate.wait() }
+        )
+
+        let task = Task { await provider.syncConvectiveOutlooks() }
+        await publicationGate.waitForWaiter()
+        task.cancel()
+        #expect(await task.value == .cancelled)
+        await publicationGate.open()
+        await Task.yield()
+
+        #expect(await provider.latestConvective == nil)
+    }
+
     @Test("All-empty valid map batch is accepted and clears active persisted risks")
     func allEmptyBatchAcceptedAndClearsActivePersistedRisks() async throws {
         let container = try await makeMapSyncContainer()
@@ -1029,10 +1178,173 @@ private struct MesoSyncClient: SpcClient {
     }
 }
 
+private actor OutlookSyncClient: SpcClient {
+    enum Mode {
+        case accepted
+        case revalidated
+        case rejected
+        case failed
+        case fallback
+        case localCache
+    }
+
+    private let mode: Mode
+    private let responseGate: OutlookSyncGate?
+    private var rssResponseCalls = 0
+    private var inFlightRssResponseCalls = 0
+    private var maxConcurrentRssResponseCallsValue = 0
+    private var startContinuation: CheckedContinuation<Void, Never>?
+    private var cancellationContinuation: CheckedContinuation<Void, Never>?
+    private var cancellationOccurred = false
+    private var completionContinuation: CheckedContinuation<Void, Never>?
+    private var completedRssResponses = 0
+    private var recordedExecutionModes: [HTTPExecutionMode] = []
+    private let ignoresCancellationAfterGate: Bool
+
+    init(
+        mode: Mode,
+        responseGate: OutlookSyncGate? = nil,
+        ignoresCancellationAfterGate: Bool = false
+    ) {
+        self.mode = mode
+        self.responseGate = responseGate
+        self.ignoresCancellationAfterGate = ignoresCancellationAfterGate
+    }
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        let response = try await fetchRssResponse(for: product)
+        guard let data = response.data else { throw SpcError.missingData }
+        return data
+    }
+
+    func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
+        rssResponseCalls += 1
+        recordedExecutionModes.append(HTTPExecutionMode.current)
+        inFlightRssResponseCalls += 1
+        maxConcurrentRssResponseCallsValue = max(maxConcurrentRssResponseCallsValue, inFlightRssResponseCalls)
+        defer {
+            inFlightRssResponseCalls -= 1
+            completedRssResponses += 1
+            completionContinuation?.resume()
+            completionContinuation = nil
+        }
+        startContinuation?.resume()
+        startContinuation = nil
+
+        if let responseGate {
+            await responseGate.wait()
+            if ignoresCancellationAfterGate == false {
+                do {
+                    try Task.checkCancellation()
+                } catch {
+                    cancellationOccurred = true
+                    cancellationContinuation?.resume()
+                    cancellationContinuation = nil
+                    throw error
+                }
+            }
+        }
+
+        switch mode {
+        case .accepted, .revalidated, .fallback, .localCache:
+            let source: HTTPResponse.Source = switch mode {
+            case .accepted: .live
+            case .revalidated: .cacheRevalidated304
+            case .fallback: .cacheFallback
+            case .localCache: .localCache
+            case .rejected, .failed: fatalError("Unexpected outcome mode")
+            }
+            return .init(
+                status: 200,
+                headers: [:],
+                data: Data("""
+                <rss><channel><item>
+                <title>Day 1 Convective Outlook</title>
+                <link>https://www.spc.noaa.gov/products/outlook/day1otlk.html</link>
+                <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
+                <description>Valid outlook</description>
+                </item></channel></rss>
+                """.utf8),
+                source: source
+            )
+        case .rejected:
+            return .init(status: 200, headers: [:], data: Data("not-xml".utf8))
+        case .failed:
+            throw SpcError.networkError(status: 503)
+        }
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        throw SpcError.missingGeoJsonData
+    }
+
+    func rssResponseCallCount() -> Int {
+        rssResponseCalls
+    }
+
+    func maxConcurrentRssResponseCalls() -> Int {
+        maxConcurrentRssResponseCallsValue
+    }
+
+    func waitForRssResponseStart() async {
+        guard rssResponseCalls == 0 else { return }
+        await withCheckedContinuation { continuation in
+            startContinuation = continuation
+        }
+    }
+
+    func waitForCancellation() async {
+        guard cancellationOccurred == false else { return }
+        await withCheckedContinuation { continuation in
+            cancellationContinuation = continuation
+        }
+    }
+
+    func waitForRssResponseCompletion() async {
+        guard completedRssResponses == 0 else { return }
+        await withCheckedContinuation { continuation in
+            completionContinuation = continuation
+        }
+    }
+
+    func executionModes() -> [HTTPExecutionMode] {
+        recordedExecutionModes
+    }
+}
+
+private actor OutlookSyncGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var waiterContinuation: CheckedContinuation<Void, Never>?
+    private var isOpen = false
+
+    func wait() async {
+        guard isOpen == false else { return }
+        waiterContinuation?.resume()
+        waiterContinuation = nil
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func waitForWaiter() async {
+        guard continuation == nil else { return }
+        await withCheckedContinuation { continuation in
+            waiterContinuation = continuation
+        }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private func makeSpcProviderForMapSyncTests(
     container: ModelContainer,
     client: any SpcClient,
-    persistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none
+    persistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none,
+    beforeOutlookPublication: @escaping @Sendable () async -> Void = {}
 ) -> SpcProvider {
     let outlookRepo = ConvectiveOutlookRepo(modelContainer: container)
     let mesoRepo = MesoRepo(modelContainer: container)
@@ -1051,7 +1363,8 @@ private func makeSpcProviderForMapSyncTests(
         fireRiskRepo: fireRiskRepo,
         spcMapBatchPersistenceRepo: spcMapBatchPersistenceRepo,
         mapBatchPersistenceFailureInjection: persistenceFailureInjection,
-        client: client
+        client: client,
+        beforeOutlookPublication: beforeOutlookPublication
     )
 }
 

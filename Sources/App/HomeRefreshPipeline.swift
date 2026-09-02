@@ -204,7 +204,7 @@ final class HomeRefreshPipeline {
         updateEnvironment(environment)
 
         await HTTPExecutionMode.$current.withValue(.foreground) {
-            await environment.sync.syncConvectiveOutlooks()
+            _ = await environment.sync.syncConvectiveOutlooks()
         }
         await refreshOutlooks(using: environment.outlooks)
     }

@@ -56,7 +56,8 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Projected hot alerts and freshness now advance only after both location-scoped Arcus and meso syncs accept; targeted remote sync does not replace the coherent slice.
 
 ### [#433](https://github.com/justinrooks/project-arcus/issues/433) — Add typed outlook outcome and in-flight joining
-- Status: Pending
+- Status: Implemented — awaiting human review
+- Handoff: Outlook sync now returns typed accepted, fallback, rejected, failed, or cancelled outcomes; concurrent callers join one run, final-owner cancellation cannot persist or publish, and a queued fresh caller retains its own HTTP execution mode.
 
 ### [#434](https://github.com/justinrooks/project-arcus/issues/434) — Separate map and outlook refresh clocks
 - Status: Pending
@@ -78,4 +79,5 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 ## Verification Ledger
 
 - #428: `ConvectiveOutlookRepoTests` disk-backed acceptance coverage passed (13 tests); Debug iPhone 17 simulator build passed; `git diff --check` passed.
+- #433: `SpcProviderSyncMapProductsTests` validates outcome mapping, joining, cancellation, cancellation-safe persistence, and fresh-caller HTTP execution mode; full `SkyAware_Tests` passed (1,071 tests) before the final review corrections.
 - #429: Focused `AlertRepoActiveTests` and `SpcProviderSyncMapProductsTests` passed (36 tests); full unit lane passed (1,062 tests); Debug iPhone 17 simulator build and `git diff --check` passed.

@@ -175,6 +175,7 @@ struct LocationContextResolverTests {
             authorizationStatusProvider: { await authorizationState.current() },
             authorizationRequester: { _ in
                 await requestState.markRequested()
+                await authorizationState.set(.authorizedWhenInUse)
             },
             refreshCurrentLocation: { _ in
                 await locationProvider.send(update: .init(
@@ -202,8 +203,6 @@ struct LocationContextResolverTests {
             await requestState.wasRequested()
         }
         #expect(authorizationRequested)
-
-        await authorizationState.set(.authorizedWhenInUse)
 
         let context = try await contextTask.value
 

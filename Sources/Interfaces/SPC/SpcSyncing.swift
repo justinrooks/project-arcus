@@ -72,11 +72,19 @@ enum SpcMesoSyncOutcome: Sendable, Equatable {
     case cancelled
 }
 
+enum SpcOutlookSyncOutcome: Sendable, Equatable {
+    case accepted
+    case fallback
+    case rejected
+    case failed
+    case cancelled
+}
+
 protocol SpcSyncing: Sendable {//where Self: Actor {
     func sync() async -> Void
     func syncMapProducts() async -> Void
     func syncMapProductsOutcome() async -> SpcMapSyncOutcome
     func syncTextProducts() async -> Void
-    func syncConvectiveOutlooks() async -> Void
+    func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome
 }

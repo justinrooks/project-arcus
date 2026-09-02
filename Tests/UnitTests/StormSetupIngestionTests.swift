@@ -2597,8 +2597,9 @@ private actor StormSetupTestSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlook
 
     func syncTextProducts() async {}
 
-    func syncConvectiveOutlooks() async {
+    func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome {
         syncConvectiveOutlooksCalls += 1
+        return .accepted
     }
 
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {

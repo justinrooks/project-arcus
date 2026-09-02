@@ -15,8 +15,10 @@ actor ConvectiveOutlookRepo {
     private let parser: RSSFeedParser = RSSFeedParser()
     private let outlookParser = OutlookParser()
     
-    func refreshConvectiveOutlooks(using client: any SpcClient) async throws {
-        let data = try await client.fetchRssData(for: .convective)
+    func refreshConvectiveOutlooks(using client: any SpcClient) async throws -> HTTPResponse.Source {
+        let response = try await client.fetchRssResponse(for: .convective)
+        try Task.checkCancellation()
+        guard let data = response.data else { throw SpcError.missingData }
                 
         guard let rss = try parser.parse(data: data) else {
             throw SpcError.parsingError
@@ -40,8 +42,10 @@ actor ConvectiveOutlookRepo {
             throw SpcError.parsingError
         }
         
+        try Task.checkCancellation()
         try upsert(outlooks)
         logger.debug("Persisted convective outlook refresh count=\(outlooks.count, privacy: .public)")
+        return response.source
     }
     
     func fetchConvectiveOutlooks(for day:Int = 1) throws -> [ConvectiveOutlookDTO] {
