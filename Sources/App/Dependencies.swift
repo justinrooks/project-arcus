@@ -11,6 +11,7 @@ import SwiftData
 import UIKit
 
 final class Dependencies: Sendable {
+    static let liveAppRefreshID = "com.skyaware.app.refresh"
     // MARK: Core config
 
     let appRefreshID: String
@@ -300,9 +301,9 @@ final class Dependencies: Sendable {
     @MainActor
     static func live(
         arcusReachabilityTracker: any ArcusSignalReachabilityReporting = NoOpArcusSignalReachabilityReporter()
-    ) -> Dependencies {
+    ) throws -> Dependencies {
         let logger = Logger.appDependencies
-        let appRefreshID = "com.skyaware.app.refresh"
+        let appRefreshID = liveAppRefreshID
         let isUITestStaticHome = ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1"
         
         // Shared SwiftData context
@@ -334,10 +335,9 @@ final class Dependencies: Sendable {
                 "ModelContainer created mode=\(String(describing: persistenceMode), privacy: .public)"
             )
         } catch {
-            Logger.appMain.critical(
-                "Failed to create persistent and transient ModelContainer: \(String(describing: error), privacy: .public)"
-            )
-            preconditionFailure("Could not create any ModelContainer: \(error)")
+            // No providers, location subscriptions, or background handlers exist yet.
+            // The app-owned startup coordinator can safely retry this construction.
+            throw error
         }
         let allowsBackgroundPersistence: @Sendable () async -> Bool = {
             // A successfully opened store remains accessible after first unlock even when

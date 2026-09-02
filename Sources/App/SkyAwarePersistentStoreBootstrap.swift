@@ -84,13 +84,9 @@ enum SkyAwarePersistentStoreBootstrap {
                   storeFiles(at: storeURL, fileManager: fileManager).isEmpty == false,
                   hasRecoveryEvidence(for: initialError, at: storeURL) else {
                 logger.error(
-                    "Persistent SwiftData unavailable; preserving cache and using transient storage. error=\(String(describing: initialError), privacy: .public)"
+                    "Persistent SwiftData unavailable; preserving cache for a later startup attempt. error=\(String(describing: initialError), privacy: .public)"
                 )
-                return try transientResult(
-                    schema: schema,
-                    migrationPlan: migrationPlan,
-                    factory: factory
-                )
+                throw initialError
             }
 
             let backupURL: URL
@@ -101,13 +97,9 @@ enum SkyAwarePersistentStoreBootstrap {
                 )
             } catch {
                 logger.error(
-                    "Could not quarantine unreadable SwiftData cache; using transient storage. openError=\(String(describing: initialError), privacy: .public) quarantineError=\(String(describing: error), privacy: .public)"
+                    "Could not quarantine unreadable SwiftData cache; deferring startup. openError=\(String(describing: initialError), privacy: .public) quarantineError=\(String(describing: error), privacy: .public)"
                 )
-                return try transientResult(
-                    schema: schema,
-                    migrationPlan: migrationPlan,
-                    factory: factory
-                )
+                throw error
             }
 
             do {
@@ -125,13 +117,9 @@ enum SkyAwarePersistentStoreBootstrap {
                 return Result(container: container, mode: .persistent)
             } catch let retryError {
                 logger.error(
-                    "Persistent SwiftData recovery failed; using transient storage. initialError=\(String(describing: initialError), privacy: .public) retryError=\(String(describing: retryError), privacy: .public)"
+                    "Persistent SwiftData recovery failed; deferring startup. initialError=\(String(describing: initialError), privacy: .public) retryError=\(String(describing: retryError), privacy: .public)"
                 )
-                return try transientResult(
-                    schema: schema,
-                    migrationPlan: migrationPlan,
-                    factory: factory
-                )
+                throw retryError
             }
         }
     }
@@ -176,20 +164,6 @@ enum SkyAwarePersistentStoreBootstrap {
             NSPersistentStoreIncompatibleVersionHashError,
             NSMigrationMissingSourceModelError
         ].contains(error.code)
-    }
-
-    private static func transientResult(
-        schema: Schema,
-        migrationPlan: (any SchemaMigrationPlan.Type)?,
-        factory: ContainerFactory
-    ) throws -> Result {
-        let configuration = ModelConfiguration(
-            "\(storeName)_Transient",
-            schema: schema,
-            isStoredInMemoryOnly: true
-        )
-        let container = try factory(schema, configuration, migrationPlan)
-        return Result(container: container, mode: .transient)
     }
 
     static func quarantineRootURL(for storeURL: URL) -> URL {
