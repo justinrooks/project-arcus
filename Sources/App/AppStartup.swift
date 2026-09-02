@@ -14,6 +14,7 @@ final class AppStartup {
 
     private(set) var dependencies: Dependencies?
     private(set) var status: Status = .unavailable
+    private(set) var failureDiagnostic: String?
     @ObservationIgnored private var isStarting = false
     @ObservationIgnored private var pendingNotificationOpen: HomeRemoteAlertContext?
     @ObservationIgnored private(set) var hasPresentedHome = false
@@ -43,9 +44,20 @@ final class AppStartup {
             self.dependencies = dependencies
             onReady(dependencies)
             status = .ready
+            failureDiagnostic = nil
+            Logger.appMain.notice("Startup ready; persistence-dependent services installed")
         } catch {
-            status = protectedDataAvailable() ? .unavailable : .waitingForProtectedData
-            Logger.appMain.error("Startup deferred: \(String(describing: error), privacy: .public)")
+            let isProtectedDataAvailable = protectedDataAvailable()
+            status = isProtectedDataAvailable ? .unavailable : .waitingForProtectedData
+            let failure = error as NSError
+            // Error descriptions/userInfo may contain paths or private payloads. Keep only
+            // domain/code evidence and the protection signal; locking alone is not the cause.
+            var diagnostic = "store-open-failed domain=\(failure.domain) code=\(failure.code) protectedDataAvailable=\(isProtectedDataAvailable)"
+            if let underlying = failure.userInfo[NSUnderlyingErrorKey] as? NSError {
+                diagnostic += " underlyingDomain=\(underlying.domain) underlyingCode=\(underlying.code)"
+            }
+            failureDiagnostic = diagnostic
+            Logger.appMain.error("Startup deferred: \(diagnostic, privacy: .public)")
         }
         return dependencies
     }

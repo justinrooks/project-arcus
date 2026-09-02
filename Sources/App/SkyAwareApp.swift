@@ -122,25 +122,29 @@ struct SkyAwareApp: App {
                 .environment(runtimeConnectivityState)
         }
         .backgroundTask(.appRefresh(Dependencies.liveAppRefreshID)) {
+            let attemptID = UUID().uuidString
+            logger.notice("Background refresh invoked attempt=\(attemptID, privacy: .public)")
             guard let deps = await startup.retry() else {
-                logger.notice("Background refresh deferred because startup is unavailable")
-                _ = await BackgroundScheduler(refreshId: Dependencies.liveAppRefreshID)
-                    .ensureScheduled(using: RefreshPolicy())
+                let reason = await startup.failureDiagnostic ?? "startup-not-ready"
+                await BackgroundRefreshExecution.reject(attemptID: attemptID, reason: reason) {
+                    await BackgroundScheduler(refreshId: Dependencies.liveAppRefreshID)
+                        .ensureScheduled(using: RefreshPolicy())
+                }
                 return
             }
             await BackgroundRefreshExecution.run(
+                attemptID: attemptID,
                 allowsBackgroundPersistence: deps.allowsBackgroundPersistence,
                 scheduleFallback: {
-                    let outcome = await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
-                    if outcome.preservesSuccessor == false {
-                        logger.error("Skipped background refresh could not preserve a successor")
-                    }
+                    await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
                 },
                 runPersistentLifecycle: {
                     logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
                     let lifecycle = BackgroundRefreshLifecycle(
                         beginRun: {
-                            await deps.orchestrator.beginRun()
+                            let run = await deps.orchestrator.beginRun()
+                            logger.notice("Background refresh admitted attempt=\(attemptID, privacy: .public) run=\(run.runId, privacy: .public)")
+                            return run
                         },
                         scheduleFallback: {
                             await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
@@ -215,16 +219,40 @@ struct SkyAwareApp: App {
 }
 
 enum BackgroundRefreshExecution {
+    enum AdmissionOutcome: Equatable {
+        case lifecycleExecuted
+        case blocked(reason: String, scheduling: BackgroundScheduler.SchedulingOutcome)
+    }
+
+    @discardableResult
     static func run(
+        attemptID: String = UUID().uuidString,
         allowsBackgroundPersistence: @Sendable () async -> Bool,
-        scheduleFallback: @Sendable () async -> Void,
+        scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome,
         runPersistentLifecycle: @Sendable () async -> Void
-    ) async {
+    ) async -> AdmissionOutcome {
         guard await allowsBackgroundPersistence() else {
-            await scheduleFallback()
-            return
+            return await reject(attemptID: attemptID, reason: "nonpersistent-storage", scheduleFallback: scheduleFallback)
         }
         await runPersistentLifecycle()
+        return .lifecycleExecuted
+    }
+
+    @discardableResult
+    static func reject(
+        attemptID: String,
+        reason: String,
+        scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome
+    ) async -> AdmissionOutcome {
+        // Emit rejection before awaiting the scheduler so an interrupted attempt remains visible.
+        Logger.appMain.error("Background refresh blocked attempt=\(attemptID, privacy: .public) reason=\(reason, privacy: .public)")
+        let outcome = await scheduleFallback()
+        if outcome.preservesSuccessor {
+            Logger.appMain.notice("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        } else {
+            Logger.appMain.error("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        }
+        return .blocked(reason: reason, scheduling: outcome)
     }
 }
 

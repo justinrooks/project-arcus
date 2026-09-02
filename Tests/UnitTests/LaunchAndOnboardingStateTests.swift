@@ -43,10 +43,12 @@ struct AppStartupTests {
 
         #expect(startup.retry() == nil)
         #expect(startup.status == .waitingForProtectedData)
+        #expect(startup.failureDiagnostic?.contains("protectedDataAvailable=false") == true)
         #expect(compositions == 0)
         storageAvailable = true
         #expect(startup.retry() != nil)
         #expect(startup.status == .ready)
+        #expect(startup.failureDiagnostic == nil)
         #expect(compositions == 1)
         let container = try #require(restoredContainer)
         let runs = try ModelContext(container).fetch(FetchDescriptor<BgRunSnapshot>())
@@ -89,6 +91,23 @@ struct AppStartupTests {
         #expect(startup.retry() == nil)
         #expect(startup.status == .unavailable)
         #expect(attempts == 2)
+    }
+
+    @Test("startup diagnostics retain error codes without private error payloads")
+    func failureDiagnosticExcludesPrivatePayloads() {
+        let underlying = NSError(domain: NSPOSIXErrorDomain, code: 13, userInfo: [
+            NSLocalizedDescriptionKey: "private-location-payload"
+        ])
+        let failure = NSError(domain: NSCocoaErrorDomain, code: 256, userInfo: [
+            NSUnderlyingErrorKey: underlying,
+            NSFilePathErrorKey: "/private/user/store",
+            NSLocalizedDescriptionKey: "private-alert-payload"
+        ])
+        let startup = AppStartup(makeDependencies: { throw failure }, protectedDataAvailable: { true })
+        startup.retry()
+        #expect(startup.status == .unavailable)
+        #expect(startup.failureDiagnostic ==
+            "store-open-failed domain=NSCocoaErrorDomain code=256 protectedDataAvailable=true underlyingDomain=NSPOSIXErrorDomain underlyingCode=13")
     }
 
     @Test("the latest notification open survives blocked startup and is consumed once after recovery")
