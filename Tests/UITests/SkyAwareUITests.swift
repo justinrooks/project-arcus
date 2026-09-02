@@ -24,6 +24,22 @@ final class SkyAwareUITests: XCTestCase {
     }
 
     @MainActor
+    func testUnavailableStorageShowsExplicitRetryInsteadOfConditionsLoading() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["UI_TESTS_STATIC_HOME"] = "1"
+        app.launchEnvironment["UI_TESTS_STORAGE_UNAVAILABLE"] = "1"
+        app.launch()
+
+        let retry = app.buttons["startup-retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Unable to open SkyAware"].exists)
+        XCTAssertFalse(app.staticTexts["Getting your conditions ready"].exists)
+        retry.tap()
+        XCTAssertTrue(retry.exists)
+        XCTAssertTrue(app.staticTexts["Unable to open SkyAware"].exists)
+    }
+
+    @MainActor
     func testExample() throws {
         // UI tests must launch the application that they test.
         let app = XCUIApplication()

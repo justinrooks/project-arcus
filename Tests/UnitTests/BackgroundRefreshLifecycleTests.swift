@@ -5,14 +5,15 @@ import Testing
 
 @Suite("Background refresh lifecycle", .serialized)
 struct BackgroundRefreshLifecycleTests {
-    @Test("Locked execution preserves a successor without starting persistence work")
-    func lockedExecutionSchedulesFallbackWithoutRunningLifecycle() async {
+    @Test("Unavailable storage preserves a successor without starting persistence work")
+    func unavailableStorageSchedulesFallbackWithoutRunningLifecycle() async {
         let recorder = LifecycleRecorder()
 
-        await BackgroundRefreshExecution.run(
+        let outcome = await BackgroundRefreshExecution.run(
             allowsBackgroundPersistence: { false },
             scheduleFallback: {
                 await recorder.recordAcceptedFallback()
+                return .submitted
             },
             runPersistentLifecycle: {
                 await recorder.recordOrchestrationStart()
@@ -20,16 +21,18 @@ struct BackgroundRefreshLifecycleTests {
         )
 
         #expect(await recorder.events() == ["fallback-complete"])
+        #expect(outcome == .blocked(reason: "nonpersistent-storage", scheduling: .submitted))
     }
 
-    @Test("Unlocked execution runs the persistent lifecycle")
-    func unlockedExecutionRunsPersistentLifecycle() async {
+    @Test("Available storage runs the persistent lifecycle")
+    func availableStorageRunsPersistentLifecycle() async {
         let recorder = LifecycleRecorder()
 
-        await BackgroundRefreshExecution.run(
+        let outcome = await BackgroundRefreshExecution.run(
             allowsBackgroundPersistence: { true },
             scheduleFallback: {
                 await recorder.recordAcceptedFallback()
+                return .submitted
             },
             runPersistentLifecycle: {
                 await recorder.recordOrchestrationStart()
@@ -37,6 +40,22 @@ struct BackgroundRefreshLifecycleTests {
         )
 
         #expect(await recorder.events() == ["orchestration-start"])
+        #expect(outcome == .lifecycleExecuted)
+    }
+
+    @Test("Blocked startup retains its reason and the actual successor outcome", arguments: [
+        BackgroundScheduler.SchedulingOutcome.submitted, .preservedExisting, .preservedImmediate,
+        .submissionFailed, .restoredPrevious, .restorationFailed
+    ])
+    func blockedStartupReportsSchedulingOutcome(_ scheduling: BackgroundScheduler.SchedulingOutcome) async {
+        let recorder = LifecycleRecorder()
+        let reason = "store-open-failed domain=NSCocoaErrorDomain code=257 protectedDataAvailable=false"
+        let outcome = await BackgroundRefreshExecution.reject(attemptID: "blocked-test", reason: reason) {
+            await recorder.recordAcceptedFallback()
+            return scheduling
+        }
+        #expect(await recorder.events() == ["fallback-complete"])
+        #expect(outcome == .blocked(reason: reason, scheduling: scheduling))
     }
 
     @Test("Fallback scheduling completes before blocked orchestration starts")

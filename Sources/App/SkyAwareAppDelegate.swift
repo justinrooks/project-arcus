@@ -13,9 +13,24 @@ import UserNotifications
 final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
     private let logger = Logger.notificationsRemote
     private static var remoteHotAlertHandler: RemoteHotAlertHandler?
+    private static var startup: AppStartup?
+
+    static func install(startup: AppStartup) {
+        self.startup = startup
+    }
 
     static func install(remoteHotAlertHandler: RemoteHotAlertHandler) {
         self.remoteHotAlertHandler = remoteHotAlertHandler
+    }
+
+    func applicationProtectedDataDidBecomeAvailable(_ application: UIApplication) {
+        Self.startup?.retry()
+    }
+
+    static func resumePendingNotificationOpen() {
+        guard let handler = remoteHotAlertHandler,
+              let context = startup?.takePendingNotificationOpen() else { return }
+        Task { await handler.handleNotificationOpen(context) }
     }
 
     func application(
@@ -46,15 +61,16 @@ final class SkyAwareAppDelegate: NSObject, UIApplicationDelegate {
         didReceiveRemoteNotification userInfo: [AnyHashable: Any],
         fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
     ) {
-        guard let handler = Self.remoteHotAlertHandler else {
-            logger.notice("Remote hot-alert handler unavailable for APNs receipt")
+        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
+            logger.notice("Ignoring remote notification without a supported hot-alert payload")
             completionHandler(.noData)
             return
         }
 
-        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
-            logger.notice("Ignoring remote notification without a supported hot-alert payload")
-            completionHandler(.noData)
+        Self.startup?.retry()
+        guard let handler = Self.remoteHotAlertHandler else {
+            logger.notice("Remote hot-alert receipt deferred because startup is unavailable")
+            completionHandler(.failed)
             return
         }
 
@@ -78,15 +94,18 @@ extension SkyAwareAppDelegate: @MainActor UNUserNotificationCenterDelegate {
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        guard let handler = Self.remoteHotAlertHandler else {
-            logger.notice("Remote hot-alert handler unavailable for notification open")
+        let userInfo = response.notification.request.content.userInfo
+        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
+            logger.notice("Ignoring notification open without a supported hot-alert payload")
             completionHandler()
             return
         }
 
-        let userInfo = response.notification.request.content.userInfo
-        guard let remoteAlertContext = HomeRemoteAlertContext(userInfo: userInfo) else {
-            logger.notice("Ignoring notification open without a supported hot-alert payload")
+        Self.startup?.retry()
+        guard let handler = Self.remoteHotAlertHandler,
+              Self.startup?.hasPresentedHome == true else {
+            Self.startup?.deferNotificationOpen(remoteAlertContext)
+            logger.notice("Retaining notification open until Home is ready")
             completionHandler()
             return
         }
