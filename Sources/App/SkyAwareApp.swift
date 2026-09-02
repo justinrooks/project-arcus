@@ -22,8 +22,9 @@ struct SkyAwareApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     // Dependencies
-    private let deps: Dependencies
-    @State private var locationSession: LocationSession
+    @State private var startup: AppStartup
+
+    private var deps: Dependencies? { startup.dependencies }
     @State private var remoteAlertPresentationState: RemoteAlertPresentationState
     @State private var runtimeConnectivityState: RuntimeConnectivityState
     private let logger = Logger.appMain
@@ -64,39 +65,48 @@ struct SkyAwareApp: App {
         let runtimeConnectivityState = RuntimeConnectivityState()
         runtimeConnectivityState.startMonitoringIfNeeded()
 
-        let deps = Dependencies.live(
-            arcusReachabilityTracker: ArcusSignalReachabilityTracker { availability in
-                await MainActor.run {
-                    runtimeConnectivityState.updateArcusSignalAvailability(availability)
-                }
-            }
-        )
-        self.deps = deps
         let remoteAlertPresentationState = RemoteAlertPresentationState()
         _runtimeConnectivityState = State(initialValue: runtimeConnectivityState)
         _remoteAlertPresentationState = State(initialValue: remoteAlertPresentationState)
-        Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
-        Self.applyUITestStormSetupFixtureIfNeeded(locationSession: deps.locationSession)
-        _locationSession = State(initialValue: deps.locationSession)
-        let remoteAlertWidgetSnapshotRefreshDriver: RemoteAlertWidgetSnapshotRefreshDriver? = {
-            guard let widgetSnapshotStore = try? WidgetSnapshotStore() else {
-                return nil
+        let startup = AppStartup(
+            makeDependencies: {
+#if DEBUG
+                if ProcessInfo.processInfo.environment["UI_TESTS_STATIC_HOME"] == "1",
+                   ProcessInfo.processInfo.environment["UI_TESTS_STORAGE_UNAVAILABLE"] == "1" {
+                    throw CocoaError(.fileReadNoPermission)
+                }
+#endif
+                return try Dependencies.live(
+                    arcusReachabilityTracker: ArcusSignalReachabilityTracker { availability in
+                        await MainActor.run {
+                            runtimeConnectivityState.updateArcusSignalAvailability(availability)
+                        }
+                    }
+                )
+            },
+            onReady: { deps in
+                Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
+                Self.applyUITestStormSetupFixtureIfNeeded(locationSession: deps.locationSession)
+                let widgetDriver = (try? WidgetSnapshotStore()).map {
+                    RemoteAlertWidgetSnapshotRefreshDriver(
+                        projectionStore: deps.homeProjectionStore,
+                        widgetSnapshotRefresher: WidgetSnapshotRefreshCoordinator(store: $0)
+                    )
+                }
+                SkyAwareAppDelegate.install(
+                    remoteHotAlertHandler: RemoteHotAlertHandler(
+                        coordinator: deps.homeIngestionCoordinator,
+                        arcusAlerts: deps.arcusProvider,
+                        presentationState: remoteAlertPresentationState,
+                        widgetSnapshotRefreshDriver: widgetDriver,
+                        allowsBackgroundIngestion: deps.allowsBackgroundPersistence
+                    )
+                )
             }
-            let widgetSnapshotRefresher = WidgetSnapshotRefreshCoordinator(store: widgetSnapshotStore)
-            return RemoteAlertWidgetSnapshotRefreshDriver(
-                projectionStore: deps.homeProjectionStore,
-                widgetSnapshotRefresher: widgetSnapshotRefresher
-            )
-        }()
-        SkyAwareAppDelegate.install(
-            remoteHotAlertHandler: RemoteHotAlertHandler(
-                coordinator: deps.homeIngestionCoordinator,
-                arcusAlerts: deps.arcusProvider,
-                presentationState: remoteAlertPresentationState,
-                widgetSnapshotRefreshDriver: remoteAlertWidgetSnapshotRefreshDriver,
-                allowsBackgroundIngestion: deps.allowsBackgroundPersistence
-            )
         )
+        _startup = State(initialValue: startup)
+        SkyAwareAppDelegate.install(startup: startup)
+        startup.retry()
 #if DEBUG
         Logger.appMain.debug("Application support directory: \(URL.applicationSupportDirectory.path(percentEncoded: false), privacy: .public)")
 #endif
@@ -110,26 +120,31 @@ struct SkyAwareApp: App {
                 .preferredColorScheme(Self.uiTestPreferredColorScheme)
                 .environment(remoteAlertPresentationState)
                 .environment(runtimeConnectivityState)
-                .onAppear {
-                    guard isUITestStaticHome == false else { return }
-                    locationSession.handleScenePhaseChange(scenePhase)
-                }
         }
-        .modelContainer(deps.modelContainer)
-        .backgroundTask(.appRefresh(deps.appRefreshID)) {
+        .backgroundTask(.appRefresh(Dependencies.liveAppRefreshID)) {
+            let attemptID = UUID().uuidString
+            logger.notice("Background refresh invoked attempt=\(attemptID, privacy: .public)")
+            guard let deps = await startup.retry() else {
+                let reason = await startup.failureDiagnostic ?? "startup-not-ready"
+                await BackgroundRefreshExecution.reject(attemptID: attemptID, reason: reason) {
+                    await BackgroundScheduler(refreshId: Dependencies.liveAppRefreshID)
+                        .ensureScheduled(using: RefreshPolicy())
+                }
+                return
+            }
             await BackgroundRefreshExecution.run(
+                attemptID: attemptID,
                 allowsBackgroundPersistence: deps.allowsBackgroundPersistence,
                 scheduleFallback: {
-                    let outcome = await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
-                    if outcome.preservesSuccessor == false {
-                        logger.error("Skipped background refresh could not preserve a successor")
-                    }
+                    await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
                 },
                 runPersistentLifecycle: {
                     logger.notice("Background app refresh started (id: \(deps.appRefreshID, privacy: .public))")
                     let lifecycle = BackgroundRefreshLifecycle(
                         beginRun: {
-                            await deps.orchestrator.beginRun()
+                            let run = await deps.orchestrator.beginRun()
+                            logger.notice("Background refresh admitted attempt=\(attemptID, privacy: .public) run=\(run.runId, privacy: .public)")
+                            return run
                         },
                         scheduleFallback: {
                             await deps.scheduler.ensureScheduled(using: deps.refreshPolicy)
@@ -149,14 +164,15 @@ struct SkyAwareApp: App {
         .onChange(of: scenePhase) { _, newPhase in
             guard isUITestStaticHome == false else { return }
             logger.debug("Scene phase changed to: \(String(describing: newPhase), privacy: .public)")
-            locationSession.handleScenePhaseChange(newPhase)
+            if newPhase == .active { startup.retry() }
+            deps?.locationSession.handleScenePhaseChange(newPhase)
             
             switch newPhase {
             case .background:
                 Task {
-                    let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
+                    let scheduler = BackgroundScheduler(refreshId: Dependencies.liveAppRefreshID)
                     logger.notice("App entered background; ensuring background refresh is seeded if needed")
-                    _ = await scheduler.ensureScheduled(using: deps.refreshPolicy)
+                    _ = await scheduler.ensureScheduled(using: RefreshPolicy())
                 }
             case .inactive: // Swallow inactive state
                 break
@@ -165,7 +181,7 @@ struct SkyAwareApp: App {
                     let installationId = await InstallationIdentityStore.shared.installationId()
                     logger.debug("Installation ID ready with \(installationId.count, privacy: .public) chars")
                     await RemoteNotificationRegistrar.shared.registerForRemoteNotificationsIfAuthorized(context: "scene-active")
-                    await locationSession.drainPendingLocationUploads()
+                    await deps?.locationSession.drainPendingLocationUploads()
                 }
                 
                 // If its our first run, spin off a task to set up a background task
@@ -176,8 +192,8 @@ struct SkyAwareApp: App {
                     // Schedule a background task greedy, so we start on the right foot
                     Task(priority: .background) {
                         logger.notice("Seeding initial background task")
-                        let scheduler = BackgroundScheduler(refreshId: deps.appRefreshID)
-                        let outcome = await scheduler.ensureScheduled(using: deps.refreshPolicy)
+                        let scheduler = BackgroundScheduler(refreshId: Dependencies.liveAppRefreshID)
+                        let outcome = await scheduler.ensureScheduled(using: RefreshPolicy())
                         if outcome.preservesSuccessor {
                             logger.notice("Initial background refresh scheduling preserved a successor")
                         } else {
@@ -203,33 +219,82 @@ struct SkyAwareApp: App {
 }
 
 enum BackgroundRefreshExecution {
+    enum AdmissionOutcome: Equatable {
+        case lifecycleExecuted
+        case blocked(reason: String, scheduling: BackgroundScheduler.SchedulingOutcome)
+    }
+
+    @discardableResult
     static func run(
+        attemptID: String = UUID().uuidString,
         allowsBackgroundPersistence: @Sendable () async -> Bool,
-        scheduleFallback: @Sendable () async -> Void,
+        scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome,
         runPersistentLifecycle: @Sendable () async -> Void
-    ) async {
+    ) async -> AdmissionOutcome {
         guard await allowsBackgroundPersistence() else {
-            await scheduleFallback()
-            return
+            return await reject(attemptID: attemptID, reason: "nonpersistent-storage", scheduleFallback: scheduleFallback)
         }
         await runPersistentLifecycle()
+        return .lifecycleExecuted
+    }
+
+    @discardableResult
+    static func reject(
+        attemptID: String,
+        reason: String,
+        scheduleFallback: @Sendable () async -> BackgroundScheduler.SchedulingOutcome
+    ) async -> AdmissionOutcome {
+        // Emit rejection before awaiting the scheduler so an interrupted attempt remains visible.
+        Logger.appMain.error("Background refresh blocked attempt=\(attemptID, privacy: .public) reason=\(reason, privacy: .public)")
+        let outcome = await scheduleFallback()
+        if outcome.preservesSuccessor {
+            Logger.appMain.notice("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        } else {
+            Logger.appMain.error("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
+        }
+        return .blocked(reason: reason, scheduling: outcome)
     }
 }
 
 private extension SkyAwareApp {
     @ViewBuilder
     var rootContent: some View {
-        if onboardingComplete {
-            homeContent
+        if let deps {
+            Group {
+                if onboardingComplete {
+                    homeContent(deps: deps)
+                } else {
+                    onboardingContent(deps: deps)
+                }
+            }
+            .modelContainer(deps.modelContainer)
+            .onAppear {
+                guard isUITestStaticHome == false else { return }
+                deps.locationSession.handleScenePhaseChange(scenePhase)
+                if scenePhase == .active {
+                    Task { await deps.locationSession.drainPendingLocationUploads() }
+                    if onboardingComplete { scheduleActivationCleanupIfNeeded() }
+                }
+            }
         } else {
-            onboardingContent
+            ContentUnavailableView {
+                Label("Unable to open SkyAware", systemImage: "exclamationmark.circle")
+            } description: {
+                Text(startup.status == .waitingForProtectedData
+                     ? "Unlock your device to try again."
+                     : "Your saved data is temporarily unavailable. Please try again.")
+            } actions: {
+                Button("Try Again") { startup.retry() }
+                    .accessibilityIdentifier("startup-retry")
+            }
+            .appBackground()
         }
     }
 
-    var homeContent: some View {
+    func homeContent(deps: Dependencies) -> some View {
         currentHomeView
             .environment(\.dependencies, deps)
-            .environment(locationSession)
+            .environment(deps.locationSession)
             .appBackground()
             .onAppear(perform: handleHomeOnAppear)
             .sheet(item: $launchPresentation, content: launchPresentationSheet)
@@ -261,14 +326,16 @@ private extension SkyAwareApp {
         }
     }
 
-    var onboardingContent: some View {
+    func onboardingContent(deps: Dependencies) -> some View {
         OnboardingView()
             .environment(\.dependencies, deps)
-            .environment(locationSession)
+            .environment(deps.locationSession)
     }
 
     func handleHomeOnAppear() {
         updateLaunchPresentation()
+        startup.markHomePresented()
+        SkyAwareAppDelegate.resumePendingNotificationOpen()
     }
 
     @ViewBuilder
@@ -299,7 +366,7 @@ private extension SkyAwareApp {
                 isWorking: false,
                 statusMessage: nil,
                 onEnable: {
-                    locationSession.requestInteractiveAuthorization()
+                    deps?.locationSession.requestInteractiveAuthorization()
                     launchPresentation = nil
                 },
                 onSkip: {
@@ -313,6 +380,7 @@ private extension SkyAwareApp {
     }
 
     func updateLaunchPresentation() {
+        guard let locationSession = deps?.locationSession else { return }
         launchPresentation = LaunchPresentationState.resolve(
             disclaimerVersion: disclaimerVersion,
             currentDisclaimerVersion: currentDisclaimerVersion,
@@ -324,6 +392,7 @@ private extension SkyAwareApp {
     static let activationCleanupMinimumInterval: TimeInterval = 60 * 60
 
     func scheduleActivationCleanupIfNeeded(now: Date = .now) {
+        guard let deps else { return }
         guard ActivationCleanupThrottle.shouldRun(
             lastRunAt: activationCleanupLastRunAt,
             now: now
