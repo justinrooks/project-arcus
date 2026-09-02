@@ -1,3 +1,4 @@
+import CoreData
 import Foundation
 import OSLog
 import SwiftData
@@ -64,16 +65,9 @@ enum SkyAwarePersistentStoreBootstrap {
             )
         }
 
-        guard isProtectedDataAvailable else {
-            logger.error("Protected data is locked; using transient SwiftData storage")
-            return try transientResult(
-                schema: schema,
-                migrationPlan: migrationPlan,
-                factory: factory
-            )
-        }
-
         do {
+            // Core Data defaults to protection until first unlock, so a locked device can
+            // still open this store. Let the store operation establish availability.
             let container = try factory(schema, configuration, migrationPlan)
             maintainQuarantines(
                 for: configuration.url,
@@ -85,9 +79,12 @@ enum SkyAwarePersistentStoreBootstrap {
         } catch let initialError {
             let storeURL = configuration.url
 
-            guard storeFiles(at: storeURL, fileManager: fileManager).isEmpty == false else {
+            // Never interpret a lock/access failure (or an unknown open error) as corruption.
+            guard isProtectedDataAvailable,
+                  storeFiles(at: storeURL, fileManager: fileManager).isEmpty == false,
+                  hasRecoveryEvidence(for: initialError, at: storeURL) else {
                 logger.error(
-                    "Persistent SwiftData failed without store files; using transient storage. error=\(String(describing: initialError), privacy: .public)"
+                    "Persistent SwiftData unavailable; preserving cache and using transient storage. error=\(String(describing: initialError), privacy: .public)"
                 )
                 return try transientResult(
                     schema: schema,
@@ -141,6 +138,44 @@ enum SkyAwarePersistentStoreBootstrap {
 
     static func storeURL(applicationSupportDirectory: URL = .applicationSupportDirectory) -> URL {
         applicationSupportDirectory.appendingPathComponent(storeFileName, isDirectory: false)
+    }
+
+    private static func hasRecoveryEvidence(for error: any Error, at storeURL: URL) -> Bool {
+        if isIncompatibleOrCorrupt(error as NSError) { return true }
+        guard error as? SwiftDataError == .loadIssueModelContainer else { return false }
+
+        // SwiftData can hide the underlying Core Data error. Read metadata without opening
+        // a writable store to distinguish a corrupt file from unavailable storage.
+        do {
+            _ = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+                ofType: NSSQLiteStoreType,
+                at: storeURL,
+                options: [NSReadOnlyPersistentStoreOption: true]
+            )
+            return false
+        } catch {
+            return isIncompatibleOrCorrupt(error as NSError)
+        }
+    }
+
+    private static func isIncompatibleOrCorrupt(_ error: NSError) -> Bool {
+        // Prefer the underlying cause: a wrapper must not hide a permission or I/O failure.
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return isIncompatibleOrCorrupt(underlying)
+        }
+        if error.domain == NSSQLiteErrorDomain {
+            // SQLite primary result codes: SQLITE_CORRUPT and SQLITE_NOTADB.
+            return [11, 26].contains(error.code & 0xff)
+        }
+        if error.domain == NSCocoaErrorDomain,
+           let sqliteCode = error.userInfo[NSSQLiteErrorDomain] as? Int {
+            return [11, 26].contains(sqliteCode & 0xff)
+        }
+        return error.domain == NSCocoaErrorDomain && [
+            NSFileReadCorruptFileError,
+            NSPersistentStoreIncompatibleVersionHashError,
+            NSMigrationMissingSourceModelError
+        ].contains(error.code)
     }
 
     private static func transientResult(

@@ -1,5 +1,6 @@
-import Foundation
 import ArcusCore
+import CoreData
+import Foundation
 import SwiftData
 import Testing
 @testable import SkyAware
@@ -53,8 +54,8 @@ struct HomeProjectionStoreTests {
         #expect(reopened.mode == .persistent)
     }
 
-    @Test("a healthy versioned store reopens without quarantine or data loss")
-    func currentStore_reopensWithoutQuarantineOrDataLoss() throws {
+    @Test("a healthy versioned store reopens even when protected data is locked", arguments: [true, false])
+    func currentStore_reopensWithoutQuarantineOrDataLoss(isProtectedDataAvailable: Bool) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -73,11 +74,26 @@ struct HomeProjectionStoreTests {
             schema: schema,
             configuration: configuration,
             migrationPlan: SkyAwarePersistenceMigrationPlan.self,
-            isProtectedDataAvailable: true
+            isProtectedDataAvailable: isProtectedDataAvailable
         )
 
         #expect(opened.mode == .persistent)
         #expect(try ModelContext(opened.container).fetchCount(FetchDescriptor<SevereRisk>()) == 1)
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(FileManager.default.fileExists(atPath: storeURL.path + suffix))
+            // Simulator files have no Data Protection attribute; verify the actual class on device.
+#if !targetEnvironment(simulator)
+            let attributes = try FileManager.default.attributesOfItem(atPath: storeURL.path + suffix)
+            #expect(
+                attributes[.protectionKey] as? String == FileProtectionType.completeUntilFirstUserAuthentication.rawValue
+            )
+#endif
+        }
+        let context = ModelContext(opened.container)
+        context.insert(BgRunSnapshot(runId: "background-write", startedAt: .now))
+        try context.save()
+        let reopened = try ModelContainer(for: schema, configurations: configuration)
+        #expect(try ModelContext(reopened).fetchCount(FetchDescriptor<BgRunSnapshot>()) == 1)
         #expect(
             FileManager.default.fileExists(
                 atPath: SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL).path
@@ -85,8 +101,51 @@ struct HomeProjectionStoreTests {
         )
     }
 
-    @Test("locked protected data falls back to memory without mutating the persistent store")
-    func protectedDataUnavailable_preservesStoreAndUsesTransientContainer() throws {
+    @Test("an opaque SwiftData open failure does not quarantine a healthy store")
+    func opaqueOpenFailure_preservesHealthyStore() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
+        let schema = productionSchema()
+        let configuration = ModelConfiguration(
+            SkyAwarePersistentStoreBootstrap.storeName,
+            schema: schema,
+            url: storeURL
+        )
+        try createCurrentStore(schema: schema, configuration: configuration)
+
+        let result = try SkyAwarePersistentStoreBootstrap.open(
+            schema: schema,
+            configuration: configuration,
+            migrationPlan: SkyAwarePersistenceMigrationPlan.self,
+            isProtectedDataAvailable: true,
+            makeContainer: failingPersistentContainerFactory(error: SwiftDataError.loadIssueModelContainer)
+        )
+
+        #expect(result.mode == .transient)
+        let reopened = try ModelContainer(for: schema, configurations: configuration)
+        #expect(try ModelContext(reopened).fetchCount(FetchDescriptor<SevereRisk>()) == 1)
+        #expect(FileManager.default.fileExists(
+            atPath: SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL).path
+        ) == false)
+    }
+
+    @Test("access and ambiguous failures preserve the store whether locked or unlocked", arguments: [true, false], [
+        NSError(domain: NSCocoaErrorDomain, code: NSFileReadNoPermissionError),
+        NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES)),
+        NSError(domain: NSSQLiteErrorDomain, code: 5), // SQLITE_BUSY
+        NSError(domain: NSSQLiteErrorDomain, code: 10), // SQLITE_IOERR
+        NSError(domain: NSSQLiteErrorDomain, code: 13), // SQLITE_FULL
+        NSError(domain: NSSQLiteErrorDomain, code: 23), // SQLITE_AUTH
+        NSError(domain: NSCocoaErrorDomain, code: NSPersistentStoreIncompatibleVersionHashError, userInfo: [
+            NSUnderlyingErrorKey: NSError(domain: NSPOSIXErrorDomain, code: Int(EACCES))
+        ]),
+        NSError(domain: "UnknownStoreError", code: 1)
+    ])
+    func unavailableStore_preservesStoreAndUsesTransientContainer(
+        isProtectedDataAvailable: Bool,
+        openError: NSError
+    ) throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("HomeProjectionStoreTests")
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -94,7 +153,9 @@ struct HomeProjectionStoreTests {
 
         let storeURL = SkyAwarePersistentStoreBootstrap.storeURL(applicationSupportDirectory: root)
         let originalData = Data("protected-store".utf8)
-        try originalData.write(to: storeURL)
+        for suffix in ["", "-wal", "-shm"] {
+            try originalData.write(to: URL(fileURLWithPath: storeURL.path + suffix))
+        }
         let schema = productionSchema()
         let configuration = ModelConfiguration(
             SkyAwarePersistentStoreBootstrap.storeName,
@@ -107,11 +168,11 @@ struct HomeProjectionStoreTests {
             schema: schema,
             configuration: configuration,
             migrationPlan: SkyAwarePersistenceMigrationPlan.self,
-            isProtectedDataAvailable: false,
+            isProtectedDataAvailable: isProtectedDataAvailable,
             makeContainer: { schema, configuration, migrationPlan in
                 if configuration.isStoredInMemoryOnly == false {
                     persistentAttempts += 1
-                    throw PersistenceBootstrapTestError.openFailed
+                    throw openError
                 }
                 return try ModelContainer(
                     for: schema,
@@ -122,8 +183,10 @@ struct HomeProjectionStoreTests {
         )
 
         #expect(result.mode == .transient)
-        #expect(persistentAttempts == 0)
-        #expect(try Data(contentsOf: storeURL) == originalData)
+        #expect(persistentAttempts == 1)
+        for suffix in ["", "-wal", "-shm"] {
+            #expect(try Data(contentsOf: URL(fileURLWithPath: storeURL.path + suffix)) == originalData)
+        }
         #expect(
             FileManager.default.fileExists(
                 atPath: SkyAwarePersistentStoreBootstrap.quarantineRootURL(for: storeURL).path
@@ -157,9 +220,6 @@ struct HomeProjectionStoreTests {
         ) { schema, configuration, migrationPlan in
             if configuration.isStoredInMemoryOnly == false {
                 persistentAttempts += 1
-                if persistentAttempts == 1 {
-                    throw PersistenceBootstrapTestError.openFailed
-                }
             }
             return try ModelContainer(
                 for: schema,
@@ -1661,10 +1721,12 @@ struct HomeProjectionStoreTests {
         )
     }
 
-    private func failingPersistentContainerFactory() -> SkyAwarePersistentStoreBootstrap.ContainerFactory {
+    private func failingPersistentContainerFactory(
+        error: any Error = NSError(domain: NSSQLiteErrorDomain, code: 26) // SQLITE_NOTADB
+    ) -> SkyAwarePersistentStoreBootstrap.ContainerFactory {
         { schema, configuration, migrationPlan in
             guard configuration.isStoredInMemoryOnly else {
-                throw PersistenceBootstrapTestError.openFailed
+                throw error
             }
             return try ModelContainer(
                 for: schema,
@@ -1672,10 +1734,6 @@ struct HomeProjectionStoreTests {
                 configurations: configuration
             )
         }
-    }
-
-    private enum PersistenceBootstrapTestError: Error {
-        case openFailed
     }
 
     private enum QuarantineTestError: Error {

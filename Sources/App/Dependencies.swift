@@ -340,10 +340,9 @@ final class Dependencies: Sendable {
             preconditionFailure("Could not create any ModelContainer: \(error)")
         }
         let allowsBackgroundPersistence: @Sendable () async -> Bool = {
-            guard persistenceMode == .persistent else { return false }
-            return await MainActor.run {
-                UIApplication.shared.isProtectedDataAvailable
-            }
+            // A successfully opened store remains accessible after first unlock even when
+            // the device locks again. isProtectedDataAvailable describes stricter protection.
+            persistenceMode == .persistent
         }
         
         // Configure the network cache

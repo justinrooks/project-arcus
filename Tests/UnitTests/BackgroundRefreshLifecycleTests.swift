@@ -5,8 +5,8 @@ import Testing
 
 @Suite("Background refresh lifecycle", .serialized)
 struct BackgroundRefreshLifecycleTests {
-    @Test("Locked execution preserves a successor without starting persistence work")
-    func lockedExecutionSchedulesFallbackWithoutRunningLifecycle() async {
+    @Test("Unavailable storage preserves a successor without starting persistence work")
+    func unavailableStorageSchedulesFallbackWithoutRunningLifecycle() async {
         let recorder = LifecycleRecorder()
 
         await BackgroundRefreshExecution.run(
@@ -22,8 +22,8 @@ struct BackgroundRefreshLifecycleTests {
         #expect(await recorder.events() == ["fallback-complete"])
     }
 
-    @Test("Unlocked execution runs the persistent lifecycle")
-    func unlockedExecutionRunsPersistentLifecycle() async {
+    @Test("Available storage runs the persistent lifecycle")
+    func availableStorageRunsPersistentLifecycle() async {
         let recorder = LifecycleRecorder()
 
         await BackgroundRefreshExecution.run(
