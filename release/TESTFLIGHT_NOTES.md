@@ -1,5 +1,18 @@
 Unreleased
 
+SkyAware v1.1.1(142)
+
+Highlights:
+- Malformed SPC text feeds are rejected instead of updating persisted convective outlook or mesoscale state.
+- Hot-feed projections and freshness advance only when both location-scoped Arcus and mesoscale feeds are accepted; partial results preserve the prior coherent snapshot.
+- The app shows a retryable storage-unavailable state instead of silently opening with empty temporary data when durable storage cannot be opened.
+- Background refresh remains schedulable and notification opens wait until startup and Home are ready.
+
+What to test:
+- Exercise startup with durable storage unavailable, where feasible, and confirm the retry state appears and recovery succeeds after storage becomes available.
+- Exercise background refresh and remote notification flows after startup recovery; confirm scheduling remains available and notification navigation completes once Home is ready.
+- Exercise partial or unavailable hot-feed conditions, where feasible, and confirm the prior coherent alert and mesoscale snapshot is not replaced by incomplete data.
+
 SkyAware v1.1.1(137)
 
 Highlights:

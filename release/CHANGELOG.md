@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## v1.1.1(142)
+
+### Reliability
+- Malformed SPC text feeds are rejected before they can update persisted convective outlook or mesoscale state.
+<!-- evidence: 8195aa15 -->
+- Arcus alert and SPC mesoscale syncs now report accepted, fallback, rejected, failed, or cancelled outcomes so ingestion can preserve state and retry appropriately.
+<!-- evidence: bd186f9d -->
+- Hot-feed projections and freshness advance only after both location-scoped Arcus and mesoscale feeds are accepted; targeted alert refreshes do not replace coherent location-scoped data.
+<!-- evidence: b43fc969 -->
+- Startup now defers persistence-dependent services when durable storage is unavailable, offers retryable recovery, preserves background scheduling, and defers notification navigation until data is ready.
+<!-- evidence: 0d1d5a53, 31a91679 -->
+- Persistent cache files are quarantined only with confirmed corruption or incompatibility evidence, preserving ambiguous unavailable stores for later recovery.
+<!-- evidence: 1c6a4292, 0d1d5a53 -->
+
+### Tests / QA
+- Regression coverage was expanded for malformed feed rejection, typed sync outcomes, coherent hot-feed acceptance, startup recovery, background refresh, notification deferral, and UI smoke paths.
+<!-- evidence: 8195aa15, bd186f9d, b43fc969, 31a91679 -->
+
 ## v1.1.1(137)
 
 ### Reliability
