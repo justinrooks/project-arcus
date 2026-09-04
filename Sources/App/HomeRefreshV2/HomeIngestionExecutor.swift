@@ -196,6 +196,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
     }
 
+    private struct SlowFeedSyncOutcome: Sendable {
+        let map: SpcMapSyncOutcome?
+        let outlook: SpcOutlookSyncOutcome?
+    }
+
     struct Environment: Sendable {
         let logger: Logger
         let spcSync: any SpcSyncing
@@ -317,23 +322,32 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
 
         await progress.markHotAlertsCompleted()
 
-        var slowProductMapSyncOutcome: SpcMapSyncOutcome?
+        var slowFeedSyncOutcome: SlowFeedSyncOutcome?
         if plan.lanes.contains(.slowProducts) {
-            if shouldSyncSlowFeeds(plan: plan, now: now) {
+            let slowFeedAdmission = slowFeedAdmission(plan: plan, now: now)
+            if slowFeedAdmission.maps || slowFeedAdmission.outlooks {
                 await progress.report(.started(.lane(.slowProducts)))
                 environment.logger.info("Running home ingestion slow-product sync mode=\(executionMode.logName, privacy: .public)")
-                slowProductMapSyncOutcome = await syncSlowFeeds(executionMode: executionMode)
+                slowFeedSyncOutcome = await syncSlowFeeds(
+                    maps: slowFeedAdmission.maps,
+                    outlooks: slowFeedAdmission.outlooks,
+                    executionMode: executionMode
+                )
                 try await throwIfBackgroundDeadlineExceeded()
-                if slowProductMapSyncOutcome?.isFullyAccepted == true {
-                    freshness.lastSlowFeedSyncAt = now
-                } else if slowProductMapSyncOutcome != .skipped {
-                    freshness.lastSlowFeedSyncAt = nil
+                if let mapOutcome = slowFeedSyncOutcome?.map {
+                    if mapOutcome.isFullyAccepted {
+                        freshness.lastMapProductSyncAt = now
+                    } else if mapOutcome != .skipped {
+                        freshness.lastMapProductSyncAt = nil
+                    }
+                }
+                if let outlookOutcome = slowFeedSyncOutcome?.outlook {
+                    freshness.lastOutlookSyncAt = outlookOutcome == .accepted ? now : nil
                 }
                 await progress.report(.completed(.lane(.slowProducts)))
                 environment.logger.debug("Finished home ingestion slow-product sync")
             } else {
                 await progress.report(.skipped(.lane(.slowProducts)))
-                slowProductMapSyncOutcome = .skipped
                 environment.logger.debug("Skipping home ingestion slow-product sync reason=freshness")
             }
         }
@@ -355,7 +369,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             snapshot.riskComparisonLocationKey = HomeProjection.riskComparisonLocationKey(for: context)
             let slowProductDecision = slowProductPersistenceDecision(
                 plan: plan,
-                mapSyncOutcome: slowProductMapSyncOutcome
+                mapSyncOutcome: slowFeedSyncOutcome?.map
             )
             snapshot = await reconcilingRejectedRiskDomains(
                 in: snapshot,
@@ -528,21 +542,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
     }
 
-    private func shouldSyncSlowFeeds(plan: HomeIngestionPlan, now: Date) -> Bool {
-        guard plan.lanes.contains(.slowProducts) else { return false }
+    private func slowFeedAdmission(plan: HomeIngestionPlan, now: Date) -> (maps: Bool, outlooks: Bool) {
+        guard plan.lanes.contains(.slowProducts) else { return (false, false) }
 
         let forceSlowProducts = plan.forcedLanes.contains(.slowProducts)
-        let shouldSyncMaps = mapProductRefreshPolicy.shouldSync(
+        let maps = mapProductRefreshPolicy.shouldSync(
             now: now,
-            lastSync: freshness.lastSlowFeedSyncAt,
+            lastSync: freshness.lastMapProductSyncAt,
             force: forceSlowProducts
         )
-        let shouldSyncOutlooks = outlookRefreshPolicy.shouldSync(
+        let outlooks = outlookRefreshPolicy.shouldSync(
             now: now,
-            lastSync: freshness.lastSlowFeedSyncAt,
+            lastSync: freshness.lastOutlookSyncAt,
             force: forceSlowProducts
         )
-        return shouldSyncMaps || shouldSyncOutlooks
+        return (maps, outlooks)
     }
 
     private func syncHotFeeds(
@@ -582,13 +596,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
     }
 
-    private func syncSlowFeeds(executionMode: HTTPExecutionMode) async -> SpcMapSyncOutcome {
+    private func syncSlowFeeds(
+        maps: Bool,
+        outlooks: Bool,
+        executionMode: HTTPExecutionMode
+    ) async -> SlowFeedSyncOutcome {
         await HTTPExecutionMode.$current.withValue(executionMode) {
-            async let mapOutcomeTask = environment.spcSync.syncMapProductsOutcome()
-            async let outlookSync = environment.spcSync.syncConvectiveOutlooks()
-            let mapSyncOutcome = await mapOutcomeTask
-            _ = await outlookSync
-            return mapSyncOutcome
+            async let mapOutcome = maps ? environment.spcSync.syncMapProductsOutcome() : nil
+            async let outlookOutcome = outlooks ? environment.spcSync.syncConvectiveOutlooks() : nil
+            return await .init(map: mapOutcome, outlook: outlookOutcome)
         }
     }
 

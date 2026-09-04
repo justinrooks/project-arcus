@@ -2215,6 +2215,57 @@ struct HomeRefreshPipelineTests {
         #expect(slowSpcModes == [.foreground, .foreground])
     }
 
+    @Test("slow-product freshness retries only the failed feed and skips fresh feeds independently")
+    func slowProductFreshness_retriesOnlyFailedFeed() async throws {
+        let context = makeContext()
+        let spc = FakeSpcProvider(mapSyncOutcome: .accepted, outlookSyncOutcome: .failed)
+        let executor = makeSlowProductExecutor(spc: spc, context: context)
+        let forcedPlan = slowProductPlan(forced: true)
+
+        _ = try await executor.run(plan: forcedPlan)
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+
+        _ = try await executor.run(plan: slowProductPlan())
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 2)
+
+        await spc.configureOutlookSync(outcome: .accepted)
+        _ = try await executor.run(plan: slowProductPlan())
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 3)
+
+        _ = try await executor.run(plan: slowProductPlan())
+        #expect(await spc.syncMapProductsCount() == 1)
+        #expect(await spc.syncConvectiveOutlooksCount() == 3)
+    }
+
+    @Test("slow-product freshness retries failed maps while skipping a fresh outlook")
+    func slowProductFreshness_retriesFailedMaps() async throws {
+        let context = makeContext()
+        let spc = FakeSpcProvider(mapSyncOutcome: .failed, outlookSyncOutcome: .accepted)
+        let executor = makeSlowProductExecutor(spc: spc, context: context)
+
+        _ = try await executor.run(plan: slowProductPlan(forced: true))
+        _ = try await executor.run(plan: slowProductPlan())
+
+        #expect(await spc.syncMapProductsCount() == 2)
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+    }
+
+    @Test("forced slow refresh invokes both fresh feeds")
+    func forcedSlowProductRefresh_invokesBothFeeds() async throws {
+        let context = makeContext()
+        let spc = FakeSpcProvider()
+        let executor = makeSlowProductExecutor(spc: spc, context: context)
+
+        _ = try await executor.run(plan: slowProductPlan(forced: true))
+        _ = try await executor.run(plan: slowProductPlan(forced: true))
+
+        #expect(await spc.syncMapProductsCount() == 2)
+        #expect(await spc.syncConvectiveOutlooksCount() == 2)
+    }
+
     @Test("cancelling a hot sync joins both cancelled provider children")
     func hotAlertSync_cancellationJoinsBothChildren() async throws {
         let context = makeContext()
@@ -2673,6 +2724,29 @@ struct HomeRefreshPipelineTests {
             ),
             locationSession: locationSession
         )
+    }
+
+    private func makeSlowProductExecutor(spc: FakeSpcProvider, context: LocationContext) -> HomeIngestionExecutor {
+        let alerts = FakeAlertProvider()
+        return HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: nil,
+                widgetSnapshotRefresher: nil
+            )
+        )
+    }
+
+    private func slowProductPlan(forced: Bool = false) -> HomeIngestionPlan {
+        var plan = HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        plan.lanes = [.slowProducts]
+        plan.forcedLanes = forced ? [.slowProducts] : []
+        return plan
     }
 
     private func makeCoordinator(
@@ -3344,6 +3418,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let convectiveOutlookGate: AsyncGate?
     private let marksBackgroundDeadlineDuringMesoSync: Bool
     private var mapSyncOutcome: SpcMapSyncOutcome
+    private var outlookSyncOutcome: SpcOutlookSyncOutcome
     private var stormRiskValue: StormRiskLevel
     private var severeRiskValue: SevereWeatherThreat
     private var fireRiskValue: FireRiskLevel
@@ -3369,6 +3444,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         convectiveOutlookGate: AsyncGate? = nil,
         marksBackgroundDeadlineDuringMesoSync: Bool = false,
         mapSyncOutcome: SpcMapSyncOutcome = .accepted,
+        outlookSyncOutcome: SpcOutlookSyncOutcome = .accepted,
         stormRiskValue: StormRiskLevel = .enhanced,
         severeRiskValue: SevereWeatherThreat = .hail(probability: 0.30),
         fireRiskValue: FireRiskLevel = .elevated
@@ -3382,6 +3458,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.convectiveOutlookGate = convectiveOutlookGate
         self.marksBackgroundDeadlineDuringMesoSync = marksBackgroundDeadlineDuringMesoSync
         self.mapSyncOutcome = mapSyncOutcome
+        self.outlookSyncOutcome = outlookSyncOutcome
         self.stormRiskValue = stormRiskValue
         self.severeRiskValue = severeRiskValue
         self.fireRiskValue = fireRiskValue
@@ -3417,6 +3494,10 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         fireRiskValue = fireRisk
     }
 
+    func configureOutlookSync(outcome: SpcOutlookSyncOutcome) {
+        outlookSyncOutcome = outcome
+    }
+
     func syncTextProducts() async {}
 
     func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome {
@@ -3425,7 +3506,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         if let convectiveOutlookGate {
             await convectiveOutlookGate.wait()
         }
-        return Task.isCancelled ? .cancelled : .accepted
+        return Task.isCancelled ? .cancelled : outlookSyncOutcome
     }
 
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
