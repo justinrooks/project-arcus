@@ -218,8 +218,8 @@ struct SpcProviderSyncMapProductsTests {
         #expect(await client.executionModes() == [.background, .foreground])
     }
 
-    @Test("Cancelling the final owner after persistence prevents outlook publication")
-    func cancellingFinalOutlookOwner_afterPersistence_preventsPublication() async throws {
+    @Test("Cancelling the final owner after commit preserves the accepted result")
+    func cancellingFinalOutlookOwner_afterCommit_preservesAcceptedResult() async throws {
         let container = try await makeMapSyncContainer()
         let publicationGate = OutlookSyncGate()
         let provider = makeSpcProviderForMapSyncTests(
@@ -231,10 +231,91 @@ struct SpcProviderSyncMapProductsTests {
         let task = Task { await provider.syncConvectiveOutlooks() }
         await publicationGate.waitForWaiter()
         task.cancel()
-        #expect(await task.value == .cancelled)
         await publicationGate.open()
+
+        #expect(await task.value == .accepted)
+        #expect(await provider.latestConvective != nil)
+    }
+
+    @Test("Cancelling the final owner before commit preserves outlook rows")
+    func cancellingFinalOutlookOwner_beforeCommit_preservesOutlooks() async throws {
+        let container = try await makeMapSyncContainer()
+        let commitGate = OutlookSyncGate()
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+        try await repo.refreshConvectiveOutlooks(
+            using: OutlookSyncClient(mode: .accepted, description: "Accepted outlook")
+        )
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: OutlookSyncClient(mode: .accepted),
+            beforeOutlookCommit: { await commitGate.wait() }
+        )
+
+        let task = Task { await provider.syncConvectiveOutlooks() }
+        await commitGate.waitForWaiter()
+        task.cancel()
+        #expect(await task.value == .cancelled)
+        await commitGate.open()
         await Task.yield()
 
+        let current = try #require(await repo.current())
+        #expect(current.fullText == "Accepted outlook")
+        #expect(await provider.latestConvective == nil)
+    }
+
+    @Test("Fallback outlook responses preserve accepted rows and do not publish")
+    func fallbackOutlookSync_preservesAcceptedRows() async throws {
+        let container = try await makeMapSyncContainer()
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+        try await repo.refreshConvectiveOutlooks(
+            using: OutlookSyncClient(mode: .accepted, description: "Accepted outlook")
+        )
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: OutlookSyncClient(mode: .fallback, description: "Fallback outlook")
+        )
+
+        #expect(await provider.syncConvectiveOutlooks() == .fallback)
+        let current = try #require(await repo.current())
+        #expect(current.fullText == "Accepted outlook")
+        #expect(await provider.latestConvective == nil)
+    }
+
+    @Test("Local-cache and failed outlook syncs preserve accepted rows")
+    func localCacheAndFailedOutlookSyncs_preserveAcceptedRows() async throws {
+        for mode in [OutlookSyncClient.Mode.localCache, .failed] {
+            let container = try await makeMapSyncContainer()
+            let repo = ConvectiveOutlookRepo(modelContainer: container)
+            try await repo.refreshConvectiveOutlooks(
+                using: OutlookSyncClient(mode: .accepted, description: "Accepted outlook")
+            )
+            let provider = makeSpcProviderForMapSyncTests(
+                container: container,
+                client: OutlookSyncClient(mode: mode, description: "Non-authoritative outlook")
+            )
+
+            let expected: SpcOutlookSyncOutcome = mode == .localCache ? .fallback : .failed
+            #expect(await provider.syncConvectiveOutlooks() == expected)
+            let current = try #require(await repo.current())
+            #expect(current.fullText == "Accepted outlook")
+            #expect(await provider.latestConvective == nil)
+        }
+    }
+
+    @Test("Publication lookup failure preserves the accepted sync outcome")
+    func publicationLookupFailure_preservesAcceptedOutcome() async throws {
+        enum PublicationError: Error { case unavailable }
+
+        let container = try await makeMapSyncContainer()
+        let provider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: OutlookSyncClient(mode: .accepted),
+            outlookPublicationDateProvider: { throw PublicationError.unavailable }
+        )
+
+        #expect(await provider.syncConvectiveOutlooks() == .accepted)
+        let current = try await ConvectiveOutlookRepo(modelContainer: container).current()
+        #expect(current != nil)
         #expect(await provider.latestConvective == nil)
     }
 
@@ -1200,15 +1281,18 @@ private actor OutlookSyncClient: SpcClient {
     private var completedRssResponses = 0
     private var recordedExecutionModes: [HTTPExecutionMode] = []
     private let ignoresCancellationAfterGate: Bool
+    private let description: String
 
     init(
         mode: Mode,
         responseGate: OutlookSyncGate? = nil,
-        ignoresCancellationAfterGate: Bool = false
+        ignoresCancellationAfterGate: Bool = false,
+        description: String = "Valid outlook"
     ) {
         self.mode = mode
         self.responseGate = responseGate
         self.ignoresCancellationAfterGate = ignoresCancellationAfterGate
+        self.description = description
     }
 
     func fetchRssData(for product: RssProduct) async throws -> Data {
@@ -1262,7 +1346,7 @@ private actor OutlookSyncClient: SpcClient {
                 <title>Day 1 Convective Outlook</title>
                 <link>https://www.spc.noaa.gov/products/outlook/day1otlk.html</link>
                 <pubDate>Wed, 12 Nov 2025 12:00:00 GMT</pubDate>
-                <description>Valid outlook</description>
+                <description>\(description)</description>
                 </item></channel></rss>
                 """.utf8),
                 source: source
@@ -1344,7 +1428,9 @@ private func makeSpcProviderForMapSyncTests(
     container: ModelContainer,
     client: any SpcClient,
     persistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none,
-    beforeOutlookPublication: @escaping @Sendable () async -> Void = {}
+    beforeOutlookCommit: @escaping @Sendable () async -> Void = {},
+    beforeOutlookPublication: @escaping @Sendable () async -> Void = {},
+    outlookPublicationDateProvider: (@Sendable () async throws -> Date?)? = nil
 ) -> SpcProvider {
     let outlookRepo = ConvectiveOutlookRepo(modelContainer: container)
     let mesoRepo = MesoRepo(modelContainer: container)
@@ -1364,7 +1450,9 @@ private func makeSpcProviderForMapSyncTests(
         spcMapBatchPersistenceRepo: spcMapBatchPersistenceRepo,
         mapBatchPersistenceFailureInjection: persistenceFailureInjection,
         client: client,
-        beforeOutlookPublication: beforeOutlookPublication
+        beforeOutlookCommit: beforeOutlookCommit,
+        beforeOutlookPublication: beforeOutlookPublication,
+        outlookPublicationDateProvider: outlookPublicationDateProvider
     )
 }
 

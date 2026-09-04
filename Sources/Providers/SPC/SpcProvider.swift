@@ -25,7 +25,9 @@ actor SpcProvider {
     let spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo
     let mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection
     let client: SpcClient
+    let beforeOutlookCommit: @Sendable () async -> Void
     let beforeOutlookPublication: @Sendable () async -> Void
+    let outlookPublicationDateProvider: (@Sendable () async throws -> Date?)?
     
     // Convective freshness Stream
     var latestConvective: Date?
@@ -34,6 +36,7 @@ actor SpcProvider {
     var mesoSyncTask: Task<SpcMesoSyncOutcome, Never>?
     var outlookSyncTask: Task<SpcOutlookSyncOutcome, Never>?
     var outlookSyncRunID: UUID?
+    var outlookSyncCommitRunID: UUID?
     var outlookSyncWaiters: [UUID: OutlookSyncWaiter] = [:]
     var pendingOutlookSyncWaiters: [UUID: OutlookSyncWaiter] = [:]
     var pendingOutlookSyncWaiterOrder: [UUID] = []
@@ -54,7 +57,9 @@ actor SpcProvider {
          spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo,
          mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none,
          client: SpcClient,
-         beforeOutlookPublication: @escaping @Sendable () async -> Void = {}) {
+         beforeOutlookCommit: @escaping @Sendable () async -> Void = {},
+         beforeOutlookPublication: @escaping @Sendable () async -> Void = {},
+         outlookPublicationDateProvider: (@Sendable () async throws -> Date?)? = nil) {
         signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
         self.mesoRepo = mesoRepo
@@ -65,7 +70,9 @@ actor SpcProvider {
         self.spcMapBatchPersistenceRepo = spcMapBatchPersistenceRepo
         self.mapBatchPersistenceFailureInjection = mapBatchPersistenceFailureInjection
         self.client = client
+        self.beforeOutlookCommit = beforeOutlookCommit
         self.beforeOutlookPublication = beforeOutlookPublication
+        self.outlookPublicationDateProvider = outlookPublicationDateProvider
     }
 
     func convectiveIssueUpdates() async -> AsyncStream<Date> {

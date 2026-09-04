@@ -496,3 +496,148 @@
 - Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories, and external services.
 - Skipped evidence: no sibling repository, external service, deployed store, physical device, or runtime behavior
   was inspected. Unrelated modified planning files in the active checkout were left untouched.
+
+
+## 2026-09-03T16:09:43+00:00
+- Date: 2026-09-03T16:09:43+00:00
+- Repository scanned: project-arcus
+- Default branch: main; local HEAD and origin/main both `f10c62b39a564b964f8abb64ba49620491c31699`.
+- Workflow reviewed: Weekly bug scan (audit and issue triage only).
+- Commit window: `18421274e7d58f700b466d69cc56c029524ce5a5..f10c62b39a564b964f8abb64ba49620491c31699`;
+  previous ledger marker 2026-08-27T10:08:42-06:00; 22 commits dated 2026-08-27T11:38:58-06:00 through
+  2026-09-02T10:07:38-06:00. Start commit excluded, end included. No fallback scan required.
+- Files inspected (targeted code, diff, or test excerpts; repository-relative):
+  - `Sources/App/AppStartup.swift`
+  - `Sources/App/Dependencies.swift`
+  - `Sources/App/SkyAwarePersistentStoreBootstrap.swift`
+  - `Sources/App/SkyAwareApp.swift`
+  - `Sources/App/SkyAwareAppDelegate.swift`
+  - `Sources/App/RemoteHotAlertHandler.swift`
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`
+  - `Sources/App/HomeRefreshV2/HomeSnapshotStore.swift`
+  - `Sources/App/HomeRefreshPipeline.swift`
+  - `Sources/App/HomeView+PresentationState.swift`
+  - `Sources/Clients/ArcusClient.swift`
+  - `Sources/Clients/SpcClient.swift`
+  - `Sources/Providers/ArcusAlertProvider.swift`
+  - `Sources/Repos/AlertRepo.swift`
+  - `Sources/Repos/MesoRepo.swift`
+  - `Sources/Repos/ConvectiveOutlookRepo.swift`
+  - `Sources/Repos/HomeProjectionStore.swift`
+  - `Sources/Infrastructure/Parsing/Regex/MDParser.swift`
+  - `Sources/Models/Home/HomeProjection.swift`
+  - `Sources/Models/Convective/ConvectiveOutlook.swift`
+  - `Sources/Features/Map/MapFeatureModel.swift`
+  - `Sources/Features/Summary/SummaryView.swift`
+  - `Sources/Features/StormSetup/StormSetupPresentation.swift`
+  - `Tests/UnitTests/HomeProjectionStoreTests.swift`
+  - `Tests/UnitTests/HomeRefreshPipelineTests.swift`
+  - `Tests/UnitTests/StormSetupIngestionTests.swift`
+  - Supporting evidence: `docs/plans/ingestion-cache-acceptance-progress.md`, existing audit entries,
+    applicable AGENTS/lessons, `tools/ci/run_test_lane.sh`, and GitHub issues/merged PRs.
+- High-risk areas inspected: versioned cache cutover and recovery; deferred startup/background admission;
+  SPC text validation; typed hot-feed acceptance, projection freshness and widget coherence; AQI persistence
+  and location-scoped presentation; map cache retention; Storm Setup summary-state selection.
+- Findings: NEW 0 (HIGH confidence 0 / MEDIUM 0 / LOW 0); RECURRING 0; CHANGED 0;
+  two verified mechanisms classified DUPLICATE of existing implementation issues:
+  - Finding ID: BUG-ARCUS-AQI-UNPERSISTED-PUBLICATION
+    Fingerprint: weekly-bug-scan|project-arcus|HomeIngestionExecutor.refreshAirQuality|publish-replacement-after-save-failure
+    Repository: project-arcus
+    Audit type: Weekly Bug Scan
+    Title: AQI save failure still replaces durable Today content with an unpersisted response
+    Status: DUPLICATE
+    Triage: DUPLICATE; bounded existing implementation issue owns remediation.
+    Severity: MEDIUM
+    Confidence: HIGH
+    First observed: 2026-09-03 (this audit; existing issue predates this observation)
+    Last verified: 2026-09-03 at `f10c62b3`
+    Affected files and symbols: `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift:644`
+      (`refreshAirQuality`); `Sources/App/HomeRefreshPipeline.swift:607` (`applyEnrichment`).
+    Failure mode: a successful AQI fetch followed by a thrown projection save returns `.replace(response)`;
+      the pipeline accepts that response, although the durable projection retains the previous observation.
+    Evidence: `b5f13c23` introduced persistence with a live-response fallback; current executor line 683 retains
+      the fallback. `Tests/UnitTests/StormSetupIngestionTests.swift:307`
+      (`airQualityPersistenceFailurePublishesLiveResponse`) explicitly asserts this behavior with a throwing store.
+      The current Home presentation prefers matching pipeline AQI over the selected projection.
+    Blast radius: foreground AQI refreshes when persistence fails; visible AQI can disagree with the durable cache
+      and revert on relaunch. No cross-repository contract or schema change is necessary.
+    Minimal fix strategy: preserve prior projected AQI when persistence fails, following existing issue #431.
+    Required validation: change the throwing-store regression expectation to preservation; cover prior AQI present
+      and absent, successful save, and subsequent recovery, then run focused ingestion/presentation tests and build.
+    Related GitHub issue: [#431](https://github.com/justinrooks/project-arcus/issues/431), confirmed open.
+  - Finding ID: BUG-ARCUS-HOME-UNACKNOWLEDGED-CORE-PUBLICATION
+    Fingerprint: weekly-bug-scan|project-arcus|HomeIngestionExecutor.persistProjection|publish-core-without-save-acknowledgement
+    Repository: project-arcus
+    Audit type: Weekly Bug Scan
+    Title: Home publishes candidate core content after projection persistence fails
+    Status: DUPLICATE
+    Triage: DUPLICATE; existing sequenced issues own acknowledgement and publication.
+    Severity: MEDIUM
+    Confidence: HIGH
+    First observed: 2026-09-03 (this audit; existing issues predate this observation)
+    Last verified: 2026-09-03 at `f10c62b3`
+    Affected files and symbols: `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift:700`
+      (`persistProjection`, caller in `run`); `Sources/App/HomeRefreshPipeline.swift:557` (`applyCore`).
+    Failure mode: `persistProjection` catches save errors and returns only an optional risk change; `run` still
+      publishes the candidate core snapshot. `applyCore` replaces risk/alert state and successful weather without
+      checking persistence acknowledgement. Today can diverge from its durable projection.
+    Evidence: current executor lines 773-779 swallow persistence failure; lines 380-385 publish the core snapshot
+      regardless. The acceptance changes in `b43fc969` protect projected hot replacement but do not add a durable
+      publication acknowledgement. Current tests around lines 2002-2154 verify projection and widget preservation,
+      not a failing-store-to-visible-Home preservation boundary.
+    Blast radius: foreground core publication on projection save failure; accepted cache can reappear on restart.
+      The remediation spans the existing executor/pipeline seam and does not require a new persistence schema.
+    Minimal fix strategy: complete explicit acknowledgement in #435, then gate visible core replacement in #432.
+    Required validation: failing-store tests with seeded durable content, absence of prior content, successful
+      retry, and foreground/background publication; verify the visible pipeline as well as stored rows.
+    Related GitHub issue: [#432](https://github.com/justinrooks/project-arcus/issues/432), confirmed open;
+      prerequisite [#435](https://github.com/justinrooks/project-arcus/issues/435).
+- Watchlist: None newly retained. Unproven concerns were not promoted.
+- Resolved findings:
+  - Finding ID: BUG-ARCUS-SEVERE-RISK-SCHEMA-MIGRATION
+    Fingerprint: weekly-bug-scan|project-arcus|SevereRisk|required-primitive-fields-without-store-migration
+    Repository: project-arcus
+    Audit type: Weekly Bug Scan
+    Title: SevereRisk schema change can prevent upgraded installs from launching
+    Status: RESOLVED
+    Triage: ALREADY FIXED
+    Severity: HIGH (historical)
+    Confidence: HIGH (current execution-path verification)
+    First observed: 2026-08-27
+    Last verified: 2026-09-03 at `f10c62b3`
+    Affected files and symbols: `Sources/App/Dependencies.swift` (`live`),
+      `Sources/App/SkyAwarePersistentStoreBootstrap.swift` (`storeURL`, `open`), `Sources/App/AppStartup.swift` (`retry`).
+    Failure mode: the old path attempted to open incompatible legacy rows and terminated on container failure.
+      Production now selects a separate `SkyAware_Data_v3.store`; legacy rows are not opened by that path.
+    Evidence: `0a1abc78` / PR #420 introduced the versioned cache boundary; current `Dependencies.live` uses it.
+      `135d10d4` / PR #467 makes construction throwing and retryable through AppStartup instead of fatal.
+      `HomeProjectionStoreTests.productionStoreFixture_opensIsolatedVersionedStore` verifies separation from
+      the frozen build-113 store; healthy-current-store coverage verifies reopen with SevereRisk rows.
+    Blast radius: legacy cache contents are intentionally not migrated; the former launch-termination mechanism
+      is removed. Current runtime/device validation was unavailable in this audit.
+    Minimal fix strategy: no further fix for this mechanism.
+    Required validation: retain cutover/reopen and recoverable-startup tests; real-device upgrade/protection
+      behavior remains separate evidence from static inspection and simulator tests.
+    Related GitHub issue: none created by this audit; remediation PRs
+      [#420](https://github.com/justinrooks/project-arcus/pull/420) and
+      [#467](https://github.com/justinrooks/project-arcus/pull/467).
+- Top finding: existing core publication acknowledgement gap, BUG-ARCUS-HOME-UNACKNOWLEDGED-CORE-PUBLICATION.
+- Best next fix: follow #435 then #432; keep #431 in its existing sequence. No duplicate issue or implementation
+  prompt is needed. Each issue remains a separate review unit.
+- Implementation recommended: Yes, through the existing issues; no implementation performed by this automation.
+- GitHub issues created: None; both verified unresolved mechanisms already have equivalent issues.
+- GitHub issues updated: None; existing issue bodies already describe the evidence, and this run adds no material
+  evidence requiring a write. The prompt's prohibition on editing existing issues was respected.
+- Existing issues referenced: #431, #432, #435; #425 supplies the existing sequencing context.
+- Deduplication: connector searches covered both proposed Finding IDs, AQI/fallback and projection-acknowledgement
+  mechanisms, open and closed issues, and merged PRs. No independent regression beyond existing scope was confirmed.
+- Validation: attempted `tools/ci/run_test_lane.sh unit` with selectors for HomeProjectionStoreTests,
+  HomeRefreshPipelineTests, StormSetupIngestionTests, ConvectiveOutlookRepoTests, and LaunchAndOnboardingStateTests.
+  Xcode exited 74 before tests started: CoreSimulator connection and Xcode/SwiftPM cache access were denied by the
+  sandbox. The result verifier could not read a finalized bundle. Executed: 0; passed/failed/skipped and expected
+  discovered counts unavailable; this is not passing test evidence. Log: `/private/tmp/weekly-bug-scan-20260903-tests.log`.
+  Requested bundle: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.fz5zyn/unit.xcresult`.
+- Out-of-scope repositories: arcus-signal, ArcusCore, all sibling repositories and external services.
+- Skipped evidence: no sibling source, live weather/API calls, deployed stores, physical-device execution, UI render,
+  or performance measurement. Commit inventory covers the full window; code inspection prioritized the listed
+  high-risk paths rather than every changed line. Release/planning-only changes were inventoried, not treated as defects.

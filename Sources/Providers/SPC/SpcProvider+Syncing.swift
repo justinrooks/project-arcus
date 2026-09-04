@@ -124,7 +124,7 @@ extension SpcProvider: SpcSyncing {
         let runID = UUID()
         let task = Task { [self] () -> SpcOutlookSyncOutcome in
             await HTTPExecutionMode.$current.withValue(executionMode) {
-                await runConvectiveOutlookSync()
+                await runConvectiveOutlookSync(runID: runID)
             }
         }
         outlookSyncTask = task
@@ -146,15 +146,22 @@ extension SpcProvider: SpcSyncing {
             return
         }
 
-        guard let waiter = outlookSyncWaiters.removeValue(forKey: waiterID) else { return }
+        guard let waiter = outlookSyncWaiters[waiterID] else { return }
+        let isFinalWaiter = outlookSyncWaiters.count == 1
+        if isFinalWaiter, outlookSyncCommitRunID == outlookSyncRunID {
+            logger.debug("SPC convective outlook sync cancellation arrived after commit reservation")
+            return
+        }
+
+        if isFinalWaiter {
+            outlookSyncTask?.cancel()
+        }
+        outlookSyncWaiters.removeValue(forKey: waiterID)
         waiter.continuation.resume(returning: .cancelled)
         #if DEBUG
         notifyOutlookSyncWaiterCountObservers()
         #endif
 
-        if outlookSyncWaiters.isEmpty {
-            outlookSyncTask?.cancel()
-        }
     }
 
     private func finishOutlookSync(_ outcome: SpcOutlookSyncOutcome, runID: UUID) {
@@ -164,6 +171,7 @@ extension SpcProvider: SpcSyncing {
         outlookSyncWaiters.removeAll()
         outlookSyncTask = nil
         outlookSyncRunID = nil
+        outlookSyncCommitRunID = nil
         waiters.forEach { $0.continuation.resume(returning: outcome) }
         #if DEBUG
         notifyOutlookSyncWaiterCountObservers()
@@ -227,27 +235,45 @@ extension SpcProvider: SpcSyncing {
     }
     #endif
 
-    private func runConvectiveOutlookSync() async -> SpcOutlookSyncOutcome {
+    private func runConvectiveOutlookSync(runID: UUID) async -> SpcOutlookSyncOutcome {
         let runInterval = signposter.beginInterval("Spc Sync Convective Outlooks")
         defer {
             signposter.endInterval("Background Run", runInterval)
         }
 
         do {
-            let source = try await outlookRepo.refreshConvectiveOutlooks(using: client)
+            await beforeOutlookCommit()
+            let source = try await outlookRepo.refreshConvectiveOutlooks(using: client) { [self] in
+                await reserveOutlookSyncCommit(for: runID)
+            }
             try Task.checkCancellation()
             let outcome = Self.outlookOutcome(for: source)
-            
-            // After refresh, fetch the latest and publish (keeps it simple and reactive)
-            if let d = try await latestIssue(for: .convective) {
-                await beforeOutlookPublication()
-                try Task.checkCancellation()
-                logger.info(
-                    "SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) latestPersistedPublished=\(d, privacy: .public)"
-                )
-                publishConvectiveIssue(d)
-            } else {
-                logger.info("SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) latestPersistedPublished=none")
+            guard outcome == .accepted else {
+                logger.info("SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) persistedPublished=false")
+                return outcome
+            }
+
+            do {
+                let publicationDate: Date?
+                if let outlookPublicationDateProvider {
+                    publicationDate = try await outlookPublicationDateProvider()
+                } else {
+                    publicationDate = try await latestIssue(for: .convective)
+                }
+                if let publicationDate {
+                    await beforeOutlookPublication()
+                    try Task.checkCancellation()
+                    logger.info(
+                        "SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) latestPersistedPublished=\(publicationDate, privacy: .public)"
+                    )
+                    publishConvectiveIssue(publicationDate)
+                } else {
+                    logger.info("SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) latestPersistedPublished=none")
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                logger.error("Convective outlook sync persisted but publication lookup failed: \(error.localizedDescription, privacy: .public)")
             }
             return outcome
         } catch is CancellationError {
@@ -260,6 +286,12 @@ extension SpcProvider: SpcSyncing {
             logger.error("Error syncing convective outlook text products: \(error.localizedDescription, privacy: .public)")
             return .failed
         }
+    }
+
+    private func reserveOutlookSyncCommit(for runID: UUID) -> Bool {
+        guard outlookSyncRunID == runID, outlookSyncWaiters.isEmpty == false else { return false }
+        outlookSyncCommitRunID = runID
+        return true
     }
 
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {

@@ -15,7 +15,10 @@ actor ConvectiveOutlookRepo {
     private let parser: RSSFeedParser = RSSFeedParser()
     private let outlookParser = OutlookParser()
     
-    func refreshConvectiveOutlooks(using client: any SpcClient) async throws -> HTTPResponse.Source {
+    func refreshConvectiveOutlooks(
+        using client: any SpcClient,
+        shouldCommit: @Sendable () async -> Bool = { true }
+    ) async throws -> HTTPResponse.Source {
         let response = try await client.fetchRssResponse(for: .convective)
         try Task.checkCancellation()
         guard let data = response.data else { throw SpcError.missingData }
@@ -42,7 +45,12 @@ actor ConvectiveOutlookRepo {
             throw SpcError.parsingError
         }
         
-        try Task.checkCancellation()
+        guard response.source == .live || response.source == .cacheRevalidated304 else {
+            logger.notice("Ignored non-authoritative convective outlook response source=\(String(describing: response.source), privacy: .public)")
+            return response.source
+        }
+
+        guard await shouldCommit() else { throw CancellationError() }
         try upsert(outlooks)
         logger.debug("Persisted convective outlook refresh count=\(outlooks.count, privacy: .public)")
         return response.source
