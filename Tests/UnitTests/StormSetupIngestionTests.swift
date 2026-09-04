@@ -1483,6 +1483,30 @@ struct StormSetupIngestionTests {
         #expect(persisted.fireRisk == .critical)
     }
 
+    @Test("widget refresh uses the acknowledged projection without rereading the store")
+    func widgetRefresh_usesAcknowledgedProjection() async throws {
+        let context = makeContext()
+        let projectionStore = AtomicHomeProjectionStore()
+        let widgetRefresher = RecordingWidgetSnapshotRefresher()
+        let harness = try makeHarness(
+            context: context,
+            projectionStore: projectionStore,
+            widgetSnapshotRefresher: widgetRefresher,
+            activeAlerts: [Watch.sampleWatchRows[1]],
+            activeMesos: [MD.sampleDiscussionDTOs[1]]
+        )
+        await projectionStore.failProjectionReads()
+
+        _ = try await harness.executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+        )
+
+        let input = try #require(widgetRefresher.lastInput())
+        #expect(input.alerts == [Watch.sampleWatchRows[1]])
+        #expect(input.mesos.count == 1)
+        #expect(input.snapshotTimestamp != nil)
+    }
+
     @Test("first baseline and unchanged profile expose no delta")
     func firstBaselineAndUnchangedProfileExposeNoDelta() async throws {
         let context = makeContext()
@@ -1696,22 +1720,23 @@ struct StormSetupIngestionTests {
         #expect(initialState.lastHotAlertsLoadAt == initialLoadedAt)
 
         let loadedAt = Date(timeIntervalSince1970: 200)
-        let change = try #require(await store.commitCore(
+        let change = try await store.commitCore(
             .init(
                 slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated),
                 hotAlerts: (alerts: [], mesos: [])
             ),
             for: context,
             loadedAt: loadedAt
-        ))
+        )
+        let riskProfileChange = try #require(change.riskProfileChange)
         let committed = try #require(await store.projection(for: context))
 
-        #expect(change.previous == RiskProfile(
+        #expect(riskProfileChange.previous == RiskProfile(
             stormRisk: .slight,
             severeRisk: .wind(probability: 0.15),
             fireRisk: .critical
         ))
-        #expect(change.current == RiskProfile(
+        #expect(riskProfileChange.current == RiskProfile(
             stormRisk: .enhanced,
             severeRisk: .tornado(probability: 0.30),
             fireRisk: .elevated
@@ -2178,6 +2203,23 @@ private struct ThrowingWidgetSnapshotRefresher: WidgetSnapshotRefreshing {
     }
 }
 
+private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, WidgetSnapshotRefreshing {
+    private let lock = NSLock()
+    private var input: WidgetSnapshotRefreshInput?
+
+    func refresh(scope _: WidgetSnapshotChangeScope, input: WidgetSnapshotRefreshInput) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        self.input = input
+    }
+
+    func lastInput() -> WidgetSnapshotRefreshInput? {
+        lock.lock()
+        defer { lock.unlock() }
+        return input
+    }
+}
+
 private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
     func projection(for context: LocationContext) async throws -> HomeProjectionRecord? {
         nil
@@ -2232,7 +2274,7 @@ private actor ThrowingHomeProjectionStore: HomeProjectionPersisting {
         _ commit: HomeProjectionCoreCommit,
         for context: LocationContext,
         loadedAt: Date
-    ) async throws -> RiskProfileChange? {
+    ) async throws -> HomeProjectionCommitAcknowledgement {
         throw TestError.failed
     }
 }
@@ -2259,8 +2301,16 @@ private actor AtomicHomeProjectionStore: HomeProjectionPersisting {
 
     private var states: [String: State] = [:]
     private var failurePoint: FailurePoint?
+    private var projectionReadsFail = false
+
+    func failProjectionReads() {
+        projectionReadsFail = true
+    }
 
     func projection(for context: LocationContext) async throws -> HomeProjectionRecord? {
+        if projectionReadsFail {
+            throw TestError.failed
+        }
         guard let state = states[HomeProjection.projectionKey(for: context)] else {
             return nil
         }
@@ -2316,7 +2366,7 @@ private actor AtomicHomeProjectionStore: HomeProjectionPersisting {
         _ commit: HomeProjectionCoreCommit,
         for context: LocationContext,
         loadedAt: Date
-    ) async throws -> RiskProfileChange? {
+    ) async throws -> HomeProjectionCommitAcknowledgement {
         let projectionKey = HomeProjection.projectionKey(for: context)
         let previous = states[projectionKey] ?? State()
         var candidate = previous
@@ -2342,21 +2392,24 @@ private actor AtomicHomeProjectionStore: HomeProjectionPersisting {
 
         candidate.updatedAt = loadedAt
         states[projectionKey] = candidate
-        return RiskProfileChange(
-            previous: RiskProfile(
-                stormRisk: previous.stormRisk,
-                severeRisk: previous.severeRisk,
-                fireRisk: previous.fireRisk
-            ),
-            current: commit.slowProducts.flatMap {
-                RiskProfile(
-                    stormRisk: $0.stormRisk,
-                    severeRisk: $0.severeRisk,
-                    fireRisk: $0.fireRisk
-                )
-            },
-            projectionKey: projectionKey,
-            locationSummary: context.snapshot.placemarkSummary
+        return .init(
+            record: record(for: candidate, context: context),
+            riskProfileChange: .init(
+                previous: RiskProfile(
+                    stormRisk: previous.stormRisk,
+                    severeRisk: previous.severeRisk,
+                    fireRisk: previous.fireRisk
+                ),
+                current: commit.slowProducts.flatMap {
+                    RiskProfile(
+                        stormRisk: $0.stormRisk,
+                        severeRisk: $0.severeRisk,
+                        fireRisk: $0.fireRisk
+                    )
+                },
+                projectionKey: projectionKey,
+                locationSummary: context.snapshot.placemarkSummary
+            )
         )
     }
 

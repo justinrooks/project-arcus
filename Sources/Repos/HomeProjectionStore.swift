@@ -157,6 +157,11 @@ struct RiskProfileChange: Sendable, Equatable {
     }
 }
 
+struct HomeProjectionCommitAcknowledgement: Sendable, Equatable {
+    let record: HomeProjectionRecord
+    let riskProfileChange: RiskProfileChange?
+}
+
 struct HomeProjectionCoreCommit: Sendable {
     let weather: SummaryWeather??
     let slowProducts: (stormRisk: StormRiskLevel?, severeRisk: SevereWeatherThreat?, fireRisk: FireRiskLevel?)?
@@ -227,7 +232,7 @@ protocol HomeProjectionPersisting: Sendable {
         _ commit: HomeProjectionCoreCommit,
         for context: LocationContext,
         loadedAt: Date
-    ) async throws -> RiskProfileChange?
+    ) async throws -> HomeProjectionCommitAcknowledgement
 }
 
 extension HomeProjectionPersisting {
@@ -355,7 +360,7 @@ actor HomeProjectionStore {
             ),
             for: context,
             loadedAt: loadedAt
-        )
+        ).riskProfileChange
     }
 
     func updateHotAlerts(
@@ -377,7 +382,7 @@ actor HomeProjectionStore {
         _ commit: HomeProjectionCoreCommit,
         for context: LocationContext,
         loadedAt: Date = .now
-    ) throws -> RiskProfileChange? {
+    ) throws -> HomeProjectionCommitAcknowledgement {
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
         let previousProfile = RiskProfile(
             stormRisk: projection.stormRisk,
@@ -426,19 +431,22 @@ actor HomeProjectionStore {
 
         projection.updatedAt = loadedAt
         try saveProjection(named: "Projection Core Save")
-        return RiskProfileChange(
-            previous: previousProfile,
-            current: commit.slowProducts.flatMap { _ in
-                RiskProfile(
-                    stormRisk: projection.stormRisk,
-                    severeRisk: projection.severeRisk,
-                    fireRisk: projection.fireRisk
-                )
-            },
-            projectionKey: projection.projectionKey,
-            comparisonLocationKey: HomeProjection.riskComparisonLocationKey(for: context),
-            locationSummary: projection.placemarkSummary,
-            eligibleDimensions: eligibleDimensions
+        return .init(
+            record: projection.record,
+            riskProfileChange: .init(
+                previous: previousProfile,
+                current: commit.slowProducts.flatMap { _ in
+                    RiskProfile(
+                        stormRisk: projection.stormRisk,
+                        severeRisk: projection.severeRisk,
+                        fireRisk: projection.fireRisk
+                    )
+                },
+                projectionKey: projection.projectionKey,
+                comparisonLocationKey: HomeProjection.riskComparisonLocationKey(for: context),
+                locationSummary: projection.placemarkSummary,
+                eligibleDimensions: eligibleDimensions
+            )
         )
     }
 

@@ -64,7 +64,7 @@ struct HomeProjectionStoreScalingMeasurementTests {
             for: fixture.target,
             loadedAt: .init(timeIntervalSince1970: 20_010)
         ))
-        #expect(accepted.changedDimensions == [.storm, .severe])
+        #expect(try #require(accepted.riskProfileChange).changedDimensions == [.storm, .severe])
 
         projections = try fetchProjections(from: fixture.container)
         let current = try #require(projections.first(where: { $0.projectionKey == fixture.targetKey }))

@@ -68,7 +68,8 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Manual outlook refresh now queries and reports success only after an accepted sync; fallback, rejection, failure, and cancellation retain the visible accepted cache and report failure without triggering unrelated work.
 
 ### [#435](https://github.com/justinrooks/project-arcus/issues/435) — Return explicit projection commit acknowledgement
-- Status: Pending
+- Status: Implemented — awaiting human review
+- Handoff: Core projection commits now acknowledge the exact saved record and derived risk change. The executor consumes that acknowledgement for widget publication while projection failures remain isolated from canonical ingestion state.
 
 ### [#432](https://github.com/justinrooks/project-arcus/issues/432) — Gate core UI replacement on projection acknowledgement
 - Status: Pending
