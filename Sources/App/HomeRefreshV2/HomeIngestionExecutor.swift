@@ -585,7 +585,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     private func syncSlowFeeds(executionMode: HTTPExecutionMode) async -> SpcMapSyncOutcome {
         await HTTPExecutionMode.$current.withValue(executionMode) {
             async let mapOutcomeTask = environment.spcSync.syncMapProductsOutcome()
-            async let outlookSync: Void = environment.spcSync.syncConvectiveOutlooks()
+            async let outlookSync = environment.spcSync.syncConvectiveOutlooks()
             let mapSyncOutcome = await mapOutcomeTask
             _ = await outlookSync
             return mapSyncOutcome

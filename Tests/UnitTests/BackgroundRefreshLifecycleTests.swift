@@ -230,12 +230,9 @@ struct BackgroundRefreshLifecycleTests {
 
         _ = await lifecycle.run()
 
-        let snapshot = try #require(await waitForBackgroundRun(id: "scheduled-run", in: container) {
-            $0.fallbackSchedulingOutcome == .submissionFailed
-                && $0.authoritativeSchedulingOutcome == .restoredPrevious
-        })
-        #expect(snapshot.fallbackSchedulingOutcome == .submissionFailed)
-        #expect(snapshot.authoritativeSchedulingOutcome == .restoredPrevious)
+        let outcomes = try #require(await store.schedulingOutcomes(for: "scheduled-run"))
+        #expect(outcomes.fallback == .submissionFailed)
+        #expect(outcomes.authoritative == .restoredPrevious)
     }
 
     @Test("Fallback scheduling is durable before blocked orchestration finishes")

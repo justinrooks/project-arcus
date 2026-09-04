@@ -1480,9 +1480,10 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         return .accepted
     }
     func syncTextProducts() async {}
-    func syncConvectiveOutlooks() async {
+    func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome {
         syncConvectiveOutlooksCalls += 1
         syncExecutionModeValues.append(HTTPExecutionMode.current)
+        return .accepted
     }
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
         syncExecutionModeValues.append(HTTPExecutionMode.current)

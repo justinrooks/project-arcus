@@ -23,6 +23,11 @@ struct BgRunFinalization: Sendable {
     let ingestionOutcome: BgPhaseOutcome?
 }
 
+struct BgSchedulingOutcomes: Sendable, Equatable {
+    let fallback: BgSchedulingOutcome?
+    let authoritative: BgSchedulingOutcome?
+}
+
 @ModelActor
 actor BgHealthStore {
     private let logger = Logger.backgroundOrchestrator
@@ -107,6 +112,14 @@ actor BgHealthStore {
             snapshot.authoritativeSchedulingOutcomeRaw = outcome.rawValue
         }
         try modelContext.save()
+    }
+
+    func schedulingOutcomes(for runId: String) throws -> BgSchedulingOutcomes? {
+        guard let snapshot = try snapshot(for: runId) else { return nil }
+        return .init(
+            fallback: snapshot.fallbackSchedulingOutcome,
+            authoritative: snapshot.authoritativeSchedulingOutcome
+        )
     }
 
     func latest() throws -> BgRunSnapshot? {

@@ -177,20 +177,33 @@ struct LocationProviderTests {
     private actor GateableSnapshotUploader: LocationSnapshotUploading {
         private var payloads: [LocationSnapshotPushPayload] = []
         private var isBlocked = true
+        private var firstAttemptContinuation: CheckedContinuation<Void, Never>?
+        private var unblockContinuation: CheckedContinuation<Void, Never>?
 
         func upload(_ payload: LocationSnapshotPushPayload) async throws {
             payloads.append(payload)
+            if payloads.count == 1 {
+                firstAttemptContinuation?.resume()
+                firstAttemptContinuation = nil
+            }
             while isBlocked {
-                try await Task.sleep(for: .milliseconds(1))
+                await withCheckedContinuation { continuation in
+                    unblockContinuation = continuation
+                }
             }
         }
 
-        func waitForFirstAttempt() async -> Bool {
-            await waitForAttemptCount(atLeast: 1)
+        func waitForFirstAttempt() async {
+            if payloads.isEmpty == false { return }
+            await withCheckedContinuation { continuation in
+                firstAttemptContinuation = continuation
+            }
         }
 
         func unblock() {
             isBlocked = false
+            unblockContinuation?.resume()
+            unblockContinuation = nil
         }
 
         func attemptCount() -> Int {
@@ -1503,6 +1516,9 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedWhenInUse },
             retryDelaysSeconds: [0]
         )
         let context = makeContext()
@@ -1510,7 +1526,7 @@ struct LocationProviderTests {
         let firstTask = Task {
             await pusher.enqueue(context, source: .foregroundPrime, reason: .locationResolved)
         }
-        #expect(await uploader.waitForFirstAttempt())
+        await uploader.waitForFirstAttempt()
         await pusher.enqueue(context, source: .foregroundLocationChange, reason: .locationChanged)
         await uploader.unblock()
         await firstTask.value
@@ -1529,6 +1545,9 @@ struct LocationProviderTests {
             preferenceUploader: NoOpDevicePreferenceSyncUploader(),
             apnsTokenProvider: { "apns-token-123" },
             installationIdProvider: { "install-abc-123" },
+            subscriptionStatusProvider: { true },
+            locationUploadEnabledProvider: { true },
+            authorizationStatusProvider: { .authorizedWhenInUse },
             retryDelaysSeconds: [0],
             queueStore: store
         )
@@ -1542,7 +1561,7 @@ struct LocationProviderTests {
             )
         }
 
-        #expect(await uploader.waitForFirstAttempt())
+        await uploader.waitForFirstAttempt()
         await pusher.enqueue(secondContext, source: .foregroundLocationChange, reason: .locationChanged)
         await uploader.unblock()
 
@@ -1572,7 +1591,7 @@ struct LocationProviderTests {
             await pusher.enqueue(makeContext(), source: .manualRefresh, reason: .locationResolved)
         }
 
-        #expect(await uploader.waitForFirstAttempt())
+        await uploader.waitForFirstAttempt()
         let outcome = await pusher.drainPendingUploads(
             using: PendingLocationUploadDrainBudget(
                 uploadQuota: 1,

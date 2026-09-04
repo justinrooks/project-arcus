@@ -3419,12 +3419,13 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func syncTextProducts() async {}
 
-    func syncConvectiveOutlooks() async {
+    func syncConvectiveOutlooks() async -> SpcOutlookSyncOutcome {
         syncConvectiveOutlooksCalls += 1
         observedHTTPModeValues.append(HTTPExecutionMode.current)
         if let convectiveOutlookGate {
             await convectiveOutlookGate.wait()
         }
+        return Task.isCancelled ? .cancelled : .accepted
     }
 
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {

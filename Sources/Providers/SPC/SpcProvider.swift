@@ -9,6 +9,11 @@ import Foundation
 import OSLog
 
 actor SpcProvider {
+    struct OutlookSyncWaiter {
+        let continuation: CheckedContinuation<SpcOutlookSyncOutcome, Never>
+        let executionMode: HTTPExecutionMode
+    }
+
     let logger = Logger.providersSpc
     let signposter:OSSignposter
     let outlookRepo: ConvectiveOutlookRepo
@@ -20,12 +25,26 @@ actor SpcProvider {
     let spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo
     let mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection
     let client: SpcClient
+    let beforeOutlookCommit: @Sendable () async -> Void
+    let beforeOutlookPublication: @Sendable () async -> Void
+    let outlookPublicationDateProvider: (@Sendable () async throws -> Date?)?
     
     // Convective freshness Stream
     var latestConvective: Date?
     var convectiveContinuations: [UUID: AsyncStream<Date>.Continuation] = [:]
     var mapSyncTask: Task<SpcMapSyncOutcome, Never>?
     var mesoSyncTask: Task<SpcMesoSyncOutcome, Never>?
+    var outlookSyncTask: Task<SpcOutlookSyncOutcome, Never>?
+    var outlookSyncRunID: UUID?
+    var outlookSyncCommitRunID: UUID?
+    var outlookSyncWaiters: [UUID: OutlookSyncWaiter] = [:]
+    var pendingOutlookSyncWaiters: [UUID: OutlookSyncWaiter] = [:]
+    var pendingOutlookSyncWaiterOrder: [UUID] = []
+
+    #if DEBUG
+    var outlookSyncWaiterCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    var pendingOutlookSyncWaiterCountContinuations: [Int: [CheckedContinuation<Void, Never>]] = [:]
+    #endif
     var lastMapSyncFinishedAt: Date?
     private let mapSyncCooldownSeconds: TimeInterval = 20
     
@@ -37,7 +56,10 @@ actor SpcProvider {
          fireRiskRepo: FireRiskRepo,
          spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo,
          mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none,
-         client: SpcClient) {
+         client: SpcClient,
+         beforeOutlookCommit: @escaping @Sendable () async -> Void = {},
+         beforeOutlookPublication: @escaping @Sendable () async -> Void = {},
+         outlookPublicationDateProvider: (@Sendable () async throws -> Date?)? = nil) {
         signposter = OSSignposter(logger: logger)
         self.outlookRepo = outlookRepo
         self.mesoRepo = mesoRepo
@@ -48,6 +70,9 @@ actor SpcProvider {
         self.spcMapBatchPersistenceRepo = spcMapBatchPersistenceRepo
         self.mapBatchPersistenceFailureInjection = mapBatchPersistenceFailureInjection
         self.client = client
+        self.beforeOutlookCommit = beforeOutlookCommit
+        self.beforeOutlookPublication = beforeOutlookPublication
+        self.outlookPublicationDateProvider = outlookPublicationDateProvider
     }
 
     func convectiveIssueUpdates() async -> AsyncStream<Date> {
