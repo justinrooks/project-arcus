@@ -2477,6 +2477,63 @@ struct HomeRefreshPipelineTests {
         #expect(await coordinator.requestCount() == 0)
         #expect(pipeline.outlooks.map(\.title) == sampleOutlooks().map(\.title))
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
+        #expect(pipeline.outlookRefreshStatus == .success(hasContent: true))
+    }
+
+    @Test("manual outlook failure and rejection retain accepted cache and report failure", arguments: [
+        SpcOutlookSyncOutcome.failed,
+        .rejected
+    ])
+    func refreshOutlooksManually_nonAcceptedOutcomeRetainsCachedOutlooks(
+        outcome: SpcOutlookSyncOutcome
+    ) async {
+        let cachedOutlooks = sampleOutlooks()
+        let spc = FakeSpcProvider(outlooks: [], outlookSyncOutcome: outcome)
+        let pipeline = HomeRefreshPipeline(
+            initialOutlooks: cachedOutlooks,
+            initialOutlook: cachedOutlooks.last
+        )
+
+        await pipeline.refreshOutlooksManually(
+            environment: makeEnvironment(
+                spc: spc,
+                locationSession: FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+            )
+        )
+
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+        #expect(await spc.outlookQueryCount() == 0)
+        #expect(pipeline.outlooks.map(\.title) == cachedOutlooks.map(\.title))
+        #expect(pipeline.outlook?.title == cachedOutlooks.last?.title)
+        #expect(pipeline.outlookRefreshStatus == .failed)
+    }
+
+    @Test("manual outlook query failure retains accepted cache and reports failure")
+    func refreshOutlooksManually_acceptedSyncWithQueryFailureRetainsCachedOutlooks() async {
+        let cachedOutlooks = sampleOutlooks()
+        let coordinator = RecordingHomeIngestionCoordinator()
+        let spc = FakeSpcProvider(outlookReadError: TestFailure.failedRead)
+        let pipeline = HomeRefreshPipeline(
+            initialOutlooks: cachedOutlooks,
+            initialOutlook: cachedOutlooks.last
+        )
+
+        await pipeline.refreshOutlooksManually(
+            environment: makeEnvironment(
+                spc: spc,
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+            )
+        )
+
+        #expect(await spc.syncConvectiveOutlooksCount() == 1)
+        #expect(await spc.outlookQueryCount() == 1)
+        #expect(await spc.syncMapProductsCount() == 0)
+        #expect(await spc.syncMesoscaleDiscussionsCount() == 0)
+        #expect(await coordinator.requestCount() == 0)
+        #expect(pipeline.outlooks.map(\.title) == cachedOutlooks.map(\.title))
+        #expect(pipeline.outlook?.title == cachedOutlooks.last?.title)
+        #expect(pipeline.outlookRefreshStatus == .failed)
     }
 
     @Test("foreground outlook refresh marks empty results as completed")
@@ -3412,6 +3469,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let activeMesos: [MdDTO]
     private let outlookValues: [ConvectiveOutlookDTO]
     private let locationReadError: Error?
+    private let outlookReadError: Error?
     private let syncMesoscaleGate: AsyncGate?
     private let mesoSyncOutcome: SpcMesoSyncOutcome
     private let mapSyncGate: AsyncGate?
@@ -3438,6 +3496,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         activeMesos: [MdDTO] = [MD.sampleDiscussionDTOs[0]],
         outlooks: [ConvectiveOutlookDTO] = [],
         locationReadError: Error? = nil,
+        outlookReadError: Error? = nil,
         syncMesoscaleGate: AsyncGate? = nil,
         mesoSyncOutcome: SpcMesoSyncOutcome = .accepted,
         mapSyncGate: AsyncGate? = nil,
@@ -3452,6 +3511,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.activeMesos = activeMesos
         self.outlookValues = outlooks
         self.locationReadError = locationReadError
+        self.outlookReadError = outlookReadError
         self.syncMesoscaleGate = syncMesoscaleGate
         self.mesoSyncOutcome = mesoSyncOutcome
         self.mapSyncGate = mapSyncGate
@@ -3559,11 +3619,17 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
 
     func getLatestConvectiveOutlook() async throws -> ConvectiveOutlookDTO? {
         outlookQueries += 1
+        if let outlookReadError {
+            throw outlookReadError
+        }
         return outlookValues.max(by: { $0.published < $1.published })
     }
 
     func getConvectiveOutlooks() async throws -> [ConvectiveOutlookDTO] {
         outlookQueries += 1
+        if let outlookReadError {
+            throw outlookReadError
+        }
         return outlookValues
     }
 
