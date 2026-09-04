@@ -203,8 +203,13 @@ final class HomeRefreshPipeline {
     func refreshOutlooksManually(environment: Environment) async {
         updateEnvironment(environment)
 
-        await HTTPExecutionMode.$current.withValue(.foreground) {
-            _ = await environment.sync.syncConvectiveOutlooks()
+        let outcome = await HTTPExecutionMode.$current.withValue(.foreground) {
+            await environment.sync.syncConvectiveOutlooks()
+        }
+        guard outcome == .accepted else {
+            outlookRefreshStatus = .failed
+            environment.logger.error("Manual convective outlook refresh finished result=\(String(describing: outcome), privacy: .public)")
+            return
         }
         await refreshOutlooks(using: environment.outlooks)
     }
@@ -333,9 +338,7 @@ final class HomeRefreshPipeline {
                 "Manual convective outlook refresh finished result=success durationMs=\(durationMs, privacy: .public) outlooks=\(dtos.count, privacy: .public)"
             )
         } catch {
-            if case .loading = outlookRefreshStatus {
-                outlookRefreshStatus = .failed
-            }
+            outlookRefreshStatus = .failed
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment?.logger.error(
                 "Manual convective outlook refresh finished result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"

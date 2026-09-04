@@ -64,7 +64,8 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Map and outlook admission now maintain independent accepted-sync clocks. A failed feed remains due while a fresh sibling is skipped; forced slow refresh still attempts both under the shared slow lane.
 
 ### [#427](https://github.com/justinrooks/project-arcus/issues/427) — Make manual outlook refresh honor its outcome
-- Status: Pending
+- Status: Implemented — awaiting human review
+- Handoff: Manual outlook refresh now queries and reports success only after an accepted sync; fallback, rejection, failure, and cancellation retain the visible accepted cache and report failure without triggering unrelated work.
 
 ### [#435](https://github.com/justinrooks/project-arcus/issues/435) — Return explicit projection commit acknowledgement
 - Status: Pending
