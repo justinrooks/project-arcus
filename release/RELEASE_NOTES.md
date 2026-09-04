@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## v1.1.1(142)
+
+## Overview
+This update hardens severe-weather ingestion and startup recovery: malformed or incomplete feeds no longer advance canonical state, synchronization outcomes remain explicit, and persistent storage failures become retryable instead of silently switching to empty transient storage.
+
+## Highlights
+- Malformed SPC text feeds are rejected before they can update persisted convective outlook or mesoscale state.
+- Arcus alert and SPC mesoscale syncs now distinguish accepted, fallback, rejected, failed, and cancelled outcomes.
+- Hot-feed projections and freshness advance only after both location-scoped feeds are accepted, while targeted alert refreshes do not replace the coherent location-scoped snapshot.
+- Startup now offers retryable recovery when durable storage is unavailable, preserves background scheduling, and defers notification navigation until data is ready.
+- Persistent cache files are quarantined only when corruption or incompatibility is confirmed, preserving ambiguous unavailable stores for later recovery.
+- Regression coverage was expanded across feed rejection, sync outcomes, coherent hot-feed acceptance, startup recovery, background refresh, notification deferral, and UI smoke paths.
+
 ## v1.1.1(137)
 
 ## Overview
