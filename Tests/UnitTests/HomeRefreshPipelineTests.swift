@@ -1516,6 +1516,48 @@ struct HomeRefreshPipelineTests {
         #expect(stored.activeAlerts == [alert])
     }
 
+    @Test("projection save failure preserves canonical ingestion data and the prior projection")
+    func projectionSaveFailure_preservesCanonicalDataAndPriorProjection() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let previousAlert = Watch.sampleWatchRows[0]
+        let previousMeso = MD.sampleDiscussionDTOs[0]
+        let refreshedAlert = Watch.sampleWatchRows[1]
+        let refreshedMeso = MD.sampleDiscussionDTOs[1]
+        let previousLoadedAt = Date(timeIntervalSince1970: 100)
+        _ = try await projectionStore.commitCore(
+            .init(hotAlerts: (alerts: [previousAlert], mesos: [previousMeso])),
+            for: context,
+            loadedAt: previousLoadedAt
+        )
+        await projectionStore.failNextSaveForTesting()
+
+        let spc = FakeSpcProvider(activeMesos: [refreshedMeso], outlooks: sampleOutlooks())
+        let alerts = FakeAlertProvider(activeAlerts: [refreshedAlert])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(weather: sampleWeather()),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let snapshot = try await executor.run(plan: .init(request: .init(trigger: .sessionTick)))
+        let persisted = try #require(await projectionStore.projection(for: context))
+
+        #expect(snapshot.alerts == [refreshedAlert])
+        #expect(snapshot.mesos == [refreshedMeso])
+        #expect(persisted.activeAlerts == [previousAlert])
+        #expect(persisted.activeMesos == [previousMeso])
+        #expect(persisted.lastHotAlertsLoadAt == previousLoadedAt)
+    }
+
     @Test("scene active refresh persists empty alert slices for the resolved context")
     func sceneActiveRefresh_persistsEmptyAlertSlices() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])

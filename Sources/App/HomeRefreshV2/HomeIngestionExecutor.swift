@@ -724,6 +724,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     ) async -> RiskProfileChange? {
         guard let projectionStore = environment.projectionStore else { return nil }
         var riskProfileChange: RiskProfileChange?
+        var committedProjection: HomeProjectionRecord?
 
         do {
             let weather: SummaryWeather??
@@ -744,7 +745,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 : nil
 
             if weather != nil || slowProducts != nil || hotAlerts != nil {
-                riskProfileChange = try await projectionStore.commitCore(
+                let acknowledgement = try await projectionStore.commitCore(
                     .init(
                         weather: weather,
                         slowProducts: slowProducts,
@@ -757,6 +758,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     for: context,
                     loadedAt: loadedAt
                 )
+                riskProfileChange = acknowledgement.riskProfileChange
+                committedProjection = acknowledgement.record
             }
 
             guard let widgetSnapshotRefresher = environment.widgetSnapshotRefresher else {
@@ -769,7 +772,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
                     return riskProfileChange
                 }
-                guard let projection = try await projectionStore.projection(for: context),
+                let projection: HomeProjectionRecord?
+                if let committedProjection {
+                    projection = committedProjection
+                } else {
+                    projection = try await projectionStore.projection(for: context)
+                }
+                guard let projection,
                       let hotSnapshotTimestamp = projection.lastHotAlertsLoadAt else {
                     return riskProfileChange
                 }

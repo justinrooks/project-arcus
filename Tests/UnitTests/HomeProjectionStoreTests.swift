@@ -1193,8 +1193,8 @@ struct HomeProjectionStoreTests {
             for: fireContext
         ))
 
-        #expect(convectiveChange.changedDimensions == [.storm, .severe])
-        #expect(fireChange.changedDimensions == [.fire])
+        #expect(try #require(convectiveChange.riskProfileChange).changedDimensions == [.storm, .severe])
+        #expect(try #require(fireChange.riskProfileChange).changedDimensions == [.fire])
     }
 
     @Test("failed saves roll back risk values and comparison metadata")
@@ -1597,7 +1597,7 @@ struct HomeProjectionStoreTests {
             for: context,
             loadedAt: Date(timeIntervalSince1970: 500)
         )
-        let change = try #require(await store.commitCore(
+        let change = try await store.commitCore(
             .init(
                 slowProducts: (.enhanced, .tornado(probability: 0.30), .elevated),
                 convectiveSource: makeSource(revision: 2),
@@ -1605,14 +1605,15 @@ struct HomeProjectionStoreTests {
             ),
             for: context,
             loadedAt: Date(timeIntervalSince1970: 600)
-        ))
+        )
+        let riskProfileChange = try #require(change.riskProfileChange)
 
-        #expect(change.previous == RiskProfile(
+        #expect(riskProfileChange.previous == RiskProfile(
             stormRisk: .slight,
             severeRisk: .wind(probability: 0.15),
             fireRisk: .critical
         ))
-        #expect(change.current == RiskProfile(
+        #expect(riskProfileChange.current == RiskProfile(
             stormRisk: .enhanced,
             severeRisk: .tornado(probability: 0.30),
             fireRisk: .elevated
@@ -1623,6 +1624,7 @@ struct HomeProjectionStoreTests {
         #expect(committed.lastWeatherLoadAt == Date(timeIntervalSince1970: 500))
         #expect(committed.lastHotAlertsLoadAt == Date(timeIntervalSince1970: 500))
         #expect(committed.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 600))
+        #expect(change.record == committed)
     }
 
     @Test("core commit preserves skipped slices and persists authoritative empty alerts")
