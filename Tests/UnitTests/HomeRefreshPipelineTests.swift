@@ -1516,8 +1516,8 @@ struct HomeRefreshPipelineTests {
         #expect(stored.activeAlerts == [alert])
     }
 
-    @Test("projection save failure preserves canonical ingestion data and the prior projection")
-    func projectionSaveFailure_preservesCanonicalDataAndPriorProjection() async throws {
+    @Test("projection save failure preserves canonical ingestion data and the prior visible core")
+    func projectionSaveFailure_preservesCanonicalDataAndPriorVisibleCore() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
@@ -1525,11 +1525,166 @@ struct HomeRefreshPipelineTests {
         let previousMeso = MD.sampleDiscussionDTOs[0]
         let refreshedAlert = Watch.sampleWatchRows[1]
         let refreshedMeso = MD.sampleDiscussionDTOs[1]
+        let previousWeather = sampleWeather()
         let previousLoadedAt = Date(timeIntervalSince1970: 100)
         _ = try await projectionStore.commitCore(
-            .init(hotAlerts: (alerts: [previousAlert], mesos: [previousMeso])),
+            .init(
+                weather: previousWeather,
+                slowProducts: (.slight, .wind(probability: 0.10), .elevated),
+                hotAlerts: (alerts: [previousAlert], mesos: [previousMeso])
+            ),
             for: context,
             loadedAt: previousLoadedAt
+        )
+        await projectionStore.failNextSaveForTesting()
+
+        let spc = FakeSpcProvider(activeMesos: [refreshedMeso], outlooks: sampleOutlooks())
+        let alerts = FakeAlertProvider(activeAlerts: [refreshedAlert])
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: .slight,
+            initialSevereRisk: .wind(probability: 0.10),
+            initialFireRisk: .elevated,
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [previousMeso],
+            initialAlerts: [previousAlert]
+        )
+        pipeline.summaryWeather = previousWeather
+        let coordinator = HomeIngestionCoordinator(executor: HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(weather: sampleWeather()),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        ))
+        let environment = makeEnvironment(
+            spc: spc,
+            alerts: alerts,
+            coordinator: coordinator,
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+        )
+
+        await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        let persisted = try #require(await projectionStore.projection(for: context))
+
+        #expect(pipeline.summaryWeather == previousWeather)
+        #expect(pipeline.stormRisk == .slight)
+        #expect(pipeline.severeRisk == .wind(probability: 0.10))
+        #expect(pipeline.fireRisk == .elevated)
+        #expect(pipeline.alertSnapshot.alerts == [previousAlert])
+        #expect(pipeline.alertSnapshot.mesos == [previousMeso])
+        #expect(persisted.activeAlerts == [previousAlert])
+        #expect(persisted.activeMesos == [previousMeso])
+        #expect(persisted.lastHotAlertsLoadAt == previousLoadedAt)
+
+        let repairedCoordinator = HomeIngestionCoordinator(executor: HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(weather: sampleWeather()),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        ))
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                spc: spc,
+                alerts: alerts,
+                coordinator: repairedCoordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.summaryWeather == sampleWeather())
+        #expect(pipeline.stormRisk == .enhanced)
+        #expect(pipeline.severeRisk == .hail(probability: 0.30))
+        #expect(pipeline.fireRisk == .elevated)
+        #expect(pipeline.alertSnapshot.alerts == [refreshedAlert])
+        #expect(pipeline.alertSnapshot.mesos == [refreshedMeso])
+    }
+
+    @Test("projection save failure without durable content suppresses core replacement")
+    func projectionSaveFailureWithoutDurableContent_suppressesCoreReplacement() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let visibleWeather = sampleWeather()
+        let visibleAlert = Watch.sampleWatchRows[0]
+        let visibleMeso = MD.sampleDiscussionDTOs[0]
+        let refreshedAlert = Watch.sampleWatchRows[1]
+        let refreshedMeso = MD.sampleDiscussionDTOs[1]
+        await projectionStore.failNextSaveForTesting()
+
+        let spc = FakeSpcProvider(activeMesos: [refreshedMeso], outlooks: sampleOutlooks())
+        let alerts = FakeAlertProvider(activeAlerts: [refreshedAlert])
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: .slight,
+            initialSevereRisk: .wind(probability: 0.10),
+            initialFireRisk: .elevated,
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [visibleMeso],
+            initialAlerts: [visibleAlert]
+        )
+        pipeline.summaryWeather = visibleWeather
+        let coordinator = HomeIngestionCoordinator(executor: HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(weather: sampleWeather()),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        ))
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                spc: spc,
+                alerts: alerts,
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.summaryWeather == visibleWeather)
+        #expect(pipeline.stormRisk == .slight)
+        #expect(pipeline.severeRisk == .wind(probability: 0.10))
+        #expect(pipeline.fireRisk == .elevated)
+        #expect(pipeline.alertSnapshot.alerts == [visibleAlert])
+        #expect(pipeline.alertSnapshot.mesos == [visibleMeso])
+        #expect(try await projectionStore.projection(for: context) == nil)
+    }
+
+    @Test("background projection save failure retains canonical data and repairs on retry")
+    func backgroundProjectionSaveFailure_retainsCanonicalDataAndRepairsOnRetry() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let previousAlert = Watch.sampleWatchRows[0]
+        let previousMeso = MD.sampleDiscussionDTOs[0]
+        let refreshedAlert = Watch.sampleWatchRows[1]
+        let refreshedMeso = MD.sampleDiscussionDTOs[1]
+        _ = try await projectionStore.commitCore(
+            .init(
+                weather: sampleWeather(),
+                slowProducts: (.slight, .wind(probability: 0.10), .elevated),
+                hotAlerts: (alerts: [previousAlert], mesos: [previousMeso])
+            ),
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 100)
         )
         await projectionStore.failNextSaveForTesting()
 
@@ -1547,15 +1702,42 @@ struct HomeRefreshPipelineTests {
                 widgetSnapshotRefresher: nil
             )
         )
+        let failedPublications = PipelinePublicationRecorder()
 
-        let snapshot = try await executor.run(plan: .init(request: .init(trigger: .sessionTick)))
-        let persisted = try #require(await projectionStore.projection(for: context))
+        let failedSnapshot = try await executor.run(
+            plan: .init(request: .init(trigger: .backgroundRefresh)),
+            progress: .init(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in await failedPublications.append(publication) }
+            )
+        )
+        let retainedProjection = try #require(await projectionStore.projection(for: context))
+        let failedPublication = try #require(await failedPublications.firstCore())
+        #expect(failedSnapshot.alerts == [refreshedAlert])
+        #expect(failedSnapshot.mesos == [refreshedMeso])
+        #expect(failedPublication.alerts == [previousAlert])
+        #expect(failedPublication.mesos == [previousMeso])
+        #expect(retainedProjection.activeAlerts == [previousAlert])
+        #expect(retainedProjection.activeMesos == [previousMeso])
 
-        #expect(snapshot.alerts == [refreshedAlert])
-        #expect(snapshot.mesos == [refreshedMeso])
-        #expect(persisted.activeAlerts == [previousAlert])
-        #expect(persisted.activeMesos == [previousMeso])
-        #expect(persisted.lastHotAlertsLoadAt == previousLoadedAt)
+        let retryPublications = PipelinePublicationRecorder()
+        let repairedSnapshot = try await executor.run(
+            plan: .init(request: .init(trigger: .backgroundRefresh)),
+            progress: .init(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { publication in await retryPublications.append(publication) }
+            )
+        )
+        let repairedProjection = try #require(await projectionStore.projection(for: context))
+        let retryPublication = try #require(await retryPublications.firstCore())
+        #expect(repairedSnapshot.alerts == [refreshedAlert])
+        #expect(repairedSnapshot.mesos == [refreshedMeso])
+        #expect(retryPublication.alerts == [refreshedAlert])
+        #expect(retryPublication.mesos == [refreshedMeso])
+        #expect(repairedProjection.activeAlerts == [refreshedAlert])
+        #expect(repairedProjection.activeMesos == [refreshedMeso])
     }
 
     @Test("scene active refresh persists empty alert slices for the resolved context")
@@ -3080,6 +3262,23 @@ struct HomeRefreshPipelineTests {
                 )
             }
         }
+    }
+}
+
+private actor PipelinePublicationRecorder {
+    private var publications: [HomeIngestionPublication] = []
+
+    func append(_ publication: HomeIngestionPublication) {
+        publications.append(publication)
+    }
+
+    func firstCore() -> HomeIngestionCorePublication? {
+        for publication in publications {
+            if case .core(let core) = publication.stage {
+                return core
+            }
+        }
+        return nil
     }
 }
 

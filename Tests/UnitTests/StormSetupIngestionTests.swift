@@ -216,14 +216,14 @@ struct StormSetupIngestionTests {
             return
         }
         #expect(core.refreshKey == context.refreshKey)
-        #expect(core.locationSnapshot == context.snapshot)
+        let persistedCore = try #require(await harness.projectionStore.projection(for: context))
+        #expect(core.locationSnapshot == persistedCore.locationSnapshot)
         #expect(core.weatherRefreshResult == .success(sampleWeather()))
         #expect(core.stormRisk == .enhanced)
         #expect(core.severeRisk == .hail(probability: 0.30))
         #expect(core.fireRisk == .elevated)
         #expect(core.alerts == [alert])
         #expect(core.mesos == [meso])
-        let persistedCore = try #require(await harness.projectionStore.projection(for: context))
         #expect(persistedCore.lastWeatherLoadAt != nil)
         #expect(persistedCore.lastSlowProductsLoadAt != nil)
         #expect(persistedCore.lastHotAlertsLoadAt != nil)
