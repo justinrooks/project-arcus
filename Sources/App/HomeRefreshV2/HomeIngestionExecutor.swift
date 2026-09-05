@@ -32,6 +32,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
     let fireRisk: FireRiskLevel?
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
+    let hasAcceptedAlertSnapshot: Bool
     let outlooks: [ConvectiveOutlookDTO]
     let latestOutlook: ConvectiveOutlookDTO?
 
@@ -44,6 +45,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         fireRisk = snapshot.fireRisk
         mesos = snapshot.mesos
         alerts = snapshot.alerts
+        hasAcceptedAlertSnapshot = true
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }
@@ -57,6 +59,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         fireRisk = retainedProjection.fireRisk
         mesos = retainedProjection.activeMesos
         alerts = retainedProjection.activeAlerts
+        hasAcceptedAlertSnapshot = retainedProjection.lastHotAlertsLoadAt != nil
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }
@@ -70,6 +73,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         fireRisk = acknowledgedProjection.fireRisk
         mesos = acknowledgedProjection.activeMesos
         alerts = acknowledgedProjection.activeAlerts
+        hasAcceptedAlertSnapshot = acknowledgedProjection.lastHotAlertsLoadAt != nil
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }
@@ -739,8 +743,8 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 return .preserve
             }
             guard let projectionStore = environment.projectionStore else {
-                environment.logger.error("AQI persistence unavailable; publishing live response")
-                return .replace(response)
+                environment.logger.error("AQI persistence unavailable; preserving projected response")
+                return .preserve
             }
 
             do {
@@ -751,18 +755,18 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 )
                 guard let acceptedAirQuality = accepted.airQuality else {
                     environment.logger.error(
-                        "AQI persistence returned no accepted response; publishing live response"
+                        "AQI persistence returned no accepted response; preserving projected response"
                     )
-                    return .replace(response)
+                    return .preserve
                 }
                 return .replace(acceptedAirQuality)
             } catch is CancellationError {
                 return .preserve
             } catch {
                 environment.logger.error(
-                    "AQI persistence unavailable; publishing live response error=\(String(describing: error), privacy: .public)"
+                    "AQI persistence unavailable; preserving projected response error=\(String(describing: error), privacy: .public)"
                 )
-                return .replace(response)
+                return .preserve
             }
         } catch is CancellationError {
             return .preserve

@@ -76,11 +76,12 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Core publication now uses the acknowledged projection. On a failed core commit it retains the prior durable slice, or suppresses UI replacement when no durable slice exists; canonical evaluation remains available and the next successful run repairs publication.
 
 ### [#431](https://github.com/justinrooks/project-arcus/issues/431) — Remove AQI live-only publication fallback
-- Status: Pending
-- Handoff: Issue #331 already owns same-location in-memory preservation history.
+- Status: Implemented — awaiting human review
+- Handoff: AQI persistence unavailability, a rejected persisted response, and persistence failures now preserve the prior projected AQI instead of publishing a live-only response. Issue #331 retains same-location in-memory preservation ownership.
 
 ## Verification Ledger
 
+- #431: `StormSetupIngestionTests` passed (47 tests) on iPhone 17, iOS 26.5, Debug; Debug simulator build and `git diff --check` passed.
 - #428: `ConvectiveOutlookRepoTests` disk-backed acceptance coverage passed (13 tests); Debug iPhone 17 simulator build passed; `git diff --check` passed.
 - #433: `SpcProviderSyncMapProductsTests` validates outcome mapping, joining, cancellation, cancellation-safe persistence, and fresh-caller HTTP execution mode; full `SkyAware_Tests` passed (1,071 tests) before the final review corrections.
 - #429: Focused `AlertRepoActiveTests` and `SpcProviderSyncMapProductsTests` passed (36 tests); full unit lane passed (1,062 tests); Debug iPhone 17 simulator build and `git diff --check` passed.
