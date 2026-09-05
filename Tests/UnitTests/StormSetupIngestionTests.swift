@@ -303,8 +303,8 @@ struct StormSetupIngestionTests {
         #expect(persisted.airQuality == acceptedResponse)
     }
 
-    @Test("AQI persistence failure still publishes the live response")
-    func airQualityPersistenceFailurePublishesLiveResponse() async throws {
+    @Test("AQI persistence failure preserves the projected response")
+    func airQualityPersistenceFailurePreservesProjectedResponse() async throws {
         let context = makeContext()
         let response = try makeAirQualityResponse()
         let publications = HomeIngestionPublicationRecorder()
@@ -325,13 +325,13 @@ struct StormSetupIngestionTests {
             )
         )
 
-        #expect(snapshot.airQuality == response)
+        #expect(snapshot.airQuality == nil)
         let enrichment = try #require(await publications.values().last)
         guard case .enrichment(let value) = enrichment.stage else {
             Issue.record("Expected optional enrichment publication")
             return
         }
-        #expect(value.airQualityOutcome == .replace(response))
+        #expect(value.airQualityOutcome == .preserve)
     }
 
     @Test("AQI release alone does not return the snapshot while Storm Setup is blocked")
