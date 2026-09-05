@@ -32,6 +32,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
     let fireRisk: FireRiskLevel?
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
+    let hasAcceptedAlertSnapshot: Bool
     let outlooks: [ConvectiveOutlookDTO]
     let latestOutlook: ConvectiveOutlookDTO?
 
@@ -44,6 +45,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         fireRisk = snapshot.fireRisk
         mesos = snapshot.mesos
         alerts = snapshot.alerts
+        hasAcceptedAlertSnapshot = true
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }
@@ -57,6 +59,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         fireRisk = retainedProjection.fireRisk
         mesos = retainedProjection.activeMesos
         alerts = retainedProjection.activeAlerts
+        hasAcceptedAlertSnapshot = retainedProjection.lastHotAlertsLoadAt != nil
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }
@@ -70,6 +73,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         fireRisk = acknowledgedProjection.fireRisk
         mesos = acknowledgedProjection.activeMesos
         alerts = acknowledgedProjection.activeAlerts
+        hasAcceptedAlertSnapshot = acknowledgedProjection.lastHotAlertsLoadAt != nil
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }

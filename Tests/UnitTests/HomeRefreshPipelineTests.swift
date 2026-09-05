@@ -742,6 +742,130 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.airQuality == replacement)
     }
 
+    @Test("acknowledged core without accepted alerts preserves the existing alert snapshot")
+    func acknowledgedCore_withoutAcceptedAlerts_preservesExistingAlertSnapshot() async {
+        let context = makeContext()
+        let existingAlert = Watch.sampleWatchRows[0]
+        let existingMeso = MD.sampleDiscussionDTOs[0]
+        let projection = HomeProjection(context: context).record
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .slight,
+            mesos: [],
+            alerts: []
+        )
+        let runID = UUID()
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(
+                        runID: runID,
+                        stage: .core(.init(snapshot: snapshot, acknowledgedProjection: projection))
+                    ),
+                    finalSnapshot: snapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialAlertSnapshotRefreshKey: context.refreshKey,
+            initialMesos: [existingMeso],
+            initialAlerts: [existingAlert]
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.alertSnapshot.alerts == [existingAlert])
+        #expect(pipeline.alertSnapshot.mesos == [existingMeso])
+        #expect(pipeline.alertSnapshotRefreshKey == context.refreshKey)
+    }
+
+    @Test("never-accepted alerts remain unavailable when an acknowledged partial risk record is published")
+    func acknowledgedPartialRisk_withoutAcceptedAlerts_keepsAlertsUnavailable() async {
+        let context = makeContext()
+        let model = HomeProjection(context: context)
+        model.stormRisk = .slight
+        let projection = model.record
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .slight
+        )
+        let runID = UUID()
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(
+                        runID: runID,
+                        stage: .core(.init(snapshot: snapshot, acknowledgedProjection: projection))
+                    ),
+                    finalSnapshot: snapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.alertSnapshotRefreshKey == nil)
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: projection.lastHotAlertsLoadAt,
+                hasActiveAlerts: false,
+                isLocationUnavailable: false
+            ) == .unavailable(reason: .noUsefulAlertState)
+        )
+    }
+
+    @Test("retained authoritative empty alerts publish an empty alert snapshot")
+    func retainedProjection_withAcceptedEmptyAlerts_publishesEmptyAlertSnapshot() async {
+        let context = makeContext()
+        let model = HomeProjection(context: context)
+        model.lastHotAlertsLoadAt = Date(timeIntervalSince1970: 100)
+        let projection = model.record
+        let snapshot = HomeSnapshot(locationSnapshot: context.snapshot, refreshKey: context.refreshKey)
+        let runID = UUID()
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(
+                        runID: runID,
+                        stage: .core(.init(snapshot: snapshot, retainedProjection: projection))
+                    ),
+                    finalSnapshot: snapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.alertSnapshotRefreshKey == context.refreshKey)
+        #expect(pipeline.alertSnapshot.alerts.isEmpty)
+        #expect(pipeline.alertSnapshot.mesos.isEmpty)
+    }
+
     @Test("superseded same-location enrichment cannot overwrite a newer publication")
     func supersededSameLocationEnrichment_cannotOverwriteNewerPublication() async throws {
         let context = makeContext()

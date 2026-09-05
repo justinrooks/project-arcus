@@ -575,13 +575,15 @@ final class HomeRefreshPipeline {
                 severeRisk: core.severeRisk,
                 fireRisk: core.fireRisk
             )
-            commitAlertSnapshotIfChanged(
-                HomeAlertSnapshot(
-                    refreshKey: core.refreshKey,
-                    mesos: core.mesos,
-                    alerts: core.alerts
+            if core.hasAcceptedAlertSnapshot {
+                commitAlertSnapshotIfChanged(
+                    HomeAlertSnapshot(
+                        refreshKey: core.refreshKey,
+                        mesos: core.mesos,
+                        alerts: core.alerts
+                    )
                 )
-            )
+            }
 
             if core.refreshKey != stormSetupRefreshKey {
                 stormSetup = nil

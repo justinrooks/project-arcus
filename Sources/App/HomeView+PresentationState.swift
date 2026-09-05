@@ -236,7 +236,10 @@ extension HomeView {
     }
 
     nonisolated private static func isDisplayReady(_ projection: HomeProjectionRecord) -> Bool {
-        projection.lastSlowProductsLoadAt != nil &&
+        projection.weather != nil ||
+        projection.stormRisk != nil ||
+        projection.severeRisk != nil ||
+        projection.fireRisk != nil ||
         projection.lastHotAlertsLoadAt != nil
     }
 

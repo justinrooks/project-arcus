@@ -1523,32 +1523,92 @@ struct HomeProjectionStoreTests {
         #expect(latestProjection.stormRisk == .slight)
     }
 
-    @Test("a hot-only projection remains unavailable to Today until a core commit")
-    func hotOnlyProjection_isNotDisplayReadyUntilCoreCommit() async throws {
-        let container = try TestStore.container(for: [HomeProjection.self])
-        let store = HomeProjectionStore(modelContainer: container)
-        let context = makeContext()
+    @Test("disk-reopened partial accepted projections remain available to Today")
+    func partialAcceptedProjections_reopenAsDisplayReady() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
 
-        _ = try await store.updateHotAlerts(
-            alerts: [],
-            mesos: [],
-            for: context,
-            loadedAt: Date(timeIntervalSince1970: 450)
-        )
-        let hotOnly = try #require(await store.projection(for: context))
-        #expect(HomeView.selectProjection(from: [hotOnly], currentContext: context) == nil)
+        let schema = Schema([HomeProjection.self])
+        let storeURL = root.appendingPathComponent("SkyAware_Data.sqlite")
+        let configuration = ModelConfiguration("SkyAware_Data", schema: schema, url: storeURL)
+        let weatherContext = makeContext(h3Cell: 123_456)
+        let alertsContext = makeContext(h3Cell: 654_321)
+        let partialRiskContext = makeContext(h3Cell: 456_789)
+        let completeContext = makeContext(h3Cell: 789_123)
 
-        _ = try await store.commitCore(
-            .init(
-                weather: makeWeather(),
-                slowProducts: (.slight, .wind(probability: 0.15), .critical),
-                hotAlerts: (alerts: [], mesos: [])
-            ),
-            for: context,
-            loadedAt: Date(timeIntervalSince1970: 500)
-        )
-        let committed = try #require(await store.projection(for: context))
-        #expect(HomeView.selectProjection(from: [committed], currentContext: context) == committed)
+        func todayContentState(for projection: HomeProjectionRecord?) -> TodayContentState {
+            TodayContentState.from(
+                readinessState: .loadingLocalData,
+                hasCachedContent: projection != nil,
+                hasLiveContent: false,
+                isRefreshing: true,
+                isOffline: false
+            )
+        }
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let store = HomeProjectionStore(modelContainer: container)
+            _ = try await store.commitCore(
+                .init(weather: makeWeather()),
+                for: weatherContext,
+                loadedAt: Date(timeIntervalSince1970: 450)
+            )
+            _ = try await store.updateHotAlerts(
+                alerts: [],
+                mesos: [],
+                for: alertsContext,
+                loadedAt: Date(timeIntervalSince1970: 460)
+            )
+            _ = try await store.commitCore(
+                .init(
+                    slowProducts: (.slight, nil, nil),
+                    updatesConvectiveRisk: true,
+                    updatesFireRisk: false
+                ),
+                for: partialRiskContext,
+                loadedAt: Date(timeIntervalSince1970: 470)
+            )
+            _ = try await store.commitCore(
+                .init(
+                    weather: makeWeather(),
+                    slowProducts: (.slight, .wind(probability: 0.15), .critical),
+                    hotAlerts: (alerts: [], mesos: [])
+                ),
+                for: completeContext,
+                loadedAt: Date(timeIntervalSince1970: 480)
+            )
+
+            let preCloseWeather = try #require(await store.projection(for: weatherContext))
+            let preCloseAlerts = try #require(await store.projection(for: alertsContext))
+            let preClosePartialRisk = try #require(await store.projection(for: partialRiskContext))
+            let preCloseComplete = try #require(await store.projection(for: completeContext))
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseWeather], currentContext: weatherContext)) == .cachedRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseAlerts], currentContext: alertsContext)) == .cachedRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preClosePartialRisk], currentContext: partialRiskContext)) == .cachedRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseComplete], currentContext: completeContext)) == .cachedRefreshing)
+        }
+
+        let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
+        let reopenedStore = HomeProjectionStore(modelContainer: reopenedContainer)
+        let weatherProjection = try #require(await reopenedStore.projection(for: weatherContext))
+        let alertsProjection = try #require(await reopenedStore.projection(for: alertsContext))
+        let partialRiskProjection = try #require(await reopenedStore.projection(for: partialRiskContext))
+        let completeProjection = try #require(await reopenedStore.projection(for: completeContext))
+
+        #expect(HomeView.selectProjection(from: [weatherProjection], currentContext: weatherContext) == weatherProjection)
+        #expect(HomeView.selectProjection(from: [alertsProjection], currentContext: alertsContext) == alertsProjection)
+        #expect(HomeView.selectProjection(from: [partialRiskProjection], currentContext: partialRiskContext) == partialRiskProjection)
+        #expect(HomeView.selectProjection(from: [completeProjection], currentContext: completeContext) == completeProjection)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [weatherProjection], currentContext: weatherContext)) == .cachedRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [alertsProjection], currentContext: alertsContext)) == .cachedRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [partialRiskProjection], currentContext: partialRiskContext)) == .cachedRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [completeProjection], currentContext: completeContext)) == .cachedRefreshing)
+
+        let emptyProjection = HomeProjection(context: makeContext(h3Cell: 999_999)).record
+        #expect(HomeView.selectProjection(from: [emptyProjection], currentContext: nil) == nil)
     }
 
     @Test("a severe-weather core commit is display-ready when WeatherKit is unavailable")
