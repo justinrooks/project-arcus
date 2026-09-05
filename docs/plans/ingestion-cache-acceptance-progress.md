@@ -72,8 +72,8 @@ Arcus, meso, and outlook sync methods can swallow errors. The executor can advan
 - Handoff: Core projection commits now acknowledge the exact saved record and derived risk change. The executor consumes that acknowledgement for widget publication while projection failures remain isolated from canonical ingestion state.
 
 ### [#432](https://github.com/justinrooks/project-arcus/issues/432) — Gate core UI replacement on projection acknowledgement
-- Status: Pending
-- Handoff: Background evaluation may retain useful canonical data.
+- Status: Implemented — awaiting human review
+- Handoff: Core publication now uses the acknowledged projection. On a failed core commit it retains the prior durable slice, or suppresses UI replacement when no durable slice exists; canonical evaluation remains available and the next successful run repairs publication.
 
 ### [#431](https://github.com/justinrooks/project-arcus/issues/431) — Remove AQI live-only publication fallback
 - Status: Pending

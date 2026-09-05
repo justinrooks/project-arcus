@@ -47,6 +47,32 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
     }
+
+    init(snapshot: HomeSnapshot, retainedProjection: HomeProjectionRecord) {
+        locationSnapshot = retainedProjection.locationSnapshot
+        refreshKey = snapshot.refreshKey
+        weatherRefreshResult = .skipped
+        stormRisk = retainedProjection.stormRisk
+        severeRisk = retainedProjection.severeRisk
+        fireRisk = retainedProjection.fireRisk
+        mesos = retainedProjection.activeMesos
+        alerts = retainedProjection.activeAlerts
+        outlooks = snapshot.outlooks
+        latestOutlook = snapshot.latestOutlook
+    }
+
+    init(snapshot: HomeSnapshot, acknowledgedProjection: HomeProjectionRecord) {
+        locationSnapshot = acknowledgedProjection.locationSnapshot
+        refreshKey = snapshot.refreshKey
+        weatherRefreshResult = snapshot.weatherRefreshResult
+        stormRisk = acknowledgedProjection.stormRisk
+        severeRisk = acknowledgedProjection.severeRisk
+        fireRisk = acknowledgedProjection.fireRisk
+        mesos = acknowledgedProjection.activeMesos
+        alerts = acknowledgedProjection.activeAlerts
+        outlooks = snapshot.outlooks
+        latestOutlook = snapshot.latestOutlook
+    }
 }
 
 enum HomeAirQualityPublicationOutcome: Sendable, Equatable {
@@ -79,6 +105,7 @@ struct HomeIngestionEnrichmentPublication: Sendable, Equatable {
 struct HomeIngestionPublication: Sendable, Equatable {
     enum Stage: Sendable, Equatable {
         case core(HomeIngestionCorePublication)
+        case coreSuppressed
         case enrichment(HomeIngestionEnrichmentPublication)
     }
 
@@ -169,6 +196,13 @@ protocol HomeIngestionExecuting: Sendable {
 }
 
 actor HomeIngestionExecutor: HomeIngestionExecuting {
+    private enum ProjectionPersistenceResult {
+        case unavailable
+        case notRequired(HomeProjectionRecord?)
+        case committed(HomeProjectionCommitAcknowledgement)
+        case failed(HomeProjectionRecord?)
+    }
+
     private enum HotFeedSyncOutcome: Sendable, Equatable {
         case completeLocationScopedAcceptance
         case incomplete
@@ -376,7 +410,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 for: context,
                 decision: slowProductDecision
             )
-            let riskProfileChange = await persistProjection(
+            let persistenceResult = await persistProjection(
                 for: plan,
                 context: context,
                 snapshot: snapshot,
@@ -385,16 +419,48 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                 slowProductDecision: slowProductDecision,
                 acceptsHotFeedSnapshot: hotFeedSyncOutcome?.advancesFreshness == true
             )
-            snapshot.riskProfileChange = riskProfileChange
+            switch persistenceResult {
+            case .unavailable, .notRequired:
+                break
+            case .committed(let acknowledgement):
+                snapshot.riskProfileChange = acknowledgement.riskProfileChange
+            case .failed:
+                snapshot.riskProfileChange = nil
+            }
+
+            switch persistenceResult {
+            case .unavailable:
+                await progress.publish(
+                    HomeIngestionPublication(runID: progress.runID, stage: .core(.init(snapshot: snapshot)))
+                )
+            case .notRequired(let retainedProjection), .failed(let retainedProjection):
+                if let retainedProjection {
+                    await progress.publish(
+                        HomeIngestionPublication(
+                            runID: progress.runID,
+                            stage: .core(.init(snapshot: snapshot, retainedProjection: retainedProjection))
+                        )
+                    )
+                } else {
+                    await progress.publish(
+                        HomeIngestionPublication(runID: progress.runID, stage: .coreSuppressed)
+                    )
+                }
+            case .committed(let acknowledgement):
+                await progress.publish(
+                    HomeIngestionPublication(
+                        runID: progress.runID,
+                        stage: .core(.init(snapshot: snapshot, acknowledgedProjection: acknowledgement.record))
+                    )
+                )
+            }
+        } else {
+            await progress.publish(
+                HomeIngestionPublication(runID: progress.runID, stage: .core(.init(snapshot: snapshot)))
+            )
         }
 
         freshness.lastResolvedRefreshKey = snapshot.refreshKey
-        await progress.publish(
-            HomeIngestionPublication(
-                runID: progress.runID,
-                stage: .core(.init(snapshot: snapshot))
-            )
-        )
 
         let coreSnapshot = snapshot
         guard try await shouldAdmitStormSetupEnrichment(executionMode: executionMode) else {
@@ -721,87 +787,128 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         loadedAt: Date,
         slowProductDecision: SlowProductPersistenceDecision,
         acceptsHotFeedSnapshot: Bool
-    ) async -> RiskProfileChange? {
-        guard let projectionStore = environment.projectionStore else { return nil }
-        var riskProfileChange: RiskProfileChange?
-        var committedProjection: HomeProjectionRecord?
+    ) async -> ProjectionPersistenceResult {
+        guard let projectionStore = environment.projectionStore else { return .unavailable }
 
+        let weather: SummaryWeather??
+        if case .success(let refreshedWeather) = weatherRefreshResult {
+            weather = .some(refreshedWeather)
+        } else {
+            weather = nil
+        }
+        let slowProducts = slowProductDecision.shouldUpdateProjection
+            ? (
+                stormRisk: snapshot.stormRisk,
+                severeRisk: snapshot.severeRisk,
+                fireRisk: snapshot.fireRisk
+            )
+            : nil
+        let hotAlerts = acceptsHotFeedSnapshot
+            ? (alerts: snapshot.alerts, mesos: snapshot.mesos)
+            : nil
+
+        guard weather != nil || slowProducts != nil || hotAlerts != nil else {
+            let projection: HomeProjectionRecord?
+            do {
+                projection = try await projectionStore.projection(for: context)
+            } catch {
+                environment.logger.error(
+                    "Failed to load the persisted home projection during ingestion: \(error.localizedDescription, privacy: .public)"
+                )
+                return .failed(nil)
+            }
+
+            do {
+                try refreshWidgets(
+                    for: plan,
+                    projection: projection,
+                    snapshot: snapshot,
+                    loadedAt: loadedAt,
+                    slowProductDecision: slowProductDecision,
+                    acceptsHotFeedSnapshot: acceptsHotFeedSnapshot
+                )
+            } catch {
+                environment.logger.error(
+                    "Failed to refresh home widgets from the persisted projection: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+            return .notRequired(projection)
+        }
+
+        let acknowledgement: HomeProjectionCommitAcknowledgement
         do {
-            let weather: SummaryWeather??
-            if case .success(let refreshedWeather) = weatherRefreshResult {
-                weather = .some(refreshedWeather)
-            } else {
-                weather = nil
-            }
-            let slowProducts = slowProductDecision.shouldUpdateProjection
-                ? (
-                    stormRisk: snapshot.stormRisk,
-                    severeRisk: snapshot.severeRisk,
-                    fireRisk: snapshot.fireRisk
-                )
-                : nil
-            let hotAlerts = acceptsHotFeedSnapshot
-                ? (alerts: snapshot.alerts, mesos: snapshot.mesos)
-                : nil
-
-            if weather != nil || slowProducts != nil || hotAlerts != nil {
-                let acknowledgement = try await projectionStore.commitCore(
-                    .init(
-                        weather: weather,
-                        slowProducts: slowProducts,
-                        updatesConvectiveRisk: slowProductDecision.updatesConvective,
-                        updatesFireRisk: slowProductDecision.updatesFire,
-                        convectiveSource: slowProductDecision.convectiveSource,
-                        fireSource: slowProductDecision.fireSource,
-                        hotAlerts: hotAlerts
-                    ),
-                    for: context,
-                    loadedAt: loadedAt
-                )
-                riskProfileChange = acknowledgement.riskProfileChange
-                committedProjection = acknowledgement.record
-            }
-
-            guard let widgetSnapshotRefresher = environment.widgetSnapshotRefresher else {
-                return riskProfileChange
-            }
-            if let scope = homeWidgetRefreshScope(for: plan) {
-                if case .riskOrLocationProjection = scope, slowProductDecision.shouldRefreshRiskWidgets == false {
-                    return riskProfileChange
-                }
-                if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
-                    return riskProfileChange
-                }
-                let projection: HomeProjectionRecord?
-                if let committedProjection {
-                    projection = committedProjection
-                } else {
-                    projection = try await projectionStore.projection(for: context)
-                }
-                guard let projection,
-                      let hotSnapshotTimestamp = projection.lastHotAlertsLoadAt else {
-                    return riskProfileChange
-                }
-                try widgetSnapshotRefresher.refresh(
-                    scope: scope,
-                    input: .init(
-                        generatedAt: loadedAt,
-                        snapshotTimestamp: hotSnapshotTimestamp,
-                        stormRisk: snapshot.stormRisk,
-                        severeRisk: snapshot.severeRisk,
-                        alerts: projection.activeAlerts,
-                        mesos: projection.activeMesos,
-                        locationSummary: snapshot.locationSnapshot?.placemarkSummary
-                    )
-                )
-            }
+            acknowledgement = try await projectionStore.commitCore(
+                .init(
+                    weather: weather,
+                    slowProducts: slowProducts,
+                    updatesConvectiveRisk: slowProductDecision.updatesConvective,
+                    updatesFireRisk: slowProductDecision.updatesFire,
+                    convectiveSource: slowProductDecision.convectiveSource,
+                    fireSource: slowProductDecision.fireSource,
+                    hotAlerts: hotAlerts
+                ),
+                for: context,
+                loadedAt: loadedAt
+            )
         } catch {
             environment.logger.error(
                 "Failed to persist home projection during ingestion: \(error.localizedDescription, privacy: .public)"
             )
+            let retainedProjection = try? await projectionStore.projection(for: context)
+            return .failed(retainedProjection)
         }
 
-        return riskProfileChange
+        do {
+            try refreshWidgets(
+                for: plan,
+                projection: acknowledgement.record,
+                snapshot: snapshot,
+                loadedAt: loadedAt,
+                slowProductDecision: slowProductDecision,
+                acceptsHotFeedSnapshot: acceptsHotFeedSnapshot
+            )
+        } catch {
+            environment.logger.error(
+                "Failed to refresh home widgets from the persisted projection: \(error.localizedDescription, privacy: .public)"
+            )
+        }
+        return .committed(acknowledgement)
+    }
+
+    private func refreshWidgets(
+        for plan: HomeIngestionPlan,
+        projection: HomeProjectionRecord?,
+        snapshot: HomeSnapshot,
+        loadedAt: Date,
+        slowProductDecision: SlowProductPersistenceDecision,
+        acceptsHotFeedSnapshot: Bool
+    ) throws {
+        guard let widgetSnapshotRefresher = environment.widgetSnapshotRefresher,
+              let scope = homeWidgetRefreshScope(for: plan) else {
+            return
+        }
+        if case .riskOrLocationProjection = scope, slowProductDecision.shouldRefreshRiskWidgets == false {
+            return
+        }
+        if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
+            return
+        }
+        guard let projection,
+              let hotSnapshotTimestamp = projection.lastHotAlertsLoadAt else {
+            return
+        }
+        try widgetSnapshotRefresher.refresh(
+            scope: scope,
+            input: .init(
+                generatedAt: loadedAt,
+                snapshotTimestamp: hotSnapshotTimestamp,
+                stormRisk: snapshot.stormRisk,
+                severeRisk: snapshot.severeRisk,
+                alerts: projection.activeAlerts,
+                mesos: projection.activeMesos,
+                locationSummary: snapshot.locationSnapshot?.placemarkSummary
+            )
+        )
     }
 
     private func reconcilingRejectedRiskDomains(

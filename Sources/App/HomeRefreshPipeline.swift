@@ -96,6 +96,7 @@ final class HomeRefreshPipeline {
     private var followUpRefreshCount = 0
     private var latestVisibleSubmissionID: UUID?
     private var acceptedCorePublication: AcceptedCorePublication?
+    private var suppressedCoreSubmissionID: UUID?
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
@@ -537,6 +538,9 @@ final class HomeRefreshPipeline {
                 runID: publication.runID,
                 refreshKey: core.refreshKey
             )
+        case .coreSuppressed:
+            guard acceptedCorePublication?.submissionID != submissionID else { return }
+            suppressedCoreSubmissionID = submissionID
         case .enrichment(let enrichment):
             guard acceptedCorePublication == AcceptedCorePublication(
                 submissionID: submissionID,
@@ -552,6 +556,7 @@ final class HomeRefreshPipeline {
     private func applyFinalSnapshotIfNeeded(_ snapshot: HomeSnapshot, submissionID: UUID) {
         guard latestVisibleSubmissionID == submissionID else { return }
         guard acceptedCorePublication?.submissionID != submissionID else { return }
+        guard suppressedCoreSubmissionID != submissionID else { return }
 
         applyCore(.init(snapshot: snapshot))
         applyEnrichment(.init(snapshot: snapshot))
