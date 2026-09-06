@@ -11,7 +11,7 @@ struct HomeRefreshPipelineTests {
     @Test("scene active submits foreground activate to the unified queue")
     func sceneActive_submitsForegroundActivate() async throws {
         let context = makeContext()
-        let coordinator = RecordingHomeIngestionCoordinator()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
@@ -29,13 +29,13 @@ struct HomeRefreshPipelineTests {
         #expect(requests[0].trigger == .foregroundPrime)
         #expect(requests[0].locationContext == nil)
         #expect(requests[1].trigger == .foregroundActivate)
-        #expect(requests[1].locationContext == nil)
+        #expect(requests[1].locationContext == context)
     }
 
     @Test("context change forwards the current resolved context to the unified queue")
     func contextChanged_submitsExplicitLocationContext() async throws {
         let context = makeContext()
-        let coordinator = RecordingHomeIngestionCoordinator()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
@@ -121,6 +121,56 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
 
         #expect(await coordinator.requestCount() == 2)
+    }
+
+    @Test("movement during a scene-active follow-up remains deferred")
+    func sceneActiveFollowUp_defersMovementRefresh() async throws {
+        let initialContext = makeContext(h3Cell: 111_111)
+        let movedContext = makeContext(h3Cell: 222_222, timestamp: 200)
+        let primeGate = AsyncGate()
+        let followUpGate = AsyncGate()
+        let snapshots = [initialContext, initialContext, movedContext, movedContext].map {
+            HomeSnapshot(locationContext: $0, locationSnapshot: $0.snapshot, refreshKey: $0.refreshKey)
+        }
+        let coordinator = SequencedHomeIngestionCoordinator(
+            snapshots: snapshots,
+            gates: [primeGate, followUpGate]
+        )
+        let locationSession = FakeLocationSession(
+            currentContext: initialContext,
+            preparedContext: initialContext
+        )
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(
+            coordinator: coordinator,
+            locationSession: locationSession
+        )
+
+        await pipeline.handleScenePhaseChange(.active, environment: environment)
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+
+        locationSession.currentContext = movedContext
+        await pipeline.handleContextRefreshKeyChange(
+            movedContext.refreshKey,
+            scenePhase: .active,
+            environment: environment
+        )
+        #expect(await coordinator.requestCount() == 1)
+
+        await primeGate.open()
+        #expect(await waitUntil { await coordinator.requestCount() == 2 })
+        await followUpGate.open()
+        await pipeline.waitForIdle()
+
+        let requests = await coordinator.requests()
+        #expect(requests.map(\.trigger) == [
+            .foregroundPrime,
+            .foregroundActivate,
+            .foregroundPrime,
+            .foregroundLocationChange
+        ])
+        #expect(requests[1].locationContext == initialContext)
+        #expect(requests[3].locationContext == movedContext)
     }
 
     @Test("force refresh waits for unified queue completion when loading is shown")
@@ -1633,6 +1683,7 @@ struct HomeRefreshPipelineTests {
         let stored = try #require(projection)
 
         #expect(stored.weather == weatherValue)
+        #expect(locationSession.prepareCalls.count == 1)
         #expect(stored.stormRisk == .enhanced)
         #expect(stored.severeRisk == .hail(probability: 0.30))
         #expect(stored.fireRisk == .elevated)
@@ -3606,6 +3657,10 @@ private actor SequencedHomeIngestionCoordinator: HomeIngestionCoordinating {
 
     func requestCount() -> Int {
         submittedRequests.count
+    }
+
+    func requests() -> [HomeIngestionRequest] {
+        submittedRequests
     }
 }
 

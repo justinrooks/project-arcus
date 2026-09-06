@@ -18,6 +18,7 @@ enum HomeStormSetupRefreshResult: Sendable, Equatable {
 }
 
 struct HomeSnapshot: Sendable, Equatable {
+    var locationContext: LocationContext?
     var locationSnapshot: LocationSnapshot?
     var refreshKey: LocationContext.RefreshKey?
     var weather: SummaryWeather?
@@ -38,6 +39,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var freshness: HomeFreshnessState
 
     init(
+        locationContext: LocationContext? = nil,
         locationSnapshot: LocationSnapshot? = nil,
         refreshKey: LocationContext.RefreshKey? = nil,
         weather: SummaryWeather? = nil,
@@ -57,6 +59,7 @@ struct HomeSnapshot: Sendable, Equatable {
         latestOutlook: ConvectiveOutlookDTO? = nil,
         freshness: HomeFreshnessState = .init()
     ) {
+        self.locationContext = locationContext
         self.locationSnapshot = locationSnapshot
         self.refreshKey = refreshKey
         self.weather = weather

@@ -48,8 +48,8 @@ Plans merge provenance independently from execution class, with foreground owner
 - Status: Implemented locally; focused validation passed; awaiting human review.
 
 ### [#439](https://github.com/justinrooks/project-arcus/issues/439) — Reuse prime context for scene-active follow-up
-- Status: Pending
-- Handoff: Preserve deferred movement refresh.
+- Status: Implemented locally; awaiting human review.
+- Handoff: Scene-active follow-up now receives the context resolved by prime; preserve deferred movement refresh.
 
 ### [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests
 - Status: Pending
@@ -72,4 +72,9 @@ Plans merge provenance independently from execution class, with foreground owner
 - `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeRefreshPipelineTests` — 71 executed, 71 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.gKlyx7/unit.xcresult`.
 - `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests -only-testing:SkyAwareTests/LocationContextResolverTests -only-testing:SkyAwareTests/NwsHttpClientTests` — 46 executed, 46 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.v6aT8t/unit.xcresult`.
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` — passed.
+- `git diff --check` — passed.
+
+### [#439](https://github.com/justinrooks/project-arcus/issues/439)
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeRefreshPipelineTests` — 72 executed, 72 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.mdY9yo/unit.xcresult`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` — passed.
 - `git diff --check` — passed.

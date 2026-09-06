@@ -299,7 +299,6 @@ final class HomeRefreshPipeline {
         let startedAt = Date()
         let previousResolvedRefreshKey = lastResolvedLocationScopedRefreshKey
         do {
-            let request = makeRequest(for: trigger, using: environment.locationSession)
             let snapshot: HomeSnapshot
             if shouldPrimeSummary(for: trigger) {
                 snapshot = try await environment.coordinator.enqueueAndWait(
@@ -308,9 +307,15 @@ final class HomeRefreshPipeline {
                 if trigger == .sceneActive, snapshot.locationSnapshot != nil {
                     lastResolvedLocationScopedRefreshKey = snapshot.refreshKey
                 }
-                scheduleFollowUpRefresh(request, environment: environment)
+                scheduleFollowUpRefresh(
+                    makeFollowUpRequest(for: trigger, resolvedContext: snapshot.locationContext),
+                    environment: environment
+                )
             } else {
-                snapshot = try await enqueueVisibleSnapshot(request, environment: environment)
+                snapshot = try await enqueueVisibleSnapshot(
+                    makeRequest(for: trigger, using: environment.locationSession),
+                    environment: environment
+                )
             }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.info(
@@ -416,9 +421,26 @@ final class HomeRefreshPipeline {
         for trigger: HomeView.RefreshTrigger,
         using locationSession: any HomeLocationContextPreparing
     ) -> HomeIngestionRequest {
+        let locationContext: LocationContext?
+        switch trigger {
+        case .sceneActive, .contextChanged:
+            locationContext = locationSession.currentContext
+        case .manual, .timer:
+            locationContext = nil
+        }
+        return HomeIngestionRequest(
+            trigger: trigger.ingestionTrigger,
+            locationContext: locationContext
+        )
+    }
+
+    private func makeFollowUpRequest(
+        for trigger: HomeView.RefreshTrigger,
+        resolvedContext: LocationContext?
+    ) -> HomeIngestionRequest {
         HomeIngestionRequest(
             trigger: trigger.ingestionTrigger,
-            locationContext: trigger == .contextChanged ? locationSession.currentContext : nil
+            locationContext: resolvedContext
         )
     }
 
