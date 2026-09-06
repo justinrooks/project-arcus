@@ -412,6 +412,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             weather: weatherRefresh.weather,
             freshness: freshness
         )
+        snapshot.locationContext = context
         snapshot.weatherRefreshResult = weatherRefresh
         if let context {
             snapshot.riskComparisonLocationKey = HomeProjection.riskComparisonLocationKey(for: context)
