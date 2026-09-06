@@ -132,3 +132,9 @@
 - Keep targeted `SkyAware_UI_Smoke` evidence distinct from the entire UI smoke suite. Do not infer the full suite’s
   health from selected UI tests, and do not classify a one-off CLI unit-lane crash as a branch blocker after a human
   has reproduced the complete `SkyAware_Tests` plan successfully in Xcode.
+
+## 2026-09-06
+
+- Do not advance an issue to commit readiness from focused tests when its acceptance criteria require a broader
+  coordinator ownership/cancellation suite. Record the exact finalized result bundle and verify the full required
+  lane before declaring validation complete.

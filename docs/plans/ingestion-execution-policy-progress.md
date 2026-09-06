@@ -24,7 +24,7 @@ Plans merge provenance independently from execution class, with foreground owner
 
 | Order | Issue | Status | Dependency |
 |---:|---|---|---|
-| 1 | [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class | Ready for commit | None |
+| 1 | [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class | Awaiting human review | None |
 | 2 | [#436](https://github.com/justinrooks/project-arcus/issues/436) — Scope HTTP policy across location resolution | Pending | 01 |
 | 3 | [#439](https://github.com/justinrooks/project-arcus/issues/439) — Reuse prime context for scene-active follow-up | Pending | 02 |
 | 4 | [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests | Pending | None |
@@ -41,7 +41,7 @@ Plans merge provenance independently from execution class, with foreground owner
 ## Status Ledger
 
 ### [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class
-- Status: Implemented locally; validation complete; awaiting human review.
+- Status: Implemented locally; complete unit validation passed; awaiting human review.
 - Handoff: Execution class now merges independently from provenance; preserve waiter/cancellation semantics.
 
 ### [#436](https://github.com/justinrooks/project-arcus/issues/436) — Scope HTTP policy across location resolution
@@ -63,5 +63,7 @@ Plans merge provenance independently from execution class, with foreground owner
 ### [#438](https://github.com/justinrooks/project-arcus/issues/438)
 - `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests` — passed.
 - `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeRefreshPipelineTests` — 100 executed, 100 passed.
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/StormSetupIngestionTests` — 47 executed, 47 passed.
+- `tools/ci/run_test_lane.sh unit` — 1,096 executed, 1,096 passed.
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` — passed.
 - `git diff --check` — passed.

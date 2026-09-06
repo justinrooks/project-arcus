@@ -780,8 +780,8 @@ struct StormSetupIngestionTests {
         }
     }
 
-    @Test("background-classified mixed provenance skips AQI without changing weather execution")
-    func backgroundClassifiedMixedProvenanceSkipsAirQuality() async throws {
+    @Test("foreground-classified mixed provenance refreshes AQI with foreground execution")
+    func foregroundClassifiedMixedProvenanceRefreshesAirQuality() async throws {
         let context = makeContext()
         let airQuality = AirQualityQueryingFake(response: .success(try makeAirQualityResponse()))
         let harness = try makeHarness(context: context, airQualityQuerying: airQuality)
@@ -789,10 +789,10 @@ struct StormSetupIngestionTests {
             .merged(with: .init(request: .init(trigger: .backgroundRefresh)))
 
         let snapshot = try await harness.executor.run(plan: plan)
-        #expect(await airQuality.requestCount() == 0)
-        #expect(await harness.query.executionModes() == [.background])
+        #expect(await airQuality.requestCount() == 1)
+        #expect(await harness.query.executionModes() == [.foreground])
         #expect(await harness.weather.callCount() == 1)
-        #expect(snapshot.airQuality == nil)
+        #expect(snapshot.airQuality != nil)
     }
 
     @Test("AQI preserves missing-context and missing-provider behavior")
