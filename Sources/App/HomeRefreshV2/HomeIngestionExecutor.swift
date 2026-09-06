@@ -944,10 +944,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     private func httpExecutionMode(for plan: HomeIngestionPlan) -> HTTPExecutionMode {
-        if plan.provenance.contains(.background) {
-            return .background
+        switch plan.executionClass {
+        case .foreground:
+            .foreground
+        case .background:
+            .background
         }
-        return .foreground
     }
 
     private func throwIfBackgroundDeadlineExceeded() async throws {

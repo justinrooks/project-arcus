@@ -758,3 +758,123 @@
 - GitHub issues updated: none
 - Existing issues referenced: none; remote issue deduplication could not be performed without the required connector.
 - Out-of-scope repositories: arcus-signal; ArcusCore
+
+## 2026-09-06
+
+- Date: 2026-09-06
+- Repository reviewed: project-arcus
+- Workflow reviewed: Foreground activation refresh and coherent Today publication
+- Workflow selection reason: This workflow changed materially after the 2026-08-30 audit through eight commits that
+  introduced typed feed outcomes, independent slow-feed clocks, projection commit acknowledgement, and persistence-gated
+  visible publication. It is the primary user-facing refresh path, and these changes warranted a complete recheck of
+  request admission, context preparation, persistence, and UI publication rather than a changed-lines-only review.
+- Previous workflow review: 2026-08-25 (Today refresh and projection persistence); the 2026-08-30 audit covered only
+  Storm Setup presentation construction.
+- Commit window: `1481bfa49fb434df4915627752349ef8d678dcf2..4ca545ea87f08b0203af16db989ef100aab6033b`
+  (2026-08-30 through 2026-09-05). The prior audit's end commit supplied the workflow marker; current `HEAD` supplied
+  the end marker.
+- Relevant commits: `bd186f9d` (typed Arcus and meso outcomes), `b43fc969` (coherent hot-feed acceptance), `9a5ac89d`
+  (typed outlook outcome), `782ab7b7` (independent map/outlook refresh clocks), `93c23d20` (manual outlook outcome),
+  `4ba84de3` (projection commit acknowledgement), `c701a2f6` (persistence-gated core publication), and `4ca545ea`
+  (remove AQI live-only fallback).
+- Relevant changed files: `Sources/App/HomeRefreshPipeline.swift`,
+  `Sources/App/HomeRefreshV2/HomeFreshnessState.swift`, `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift`,
+  `Sources/Repos/HomeProjectionStore.swift`, `Tests/UnitTests/HomeProjectionStoreTests.swift`,
+  `Tests/UnitTests/HomeRefreshPipelineTests.swift`, and `Tests/UnitTests/StormSetupIngestionTests.swift`.
+- Files and symbols inspected:
+  - `docs/codebase/skyaware-app-summary.md` — current ingestion, persistence, Today, and product-surface inventory
+  - `Sources/App/HomeRefreshPipeline.swift` — `handleScenePhaseChange`, `runRefresh`, `makePrimeRequest`,
+    `scheduleFollowUpRefresh`, `enqueueVisibleSnapshot`, `handle`, and `applyCore`
+  - `Sources/App/HomeRefreshV2/HomeRefreshTrigger.swift` — `HomeIngestionPlan.init(request:)`, merge, and satisfaction
+  - `Sources/App/HomeRefreshV2/HomeIngestionCoordinator.swift` — request joining, pending-run merging, progress, and
+    publication fan-out
+  - `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — `run`, `resolveContext`, feed admission and concurrency,
+    `persistProjection`, and `refreshWidgets`
+  - `Sources/App/HomeRefreshV2/HomeFreshnessState.swift` — hot, map, outlook, and weather freshness ownership
+  - `Sources/Infrastructure/Location/LocationContextResolver.swift` — `prepareCurrentContext` and `resolveContext`
+  - `Sources/Providers/Location/LocationProvider.swift` — recent snapshot and placemark reuse
+  - `Sources/Repos/HomeProjectionStore.swift` — `commitCore`, keyed projection reads, and commit acknowledgement
+  - `Tests/UnitTests/HomeRefreshPipelineTests.swift`, `Tests/UnitTests/StormSetupIngestionTests.swift`, and
+    `Tests/UnitTests/HomeProjectionStoreTests.swift` — prime/follow-up shape, concurrent feed execution, independent
+    freshness retry, persistence acknowledgement, retained projection, and publication suppression coverage
+  - `Tests/UnitTests/HomeProjectionStoreScalingMeasurementTests.swift` — existing projection-store and presentation
+    scaling harness
+  - `docs/plans/ingestion-execution-policy-runbook.md`,
+    `docs/plans/ingestion-execution-policy-progress.md`, and
+    `docs/plans/physical-device-release-validation-progress.md` — existing ownership, remediation, and measurement state
+- Tests, metrics, traces, or profiling inspected: The current deterministic suites explicitly cover two scene-active
+  requests, concurrent hot and slow providers, independent map/outlook retry clocks, acknowledged persistence,
+  persistence-failure retention, and suppression without durable content. Existing Debug simulator measurements show
+  bounded post-fix projection commits and a 12.467 ms median full-history presentation conversion at 1,000 rows, but
+  do not measure this workflow's prime/follow-up context preparation. The physical-device ledger contains one
+  non-comparable 86.771 ms visible-commit-to-render interval and records that privacy-safe Release tracing remains
+  blocked. No tests, profiler captures, or benchmarks were run because this audit changes documentation only.
+- Findings:
+  - Finding ID: `PERF-ARCUS-FOREGROUND-PRIME-CONTEXT-REPREPARATION`
+  - Fingerprint: `performance|project-arcus|foreground-activation-refresh|location-context|prime-follow-up-repreparation`
+  - Repository: project-arcus
+  - Audit type: Weekly Workflow Performance Audit
+  - Workflow: Foreground activation refresh and coherent Today publication
+  - Title: Scene-active follow-up repeats prime location-context preparation
+  - Status: DUPLICATE
+  - Severity: LOW
+  - Confidence: MEDIUM
+  - Evidence class: CODE-SUPPORTED
+  - First observed: 2026-09-01 in the ingestion execution-policy plan
+  - Last verified: 2026-09-06 at `4ca545ea87f08b0203af16db989ef100aab6033b`
+  - Affected files and symbols: `Sources/App/HomeRefreshPipeline.swift` — `runRefresh`, `makeRequest`,
+    `makePrimeRequest`, and `scheduleFollowUpRefresh`; `Sources/App/HomeRefreshV2/HomeRefreshTrigger.swift` —
+    `HomeIngestionPlan.init(request:)`; `Sources/App/HomeRefreshV2/HomeIngestionExecutor.swift` — `resolveContext`;
+    `Sources/Infrastructure/Location/LocationContextResolver.swift` — `prepareCurrentContext` and `resolveContext`.
+  - Execution path: A scene-active refresh submits a forced hot-alert `foregroundPrime`, awaits it, then schedules an
+    all-lane `foregroundActivate` request created before the prime result is available. Both plans use
+    `.prepare(requiresFreshLocation: true, showsAuthorizationPrompt: true)`, so the follow-up enters context preparation
+    again instead of carrying the prime's resolved context. A recent snapshot can avoid a second GPS request, and
+    placemark reuse can avoid reverse geocoding, but `resolveContext` still requests grid-point metadata for the same
+    coordinates before the full feed work can proceed.
+  - Performance mechanism: The workflow repeats location-context orchestration and NWS grid metadata resolution on its
+    latency-sensitive foreground path. The repeated work is structurally demonstrated, but its material duration and
+    network/cache behavior have not been measured in a valid Release-device trace.
+  - User or operational impact: The prime remains intentionally non-visible, so the repeated preparation can delay the
+    coherent all-lane Today publication after activation and can add avoidable provider/cache work. Cached location and
+    metadata limit the likely impact; no hitch or end-to-end latency regression is established, so severity remains Low.
+  - Measurement evidence: No directly comparable measurement. Current app signposts record ingestion duration and
+    visible commit, while the physical-device evidence lane is blocked from collecting privacy-safe correlated
+    signposts and SwiftUI metrics.
+  - Measurement gap: Capture prime and follow-up context-preparation spans, grid metadata request/cache-hit counts, and
+    activation-to-visible-commit latency in the same privacy-safe Release-device scenario before claiming a user-visible
+    latency reduction.
+  - Minimal fix strategy: Reuse the successfully resolved prime context as the scene-active follow-up's explicit
+    context, while preserving the current prime/follow-up split, deferred movement refresh, upload attribution,
+    authorization behavior, coordinator joining, and persistence-gated publication.
+  - Required validation: Deterministic pipeline/executor tests proving one context preparation for scene activation,
+    explicit follow-up context ownership, deferred movement behavior, unchanged upload source/reason, and unchanged
+    publication ordering; focused non-zero unit lane and Debug build; before/after Release-device timing when the safe
+    trace lane becomes available.
+  - Related GitHub issue: [#439](https://github.com/justinrooks/project-arcus/issues/439), already listed as Pending in
+    the repository's ingestion execution-policy runbook and progress ledger. Remote state could not be re-verified
+    because `gh` could not connect to `api.github.com`; no duplicate issue was created.
+- Measurement gaps: The existing #439 concern lacks a valid Release-device baseline for repeated context preparation
+  and activation-to-visible-commit latency. This gap does not justify another measurement issue because the repository's
+  ordered physical-device campaign already owns the required evidence lane and warm-activation scenario in #347 and
+  #350.
+- Watchlist: Persistence-gated no-commit and failed-commit paths can perform one additional keyed projection read before
+  visible publication. The read is required to prevent unpersisted provider data from replacing coherent UI state and
+  is bounded by the current projection key; promote only if a trace attributes material foreground latency or excessive
+  fetch frequency to it.
+- Resolved findings: none in this selected workflow. The recent commit-acknowledgement path does avoid rereading the
+  projection after a successful core commit, as covered by the existing widget-refresh test.
+- Top finding: `PERF-ARCUS-FOREGROUND-PRIME-CONTEXT-REPREPARATION` (DUPLICATE of #439, MEDIUM confidence).
+- Best next action: Execute the existing ordered ingestion execution-policy work through #439, then compare one
+  context preparation against the current two-preparation structural baseline; do not open another optimization or
+  measurement issue from this audit.
+- Implementation recommended: yes, through existing issue #439 after its documented dependencies; no new audit issue
+  is recommended.
+- Measurement recommended: yes, through the existing privacy-safe Release-device campaign rather than a new issue.
+- GitHub issues created: none; the only actionable mechanism duplicates #439, and remote issue search failed because
+  `gh` could not connect to `api.github.com`.
+- GitHub issues updated: none
+- Existing issues referenced: #439 (prime-context reuse), #347 (privacy-safe evidence lane), and #350 (warm cached
+  launch and foreground activation capture). Repository documents show all three as Pending or Blocked; remote state
+  was unavailable.
+- Out-of-scope repositories: arcus-signal; ArcusCore

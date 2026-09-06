@@ -18,13 +18,13 @@ Tracks explicit execution ownership and removal of avoidable foreground context 
 
 ## Current State
 
-Plans union provenance, while any background provenance selects background HTTP behavior. Context resolution occurs before the executor scopes HTTP mode. Scene activation constructs its full request before prime completes, causing avoidable second preparation.
+Plans merge provenance independently from execution class, with foreground ownership selecting foreground HTTP behavior and clearing retained background deadlines. Context resolution still occurs before the executor scopes HTTP mode. Scene activation constructs its full request before prime completes, causing avoidable second preparation.
 
 ## Issue Sequence
 
 | Order | Issue | Status | Dependency |
 |---:|---|---|---|
-| 1 | [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class | Pending | None |
+| 1 | [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class | Awaiting human review | None |
 | 2 | [#436](https://github.com/justinrooks/project-arcus/issues/436) — Scope HTTP policy across location resolution | Pending | 01 |
 | 3 | [#439](https://github.com/justinrooks/project-arcus/issues/439) — Reuse prime context for scene-active follow-up | Pending | 02 |
 | 4 | [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests | Pending | None |
@@ -41,8 +41,8 @@ Plans union provenance, while any background provenance selects background HTTP 
 ## Status Ledger
 
 ### [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class
-- Status: Pending
-- Handoff: Preserve waiter/cancellation semantics and deliberately update mixed-provenance tests.
+- Status: Implemented locally; complete unit validation passed; awaiting human review.
+- Handoff: Execution class now merges independently from provenance; preserve waiter/cancellation semantics.
 
 ### [#436](https://github.com/justinrooks/project-arcus/issues/436) — Scope HTTP policy across location resolution
 - Status: Pending
@@ -60,5 +60,10 @@ Plans union provenance, while any background provenance selects background HTTP 
 
 ## Verification Ledger
 
-No implementation validation yet.
-
+### [#438](https://github.com/justinrooks/project-arcus/issues/438)
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeIngestionCoordinatorTests` — passed.
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeRefreshPipelineTests` — 100 executed, 100 passed.
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/StormSetupIngestionTests` — 47 executed, 47 passed.
+- `tools/ci/run_test_lane.sh unit` — 1,096 executed, 1,096 passed.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` — passed.
+- `git diff --check` — passed.
