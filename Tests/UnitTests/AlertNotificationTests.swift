@@ -192,7 +192,7 @@ struct AlertNotificationTests {
     }
 
     @Test("background location change waits for unified ingestion before sending a alert notification")
-    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async throws {
+    func backgroundLocationChange_waitsForUnifiedIngestionBeforeSendingNotification() async {
         let sender = RecordingSender()
         let watchEngine = WatchEngine(
             rule: WatchRule(),
@@ -223,21 +223,20 @@ struct AlertNotificationTests {
             )
         )
 
-        let handleTask = Task {
-            await handler.handleLocationChange()
-        }
+        async let handleLocationChange = handler.handleLocationChange()
 
-        let requestStarted = await waitUntil {
+        let requestStarted = await waitUntil(timeout: .seconds(5)) {
             await coordinator.requestCount() == 1
         }
         #expect(requestStarted)
         #expect((await sender.sent()).isEmpty)
 
-        let request = try #require(await coordinator.requests().first)
-        #expect(request.trigger == .backgroundLocationChange)
+        let requests = await coordinator.requests()
+        #expect(requests.count == 1)
+        #expect(requests.first?.trigger == .backgroundLocationChange)
 
         await gate.open()
-        await handleTask.value
+        await handleLocationChange
 
         #expect((await sender.sent()).count == 1)
     }

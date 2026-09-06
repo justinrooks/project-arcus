@@ -152,6 +152,87 @@ struct LocationContextResolverTests {
         }
     }
 
+    private actor SuspendedLabelsNwsClient: NwsClient {
+        private var countyRequestStarted = false
+        private var fireZoneRequestStarted = false
+        private var requestsReleased = false
+        private var countyContinuation: CheckedContinuation<Data, Never>?
+        private var fireZoneContinuation: CheckedContinuation<Data, Never>?
+
+        func fetchActiveAlertsJsonData(for location: Coordinate2D) async throws -> Data {
+            Data()
+        }
+
+        func fetchPointMetadata(for location: Coordinate2D) async throws -> Data {
+            Data()
+        }
+
+        func fetchZoneMetadata(for zoneType: NwsZoneType, and zone: String) async throws -> Data {
+            if requestsReleased {
+                return Self.zoneMetadata(for: zoneType)
+            }
+
+            return await withCheckedContinuation { continuation in
+                switch zoneType {
+                case .county:
+                    countyRequestStarted = true
+                    countyContinuation = continuation
+                case .fire:
+                    fireZoneRequestStarted = true
+                    fireZoneContinuation = continuation
+                }
+            }
+        }
+
+        func bothZoneRequestsStarted() -> Bool {
+            countyRequestStarted && fireZoneRequestStarted
+        }
+
+        func resumeRequests() {
+            requestsReleased = true
+            countyContinuation?.resume(returning: Self.zoneMetadata(for: .county))
+            fireZoneContinuation?.resume(returning: Self.zoneMetadata(for: .fire))
+            countyContinuation = nil
+            fireZoneContinuation = nil
+        }
+
+        private static func zoneMetadata(for zoneType: NwsZoneType) -> Data {
+            let name = switch zoneType {
+            case .county: "Oklahoma"
+            case .fire: "Central Oklahoma"
+            }
+            let type = switch zoneType {
+            case .county: "county"
+            case .fire: "fire"
+            }
+            return Data(
+                """
+                {
+                  "properties": {
+                    "type": "\(type)",
+                    "name": "\(name)"
+                  }
+                }
+                """.utf8
+            )
+        }
+    }
+
+    @Test("resolves county and fire-zone labels concurrently")
+    func resolvesLocationLabelsConcurrently() async throws {
+        let client = SuspendedLabelsNwsClient()
+        let repo = NwsMetadataRepo()
+
+        async let labels = repo.getLocationLabels(using: client, for: "OKC109", and: "OKZ025")
+
+        #expect(await waitUntil { await client.bothZoneRequestsStarted() })
+        await client.resumeRequests()
+
+        let (countyLabel, fireZoneLabel) = try await labels
+        #expect(countyLabel == "Oklahoma County")
+        #expect(fireZoneLabel == "Central Oklahoma")
+    }
+
     @Test("waits for authorization result before preparing a ready context")
     func waitsForAuthorizationResult() async throws {
         let authorizationState = AuthorizationState(status: .notDetermined)

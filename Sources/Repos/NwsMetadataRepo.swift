@@ -34,11 +34,12 @@ actor NwsMetadataRepo {
     
     func getLocationLabels(using client: any NwsClient, for countyCode: String?, and fireZone: String?) async throws -> (String?, String?) {
         logger.debug("Resolving NWS location labels")
-        let countyMetadata = try await zoneMetadata(using: client, type: .county, identifier: countyCode)
-        let fireZoneMetadata = try await zoneMetadata(using: client, type: .fire, identifier: fireZone)
+        async let countyMetadata = zoneMetadata(using: client, type: .county, identifier: countyCode)
+        async let fireZoneMetadata = zoneMetadata(using: client, type: .fire, identifier: fireZone)
+        let (resolvedCountyMetadata, resolvedFireZoneMetadata) = try await (countyMetadata, fireZoneMetadata)
 
-        let countyLabel = countyMetadata.map { "\($0.name) \($0.type)".capitalized }
-        let fireZoneLabel = fireZoneMetadata?.name
+        let countyLabel = resolvedCountyMetadata.map { "\($0.name) \($0.type)".capitalized }
+        let fireZoneLabel = resolvedFireZoneMetadata?.name
 
         logger.debug(
             "Resolved NWS location labels hasCountyLabel=\((countyLabel != nil), privacy: .public) hasFireZoneLabel=\((fireZoneLabel != nil), privacy: .public)"
