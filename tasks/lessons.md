@@ -138,3 +138,5 @@
 - Do not advance an issue to commit readiness from focused tests when its acceptance criteria require a broader
   coordinator ownership/cancellation suite. Record the exact finalized result bundle and verify the full required
   lane before declaring validation complete.
+- When a concurrency test must hold a dependency behind a gate, use a structured child and release the gate on every
+  assertion path. An unstructured test task can be delayed under a parallel lane and remains orphaned if a requirement throws.

@@ -27,7 +27,7 @@ Plans merge provenance independently from execution class, with foreground owner
 | 1 | [#438](https://github.com/justinrooks/project-arcus/issues/438) — Add explicit ingestion execution class | Awaiting human review | None |
 | 2 | [#436](https://github.com/justinrooks/project-arcus/issues/436) — Scope HTTP policy across location resolution | Implemented locally; awaiting human review | 01 |
 | 3 | [#439](https://github.com/justinrooks/project-arcus/issues/439) — Reuse prime context for scene-active follow-up | Pending | 02 |
-| 4 | [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests | Pending | None |
+| 4 | [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests | Ready for commit | None |
 | 5 | [#440](https://github.com/justinrooks/project-arcus/issues/440) — Define the foreground durable-context policy | Pending | 03 |
 
 ## Existing Code Map
@@ -52,7 +52,7 @@ Plans merge provenance independently from execution class, with foreground owner
 - Handoff: Scene-active follow-up now receives the context resolved by prime; preserve deferred movement refresh.
 
 ### [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests
-- Status: Pending
+- Status: Ready for commit.
 
 ### [#440](https://github.com/justinrooks/project-arcus/issues/440) — Define the foreground durable-context policy
 - Status: Pending decision gate
@@ -77,4 +77,9 @@ Plans merge provenance independently from execution class, with foreground owner
 ### [#439](https://github.com/justinrooks/project-arcus/issues/439)
 - `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeRefreshPipelineTests` — 72 executed, 72 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.mdY9yo/unit.xcresult`.
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17" build` — passed.
+- `git diff --check` — passed.
+
+### [#437](https://github.com/justinrooks/project-arcus/issues/437)
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/LocationContextResolverTests` — 11 executed, 11 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.cz6Vom/unit.xcresult`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` — passed.
 - `git diff --check` — passed.
