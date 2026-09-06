@@ -69,6 +69,15 @@ struct HomeIngestionProvenance: OptionSet, Sendable {
     static let remoteHotAlertOpened = HomeIngestionProvenance(rawValue: 1 << 7)
 }
 
+enum HomeIngestionExecutionClass: Sendable, Equatable {
+    case foreground
+    case background
+
+    func merged(with newer: Self) -> Self {
+        self == .foreground || newer == .foreground ? .foreground : .background
+    }
+}
+
 enum HomeIngestionLocationRequest: Sendable, Equatable {
     case currentPrepared
     case latestAcceptedSnapshotPrepared
@@ -134,6 +143,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
     var forcedLanes: HomeIngestionLane
     var locationRequest: HomeIngestionLocationRequest
     var provenance: HomeIngestionProvenance
+    var executionClass: HomeIngestionExecutionClass
     var remoteAlertContext: HomeRemoteAlertContext?
     var isLocationBearing: Bool
     /// Only a standalone scheduled app refresh may apply durable-context reuse.
@@ -142,6 +152,12 @@ struct HomeIngestionPlan: Sendable, Equatable {
 
     init(request: HomeIngestionRequest) {
         isScheduledBackgroundRefresh = request.trigger == .backgroundRefresh
+        executionClass = switch request.trigger {
+        case .backgroundRefresh, .backgroundLocationChange, .remoteHotAlertReceived:
+            .background
+        default:
+            .foreground
+        }
         switch request.trigger {
         case .bootstrap:
             lanes = .all
@@ -218,6 +234,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
 
     mutating func merge(with newer: Self) {
         isScheduledBackgroundRefresh = isScheduledBackgroundRefresh && newer.isScheduledBackgroundRefresh
+        executionClass = executionClass.merged(with: newer.executionClass)
         lanes.formUnion(newer.lanes)
         lanes.insert(.hotAlerts)
         forcedLanes.formUnion(newer.forcedLanes)
@@ -333,6 +350,18 @@ extension HomeIngestionPlan {
         "forced=\(forcedLanes.logDescription) " +
         "locationRequest=\(locationRequest.logDescription) " +
         "provenance=\(provenance.logDescription) " +
+        "executionClass=\(executionClass.logDescription) " +
         "remoteAlert=\(remoteAlertContext != nil)"
+    }
+}
+
+extension HomeIngestionExecutionClass {
+    var logDescription: String {
+        switch self {
+        case .foreground:
+            "foreground"
+        case .background:
+            "background"
+        }
     }
 }

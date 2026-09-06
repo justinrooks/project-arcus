@@ -2524,10 +2524,12 @@ struct HomeRefreshPipelineTests {
                 widgetSnapshotRefresher: nil
             )
         )
-        var plan = HomeIngestionPlan(request: .init(trigger: .sessionTick))
+        var plan = HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
+        plan.merge(with: .init(request: .init(trigger: .foregroundActivate)))
         plan.lanes = [.slowProducts]
         plan.forcedLanes = [.slowProducts]
-        plan.provenance = .manualRefresh
+        #expect(plan.provenance.contains(.background))
+        #expect(plan.executionClass == .foreground)
         let task = Task {
             try await executor.run(
                 plan: plan,
@@ -3083,6 +3085,10 @@ struct HomeRefreshPipelineTests {
         #expect(remote.isScheduledBackgroundRefresh == false)
         #expect(foregroundMerged.isScheduledBackgroundRefresh == false)
         #expect(manualMerged.isScheduledBackgroundRefresh == false)
+        #expect(scheduled.executionClass == .background)
+        #expect(remote.executionClass == .background)
+        #expect(foregroundMerged.executionClass == .foreground)
+        #expect(manualMerged.executionClass == .foreground)
 
         for testCase in [scheduled, remote, foregroundMerged, manualMerged] {
             let locationSession = FakeLocationSession(currentContext: nil, preparedContext: makeContext())

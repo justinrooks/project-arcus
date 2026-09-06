@@ -221,6 +221,7 @@ struct HomeIngestionCoordinatorTests {
         #expect(backgroundRefreshPlan.lanes == .all)
         #expect(backgroundRefreshPlan.forcedLanes == [.hotAlerts])
         #expect(backgroundRefreshPlan.locationRequest == .prepare(requiresFreshLocation: true, showsAuthorizationPrompt: false))
+        #expect(backgroundRefreshPlan.executionClass == .background)
 
         let backgroundLocationPlan = HomeIngestionPlan(
             request: .init(trigger: .backgroundLocationChange)
@@ -228,6 +229,10 @@ struct HomeIngestionCoordinatorTests {
         #expect(backgroundLocationPlan.lanes == .all)
         #expect(backgroundLocationPlan.forcedLanes == [.hotAlerts, .weather])
         #expect(backgroundLocationPlan.locationRequest == .latestAcceptedSnapshotPrepared)
+        #expect(backgroundLocationPlan.executionClass == .background)
+
+        #expect(activatePlan.executionClass == .foreground)
+        #expect(HomeIngestionPlan(request: .init(trigger: .remoteHotAlertReceived)).executionClass == .background)
     }
 
     @Test("runs one ingestion plan at a time")
@@ -319,6 +324,7 @@ struct HomeIngestionCoordinatorTests {
         #expect(merged.forcedLanes == .all)
         #expect(merged.provenance.contains(.background))
         #expect(merged.provenance.contains(.manualRefresh))
+        #expect(merged.executionClass == .foreground)
     }
 
     @Test("newest location-bearing request wins when pending work is merged")

@@ -133,12 +133,12 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     }
 
     private func submit(_ requestedPlan: HomeIngestionPlan, waiter: Waiter?) {
-        let executionContext = BackgroundRefreshExecutionContext.current
+        let submittedExecutionContext = BackgroundRefreshExecutionContext.current
         let hasFireAndForgetOwner = waiter == nil
         if let activePlan,
            activePlan.satisfies(requestedPlan),
            activePlanCanSatisfy(requestedPlan),
-           !(activeExecutionContext != nil && isForegroundOwner(requestedPlan)) {
+           !(activeExecutionContext != nil && requestedPlan.executionClass == .foreground) {
             logger.debug(
                 "Home ingestion request joined active run requested={\(requestedPlan.logDescription)} active={\(activePlan.logDescription)}"
             )
@@ -152,7 +152,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         if activeTask != nil {
             if let pendingRun {
                 let mergedPlan = pendingRun.plan.merged(with: requestedPlan)
-                let hasForegroundOwner = pendingRun.hasForegroundOwner || isForegroundOwner(requestedPlan)
+                let hasForegroundOwner = pendingRun.hasForegroundOwner || requestedPlan.executionClass == .foreground
                 logger.debug(
                     "Home ingestion request merged into pending follow-up requested={\(requestedPlan.logDescription)} pending={\(pendingRun.plan.logDescription)} merged={\(mergedPlan.logDescription)}"
                 )
@@ -160,8 +160,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                     plan: mergedPlan,
                     executionContext: mergedExecutionContext(
                         pending: pendingRun.executionContext,
-                        submitted: executionContext,
-                        hasForegroundOwner: hasForegroundOwner
+                        submitted: submittedExecutionContext,
+                        executionClass: mergedPlan.executionClass
                     ),
                     hasForegroundOwner: hasForegroundOwner,
                     hasFireAndForgetOwner: pendingRun.hasFireAndForgetOwner || hasFireAndForgetOwner
@@ -172,8 +172,8 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                 )
                 pendingRun = .init(
                     plan: requestedPlan,
-                    executionContext: isForegroundOwner(requestedPlan) ? nil : executionContext,
-                    hasForegroundOwner: isForegroundOwner(requestedPlan),
+                    executionContext: executionContext(for: requestedPlan, submitted: submittedExecutionContext),
+                    hasForegroundOwner: requestedPlan.executionClass == .foreground,
                     hasFireAndForgetOwner: hasFireAndForgetOwner
                 )
             }
@@ -184,7 +184,7 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
         store(waiter, earliestRunNumber: activeRunNumber + 1)
         startRun(
             with: requestedPlan,
-            executionContext: executionContext,
+            executionContext: executionContext(for: requestedPlan, submitted: submittedExecutionContext),
             hasFireAndForgetOwner: hasFireAndForgetOwner
         )
     }
@@ -192,14 +192,17 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
     private func mergedExecutionContext(
         pending: BackgroundRefreshExecutionContext?,
         submitted: BackgroundRefreshExecutionContext?,
-        hasForegroundOwner: Bool
+        executionClass: HomeIngestionExecutionClass
     ) -> BackgroundRefreshExecutionContext? {
-        guard !hasForegroundOwner else { return nil }
+        guard executionClass == .background else { return nil }
         return .merged(pending, submitted)
     }
 
-    private func isForegroundOwner(_ plan: HomeIngestionPlan) -> Bool {
-        !plan.provenance.contains(.background)
+    private func executionContext(
+        for plan: HomeIngestionPlan,
+        submitted: BackgroundRefreshExecutionContext?
+    ) -> BackgroundRefreshExecutionContext? {
+        plan.executionClass == .background ? submitted : nil
     }
 
     private func store(_ waiter: Waiter?, earliestRunNumber: Int) {
