@@ -321,6 +321,17 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
     }
 
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress = .none) async throws -> HomeSnapshot {
+        let executionMode = httpExecutionMode(for: plan)
+        return try await HTTPExecutionMode.$current.withValue(executionMode) {
+            try await runScoped(plan: plan, progress: progress, executionMode: executionMode)
+        }
+    }
+
+    private func runScoped(
+        plan: HomeIngestionPlan,
+        progress: HomeIngestionRunProgress,
+        executionMode: HTTPExecutionMode
+    ) async throws -> HomeSnapshot {
         let startedAt = Date()
         environment.logger.info("Executing home ingestion plan={\(plan.logDescription)}")
         await progress.report(.started(.location(plan.lanes)))
@@ -333,7 +344,6 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         )
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
         let now = Date()
-        let executionMode = httpExecutionMode(for: plan)
         environment.logger.debug(
             "Home ingestion context resolution finished available=\((context != nil), privacy: .public) mode=\(executionMode.logName, privacy: .public)"
         )

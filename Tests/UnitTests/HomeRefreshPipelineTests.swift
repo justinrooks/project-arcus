@@ -2347,6 +2347,41 @@ struct HomeRefreshPipelineTests {
         #expect(hotAlertModes == [.foreground])
     }
 
+    @Test("location resolution inherits the campaign HTTP execution policy")
+    func locationResolution_inheritsCampaignHTTPExecutionPolicy() async throws {
+        let context = makeContext()
+        let cases: [(String, HomeIngestionPlan, HTTPExecutionMode)] = [
+            ("foreground", .init(request: .init(trigger: .foregroundActivate)), .foreground),
+            ("background", .init(request: .init(trigger: .backgroundRefresh)), .background),
+            ("mixed ownership", {
+                var plan = HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
+                plan.merge(with: .init(request: .init(trigger: .foregroundActivate)))
+                return plan
+            }(), .foreground)
+        ]
+
+        for (name, plan, expectedMode) in cases {
+            let locationSession = FakeLocationSession(currentContext: nil, preparedContext: context)
+            let spc = FakeSpcProvider(activeMesos: [])
+            let alerts = FakeAlertProvider(activeAlerts: [])
+            let executor = HomeIngestionExecutor(
+                environment: .init(
+                    logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                    spcSync: spc,
+                    arcusAlertSync: alerts,
+                    weatherClient: FakeWeatherClient(),
+                    locationSession: locationSession,
+                    snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                    projectionStore: nil,
+                    widgetSnapshotRefresher: nil
+                )
+            )
+
+            _ = try await executor.run(plan: plan)
+            #expect(locationSession.observedHTTPModes == [expectedMode], "\(name)")
+        }
+    }
+
     @Test("hot projection advances only after complete location-scoped acceptance")
     func hotProjection_requiresCompleteLocationScopedAcceptance() async throws {
         let cases: [(String, SpcMesoSyncOutcome, ArcusLocationSyncOutcome, Bool)] = [
@@ -3751,6 +3786,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     var preparedContext: LocationContext?
     var prepareCalls: [PrepareCall] = []
     var scheduledPrepareCallCount = 0
+    var observedHTTPModes: [HTTPExecutionMode] = []
 
     private let prepareGate: AsyncGate?
 
@@ -3774,6 +3810,7 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
         maximumAcceptedLocationAge: TimeInterval,
         placemarkTimeout: Double
     ) async -> LocationContext? {
+        observedHTTPModes.append(HTTPExecutionMode.current)
         prepareCalls.append(
             .init(
                 requiresFreshLocation: requiresFreshLocation,
@@ -3789,7 +3826,8 @@ private final class FakeLocationSession: HomeLocationContextPreparing, HomeConte
     }
 
     func currentPreparedContext() async -> LocationContext? {
-        currentContext
+        observedHTTPModes.append(HTTPExecutionMode.current)
+        return currentContext
     }
 
     func prepareScheduledBackgroundLocationContext(
