@@ -38,8 +38,8 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 ## Status Ledger
 
 ### [#441](https://github.com/justinrooks/project-arcus/issues/441) — Add a versioned feed-state sidecar
-- Status: Pending
-- Handoff: Cover corruption, newer versions, pruning, future dates, and concurrent updates.
+- Status: Implemented; awaiting review
+- Handoff: Versioned actor-owned JSON sidecar is metadata-only and wired through Dependencies; transport propagation and scheduling remain deferred.
 
 ### [#444](https://github.com/justinrooks/project-arcus/issues/444) — Propagate Arcus transport provenance
 - Status: Pending
@@ -53,5 +53,4 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 
 ## Verification Ledger
 
-No implementation validation yet.
-
+- [#441](https://github.com/justinrooks/project-arcus/issues/441): focused `FeedStateStoreTests` lane passed (5 tests) and Debug simulator build passed.
