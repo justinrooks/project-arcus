@@ -461,7 +461,8 @@ final class Dependencies: Sendable {
         
         let arcus = ArcusAlertProvider(
             alertRepo: alertRepo,
-            client: arcusClient)
+            client: arcusClient,
+            feedStateStore: feedStateStore)
         let arcusProvider = arcus
         logger.debug("Arcus provider initialized")
         

@@ -100,10 +100,11 @@ actor AlertRepo {
         var watches: [Watch] = []
         watches.reserveCapacity(decoded.count)
         var reconciledTerminalCount = 0
+        let allowsTerminalReconciliation = response.source != .cacheFallback
 
         for payload in decoded {
             if isTerminalLifecyclePayload(payload) {
-                if try reconcileExistingWatchForTerminalPayload(payload) {
+                if allowsTerminalReconciliation, try reconcileExistingWatchForTerminalPayload(payload) {
                     reconciledTerminalCount += 1
                 }
                 continue
@@ -136,10 +137,11 @@ actor AlertRepo {
         var watches: [Watch] = []
         watches.reserveCapacity(decoded.count)
         var reconciledTerminalCount = 0
+        let allowsTerminalReconciliation = response.source != .cacheFallback
 
         for payload in decoded {
             if isTerminalLifecyclePayload(payload) {
-                if try reconcileExistingWatchForTerminalPayload(payload) {
+                if allowsTerminalReconciliation, try reconcileExistingWatchForTerminalPayload(payload) {
                     reconciledTerminalCount += 1
                 }
                 continue

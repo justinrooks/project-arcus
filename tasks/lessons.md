@@ -140,3 +140,9 @@
   lane before declaring validation complete.
 - When a concurrency test must hold a dependency behind a gate, use a structured child and release the gate on every
   assertion path. An unstructured test task can be delayed under a parallel lane and remains orphaned if a requirement throws.
+
+## 2026-09-07
+
+- Treat a newly reported asynchronous test failure as a regression investigation even when a prior full lane passed.
+  First establish whether the changed path can affect the failed test; then reproduce with the original selector and
+  repeated execution before attributing it to test scheduling or timeout sensitivity.

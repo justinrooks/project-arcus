@@ -38,6 +38,37 @@ private struct FallbackArcusClient: ArcusClient {
     }
 }
 
+private struct ResponseArcusClient: ArcusClient {
+    let source: HTTPResponse.Source
+    let payload: Data
+
+    init(source: HTTPResponse.Source, payload: Data = Data("[]".utf8)) {
+        self.source = source
+        self.payload = payload
+    }
+
+    func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
+        payload
+    }
+
+    func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
+        payload
+    }
+
+    func fetchActiveAlertsResponse(
+        for county: String,
+        and fire: String,
+        and forecast: String,
+        in cell: Int64?
+    ) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: payload, source: source)
+    }
+
+    func fetchAlertResponse(id: String, revisionSent: Date?) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: payload, source: source)
+    }
+}
+
 @Suite("AlertRepo active()")
 struct AlertRepoActiveTests {
     let container: ModelContainer
@@ -579,7 +610,44 @@ struct AlertRepoActiveTests {
 
         #expect(unavailableOutcome == .failed)
         #expect(malformedOutcome == .rejected)
-        #expect(fallbackOutcome == .fallback)
+        #expect(fallbackOutcome == .errorFallback)
+    }
+
+    @Test("Targeted provider sync preserves every accepted transport source")
+    func targetedProviderSync_preservesTransportSource() async {
+        let cases: [(HTTPResponse.Source, ArcusRemoteAlertSyncOutcome)] = [
+            (.live, .live),
+            (.cacheRevalidated304, .revalidated),
+            (.localCache, .localCache),
+            (.cacheFallback, .errorFallback)
+        ]
+
+        for (source, expected) in cases {
+            let provider = ArcusAlertProvider(alertRepo: repo, client: ResponseArcusClient(source: source))
+            #expect(await provider.syncRemoteAlert(id: "test", revisionSent: nil) == expected)
+        }
+    }
+
+    @Test("Provider records fallback provenance without advancing network success")
+    func provider_recordsFallbackProvenance() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ArcusAlertProviderTests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = FeedStateStore(directoryURL: directory)
+        let provider = ArcusAlertProvider(
+            alertRepo: repo,
+            client: ResponseArcusClient(source: .cacheFallback),
+            feedStateStore: store
+        )
+
+        #expect(await provider.syncRemoteAlert(id: "test", revisionSent: nil) == .errorFallback)
+
+        let record = try #require(await store.record(for: "arcus.alert"))
+        #expect(record.lastTransportSource == .errorFallback)
+        #expect(record.lastNetworkSuccessAt == nil)
+        #expect(record.lastCanonicalAcceptanceAt != nil)
+        #expect(record.lastFailure == .transport)
     }
 
     private func testPolygonGeometry() -> DeviceAlertGeometry {
