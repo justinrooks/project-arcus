@@ -671,7 +671,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             async let mesoSync = environment.spcSync.syncMesoscaleDiscussions()
             async let alertSync = environment.arcusAlertSync.sync(context: context)
             let (mesoOutcome, alertOutcome) = await (mesoSync, alertSync)
-            return mesoOutcome == .accepted && alertOutcome == .accepted
+            return mesoOutcome == .accepted && alertOutcome.authorizesLocationScopedAcceptance
                 ? .completeLocationScopedAcceptance
                 : .incomplete
         }

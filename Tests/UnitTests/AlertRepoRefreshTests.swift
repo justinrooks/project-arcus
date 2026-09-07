@@ -6,6 +6,12 @@ import ArcusCore
 
 private struct StubArcusClient: ArcusClient {
     let payload: Data
+    let source: HTTPResponse.Source
+
+    init(payload: Data, source: HTTPResponse.Source = .live) {
+        self.payload = payload
+        self.source = source
+    }
 
     func fetchActiveAlerts(for county: String, and fire: String, and forecast: String, in cell: Int64?) async throws -> Data {
         payload
@@ -13,6 +19,19 @@ private struct StubArcusClient: ArcusClient {
 
     func fetchAlert(id: String, revisionSent: Date?) async throws -> Data {
         payload
+    }
+
+    func fetchActiveAlertsResponse(
+        for county: String,
+        and fire: String,
+        and forecast: String,
+        in cell: Int64?
+    ) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: payload, source: source)
+    }
+
+    func fetchAlertResponse(id: String, revisionSent: Date?) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: payload, source: source)
     }
 }
 
@@ -26,6 +45,24 @@ struct AlertRepoRefreshTests {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         container = try ModelContainer(for: schema, configurations: config)
         repo = AlertRepo(modelContainer: container)
+    }
+
+    @Test("refresh returns the exact accepted HTTP transport source")
+    func refresh_returnsTransportSource() async throws {
+        let payload = Data("[]".utf8)
+        let sources: [HTTPResponse.Source] = [.live, .cacheRevalidated304, .localCache, .cacheFallback]
+
+        for source in sources {
+            let result = try await repo.refresh(
+                using: StubArcusClient(payload: payload, source: source),
+                for: "COC031",
+                and: "COZ245",
+                and: "COZ245",
+                in: 613725958748241919
+            )
+
+            #expect(result == source)
+        }
     }
 
     @Test("Skips cancelled Arcus alerts even if timing fields are still active")
@@ -311,6 +348,44 @@ struct AlertRepoRefreshTests {
             on: now
         )
         #expect(activeAlerts.contains(where: { $0.id == ArcusAlertIdentifier.canonical(id) }) == false)
+    }
+
+    @Test("error fallback does not reconcile terminal alert payloads")
+    func refresh_errorFallbackPreservesExistingTerminalAlert() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174011"
+        let initial = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:initial",
+            currentRevisionSent: "2026-03-24T12:15:00Z",
+            geometry: polygonGeometryJSON()
+        )
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(initial.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let fallbackTerminal = alertPayloadArrayJSON(
+            id: id,
+            messageId: "urn:alert:cancelled",
+            currentRevisionSent: "2026-03-24T12:45:00Z",
+            messageType: "Cancel",
+            state: "Cancelled"
+        )
+        let source = try await repo.refresh(
+            using: StubArcusClient(payload: Data(fallbackTerminal.utf8), source: .cacheFallback),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let reloaded = try #require(await repo.alert(id: id))
+        #expect(source == .cacheFallback)
+        #expect(reloaded.messageId == "urn:alert:initial")
+        #expect(reloaded.geometry == polygonGeometry())
     }
 
     @Test("refresh reconciles superseded payloads by clearing stored geometry")

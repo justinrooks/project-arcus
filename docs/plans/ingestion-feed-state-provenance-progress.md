@@ -42,7 +42,8 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 - Handoff: Versioned actor-owned JSON sidecar is metadata-only and wired through Dependencies; transport propagation and scheduling remain deferred.
 
 ### [#444](https://github.com/justinrooks/project-arcus/issues/444) — Propagate Arcus transport provenance
-- Status: Pending
+- Status: Implemented; awaiting review
+- Handoff: Arcus outcomes preserve live, 304 revalidation, local-cache, and error-fallback provenance. Error fallback cannot reconcile terminal alert payloads; accepted cache remains usable offline without reporting network success.
 
 ### [#445](https://github.com/justinrooks/project-arcus/issues/445) — Propagate SPC text transport provenance
 - Status: Pending
@@ -54,3 +55,4 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 ## Verification Ledger
 
 - [#441](https://github.com/justinrooks/project-arcus/issues/441): focused `FeedStateStoreTests` lane passed (5 tests) and Debug simulator build passed.
+- [#444](https://github.com/justinrooks/project-arcus/issues/444): focused Arcus repository/provider lane passed (29 tests), full unit lane passed (1,119 tests), and Debug simulator build passed.
