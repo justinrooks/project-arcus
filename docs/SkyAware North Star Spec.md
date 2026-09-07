@@ -314,6 +314,14 @@ Storm Setup is a conditional Summary section for users who enable it and have
 eligible local guidance. It may show resolved guidance or a truthful status such
 as analyzing, no notable setup, analysis not needed, or unavailable.
 
+On the Summary surface, describe the result and what limits it in plain language.
+Avoid exposing diagnostic labels such as `Fixed Effective STP Disagreement` or
+`Missing Storm Mode`; use concise meanings such as `Model signals differ` or
+`Storm mode is uncertain`. Preserve deeper meteorological terminology in the
+Storm Setup detail experience when it helps explain the guidance. Any model
+provenance, including `HRRR guidance`, must remain clearly identified as forecast
+guidance rather than an observation, watch, or warning.
+
 When present, it follows Atmospheric Conditions and precedes Location Reliability
 and the Convective Outlook summary.
 

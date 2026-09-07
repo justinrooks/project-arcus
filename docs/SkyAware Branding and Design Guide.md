@@ -568,6 +568,14 @@ eligible, it occupies a stable slot after Atmospheric Conditions and may present
 resolved guidance or a truthful status state while analysis is unavailable,
 unnecessary, or in progress.
 
+Summary copy should explain what limits the setup in plain language rather than
+exposing diagnostic labels. For example, use `Model signals differ` instead of
+`Fixed Effective STP Disagreement`, and `Storm mode is uncertain` instead of
+`Missing Storm Mode`. The detail experience may retain deeper meteorological
+terminology when it helps the user understand the guidance. Preserve model
+provenance, including `HRRR guidance`, and identify it as forecast guidance,
+not an observation, watch, or warning.
+
 ### **Location Reliability**
 Location Reliability is a conditional, dismissible prompt about enabling Always
 location access for more reliable background severe-weather alerts. It appears

@@ -281,7 +281,7 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
             overallTitle,
             summaryProse,
             ingredientRows.map { "\($0.title): \($0.value)" }.joined(separator: ". "),
-            limiterText.map { "Limiter: \($0)" },
+            limiterText.map { "What limits the setup: \($0)" },
             freshnessText,
             sourceLine
         ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
@@ -331,7 +331,7 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
             overallTitle,
             summaryProse,
             ingredientRows.map { "\($0.title): \($0.value)" }.joined(separator: ". "),
-            limiterText.map { "Limiter: \($0)" },
+            limiterText.map { "What limits the setup: \($0)" },
             freshnessText,
             sourceLine
         ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty }
@@ -429,14 +429,25 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
 
     private static func firstMeaningfulLimiter(from factors: [String]) -> String? {
         factors
-            .compactMap { Self.readableLimiter(from: $0) }
+            .compactMap { Self.summaryLimiterText(from: $0) }
             .first
     }
 
     private static func firstMeaningfulLimiter(from factors: [TornadoViabilityLimiter]) -> String? {
         factors
-            .map(readableLimiter(_:))
+            .map(summaryLimiterText(_:))
             .first
+    }
+
+    private static func summaryLimiterText(_ limiter: TornadoViabilityLimiter) -> String {
+        switch limiter {
+        case .fixedEffectiveStpDisagreement:
+            "Model signals differ"
+        case .missingStormMode:
+            "Storm mode is uncertain"
+        default:
+            readableLimiter(limiter)
+        }
     }
 
     static func readableLimiter(_ limiter: TornadoViabilityLimiter) -> String {
@@ -499,6 +510,22 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
             return "Missing Storm Mode"
         default:
             return trimmed
+        }
+    }
+
+    private static func summaryLimiterText(from value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return nil
+        }
+
+        switch normalizedLimiterKey(trimmed) {
+        case "fixedeffectivestpdisagreement":
+            return "Model signals differ"
+        case "missingstormmode":
+            return "Storm mode is uncertain"
+        default:
+            return readableLimiter(from: trimmed)
         }
     }
 
