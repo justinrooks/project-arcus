@@ -50,7 +50,7 @@ struct AlertRowView: View {
                 if let sevTags = alert.severeRiskTags {
                     Text(sevTags)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.tornadoRed)
+                        .foregroundStyle(Color.semanticMetadata)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
