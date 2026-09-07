@@ -216,18 +216,29 @@ struct StormSetupPresentationTests {
         #expect(presentation.limiterText == "capping")
     }
 
-    @Test("typed limiter copy is title-cased in the summary card data")
-    func typedLimiterCopyIsTitleCasedInTheSummaryCardData() {
+    @Test("summary limiter copy translates technical terminology")
+    func summaryLimiterCopyTranslatesTechnicalTerminology() {
         let presentation = StormSetupSummaryPresentation(
             dto: makeDTO(
-                limitingFactors: ["weakInstability", "capping"]
+                limitingFactors: ["fixedEffectiveStpDisagreement"]
             ),
             timeZone: TimeZone(identifier: "America/Denver")!,
             now: date("2026-06-01T18:00:00Z")
         )
 
-        #expect(presentation.limiterText == "Weak Instability")
-        #expect(presentation.accessibilityValue.contains("Limiter: Weak Instability"))
+        #expect(presentation.limiterText == "Model signals differ")
+        #expect(presentation.accessibilityValue.contains("Model signals differ"))
+    }
+
+    @Test("summary limiter copy keeps uncertain storm mode plain-language")
+    func summaryLimiterCopyKeepsUncertainStormModePlainLanguage() {
+        let presentation = StormSetupSummaryPresentation(
+            dto: makeDTO(limitingFactors: ["missingStormMode"]),
+            timeZone: TimeZone(identifier: "America/Denver")!,
+            now: date("2026-06-01T18:00:00Z")
+        )
+
+        #expect(presentation.limiterText == "Storm mode is uncertain")
     }
 
     @Test("source line uses the forecast-location time zone")

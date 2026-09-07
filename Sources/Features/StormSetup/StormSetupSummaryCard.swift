@@ -103,7 +103,7 @@ struct StormSetupSummaryCard: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 if let limiterText = presentation.limiterText {
-                    Text("Limiter: \(limiterText)")
+                    Text("What limits the setup: \(limiterText)")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
