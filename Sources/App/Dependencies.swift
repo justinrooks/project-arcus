@@ -30,6 +30,7 @@ final class Dependencies: Sendable {
     private let _severeRiskRepo: SevereRiskRepo?
     private let _healthStore: BgHealthStore?
     private let _homeProjectionStore: HomeProjectionStore?
+    private let _feedStateStore: FeedStateStore?
     private let _homeIngestionCoordinator: (any HomeIngestionCoordinating)?
     
     // MARK: Location / grid
@@ -102,6 +103,12 @@ final class Dependencies: Sendable {
     var homeProjectionStore: HomeProjectionStore {
         guard let value = _homeProjectionStore else {
             fatalError("Dependencies.homeProjectionStore used while unconfigured")
+        }
+        return value
+    }
+    var feedStateStore: FeedStateStore {
+        guard let value = _feedStateStore else {
+            fatalError("Dependencies.feedStateStore used while unconfigured")
         }
         return value
     }
@@ -255,6 +262,7 @@ final class Dependencies: Sendable {
         severeRiskRepo: SevereRiskRepo?,
         healthStore: BgHealthStore?,
         homeProjectionStore: HomeProjectionStore?,
+        feedStateStore: FeedStateStore?,
         homeIngestionCoordinator: (any HomeIngestionCoordinating)?,
         locationProvider: LocationProvider?,
         locationManager: LocationManager?,
@@ -282,6 +290,7 @@ final class Dependencies: Sendable {
         self._severeRiskRepo = severeRiskRepo
         self._healthStore = healthStore
         self._homeProjectionStore = homeProjectionStore
+        self._feedStateStore = feedStateStore
         self._homeIngestionCoordinator = homeIngestionCoordinator
         self._locationProvider = locationProvider
         self._locationManager = locationManager
@@ -391,6 +400,7 @@ final class Dependencies: Sendable {
         let spcMapBatchPersistenceRepo = SpcMapBatchPersistenceRepo(modelContainer: container)
         let healthStore    = BgHealthStore(modelContainer: container)
         let homeProjectionStore = HomeProjectionStore(modelContainer: container)
+        let feedStateStore = FeedStateStore()
         
         logger.debug("Repositories initialized")
         
@@ -576,6 +586,7 @@ final class Dependencies: Sendable {
             severeRiskRepo: severeRiskRepo,
             healthStore: healthStore,
             homeProjectionStore: homeProjectionStore,
+            feedStateStore: feedStateStore,
             homeIngestionCoordinator: homeIngestionCoordinator,
             locationProvider: locationProvider,
             locationManager: locationManager,
@@ -605,6 +616,7 @@ final class Dependencies: Sendable {
                                                          severeRiskRepo: nil,
                                                          healthStore: nil,
                                                          homeProjectionStore: nil,
+                                                         feedStateStore: nil,
                                                          homeIngestionCoordinator: nil,
                                                          locationProvider: nil,
                                                          locationManager: nil,
