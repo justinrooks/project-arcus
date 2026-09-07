@@ -108,10 +108,12 @@ Use these labels consistently when generating UI or copy:
 
 - Product category: `severe-weather awareness app` or `severe-weather awareness product`
 - Top header section: `Current Conditions`
-- Hero risk labels: `Storm Risk` and `Severe Risk`
-- Secondary hazard rail: `Fire Risk`
-- Secondary instrumentation rail: `Atmospheric Conditions`
+- Primary awareness section: `Today's Awareness`
+- Supporting awareness rows: `Storm Risk`, `Severe Risk`, and `Fire Risk`
+- Secondary instrumentation section: `Atmospheric Conditions`
 - Alert section: `Local Alerts`
+- Conditional guidance section: `Storm Setup`
+- Conditional reliability prompt: `Location Reliability`
 - Severe map/menu wording: `Severe Risk`, not `Categorical`
 - User-facing intensity language: `Hatching` and `Stronger storms possible`
 
@@ -252,11 +254,18 @@ It should answer, within seconds:
 
 Canonical content order:
 1. Current Conditions
-2. Storm Risk and Severe Risk hero tiles
-3. Fire Risk rail
-4. Atmospheric Conditions rail
-5. Local Alerts
-6. Convective Outlook summary
+2. Today's Awareness
+   - dynamic primary awareness hero
+   - supporting Storm Risk, Severe Risk, and Fire Risk rows
+3. Local Alerts
+4. Atmospheric Conditions
+5. Storm Setup, when enabled and eligible (including status states while resolving)
+6. Location Reliability, when the user is eligible for the prompt
+7. Convective Outlook summary
+8. Attribution
+
+The section plan is conditional. Hidden optional sections do not leave empty slots,
+while Storm Setup status states reserve the same position as resolved guidance.
 
 ### Current Conditions Header
 Rules:
@@ -274,18 +283,52 @@ Avoid:
 - `Current Location`
 - `Current Conditions for`
 
-### Risk Snapshot Hero Tiles
+### Today's Awareness
+`Today's Awareness` is the primary risk surface. It presents one dynamic hero
+chosen from the strongest currently relevant local signal, followed by supporting
+rows that keep the remaining risk categories visible.
+
+Primary-awareness precedence is:
+1. active warning or watch
+2. non-clear severe threat
+3. non-clear storm risk
+4. elevated fire risk
+5. resolving state
+6. quiet state
+
 Rules:
-- keep Storm Risk and Severe Risk horizontally aligned
-- keep them glanceable and semantically colored
-- do not overload them with auxiliary metadata
+- keep the primary hero glanceable, calm, and actionable
+- preserve the supporting Storm Risk, Severe Risk, and Fire Risk rows beneath it
+- keep supporting rows semantically colored without competing with the primary hero
+- route the hero to the relevant alert or map destination when one exists
+
+### Supporting Risk Rows
+Rules:
+- keep Storm Risk, Severe Risk, and Fire Risk concise and glanceable
+- do not require a fixed paired-hero layout
+- do not overload supporting rows with auxiliary metadata
 - conditional intensity should appear as subtle hatch or texture, not as extra jargon or extra iconography
 
-### Fire Risk Rail
+### Storm Setup
+Storm Setup is a conditional Summary section for users who enable it and have
+eligible local guidance. It may show resolved guidance or a truthful status such
+as analyzing, no notable setup, analysis not needed, or unavailable.
+
+When present, it follows Atmospheric Conditions and precedes Location Reliability
+and the Convective Outlook summary.
+
+### Location Reliability
+Location Reliability is a conditional, dismissible Summary prompt that explains
+how enabling Always location access can improve background severe-weather alerts.
+It appears only when the current authorization, accuracy, risk, and prompt ledger
+state make the user eligible. It follows the Storm Setup slot when that slot is
+present, otherwise it follows Atmospheric Conditions.
+
+### Fire Risk Supporting Row
 Rules:
-- keep it concise and rail-like
-- place it beneath the hero tiles
-- keep it visually distinct from severe-weather hero badges
+- keep it concise and visually distinct from Storm Risk and Severe Risk
+- allow elevated fire risk to become the primary awareness hero when appropriate
+- preserve its own semantic color ladder
 
 ### Atmospheric Conditions Rail
 This is instrumentation, not alerting.

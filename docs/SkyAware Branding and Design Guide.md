@@ -57,8 +57,8 @@ If you only need the non-negotiables, keep these in view:
 - **Part II. Core Product Experience**
   - [[#9. Summary Screen Philosophy|9. Summary Screen Philosophy]]
   - [[#10. Current Conditions Header|10. Current Conditions Header]]
-  - [[#11. Risk Snapshot Hero Tiles|11. Risk Snapshot Hero Tiles]]
-  - [[#12. Fire Risk Rail|12. Fire Risk Rail]]
+  - [[#11. Today's Awareness|11. Today's Awareness]]
+  - [[#12. Supporting Risk Rows|12. Supporting Risk Rows]]
   - [[#13. Atmospheric Conditions Rail|13. Atmospheric Conditions Rail]]
   - [[#14. Local Alerts Section|14. Local Alerts Section]]
   - [[#15. Watch Detail View|15. Watch Detail View]]
@@ -417,12 +417,30 @@ It is the landing page and the main “what do I need to know?” surface.
 
 The intended content stack is:
 1. Current Conditions / Location
-2. Storm Risk + Severe Risk hero tiles
-3. Fire Risk rail
-4. Atmospheric Conditions rail
-5. Local Alerts (watches / mesos)
-6. Convective Outlook summary
+2. Today's Awareness
+   - dynamic primary awareness hero
+   - supporting Storm Risk, Severe Risk, and Fire Risk rows
+3. Local Alerts (warnings / watches / mesos)
+4. Atmospheric Conditions
+5. Storm Setup, when enabled and eligible
+6. Location Reliability, when eligible
+7. Convective Outlook summary
+8. Attribution
 This is the primary interaction page and the highest-leverage surface in the app.
+
+## **Current Summary hierarchy**
+The Summary plan is conditional rather than a fixed stack of permanent rails.
+
+`Today's Awareness` chooses one primary hero from the strongest relevant local
+signal, then keeps the three risk categories available as supporting rows. The
+selection precedence is active warning or watch, non-clear severe threat,
+non-clear storm risk, elevated fire risk, resolving state, then quiet state.
+
+Storm Setup reserves a stable section slot when enabled and eligible, including
+truthful analyzing, no-notable-setup, analysis-not-needed, and unavailable states.
+Location Reliability is a conditional, dismissible prompt that appears only when
+the user's location authorization, accuracy, local risk, and prompt history make
+it appropriate. Optional sections disappear cleanly when they are not applicable.
 ## **Design intent**
 The Summary screen must answer:
 - where am I?
@@ -464,32 +482,43 @@ Avoid:
 - Current Conditions for
 - Current Location (once weather is included)
 ---
-# **11. Risk Snapshot Hero Tiles**
+# **11. Today's Awareness**
 ## **Philosophy**
-Storm Risk and Severe Risk tiles are the app’s primary severe-weather summary signal.
+`Today's Awareness` is the app's primary severe-weather summary signal.
 
-They should remain:
-- horizontally aligned
-- glanceable
-- semantically colored
-- elegant but never flashy
+It presents one dynamic primary hero selected from the strongest relevant local
+signal, followed by supporting rows for Storm Risk, Severe Risk, and Fire Risk.
+
+The primary signal is selected in this order:
+1. active warning or watch
+2. non-clear severe threat
+3. non-clear storm risk
+4. elevated fire risk
+5. resolving state
+6. quiet state
+
+The hero should remain glanceable, semantically colored, elegant, and never flashy.
 ## **Tile language**
-These tiles represent the most important severe-weather categories and should not become overloaded with auxiliary metadata.
+The primary hero and supporting rows represent the most important severe-weather
+categories and should not become overloaded with auxiliary metadata. Do not restore
+the superseded paired Storm Risk / Severe Risk hero layout.
 ## **Conditional intensity integration**
 Rather than adding text labels for CIG or new icons, the chosen direction is:
 - add **subtle texture / hatch** to the badge / tile when conditional intensity applies to the user’s current location
 This keeps the visual language consistent with the map.
 ---
-# **12. Fire Risk Rail**
+# **12. Supporting Risk Rows**
 ## **Role**
-The Fire Risk rail is a distinct contextual hazard rail beneath the hero badges.
+Storm Risk, Severe Risk, and Fire Risk remain visible as concise supporting rows
+under the dynamic primary hero.
 
-It is subordinate to storm/severe hero tiles but still important.
 ## **Design intent**
 - concise
-- rail-like
+- glanceable
 - integrated with the summary hierarchy
-- clearly distinct from severe weather badges
+- semantically colored
+- clearly distinct from one another
+- Fire Risk may become the primary hero when it is the strongest relevant signal
 ---
 # **13. Atmospheric Conditions Rail**
 ## **Role**
@@ -502,7 +531,9 @@ The first key metric was **dew point**, followed by:
 - wind
 - pressure
 ## **Position**
-This rail sits below Fire Risk.
+Atmospheric Conditions follows Local Alerts in the current Summary plan. It is
+followed by the conditional Storm Setup and Location Reliability sections when
+those sections are eligible.
 ## **Why it exists**
 Dew point and similar metrics are important severe-weather ingredients, but they are not headline risk. They belong in a secondary contextual layer.
 ## **Design principles**
@@ -529,6 +560,19 @@ The popup copy should remain:
 ## **Dew point visual behavior**
 - only the dew point **value** is tappable for the info popup, not the whole tile
 - the popup content must fully wrap and scroll rather than truncating
+
+## **Conditional Summary sections**
+### **Storm Setup**
+Storm Setup is a first-class but conditional Summary section. When enabled and
+eligible, it occupies a stable slot after Atmospheric Conditions and may present
+resolved guidance or a truthful status state while analysis is unavailable,
+unnecessary, or in progress.
+
+### **Location Reliability**
+Location Reliability is a conditional, dismissible prompt about enabling Always
+location access for more reliable background severe-weather alerts. It appears
+only when authorization, accuracy, current local risk, and prompt history make it
+appropriate. It follows Storm Setup when that section is present.
 ---
 # **14. Local Alerts Section**
 ## **Role**
@@ -773,7 +817,7 @@ The following summary sections should participate in blur/opacity resolving:
 - Current Conditions & Location
 - Storm Risk
 - Severe Risk
-- Fire Risk rail
+- Today's Awareness and supporting risk rows
 - Atmospheric Conditions
 - Local Watches
 - Convective Outlook
@@ -954,8 +998,8 @@ This keeps the UI precise and prevents accidental affordance sprawl.
 # **27. Design Patterns to Reuse**
 These patterns are strong and should be reused thoughtfully:
 - compact utility header with location + real-world context
-- hero tiles with clear semantic color and minimal text
-- rail components for secondary context (fire risk, atmospheric conditions)
+- a dynamic awareness hero with clear semantic color and minimal text
+- supporting-row components for risk and atmospheric context
 - subtle texture overlays as semantic modifiers
 - inline resolving status instead of overlay banners
 - state-driven copy instead of generic loading language
