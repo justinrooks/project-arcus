@@ -28,7 +28,7 @@ Plans merge provenance independently from execution class, with foreground owner
 | 2 | [#436](https://github.com/justinrooks/project-arcus/issues/436) — Scope HTTP policy across location resolution | Implemented locally; awaiting human review | 01 |
 | 3 | [#439](https://github.com/justinrooks/project-arcus/issues/439) — Reuse prime context for scene-active follow-up | Pending | 02 |
 | 4 | [#437](https://github.com/justinrooks/project-arcus/issues/437) — Parallelize independent NWS zone-label requests | Ready for commit | None |
-| 5 | [#440](https://github.com/justinrooks/project-arcus/issues/440) — Define the foreground durable-context policy | Pending | 03 |
+| 5 | [#440](https://github.com/justinrooks/project-arcus/issues/440) — Define the foreground durable-context policy | Implemented locally; awaiting human review | 03 |
 
 ## Existing Code Map
 
@@ -55,8 +55,12 @@ Plans merge provenance independently from execution class, with foreground owner
 - Status: Ready for commit.
 
 ### [#440](https://github.com/justinrooks/project-arcus/issues/440) — Define the foreground durable-context policy
-- Status: Pending decision gate
-- Handoff: Stop before changing authorization, movement, capture, or upload timestamp semantics.
+- Status: Implemented locally; awaiting human re-review.
+- Handoff: Current v1 durable entries explicitly reject the fast path because they cannot prove capture authorization
+  or current grid compatibility. A future versioned cache and trusted current H3 plus NWS `(gridId, gridX, gridY)`
+  evidence may permit only a
+  complete, same-authorization, at-most-15-second context with no movement evidence. Reuse has no upload side effect
+  and requires an independent refresh-behind; all other authorized cases resolve fresh. Runtime reuse remains out of scope.
 
 ## Verification Ledger
 
@@ -81,5 +85,11 @@ Plans merge provenance independently from execution class, with foreground owner
 
 ### [#437](https://github.com/justinrooks/project-arcus/issues/437)
 - `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/LocationContextResolverTests` — 11 executed, 11 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.cz6Vom/unit.xcresult`.
+- `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` — passed.
+- `git diff --check` — passed.
+
+### [#440](https://github.com/justinrooks/project-arcus/issues/440)
+- `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/ForegroundDurableContextReusePolicyTests` — 10 executed,
+  10 passed; finalized result: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.xeaLkb/unit.xcresult`.
 - `xcodebuild -project SkyAware.xcodeproj -scheme SkyAware -destination "platform=iOS Simulator,name=iPhone 17,OS=26.5" build` — passed.
 - `git diff --check` — passed.
