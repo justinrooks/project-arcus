@@ -173,7 +173,7 @@ enum SevereWeatherThreat: Comparable, Codable {
         case .allClear: return "No severe threats expected"
         case .wind: return "Damaging wind possible"
         case .hail: return "1 in or larger hail possible"
-        case .tornado: return "Tornados are possible"
+        case .tornado: return "Tornadoes are possible"
         }
     }
     
