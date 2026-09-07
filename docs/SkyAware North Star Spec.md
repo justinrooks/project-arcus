@@ -41,14 +41,15 @@ SkyAware should not feel like:
 - a generic weather data viewer
 ---
 ## Operating Rules
-1. Choose calm, clear, useful, and trustworthy over dramatic or decorative.
-2. Preserve semantic meaning. Do not casually reuse colors, icons, or labels that already mean something specific.
-3. Prefer omission over clutter. If a detail is not helping the user understand what matters now, leave it out.
-4. Use canonical labels and user-facing vocabulary from this note.
-5. Do not expose internal jargon like provider names or `CIG` on primary user surfaces.
-6. When guidance overlaps, the more specific section wins over the more general one.
-7. `Locked` decisions in the full guide should be treated as fixed unless the product direction intentionally changes.
-8. `Still tuning` areas are polish problems, not invitations to invent new semantics.
+1. Make SkyAware feel and behave high-end. Premium means precise, restrained, coherent, responsive, and finished. Do not substitute ornament for polish.
+2. Choose calm, clear, useful, and trustworthy over dramatic or decorative.
+3. Preserve semantic meaning. Do not casually reuse colors, icons, or labels that already mean something specific.
+4. Prefer omission over clutter. If a detail is not helping the user understand what matters now, leave it out.
+5. Use canonical labels and user-facing vocabulary from this note.
+6. Do not expose internal jargon like provider names or `CIG` on primary user surfaces.
+7. When guidance overlaps, the more specific section wins over the more general one.
+8. `Locked` decisions in the full guide should be treated as fixed unless the product direction intentionally changes.
+9. `Still tuning` areas are polish problems, not invitations to invent new semantics.
 ---
 ## Brand Traits
 SkyAware should feel:
@@ -70,6 +71,15 @@ SkyAware should avoid feeling:
 - cute in serious contexts
 - visually noisy
 - jargon-heavy
+---
+## High-End Experience Standard
+Treat premium quality as a product requirement, not a decorative style.
+- Every surface and state should feel intentionally designed.
+- Favor precision, consistency, responsiveness, and continuity over visual effects.
+- Loading, stale, offline, empty, error, permission, accessibility, light-mode, and dark-mode states require the same level of care as the ideal state.
+- Avoid jitter, accidental reflow, inconsistent spacing, misleading affordances, clipped content, unnecessary chrome, and generic placeholder-feeling UI.
+- Prefer native platform behavior where it improves predictability and accessibility; customize where SkyAware's weather semantics and identity genuinely benefit.
+- A simpler solution executed exceptionally well is preferable to a more elaborate solution executed adequately.
 ---
 ## Voice and Tone
 Use a voice that is:
@@ -118,6 +128,13 @@ Status and resolving language should use present-progressive, user-centered phra
 - `Updating your conditions`
 ---
 ## Visual System
+### Apple-Native Behavior
+Apple-native means predictable interaction, accessibility, state clarity, platform-appropriate behavior, and disciplined use of native materials and controls.
+
+It does not mean making SkyAware look generic or copying Apple Weather.
+
+Use native behavior where it improves the experience. Preserve custom SkyAware presentation where domain meaning or brand identity requires it.
+
 ### Hierarchy
 SkyAware is typography-led.
 
@@ -210,12 +227,17 @@ Use:
 - blur-to-sharp resolving
 - opacity lift
 - crossfades
+- transitions that preserve spatial and state continuity
+- immediate, proportionate interaction feedback
 
 Avoid:
 - strong spring motion
 - bouncing
 - spinner-first behavior
 - flashy shimmer
+- visible jitter or unnecessary layout reflow
+- decorative animation with no state or interaction purpose
+- motion that hides uncertainty, latency, or incorrect state
 ---
 ## Product Surface Spec
 ### Summary Screen
@@ -413,6 +435,10 @@ Aim for:
 - realistic semantic color usage
 - soft integrated surfaces
 - components that feel coherent with each other
+- deliberately refined spacing and alignment
+- consistent edge treatment, materials, and hierarchy
+- realistic loading, empty, degraded, and error states when relevant
+- an overall sense that every visible detail was intentional
 
 Avoid:
 - dashboard sprawl
@@ -420,6 +446,9 @@ Avoid:
 - decorative widgets
 - risk colors used as generic accent decoration
 - excessive iconography
+- generic template-like surfaces
+- polish that depends primarily on glass, shadows, gradients, or animation
+- inconsistent spacing or one-off component treatments
 
 ### Map and Data Visuals
 Aim for:
@@ -441,6 +470,9 @@ When generating copy, prompts, or content derived from this brand:
 - keep explanations concise on primary surfaces and use progressive disclosure for advanced concepts
 - avoid marketing-speak inside the product
 - avoid turning serious weather information into personality-driven entertainment
+- prefer concise, deliberate wording over merely correct wording
+- treat awkward truncation, inconsistent punctuation, placeholder copy, and technical leakage as quality defects
+- primary and degraded states should use the same voice and level of care
 
 If writing prompt instructions for another model or agent:
 - say what the artifact is
@@ -462,7 +494,11 @@ Before approving generated assets, content, or UI, ask:
 1. Does this make SkyAware feel calmer or noisier?
 2. Does this make the product feel more trustworthy or more dramatic?
 3. Does this help the user understand what matters right now?
-4. Are the labels, colors, and icons being used semantically rather than decoratively?
+4. Are labels, colors, icons, materials, and motion being used semantically rather than decoratively?
 5. Does this feel like a severe-weather awareness product rather than a generic weather app?
+6. Does this look and behave deliberately crafted, or can I see the seams?
+7. Would removing anything make this feel more refined?
+8. Are degraded, transitional, accessibility, light-mode, and dark-mode states as considered as the ideal state?
+9. Is the simpler solution equally effective? If so, prefer it.
 
 If the answer is unclear, simplify.

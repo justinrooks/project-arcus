@@ -22,15 +22,16 @@ This guide is written to optimize for consistency, clarity, restraint, and direc
 ## **Quick Start**
 If you only need the non-negotiables, keep these in view:
 1. SkyAware is a **severe-weather awareness app**, not a generic weather app.
-2. Calm, clear, useful, and trustworthy beat flashy every time.
-3. Typography and layout should carry the hierarchy; iconography should support it.
-4. Risk colors are semantic and should not be casually reused.
-5. Secondary context belongs in rails and subtle supporting layers, not in the hero area.
-6. The Summary screen is the product’s center of gravity.
-7. Cached-first, resolve-forward is the correct loading model.
-8. Full-screen resolving state is only for true empty/no-cache startup.
-9. Conditional intensity should be represented as texture, not jargon.
-10. Every state transition should feel like the app is becoming more accurate, not reloading.
+2. SkyAware must feel and behave high-end. Premium comes from precision, restraint, coherence, responsiveness, and care, not ornament.
+3. Calm, clear, useful, and trustworthy beat flashy every time.
+4. Typography and layout should carry the hierarchy; iconography should support it.
+5. Risk colors are semantic and should not be casually reused.
+6. Secondary context belongs in rails and subtle supporting layers, not in the hero area.
+7. The Summary screen is the product’s center of gravity.
+8. Cached-first, resolve-forward is the correct loading model.
+9. Full-screen resolving state is only for true empty/no-cache startup.
+10. Conditional intensity should be represented as texture, not jargon.
+11. Every state transition should feel like the app is becoming more accurate, not reloading.
 
 ## **How to Read This Guide**
 - Read Sections 1-8 when you are setting brand, hierarchy, color, typography, or icon rules.
@@ -114,6 +115,8 @@ SkyAware should consistently feel:
 - local
 - trustworthy
 - quietly intelligent
+- refined
+- polished
 SkyAware should avoid feeling:
 - dramatic
 - loud
@@ -122,6 +125,9 @@ SkyAware should avoid feeling:
 - playful in serious contexts
 - overloaded with technical jargon
 - visually noisy
+
+Every SkyAware surface should feel deliberately considered. Nothing should look accidental, generic, unfinished, or added simply because it was easy to add.
+
 ## **Voice and tone**
 The product voice should be:
 - concise
@@ -200,12 +206,35 @@ Do not borrow:
 # **4. High-Level Visual Language**
 ## **Overall style**
 SkyAware should feel:
-- calm and cozy
+- calm and refined
 - minimalist with optional depth
 - typography-led
 - Apple-native
 - atmospheric but not flashy
 The app should be visually clean enough for general users while still carrying enough detail and polish for weather-aware users and enthusiasts.
+## High-End Experience Standard
+SkyAware must feel and behave high-end.
+Premium does not mean ornamental, luxurious, or visually elaborate. It means the product feels deliberately crafted, coherent, responsive, and complete.
+The user should feel evidence of care throughout the experience, including details they may never consciously notice.
+A high-end SkyAware experience has:
+- precise typography, spacing, alignment, and hierarchy
+- consistent materials, shapes, colors, and interaction patterns
+- smooth continuity without jitter, unnecessary reflow, or abrupt state changes
+- responsive and predictable controls with honest affordances
+- polished loading, empty, stale, offline, error, and permission states
+- strong accessibility and Dynamic Type behavior
+- restraint: nothing exists merely to make the interface look more expensive
+- no obvious seams, placeholders, accidental inconsistencies, or unfinished-feeling interactions
+
+Premium is achieved through precision and restraint, not decoration.
+
+## Apple-Native, Not Generic
+Apple-native means respecting platform behavior, interaction conventions, accessibility, materials, hierarchy, and continuity.
+
+It does not mean flattening SkyAware into generic system UI or imitating Apple Weather.
+
+Prefer native platform behavior where it improves predictability, accessibility, and quality. Preserve custom SkyAware presentation where weather semantics or product identity genuinely benefit from it.
+
 ## **Primary visual principles**
 1. Information first
 2. Color with purpose
@@ -898,6 +927,14 @@ Avoid:
 - opacity settle: ~0.35s easeOut
 - status text crossfade: ~0.25–0.35s
 - atmospheric glow / gradient drift: ~8–12s loop or ~3s pulse depending on element
+## **Behavioral Polish**
+High-end motion preserves continuity and reinforces cause and effect.
+- No visible jitter or unnecessary layout movement.
+- No animation merely to decorate a state change.
+- Interaction feedback should be immediate and proportionate.
+- Updated content should resolve in place whenever practical.
+- Motion must never disguise latency, uncertainty, or incorrect state.
+- Reduced Motion should remain equally intentional and should not feel like a degraded version of the product.
 ---
 # **26. Control Styling and Microinteractions**
 ## **Map selector**
@@ -938,6 +975,15 @@ Specifically avoid:
 - raw jargon like CIG in primary surfaces
 - dramatic color reuse across unrelated semantic layers
 - cluttering the summary with every metric available
+- inconsistent spacing or alignment
+- unexplained layout shifts
+- visual jitter during refresh or state transitions
+- clipped or awkwardly compressed content
+- controls whose appearance does not match their behavior
+- generic placeholder or default-looking UI on important product surfaces
+- excessive glass, gradients, shadows, or animation used to manufacture perceived quality
+- error, offline, permission, stale, or empty states that feel less designed than the ideal state
+- one-off treatments that break the established design system
 ---
 # **29. Canonical Messaging Themes**
 Across the app, the preferred messaging themes are:
@@ -954,18 +1000,24 @@ The common thread is:
 # **Part IV. Reference and Review**
 Use this part for fast alignment, review passes, and turning the guidance above into implementation guardrails.
 ---
-# **30. Summary of the Most Important Brand/Design Decisions**
-If only a small set of principles is remembered, use these:
-1. SkyAware is a **severe-weather awareness app**, not a generic weather app.
-2. Calm, clear, useful, and trustworthy beat flashy every time.
-3. Typography and layout should carry the hierarchy; iconography should support it.
-4. Risk colors are semantic and should not be casually reused.
-5. Secondary context belongs in rails and subtle supporting layers, not in the hero area.
-6. The Summary screen is the product’s center of gravity.
-7. Cached-first, resolve-forward is the correct loading model.
-8. Full-screen resolving state is only for true empty/no-cache startup.
-9. Conditional intensity should be represented as texture, not jargon.
-10. Every state transition should feel like the app is becoming more accurate, not reloading.
+# **30. Product Quality Bar**
+Suggested content:
+
+SkyAware is ready when the experience is not only correct, but feels intentional and complete.
+
+Review against these standards:
+1. Severe-weather meaning is clear within seconds.
+2. Information hierarchy matches actual user importance.
+3. Interactions behave predictably and honestly.
+4. Typography, spacing, alignment, shape, and materials feel consistent.
+5. Loading, refreshing, stale, offline, empty, error, and permission states feel intentionally designed.
+6. Accessibility and Dynamic Type preserve meaning and usability.
+7. Motion reinforces continuity without calling attention to itself.
+8. Nothing appears accidental, generic, unfinished, or unnecessarily decorative.
+9. Simpler solutions are preferred when they achieve the same user value with greater clarity.
+10. The product should feel like someone cared about every visible seam.
+
+Premium is not an additional layer of decoration. It is the absence of careless decisions.
 ---
 # **31. Review Notes / Consistency Check**
 ## **Resolved tensions**
