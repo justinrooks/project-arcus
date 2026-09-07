@@ -48,7 +48,7 @@ struct WidgetSnapshotBuilderTests {
 
         #expect(snapshot.selectedAlert == nil)
         #expect(snapshot.hiddenAlertCount == 0)
-        #expect(snapshot.stormRisk.label == "No Storm Risk")
+        #expect(snapshot.stormRisk.label == "No Severe Storm Risk")
         #expect(snapshot.severeRisk.label == "No Active Threats")
     }
 
