@@ -216,7 +216,7 @@ struct AlertDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(text)
                 .font(areTags ? .subheadline.weight(.semibold) : .callout)
-                .foregroundStyle(areTags ? Color.tornadoRed  : .secondary)
+                .foregroundStyle(areTags ? Color.semanticMetadata : .secondary)
                 .monospacedDigit()
         }
         .padding()

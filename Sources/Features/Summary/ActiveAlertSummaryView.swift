@@ -530,7 +530,7 @@ private struct WatchRowView: View {
                         VStack(alignment: .leading) {
                             Text(sevTags)
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(Color.tornadoRed)
+                                .foregroundStyle(Color.semanticMetadata)
                                 .lineLimit(2)
                         }
                         Spacer()
