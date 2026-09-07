@@ -136,7 +136,7 @@ struct MorningNotificationTests {
         #expect(message.title == "Today's Outlook for Oklahoma City, OK")
         #expect(message.body == """
         Storm Activity: Chance for a few strong storms
-        Severe Activity: Tornados are possible
+        Severe Activity: Tornadoes are possible
         Fire Risk: No elevated fire weather risk is forecast.
         """)
     }
@@ -181,7 +181,7 @@ struct MorningNotificationTests {
         Fire Risk: Clear → Critical
 
         Storm Activity: Several severe storms are possible
-        Severe Activity: Tornados are possible
+        Severe Activity: Tornadoes are possible
         Fire Risk: Dry fuels, strong winds, and very low humidity could allow any fire that starts to spread rapidly.
         """)
     }

@@ -289,12 +289,12 @@ private struct HatchingExplanationView: View {
             Text("Hatched Risk Areas")
                 .font(.headline.weight(.semibold))
 
-            Text("Hatching marks where stronger storms are more likely inside the broader risk area.")
+            Text("Hatching marks where stronger storm intensity is possible if storms occur inside the broader risk area.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("When you see hatching on tornado, hail, or wind layers, SPC is signaling a higher chance of significant reports in that area.")
+            Text("When you see hatching on tornado, hail, or wind layers, SPC is signaling potential for significant reports in that area if storms develop.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

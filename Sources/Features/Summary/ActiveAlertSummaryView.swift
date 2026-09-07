@@ -115,7 +115,7 @@ struct ActiveAlertSummaryView: View {
     private var alertsContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             ActiveAlertSection(
-                label: "Watches & Warnings",
+                label: "Warnings & Watches",
                 items: sortedAlerts,
                 limit: 2,
                 onSelect: {

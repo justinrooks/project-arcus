@@ -43,7 +43,7 @@ struct SevereWeatherThreatTests {
         #expect(SevereWeatherThreat.allClear.summary == "No severe threats expected")
         #expect(SevereWeatherThreat.wind(probability: 0.1).summary == "Damaging wind possible")
         #expect(SevereWeatherThreat.hail(probability: 0.1).summary == "1 in or larger hail possible")
-        #expect(SevereWeatherThreat.tornado(probability: 0.1).summary == "Tornados are possible")
+        #expect(SevereWeatherThreat.tornado(probability: 0.1).summary == "Tornadoes are possible")
     }
 
     @Test("dynamicSummary formats percentages and is empty for allClear")
