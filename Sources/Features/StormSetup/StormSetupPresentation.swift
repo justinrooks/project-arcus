@@ -441,12 +441,30 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
 
     private static func summaryLimiterText(_ limiter: TornadoViabilityLimiter) -> String {
         switch limiter {
+        case .weakInstability:
+            "Limited instability"
+        case .weakDeepShear:
+            "Limited deep-layer support"
+        case .weakLowLevelRotation:
+            "Limited low-level rotation"
+        case .weakLowLevelStretching:
+            "Limited low-level lift"
+        case .elevatedCloudBases:
+            "Higher cloud bases"
+        case .strongCap:
+            "Storms may struggle to form"
+        case .conditionalInitiation:
+            "Storm development is uncertain"
+        case .weakStormOrganization:
+            "Storms may stay disorganized"
         case .fixedEffectiveStpDisagreement:
             "Model signals differ"
+        case .poorMoisture:
+            "Limited moisture"
         case .missingStormMode:
             "Storm mode is uncertain"
-        default:
-            readableLimiter(limiter)
+        case .unknown:
+            "Unavailable"
         }
     }
 
@@ -520,10 +538,30 @@ struct StormSetupSummaryPresentation: Sendable, Equatable {
         }
 
         switch normalizedLimiterKey(trimmed) {
+        case "weakinstability":
+            return "Limited instability"
+        case "weakdeepshear":
+            return "Limited deep-layer support"
+        case "weaklowlevelrotation":
+            return "Limited low-level rotation"
+        case "weaklowlevelstretching":
+            return "Limited low-level lift"
+        case "elevatedcloudbases":
+            return "Higher cloud bases"
+        case "strongcap":
+            return "Storms may struggle to form"
+        case "conditionalinitiation":
+            return "Storm development is uncertain"
+        case "weakstormorganization":
+            return "Storms may stay disorganized"
         case "fixedeffectivestpdisagreement":
             return "Model signals differ"
+        case "poormoisture":
+            return "Limited moisture"
         case "missingstormmode":
             return "Storm mode is uncertain"
+        case "unknown":
+            return "Unavailable"
         default:
             return readableLimiter(from: trimmed)
         }

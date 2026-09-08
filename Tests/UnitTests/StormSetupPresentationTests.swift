@@ -164,8 +164,8 @@ struct StormSetupPresentationTests {
 
         #expect(presentation.overallTitle == "Supportive Setup")
         #expect(presentation.ingredientRows.map(\.value) == ["Supportive", "Conditional", "High"])
-        #expect(presentation.limiterText == "Strong Cap")
-        #expect(presentation.accessibilityValue.contains("Strong Cap"))
+        #expect(presentation.limiterText == "Storms may struggle to form")
+        #expect(presentation.accessibilityValue.contains("Storms may struggle to form"))
     }
 
     @Test("maps signals to readable ingredient text")
@@ -216,29 +216,68 @@ struct StormSetupPresentationTests {
         #expect(presentation.limiterText == "capping")
     }
 
-    @Test("summary limiter copy translates technical terminology")
-    func summaryLimiterCopyTranslatesTechnicalTerminology() {
+    @Test("summary limiter copy translates every supported limiter")
+    func summaryLimiterCopyTranslatesEverySupportedLimiter() {
+        let cases = [
+            ("weakInstability", "Limited instability"),
+            ("weakDeepShear", "Limited deep-layer support"),
+            ("weakLowLevelRotation", "Limited low-level rotation"),
+            ("weakLowLevelStretching", "Limited low-level lift"),
+            ("elevatedCloudBases", "Higher cloud bases"),
+            ("strongCap", "Storms may struggle to form"),
+            ("conditionalInitiation", "Storm development is uncertain"),
+            ("weakStormOrganization", "Storms may stay disorganized"),
+            ("fixedEffectiveStpDisagreement", "Model signals differ"),
+            ("poorMoisture", "Limited moisture"),
+            ("missingStormMode", "Storm mode is uncertain"),
+            ("unknown", "Unavailable")
+        ]
+
+        for (limiter, expected) in cases {
+            let presentation = StormSetupSummaryPresentation(
+                dto: makeDTO(limitingFactors: [limiter]),
+                timeZone: TimeZone(identifier: "America/Denver")!,
+                now: date("2026-06-01T18:00:00Z")
+            )
+
+            #expect(presentation.limiterText == expected)
+        }
+    }
+
+    @Test("typed current response uses Summary limiter copy")
+    func typedCurrentResponseUsesSummaryLimiterCopy() {
         let presentation = StormSetupSummaryPresentation(
-            dto: makeDTO(
-                limitingFactors: ["fixedEffectiveStpDisagreement"]
+            response: makeCurrentResponse(
+                tornadoViability: .init(
+                    overall: .weak,
+                    realization: .conditional,
+                    primaryFailureMode: .none,
+                    confidence: .moderate,
+                    summary: "Conditional setup.",
+                    details: .init(
+                        stormViability: .weak,
+                        supercellViability: .conditional,
+                        tornadoEfficiency: .weak,
+                        inhibition: .strong,
+                        instability: .weak,
+                        moisture: .weak,
+                        cloudBase: .weak,
+                        deepShear: .weak,
+                        lowLevelRotation: .weak,
+                        lowLevelStretching: .weak,
+                        cloudBaseEfficiency: .weak,
+                        supercellComposite: .weak,
+                        tornadoComposite: .weak,
+                        stormMode: .unknown
+                    ),
+                    limitingFactors: [.weakDeepShear, .poorMoisture]
+                )
             ),
             timeZone: TimeZone(identifier: "America/Denver")!,
             now: date("2026-06-01T18:00:00Z")
         )
 
-        #expect(presentation.limiterText == "Model signals differ")
-        #expect(presentation.accessibilityValue.contains("Model signals differ"))
-    }
-
-    @Test("summary limiter copy keeps uncertain storm mode plain-language")
-    func summaryLimiterCopyKeepsUncertainStormModePlainLanguage() {
-        let presentation = StormSetupSummaryPresentation(
-            dto: makeDTO(limitingFactors: ["missingStormMode"]),
-            timeZone: TimeZone(identifier: "America/Denver")!,
-            now: date("2026-06-01T18:00:00Z")
-        )
-
-        #expect(presentation.limiterText == "Storm mode is uncertain")
+        #expect(presentation.limiterText == "Limited deep-layer support")
     }
 
     @Test("source line uses the forecast-location time zone")
