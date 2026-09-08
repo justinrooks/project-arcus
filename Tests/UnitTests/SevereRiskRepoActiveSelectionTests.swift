@@ -21,6 +21,93 @@ private struct MultiProductMockClient: SpcClient {
 
 @Suite("SevereRiskRepo.active", .serialized)
 struct SevereRiskRepoActiveSelectionTests {
+    @Test("Local intensity selects the highest containing level, respecting holes and forecast identity")
+    @MainActor
+    func localIntensitySelection() async throws {
+        let (repo, _) = try intensityFixture()
+        let source = SpcMapSourceIdentity.forecast(issued: .init(timeIntervalSince1970: 100),
+                                                  valid: .init(timeIntervalSince1970: 100),
+                                                  expires: .init(timeIntervalSince1970: 300)).persistenceToken
+        let now = Date(timeIntervalSince1970: 200)
+        let inside = CLLocationCoordinate2D(latitude: 40.5, longitude: -99.5)
+        let highest = try await repo.localIntensity(for: inside, threat: .tornado(probability: 0.10), sourceToken: source, asOf: now)
+        #expect(highest?.level == 3)
+        let hole = try await repo.localIntensity(for: .init(latitude: 42, longitude: -98),
+                                                threat: .tornado(probability: 0.10), sourceToken: source, asOf: now)
+        #expect(hole?.level == 1)
+        let outside = try await repo.localIntensity(for: .init(latitude: 45, longitude: -99),
+                                                   threat: .tornado(probability: 0.10), sourceToken: source, asOf: now)
+        #expect(outside == nil)
+        let mismatch = try await repo.localIntensity(for: inside, threat: .tornado(probability: 0.10), sourceToken: "wrong", asOf: now)
+        #expect(mismatch == nil)
+        for date in [Date(timeIntervalSince1970: 99), Date(timeIntervalSince1970: 300)] {
+            let result = try await repo.localIntensity(for: inside, threat: .tornado(probability: 0.10), sourceToken: source, asOf: date)
+            #expect(result == nil)
+        }
+        for threat in [SevereWeatherThreat.allClear, .wind(probability: 0.10), .tornado(probability: 0.05)] {
+            let result = try await repo.localIntensity(for: inside, threat: threat, sourceToken: source, asOf: now)
+            #expect(result == nil)
+        }
+    }
+
+    @Test("A newer issuance without intensity cannot inherit an older local highlight")
+    @MainActor
+    func localIntensityDoesNotReuseOlderIssuance() async throws {
+        let (repo, container) = try intensityFixture()
+        let context = ModelContext(container)
+        context.insert(intensityRow(label: "0.10", issued: 150))
+        try context.save()
+        for issue in [100.0, 150.0] {
+            let source = SpcMapSourceIdentity.forecast(issued: .init(timeIntervalSince1970: issue),
+                                                      valid: .init(timeIntervalSince1970: 100),
+                                                      expires: .init(timeIntervalSince1970: 300)).persistenceToken
+            let result = try await repo.localIntensity(for: .init(latitude: 40.5, longitude: -99.5),
+                                                       threat: .tornado(probability: 0.10), sourceToken: source,
+                                                       asOf: .init(timeIntervalSince1970: 200))
+            #expect(result == nil)
+        }
+    }
+
+    @Test("CIG-only polygons never create a base severe threat")
+    @MainActor
+    func intensityRequiresBaseProbability() async throws {
+        let container = try TestStore.container(for: [SevereRisk.self])
+        let context = ModelContext(container)
+        context.insert(intensityRow(label: "CIG3"))
+        try context.save()
+        let repo = SevereRiskRepo(modelContainer: container)
+        let source = SpcMapSourceIdentity.forecast(issued: .init(timeIntervalSince1970: 100),
+                                                  valid: .init(timeIntervalSince1970: 100),
+                                                  expires: .init(timeIntervalSince1970: 300)).persistenceToken
+        let result = try await repo.localIntensity(for: .init(latitude: 40.5, longitude: -99.5),
+                                                   threat: .tornado(probability: 0), sourceToken: source,
+                                                   asOf: .init(timeIntervalSince1970: 200))
+        #expect(result == nil)
+    }
+
+    @MainActor
+    private func intensityFixture() throws -> (SevereRiskRepo, ModelContainer) {
+        let container = try TestStore.container(for: [SevereRisk.self])
+        let context = ModelContext(container)
+        for label in ["0.10", "CIG1", "CIG3"] {
+            context.insert(intensityRow(label: label, hasHole: label == "CIG3"))
+        }
+        try context.save()
+        return (SevereRiskRepo(modelContainer: container), container)
+    }
+
+    @MainActor
+    private func intensityRow(label: String, issued: Double = 100, hasHole: Bool = false) -> SevereRisk {
+        let exterior = squareRing(longitude: -100, latitude: 40, size: 4).map { Coordinate2D(latitude: $0[1], longitude: $0[0]) }
+        let hole = squareRing(longitude: -98.5, latitude: 41.5, size: 1).map { Coordinate2D(latitude: $0[1], longitude: $0[0]) }
+        let probability = label == "0.10" ? 0.10 : 0.0
+        return SevereRisk(type: .tornado, probability: .percent(probability), threatLevel: .tornado(probability: probability),
+                          issued: .init(timeIntervalSince1970: issued), valid: .init(timeIntervalSince1970: 100),
+                          expires: .init(timeIntervalSince1970: 300), dn: label == "CIG3" ? 3 : 1, stroke: nil, fill: nil,
+                          polygons: [GeoPolygonEntity(title: "Fixture", coordinates: exterior, interiorCoordinates: hasHole ? [hole] : [])],
+                          label: label)
+    }
+
     @Test("Tornado active lookup excludes parsed interior holes")
     func tornadoActiveLookupExcludesParsedInteriorHoles() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [SevereRisk.self]) }

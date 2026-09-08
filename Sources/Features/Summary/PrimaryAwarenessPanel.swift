@@ -11,6 +11,7 @@ import SwiftUI
 struct PrimaryAwarenessPanel: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.severeIntensity) private var severeIntensity
 
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -91,6 +92,7 @@ struct PrimaryAwarenessPanel: View {
             symbolName: severeSymbolName,
             background: severeBackground,
             isQuiet: severeIsQuiet,
+            intensity: severeIntensity?.displayed(for: severeRisk, contentState: todayContentState),
             action: {
                 onOpenMapLayer(severeMapLayer)
             }
@@ -122,6 +124,7 @@ struct PrimaryAwarenessPanel: View {
         symbolName: String,
         background: LinearGradient,
         isQuiet: Bool,
+        intensity: SevereIntensityPresentation? = nil,
         presentationMode: SupportingRiskRowPresentationMode = .normal,
         action: @escaping () -> Void,
         showsChevron: Bool = false
@@ -132,6 +135,7 @@ struct PrimaryAwarenessPanel: View {
                 detail: detail,
                 symbolName: symbolName,
                 background: background,
+                intensity: intensity,
                 isQuiet: isQuiet,
                 presentationMode: presentationMode,
                 showsChevron: showsChevron
@@ -265,6 +269,10 @@ struct PrimaryAwarenessPanel: View {
     }
 
     private var severeDetail: String {
+        if primaryState.source == .severeRisk,
+           severeIntensity?.displayed(for: severeRisk, contentState: todayContentState) != nil {
+            return ""
+        }
         if severeUnavailable {
             return "No saved severe risk data is available offline."
         }

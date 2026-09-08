@@ -153,6 +153,43 @@ actor SevereRiskRepo {
 
     }
 
+    /// Read-only companion to the displayed forecast. Never borrow intensity from a different issuance.
+    func localIntensity(
+        for point: CLLocationCoordinate2D,
+        threat: SevereWeatherThreat,
+        sourceToken: String,
+        asOf date: Date = .now
+    ) throws -> (hazard: ThreatType, level: Int, expires: Date)? {
+        let hazard: ThreatType = switch threat {
+        case .tornado: .tornado
+        case .wind: .wind
+        case .hail: .hail
+        case .allClear: .unknown
+        }
+        guard hazard != .unknown else { return nil }
+        let rows = try modelContext.fetch(FetchDescriptor<SevereRisk>(predicate: #Predicate {
+            $0.valid <= date && date < $0.expires
+        }))
+        let latest = latestIssuanceSlicesByThreatType(from: rows)
+        let matching = latest.filter { row in
+            row.type == hazard && SpcMapSourceIdentity.forecast(
+                issued: row.issued, valid: row.valid, expires: row.expires
+            ).persistenceToken == sourceToken
+        }
+        // Intensity alone must never synthesize a threat (CIG rows can carry a zero probability).
+        let localProbability = matching.filter {
+            $0.probability.decimalValue > 0 && SevereRiskShapeDTO.intensityLevel(from: $0.label ?? "") == nil &&
+                $0.polygons.contains(where: { $0.contains(point) })
+        }.max { $0.probability.decimalValue < $1.probability.decimalValue }
+        guard localProbability?.threatLevel == threat else { return nil }
+        return matching.compactMap { row -> (hazard: ThreatType, level: Int, expires: Date)? in
+            guard let level = SevereRiskShapeDTO.intensityLevel(from: row.label ?? ""),
+                  !(hazard == .hail && level == 3),
+                  row.polygons.contains(where: { $0.contains(point) }) else { return nil }
+            return (hazard: hazard, level: level, expires: row.expires)
+        }.max { $0.level < $1.level }
+    }
+
     func purge(asOf now: Date = .init()) throws {
         logger.info("Purging expired severe risk geometry")
 

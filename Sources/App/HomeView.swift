@@ -252,6 +252,16 @@ struct HomeView: View {
                 environment: refreshEnvironment
             )
         }
+        .modifier(SummaryIntensityModifier(
+            request: SummaryIntensityRequest(
+                projection: presentation.projection,
+                location: presentation.locationSnapshot,
+                threat: presentation.severeRisk,
+                contentState: todayContentState
+            ),
+            refreshRevision: presentation.projection?.updatedAt,
+            isRefreshing: refreshPipeline.isRefreshInFlight
+        ))
     }
 
     private func alertsTab(presentation: HomePresentationSnapshot) -> some View {

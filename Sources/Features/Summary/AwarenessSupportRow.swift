@@ -14,6 +14,7 @@ struct AwarenessSupportRow: View {
     let detail: String
     let symbolName: String
     let background: LinearGradient
+    var intensity: SevereIntensityPresentation? = nil
     var isQuiet: Bool = false
     var presentationMode: SupportingRiskRowPresentationMode = .normal
     var showsChevron: Bool = false
@@ -35,11 +36,25 @@ struct AwarenessSupportRow: View {
                     .lineLimit(1)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(detail)
-                    .font(rowMetrics.detailFont)
-                    .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(rowMetrics.detailFont)
+                        .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if let intensity {
+                    Text(intensity.title)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
+                    Text(intensity.detail)
+                        .font(.footnote)
+                        .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 8)
@@ -57,6 +72,15 @@ struct AwarenessSupportRow: View {
         .background(
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
                 .fill(background)
+                .overlay {
+                    if let intensity {
+                        SevereIntensityTexture(level: intensity.level)
+                            .frame(width: 44)
+                            .clipped()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous))
         )
         .overlay {
             RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
@@ -72,7 +96,9 @@ struct AwarenessSupportRow: View {
         .opacity(rowOpacity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
-        .accessibilityValue(detail)
+        .accessibilityValue(intensity.map {
+            [detail, $0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: ". ")
+        } ?? detail)
     }
 
     private var metrics: Metrics {

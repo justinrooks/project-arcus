@@ -152,6 +152,7 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
     var todayContentState: TodayContentState = .current
     var colorScheme: ColorScheme? = nil
     var dynamicTypeSize: DynamicTypeSize? = nil
+    var intensity: SevereIntensityPresentation? = nil
 
     private var resolutionState: SummaryResolutionState { SummaryResolutionState() }
 
@@ -174,6 +175,36 @@ private struct PrimaryAwarenessPanelPreviewCard: View {
             )
         }
         .preferredColorScheme(colorScheme)
+        .environment(\.severeIntensity, intensity)
         .dynamicTypeSize(dynamicTypeSize ?? .large)
     }
+}
+
+#Preview("Local intensity — all tornado levels") {
+    ScrollView {
+        VStack(spacing: 18) {
+            ForEach(1...3, id: \.self) { level in
+                PrimaryAwarenessPanelPreviewCard(
+                    title: "Potential impacts", stormRisk: .enhanced,
+                    severeRisk: .tornado(probability: 0.10), fireRisk: .clear,
+                    colorScheme: level == 2 ? .dark : .light,
+                    dynamicTypeSize: level == 3 ? .accessibility3 : .large,
+                    intensity: .init(hazard: .tornado, level: level)
+                )
+            }
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Watch retains priority", stormRisk: .enhanced,
+                severeRisk: .wind(probability: 0.30), fireRisk: .clear,
+                alerts: [AlertDTO(from: Watch.sampleWatches[0])],
+                colorScheme: .dark, intensity: .init(hazard: .wind, level: 3)
+            )
+            PrimaryAwarenessPanelPreviewCard(
+                title: "Hail impacts", stormRisk: .enhanced,
+                severeRisk: .hail(probability: 0.30), fireRisk: .clear,
+                intensity: .init(hazard: .hail, level: 2)
+            )
+        }
+        .padding()
+    }
+    .background(.skyAwareBackground)
 }
