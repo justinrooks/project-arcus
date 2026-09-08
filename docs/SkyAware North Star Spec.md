@@ -317,14 +317,17 @@ Keep occurrence probability and hero precedence unchanged. Use these shared Toda
 
 | Hazard | Increasing intensity descriptions |
 | --- | --- |
-| Tornado | Strong tornadoes possible → Intense tornadoes possible → Violent tornadoes possible |
-| Wind | Destructive gusts possible → Widespread damaging winds possible → Exceptionally damaging winds possible |
+| Tornado | Strong tornadoes possible → More intense tornadoes possible → Highest tornado intensity potential |
+| Wind | Destructive gusts possible → More intense wind damage possible → Highest wind intensity potential |
 | Hail | Very large hail possible → Giant hail possible (no third hail level) |
 
-Pair each label with visible conditional impact copy: major home damage, home destruction, or
-leveling well-built homes for tornadoes; destructive gusts or progressively more extensive wind damage
-for wind; 2-inch or larger hail and softball-size or larger hail. These are potential outcomes, not
-guarantees or hard maximums. The mapping follows [SPC's intensity guidance, slides 8–10 and 28](https://www.weather.gov/media/rah/ConditionalIntensityPresentation.pdf).
+Pair each label with visible hazard-conditional detail copy. If tornadoes form, describe a greater
+potential for strong tornadoes, a higher potential for stronger and more damaging tornadoes, or the
+highest tornado intensity potential. If damaging winds occur, describe especially strong gusts,
+stronger wind gusts, or the highest wind intensity potential. If severe hail occurs, describe larger
+hailstones or the highest hail intensity potential. These describe potential intensity if the hazard
+occurs; they do not increase the underlying probability and are neither guaranteed outcomes nor
+maximum limits. The mapping follows [SPC's intensity guidance, slides 8–10 and 28](https://www.weather.gov/media/rah/ConditionalIntensityPresentation.pdf).
 
 The existing Severe Risk row is the sole Today owner, including beneath an alert hero. Require the
 displayed non-clear hazard, location, and accepted outlook identity to match active local stored
