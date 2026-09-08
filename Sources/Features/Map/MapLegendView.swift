@@ -63,9 +63,8 @@ struct MapLegend: View {
                             pressedOverlayOpacity: 0.06
                         )
                     )
-                    .popover(isPresented: $showsHatchingExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                    .popover(isPresented: $showsHatchingExplanation, attachmentAnchor: .rect(.bounds)) {
                         HatchingExplanationView(layer: state.layer)
-                            .presentationCompactAdaptation(.popover)
                     }
                 }
             }
@@ -290,8 +289,7 @@ struct HatchingExplanationView: View {
 
     var body: some View {
         ScrollView { explanationContent }
-            .frame(width: 300, alignment: .leading)
-            .frame(maxHeight: 500)
+            .frame(minWidth: 280, idealWidth: 300, maxWidth: 360, maxHeight: 500, alignment: .leading)
     }
 
     var explanationContent: some View {
@@ -324,7 +322,6 @@ struct HatchingExplanationView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .frame(width: 300, alignment: .leading)
     }
 
 }
