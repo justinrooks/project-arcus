@@ -503,9 +503,11 @@ The primary hero and supporting rows represent the most important severe-weather
 categories and should not become overloaded with auxiliary metadata. Do not restore
 the superseded paired Storm Risk / Severe Risk hero layout.
 ## **Conditional intensity integration**
-Rather than adding text labels for CIG or new icons, the chosen direction is:
-- add **subtle texture / hatch** to the badge / tile when conditional intensity applies to the user’s current location
-This keeps the visual language consistent with the map.
+The existing **Severe Risk supporting row** owns the local intensity explanation, even beneath an alert hero.
+Pair a concise hazard-specific potential-impact label with visible conditional explanation and subordinate
+hatch texture. Users must understand the potential severity without knowing an internal level or decoding hatching.
+Keep the hero's priority, probability colors, and navigation unchanged. Do not add a standalone card or badge.
+The exact vocabulary, eligibility, and cache policy are defined in the North Star's **Local Intensity Meaning** section.
 ---
 # **12. Supporting Risk Rows**
 ## **Role**
@@ -725,12 +727,15 @@ Do not expose:
 - CIG1 / CIG2 / CIG3 in primary UI
 Instead use:
 - hatch texture on map
-- hatch texture in badge when applicable
-- plain-language popovers on tap
-## **Badge integration**
-Rather than adding text or icons, the preferred design is:
-- subtle hatch/texture overlay inside the risk badge when the user is inside a conditional intensity area for the active hazard
-This visually connects badge and map.
+- subtle hatch texture in the matching Severe Risk supporting row
+- visible plain-language potential impacts in Today and matching explanations in the map popover
+## **Today integration**
+Use the Severe Risk row, never the hero or unrelated Storm/Fire rows. Explain the specific hazard's
+increasing intensity with conditional impact language; retain subtle texture as a visual connection to Map.
+Tornado uses strong, intense, and violent tornado potential; wind distinguishes destructive gusts from
+more extensive damaging wind events; hail distinguishes very large from giant hail and has only two levels.
+Follow the North Star's **Local Intensity Meaning** mapping and provenance policy. Texture is reinforcement,
+not the sole carrier of meaning. Preserve VoiceOver text, Dynamic Type wrapping, and unaltered hazard colors.
 ## **Multiple hazards**
 Because severe outlooks often include wind, hail, and tornado simultaneously, a **horizontal swipe rotator** was preferred for severe threat cards, similar in spirit to iOS rotating widgets.
 

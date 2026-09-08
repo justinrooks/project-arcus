@@ -82,6 +82,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
     let lastWeatherLoadAt: Date?
     let lastAirQualityLoadAt: Date?
     let lastStormSetupLoadAt: Date?
+    let convectiveSourceToken: String?
 
     init(
         id: UUID,
@@ -111,7 +112,8 @@ struct HomeProjectionRecord: Sendable, Equatable {
         lastAirQualityLoadAt: Date? = nil,
         stormSetupCurrentResponse: StormSetupCurrentResponse? = nil,
         stormSetup: StormSetupDTO? = nil,
-        lastStormSetupLoadAt: Date? = nil
+        lastStormSetupLoadAt: Date? = nil,
+        convectiveSourceToken: String? = nil
     ) {
         self.id = id
         self.projectionKey = projectionKey
@@ -141,6 +143,7 @@ struct HomeProjectionRecord: Sendable, Equatable {
         self.lastWeatherLoadAt = lastWeatherLoadAt
         self.lastAirQualityLoadAt = lastAirQualityLoadAt
         self.lastStormSetupLoadAt = lastStormSetupLoadAt
+        self.convectiveSourceToken = convectiveSourceToken
     }
 }
 
@@ -347,7 +350,8 @@ extension HomeProjection {
             lastAirQualityLoadAt: lastAirQualityLoadAt,
             stormSetupCurrentResponse: stormSetupCurrentResponse,
             stormSetup: stormSetupCurrentResponse.map(StormSetupDTO.init(response:)),
-            lastStormSetupLoadAt: lastStormSetupLoadAt
+            lastStormSetupLoadAt: lastStormSetupLoadAt,
+            convectiveSourceToken: convectiveRiskComparisonSourceKey
         )
     }
 

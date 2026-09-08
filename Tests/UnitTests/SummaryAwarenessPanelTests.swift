@@ -1,10 +1,147 @@
 #if canImport(Testing)
 import Foundation
 import Testing
+import SwiftUI
 @testable import SkyAware
 
 @Suite("Summary Awareness Panel")
 struct SummaryAwarenessPanelTests {
+    @Test("Intensity preserves distinct hazard-specific meanings and excludes unsupported levels")
+    func intensityMeanings() {
+        for layer in [MapLayer.tornado, .wind, .hail] {
+            let levels = SevereIntensityPresentation.levels(for: layer)
+            #expect(levels.count == (layer == .hail ? 2 : 3))
+            #expect(Set(levels.map(\.title)).count == levels.count)
+            #expect(Set(levels.map(\.detail)).count == levels.count)
+            #expect(levels.allSatisfy { $0.detail.hasPrefix("If ") && !$0.title.contains("CIG") })
+        }
+        #expect(SevereIntensityPresentation(hazard: .tornado, level: 1)?.title == "Strong tornadoes possible")
+        #expect(SevereIntensityPresentation(hazard: .tornado, level: 2)?.title == "More intense tornadoes possible")
+        #expect(SevereIntensityPresentation(hazard: .tornado, level: 3)?.title == "Highest tornado intensity potential")
+        #expect(SevereIntensityPresentation(hazard: .hail, level: 3) == nil)
+        #expect(SevereIntensityPresentation(hazard: .unknown, level: 1) == nil)
+        #expect(SevereIntensityPresentation(hazard: .wind, level: 4) == nil)
+    }
+
+    @Test("Only a matching resolved severe row owns intensity, including under an alert hero")
+    func intensityOwnership() throws {
+        let intensity = try #require(SevereIntensityPresentation(hazard: .tornado, level: 2))
+        for contentState in [TodayContentState.current, .cachedRefreshing, .staleRefreshing, .degraded] {
+            #expect(intensity.displayed(for: .tornado(probability: 0.10), contentState: contentState) == intensity)
+        }
+        for contentState in [TodayContentState.noCacheResolving, .unavailable] {
+            #expect(intensity.displayed(for: .tornado(probability: 0.10), contentState: contentState) == nil)
+        }
+        for threat in [nil, SevereWeatherThreat.allClear, .wind(probability: 0.10), .hail(probability: 0.10)] {
+            #expect(intensity.displayed(for: threat, contentState: .current) == nil)
+        }
+        let primary = SummaryAwarenessPrimaryState.resolve(
+            stormRisk: .high, severeRisk: .tornado(probability: 0.10), fireRisk: .critical,
+            alerts: [makeAlert(title: "Tornado Warning", headline: "Take shelter")],
+            todayContentState: .current, isStormRiskResolving: false, isSevereRiskResolving: false,
+            isFireRiskResolving: false, isOffline: false
+        )
+        #expect(primary == .alert(title: "Tornado Warning", detail: "Take shelter"))
+        #expect(intensity.displayed(for: .tornado(probability: 0.10), contentState: .current) == intensity)
+    }
+
+    @Test("Intensity request rejects missing provenance and a different displayed location or threat")
+    func intensityRequestProvenance() {
+        let projection = makeIntensityProjection()
+        let location = projection.locationSnapshot
+        let request = SummaryIntensityRequest(projection: projection, location: location,
+                                              threat: projection.severeRisk, contentState: .current)
+        #expect(request?.sourceToken == "forecast:test")
+        #expect(SummaryIntensityRequest(projection: makeIntensityProjection(token: nil), location: location,
+                                       threat: projection.severeRisk, contentState: .current) == nil)
+        #expect(SummaryIntensityRequest(projection: makeIntensityProjection(token: "all-clear:test"), location: location,
+                                       threat: projection.severeRisk, contentState: .current) == nil)
+        #expect(SummaryIntensityRequest(projection: projection, location: makeIntensityProjection(latitude: 40).locationSnapshot,
+                                       threat: projection.severeRisk, contentState: .current) == nil)
+        #expect(SummaryIntensityRequest(projection: projection, location: location,
+                                       threat: .wind(probability: 0.10), contentState: .current) == nil)
+        #expect(SummaryIntensityRequest(projection: projection, location: location,
+                                       threat: projection.severeRisk, contentState: .unavailable) == nil)
+    }
+
+    @Test("Intensity panels render in light dark and accessibility sizes")
+    @MainActor
+    func intensityRenderEvidence() throws {
+        for (name, hazard, level, scheme, size) in [
+            ("tornado-1-light", ThreatType.tornado, 1, ColorScheme.light, DynamicTypeSize.large),
+            ("tornado-2-dark", .tornado, 2, .dark, .large),
+            ("tornado-3-accessibility", .tornado, 3, .dark, .accessibility3),
+            ("wind-1-light", .wind, 1, .light, .large),
+            ("wind-2-dark", .wind, 2, .dark, .large),
+            ("wind-3-accessibility", .wind, 3, .light, .accessibility3),
+            ("hail-1-light", .hail, 1, .light, .large),
+            ("hail-2-dark", .hail, 2, .dark, .accessibility3)
+        ] {
+            let threat: SevereWeatherThreat = switch hazard {
+            case .tornado: .tornado(probability: 0.10)
+            case .wind: .wind(probability: 0.30)
+            default: .hail(probability: 0.30)
+            }
+            let panel = PrimaryAwarenessPanel(
+                stormRisk: .enhanced, severeRisk: threat, fireRisk: .clear,
+                alerts: name == "tornado-2-dark" ? [makeAlert(title: "Tornado Warning", headline: "Take shelter now")] : [],
+                todayContentState: .current, resolutionState: SummaryResolutionState(), showsOfflineToken: false,
+                onOpenMapLayer: { _ in }, onOpenAlerts: {}
+            )
+            .environment(\.severeIntensity, SevereIntensityPresentation(hazard: hazard, level: level))
+            .environment(\.dynamicTypeSize, size)
+            .padding(16)
+            .frame(width: 390)
+            .background(Color.skyAwareBackground)
+            .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: panel)
+            let data = try #require(renderer.uiImage?.pngData())
+            try data.write(to: URL(fileURLWithPath: "/private/tmp/486-\(name).png"))
+            let layer: MapLayer = switch hazard {
+            case .tornado: .tornado
+            case .wind: .wind
+            default: .hail
+            }
+            let legend = HatchingExplanationView(layer: layer).explanationContent
+                .background(Color.skyAwareBackground)
+                .environment(\.colorScheme, scheme)
+                .environment(\.dynamicTypeSize, size)
+            let legendRenderer = ImageRenderer(content: legend)
+            let legendData = try #require(legendRenderer.uiImage?.pngData())
+            try legendData.write(to: URL(fileURLWithPath: "/private/tmp/486-legend-\(name).png"))
+        }
+    }
+
+    @Test("Late intensity results cannot leak across locations or survive expiry")
+    @MainActor
+    func intensityResultIdentity() throws {
+        let projection = makeIntensityProjection()
+        let request = SummaryIntensityRequest(projection: projection, location: projection.locationSnapshot,
+                                              threat: projection.severeRisk, contentState: .current)
+        let other = makeIntensityProjection(latitude: 40)
+        let otherRequest = SummaryIntensityRequest(projection: other, location: other.locationSnapshot,
+                                                   threat: other.severeRisk, contentState: .current)
+        let value = LocalSevereIntensity(presentation: try #require(.init(hazard: .tornado, level: 2)),
+                                         expires: Date(timeIntervalSince1970: 200))
+        #expect(SummaryIntensityModifier.visibleIntensity(request: request, loadedRequest: request,
+                                                          intensity: value, now: .init(timeIntervalSince1970: 199)) != nil)
+        #expect(SummaryIntensityModifier.visibleIntensity(request: otherRequest, loadedRequest: request,
+                                                          intensity: value, now: .init(timeIntervalSince1970: 199)) == nil)
+        #expect(SummaryIntensityModifier.visibleIntensity(request: request, loadedRequest: request,
+                                                          intensity: value, now: value.expires) == nil)
+    }
+
+    private func makeIntensityProjection(token: String? = "forecast:test", latitude: Double = 35) -> HomeProjectionRecord {
+        HomeProjectionRecord(
+            id: UUID(), projectionKey: "intensity-test", latitude: latitude, longitude: -97, h3Cell: 1,
+            countyCode: "test", forecastZone: nil, fireZone: "test", placemarkSummary: nil, timeZoneId: nil,
+            locationTimestamp: .distantPast, createdAt: .distantPast, updatedAt: .distantPast, lastViewedAt: nil,
+            weather: nil, stormRisk: .enhanced, severeRisk: .tornado(probability: 0.10), fireRisk: .clear,
+            activeAlerts: [], activeMesos: [], lastHotAlertsLoadAt: nil, lastSlowProductsLoadAt: nil,
+            lastWeatherLoadAt: nil, convectiveSourceToken: token
+        )
+    }
+
     @Test("warning outranks every other awareness signal")
     func warning_outranksOtherSignals() {
         let selected = SummaryAwarenessPrimaryState.resolve(

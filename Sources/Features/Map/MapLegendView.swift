@@ -52,7 +52,9 @@ struct MapLegend: View {
                     Button {
                         showsHatchingExplanation = true
                     } label: {
-                        HatchLegendRow(hatchStyles: HatchStyle.legendPreviewStyles)
+                        HatchLegendRow(hatchStyles: SevereIntensityPresentation.levels(for: state.layer).map {
+                            HatchStyle.default.adjusted(forIntensityLevel: $0.level)
+                        })
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(
@@ -62,7 +64,7 @@ struct MapLegend: View {
                         )
                     )
                     .popover(isPresented: $showsHatchingExplanation, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                        HatchingExplanationView()
+                        HatchingExplanationView(layer: state.layer)
                             .presentationCompactAdaptation(.popover)
                     }
                 }
@@ -283,8 +285,16 @@ private struct WarningLegendRow: View {
     }
 }
 
-private struct HatchingExplanationView: View {
+struct HatchingExplanationView: View {
+    let layer: MapLayer
+
     var body: some View {
+        ScrollView { explanationContent }
+            .frame(width: 300, alignment: .leading)
+            .frame(maxHeight: 500)
+    }
+
+    var explanationContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Hatched Risk Areas")
                 .font(.headline.weight(.semibold))
@@ -294,15 +304,29 @@ private struct HatchingExplanationView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("When you see hatching on tornado, hail, or wind layers, SPC is signaling potential for significant reports in that area if storms develop.")
+            Text("Color shows likelihood. Hatching describes how intense the hazard could be, not a greater chance of storms.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            ForEach(SevereIntensityPresentation.levels(for: layer), id: \.level) { intensity in
+                HStack(alignment: .top, spacing: 10) {
+                    SevereIntensityTexture(level: intensity.level)
+                        .frame(width: 28, height: 24)
+                        .clipped()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(intensity.title).font(.subheadline.weight(.semibold))
+                        Text(intensity.detail).font(.caption).foregroundStyle(.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .frame(width: 300, alignment: .leading)
     }
+
 }
 
 // MARK: - Rows

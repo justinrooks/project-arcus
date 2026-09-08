@@ -115,7 +115,7 @@ Use these labels consistently when generating UI or copy:
 - Conditional guidance section: `Storm Setup`
 - Conditional reliability prompt: `Location Reliability`
 - Severe map/menu wording: `Severe Risk`, not `Categorical`
-- User-facing intensity language: `Hatching` and `Stronger storms possible`
+- User-facing intensity language: `Hatching`, `Stronger storms possible`, and hazard-specific potential impacts
 
 Internal vs user-facing terminology:
 - Internal term: `conditional intensity` or `CIG`
@@ -307,7 +307,34 @@ Rules:
 - keep Storm Risk, Severe Risk, and Fire Risk concise and glanceable
 - do not require a fixed paired-hero layout
 - do not overload supporting rows with auxiliary metadata
-- conditional intensity should appear as subtle hatch or texture, not as extra jargon or extra iconography
+- the Severe Risk row owns local conditional intensity, using a short hazard-specific impact explanation
+  and subordinate hatch texture; never require users to decode texture to understand intensity
+- the hero, Storm Risk row, and Fire Risk row never inherit this modifier
+
+### Local Intensity Meaning
+Intensity describes potential severity **if the hazard occurs**, not a greater chance of storms.
+Keep occurrence probability and hero precedence unchanged. Use these shared Today/Map labels:
+
+| Hazard | Increasing intensity descriptions |
+| --- | --- |
+| Tornado | Strong tornadoes possible → Intense tornadoes possible → Violent tornadoes possible |
+| Wind | Destructive gusts possible → Widespread damaging winds possible → Exceptionally damaging winds possible |
+| Hail | Very large hail possible → Giant hail possible (no third hail level) |
+
+Pair each label with visible conditional impact copy: major home damage, home destruction, or
+leveling well-built homes for tornadoes; destructive gusts or progressively more extensive wind damage
+for wind; 2-inch or larger hail and softball-size or larger hail. These are potential outcomes, not
+guarantees or hard maximums. The mapping follows [SPC's intensity guidance, slides 8–10 and 28](https://www.weather.gov/media/rah/ConditionalIntensityPresentation.pdf).
+
+The existing Severe Risk row is the sole Today owner, including beneath an alert hero. Require the
+displayed non-clear hazard, location, and accepted outlook identity to match active local stored
+polygons, including a matching base probability polygon. Use the highest containing supported level.
+Never transfer another hazard's intensity to the selected threat. A storm/fire/quiet hero with no
+matching severe threat gets no treatment. No-cache resolving and unavailable states omit it;
+cached-refreshing and offline states may retain it only while the same provenance and validity checks
+pass. Missing identity, a replaced outlook, expiry, or read failure means omission, not an all-clear claim.
+Derive this transient value from stored geometry; do not add a persisted intensity field or network request.
+Map explanations use the same impact copy alongside the corresponding hatch samples.
 
 ### Storm Setup
 Storm Setup is a conditional Summary section for users who enable it and have
