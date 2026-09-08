@@ -131,24 +131,23 @@ struct LoadingView: View {
         VStack(spacing: 16) {
             RoundedRectangle(cornerRadius: SkyAwareRadius.section, style: .continuous)
                 .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.22))
-                .frame(height: 72)
+                .frame(height: 64)
 
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                    .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.21))
-                    .frame(height: 126)
-                RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
-                    .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.18))
-                    .frame(height: 126)
+            RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                .fill(.white.opacity(colorScheme == .dark ? 0.10 : 0.21))
+                .frame(height: 148)
+
+            VStack(spacing: 10) {
+                ForEach(0..<3, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: SkyAwareRadius.large, style: .continuous)
+                        .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.18))
+                        .frame(height: 48)
+                }
             }
 
             RoundedRectangle(cornerRadius: SkyAwareRadius.row, style: .continuous)
                 .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.19))
-                .frame(height: 70)
-
-            RoundedRectangle(cornerRadius: SkyAwareRadius.card, style: .continuous)
-                .fill(.white.opacity(colorScheme == .dark ? 0.09 : 0.17))
-                .frame(height: 110)
+                .frame(height: 84)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 28)
