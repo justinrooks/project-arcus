@@ -14,10 +14,7 @@ enum AlertPresentationOrdering {
         case mesoscale
     }
 
-    static func ordered<Item: AlertItem>(
-        _ items: [Item],
-        endDate: KeyPath<Item, Date>
-    ) -> [Item] {
+    static func ordered<Item: AlertItem>(_ items: [Item]) -> [Item] {
         items.sorted { lhs, rhs in
             let lhsClass = presentationClass(for: lhs)
             let rhsClass = presentationClass(for: rhs)
@@ -26,8 +23,8 @@ enum AlertPresentationOrdering {
                 return lhsClass.rawValue < rhsClass.rawValue
             }
 
-            let lhsEndDate = lhs[keyPath: endDate]
-            let rhsEndDate = rhs[keyPath: endDate]
+            let lhsEndDate = lhs.validEnd
+            let rhsEndDate = rhs.validEnd
             if lhsEndDate != rhsEndDate {
                 return lhsEndDate < rhsEndDate
             }

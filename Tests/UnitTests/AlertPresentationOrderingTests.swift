@@ -27,8 +27,8 @@ struct AlertPresentationOrderingTests {
             validEnd: now.addingTimeInterval(1_500)
         )
 
-        let orderedAlerts = AlertPresentationOrdering.ordered([watch, warning], endDate: \.expires)
-        let orderedMesos = AlertPresentationOrdering.ordered([meso], endDate: \.validEnd)
+        let orderedAlerts = AlertPresentationOrdering.ordered([watch, warning])
+        let orderedMesos = AlertPresentationOrdering.ordered([meso])
 
         #expect(orderedAlerts.map(\.title) == ["Tornado Warning", "Severe Thunderstorm Watch"])
         #expect(orderedMesos.map(\.title) == ["SPC MD 2001"])
@@ -57,10 +57,7 @@ struct AlertPresentationOrderingTests {
             ends: now.addingTimeInterval(2_400)
         )
 
-        let orderedAlerts = AlertPresentationOrdering.ordered(
-            [earlierIssuedWarning, laterIssuedWarning],
-            endDate: \.ends
-        )
+        let orderedAlerts = AlertPresentationOrdering.ordered([earlierIssuedWarning, laterIssuedWarning])
         #expect(orderedAlerts.map(\.id) == ["warning-newer", "warning-older"])
 
         let earlierIssuedMeso = makeMeso(
@@ -74,11 +71,31 @@ struct AlertPresentationOrderingTests {
             validEnd: now.addingTimeInterval(1_800)
         )
 
-        let orderedMesos = AlertPresentationOrdering.ordered(
-            [earlierIssuedMeso, laterIssuedMeso],
-            endDate: \.validEnd
-        )
+        let orderedMesos = AlertPresentationOrdering.ordered([earlierIssuedMeso, laterIssuedMeso])
         #expect(orderedMesos.map(\.number) == [2003, 2002])
+    }
+
+    @Test("Uses alert end time consistently when expires differs")
+    func usesAlertEndTimeConsistentlyWhenExpiresDiffers() {
+        let now = Date()
+        let earlierEnd = makeAlert(
+            id: "earlier-end",
+            title: "Severe Thunderstorm Watch",
+            issued: now.addingTimeInterval(-600),
+            expires: now.addingTimeInterval(3_600),
+            ends: now.addingTimeInterval(600)
+        )
+        let laterEnd = makeAlert(
+            id: "later-end",
+            title: "Severe Thunderstorm Watch",
+            issued: now.addingTimeInterval(-300),
+            expires: now.addingTimeInterval(600),
+            ends: now.addingTimeInterval(3_600)
+        )
+
+        let ordered = AlertPresentationOrdering.ordered([laterEnd, earlierEnd])
+
+        #expect(ordered.map(\.id) == ["earlier-end", "later-end"])
     }
 }
 

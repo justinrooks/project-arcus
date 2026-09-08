@@ -47,8 +47,8 @@ struct AlertView: View {
     ) {
         self.mesos = mesos
         self.alerts = alerts
-        self.sortedAlerts = AlertPresentationOrdering.ordered(alerts, endDate: \.ends)
-        self.sortedMesos = AlertPresentationOrdering.ordered(mesos, endDate: \.validEnd)
+        self.sortedAlerts = AlertPresentationOrdering.ordered(alerts)
+        self.sortedMesos = AlertPresentationOrdering.ordered(mesos)
         self.latestIssued = AlertView.latestIssued(alerts: alerts, mesos: mesos)
         self.focusedAlertRequest = focusedAlertRequest
         self.onRefresh = onRefresh

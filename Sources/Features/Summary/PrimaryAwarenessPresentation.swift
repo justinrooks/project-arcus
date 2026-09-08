@@ -122,7 +122,7 @@ enum SummaryAwarenessPrimaryState: Equatable, Sendable {
     }
 
     private static func activeAlert(from alerts: [AlertDTO]) -> (title: String, detail: String)? {
-        let ordered = AlertPresentationOrdering.ordered(alerts, endDate: \.expires)
+        let ordered = AlertPresentationOrdering.ordered(alerts)
 
         guard let alert = ordered.first(where: { Self.isWarningOrWatch(title: $0.title) }) else {
             return nil
