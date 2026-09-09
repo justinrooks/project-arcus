@@ -589,7 +589,7 @@ appropriate. It follows Storm Setup when that section is present.
 This section surfaces alerts that matter to the current location.
 
 Specifically:
-- warnings (future consideration / priority above watches)
+- warnings (first-class current behavior, above watches)
 - watches
 - mesoscale discussions
 ## **Hierarchy**
@@ -732,17 +732,15 @@ Instead use:
 ## **Today integration**
 Use the Severe Risk row, never the hero or unrelated Storm/Fire rows. Explain the specific hazard's
 increasing intensity with conditional impact language; retain subtle texture as a visual connection to Map.
-Tornado uses strong, intense, and violent tornado potential; wind distinguishes destructive gusts from
-more extensive damaging wind events; hail distinguishes very large from giant hail and has only two levels.
-Follow the North Star's **Local Intensity Meaning** mapping and provenance policy. Texture is reinforcement,
-not the sole carrier of meaning. Preserve VoiceOver text, Dynamic Type wrapping, and unaltered hazard colors.
+Follow the North Star's **Local Intensity Meaning** mapping and provenance policy. Intensity describes
+potential severity if the hazard occurs; it does not increase occurrence probability or imply storm mode,
+spatial coverage, or a broader event. Texture is reinforcement, not the sole carrier of meaning. Preserve
+VoiceOver text, Dynamic Type wrapping, and unaltered hazard colors.
 ## **Multiple hazards**
-Because severe outlooks often include wind, hail, and tornado simultaneously, a **horizontal swipe rotator** was preferred for severe threat cards, similar in spirit to iOS rotating widgets.
-
-This prevents trying to compress all hazard-specific details into a single overloaded badge area.
-
-Default order currently considered:
-- wind → hail → tornado
+When an outlook includes multiple hazards, keep Today aligned with the current dynamic primary hero and
+the single **Severe Risk supporting row** beneath it. The row uses the displayed non-clear hazard and its
+matching conditional impact explanation; do not introduce a horizontal rotator or a separate severe-threat
+card architecture to present the remaining hazards.
 ---
 # **20. Hatching Visual Direction**
 > [!warning] **Status:** Still tuning. The renderer strategy is right; contrast, dark-mode treatment, and final texture polish remain active refinement areas.
