@@ -320,7 +320,7 @@ private struct StormRiskAccessoryView: View {
                         .minimumScaleFactor(0.85)
                     Text("Storm Risk")
                         .lineLimit(1)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(snapshot.stormRisk.severity == 0 ? .primary : .secondary)
                 }
             }
         case .accessoryInline:
@@ -331,6 +331,9 @@ private struct StormRiskAccessoryView: View {
     }
 
     private var compactStormLabel: String {
+        if snapshot.stormRisk.severity == 0 {
+            return "No Severe"
+        }
         let label = normalizedStormBaseLabel
         guard label.hasSuffix(" Risk") else { return label }
         return String(label.dropLast(" Risk".count))
@@ -430,9 +433,9 @@ private struct SevereRiskAccessoryView: View {
                     Text(severePrimaryLabel)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
-                    Text("Severe Risk")
+                    Text(severeSecondaryLabel)
                         .lineLimit(1)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(snapshot.severeRisk.severity == 0 ? .primary : .secondary)
                 }
             }
         case .accessoryInline:
@@ -447,6 +450,13 @@ private struct SevereRiskAccessoryView: View {
             return "No Active"
         }
         return snapshot.severeRisk.label
+    }
+
+    private var severeSecondaryLabel: String {
+        if snapshot.severeRisk.severity == 0 {
+            return "Threats"
+        }
+        return "Severe Risk"
     }
 
     private var severeInlinePhrase: String {
