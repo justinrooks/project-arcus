@@ -60,20 +60,18 @@ struct WidgetSnapshotBuilder {
 }
 
 private extension WidgetSnapshotBuilder {
-    enum AlertKind: Sendable {
+    enum AlertHazard: Sendable {
         case tornado
         case severeThunderstorm
         case flooding
-        case mesoscaleDiscussion
-        case watch
+        case other
 
         var rank: Int {
             switch self {
             case .tornado: return 0
             case .severeThunderstorm: return 1
             case .flooding: return 2
-            case .watch: return 3
-            case .mesoscaleDiscussion: return 4
+            case .other: return 3
             }
         }
 
@@ -82,8 +80,44 @@ private extension WidgetSnapshotBuilder {
             case .tornado: return 5
             case .severeThunderstorm: return 4
             case .flooding: return 3
-            case .mesoscaleDiscussion: return 2
+            case .other: return 1
+            }
+        }
+    }
+
+    enum AlertKind: Sendable {
+        case warning(AlertHazard)
+        case watch(AlertHazard)
+        case mesoscaleDiscussion
+
+        var classRank: Int {
+            switch self {
+            case .warning: return 0
             case .watch: return 1
+            case .mesoscaleDiscussion: return 2
+            }
+        }
+
+        var hazardRank: Int {
+            switch self {
+            case let .warning(hazard), let .watch(hazard): return hazard.rank
+            case .mesoscaleDiscussion: return 0
+            }
+        }
+
+        var severity: Int {
+            switch self {
+            case let .warning(hazard): return hazard.severity
+            case .watch: return 1
+            case .mesoscaleDiscussion: return 2
+            }
+        }
+
+        var typeLabel: String {
+            switch self {
+            case .warning: return "Warning"
+            case .watch: return "Watch"
+            case .mesoscaleDiscussion: return "Mesoscale Discussion"
             }
         }
     }
@@ -98,22 +132,11 @@ private extension WidgetSnapshotBuilder {
         var displayState: WidgetSelectedAlertRowDisplayState {
             WidgetSelectedAlertRowDisplayState(
                 title: title,
-                typeLabel: typeLabel,
+                typeLabel: kind.typeLabel,
                 severity: kind.severity,
                 issuedAt: issuedAt,
                 validEnd: validEnd
             )
-        }
-
-        private var typeLabel: String {
-            switch kind {
-            case .mesoscaleDiscussion:
-                return "Mesoscale Discussion"
-            case .watch:
-                return "Watch"
-            case .tornado, .severeThunderstorm, .flooding:
-                return "Warning"
-            }
         }
     }
 
@@ -163,8 +186,12 @@ private extension WidgetSnapshotBuilder {
 
     func selectHighestPriorityAlert(from candidates: [ActiveAlertCandidate]) -> ActiveAlertCandidate? {
         candidates.min {
-            if $0.kind.rank != $1.kind.rank {
-                return $0.kind.rank < $1.kind.rank
+            if $0.kind.classRank != $1.kind.classRank {
+                return $0.kind.classRank < $1.kind.classRank
+            }
+
+            if $0.kind.hazardRank != $1.kind.hazardRank {
+                return $0.kind.hazardRank < $1.kind.hazardRank
             }
 
             if $0.issuedAt != $1.issuedAt {
@@ -177,19 +204,18 @@ private extension WidgetSnapshotBuilder {
 
     func classifyWatch(title: String) -> AlertKind {
         let normalized = title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let hazard: AlertHazard
 
         if normalized.contains("tornado") {
-            return .tornado
+            hazard = .tornado
+        } else if normalized.contains("severe thunderstorm") {
+            hazard = .severeThunderstorm
+        } else if normalized.contains("flood") {
+            hazard = .flooding
+        } else {
+            hazard = .other
         }
 
-        if normalized.contains("severe thunderstorm") {
-            return .severeThunderstorm
-        }
-
-        if normalized.contains("flood") {
-            return .flooding
-        }
-
-        return .watch
+        return normalized.contains("warning") ? .warning(hazard) : .watch(hazard)
     }
 }

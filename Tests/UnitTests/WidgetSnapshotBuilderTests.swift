@@ -150,6 +150,60 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.hiddenAlertCount == 1)
     }
 
+    @Test("warning outranks a newer watch")
+    func warningOutranksNewerWatch() {
+        let snapshot = buildSnapshot(alerts: [
+            makeAlert(id: "watch", title: "Tornado Watch", issued: iso("2026-05-01T11:59:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+            makeAlert(id: "warning", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:01:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+        ])
+
+        #expect(snapshot.selectedAlert?.title == "Severe Thunderstorm Warning")
+        #expect(snapshot.selectedAlert?.typeLabel == "Warning")
+    }
+
+    @Test("tornado warning outranks tornado watch")
+    func tornadoWarningOutranksTornadoWatch() {
+        let snapshot = buildSnapshot(alerts: [
+            makeAlert(id: "watch", title: "Tornado Watch", issued: iso("2026-05-01T11:59:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+            makeAlert(id: "warning", title: "Tornado Warning", issued: iso("2026-05-01T11:01:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+        ])
+
+        #expect(snapshot.selectedAlert?.title == "Tornado Warning")
+        #expect(snapshot.selectedAlert?.typeLabel == "Warning")
+    }
+
+    @Test("watch outranks mesoscale discussion")
+    func watchOutranksMeso() {
+        let snapshot = buildSnapshot(
+            alerts: [makeAlert(id: "watch", title: "Tornado Watch", issued: iso("2026-05-01T11:01:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))],
+            mesos: [makeMeso(number: 2004, issued: iso("2026-05-01T11:59:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))]
+        )
+
+        #expect(snapshot.selectedAlert?.title == "Tornado Watch")
+        #expect(snapshot.selectedAlert?.typeLabel == "Watch")
+    }
+
+    @Test("same-class warnings use hazard then issued-time ordering")
+    func sameClassWarningsAreDeterministic() {
+        let snapshot = buildSnapshot(alerts: [
+            makeAlert(id: "older-tornado", title: "Tornado Warning", issued: iso("2026-05-01T11:01:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+            makeAlert(id: "newer-severe", title: "Severe Thunderstorm Warning", issued: iso("2026-05-01T11:59:00Z"), validEnd: iso("2026-05-01T12:30:00Z")),
+            makeAlert(id: "newer-tornado", title: "Tornado Warning", issued: iso("2026-05-01T11:02:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+        ])
+
+        #expect(snapshot.selectedAlert?.title == "Tornado Warning")
+        #expect(snapshot.selectedAlert?.issuedAt == iso("2026-05-01T11:02:00Z"))
+    }
+
+    @Test("tornado watch retains watch display type")
+    func tornadoWatchDisplayType() {
+        let snapshot = buildSnapshot(alerts: [
+            makeAlert(id: "watch", title: "Tornado Watch", issued: iso("2026-05-01T11:01:00Z"), validEnd: iso("2026-05-01T12:30:00Z"))
+        ])
+
+        #expect(snapshot.selectedAlert?.typeLabel == "Watch")
+    }
+
     @Test("expired alerts are filtered from active widget state")
     func expiredAlertsFiltered() {
         let builder = WidgetSnapshotBuilder()
@@ -213,6 +267,24 @@ struct WidgetSnapshotBuilderTests {
             Issue.record("Expected unavailable state")
         }
     }
+}
+
+private func buildSnapshot(
+    alerts: [AlertDTO],
+    mesos: [MdDTO] = []
+) -> WidgetSnapshot {
+    WidgetSnapshotBuilder().build(
+        from: .init(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            snapshotTimestamp: iso("2026-05-01T12:00:00Z"),
+            availability: .available,
+            stormRisk: .slight,
+            severeRisk: .wind(probability: 0.1),
+            alerts: alerts,
+            mesos: mesos
+        ),
+        now: iso("2026-05-01T12:00:00Z")
+    )
 }
 
 private func makeAlert(id: String, title: String, issued: Date, validEnd: Date) -> AlertDTO {
