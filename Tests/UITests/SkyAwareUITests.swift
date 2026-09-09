@@ -526,7 +526,7 @@ final class SkyAwareUITests: XCTestCase {
         let todayTab = app.tabBars.buttons["Today"]
         XCTAssertTrue(todayTab.waitForExistence(timeout: 10), "Expected Today tab to exist.")
 
-        let summaryWatchRow = app.buttons["watches-row-ui-test-watch-001"]
+        let summaryWatchRow = app.buttons["local-alert-row-ui-test-watch-001"]
         XCTAssertTrue(summaryWatchRow.waitForExistence(timeout: 10), "Expected seeded watch row to appear in Summary local alerts.")
         summaryWatchRow.tap()
 
@@ -570,7 +570,7 @@ final class SkyAwareUITests: XCTestCase {
         summaryScrollView.swipeDown()
         XCTAssertTrue(summaryScrollView.exists, "Expected pull-to-refresh interaction to preserve the Today surface.")
 
-        let warningRow = app.buttons["watches & warnings-row-ui-test-warning-001"]
+        let warningRow = app.buttons["local-alert-row-ui-test-warning-001"]
         scrollUntilHittable(warningRow, in: summaryScrollView)
         XCTAssertTrue(warningRow.isHittable, "Expected the seeded Local Alerts warning to remain reachable by scrolling.")
         XCTAssertGreaterThanOrEqual(warningRow.frame.size.height, 44, "Expected the warning row touch target to remain at least 44 points tall.")
@@ -590,7 +590,7 @@ final class SkyAwareUITests: XCTestCase {
         let summaryScrollView = app.scrollViews["summary-scroll"]
         XCTAssertTrue(summaryScrollView.waitForExistence(timeout: 10), "Expected Summary scroll view to exist.")
 
-        let localAlert = app.buttons["watches & warnings-row-ui-test-warning-001"]
+        let localAlert = app.buttons["local-alert-row-ui-test-warning-001"]
         let stormSetupCard = app.buttons["summary-storm-setup-card"]
         scrollUntilHittable(localAlert, in: summaryScrollView)
         scrollUntilHittable(stormSetupCard, in: summaryScrollView)
