@@ -143,7 +143,7 @@ private struct WidgetSevereRiskBadgeCard: View {
                     Spacer(minLength: 10)
 
                     severeValueText
-                        .frame(maxWidth: proxy.size.width * 0.72, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 16)
