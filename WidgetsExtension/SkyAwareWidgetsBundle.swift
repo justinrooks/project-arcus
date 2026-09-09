@@ -339,7 +339,7 @@ private struct StormRiskAccessoryView: View {
     private var normalizedStormBaseLabel: String {
         switch snapshot.stormRisk.severity {
         case 0:
-            return "All Clear"
+            return snapshot.stormRisk.label
         case 1:
             return "Thunderstorm"
         default:
@@ -350,7 +350,7 @@ private struct StormRiskAccessoryView: View {
     private var stormInlinePhrase: String {
         switch snapshot.stormRisk.severity {
         case 0:
-            return "All clear"
+            return snapshot.stormRisk.label
         case 1:
             return "Thunderstorm risk"
         default:
