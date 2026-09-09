@@ -71,7 +71,9 @@ struct WidgetStormRiskSmallView: View {
             // Soft top highlight to keep the surface Apple-like instead of flat.
             LinearGradient(
                 colors: [
-                    Color.white.opacity(colorScheme == .dark ? 0.055 : 0.16),
+                    Color.white.opacity(
+                        colorScheme == .dark ? 0.055 : (isQuiet ? 0.06 : 0.16)
+                    ),
                     Color.white.opacity(0.0)
                 ],
                 startPoint: .topLeading,
@@ -96,6 +98,14 @@ struct WidgetStormRiskSmallView: View {
                 Color(red: 0.065, green: 0.095, blue: 0.135),
                 Color(red: 0.105, green: 0.075, blue: 0.060),
                 Color(red: 0.030, green: 0.045, blue: 0.075)
+            ]
+        }
+
+        if snapshot.stormRisk.severity == 0 {
+            return [
+                Color(red: 0.780, green: 0.840, blue: 0.930),
+                Color(red: 0.720, green: 0.790, blue: 0.890),
+                Color(red: 0.640, green: 0.730, blue: 0.850)
             ]
         }
 
@@ -156,7 +166,13 @@ private struct WidgetStormRiskBadgeCard: View {
     private var decorativeIcon: some View {
         Image(systemName: style.icon)
             .font(.system(size: colorScheme == .dark ? 62 : 56, weight: .regular))
-            .foregroundStyle(style.tint.opacity(state.severity == 0 ? 0.08 : (colorScheme == .dark ? 0.58 : 0.22)))
+            .foregroundStyle(
+                style.tint.opacity(
+                    state.severity == 0
+                        ? (colorScheme == .dark ? 0.08 : 0.22)
+                        : (colorScheme == .dark ? 0.88 : 0.22)
+                )
+            )
             .accessibilityHidden(true)
     }
 
