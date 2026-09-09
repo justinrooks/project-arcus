@@ -128,7 +128,7 @@ private struct WidgetStormRiskBadgeCard: View {
                     Spacer(minLength: 10)
 
                     riskValueText
-                        .frame(maxWidth: proxy.size.width * 0.72, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                 }
                 .padding(.horizontal, 16)
@@ -160,12 +160,12 @@ private struct WidgetStormRiskBadgeCard: View {
 
     @ViewBuilder
     private var riskValueText: some View {
-        if let level = splitRiskLevel(from: state.label) {
+        if let composition = composedRiskLabels {
             VStack(alignment: .leading, spacing: 0) {
-                Text(level)
+                Text(composition.primary)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                Text("Risk")
+                Text(composition.secondary)
                     .foregroundStyle(style.tint)
                     .lineLimit(1)
             }
@@ -182,11 +182,23 @@ private struct WidgetStormRiskBadgeCard: View {
         }
     }
 
-    private func splitRiskLevel(from label: String) -> String? {
-        guard label.hasSuffix(" Risk") else { return nil }
-        let level = label.dropLast(" Risk".count)
-        let trimmed = level.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+    private var composedRiskLabels: (primary: String, secondary: String)? {
+        switch state.label {
+        case "No Severe Storm Risk":
+            return ("No Severe", "Storm Risk")
+        case "Marginal Risk":
+            return ("Marginal", "Risk")
+        case "Slight Risk":
+            return ("Slight", "Risk")
+        case "Enhanced Risk":
+            return ("Enhanced", "Risk")
+        case "Moderate Risk":
+            return ("Moderate", "Risk")
+        case "High Risk":
+            return ("High", "Risk")
+        default:
+            return nil
+        }
     }
 
     private var accessibilitySummary: String {
