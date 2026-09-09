@@ -25,10 +25,10 @@ import WidgetKit
     )
 }
 
-#Preview("Storm / All Clear", as: .systemSmall) {
+#Preview("Storm / Quiet", as: .systemSmall) {
     SkyAwareStormRiskWidget()
 } timeline: {
-    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormAllClear)
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormQuiet)
 }
 
 #Preview("Storm / Stale", as: .systemSmall) {
@@ -43,22 +43,10 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)
 }
 
-#Preview("Severe / None", as: .systemSmall) {
+#Preview("Severe / Quiet", as: .systemSmall) {
     SkyAwareSevereRiskWidget()
 } timeline: {
-    Entry(
-        date: .now,
-        snapshot: WidgetSnapshot(
-            generatedAt: WidgetPreviewFixtures.now,
-            stormRisk: WidgetRiskDisplayState(label: "Marginal Risk", severity: 0),
-            severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
-            selectedAlert: nil,
-            hiddenAlertCount: 0,
-            freshness: WidgetFreshnessState(timestamp: WidgetPreviewFixtures.now, state: .fresh),
-            availability: .available,
-            destination: .summary
-        )
-    )
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.severeQuiet)
 }
 
 #Preview("Severe / Wind", as: .systemSmall) {
@@ -127,13 +115,25 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
 }
 
-#Preview("Combined / All Clear", as: .systemMedium) {
+#Preview("Combined / Quiet", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
-    Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedAllClear)
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedQuiet)
+}
+
+#Preview("Combined / Quiet (Large)", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedQuiet)
 }
 
 #Preview("Combined / No Alerts", as: .systemMedium) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.noAlert)
+}
+
+#Preview("Combined / No Alerts (Large)", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.noAlert)
@@ -169,10 +169,10 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Storm Lock / All Clear", as: .accessoryRectangular) {
+#Preview("Storm Lock / Quiet", as: .accessoryRectangular) {
     SkyAwareStormRiskLockScreenWidget()
 } timeline: {
-    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormAllClear)
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormQuiet)
 }
 
 #Preview("Storm Lock / Unavailable", as: .accessoryInline) {
