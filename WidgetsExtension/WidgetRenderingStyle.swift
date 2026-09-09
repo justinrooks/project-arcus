@@ -67,20 +67,20 @@ struct WidgetAlertVisualStyle {
     let tint: Color
 
     static func style(for alert: WidgetSelectedAlertRowDisplayState) -> WidgetAlertVisualStyle {
-        let type = alert.typeLabel.localizedLowercase
-        if type.contains("tornado") {
+        let title = alert.title.localizedLowercase
+        if title.contains("tornado") {
             return WidgetAlertVisualStyle(icon: "tornado", tint: Color(red: 0.80, green: 0.20, blue: 0.40))
         }
-        if type.contains("severe") {
+        if title.contains("severe thunderstorm") {
             return WidgetAlertVisualStyle(icon: "cloud.bolt.fill", tint: Color(red: 0.38, green: 0.48, blue: 0.92))
         }
-        if type.contains("flood") {
+        if title.contains("flood") {
             return WidgetAlertVisualStyle(icon: "flood.fill", tint: Color(red: 0.19, green: 0.54, blue: 0.92))
         }
-        if type.contains("mesoscale") {
+        if alert.typeLabel.localizedLowercase.contains("mesoscale") {
             return WidgetAlertVisualStyle(icon: "waveform.path.ecg.magnifyingglass", tint: Color(red: 0.45, green: 0.35, blue: 0.85))
         }
-        if type.contains("watch") {
+        if alert.typeLabel.localizedLowercase.contains("watch") {
             return WidgetAlertVisualStyle(icon: "exclamationmark.triangle", tint: Color(red: 0.96, green: 0.78, blue: 0.18))
         }
 
