@@ -116,6 +116,7 @@ struct ActiveAlertSummaryView: View {
         VStack(alignment: .leading, spacing: 12) {
             ActiveAlertSection(
                 label: "Warnings & Watches",
+                identifierPrefix: "local-alert",
                 items: sortedAlerts,
                 limit: 2,
                 onSelect: {
@@ -128,6 +129,7 @@ struct ActiveAlertSummaryView: View {
 
             ActiveAlertSection(
                 label: "Mesos",
+                identifierPrefix: "local-meso",
                 items: sortedMesos,
                 limit: 2,
                 onSelect: {
@@ -383,6 +385,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let label: String
+    let identifierPrefix: String
     let items: [Item]
     let limit: Int
     let onSelect: (Item) -> Void
@@ -415,7 +418,7 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                             pressedOverlayOpacity: 0.06
                         )
                     )
-                    .accessibilityIdentifier("\(label.lowercased())-row-\(String(describing: item.id))")
+                    .accessibilityIdentifier("\(identifierPrefix)-row-\(String(describing: item.id))")
                 }
 
                 if items.count > limit {
