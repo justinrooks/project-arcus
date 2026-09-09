@@ -167,18 +167,29 @@ private struct WidgetCombinedLargeCard: View {
                 decorativeGlowLayer(in: proxy.size)
 
                 VStack(alignment: .leading, spacing: isMediumFamily ? 10 : 14) {
-                    WidgetCombinedRiskPairRow(
-                        stormState: snapshot.stormRisk,
-                        severeState: snapshot.severeRisk
-                    )
-
-                    if let selectedAlert = snapshot.selectedAlert {
+                    if isMediumFamily, let selectedAlert = snapshot.selectedAlert {
                         WidgetCombinedIntegratedAlertRow(
                             alert: selectedAlert,
                             hiddenAlertCount: snapshot.hiddenAlertCount
                         )
+                        WidgetCombinedRiskPairRow(
+                            stormState: snapshot.stormRisk,
+                            severeState: snapshot.severeRisk
+                        )
                     } else {
-                        WidgetCombinedIntegratedNoAlertRow(stormSeverity: snapshot.stormRisk.severity)
+                        WidgetCombinedRiskPairRow(
+                            stormState: snapshot.stormRisk,
+                            severeState: snapshot.severeRisk
+                        )
+
+                        if let selectedAlert = snapshot.selectedAlert {
+                            WidgetCombinedIntegratedAlertRow(
+                                alert: selectedAlert,
+                                hiddenAlertCount: snapshot.hiddenAlertCount
+                            )
+                        } else {
+                            WidgetCombinedIntegratedNoAlertRow(stormSeverity: snapshot.stormRisk.severity)
+                        }
                     }
 
                     if !isMediumFamily {
