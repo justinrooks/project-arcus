@@ -58,7 +58,7 @@ struct WidgetCombinedLargeView: View {
                 // Soft top highlight for the Apple-like surface depth.
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(colorScheme == .dark ? 0.050 : 0.30),
+                        Color.white.opacity(colorScheme == .dark ? 0.050 : 0.15),
                         Color.white.opacity(0.0)
                     ],
                     startPoint: .topLeading,
@@ -88,9 +88,9 @@ struct WidgetCombinedLargeView: View {
         }
 
         return [
-            Color(red: 0.985, green: 0.990, blue: 1.000),
-            Color(red: 0.965, green: 0.975, blue: 0.995),
-            Color(red: 0.940, green: 0.955, blue: 0.985)
+            Color(red: 0.910, green: 0.930, blue: 0.970),
+            Color(red: 0.860, green: 0.890, blue: 0.940),
+            Color(red: 0.800, green: 0.850, blue: 0.920)
         ]
     }
 
@@ -104,11 +104,14 @@ struct WidgetCombinedLargeView: View {
         if snapshot.stormRisk.severity > 0 {
             return WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
         }
-        return Color(red: 0.40, green: 0.75, blue: 0.40)
+        return Color(red: 0.25, green: 0.38, blue: 0.50)
     }
 
     private var stormTint: Color {
-        WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
+        guard snapshot.stormRisk.severity > 0 else {
+            return Color(red: 0.25, green: 0.38, blue: 0.50)
+        }
+        return WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
     }
 }
 
@@ -400,7 +403,7 @@ private struct WidgetCombinedIntegratedNoAlertRow: View {
 
             Image(systemName: "checkmark.shield")
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(Color(red: 0.40, green: 0.75, blue: 0.40))
+                .foregroundStyle(Color(red: 0.40, green: 0.75, blue: 0.40).opacity(0.72))
                 .frame(width: 22)
                 .accessibilityHidden(true)
 

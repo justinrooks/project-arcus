@@ -146,3 +146,12 @@
 - Treat a newly reported asynchronous test failure as a regression investigation even when a prior full lane passed.
   First establish whether the changed path can affect the failed test; then reproduce with the original selector and
   repeated execution before attributing it to test scheduling or timeout sensitivity.
+
+## 2026-09-09
+
+- When a visual refinement is reported as washed out in light mode, adjust the light-mode base surface and highlight
+  together; reducing semantic tint alone does not restore enough atmospheric contrast.
+- If the first light-mode contrast pass remains difficult to read, make the next adjustment to the neutral surface
+  values and highlight rather than increasing semantic color, which would make quiet states misleadingly loud.
+- When the request specifically targets the background, adjust only the atmospheric base layer and preserve text,
+  icon, and semantic-tint values so readability improves without changing the information hierarchy.

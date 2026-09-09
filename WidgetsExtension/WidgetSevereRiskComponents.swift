@@ -21,6 +21,7 @@ struct WidgetSevereRiskSmallView: View {
 
     private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .severe, severity: snapshot.severeRisk.severity)
+        let isQuiet = snapshot.severeRisk.severity == 0
 
         return ZStack {
             LinearGradient(
@@ -32,8 +33,8 @@ struct WidgetSevereRiskSmallView: View {
             // Full-surface semantic wash. Keeps the whole widget tinted without creating an inner panel.
             LinearGradient(
                 colors: [
-                    style.tint.opacity(colorScheme == .dark ? 0.06 : 0.025),
-                    style.tint.opacity(colorScheme == .dark ? 0.18 : 0.055)
+                    style.tint.opacity(isQuiet ? 0.015 : (colorScheme == .dark ? 0.06 : 0.025)),
+                    style.tint.opacity(isQuiet ? 0.035 : (colorScheme == .dark ? 0.18 : 0.055))
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -42,19 +43,19 @@ struct WidgetSevereRiskSmallView: View {
             // Lower-trailing glow behind the decorative severe-risk icon.
             RadialGradient(
                 colors: [
-                    style.tint.opacity(colorScheme == .dark ? 0.40 : 0.16),
-                    style.tint.opacity(colorScheme == .dark ? 0.20 : 0.075),
+                    style.tint.opacity(isQuiet ? 0.05 : (colorScheme == .dark ? 0.40 : 0.16)),
+                    style.tint.opacity(isQuiet ? 0.02 : (colorScheme == .dark ? 0.20 : 0.075)),
                     style.tint.opacity(0.0)
                 ],
                 center: UnitPoint(x: 0.86, y: 0.62),
                 startRadius: 4,
-                endRadius: colorScheme == .dark ? 118 : 104
+                endRadius: isQuiet ? 88 : (colorScheme == .dark ? 118 : 104)
             )
 
             // Subtle body glow through the middle of the card.
             RadialGradient(
                 colors: [
-                    style.tint.opacity(colorScheme == .dark ? 0.16 : 0.055),
+                    style.tint.opacity(isQuiet ? 0.02 : (colorScheme == .dark ? 0.16 : 0.055)),
                     style.tint.opacity(0.0)
                 ],
                 center: UnitPoint(x: 0.58, y: 0.58),
@@ -65,7 +66,7 @@ struct WidgetSevereRiskSmallView: View {
             // Soft top highlight to keep the surface Apple-like instead of flat.
             LinearGradient(
                 colors: [
-                    Color.white.opacity(colorScheme == .dark ? 0.055 : 0.34),
+                    Color.white.opacity(colorScheme == .dark ? 0.055 : 0.16),
                     Color.white.opacity(0.0)
                 ],
                 startPoint: .topLeading,
@@ -94,9 +95,9 @@ struct WidgetSevereRiskSmallView: View {
         }
 
         return [
-            Color(red: 0.985, green: 0.990, blue: 1.000),
-            Color(red: 0.965, green: 0.975, blue: 0.995),
-            Color(red: 0.940, green: 0.955, blue: 0.985)
+            Color(red: 0.910, green: 0.930, blue: 0.970),
+            Color(red: 0.860, green: 0.890, blue: 0.940),
+            Color(red: 0.800, green: 0.850, blue: 0.920)
         ]
     }
 }
@@ -159,13 +160,13 @@ private struct WidgetSevereRiskBadgeCard: View {
     private var decorativeIcon: some View {
         Image(systemName: style.icon)
             .font(.system(size: colorScheme == .dark ? 62 : 56, weight: .regular))
-            .foregroundStyle(style.tint.opacity(colorScheme == .dark ? 0.58 : 0.22))
+            .foregroundStyle(style.tint.opacity(state.severity == 0 ? 0.08 : (colorScheme == .dark ? 0.58 : 0.22)))
             .accessibilityHidden(true)
     }
 
     private var iconGlow: some View {
         Circle()
-            .fill(style.tint.opacity(colorScheme == .dark ? 0.20 : 0.07))
+            .fill(style.tint.opacity(state.severity == 0 ? 0.05 : (colorScheme == .dark ? 0.20 : 0.07)))
             .frame(width: colorScheme == .dark ? 230 : 200, height: colorScheme == .dark ? 230 : 200)
             .blur(radius: colorScheme == .dark ? 72 : 58)
             .allowsHitTesting(false)
