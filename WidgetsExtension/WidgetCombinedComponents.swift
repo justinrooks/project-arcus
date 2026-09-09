@@ -243,6 +243,18 @@ private struct WidgetCombinedLargeCard: View {
 
     private var accessibilitySummary: String {
         var parts: [String] = []
+        var alertParts: [String] = []
+        if let selectedAlert = snapshot.selectedAlert {
+            alertParts.append("Alert \(selectedAlert.title)")
+            if snapshot.hiddenAlertCount > 0 {
+                alertParts.append("Plus \(snapshot.hiddenAlertCount) more")
+            }
+        }
+
+        if isMediumFamily {
+            parts.append(contentsOf: alertParts)
+        }
+
         parts.append("Storm Risk \(snapshot.stormRisk.label)")
         if snapshot.severeRisk.severity == 0 {
             parts.append("Severe Risk no active threats")
@@ -250,12 +262,11 @@ private struct WidgetCombinedLargeCard: View {
             parts.append("Severe Risk \(snapshot.severeRisk.label)")
         }
 
-        if let selectedAlert = snapshot.selectedAlert {
-            parts.append("Alert \(selectedAlert.title)")
-            if snapshot.hiddenAlertCount > 0 {
-                parts.append("Plus \(snapshot.hiddenAlertCount) more")
-            }
-        } else {
+        if !isMediumFamily {
+            parts.append(contentsOf: alertParts)
+        }
+
+        if snapshot.selectedAlert == nil {
             parts.append("No local alerts")
         }
 
