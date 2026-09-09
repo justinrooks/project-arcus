@@ -20,9 +20,9 @@ enum WidgetFreshnessFormatter {
             return "As of \(formatter.string(from: timestamp))"
         case .stale:
             guard let timestamp = freshness.timestamp else {
-                return "As of earlier"
+                return "Delayed update"
             }
-            return "As of \(formatter.string(from: timestamp))"
+            return "Delayed update · \(formatter.string(from: timestamp))"
         }
     }
 }

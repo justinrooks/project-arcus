@@ -4,6 +4,7 @@ import WidgetKit
 struct WidgetCombinedLargeView: View {
     let snapshot: WidgetSnapshot
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.widgetFamily) private var widgetFamily
 
     var body: some View {
         Group {
@@ -25,8 +26,8 @@ struct WidgetCombinedLargeView: View {
                 // Full-surface semantic wash from the strongest current signal.
                 LinearGradient(
                     colors: [
-                        semanticTint.opacity(colorScheme == .dark ? 0.055 : 0.022),
-                        semanticTint.opacity(colorScheme == .dark ? 0.16 : 0.052)
+                        semanticTint.opacity(combinedEmphasis.washStart),
+                        semanticTint.opacity(combinedEmphasis.washEnd)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -35,8 +36,8 @@ struct WidgetCombinedLargeView: View {
                 // Primary signal glow, biased toward the upper trailing risk group.
                 RadialGradient(
                     colors: [
-                        semanticTint.opacity(colorScheme == .dark ? 0.34 : 0.14),
-                        semanticTint.opacity(colorScheme == .dark ? 0.17 : 0.065),
+                        semanticTint.opacity(combinedEmphasis.glowStart),
+                        semanticTint.opacity(combinedEmphasis.glowMid),
                         semanticTint.opacity(0.0)
                     ],
                     center: UnitPoint(x: 0.82, y: 0.22),
@@ -47,7 +48,7 @@ struct WidgetCombinedLargeView: View {
                 // Storm-side warmth so the left risk group feels integrated.
                 RadialGradient(
                     colors: [
-                        stormTint.opacity(colorScheme == .dark ? 0.18 : 0.070),
+                        stormTint.opacity(combinedEmphasis.bodyGlow),
                         stormTint.opacity(0.0)
                     ],
                     center: UnitPoint(x: 0.18, y: 0.18),
@@ -113,6 +114,22 @@ struct WidgetCombinedLargeView: View {
         }
         return WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity).tint
     }
+
+    private var combinedEmphasis: WidgetSemanticEmphasis {
+        guard widgetFamily == .systemMedium, snapshot.selectedAlert == nil else {
+            return WidgetSemanticEmphasis(
+                washStart: colorScheme == .dark ? 0.055 : 0.022,
+                washEnd: colorScheme == .dark ? 0.16 : 0.052,
+                glowStart: colorScheme == .dark ? 0.34 : 0.14,
+                glowMid: colorScheme == .dark ? 0.17 : 0.065,
+                bodyGlow: colorScheme == .dark ? 0.18 : 0.070
+            )
+        }
+
+        let kind: WidgetRiskKind = snapshot.severeRisk.severity > 0 ? .severe : .storm
+        let severity = kind == .severe ? snapshot.severeRisk.severity : snapshot.stormRisk.severity
+        return WidgetSemanticEmphasis.style(for: kind, severity: severity, isDark: colorScheme == .dark)
+    }
 }
 
 private struct WidgetCombinedLargeCard: View {
@@ -150,18 +167,29 @@ private struct WidgetCombinedLargeCard: View {
                 decorativeGlowLayer(in: proxy.size)
 
                 VStack(alignment: .leading, spacing: isMediumFamily ? 10 : 14) {
-                    WidgetCombinedRiskPairRow(
-                        stormState: snapshot.stormRisk,
-                        severeState: snapshot.severeRisk
-                    )
-
-                    if let selectedAlert = snapshot.selectedAlert {
+                    if isMediumFamily, let selectedAlert = snapshot.selectedAlert {
                         WidgetCombinedIntegratedAlertRow(
                             alert: selectedAlert,
                             hiddenAlertCount: snapshot.hiddenAlertCount
                         )
+                        WidgetCombinedRiskPairRow(
+                            stormState: snapshot.stormRisk,
+                            severeState: snapshot.severeRisk
+                        )
                     } else {
-                        WidgetCombinedIntegratedNoAlertRow(stormSeverity: snapshot.stormRisk.severity)
+                        WidgetCombinedRiskPairRow(
+                            stormState: snapshot.stormRisk,
+                            severeState: snapshot.severeRisk
+                        )
+
+                        if let selectedAlert = snapshot.selectedAlert {
+                            WidgetCombinedIntegratedAlertRow(
+                                alert: selectedAlert,
+                                hiddenAlertCount: snapshot.hiddenAlertCount
+                            )
+                        } else {
+                            WidgetCombinedIntegratedNoAlertRow(stormSeverity: snapshot.stormRisk.severity)
+                        }
                     }
 
                     if !isMediumFamily {
@@ -302,7 +330,7 @@ private struct WidgetCombinedRiskSummaryGroup: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(primary)
-                    .font(.system(size: 21, weight: .bold, design: .rounded))
+                    .font(.system(size: 21, weight: .bold))
                     .foregroundStyle(.primary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.78)

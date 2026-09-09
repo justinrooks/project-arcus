@@ -21,6 +21,11 @@ struct WidgetSevereRiskSmallView: View {
 
     private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .severe, severity: snapshot.severeRisk.severity)
+        let emphasis = WidgetSemanticEmphasis.style(
+            for: .severe,
+            severity: snapshot.severeRisk.severity,
+            isDark: colorScheme == .dark
+        )
         let isQuiet = snapshot.severeRisk.severity == 0
 
         return ZStack {
@@ -33,8 +38,8 @@ struct WidgetSevereRiskSmallView: View {
             // Full-surface semantic wash. Keeps the whole widget tinted without creating an inner panel.
             LinearGradient(
                 colors: [
-                    style.tint.opacity(isQuiet ? 0.015 : (colorScheme == .dark ? 0.06 : 0.025)),
-                    style.tint.opacity(isQuiet ? 0.035 : (colorScheme == .dark ? 0.18 : 0.055))
+                    style.tint.opacity(emphasis.washStart),
+                    style.tint.opacity(emphasis.washEnd)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -43,8 +48,8 @@ struct WidgetSevereRiskSmallView: View {
             // Lower-trailing glow behind the decorative severe-risk icon.
             RadialGradient(
                 colors: [
-                    style.tint.opacity(isQuiet ? 0.05 : (colorScheme == .dark ? 0.40 : 0.16)),
-                    style.tint.opacity(isQuiet ? 0.02 : (colorScheme == .dark ? 0.20 : 0.075)),
+                    style.tint.opacity(emphasis.glowStart),
+                    style.tint.opacity(emphasis.glowMid),
                     style.tint.opacity(0.0)
                 ],
                 center: UnitPoint(x: 0.86, y: 0.62),
@@ -55,7 +60,7 @@ struct WidgetSevereRiskSmallView: View {
             // Subtle body glow through the middle of the card.
             RadialGradient(
                 colors: [
-                    style.tint.opacity(isQuiet ? 0.02 : (colorScheme == .dark ? 0.16 : 0.055)),
+                    style.tint.opacity(emphasis.bodyGlow),
                     style.tint.opacity(0.0)
                 ],
                 center: UnitPoint(x: 0.58, y: 0.58),
@@ -140,6 +145,11 @@ private struct WidgetSevereRiskBadgeCard: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    if freshness.state == .stale {
+                        WidgetFreshnessLineView(freshness: freshness)
+                            .padding(.top, 4)
+                    }
 
                     Spacer(minLength: 10)
 
