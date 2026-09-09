@@ -244,7 +244,7 @@ private struct WidgetCombinedRiskPairRow: View {
         HStack(alignment: .top, spacing: 14) {
             WidgetCombinedRiskSummaryGroup(
                 title: "Storm Risk",
-                primary: stormPrimaryLabel,
+                primary: stormState.label,
                 accent: stormStyle.tint,
                 icon: stormStyle.icon
             )
@@ -273,15 +273,8 @@ private struct WidgetCombinedRiskPairRow: View {
         WidgetRiskVisualStyle.style(for: .severe, severity: severeState.severity)
     }
 
-    private var stormPrimaryLabel: String {
-        guard stormState.label.hasSuffix(" Risk") else { return stormState.label }
-        let level = stormState.label.dropLast(" Risk".count)
-        let trimmed = level.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? stormState.label : String(trimmed)
-    }
-
     private var severePrimaryLabel: String {
-        severeState.severity == 0 ? "No Active" : severeState.label
+        severeState.label
     }
 
     private var severeSecondaryLabel: String? {
@@ -308,8 +301,8 @@ private struct WidgetCombinedRiskSummaryGroup: View {
                 Text(primary)
                     .font(.system(size: 21, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.58)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.78)
 
                 if let icon {
                     Image(systemName: icon)
@@ -415,11 +408,13 @@ private struct WidgetCombinedIntegratedNoAlertRow: View {
                 Text("No local alerts")
                     .font(.headline.weight(.semibold))
                     .lineLimit(1)
-                Text(stormSeverity > 0 ? "Storm risk remains elevated" : "Your area is clear right now")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                if stormSeverity > 0 {
+                    Text("Storm risk remains elevated")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                }
             }
 
             Spacer(minLength: 0)
