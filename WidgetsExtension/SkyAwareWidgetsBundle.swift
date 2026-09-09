@@ -101,13 +101,14 @@ private struct StormRiskProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        completion(Entry(date: .now, snapshot: currentSnapshot(now: .now)))
+        let now = Date.now
+        completion(timelineEntry(snapshot: currentSnapshot(now: now), now: now, family: context.family))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let now = Date.now
         let snapshot = currentSnapshot(now: now)
-        let entry = Entry(date: now, snapshot: snapshot)
+        let entry = timelineEntry(snapshot: snapshot, now: now, family: context.family)
         let refreshDate = now.addingTimeInterval(Self.passiveRefreshInterval)
         let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
         completion(timeline)
@@ -126,6 +127,10 @@ private struct StormRiskProvider: TimelineProvider {
 
     private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
         snapshot.normalizedForWidgetPresentation(at: now)
+    }
+
+    private func timelineEntry(snapshot: WidgetSnapshot, now: Date, family: WidgetFamily) -> Entry {
+        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, family: family, now: now))
     }
 }
 
@@ -137,13 +142,14 @@ private struct SevereRiskProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        completion(Entry(date: .now, snapshot: currentSnapshot(now: .now)))
+        let now = Date.now
+        completion(timelineEntry(snapshot: currentSnapshot(now: now), now: now, family: context.family))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let now = Date.now
         let snapshot = currentSnapshot(now: now)
-        let entry = Entry(date: now, snapshot: snapshot)
+        let entry = timelineEntry(snapshot: snapshot, now: now, family: context.family)
         let refreshDate = now.addingTimeInterval(Self.passiveRefreshInterval)
         let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
         completion(timeline)
@@ -162,6 +168,10 @@ private struct SevereRiskProvider: TimelineProvider {
 
     private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
         snapshot.normalizedForWidgetPresentation(at: now)
+    }
+
+    private func timelineEntry(snapshot: WidgetSnapshot, now: Date, family: WidgetFamily) -> Entry {
+        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, family: family, now: now))
     }
 }
 
@@ -173,13 +183,14 @@ private struct CombinedProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
-        completion(Entry(date: .now, snapshot: currentSnapshot(now: .now)))
+        let now = Date.now
+        completion(timelineEntry(snapshot: currentSnapshot(now: now), now: now, family: context.family))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         let now = Date.now
         let snapshot = currentSnapshot(now: now)
-        let entry = Entry(date: now, snapshot: snapshot)
+        let entry = timelineEntry(snapshot: snapshot, now: now, family: context.family)
         let refreshDate = now.addingTimeInterval(Self.passiveRefreshInterval)
         let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
         completion(timeline)
@@ -199,11 +210,36 @@ private struct CombinedProvider: TimelineProvider {
     private func normalizeFreshness(_ snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshot {
         snapshot.normalizedForWidgetPresentation(at: now)
     }
+
+    private func timelineEntry(snapshot: WidgetSnapshot, now: Date, family: WidgetFamily) -> Entry {
+        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, family: family, now: now))
+    }
 }
 
 struct Entry: TimelineEntry {
     let date: Date
     let snapshot: WidgetSnapshot
+    let relevance: TimelineEntryRelevance?
+
+    init(date: Date, snapshot: WidgetSnapshot, relevance: TimelineEntryRelevance? = nil) {
+        self.date = date
+        self.snapshot = snapshot
+        self.relevance = relevance
+    }
+}
+
+private func widgetRelevance(
+    for snapshot: WidgetSnapshot,
+    family: WidgetFamily,
+    now: Date
+) -> TimelineEntryRelevance? {
+    guard family == .systemSmall || family == .systemMedium || family == .systemLarge,
+          let relevance = WidgetSnapshotRelevancePolicy.relevance(for: snapshot, now: now)
+    else {
+        return nil
+    }
+
+    return TimelineEntryRelevance(score: relevance.score, duration: relevance.duration)
 }
 
 struct SkyAwareStormRiskWidgetView: View {

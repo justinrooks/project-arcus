@@ -157,3 +157,84 @@ private func iso(_ value: String) -> Date {
     formatter.formatOptions = [.withInternetDateTime]
     return formatter.date(from: value)!
 }
+
+@Suite("Widget snapshot relevance")
+struct WidgetSnapshotRelevanceTests {
+    private let now = Date(timeIntervalSince1970: 1_777_700_000)
+
+    @Test("quiet and unavailable snapshots remain neutral")
+    func quietAndUnavailable_areNeutral() {
+        #expect(WidgetSnapshotRelevancePolicy.relevance(for: makeSnapshot(), now: now) == nil)
+        #expect(WidgetSnapshotRelevancePolicy.relevance(for: .unavailable(generatedAt: now), now: now) == nil)
+    }
+
+    @Test("alert classes follow warning, watch, mesoscale precedence")
+    func alertClasses_haveDescendingScores() {
+        let warning = relevance(alertType: "Warning")
+        let watch = relevance(alertType: "Watch")
+        let mesoscale = relevance(alertType: "Mesoscale Discussion")
+
+        #expect(warning.score > watch.score)
+        #expect(watch.score > mesoscale.score)
+    }
+
+    @Test("elevated risk is relevant but remains below active alerts")
+    func elevatedRisk_staysBelowAlerts() {
+        let storm = WidgetSnapshotRelevancePolicy.relevance(for: makeSnapshot(stormSeverity: 6), now: now)
+        let severe = WidgetSnapshotRelevancePolicy.relevance(for: makeSnapshot(severeSeverity: 3), now: now)
+        let warning = relevance(alertType: "Warning")
+        let mesoscale = relevance(alertType: "Mesoscale Discussion")
+
+        #expect(storm?.score ?? 0 > 0)
+        #expect(severe?.score ?? 0 > 0)
+        #expect((storm?.score ?? .greatestFiniteMagnitude) < mesoscale.score)
+        #expect((severe?.score ?? .greatestFiniteMagnitude) < mesoscale.score)
+        #expect((storm?.score ?? .greatestFiniteMagnitude) < warning.score)
+        #expect((severe?.score ?? .greatestFiniteMagnitude) < warning.score)
+    }
+
+    @Test("stale and expired states have no relevance")
+    func staleAndExpired_haveNoRelevance() {
+        let stale = makeSnapshot(freshness: .stale)
+        let expired = makeSnapshot(alertType: "Warning", validEnd: now.addingTimeInterval(-1))
+
+        #expect(WidgetSnapshotRelevancePolicy.relevance(for: stale, now: now) == nil)
+        #expect(WidgetSnapshotRelevancePolicy.relevance(for: expired, now: now) == nil)
+    }
+
+    @Test("relevance duration is bounded by freshness and alert validity")
+    func duration_isBounded() {
+        let snapshot = makeSnapshot(
+            alertType: "Warning",
+            validEnd: now.addingTimeInterval(120),
+            timestamp: now.addingTimeInterval(-60)
+        )
+
+        #expect(WidgetSnapshotRelevancePolicy.relevance(for: snapshot, now: now)?.duration == 120)
+    }
+
+    private func relevance(alertType: String) -> WidgetSnapshotRelevance {
+        WidgetSnapshotRelevancePolicy.relevance(for: makeSnapshot(alertType: alertType), now: now)!
+    }
+
+    private func makeSnapshot(
+        alertType: String? = nil,
+        validEnd: Date? = nil,
+        stormSeverity: Int = 0,
+        severeSeverity: Int = 0,
+        freshness: WidgetFreshnessState.State = .fresh,
+        timestamp: Date? = nil
+    ) -> WidgetSnapshot {
+        WidgetSnapshot(
+            generatedAt: now,
+            stormRisk: .init(label: "Risk", severity: stormSeverity),
+            severeRisk: .init(label: "Threat", severity: severeSeverity),
+            selectedAlert: alertType.map {
+                .init(title: $0, typeLabel: $0, severity: 1, issuedAt: now, validEnd: validEnd)
+            },
+            hiddenAlertCount: 0,
+            freshness: .init(timestamp: timestamp ?? now, state: freshness),
+            availability: .available
+        )
+    }
+}

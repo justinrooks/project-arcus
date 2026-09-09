@@ -88,6 +88,74 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     }
 }
 
+struct WidgetSnapshotRelevance: Equatable, Sendable {
+    let score: Float
+    let duration: TimeInterval
+}
+
+enum WidgetSnapshotRelevancePolicy {
+    private static let maximumDuration: TimeInterval = 15 * 60
+    private static let warningScore: Float = 100
+    private static let watchScore: Float = 75
+    private static let mesoscaleScore: Float = 50
+
+    static func relevance(for snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshotRelevance? {
+        guard case .available = snapshot.availability,
+              snapshot.freshness.state == .fresh,
+              !snapshot.freshness.isStale(at: now)
+        else {
+            return nil
+        }
+
+        let alertScore = selectedAlertScore(snapshot.selectedAlert) ?? 0
+        let riskScore = elevatedRiskScore(snapshot) ?? 0
+        let score = max(alertScore, riskScore)
+        guard score > 0 else {
+            return nil
+        }
+
+        let freshnessDuration = freshnessDuration(snapshot.freshness, now: now)
+        let alertDuration = selectedAlertDuration(snapshot.selectedAlert, now: now)
+        let duration = min(freshnessDuration, alertDuration ?? maximumDuration)
+        guard duration > 0 else { return nil }
+
+        return WidgetSnapshotRelevance(score: score, duration: duration)
+    }
+
+    private static func selectedAlertScore(_ alert: WidgetSelectedAlertRowDisplayState?) -> Float? {
+        guard let alert else { return nil }
+        let type = alert.typeLabel.localizedLowercase
+        if type.contains("warning") { return warningScore }
+        if type.contains("watch") { return watchScore }
+        if type.contains("mesoscale") { return mesoscaleScore }
+        return nil
+    }
+
+    private static func elevatedRiskScore(_ snapshot: WidgetSnapshot) -> Float? {
+        let stormScore = snapshot.stormRisk.severity > 0
+            ? 10 + (Float(snapshot.stormRisk.severity) * 5)
+            : 0
+        let severeScore = snapshot.severeRisk.severity > 0
+            ? 10 + (Float(snapshot.severeRisk.severity) * 10)
+            : 0
+        let score = max(stormScore, severeScore)
+        return score > 0 ? score : nil
+    }
+
+    private static func freshnessDuration(_ freshness: WidgetFreshnessState, now: Date) -> TimeInterval {
+        guard let timestamp = freshness.timestamp else { return maximumDuration }
+        return min(maximumDuration, WidgetFreshnessState.staleThreshold - now.timeIntervalSince(timestamp))
+    }
+
+    private static func selectedAlertDuration(
+        _ alert: WidgetSelectedAlertRowDisplayState?,
+        now: Date
+    ) -> TimeInterval? {
+        guard let validEnd = alert?.validEnd else { return nil }
+        return validEnd.timeIntervalSince(now)
+    }
+}
+
 struct WidgetRiskDisplayState: Codable, Sendable, Equatable {
     let label: String
     let severity: Int
