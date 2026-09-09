@@ -15,6 +15,44 @@ enum WidgetRiskKind: String, CaseIterable {
     }
 }
 
+struct WidgetSemanticEmphasis {
+    let washStart: Double
+    let washEnd: Double
+    let glowStart: Double
+    let glowMid: Double
+    let bodyGlow: Double
+
+    static func style(for kind: WidgetRiskKind, severity: Int, isDark: Bool) -> WidgetSemanticEmphasis {
+        let concern: Double
+        switch kind {
+        case .storm:
+            let curve = [0.0, 0.18, 0.35, 0.52, 0.70, 0.85, 1.0]
+            concern = curve[min(max(severity, 0), curve.count - 1)]
+        case .severe:
+            let curve = [0.0, 0.35, 0.70, 1.0]
+            concern = curve[min(max(severity, 0), curve.count - 1)]
+        }
+
+        if isDark {
+            return WidgetSemanticEmphasis(
+                washStart: 0.015 + (0.055 * concern),
+                washEnd: 0.035 + (0.145 * concern),
+                glowStart: 0.05 + ((kind == .storm ? 0.39 : 0.35) * concern),
+                glowMid: 0.02 + ((kind == .storm ? 0.20 : 0.18) * concern),
+                bodyGlow: 0.02 + ((kind == .storm ? 0.16 : 0.14) * concern)
+            )
+        }
+
+        return WidgetSemanticEmphasis(
+            washStart: 0.015 + (0.030 * concern),
+            washEnd: 0.035 + (0.055 * concern),
+            glowStart: 0.05 + (0.13 * concern),
+            glowMid: 0.02 + (0.06 * concern),
+            bodyGlow: 0.02 + (0.05 * concern)
+        )
+    }
+}
+
 struct WidgetRiskVisualStyle {
     let icon: String
     let tint: Color

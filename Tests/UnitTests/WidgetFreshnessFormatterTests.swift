@@ -23,8 +23,7 @@ struct WidgetFreshnessFormatterTests {
         )
 
         let line = WidgetFreshnessFormatter.line(for: freshness)
-        #expect(line.hasPrefix("As of "))
-//        #expect(line.hasSuffix("may be stale"))
+        #expect(line.contains("Delayed update"))
     }
 
     @Test("unavailable copy remains stable")

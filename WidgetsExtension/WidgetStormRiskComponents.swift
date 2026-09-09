@@ -21,6 +21,11 @@ struct WidgetStormRiskSmallView: View {
 
     private var backgroundGradient: some View {
         let style = WidgetRiskVisualStyle.style(for: .storm, severity: snapshot.stormRisk.severity)
+        let emphasis = WidgetSemanticEmphasis.style(
+            for: .storm,
+            severity: snapshot.stormRisk.severity,
+            isDark: colorScheme == .dark
+        )
         let isQuiet = snapshot.stormRisk.severity == 0
 
         return ZStack {
@@ -33,8 +38,8 @@ struct WidgetStormRiskSmallView: View {
             // Full-surface semantic wash. Keeps the whole widget warm without creating an inner panel.
             LinearGradient(
                 colors: [
-                    style.tint.opacity(isQuiet ? 0.015 : (colorScheme == .dark ? 0.06 : 0.025)),
-                    style.tint.opacity(isQuiet ? 0.035 : (colorScheme == .dark ? 0.18 : 0.055))
+                    style.tint.opacity(emphasis.washStart),
+                    style.tint.opacity(emphasis.washEnd)
                 ],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
@@ -43,8 +48,8 @@ struct WidgetStormRiskSmallView: View {
             // Option A-style lower trailing glow behind the decorative icon.
             RadialGradient(
                 colors: [
-                    style.tint.opacity(isQuiet ? 0.06 : (colorScheme == .dark ? 0.44 : 0.18)),
-                    style.tint.opacity(isQuiet ? 0.025 : (colorScheme == .dark ? 0.22 : 0.085)),
+                    style.tint.opacity(emphasis.glowStart),
+                    style.tint.opacity(emphasis.glowMid),
                     style.tint.opacity(0.0)
                 ],
                 center: UnitPoint(x: 0.86, y: 0.62),
@@ -55,7 +60,7 @@ struct WidgetStormRiskSmallView: View {
             // Subtle warm body glow through the middle of the card.
             RadialGradient(
                 colors: [
-                    style.tint.opacity(isQuiet ? 0.025 : (colorScheme == .dark ? 0.18 : 0.065)),
+                    style.tint.opacity(emphasis.bodyGlow),
                     style.tint.opacity(0.0)
                 ],
                 center: UnitPoint(x: 0.58, y: 0.58),
@@ -125,6 +130,11 @@ private struct WidgetStormRiskBadgeCard: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    if freshness.state == .stale {
+                        WidgetFreshnessLineView(freshness: freshness)
+                            .padding(.top, 4)
+                    }
 
                     Spacer(minLength: 10)
 
