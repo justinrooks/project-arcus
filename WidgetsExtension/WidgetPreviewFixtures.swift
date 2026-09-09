@@ -32,9 +32,9 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
-    static let combinedAllClear = WidgetSnapshot(
+    static let combinedQuiet = WidgetSnapshot(
         generatedAt: now,
-        stormRisk: WidgetRiskDisplayState(label: "No Risk", severity: 0),
+        stormRisk: WidgetRiskDisplayState(label: "No Severe Storm Risk", severity: 0),
         severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
         selectedAlert: nil,
         hiddenAlertCount: 0,
@@ -44,9 +44,20 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
-    static let stormAllClear = WidgetSnapshot(
+    static let stormQuiet = WidgetSnapshot(
         generatedAt: now,
-        stormRisk: WidgetRiskDisplayState(label: "Clear Skies", severity: 0),
+        stormRisk: WidgetRiskDisplayState(label: "No Severe Storm Risk", severity: 0),
+        severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
+        selectedAlert: nil,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
+        availability: .available,
+        destination: .summary
+    )
+
+    static let severeQuiet = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: WidgetRiskDisplayState(label: "No Severe Storm Risk", severity: 0),
         severeRisk: WidgetRiskDisplayState(label: "No Active Threats", severity: 0),
         selectedAlert: nil,
         hiddenAlertCount: 0,
@@ -136,7 +147,9 @@ enum WidgetPreviewFixtures {
     static let all: [WidgetSnapshot] = [
         normal,
         noAlert,
-        stormAllClear,
+        stormQuiet,
+        severeQuiet,
+        combinedQuiet,
         stale,
         unavailable,
         multipleAlerts,

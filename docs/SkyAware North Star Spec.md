@@ -531,6 +531,14 @@ Avoid:
 - polish that depends primarily on glass, shadows, gradients, or animation
 - inconsistent spacing or one-off component treatments
 
+### Widget Semantic Contract
+Widget status wording must stay scoped to the severe-weather state SkyAware knows.
+Compact families may reflow or deliberately compose the copy, but they must not
+broaden, weaken, or truncate its meaning. Text hierarchy and complete status
+wording take priority over decorative artwork, icons, or glows. Quiet states
+remain atmospheric-first with restrained semantic green. Lock Screen widgets
+stay restrained and WidgetKit-native.
+
 ### Map and Data Visuals
 Aim for:
 - clarity in under 2 seconds
