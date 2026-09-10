@@ -5,6 +5,7 @@ struct WidgetLargeAwarenessView: View {
     let snapshot: WidgetSnapshot
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Group {
@@ -28,7 +29,7 @@ struct WidgetLargeAwarenessView: View {
             Text(awarenessHeading)
                 .font(.title2.weight(.bold))
                 .tracking(0.4)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                 .minimumScaleFactor(0.7)
                 .padding(.top, 12)
 
@@ -47,19 +48,36 @@ struct WidgetLargeAwarenessView: View {
     }
 
     private var metadata: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Label(locationSummaryLine, systemImage: "mappin")
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 3) {
+                    locationLabel
+                    freshnessLabel
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    locationLabel
 
-            Spacer(minLength: 8)
+                    Spacer(minLength: 8)
 
-            WidgetFreshnessLineView(freshness: freshness)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                    freshnessLabel
+                }
+            }
         }
         .font(.caption2.weight(.medium))
         .foregroundStyle(.secondary)
+    }
+
+    private var locationLabel: some View {
+        Label(locationSummaryLine, systemImage: "mappin")
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .minimumScaleFactor(0.8)
+    }
+
+    private var freshnessLabel: some View {
+        WidgetFreshnessLineView(freshness: freshness)
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .minimumScaleFactor(0.8)
     }
 
     private var atmosphericBackground: some View {
@@ -242,6 +260,21 @@ private struct WidgetLargeAlertRailStack: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(minHeight: reservedStackHeight, alignment: .topLeading)
         .accessibilityElement(children: .contain)
+        .accessibilityRepresentation {
+            VStack(alignment: .leading, spacing: Self.rowSpacing) {
+                if alerts.isEmpty {
+                    WidgetLargeQuietAwarenessState()
+                } else {
+                    ForEach(alerts.indices, id: \.self) { index in
+                        WidgetLargeAlertRailRow(alert: alerts[index])
+                    }
+
+                    if overflowCount > 0 {
+                        Text("\(overflowCount) more active alerts")
+                    }
+                }
+            }
+        }
     }
 
     private var reservedStackHeight: CGFloat {
@@ -277,6 +310,7 @@ private struct WidgetLargeQuietAwarenessState: View {
 private struct WidgetLargeRiskContextFooter: View {
     let stormState: WidgetRiskDisplayState
     let severeState: WidgetRiskDisplayState
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -285,22 +319,35 @@ private struct WidgetLargeRiskContextFooter: View {
                 .frame(height: 1)
                 .accessibilityHidden(true)
 
-            HStack(alignment: .bottom, spacing: 12) {
-                WidgetLargeRiskContextColumn(
-                    title: "Storm Risk",
-                    state: stormState,
-                    style: .style(for: .storm, severity: stormState.severity)
-                )
-
-                WidgetLargeRiskContextColumn(
-                    title: "Severe Risk",
-                    state: severeState,
-                    style: .style(for: .severe, severity: severeState.severity)
-                )
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        columns
+                    }
+                } else {
+                    HStack(alignment: .bottom, spacing: 12) {
+                        columns
+                    }
+                }
             }
         }
         .padding(.bottom, 4)
         .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var columns: some View {
+        WidgetLargeRiskContextColumn(
+            title: "Storm Risk",
+            state: stormState,
+            style: .style(for: .storm, severity: stormState.severity)
+        )
+
+        WidgetLargeRiskContextColumn(
+            title: "Severe Risk",
+            state: severeState,
+            style: .style(for: .severe, severity: severeState.severity)
+        )
     }
 }
 
@@ -359,6 +406,7 @@ private struct WidgetLargeAlertRailItem: Identifiable {
 private struct WidgetLargeAlertRailRow: View {
     let alert: WidgetSelectedAlertRowDisplayState
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var style: WidgetAlertVisualStyle {
         WidgetAlertVisualStyle.style(for: alert)
@@ -414,13 +462,13 @@ private struct WidgetLargeAlertRailRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(alert.title)
                     .font(.subheadline.weight(.bold))
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     .minimumScaleFactor(0.78)
 
                 Text(lifecycleLine)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
             }
 
             Spacer(minLength: 0)
