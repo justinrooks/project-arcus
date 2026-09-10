@@ -16,6 +16,14 @@ struct WidgetSnapshotTests {
                 severity: 3,
                 issuedAt: iso("2026-05-01T11:58:00Z")
             ),
+            activeAlerts: [
+                .init(
+                    title: "Tornado Warning",
+                    typeLabel: "Warning",
+                    severity: 3,
+                    issuedAt: iso("2026-05-01T11:58:00Z")
+                )
+            ],
             hiddenAlertCount: 2,
             freshness: .from(
                 timestamp: iso("2026-05-01T11:55:00Z"),
@@ -68,6 +76,46 @@ struct WidgetSnapshotTests {
         #expect(decoded.alertFreshness == nil)
     }
 
+    @Test("decodes legacy snapshot without active alert collection")
+    func decodesLegacySnapshot_withoutActiveAlerts() throws {
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            stormRisk: .init(label: "Slight Risk", severity: 3),
+            severeRisk: .init(label: "Tornado", severity: 3),
+            selectedAlert: .init(
+                title: "Tornado Warning",
+                typeLabel: "Warning",
+                severity: 5,
+                issuedAt: iso("2026-05-01T11:58:00Z")
+            ),
+            activeAlerts: [
+                .init(
+                    title: "Tornado Warning",
+                    typeLabel: "Warning",
+                    severity: 5,
+                    issuedAt: iso("2026-05-01T11:58:00Z")
+                )
+            ],
+            hiddenAlertCount: 0,
+            freshness: .from(timestamp: iso("2026-05-01T11:55:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            availability: .available
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let currentPayload = try #require(JSONSerialization.jsonObject(with: encoder.encode(snapshot)) as? [String: Any])
+        var legacyPayload = currentPayload
+        legacyPayload.removeValue(forKey: "activeAlerts")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyPayload)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(WidgetSnapshot.self, from: legacyData)
+
+        #expect(decoded.selectedAlert == snapshot.selectedAlert)
+        #expect(decoded.activeAlerts == [snapshot.selectedAlert].compactMap { $0 })
+        #expect(decoded.hiddenAlertCount == 0)
+    }
+
     @Test("stale threshold marks snapshots stale at 30 minutes")
     func staleThreshold_isThirtyMinutes() {
         let updatedAt = iso("2026-05-01T10:00:00Z")
@@ -106,8 +154,8 @@ struct WidgetSnapshotTests {
         }
     }
 
-    @Test("normalization marks stale snapshots and suppresses expired selected alerts")
-    func normalizedForWidgetPresentation_suppressesExpiredAlert() {
+    @Test("normalization removes expired alerts and promotes the next active alert")
+    func normalizedForWidgetPresentation_removesExpiredAlerts() {
         let snapshot = WidgetSnapshot(
             generatedAt: iso("2026-05-01T11:20:00Z"),
             stormRisk: .init(label: "Enhanced Risk", severity: 4),
@@ -119,6 +167,29 @@ struct WidgetSnapshotTests {
                 issuedAt: iso("2026-05-01T10:55:00Z"),
                 validEnd: iso("2026-05-01T11:50:00Z")
             ),
+            activeAlerts: [
+                .init(
+                    title: "Tornado Warning",
+                    typeLabel: "Warning",
+                    severity: 5,
+                    issuedAt: iso("2026-05-01T10:55:00Z"),
+                    validEnd: iso("2026-05-01T11:50:00Z")
+                ),
+                .init(
+                    title: "Tornado Watch",
+                    typeLabel: "Watch",
+                    severity: 1,
+                    issuedAt: iso("2026-05-01T11:30:00Z"),
+                    validEnd: iso("2026-05-01T12:30:00Z")
+                ),
+                .init(
+                    title: "Meso 2001",
+                    typeLabel: "Mesoscale Discussion",
+                    severity: 2,
+                    issuedAt: iso("2026-05-01T11:20:00Z"),
+                    validEnd: iso("2026-05-01T11:55:00Z")
+                )
+            ],
             hiddenAlertCount: 2,
             freshness: .from(
                 timestamp: iso("2026-05-01T03:00:00Z"),
@@ -130,7 +201,38 @@ struct WidgetSnapshotTests {
         let normalized = snapshot.normalizedForWidgetPresentation(at: iso("2026-05-01T12:00:00Z"))
 
         #expect(normalized.freshness.state == .stale)
-        #expect(normalized.selectedAlert == nil)
+        #expect(normalized.selectedAlert?.title == "Tornado Watch")
+        #expect(normalized.activeAlerts.map(\.title) == ["Tornado Watch"])
+        #expect(normalized.hiddenAlertCount == 0)
+    }
+
+    @Test("normalization promotes an active alert beyond the large widget's likely visible capacity")
+    func normalizedForWidgetPresentation_promotesOverflowAlert() {
+        let now = iso("2026-05-01T12:00:00Z")
+        let alerts = (1...6).map { index in
+            WidgetSelectedAlertRowDisplayState(
+                title: "Alert \(index)",
+                typeLabel: index <= 5 ? "Warning" : "Watch",
+                severity: 1,
+                issuedAt: now.addingTimeInterval(TimeInterval(-index)),
+                validEnd: index <= 5 ? now.addingTimeInterval(-1) : now.addingTimeInterval(60 * 60)
+            )
+        }
+        let snapshot = WidgetSnapshot(
+            generatedAt: now,
+            stormRisk: .placeholder,
+            severeRisk: .placeholder,
+            selectedAlert: alerts.first,
+            activeAlerts: alerts,
+            hiddenAlertCount: 5,
+            freshness: .from(timestamp: now, now: now),
+            availability: .available
+        )
+
+        let normalized = snapshot.normalizedForWidgetPresentation(at: now)
+
+        #expect(normalized.selectedAlert?.title == "Alert 6")
+        #expect(normalized.activeAlerts.map(\.title) == ["Alert 6"])
         #expect(normalized.hiddenAlertCount == 0)
     }
 
@@ -165,6 +267,7 @@ struct WidgetSnapshotTests {
             "stormRisk",
             "severeRisk",
             "selectedAlert",
+            "activeAlerts",
             "hiddenAlertCount",
             "freshness",
             "availability",

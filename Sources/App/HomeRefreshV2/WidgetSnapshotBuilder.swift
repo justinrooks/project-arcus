@@ -47,14 +47,14 @@ struct WidgetSnapshotBuilder {
 
         let riskTimestamp = input.riskSnapshotTimestamp ?? input.generatedAt
         let alertTimestamp = input.alertSnapshotTimestamp
-        let activeAlerts = activeAlerts(alerts: input.alerts, mesos: input.mesos, now: now)
-        let selectedAlert = selectHighestPriorityAlert(from: activeAlerts)
+        let activeAlerts = orderedActiveAlerts(alerts: input.alerts, mesos: input.mesos, now: now)
 
         return WidgetSnapshot(
             generatedAt: input.generatedAt,
             stormRisk: stormRiskDisplay(from: input.stormRisk),
             severeRisk: severeRiskDisplay(from: input.severeRisk),
-            selectedAlert: selectedAlert?.displayState,
+            selectedAlert: activeAlerts.first?.displayState,
+            activeAlerts: activeAlerts.map(\.displayState),
             hiddenAlertCount: max(0, activeAlerts.count - 1),
             freshness: .from(
                 timestamp: riskTimestamp,
@@ -168,7 +168,7 @@ private extension WidgetSnapshotBuilder {
         return WidgetRiskDisplayState(label: threat.message, severity: threat.priority)
     }
 
-    func activeAlerts(alerts: [AlertDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {
+    func orderedActiveAlerts(alerts: [AlertDTO], mesos: [MdDTO], now: Date) -> [ActiveAlertCandidate] {
         let activeWatchCandidates = alerts
             .filter { $0.validEnd > now }
             .map { watch in
@@ -193,11 +193,7 @@ private extension WidgetSnapshotBuilder {
                 )
             }
 
-        return activeWatchCandidates + activeMesoCandidates
-    }
-
-    func selectHighestPriorityAlert(from candidates: [ActiveAlertCandidate]) -> ActiveAlertCandidate? {
-        candidates.min {
+        return (activeWatchCandidates + activeMesoCandidates).sorted {
             if $0.kind.classRank != $1.kind.classRank {
                 return $0.kind.classRank < $1.kind.classRank
             }

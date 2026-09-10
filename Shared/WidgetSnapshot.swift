@@ -7,6 +7,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     let stormRisk: WidgetRiskDisplayState
     let severeRisk: WidgetRiskDisplayState
     let selectedAlert: WidgetSelectedAlertRowDisplayState?
+    let activeAlerts: [WidgetSelectedAlertRowDisplayState]
     let hiddenAlertCount: Int
     let freshness: WidgetFreshnessState
     let alertFreshness: WidgetFreshnessState?
@@ -19,6 +20,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         stormRisk: WidgetRiskDisplayState,
         severeRisk: WidgetRiskDisplayState,
         selectedAlert: WidgetSelectedAlertRowDisplayState?,
+        activeAlerts: [WidgetSelectedAlertRowDisplayState] = [],
         hiddenAlertCount: Int,
         freshness: WidgetFreshnessState,
         alertFreshness: WidgetFreshnessState? = nil,
@@ -30,6 +32,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.selectedAlert = selectedAlert
+        self.activeAlerts = activeAlerts
         self.hiddenAlertCount = max(0, hiddenAlertCount)
         self.freshness = freshness
         self.alertFreshness = alertFreshness
@@ -48,6 +51,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             stormRisk: .placeholder,
             severeRisk: .placeholder,
             selectedAlert: nil,
+            activeAlerts: [],
             hiddenAlertCount: 0,
             freshness: WidgetFreshnessState(timestamp: timestamp, state: .unavailable),
             alertFreshness: timestamp.map { WidgetFreshnessState(timestamp: $0, state: .unavailable) },
@@ -81,14 +85,25 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             )
         }
 
+        let normalizedActiveAlerts = activeAlerts.filter { alert in
+            guard let validEnd = alert.validEnd else { return true }
+            return validEnd > now
+        }
         let activeSelectedAlert: WidgetSelectedAlertRowDisplayState?
         let activeHiddenAlertCount: Int
-        if let selectedAlert, let validEnd = selectedAlert.validEnd, validEnd <= now {
-            activeSelectedAlert = nil
-            activeHiddenAlertCount = 0
+        if activeAlerts.isEmpty {
+            if let selectedAlert, let validEnd = selectedAlert.validEnd, validEnd <= now {
+                activeSelectedAlert = nil
+                activeHiddenAlertCount = 0
+            } else {
+                activeSelectedAlert = selectedAlert
+                activeHiddenAlertCount = hiddenAlertCount
+            }
         } else {
-            activeSelectedAlert = selectedAlert
-            activeHiddenAlertCount = hiddenAlertCount
+            activeSelectedAlert = normalizedActiveAlerts.first
+            activeHiddenAlertCount = normalizedActiveAlerts.isEmpty
+                ? 0
+                : max(0, hiddenAlertCount - (activeAlerts.count - normalizedActiveAlerts.count))
         }
 
         return WidgetSnapshot(
@@ -96,6 +111,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             stormRisk: stormRisk,
             severeRisk: severeRisk,
             selectedAlert: activeSelectedAlert,
+            activeAlerts: normalizedActiveAlerts,
             hiddenAlertCount: activeHiddenAlertCount,
             freshness: normalizedFreshness,
             alertFreshness: normalizedAlertFreshness,
@@ -302,17 +318,25 @@ enum WidgetFreshnessPolicy {
 
 extension WidgetSnapshot {
     private enum CodingKeys: String, CodingKey {
-        case generatedAt, stormRisk, severeRisk, selectedAlert, hiddenAlertCount
+        case generatedAt, stormRisk, severeRisk, selectedAlert, activeAlerts, hiddenAlertCount
         case freshness, alertFreshness, availability, locationSummary, destination
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let selectedAlert = try container.decodeIfPresent(
+            WidgetSelectedAlertRowDisplayState.self,
+            forKey: .selectedAlert
+        )
         self.init(
             generatedAt: try container.decode(Date.self, forKey: .generatedAt),
             stormRisk: try container.decode(WidgetRiskDisplayState.self, forKey: .stormRisk),
             severeRisk: try container.decode(WidgetRiskDisplayState.self, forKey: .severeRisk),
-            selectedAlert: try container.decodeIfPresent(WidgetSelectedAlertRowDisplayState.self, forKey: .selectedAlert),
+            selectedAlert: selectedAlert,
+            activeAlerts: try container.decodeIfPresent(
+                [WidgetSelectedAlertRowDisplayState].self,
+                forKey: .activeAlerts
+            ) ?? selectedAlert.map { [$0] } ?? [],
             hiddenAlertCount: try container.decode(Int.self, forKey: .hiddenAlertCount),
             freshness: try container.decode(WidgetFreshnessState.self, forKey: .freshness),
             alertFreshness: try container.decodeIfPresent(WidgetFreshnessState.self, forKey: .alertFreshness),
