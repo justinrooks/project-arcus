@@ -96,7 +96,7 @@ struct WidgetSnapshotTests {
                     issuedAt: iso("2026-05-01T11:58:00Z")
                 )
             ],
-            hiddenAlertCount: 0,
+            hiddenAlertCount: 3,
             freshness: .from(timestamp: iso("2026-05-01T11:55:00Z"), now: iso("2026-05-01T12:00:00Z")),
             availability: .available
         )
@@ -113,7 +113,94 @@ struct WidgetSnapshotTests {
 
         #expect(decoded.selectedAlert == snapshot.selectedAlert)
         #expect(decoded.activeAlerts == [snapshot.selectedAlert].compactMap { $0 })
-        #expect(decoded.hiddenAlertCount == 0)
+        #expect(decoded.hiddenAlertCount == 3)
+        #expect(decoded.knownActiveAlertCount == 4)
+        let visibleAlerts = WidgetLargeAlertPresentation.visibleAlerts(
+            from: decoded.activeAlerts,
+            isAccessibilitySize: false
+        )
+        #expect(WidgetLargeAlertPresentation.overflowCount(
+            knownAlertCount: decoded.knownActiveAlertCount,
+            visibleAlertCount: visibleAlerts.count
+        ) == 3)
+    }
+
+    @Test("known active alert count preserves legacy hidden alerts")
+    func knownActiveAlertCount_preservesLegacyHiddenAlerts() {
+        let selectedAlert = WidgetSelectedAlertRowDisplayState(
+            title: "Tornado Warning",
+            typeLabel: "Warning",
+            severity: 5,
+            issuedAt: iso("2026-05-01T11:58:00Z")
+        )
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            stormRisk: .placeholder,
+            severeRisk: .placeholder,
+            selectedAlert: selectedAlert,
+            activeAlerts: [selectedAlert],
+            hiddenAlertCount: 3,
+            freshness: .from(timestamp: iso("2026-05-01T12:00:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            availability: .available
+        )
+
+        #expect(snapshot.knownActiveAlertCount == 4)
+    }
+
+    @Test("known active alert count keeps current ordered collection authoritative")
+    func knownActiveAlertCount_prefersCurrentCollection() {
+        let alerts = (1...5).map {
+            WidgetSelectedAlertRowDisplayState(
+                title: "Alert \($0)",
+                typeLabel: "Warning",
+                severity: 1,
+                issuedAt: nil
+            )
+        }
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            stormRisk: .placeholder,
+            severeRisk: .placeholder,
+            selectedAlert: alerts.first,
+            activeAlerts: alerts,
+            hiddenAlertCount: 4,
+            freshness: .from(timestamp: iso("2026-05-01T12:00:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            availability: .available
+        )
+
+        #expect(snapshot.knownActiveAlertCount == 5)
+    }
+
+    @Test("large alert presentation mirrors regular and accessibility capacities")
+    func largeAlertPresentation_usesVisiblePrefixForOverflow() {
+        let alerts = (1...5).map {
+            WidgetSelectedAlertRowDisplayState(
+                title: "Alert \($0)",
+                typeLabel: "Warning",
+                severity: 1,
+                issuedAt: nil
+            )
+        }
+
+        let regular = WidgetLargeAlertPresentation.visibleAlerts(
+            from: alerts,
+            isAccessibilitySize: false
+        )
+        let accessibility = WidgetLargeAlertPresentation.visibleAlerts(
+            from: alerts,
+            isAccessibilitySize: true
+        )
+
+        #expect(regular.map(\.title) == ["Alert 1", "Alert 2", "Alert 3"])
+        #expect(accessibility.map(\.title) == ["Alert 1"])
+        #expect(WidgetLargeAlertPresentation.overflowCount(
+            knownAlertCount: alerts.count,
+            visibleAlertCount: regular.count
+        ) == 2)
+        #expect(WidgetLargeAlertPresentation.overflowCount(
+            knownAlertCount: alerts.count,
+            visibleAlertCount: accessibility.count
+        ) == 4)
     }
 
     @Test("stale threshold marks snapshots stale at 30 minutes")
