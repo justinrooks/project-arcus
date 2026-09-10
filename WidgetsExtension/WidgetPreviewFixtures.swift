@@ -82,6 +82,19 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
+    static let staleRiskWithFreshAlerts = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: WidgetRiskDisplayState(label: "High Risk", severity: 6),
+        severeRisk: WidgetRiskDisplayState(label: "Tornado", severity: 3),
+        selectedAlert: normal.selectedAlert,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-28_800), state: .stale),
+        alertFreshness: WidgetFreshnessState(timestamp: now, state: .fresh),
+        availability: .available,
+        locationSummary: "Norman, OK",
+        destination: .summary
+    )
+
     static let unavailable = WidgetSnapshot.unavailable(
         generatedAt: now,
         timestamp: now.addingTimeInterval(-3_600),
@@ -107,6 +120,30 @@ enum WidgetPreviewFixtures {
         hiddenAlertCount: 0,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
         availability: .available,
+        destination: .summary
+    )
+
+    static let stormRiskUnavailable = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: .placeholder,
+        severeRisk: WidgetRiskDisplayState(label: "Wind", severity: 1),
+        selectedAlert: nil,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
+        availability: .available,
+        locationSummary: "Bennett, CO",
+        destination: .summary
+    )
+
+    static let severeRiskUnavailable = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: WidgetRiskDisplayState(label: "Slight Risk", severity: 3),
+        severeRisk: .placeholder,
+        selectedAlert: nil,
+        hiddenAlertCount: 0,
+        freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-300), state: .fresh),
+        availability: .available,
+        locationSummary: "Bennett, CO",
         destination: .summary
     )
 
@@ -220,6 +257,8 @@ enum WidgetPreviewFixtures {
         threeAlerts,
         stormRiskPlaceholder,
         severeRiskPlaceholder,
+        stormRiskUnavailable,
+        severeRiskUnavailable,
         combinedPlaceholder
     ]
 }

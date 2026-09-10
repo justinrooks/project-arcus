@@ -165,3 +165,14 @@
 - For bounded widget alert stacks, reserve the full readable-capacity footprint and top-align shorter collections.
   Apply the reserved frame outside a vertically fixed inner stack; otherwise SwiftUI proposes the spare height to a
   lone row and expands its surface. Confirm the rendered rail behavior in Preview before declaring the layout fixed.
+- When adding a conditional state around a bounded widget alert stack, preserve the stack's vertical fixed-size
+  constraint. Removing it makes a single alert absorb reserved height and breaks row-height consistency.
+- When a bounded alert stack adds an overflow affordance, reserve explicit clearance below that label before a
+  following divider. The label extends beyond the row footprint and otherwise reads as if the divider strikes through it.
+- When a bottom-anchored footer follows a flexible spacer, padding the preceding overflow label only consumes spacer
+  space and does not create visible separation. Prefer removing a nonessential boundary rule or changing the footer's
+  own placement.
+- When an overflow label needs a visual boundary before a contextual footer, attach the divider to the overflow state
+  itself and give it explicit vertical padding. A footer-owned divider can appear to strike through the label instead.
+- When visual review settles on a simpler spacing treatment, remove superseded commented-out layout experiments rather
+  than leaving dead code that obscures the approved composition.

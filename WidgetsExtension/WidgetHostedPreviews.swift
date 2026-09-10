@@ -151,6 +151,36 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.noAlert)
 }
 
+#Preview("Local Awareness Large / Stale", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stale)
+}
+
+#Preview("Local Awareness Large / Stale Risk", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.staleRiskWithFreshAlerts)
+}
+
+#Preview("Local Awareness Large / Storm Risk Unavailable", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.stormRiskUnavailable)
+}
+
+#Preview("Local Awareness Large / Severe Risk Unavailable", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.severeRiskUnavailable)
+}
+
+#Preview("Local Awareness Large / Unavailable", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.unavailable)
+}
+
 #Preview("Combined Medium / Stale", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
