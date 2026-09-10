@@ -25,6 +25,7 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.stormRisk == .init(label: "Slight Risk", severity: 3))
         #expect(snapshot.severeRisk == .init(label: "Tornado", severity: 3))
         #expect(snapshot.selectedAlert?.title == "Tornado Warning")
+        #expect(snapshot.activeAlerts.map(\.title) == ["Tornado Warning"])
         #expect(snapshot.hiddenAlertCount == 0)
         #expect(snapshot.freshness.state == .fresh)
         #expect(snapshot.availability == .available)
@@ -47,6 +48,7 @@ struct WidgetSnapshotBuilderTests {
         let snapshot = builder.build(from: input, now: now)
 
         #expect(snapshot.selectedAlert == nil)
+        #expect(snapshot.activeAlerts.isEmpty)
         #expect(snapshot.hiddenAlertCount == 0)
         #expect(snapshot.stormRisk.label == "No Severe Storm Risk")
         #expect(snapshot.severeRisk.label == "No Active Threats")
@@ -73,6 +75,11 @@ struct WidgetSnapshotBuilderTests {
         let snapshot = builder.build(from: input, now: now)
 
         #expect(snapshot.selectedAlert?.title == "Severe Thunderstorm Warning")
+        #expect(snapshot.activeAlerts.map(\.title) == [
+            "Severe Thunderstorm Warning",
+            "Special Weather Statement",
+            "Meso 2001"
+        ])
         #expect(snapshot.hiddenAlertCount == 2)
     }
 
@@ -100,6 +107,13 @@ struct WidgetSnapshotBuilderTests {
 
         #expect(snapshot.selectedAlert?.title == "Tornado Warning")
         #expect(snapshot.selectedAlert?.typeLabel == "Warning")
+        #expect(snapshot.activeAlerts.map(\.title) == [
+            "Tornado Warning",
+            "Severe Thunderstorm Warning",
+            "Flash Flood Warning",
+            "Special Weather Statement",
+            "Meso 1999"
+        ])
     }
 
     @Test("hidden count excludes expired alerts")
@@ -123,6 +137,7 @@ struct WidgetSnapshotBuilderTests {
         let snapshot = builder.build(from: input, now: now)
 
         #expect(snapshot.selectedAlert?.title == "Severe Thunderstorm Warning")
+        #expect(snapshot.activeAlerts.map(\.title) == ["Severe Thunderstorm Warning"])
         #expect(snapshot.hiddenAlertCount == 0)
     }
 
@@ -193,6 +208,22 @@ struct WidgetSnapshotBuilderTests {
 
         #expect(snapshot.selectedAlert?.title == "Tornado Warning")
         #expect(snapshot.selectedAlert?.issuedAt == iso("2026-05-01T11:02:00Z"))
+        #expect(snapshot.activeAlerts.map(\.issuedAt) == [
+            iso("2026-05-01T11:02:00Z"),
+            iso("2026-05-01T11:01:00Z"),
+            iso("2026-05-01T11:59:00Z")
+        ])
+    }
+
+    @Test("stable ID breaks otherwise equal ordering ties")
+    func stableIDBreaksOrderingTies() {
+        let snapshot = buildSnapshot(alerts: [
+            makeAlert(id: "b", title: "Statement B", issued: now, validEnd: now.addingTimeInterval(60 * 60)),
+            makeAlert(id: "a", title: "Statement A", issued: now, validEnd: now.addingTimeInterval(60 * 60))
+        ])
+
+        #expect(snapshot.activeAlerts.map(\.title) == ["Statement A", "Statement B"])
+        #expect(snapshot.selectedAlert == snapshot.activeAlerts.first)
     }
 
     @Test("tornado watch retains watch display type")
@@ -224,7 +255,28 @@ struct WidgetSnapshotBuilderTests {
         let snapshot = builder.build(from: input, now: now)
 
         #expect(snapshot.selectedAlert == nil)
+        #expect(snapshot.activeAlerts.isEmpty)
         #expect(snapshot.hiddenAlertCount == 0)
+    }
+
+    @Test("active alert presentation collection retains ordered overflow data")
+    func activeAlertCollectionRetainsOverflowData() {
+        let alerts = (1...6).map { index in
+            makeAlert(
+                id: "alert-\(index)",
+                title: "Alert \(index)",
+                issued: now.addingTimeInterval(TimeInterval(index)),
+                validEnd: now.addingTimeInterval(60 * 60)
+            )
+        }
+
+        let snapshot = buildSnapshot(alerts: alerts)
+
+        #expect(snapshot.activeAlerts.map(\.title) == [
+            "Alert 6", "Alert 5", "Alert 4", "Alert 3", "Alert 2", "Alert 1"
+        ])
+        #expect(snapshot.selectedAlert == snapshot.activeAlerts.first)
+        #expect(snapshot.hiddenAlertCount == 5)
     }
 
     @Test("stale state uses eight hour risk threshold")
@@ -261,6 +313,7 @@ struct WidgetSnapshotBuilderTests {
 
         #expect(snapshot.freshness.state == .unavailable)
         #expect(snapshot.selectedAlert == nil)
+        #expect(snapshot.activeAlerts.isEmpty)
         if case .unavailable(let message) = snapshot.availability {
             #expect(message == WidgetSnapshot.unavailableMessage)
         } else {
