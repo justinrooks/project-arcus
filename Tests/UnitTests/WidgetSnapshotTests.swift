@@ -317,6 +317,7 @@ struct WidgetSnapshotRelevanceTests {
             },
             hiddenAlertCount: 0,
             freshness: .init(timestamp: timestamp ?? now, state: freshness),
+            alertFreshness: alertType.map { _ in .init(timestamp: now, state: freshness) },
             availability: .available
         )
     }
