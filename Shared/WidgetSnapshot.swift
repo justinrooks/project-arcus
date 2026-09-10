@@ -15,6 +15,13 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     let locationSummary: String?
     let destination: WidgetSummaryDestination
 
+    var knownActiveAlertCount: Int {
+        max(
+            activeAlerts.count,
+            selectedAlert == nil ? 0 : max(0, hiddenAlertCount) + 1
+        )
+    }
+
     init(
         generatedAt: Date,
         stormRisk: WidgetRiskDisplayState,
@@ -119,6 +126,26 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             locationSummary: locationSummary,
             destination: destination
         )
+    }
+}
+
+enum WidgetLargeAlertPresentation {
+    static let regularVisibleAlertCapacity = 3
+    static let accessibilityVisibleAlertCapacity = 1
+
+    static func visibleAlertCapacity(isAccessibilitySize: Bool) -> Int {
+        isAccessibilitySize ? accessibilityVisibleAlertCapacity : regularVisibleAlertCapacity
+    }
+
+    static func visibleAlerts(
+        from alerts: [WidgetSelectedAlertRowDisplayState],
+        isAccessibilitySize: Bool
+    ) -> [WidgetSelectedAlertRowDisplayState] {
+        Array(alerts.prefix(visibleAlertCapacity(isAccessibilitySize: isAccessibilitySize)))
+    }
+
+    static func overflowCount(knownAlertCount: Int, visibleAlertCount: Int) -> Int {
+        max(0, knownAlertCount - visibleAlertCount)
     }
 }
 

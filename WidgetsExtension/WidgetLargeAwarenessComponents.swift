@@ -33,7 +33,10 @@ struct WidgetLargeAwarenessView: View {
                 .minimumScaleFactor(0.7)
                 .padding(.top, 12)
 
-            WidgetLargeAlertRailStack(alerts: activeAlerts)
+            WidgetLargeAlertRailStack(
+                alerts: activeAlerts,
+                knownAlertCount: snapshot.knownActiveAlertCount
+            )
                 .padding(.top, 10)
 
             Spacer(minLength: 8)
@@ -166,7 +169,7 @@ struct WidgetLargeAwarenessView: View {
     }
 
     private var activeAlertCount: Int {
-        activeAlerts.count
+        snapshot.knownActiveAlertCount
     }
 
     private var activeAlerts: [WidgetSelectedAlertRowDisplayState] {
@@ -218,21 +221,27 @@ struct WidgetLargeAwarenessView: View {
 }
 
 private struct WidgetLargeAlertRailStack: View {
-    private static let visibleAlertCapacity = 3
     fileprivate static let rowMinimumHeight: CGFloat = 46
     private static let rowSpacing: CGFloat = 6
 
     let alerts: [WidgetSelectedAlertRowDisplayState]
+    let knownAlertCount: Int
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var visibleAlerts: [WidgetLargeAlertRailItem] {
-        alerts.prefix(visibleAlertCapacity).enumerated().map { index, alert in
+        WidgetLargeAlertPresentation.visibleAlerts(
+            from: alerts,
+            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+        ).enumerated().map { index, alert in
             WidgetLargeAlertRailItem(position: index, alert: alert)
         }
     }
 
     private var overflowCount: Int {
-        max(0, alerts.count - visibleAlerts.count)
+        WidgetLargeAlertPresentation.overflowCount(
+            knownAlertCount: knownAlertCount,
+            visibleAlertCount: visibleAlerts.count
+        )
     }
 
     var body: some View {
@@ -265,8 +274,8 @@ private struct WidgetLargeAlertRailStack: View {
                 if alerts.isEmpty {
                     WidgetLargeQuietAwarenessState()
                 } else {
-                    ForEach(alerts.indices, id: \.self) { index in
-                        WidgetLargeAlertRailRow(alert: alerts[index])
+                    ForEach(visibleAlerts) { item in
+                        WidgetLargeAlertRailRow(alert: item.alert)
                     }
 
                     if overflowCount > 0 {
@@ -278,12 +287,11 @@ private struct WidgetLargeAlertRailStack: View {
     }
 
     private var reservedStackHeight: CGFloat {
-        (Self.rowMinimumHeight * CGFloat(visibleAlertCapacity))
-            + (Self.rowSpacing * CGFloat(visibleAlertCapacity - 1))
-    }
-
-    private var visibleAlertCapacity: Int {
-        dynamicTypeSize.isAccessibilitySize ? 1 : Self.visibleAlertCapacity
+        let capacity = WidgetLargeAlertPresentation.visibleAlertCapacity(
+            isAccessibilitySize: dynamicTypeSize.isAccessibilitySize
+        )
+        return (Self.rowMinimumHeight * CGFloat(capacity))
+            + (Self.rowSpacing * CGFloat(capacity - 1))
     }
 }
 
