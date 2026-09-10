@@ -137,6 +137,32 @@ enum WidgetPreviewFixtures {
             severity: 6,
             issuedAt: now.addingTimeInterval(-360)
         ),
+        activeAlerts: [
+            WidgetSelectedAlertRowDisplayState(
+                title: "Tornado Warning",
+                typeLabel: "Tornado Warning",
+                severity: 6,
+                issuedAt: now.addingTimeInterval(-360)
+            ),
+            WidgetSelectedAlertRowDisplayState(
+                title: "Severe Thunderstorm Warning",
+                typeLabel: "Severe Thunderstorm Warning",
+                severity: 4,
+                issuedAt: now.addingTimeInterval(-480)
+            ),
+            WidgetSelectedAlertRowDisplayState(
+                title: "Tornado Watch",
+                typeLabel: "Tornado Watch",
+                severity: 5,
+                issuedAt: now.addingTimeInterval(-600)
+            ),
+            WidgetSelectedAlertRowDisplayState(
+                title: "Flood Watch",
+                typeLabel: "Flood Watch",
+                severity: 3,
+                issuedAt: now.addingTimeInterval(-720)
+            )
+        ],
         hiddenAlertCount: 3,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-180), state: .fresh),
         availability: .available,

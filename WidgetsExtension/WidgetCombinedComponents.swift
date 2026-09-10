@@ -1,7 +1,7 @@
 import SwiftUI
 import WidgetKit
 
-struct WidgetCombinedLargeView: View {
+struct WidgetCombinedMediumView: View {
     let snapshot: WidgetSnapshot
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.widgetFamily) private var widgetFamily

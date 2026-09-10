@@ -91,55 +91,55 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Combined / Normal", as: .systemMedium) {
+#Preview("Combined Medium / Normal", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Combined / Normal (Large)", as: .systemLarge) {
+#Preview("Local Awareness Large / Normal", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Combined / Multiple Alerts", as: .systemMedium) {
+#Preview("Combined Medium / Multiple Alerts", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
 }
 
-#Preview("Combined / Multiple Alerts (Large)", as: .systemLarge) {
+#Preview("Local Awareness Large / Multiple Alerts", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
 }
 
-#Preview("Combined / Quiet", as: .systemMedium) {
+#Preview("Combined Medium / Quiet", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedQuiet)
 }
 
-#Preview("Combined / Quiet (Large)", as: .systemLarge) {
+#Preview("Local Awareness Large / Quiet", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.combinedQuiet)
 }
 
-#Preview("Combined / No Alerts", as: .systemMedium) {
+#Preview("Combined Medium / No Alerts", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.noAlert)
 }
 
-#Preview("Combined / No Alerts (Large)", as: .systemLarge) {
+#Preview("Local Awareness Large / No Alerts", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.noAlert)
 }
 
-#Preview("Combined / Stale", as: .systemMedium) {
+#Preview("Combined Medium / Stale", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.stale)
