@@ -56,8 +56,14 @@ struct WidgetSnapshotBuilder {
             severeRisk: severeRiskDisplay(from: input.severeRisk),
             selectedAlert: selectedAlert?.displayState,
             hiddenAlertCount: max(0, activeAlerts.count - 1),
-            freshness: .from(timestamp: riskTimestamp, now: now),
-            alertFreshness: alertTimestamp.map { .from(timestamp: $0, now: now) },
+            freshness: .from(
+                timestamp: riskTimestamp,
+                now: now,
+                staleAfter: WidgetFreshnessPolicy.riskStaleAfter
+            ),
+            alertFreshness: alertTimestamp.map {
+                .from(timestamp: $0, now: now, staleAfter: WidgetFreshnessPolicy.alertStaleAfter)
+            },
             availability: .available,
             locationSummary: input.locationSummary,
             destination: .summary

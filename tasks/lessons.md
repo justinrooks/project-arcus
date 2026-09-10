@@ -149,6 +149,7 @@
 
 ## 2026-09-09
 
+- When separating persisted freshness domains, define each domain's aging policy explicitly; a shared default can silently invalidate a slower trusted projection even when timestamp ownership is correct.
 - When a visual refinement is reported as washed out in light mode, adjust the light-mode base surface and highlight
   together; reducing semantic tint alone does not restore enough atmospheric contrast.
 - If the first light-mode contrast pass remains difficult to read, make the next adjustment to the neutral surface

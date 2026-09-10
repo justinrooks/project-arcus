@@ -63,14 +63,22 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
 
         let normalizedFreshness: WidgetFreshnessState
         if let timestamp = freshness.timestamp {
-            normalizedFreshness = .from(timestamp: timestamp, now: now)
+            normalizedFreshness = .from(
+                timestamp: timestamp,
+                now: now,
+                staleAfter: WidgetFreshnessPolicy.riskStaleAfter
+            )
         } else {
             normalizedFreshness = freshness
         }
 
         let normalizedAlertFreshness = alertFreshness.map { freshness in
             guard let timestamp = freshness.timestamp else { return freshness }
-            return .from(timestamp: timestamp, now: now)
+            return .from(
+                timestamp: timestamp,
+                now: now,
+                staleAfter: WidgetFreshnessPolicy.alertStaleAfter
+            )
         }
 
         let activeSelectedAlert: WidgetSelectedAlertRowDisplayState?
@@ -131,12 +139,14 @@ enum WidgetSnapshotRelevancePolicy {
             return riskRelevance(
                 score: stormRiskScore(snapshot.stormRisk),
                 freshness: snapshot.freshness,
+                staleAfter: WidgetFreshnessPolicy.riskStaleAfter,
                 now: now
             )
         case .severeRisk:
             return riskRelevance(
                 score: severeRiskScore(snapshot.severeRisk),
                 freshness: snapshot.freshness,
+                staleAfter: WidgetFreshnessPolicy.riskStaleAfter,
                 now: now
             )
         case .combined:
@@ -164,10 +174,11 @@ enum WidgetSnapshotRelevancePolicy {
     private static func riskRelevance(
         score: Float?,
         freshness: WidgetFreshnessState,
+        staleAfter: TimeInterval,
         now: Date
     ) -> WidgetSnapshotRelevance? {
-        guard let score, isFresh(freshness, now: now) else { return nil }
-        let duration = freshnessDuration(freshness, now: now)
+        guard let score, isFresh(freshness, staleAfter: staleAfter, now: now) else { return nil }
+        let duration = freshnessDuration(freshness, staleAfter: staleAfter, now: now)
         return duration > 0 ? WidgetSnapshotRelevance(score: score, duration: duration) : nil
     }
 
@@ -175,24 +186,45 @@ enum WidgetSnapshotRelevancePolicy {
         let alertFreshness = snapshot.alertFreshness ?? snapshot.freshness
         let alertRelevance: WidgetSnapshotRelevance? = {
             guard let score = selectedAlertScore(snapshot.selectedAlert),
-                  isFresh(alertFreshness, now: now),
+                  isFresh(alertFreshness, staleAfter: WidgetFreshnessPolicy.alertStaleAfter, now: now),
                   let duration = selectedAlertDuration(snapshot.selectedAlert, now: now)
             else { return nil }
-            let boundedDuration = min(freshnessDuration(alertFreshness, now: now), duration)
+            let boundedDuration = min(
+                freshnessDuration(alertFreshness, staleAfter: WidgetFreshnessPolicy.alertStaleAfter, now: now),
+                duration
+            )
             return boundedDuration > 0 ? WidgetSnapshotRelevance(score: score, duration: boundedDuration) : nil
         }()
-        let storm = riskRelevance(score: stormRiskScore(snapshot.stormRisk), freshness: snapshot.freshness, now: now)
-        let severe = riskRelevance(score: severeRiskScore(snapshot.severeRisk), freshness: snapshot.freshness, now: now)
+        let storm = riskRelevance(
+            score: stormRiskScore(snapshot.stormRisk),
+            freshness: snapshot.freshness,
+            staleAfter: WidgetFreshnessPolicy.riskStaleAfter,
+            now: now
+        )
+        let severe = riskRelevance(
+            score: severeRiskScore(snapshot.severeRisk),
+            freshness: snapshot.freshness,
+            staleAfter: WidgetFreshnessPolicy.riskStaleAfter,
+            now: now
+        )
         return [alertRelevance, storm, severe].compactMap { $0 }.max { $0.score < $1.score }
     }
 
-    private static func isFresh(_ freshness: WidgetFreshnessState, now: Date) -> Bool {
-        freshness.state == .fresh && !freshness.isStale(at: now)
+    private static func isFresh(
+        _ freshness: WidgetFreshnessState,
+        staleAfter: TimeInterval,
+        now: Date
+    ) -> Bool {
+        freshness.state == .fresh && !freshness.isStale(at: now, staleAfter: staleAfter)
     }
 
-    private static func freshnessDuration(_ freshness: WidgetFreshnessState, now: Date) -> TimeInterval {
+    private static func freshnessDuration(
+        _ freshness: WidgetFreshnessState,
+        staleAfter: TimeInterval,
+        now: Date
+    ) -> TimeInterval {
         guard let timestamp = freshness.timestamp else { return maximumDuration }
-        return min(maximumDuration, WidgetFreshnessState.staleThreshold - now.timeIntervalSince(timestamp))
+        return min(maximumDuration, staleAfter - now.timeIntervalSince(timestamp))
     }
 
     private static func selectedAlertDuration(
@@ -261,6 +293,11 @@ struct WidgetFreshnessState: Codable, Sendable, Equatable {
 
         return now.timeIntervalSince(timestamp) >= staleAfter
     }
+}
+
+enum WidgetFreshnessPolicy {
+    static let alertStaleAfter: TimeInterval = 30 * 60
+    static let riskStaleAfter: TimeInterval = 8 * 60 * 60
 }
 
 extension WidgetSnapshot {
