@@ -32,8 +32,10 @@ struct WidgetLargeAwarenessView: View {
                 .minimumScaleFactor(0.7)
                 .padding(.top, 14)
 
-            // Reserved for the alert stack introduced in #530.
-            Spacer(minLength: 0)
+            WidgetLargeAlertRailStack(alerts: activeAlerts)
+                .padding(.top, 12)
+
+            Spacer(minLength: 8)
 
             // Reserved for the risk context footer introduced in #531.
             Color.clear
@@ -105,7 +107,11 @@ struct WidgetLargeAwarenessView: View {
     }
 
     private var activeAlertCount: Int {
-        snapshot.activeAlerts.isEmpty ? (snapshot.selectedAlert == nil ? 0 : 1) : snapshot.activeAlerts.count
+        activeAlerts.count
+    }
+
+    private var activeAlerts: [WidgetSelectedAlertRowDisplayState] {
+        snapshot.activeAlerts.isEmpty ? [snapshot.selectedAlert].compactMap { $0 } : snapshot.activeAlerts
     }
 
     private var freshness: WidgetFreshnessState {
@@ -131,5 +137,118 @@ struct WidgetLargeAwarenessView: View {
             Color(red: 0.760, green: 0.835, blue: 0.910),
             Color(red: 0.685, green: 0.775, blue: 0.860)
         ]
+    }
+}
+
+private struct WidgetLargeAlertRailStack: View {
+    private static let visibleAlertCapacity = 3
+    fileprivate static let rowMinimumHeight: CGFloat = 46
+    private static let rowSpacing: CGFloat = 7
+
+    let alerts: [WidgetSelectedAlertRowDisplayState]
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var visibleAlerts: [WidgetLargeAlertRailItem] {
+        alerts.prefix(visibleAlertCapacity).enumerated().map { index, alert in
+            WidgetLargeAlertRailItem(position: index, alert: alert)
+        }
+    }
+
+    private var overflowCount: Int {
+        max(0, alerts.count - visibleAlerts.count)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Self.rowSpacing) {
+            ForEach(visibleAlerts) { item in
+                WidgetLargeAlertRailRow(alert: item.alert)
+            }
+
+            if overflowCount > 0 {
+                Text("+\(overflowCount) more active alerts")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .padding(.leading, 8)
+                    .accessibilityLabel("\(overflowCount) more active alerts")
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minHeight: reservedStackHeight, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var reservedStackHeight: CGFloat {
+        (Self.rowMinimumHeight * CGFloat(visibleAlertCapacity))
+            + (Self.rowSpacing * CGFloat(visibleAlertCapacity - 1))
+    }
+
+    private var visibleAlertCapacity: Int {
+        dynamicTypeSize.isAccessibilitySize ? 1 : Self.visibleAlertCapacity
+    }
+}
+
+private struct WidgetLargeAlertRailItem: Identifiable {
+    let position: Int
+    let alert: WidgetSelectedAlertRowDisplayState
+
+    var id: Int { position }
+}
+
+private struct WidgetLargeAlertRailRow: View {
+    let alert: WidgetSelectedAlertRowDisplayState
+
+    private var style: WidgetAlertVisualStyle {
+        WidgetAlertVisualStyle.style(for: alert)
+    }
+
+    private var lifecycleLine: String {
+        guard let validEnd = alert.validEnd else {
+            return alert.typeLabel
+        }
+
+        return "\(alert.typeLabel) · Ends \(validEnd.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var accessibilityLabel: String {
+        "\(alert.title). \(lifecycleLine)."
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 9) {
+            Capsule(style: .continuous)
+                .fill(style.tint)
+                .frame(width: 3)
+                .accessibilityHidden(true)
+
+            Image(systemName: style.icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(style.tint)
+                .frame(width: 18)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(alert.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+
+                Text(lifecycleLine)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .frame(minHeight: WidgetLargeAlertRailStack.rowMinimumHeight)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.primary.opacity(0.065))
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
     }
 }

@@ -103,6 +103,12 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
+#Preview("Local Awareness Large / 2 Alerts", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.twoAlerts)
+}
+
 #Preview("Combined Medium / Multiple Alerts", as: .systemMedium) {
     SkyAwareCombinedWidget()
 } timeline: {
@@ -113,6 +119,12 @@ import WidgetKit
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.threeAlerts)
+}
+
+#Preview("Local Awareness Large / Overflow", as: .systemLarge) {
+    SkyAwareCombinedWidget()
+} timeline: {
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
 }
 
 #Preview("Combined Medium / Quiet", as: .systemMedium) {

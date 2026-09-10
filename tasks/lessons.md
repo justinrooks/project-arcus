@@ -159,3 +159,9 @@
   values and highlight rather than increasing semantic color, which would make quiet states misleadingly loud.
 - When the request specifically targets the background, adjust only the atmospheric base layer and preserve text,
   icon, and semantic-tint values so readability improves without changing the information hierarchy.
+
+## 2026-09-10
+
+- For bounded widget alert stacks, reserve the full readable-capacity footprint and top-align shorter collections.
+  Apply the reserved frame outside a vertically fixed inner stack; otherwise SwiftUI proposes the spare height to a
+  lone row and expands its surface. Confirm the rendered rail behavior in Preview before declaring the layout fixed.
