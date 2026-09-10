@@ -37,9 +37,11 @@ struct WidgetLargeAwarenessView: View {
 
             Spacer(minLength: 8)
 
-            // Reserved for the risk context footer introduced in #531.
-            Color.clear
-                .frame(height: 44)
+            WidgetLargeRiskContextFooter(
+                stormState: snapshot.stormRisk,
+                severeState: snapshot.severeRisk
+            )
+            .padding(.top, 8)
         }
         .padding(16)
     }
@@ -115,7 +117,25 @@ struct WidgetLargeAwarenessView: View {
     }
 
     private var freshness: WidgetFreshnessState {
-        snapshot.alertFreshness ?? snapshot.freshness
+        guard let alertFreshness = snapshot.alertFreshness else {
+            return snapshot.freshness
+        }
+
+        guard snapshot.freshness.state == .fresh else {
+            return snapshot.freshness
+        }
+
+        guard alertFreshness.state == .fresh else {
+            return alertFreshness
+        }
+
+        guard let riskTimestamp = snapshot.freshness.timestamp,
+              let alertTimestamp = alertFreshness.timestamp
+        else {
+            return snapshot.freshness
+        }
+
+        return riskTimestamp <= alertTimestamp ? snapshot.freshness : alertFreshness
     }
 
     private var locationSummaryLine: String {
@@ -159,18 +179,25 @@ private struct WidgetLargeAlertRailStack: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.rowSpacing) {
-            ForEach(visibleAlerts) { item in
-                WidgetLargeAlertRailRow(alert: item.alert)
-            }
+        Group {
+            if alerts.isEmpty {
+                WidgetLargeQuietAwarenessState()
+            } else {
+                VStack(alignment: .leading, spacing: Self.rowSpacing) {
+                    ForEach(visibleAlerts) { item in
+                        WidgetLargeAlertRailRow(alert: item.alert)
+                    }
 
-            if overflowCount > 0 {
-                Text("+\(overflowCount) more active alerts")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .padding(.leading, 8)
-                    .accessibilityLabel("\(overflowCount) more active alerts")
+                    if overflowCount > 0 {
+                        Text("+\(overflowCount) more active alerts")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .padding(.leading, 8)
+                            .padding(.bottom, 8)
+                            .accessibilityLabel("\(overflowCount) more active alerts")
+                    }
+                }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -185,6 +212,82 @@ private struct WidgetLargeAlertRailStack: View {
 
     private var visibleAlertCapacity: Int {
         dynamicTypeSize.isAccessibilitySize ? 1 : Self.visibleAlertCapacity
+    }
+}
+
+private struct WidgetLargeQuietAwarenessState: View {
+    private let quietTint = Color(red: 0.40, green: 0.75, blue: 0.40)
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(quietTint)
+                .frame(width: 6, height: 6)
+                .accessibilityHidden(true)
+
+            Text("No local alerts")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.primary)
+        }
+        .padding(.top, 8)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("No local alerts")
+    }
+}
+
+private struct WidgetLargeRiskContextFooter: View {
+    let stormState: WidgetRiskDisplayState
+    let severeState: WidgetRiskDisplayState
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 12) {
+            WidgetLargeRiskContextColumn(
+                title: "Storm Risk",
+                state: stormState,
+                style: .style(for: .storm, severity: stormState.severity)
+            )
+
+            WidgetLargeRiskContextColumn(
+                title: "Severe Risk",
+                state: severeState,
+                style: .style(for: .severe, severity: severeState.severity)
+            )
+        }
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+private struct WidgetLargeRiskContextColumn: View {
+    let title: String
+    let state: WidgetRiskDisplayState
+    let style: WidgetRiskVisualStyle
+
+    private var accent: Color {
+        state == .placeholder ? .secondary : style.tint
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 7) {
+            Capsule(style: .continuous)
+                .fill(accent)
+                .frame(width: 3, height: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                Text(state.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), \(state.label)")
     }
 }
 
