@@ -142,28 +142,39 @@ enum WidgetPreviewFixtures {
                 title: "Tornado Warning",
                 typeLabel: "Tornado Warning",
                 severity: 6,
-                issuedAt: now.addingTimeInterval(-360)
+                issuedAt: now.addingTimeInterval(-360),
+                validEnd: now.addingTimeInterval(3_600)
             ),
             WidgetSelectedAlertRowDisplayState(
                 title: "Severe Thunderstorm Warning",
                 typeLabel: "Severe Thunderstorm Warning",
                 severity: 4,
-                issuedAt: now.addingTimeInterval(-480)
+                issuedAt: now.addingTimeInterval(-480),
+                validEnd: now.addingTimeInterval(5_400)
             ),
             WidgetSelectedAlertRowDisplayState(
                 title: "Tornado Watch",
                 typeLabel: "Tornado Watch",
                 severity: 5,
-                issuedAt: now.addingTimeInterval(-600)
+                issuedAt: now.addingTimeInterval(-600),
+                validEnd: now.addingTimeInterval(7_200)
             ),
             WidgetSelectedAlertRowDisplayState(
                 title: "Flood Watch",
                 typeLabel: "Flood Watch",
                 severity: 3,
-                issuedAt: now.addingTimeInterval(-720)
+                issuedAt: now.addingTimeInterval(-720),
+                validEnd: now.addingTimeInterval(9_000)
+            ),
+            WidgetSelectedAlertRowDisplayState(
+                title: "Mesoscale Discussion 2032",
+                typeLabel: "Mesoscale Discussion",
+                severity: 2,
+                issuedAt: now.addingTimeInterval(-840),
+                validEnd: now.addingTimeInterval(10_800)
             )
         ],
-        hiddenAlertCount: 3,
+        hiddenAlertCount: 4,
         freshness: WidgetFreshnessState(timestamp: now.addingTimeInterval(-180), state: .fresh),
         availability: .available,
         locationSummary: "Wichita Falls, TX",
@@ -183,6 +194,19 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
+    static let twoAlerts = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: multipleAlerts.stormRisk,
+        severeRisk: multipleAlerts.severeRisk,
+        selectedAlert: multipleAlerts.selectedAlert,
+        activeAlerts: Array(multipleAlerts.activeAlerts.prefix(2)),
+        hiddenAlertCount: 1,
+        freshness: multipleAlerts.freshness,
+        availability: .available,
+        locationSummary: multipleAlerts.locationSummary,
+        destination: .summary
+    )
+
     static let all: [WidgetSnapshot] = [
         normal,
         noAlert,
@@ -192,6 +216,7 @@ enum WidgetPreviewFixtures {
         stale,
         unavailable,
         multipleAlerts,
+        twoAlerts,
         threeAlerts,
         stormRiskPlaceholder,
         severeRiskPlaceholder,
