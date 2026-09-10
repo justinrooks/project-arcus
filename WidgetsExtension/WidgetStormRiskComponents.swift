@@ -11,7 +11,7 @@ struct WidgetStormRiskSmallView: View {
                 WidgetUnavailableStateView(message: message)
                     .padding(14)
             } else {
-                WidgetStormRiskBadgeCard(state: snapshot.stormRisk, freshness: snapshot.freshness)
+                WidgetStormRiskBadgeCard(state: snapshot.stormRisk)
             }
         }
         .containerBackground(for: .widget) {
@@ -119,7 +119,6 @@ struct WidgetStormRiskSmallView: View {
 
 private struct WidgetStormRiskBadgeCard: View {
     let state: WidgetRiskDisplayState
-    let freshness: WidgetFreshnessState
     @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetRiskVisualStyle {
@@ -140,11 +139,6 @@ private struct WidgetStormRiskBadgeCard: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-
-                    if freshness.state == .stale {
-                        WidgetFreshnessLineView(freshness: freshness)
-                            .padding(.top, 4)
-                    }
 
                     Spacer(minLength: 10)
 
@@ -229,7 +223,7 @@ private struct WidgetStormRiskBadgeCard: View {
     }
 
     private var accessibilitySummary: String {
-        "Storm Risk, \(state.label), \(WidgetFreshnessFormatter.line(for: freshness))"
+        "Storm Risk, \(state.label)"
     }
 
 }

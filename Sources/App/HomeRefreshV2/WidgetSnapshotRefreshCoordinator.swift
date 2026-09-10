@@ -5,7 +5,8 @@ import WidgetKit
 
 struct WidgetSnapshotRefreshInput: Sendable {
     let generatedAt: Date
-    let snapshotTimestamp: Date?
+    let riskSnapshotTimestamp: Date?
+    let alertSnapshotTimestamp: Date?
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let alerts: [AlertDTO]
@@ -15,6 +16,8 @@ struct WidgetSnapshotRefreshInput: Sendable {
     init(
         generatedAt: Date,
         snapshotTimestamp: Date? = nil,
+        riskSnapshotTimestamp: Date? = nil,
+        alertSnapshotTimestamp: Date? = nil,
         stormRisk: StormRiskLevel?,
         severeRisk: SevereWeatherThreat?,
         alerts: [AlertDTO],
@@ -22,12 +25,17 @@ struct WidgetSnapshotRefreshInput: Sendable {
         locationSummary: String?
     ) {
         self.generatedAt = generatedAt
-        self.snapshotTimestamp = snapshotTimestamp
+        self.riskSnapshotTimestamp = riskSnapshotTimestamp ?? snapshotTimestamp
+        self.alertSnapshotTimestamp = alertSnapshotTimestamp ?? snapshotTimestamp
         self.stormRisk = stormRisk
         self.severeRisk = severeRisk
         self.alerts = alerts
         self.mesos = mesos
         self.locationSummary = locationSummary
+    }
+
+    var snapshotTimestamp: Date? {
+        alertSnapshotTimestamp ?? riskSnapshotTimestamp
     }
 }
 
@@ -63,7 +71,8 @@ struct WidgetSnapshotRefreshCoordinator: WidgetSnapshotRefreshing {
         let snapshot = builder.build(
             from: .init(
                 generatedAt: input.generatedAt,
-                snapshotTimestamp: input.snapshotTimestamp ?? input.generatedAt,
+                riskSnapshotTimestamp: input.riskSnapshotTimestamp ?? input.generatedAt,
+                alertSnapshotTimestamp: input.alertSnapshotTimestamp,
                 availability: .available,
                 stormRisk: input.stormRisk,
                 severeRisk: input.severeRisk,

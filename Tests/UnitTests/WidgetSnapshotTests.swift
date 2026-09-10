@@ -41,6 +41,33 @@ struct WidgetSnapshotTests {
         #expect(String(decoding: data, as: UTF8.self) == String(decoding: reEncoded, as: UTF8.self))
     }
 
+    @Test("decodes legacy snapshot without alert freshness")
+    func decodesLegacySnapshot_withoutAlertFreshness() throws {
+        let snapshot = WidgetSnapshot(
+            generatedAt: iso("2026-05-01T12:00:00Z"),
+            stormRisk: .init(label: "Slight Risk", severity: 3),
+            severeRisk: .init(label: "Tornado", severity: 3),
+            selectedAlert: nil,
+            hiddenAlertCount: 0,
+            freshness: .from(timestamp: iso("2026-05-01T11:55:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            alertFreshness: .from(timestamp: iso("2026-05-01T11:59:00Z"), now: iso("2026-05-01T12:00:00Z")),
+            availability: .available
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let currentPayload = try #require(JSONSerialization.jsonObject(with: encoder.encode(snapshot)) as? [String: Any])
+        var legacyPayload = currentPayload
+        legacyPayload.removeValue(forKey: "alertFreshness")
+
+        let legacyData = try JSONSerialization.data(withJSONObject: legacyPayload)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(WidgetSnapshot.self, from: legacyData)
+
+        #expect(decoded.freshness == snapshot.freshness)
+        #expect(decoded.alertFreshness == nil)
+    }
+
     @Test("stale threshold marks snapshots stale at 30 minutes")
     func staleThreshold_isThirtyMinutes() {
         let updatedAt = iso("2026-05-01T10:00:00Z")
@@ -94,7 +121,7 @@ struct WidgetSnapshotTests {
             ),
             hiddenAlertCount: 2,
             freshness: .from(
-                timestamp: iso("2026-05-01T11:20:00Z"),
+                timestamp: iso("2026-05-01T03:00:00Z"),
                 now: iso("2026-05-01T11:25:00Z")
             ),
             availability: .available
@@ -193,6 +220,62 @@ struct WidgetSnapshotRelevanceTests {
         #expect((severe?.score ?? .greatestFiniteMagnitude) < warning.score)
     }
 
+    @Test("risk-only relevance ignores alerts and the other risk domain")
+    func riskOnlyRelevance_isScopedToVisibleRisk() {
+        let snapshot = makeSnapshot(
+            alertType: "Tornado Warning",
+            stormSeverity: 0,
+            severeSeverity: 3
+        )
+
+        #expect(WidgetSnapshotRelevancePolicy.relevance(
+            for: snapshot,
+            surface: .stormRisk,
+            now: now
+        ) == nil)
+        #expect(WidgetSnapshotRelevancePolicy.relevance(
+            for: snapshot,
+            surface: .severeRisk,
+            now: now
+        )?.score == 40)
+    }
+
+    @Test("risk relevance uses the slow-product freshness cadence")
+    func riskRelevance_usesEightHourCadence() {
+        let snapshot = makeSnapshot(
+            stormSeverity: 3,
+            timestamp: now.addingTimeInterval(-31 * 60)
+        )
+
+        #expect(WidgetSnapshotRelevancePolicy.relevance(
+            for: snapshot,
+            surface: .stormRisk,
+            now: now
+        ) != nil)
+        #expect(WidgetSnapshotRelevancePolicy.relevance(
+            for: makeSnapshot(stormSeverity: 3, timestamp: now.addingTimeInterval(-8 * 60 * 60)),
+            surface: .stormRisk,
+            now: now
+        ) == nil)
+    }
+
+    @Test("combined relevance uses alert freshness independently from risk freshness")
+    func combinedRelevance_usesDomainSpecificFreshness() {
+        let snapshot = WidgetSnapshot(
+            generatedAt: now,
+            stormRisk: .init(label: "Enhanced Risk", severity: 4),
+            severeRisk: .init(label: "Threat", severity: 0),
+            selectedAlert: .init(title: "Tornado Warning", typeLabel: "Warning", severity: 5, issuedAt: now),
+            hiddenAlertCount: 0,
+            freshness: .init(timestamp: now, state: .fresh),
+            alertFreshness: .init(timestamp: now.addingTimeInterval(-WidgetFreshnessState.staleThreshold), state: .stale),
+            availability: .available
+        )
+
+        let relevance = WidgetSnapshotRelevancePolicy.relevance(for: snapshot, now: now)
+        #expect(relevance?.score == 30)
+    }
+
     @Test("stale and expired states have no relevance")
     func staleAndExpired_haveNoRelevance() {
         let stale = makeSnapshot(freshness: .stale)
@@ -230,10 +313,17 @@ struct WidgetSnapshotRelevanceTests {
             stormRisk: .init(label: "Risk", severity: stormSeverity),
             severeRisk: .init(label: "Threat", severity: severeSeverity),
             selectedAlert: alertType.map {
-                .init(title: $0, typeLabel: $0, severity: 1, issuedAt: now, validEnd: validEnd)
+                .init(
+                    title: $0,
+                    typeLabel: $0,
+                    severity: 1,
+                    issuedAt: now,
+                    validEnd: validEnd ?? now.addingTimeInterval(60 * 60)
+                )
             },
             hiddenAlertCount: 0,
             freshness: .init(timestamp: timestamp ?? now, state: freshness),
+            alertFreshness: alertType.map { _ in .init(timestamp: now, state: freshness) },
             availability: .available
         )
     }

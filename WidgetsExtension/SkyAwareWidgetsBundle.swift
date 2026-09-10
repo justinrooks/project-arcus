@@ -130,7 +130,7 @@ private struct StormRiskProvider: TimelineProvider {
     }
 
     private func timelineEntry(snapshot: WidgetSnapshot, now: Date, family: WidgetFamily) -> Entry {
-        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, family: family, now: now))
+        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, surface: .stormRisk, family: family, now: now))
     }
 }
 
@@ -171,7 +171,7 @@ private struct SevereRiskProvider: TimelineProvider {
     }
 
     private func timelineEntry(snapshot: WidgetSnapshot, now: Date, family: WidgetFamily) -> Entry {
-        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, family: family, now: now))
+        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, surface: .severeRisk, family: family, now: now))
     }
 }
 
@@ -212,7 +212,7 @@ private struct CombinedProvider: TimelineProvider {
     }
 
     private func timelineEntry(snapshot: WidgetSnapshot, now: Date, family: WidgetFamily) -> Entry {
-        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, family: family, now: now))
+        Entry(date: now, snapshot: snapshot, relevance: widgetRelevance(for: snapshot, surface: .combined, family: family, now: now))
     }
 }
 
@@ -230,11 +230,16 @@ struct Entry: TimelineEntry {
 
 private func widgetRelevance(
     for snapshot: WidgetSnapshot,
+    surface: WidgetSnapshotRelevancePolicy.Surface,
     family: WidgetFamily,
     now: Date
 ) -> TimelineEntryRelevance? {
     guard family == .systemSmall || family == .systemMedium || family == .systemLarge,
-          let relevance = WidgetSnapshotRelevancePolicy.relevance(for: snapshot, now: now)
+          let relevance = WidgetSnapshotRelevancePolicy.relevance(
+              for: snapshot,
+              surface: surface,
+              now: now
+          )
     else {
         return nil
     }

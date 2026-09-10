@@ -227,12 +227,12 @@ struct WidgetSnapshotBuilderTests {
         #expect(snapshot.hiddenAlertCount == 0)
     }
 
-    @Test("stale state uses 30 minute threshold")
+    @Test("stale state uses eight hour risk threshold")
     func staleState() {
         let builder = WidgetSnapshotBuilder()
         let input = WidgetSnapshotBuilder.Input(
             generatedAt: now,
-            snapshotTimestamp: iso("2026-05-01T11:30:00Z"),
+            snapshotTimestamp: iso("2026-05-01T03:00:00Z"),
             availability: .available,
             stormRisk: .marginal,
             severeRisk: .wind(probability: 0.1),

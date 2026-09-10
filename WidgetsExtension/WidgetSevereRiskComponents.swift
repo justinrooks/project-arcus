@@ -11,7 +11,7 @@ struct WidgetSevereRiskSmallView: View {
                 WidgetUnavailableStateView(message: message)
                     .padding(14)
             } else {
-                WidgetSevereRiskBadgeCard(state: snapshot.severeRisk, freshness: snapshot.freshness)
+                WidgetSevereRiskBadgeCard(state: snapshot.severeRisk)
             }
         }
         .containerBackground(for: .widget) {
@@ -119,7 +119,6 @@ struct WidgetSevereRiskSmallView: View {
 
 private struct WidgetSevereRiskBadgeCard: View {
     let state: WidgetRiskDisplayState
-    let freshness: WidgetFreshnessState
     @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetRiskVisualStyle {
@@ -155,11 +154,6 @@ private struct WidgetSevereRiskBadgeCard: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-
-                    if freshness.state == .stale {
-                        WidgetFreshnessLineView(freshness: freshness)
-                            .padding(.top, 4)
-                    }
 
                     Spacer(minLength: 10)
 
@@ -221,13 +215,13 @@ private struct WidgetSevereRiskBadgeCard: View {
 
     private var accessibilitySummary: String {
         if state.severity == 0 {
-            return "Severe Risk, no active threats, \(WidgetFreshnessFormatter.line(for: freshness))"
+            return "Severe Risk, no active threats"
         }
 
         if let subtitle {
-            return "Severe Risk, \(state.label), \(subtitle), \(WidgetFreshnessFormatter.line(for: freshness))"
+            return "Severe Risk, \(state.label), \(subtitle)"
         }
 
-        return "Severe Risk, \(state.label), \(WidgetFreshnessFormatter.line(for: freshness))"
+        return "Severe Risk, \(state.label)"
     }
 }

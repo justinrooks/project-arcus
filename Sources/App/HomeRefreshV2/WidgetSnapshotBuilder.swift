@@ -3,7 +3,8 @@ import Foundation
 struct WidgetSnapshotBuilder {
     struct Input: Sendable {
         let generatedAt: Date
-        let snapshotTimestamp: Date?
+        let riskSnapshotTimestamp: Date?
+        let alertSnapshotTimestamp: Date?
         let availability: WidgetAvailabilityState
         let stormRisk: StormRiskLevel?
         let severeRisk: SevereWeatherThreat?
@@ -13,7 +14,9 @@ struct WidgetSnapshotBuilder {
 
         init(
             generatedAt: Date,
-            snapshotTimestamp: Date?,
+            snapshotTimestamp: Date? = nil,
+            riskSnapshotTimestamp: Date? = nil,
+            alertSnapshotTimestamp: Date? = nil,
             availability: WidgetAvailabilityState,
             stormRisk: StormRiskLevel?,
             severeRisk: SevereWeatherThreat?,
@@ -22,7 +25,8 @@ struct WidgetSnapshotBuilder {
             locationSummary: String? = nil
         ) {
             self.generatedAt = generatedAt
-            self.snapshotTimestamp = snapshotTimestamp
+            self.riskSnapshotTimestamp = riskSnapshotTimestamp ?? snapshotTimestamp
+            self.alertSnapshotTimestamp = alertSnapshotTimestamp ?? snapshotTimestamp
             self.availability = availability
             self.stormRisk = stormRisk
             self.severeRisk = severeRisk
@@ -36,12 +40,13 @@ struct WidgetSnapshotBuilder {
         if case .unavailable = input.availability {
             return WidgetSnapshot.unavailable(
                 generatedAt: input.generatedAt,
-                timestamp: input.snapshotTimestamp,
+                timestamp: input.riskSnapshotTimestamp,
                 destination: .summary
             )
         }
 
-        let timestamp = input.snapshotTimestamp ?? input.generatedAt
+        let riskTimestamp = input.riskSnapshotTimestamp ?? input.generatedAt
+        let alertTimestamp = input.alertSnapshotTimestamp
         let activeAlerts = activeAlerts(alerts: input.alerts, mesos: input.mesos, now: now)
         let selectedAlert = selectHighestPriorityAlert(from: activeAlerts)
 
@@ -51,7 +56,14 @@ struct WidgetSnapshotBuilder {
             severeRisk: severeRiskDisplay(from: input.severeRisk),
             selectedAlert: selectedAlert?.displayState,
             hiddenAlertCount: max(0, activeAlerts.count - 1),
-            freshness: .from(timestamp: timestamp, now: now),
+            freshness: .from(
+                timestamp: riskTimestamp,
+                now: now,
+                staleAfter: WidgetFreshnessPolicy.riskStaleAfter
+            ),
+            alertFreshness: alertTimestamp.map {
+                .from(timestamp: $0, now: now, staleAfter: WidgetFreshnessPolicy.alertStaleAfter)
+            },
             availability: .available,
             locationSummary: input.locationSummary,
             destination: .summary

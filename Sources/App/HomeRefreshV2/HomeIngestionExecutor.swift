@@ -229,6 +229,17 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let reconcilesRejectedDomains: Bool
         let shouldRefreshRiskWidgets: Bool
 
+        var convectiveFreshnessTimestamp: Date? {
+            switch convectiveSource {
+            case .forecast(let issued, _, _):
+                issued
+            case .acceptedAllClear(let date):
+                date
+            case nil:
+                nil
+            }
+        }
+
         var shouldUpdateProjection: Bool {
             updatesConvective || updatesFire
         }
@@ -908,15 +919,16 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
             return
         }
-        guard let projection,
-              let hotSnapshotTimestamp = projection.lastHotAlertsLoadAt else {
+        guard let projection else {
             return
         }
         try widgetSnapshotRefresher.refresh(
             scope: scope,
             input: .init(
                 generatedAt: loadedAt,
-                snapshotTimestamp: hotSnapshotTimestamp,
+                riskSnapshotTimestamp: slowProductDecision.convectiveFreshnessTimestamp
+                    ?? projection.lastSlowProductsLoadAt,
+                alertSnapshotTimestamp: projection.lastHotAlertsLoadAt,
                 stormRisk: snapshot.stormRisk,
                 severeRisk: snapshot.severeRisk,
                 alerts: projection.activeAlerts,
