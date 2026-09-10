@@ -2216,6 +2216,7 @@ struct HomeRefreshPipelineTests {
         let container = try TestStore.container(for: [HomeProjection.self])
         let projectionStore = HomeProjectionStore(modelContainer: container)
         let context = makeContext()
+        let widgetRecorder = RecordingWidgetSnapshotRefresher()
 
         _ = try await projectionStore.updateSlowProducts(
             stormRisk: .slight,
@@ -2233,7 +2234,11 @@ struct HomeRefreshPipelineTests {
             mapSyncOutcome: .init(
                 convective: .accepted,
                 fire: .rejected,
-                convectiveSource: testMapSource(revision: 2)
+                convectiveSource: .forecast(
+                    issued: Date(timeIntervalSince1970: 300),
+                    valid: Date(timeIntervalSince1970: 310),
+                    expires: Date(timeIntervalSince1970: 390)
+                )
             ),
             stormRiskValue: .allClear,
             severeRiskValue: .allClear,
@@ -2249,7 +2254,7 @@ struct HomeRefreshPipelineTests {
                 locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
                 snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
                 projectionStore: projectionStore,
-                widgetSnapshotRefresher: nil
+                widgetSnapshotRefresher: widgetRecorder
             )
         )
 
@@ -2267,6 +2272,7 @@ struct HomeRefreshPipelineTests {
         #expect(projection.severeRisk == .allClear)
         #expect(projection.fireRisk == .critical)
         #expect(projection.lastSlowProductsLoadAt == Date(timeIntervalSince1970: 200))
+        #expect(widgetRecorder.lastInput()?.riskSnapshotTimestamp == Date(timeIntervalSince1970: 300))
 
         await spc.configureMapSync(
             outcome: acceptedMapSyncOutcome(revision: 3),
