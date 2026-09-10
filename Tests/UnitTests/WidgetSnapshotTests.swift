@@ -193,6 +193,43 @@ struct WidgetSnapshotRelevanceTests {
         #expect((severe?.score ?? .greatestFiniteMagnitude) < warning.score)
     }
 
+    @Test("risk-only relevance ignores alerts and the other risk domain")
+    func riskOnlyRelevance_isScopedToVisibleRisk() {
+        let snapshot = makeSnapshot(
+            alertType: "Tornado Warning",
+            stormSeverity: 0,
+            severeSeverity: 3
+        )
+
+        #expect(WidgetSnapshotRelevancePolicy.relevance(
+            for: snapshot,
+            surface: .stormRisk,
+            now: now
+        ) == nil)
+        #expect(WidgetSnapshotRelevancePolicy.relevance(
+            for: snapshot,
+            surface: .severeRisk,
+            now: now
+        )?.score == 40)
+    }
+
+    @Test("combined relevance uses alert freshness independently from risk freshness")
+    func combinedRelevance_usesDomainSpecificFreshness() {
+        let snapshot = WidgetSnapshot(
+            generatedAt: now,
+            stormRisk: .init(label: "Enhanced Risk", severity: 4),
+            severeRisk: .init(label: "Threat", severity: 0),
+            selectedAlert: .init(title: "Tornado Warning", typeLabel: "Warning", severity: 5, issuedAt: now),
+            hiddenAlertCount: 0,
+            freshness: .init(timestamp: now, state: .fresh),
+            alertFreshness: .init(timestamp: now.addingTimeInterval(-WidgetFreshnessState.staleThreshold), state: .stale),
+            availability: .available
+        )
+
+        let relevance = WidgetSnapshotRelevancePolicy.relevance(for: snapshot, now: now)
+        #expect(relevance?.score == 30)
+    }
+
     @Test("stale and expired states have no relevance")
     func staleAndExpired_haveNoRelevance() {
         let stale = makeSnapshot(freshness: .stale)

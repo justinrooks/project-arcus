@@ -908,15 +908,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         if case .activeAlertProjection = scope, acceptsHotFeedSnapshot == false {
             return
         }
-        guard let projection,
-              let hotSnapshotTimestamp = projection.lastHotAlertsLoadAt else {
+        guard let projection else {
             return
         }
         try widgetSnapshotRefresher.refresh(
             scope: scope,
             input: .init(
                 generatedAt: loadedAt,
-                snapshotTimestamp: hotSnapshotTimestamp,
+                riskSnapshotTimestamp: projection.lastSlowProductsLoadAt,
+                alertSnapshotTimestamp: projection.lastHotAlertsLoadAt,
                 stormRisk: snapshot.stormRisk,
                 severeRisk: snapshot.severeRisk,
                 alerts: projection.activeAlerts,

@@ -205,9 +205,9 @@ private struct WidgetCombinedLargeCard: View {
 
                         Spacer(minLength: 8)
 
-                        WidgetFreshnessLineView(freshness: snapshot.freshness)
-                            .font(.caption2.weight(snapshot.freshness.state == .stale ? .semibold : .medium))
-                            .foregroundStyle(snapshot.freshness.state == .stale ? .orange : .secondary)
+                        WidgetFreshnessLineView(freshness: combinedFreshness)
+                            .font(.caption2.weight(combinedFreshness.state == .stale ? .semibold : .medium))
+                            .foregroundStyle(combinedFreshness.state == .stale ? .orange : .secondary)
                     }
                 }
                 .padding(.horizontal, isMediumFamily ? 14 : 16)
@@ -272,8 +272,12 @@ private struct WidgetCombinedLargeCard: View {
 
         parts.append(locationSummaryLine)
 
-        parts.append(WidgetFreshnessFormatter.line(for: snapshot.freshness))
+        parts.append(WidgetFreshnessFormatter.line(for: combinedFreshness))
         return parts.joined(separator: ". ")
+    }
+
+    private var combinedFreshness: WidgetFreshnessState {
+        snapshot.alertFreshness ?? snapshot.freshness
     }
 }
 

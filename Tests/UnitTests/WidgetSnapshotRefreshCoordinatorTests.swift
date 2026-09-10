@@ -38,6 +38,33 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         ])
     }
 
+    @Test("risk and alert freshness remain domain-specific")
+    func refresh_preservesDomainSpecificFreshness() throws {
+        let sandbox = try makeSandboxDirectory()
+        let store = WidgetSnapshotStore(directoryURL: sandbox)
+        let riskLoadedAt = Date(timeIntervalSince1970: 1_600)
+        let alertsLoadedAt = Date(timeIntervalSince1970: 1_700)
+        let coordinator = WidgetSnapshotRefreshCoordinator(store: store)
+
+        try coordinator.refresh(
+            scope: .riskOrLocationProjection,
+            input: .init(
+                generatedAt: alertsLoadedAt,
+                riskSnapshotTimestamp: riskLoadedAt,
+                alertSnapshotTimestamp: alertsLoadedAt,
+                stormRisk: .enhanced,
+                severeRisk: .allClear,
+                alerts: [],
+                mesos: [],
+                locationSummary: nil
+            )
+        )
+
+        let snapshot = try #require(store.load().snapshot)
+        #expect(snapshot.freshness.timestamp == riskLoadedAt)
+        #expect(snapshot.alertFreshness?.timestamp == alertsLoadedAt)
+    }
+
     @Test("alert projection writes snapshot and reloads combined kind only")
     func alertProjection_writesSnapshotAndReloadsCombinedOnly() throws {
         let sandbox = try makeSandboxDirectory()

@@ -9,6 +9,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
     let selectedAlert: WidgetSelectedAlertRowDisplayState?
     let hiddenAlertCount: Int
     let freshness: WidgetFreshnessState
+    let alertFreshness: WidgetFreshnessState?
     let availability: WidgetAvailabilityState
     let locationSummary: String?
     let destination: WidgetSummaryDestination
@@ -20,6 +21,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         selectedAlert: WidgetSelectedAlertRowDisplayState?,
         hiddenAlertCount: Int,
         freshness: WidgetFreshnessState,
+        alertFreshness: WidgetFreshnessState? = nil,
         availability: WidgetAvailabilityState,
         locationSummary: String? = nil,
         destination: WidgetSummaryDestination = .summary
@@ -30,6 +32,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
         self.selectedAlert = selectedAlert
         self.hiddenAlertCount = max(0, hiddenAlertCount)
         self.freshness = freshness
+        self.alertFreshness = alertFreshness
         self.availability = availability
         self.locationSummary = locationSummary
         self.destination = destination
@@ -47,6 +50,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             selectedAlert: nil,
             hiddenAlertCount: 0,
             freshness: WidgetFreshnessState(timestamp: timestamp, state: .unavailable),
+            alertFreshness: timestamp.map { WidgetFreshnessState(timestamp: $0, state: .unavailable) },
             availability: .unavailable(message: unavailableMessage),
             destination: destination
         )
@@ -62,6 +66,11 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             normalizedFreshness = .from(timestamp: timestamp, now: now)
         } else {
             normalizedFreshness = freshness
+        }
+
+        let normalizedAlertFreshness = alertFreshness.map { freshness in
+            guard let timestamp = freshness.timestamp else { return freshness }
+            return .from(timestamp: timestamp, now: now)
         }
 
         let activeSelectedAlert: WidgetSelectedAlertRowDisplayState?
@@ -81,6 +90,7 @@ struct WidgetSnapshot: Codable, Sendable, Equatable {
             selectedAlert: activeSelectedAlert,
             hiddenAlertCount: activeHiddenAlertCount,
             freshness: normalizedFreshness,
+            alertFreshness: normalizedAlertFreshness,
             availability: availability,
             locationSummary: locationSummary,
             destination: destination
@@ -99,27 +109,39 @@ enum WidgetSnapshotRelevancePolicy {
     private static let watchScore: Float = 75
     private static let mesoscaleScore: Float = 50
 
+    enum Surface: Sendable {
+        case stormRisk
+        case severeRisk
+        case combined
+    }
+
     static func relevance(for snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshotRelevance? {
-        guard case .available = snapshot.availability,
-              snapshot.freshness.state == .fresh,
-              !snapshot.freshness.isStale(at: now)
-        else {
-            return nil
+        relevance(for: snapshot, surface: .combined, now: now)
+    }
+
+    static func relevance(
+        for snapshot: WidgetSnapshot,
+        surface: Surface,
+        now: Date
+    ) -> WidgetSnapshotRelevance? {
+        guard case .available = snapshot.availability else { return nil }
+
+        switch surface {
+        case .stormRisk:
+            return riskRelevance(
+                score: stormRiskScore(snapshot.stormRisk),
+                freshness: snapshot.freshness,
+                now: now
+            )
+        case .severeRisk:
+            return riskRelevance(
+                score: severeRiskScore(snapshot.severeRisk),
+                freshness: snapshot.freshness,
+                now: now
+            )
+        case .combined:
+            return combinedRelevance(for: snapshot, now: now)
         }
-
-        let alertScore = selectedAlertScore(snapshot.selectedAlert) ?? 0
-        let riskScore = elevatedRiskScore(snapshot) ?? 0
-        let score = max(alertScore, riskScore)
-        guard score > 0 else {
-            return nil
-        }
-
-        let freshnessDuration = freshnessDuration(snapshot.freshness, now: now)
-        let alertDuration = selectedAlertDuration(snapshot.selectedAlert, now: now)
-        let duration = min(freshnessDuration, alertDuration ?? maximumDuration)
-        guard duration > 0 else { return nil }
-
-        return WidgetSnapshotRelevance(score: score, duration: duration)
     }
 
     private static func selectedAlertScore(_ alert: WidgetSelectedAlertRowDisplayState?) -> Float? {
@@ -131,15 +153,41 @@ enum WidgetSnapshotRelevancePolicy {
         return nil
     }
 
-    private static func elevatedRiskScore(_ snapshot: WidgetSnapshot) -> Float? {
-        let stormScore = snapshot.stormRisk.severity > 0
-            ? 10 + (Float(snapshot.stormRisk.severity) * 5)
-            : 0
-        let severeScore = snapshot.severeRisk.severity > 0
-            ? 10 + (Float(snapshot.severeRisk.severity) * 10)
-            : 0
-        let score = max(stormScore, severeScore)
-        return score > 0 ? score : nil
+    private static func stormRiskScore(_ risk: WidgetRiskDisplayState) -> Float? {
+        risk.severity > 0 ? 10 + (Float(risk.severity) * 5) : nil
+    }
+
+    private static func severeRiskScore(_ risk: WidgetRiskDisplayState) -> Float? {
+        risk.severity > 0 ? 10 + (Float(risk.severity) * 10) : nil
+    }
+
+    private static func riskRelevance(
+        score: Float?,
+        freshness: WidgetFreshnessState,
+        now: Date
+    ) -> WidgetSnapshotRelevance? {
+        guard let score, isFresh(freshness, now: now) else { return nil }
+        let duration = freshnessDuration(freshness, now: now)
+        return duration > 0 ? WidgetSnapshotRelevance(score: score, duration: duration) : nil
+    }
+
+    private static func combinedRelevance(for snapshot: WidgetSnapshot, now: Date) -> WidgetSnapshotRelevance? {
+        let alertFreshness = snapshot.alertFreshness ?? snapshot.freshness
+        let alertRelevance: WidgetSnapshotRelevance? = {
+            guard let score = selectedAlertScore(snapshot.selectedAlert),
+                  isFresh(alertFreshness, now: now),
+                  let duration = selectedAlertDuration(snapshot.selectedAlert, now: now)
+            else { return nil }
+            let boundedDuration = min(freshnessDuration(alertFreshness, now: now), duration)
+            return boundedDuration > 0 ? WidgetSnapshotRelevance(score: score, duration: boundedDuration) : nil
+        }()
+        let storm = riskRelevance(score: stormRiskScore(snapshot.stormRisk), freshness: snapshot.freshness, now: now)
+        let severe = riskRelevance(score: severeRiskScore(snapshot.severeRisk), freshness: snapshot.freshness, now: now)
+        return [alertRelevance, storm, severe].compactMap { $0 }.max { $0.score < $1.score }
+    }
+
+    private static func isFresh(_ freshness: WidgetFreshnessState, now: Date) -> Bool {
+        freshness.state == .fresh && !freshness.isStale(at: now)
     }
 
     private static func freshnessDuration(_ freshness: WidgetFreshnessState, now: Date) -> TimeInterval {
@@ -212,6 +260,29 @@ struct WidgetFreshnessState: Codable, Sendable, Equatable {
         }
 
         return now.timeIntervalSince(timestamp) >= staleAfter
+    }
+}
+
+extension WidgetSnapshot {
+    private enum CodingKeys: String, CodingKey {
+        case generatedAt, stormRisk, severeRisk, selectedAlert, hiddenAlertCount
+        case freshness, alertFreshness, availability, locationSummary, destination
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            generatedAt: try container.decode(Date.self, forKey: .generatedAt),
+            stormRisk: try container.decode(WidgetRiskDisplayState.self, forKey: .stormRisk),
+            severeRisk: try container.decode(WidgetRiskDisplayState.self, forKey: .severeRisk),
+            selectedAlert: try container.decodeIfPresent(WidgetSelectedAlertRowDisplayState.self, forKey: .selectedAlert),
+            hiddenAlertCount: try container.decode(Int.self, forKey: .hiddenAlertCount),
+            freshness: try container.decode(WidgetFreshnessState.self, forKey: .freshness),
+            alertFreshness: try container.decodeIfPresent(WidgetFreshnessState.self, forKey: .alertFreshness),
+            availability: try container.decode(WidgetAvailabilityState.self, forKey: .availability),
+            locationSummary: try container.decodeIfPresent(String.self, forKey: .locationSummary),
+            destination: try container.decode(WidgetSummaryDestination.self, forKey: .destination)
+        )
     }
 }
 
