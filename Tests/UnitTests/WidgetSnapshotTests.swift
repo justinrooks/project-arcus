@@ -313,7 +313,13 @@ struct WidgetSnapshotRelevanceTests {
             stormRisk: .init(label: "Risk", severity: stormSeverity),
             severeRisk: .init(label: "Threat", severity: severeSeverity),
             selectedAlert: alertType.map {
-                .init(title: $0, typeLabel: $0, severity: 1, issuedAt: now, validEnd: validEnd)
+                .init(
+                    title: $0,
+                    typeLabel: $0,
+                    severity: 1,
+                    issuedAt: now,
+                    validEnd: validEnd ?? now.addingTimeInterval(60 * 60)
+                )
             },
             hiddenAlertCount: 0,
             freshness: .init(timestamp: timestamp ?? now, state: freshness),
