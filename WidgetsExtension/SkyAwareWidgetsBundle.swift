@@ -265,9 +265,16 @@ struct SkyAwareSevereRiskWidgetView: View {
 
 struct SkyAwareCombinedWidgetView: View {
     let entry: Entry
+    @Environment(\.widgetFamily) private var widgetFamily
 
     var body: some View {
-        WidgetCombinedLargeView(snapshot: entry.snapshot)
+        Group {
+            if widgetFamily == .systemLarge {
+                WidgetLargeAwarenessView(snapshot: entry.snapshot)
+            } else {
+                WidgetCombinedMediumView(snapshot: entry.snapshot)
+            }
+        }
     }
 }
 
