@@ -97,7 +97,7 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
 }
 
-#Preview("Local Awareness Large / Normal", as: .systemLarge) {
+#Preview("Local Awareness Large / 1 Alert", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
     Entry(date: .now, snapshot: WidgetPreviewFixtures.normal)
@@ -109,10 +109,10 @@ import WidgetKit
     Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
 }
 
-#Preview("Local Awareness Large / Multiple Alerts", as: .systemLarge) {
+#Preview("Local Awareness Large / 3 Alerts", as: .systemLarge) {
     SkyAwareCombinedWidget()
 } timeline: {
-    Entry(date: .now, snapshot: WidgetPreviewFixtures.multipleAlerts)
+    Entry(date: .now, snapshot: WidgetPreviewFixtures.threeAlerts)
 }
 
 #Preview("Combined Medium / Quiet", as: .systemMedium) {

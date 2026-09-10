@@ -170,6 +170,19 @@ enum WidgetPreviewFixtures {
         destination: .summary
     )
 
+    static let threeAlerts = WidgetSnapshot(
+        generatedAt: now,
+        stormRisk: multipleAlerts.stormRisk,
+        severeRisk: multipleAlerts.severeRisk,
+        selectedAlert: multipleAlerts.selectedAlert,
+        activeAlerts: Array(multipleAlerts.activeAlerts.prefix(3)),
+        hiddenAlertCount: 0,
+        freshness: multipleAlerts.freshness,
+        availability: .available,
+        locationSummary: multipleAlerts.locationSummary,
+        destination: .summary
+    )
+
     static let all: [WidgetSnapshot] = [
         normal,
         noAlert,
@@ -179,6 +192,7 @@ enum WidgetPreviewFixtures {
         stale,
         unavailable,
         multipleAlerts,
+        threeAlerts,
         stormRiskPlaceholder,
         severeRiskPlaceholder,
         combinedPlaceholder
