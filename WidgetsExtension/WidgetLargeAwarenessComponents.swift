@@ -30,10 +30,10 @@ struct WidgetLargeAwarenessView: View {
                 .tracking(0.4)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .padding(.top, 14)
+                .padding(.top, 12)
 
             WidgetLargeAlertRailStack(alerts: activeAlerts)
-                .padding(.top, 12)
+                .padding(.top, 10)
 
             Spacer(minLength: 8)
 
@@ -41,7 +41,7 @@ struct WidgetLargeAwarenessView: View {
                 stormState: snapshot.stormRisk,
                 severeState: snapshot.severeRisk
             )
-            .padding(.top, 8)
+            .padding(.top, 10)
         }
         .padding(16)
     }
@@ -69,6 +69,17 @@ struct WidgetLargeAwarenessView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
+
+            if let primaryAlertTint {
+                LinearGradient(
+                    colors: [
+                        primaryAlertTint.opacity(alertSurfaceEmphasis),
+                        primaryAlertTint.opacity(0)
+                    ],
+                    startPoint: .topTrailing,
+                    endPoint: .center
+                )
+            }
 
             RadialGradient(
                 colors: [
@@ -105,6 +116,34 @@ struct WidgetLargeAwarenessView: View {
             return "1 ACTIVE ALERT"
         default:
             return "\(activeAlertCount) ACTIVE ALERTS"
+        }
+    }
+
+    private var primaryAlertTint: Color? {
+        activeAlerts.first.map { WidgetAlertVisualStyle.style(for: $0).tint }
+    }
+
+    private var alertSurfaceEmphasis: Double {
+        guard let primaryAlert = activeAlerts.first else { return 0 }
+
+        if primaryAlert.typeLabel.localizedLowercase == "warning" {
+            switch primaryAlert.severity {
+            case 5...:
+                return colorScheme == .dark ? 0.15 : 0.065
+            case 3...4:
+                return colorScheme == .dark ? 0.12 : 0.050
+            default:
+                return colorScheme == .dark ? 0.10 : 0.040
+            }
+        }
+
+        switch primaryAlert.severity {
+        case 5...:
+            return colorScheme == .dark ? 0.15 : 0.065
+        case 3...4:
+            return colorScheme == .dark ? 0.09 : 0.040
+        default:
+            return colorScheme == .dark ? 0.050 : 0.025
         }
     }
 
@@ -163,7 +202,7 @@ struct WidgetLargeAwarenessView: View {
 private struct WidgetLargeAlertRailStack: View {
     private static let visibleAlertCapacity = 3
     fileprivate static let rowMinimumHeight: CGFloat = 46
-    private static let rowSpacing: CGFloat = 7
+    private static let rowSpacing: CGFloat = 6
 
     let alerts: [WidgetSelectedAlertRowDisplayState]
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -194,7 +233,7 @@ private struct WidgetLargeAlertRailStack: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .padding(.leading, 8)
-                            .padding(.bottom, 8)
+                            .padding(.bottom, 4)
                             .accessibilityLabel("\(overflowCount) more active alerts")
                     }
                 }
@@ -240,20 +279,27 @@ private struct WidgetLargeRiskContextFooter: View {
     let severeState: WidgetRiskDisplayState
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 12) {
-            WidgetLargeRiskContextColumn(
-                title: "Storm Risk",
-                state: stormState,
-                style: .style(for: .storm, severity: stormState.severity)
-            )
+        VStack(alignment: .leading, spacing: 9) {
+            Rectangle()
+                .fill(Color.primary.opacity(0.12))
+                .frame(height: 1)
+                .accessibilityHidden(true)
 
-            WidgetLargeRiskContextColumn(
-                title: "Severe Risk",
-                state: severeState,
-                style: .style(for: .severe, severity: severeState.severity)
-            )
+            HStack(alignment: .bottom, spacing: 12) {
+                WidgetLargeRiskContextColumn(
+                    title: "Storm Risk",
+                    state: stormState,
+                    style: .style(for: .storm, severity: stormState.severity)
+                )
+
+                WidgetLargeRiskContextColumn(
+                    title: "Severe Risk",
+                    state: severeState,
+                    style: .style(for: .severe, severity: severeState.severity)
+                )
+            }
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, 4)
         .accessibilityElement(children: .contain)
     }
 }
@@ -267,11 +313,23 @@ private struct WidgetLargeRiskContextColumn: View {
         state == .placeholder ? .secondary : style.tint
     }
 
+    private var icon: String {
+        state == .placeholder ? "minus.circle" : style.icon
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
-            Capsule(style: .continuous)
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
                 .fill(accent)
-                .frame(width: 3, height: 28)
+                .frame(width: 3, height: 24)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(accent.opacity(0.72))
+                .frame(width: 16)
+                .padding(.top, 2)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -300,6 +358,7 @@ private struct WidgetLargeAlertRailItem: Identifiable {
 
 private struct WidgetLargeAlertRailRow: View {
     let alert: WidgetSelectedAlertRowDisplayState
+    @Environment(\.colorScheme) private var colorScheme
 
     private var style: WidgetAlertVisualStyle {
         WidgetAlertVisualStyle.style(for: alert)
@@ -317,23 +376,46 @@ private struct WidgetLargeAlertRailRow: View {
         "\(alert.title). \(lifecycleLine)."
     }
 
+    private var surfaceOpacity: Double {
+        if alert.typeLabel.localizedLowercase == "warning" {
+            switch alert.severity {
+            case 5...:
+                return colorScheme == .dark ? 0.18 : 0.11
+            case 3...4:
+                return colorScheme == .dark ? 0.15 : 0.090
+            default:
+                return colorScheme == .dark ? 0.12 : 0.075
+            }
+        }
+
+        switch alert.severity {
+        case 5...:
+            return colorScheme == .dark ? 0.18 : 0.11
+        case 3...4:
+            return colorScheme == .dark ? 0.12 : 0.075
+        default:
+            return colorScheme == .dark ? 0.075 : 0.050
+        }
+    }
+
     var body: some View {
-        HStack(alignment: .center, spacing: 9) {
-            Capsule(style: .continuous)
-                .fill(style.tint)
-                .frame(width: 3)
+        HStack(alignment: .center, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(style.tint.opacity(colorScheme == .dark ? 0.92 : 0.82))
+                .frame(width: 3, height: 30)
                 .accessibilityHidden(true)
 
             Image(systemName: style.icon)
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.bold))
                 .foregroundStyle(style.tint)
-                .frame(width: 18)
+                .frame(width: 16)
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(alert.title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.bold))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.78)
 
                 Text(lifecycleLine)
                     .font(.caption2.weight(.medium))
@@ -345,11 +427,11 @@ private struct WidgetLargeAlertRailRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, 6)
         .frame(minHeight: WidgetLargeAlertRailStack.rowMinimumHeight)
         .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.065))
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(style.tint.opacity(surfaceOpacity))
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
