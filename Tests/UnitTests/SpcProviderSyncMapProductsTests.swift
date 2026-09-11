@@ -454,6 +454,170 @@ struct SpcProviderSyncMapProductsTests {
         #expect(activeFire == .clear)
     }
 
+    @Test("Map sync records domain transport only after accepted repository saves")
+    func mapSync_recordsAcceptedDomainTransportAfterRepositorySave() async throws {
+        let container = try await makeMapSyncContainer()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
+        let batch = makeCoherentBatch(categoricalFeatures: [])
+
+        let acceptedProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: batch, transportSource: .live),
+            feedStateStore: store
+        )
+        let acceptedOutcome = await acceptedProvider.syncMapProductsOutcome()
+        #expect(acceptedOutcome.isFullyAccepted)
+        #expect(acceptedOutcome.convectiveTransportSource == .live)
+        #expect(acceptedOutcome.fireTransportSource == .live)
+
+        for feedID in ["spc.map.convective", "spc.map.fire"] {
+            let record = try #require(await store.record(for: feedID))
+            #expect(record.lastTransportSource == .live)
+            #expect(record.lastNetworkSuccessAt != nil)
+            #expect(record.lastCanonicalAcceptanceAt != nil)
+            #expect(record.generation == 1)
+        }
+        let revalidatedProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: batch, transportSource: .cacheRevalidated304),
+            feedStateStore: store
+        )
+        let revalidatedOutcome = await revalidatedProvider.syncMapProductsOutcome()
+        #expect(revalidatedOutcome.isFullyAccepted)
+        #expect(revalidatedOutcome.convectiveTransportSource == .revalidated)
+        #expect(revalidatedOutcome.fireTransportSource == .revalidated)
+
+        for feedID in ["spc.map.convective", "spc.map.fire"] {
+            let record = try #require(await store.record(for: feedID))
+            #expect(record.lastTransportSource == .revalidated)
+            #expect(record.generation == 2)
+        }
+        let acceptedConvectiveRecord = try #require(await store.record(for: "spc.map.convective"))
+        let acceptedFireRecord = try #require(await store.record(for: "spc.map.fire"))
+
+        let localCacheProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: batch, transportSource: .localCache),
+            feedStateStore: store
+        )
+        let localCacheOutcome = await localCacheProvider.syncMapProductsOutcome()
+        #expect(localCacheOutcome.isFullyAccepted)
+        #expect(localCacheOutcome.convectiveTransportSource == .localCache)
+        #expect(localCacheOutcome.fireTransportSource == .localCache)
+
+        for feedID in ["spc.map.convective", "spc.map.fire"] {
+            let record = try #require(await store.record(for: feedID))
+            let acceptedRecord = feedID == "spc.map.convective" ? acceptedConvectiveRecord : acceptedFireRecord
+            #expect(record.lastTransportSource == .localCache)
+            #expect(record.lastNetworkSuccessAt == acceptedRecord.lastNetworkSuccessAt)
+            #expect(record.lastCanonicalAcceptanceAt == acceptedRecord.lastCanonicalAcceptanceAt)
+            #expect(record.generation == 2)
+            #expect(record.lastFailure == nil)
+        }
+
+        let fallbackProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: batch, transportSource: .cacheFallback),
+            feedStateStore: store
+        )
+        let fallbackOutcome = await fallbackProvider.syncMapProductsOutcome()
+        #expect(fallbackOutcome.isFullyAccepted)
+        #expect(fallbackOutcome.convectiveTransportSource == .errorFallback)
+        #expect(fallbackOutcome.fireTransportSource == .errorFallback)
+
+        for feedID in ["spc.map.convective", "spc.map.fire"] {
+            let record = try #require(await store.record(for: feedID))
+            let acceptedRecord = feedID == "spc.map.convective" ? acceptedConvectiveRecord : acceptedFireRecord
+            #expect(record.lastTransportSource == .errorFallback)
+            #expect(record.lastNetworkSuccessAt == acceptedRecord.lastNetworkSuccessAt)
+            #expect(record.lastCanonicalAcceptanceAt == acceptedRecord.lastCanonicalAcceptanceAt)
+            #expect(record.generation == 2)
+            #expect(record.lastFailure == .transport)
+        }
+    }
+
+    @Test("Failed convective persistence retains its prior canonical feed state")
+    func mapSync_failedConvectivePersistenceDoesNotAdvanceGeneration() async throws {
+        let container = try await makeMapSyncContainer()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
+        let batch = makeCoherentBatch(categoricalFeatures: [])
+
+        let acceptedProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: batch, transportSource: .live),
+            feedStateStore: store
+        )
+        #expect(await acceptedProvider.syncMapProductsOutcome().convective == .accepted)
+
+        let failingProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: batch, transportSource: .cacheRevalidated304),
+            persistenceFailureInjection: .afterCategoricalMutation,
+            feedStateStore: store
+        )
+        #expect(await failingProvider.syncMapProductsOutcome().convective == .failed)
+
+        let record = try #require(await store.record(for: "spc.map.convective"))
+        #expect(record.lastTransportSource == .revalidated)
+        #expect(record.lastNetworkSuccessAt != nil)
+        #expect(record.lastCanonicalAcceptanceAt != nil)
+        #expect(record.generation == 1)
+        #expect(record.lastFailure == .persistence)
+    }
+
+    @Test("Rejected convective transport preserves its canonical state independently from accepted fire")
+    func mapSync_rejectedConvectiveRecordsTransportIndependently() async throws {
+        let container = try await makeMapSyncContainer()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = FeedStateStore(directoryURL: directory)
+
+        let acceptedProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(geoJsonByProduct: makeCoherentBatch(categoricalFeatures: [])),
+            feedStateStore: store
+        )
+        #expect(await acceptedProvider.syncMapProductsOutcome().isFullyAccepted)
+        let acceptedConvectiveRecord = try #require(await store.record(for: "spc.map.convective"))
+
+        let rejectedConvectiveProvider = makeSpcProviderForMapSyncTests(
+            container: container,
+            client: ScriptedMapSyncClient(
+                geoJsonByProduct: [
+                    .categorical: Data("not-geojson".utf8),
+                    .hail: emptyGeoJSONData(),
+                    .wind: emptyGeoJSONData(),
+                    .tornado: emptyGeoJSONData(),
+                    .fireRH: emptyGeoJSONData()
+                ],
+                transportSource: .cacheRevalidated304
+            ),
+            feedStateStore: store
+        )
+        let outcome = await rejectedConvectiveProvider.syncMapProductsOutcome()
+        #expect(outcome.convective == .rejected)
+        #expect(outcome.fire == .accepted)
+        #expect(outcome.convectiveTransportSource == .revalidated)
+        #expect(outcome.fireTransportSource == .revalidated)
+
+        let convectiveRecord = try #require(await store.record(for: "spc.map.convective"))
+        #expect(convectiveRecord.lastTransportSource == .revalidated)
+        #expect(convectiveRecord.lastNetworkSuccessAt != nil)
+        #expect(convectiveRecord.lastCanonicalAcceptanceAt == acceptedConvectiveRecord.lastCanonicalAcceptanceAt)
+        #expect(convectiveRecord.generation == acceptedConvectiveRecord.generation)
+        #expect(convectiveRecord.lastFailure == .rejected)
+
+        let fireRecord = try #require(await store.record(for: "spc.map.fire"))
+        #expect(fireRecord.lastTransportSource == .revalidated)
+        #expect(fireRecord.lastCanonicalAcceptanceAt != nil)
+        #expect(fireRecord.generation == 2)
+        #expect(fireRecord.lastFailure == nil)
+    }
+
     @Test("No-area categorical GeometryCollection is treated as all-clear and clears active convective risks")
     func noAreaCategoricalGeometryCollectionClearsActiveConvectiveRisks() async throws {
         let container = try await makeMapSyncContainer()
@@ -1312,6 +1476,15 @@ private actor CountingMapSyncClient: SpcClient {
 
 private struct ScriptedMapSyncClient: SpcClient {
     let geoJsonByProduct: [GeoJSONProduct: Data]
+    let transportSource: HTTPResponse.Source
+
+    init(
+        geoJsonByProduct: [GeoJSONProduct: Data],
+        transportSource: HTTPResponse.Source = .live
+    ) {
+        self.geoJsonByProduct = geoJsonByProduct
+        self.transportSource = transportSource
+    }
 
     func fetchRssData(for product: RssProduct) async throws -> Data {
         Data()
@@ -1322,6 +1495,10 @@ private struct ScriptedMapSyncClient: SpcClient {
             throw SpcError.missingGeoJsonData
         }
         return data
+    }
+
+    func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: try await fetchGeoJsonData(for: product), source: transportSource)
     }
 }
 

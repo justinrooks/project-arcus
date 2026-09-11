@@ -53,11 +53,16 @@ protocol SpcClient: Sendable {
     /// Fetches the backing data for geojson
     /// includes Categorical, Hail, Wind, Tornado geojson polygons
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data
+    func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse
 }
 
 extension SpcClient {
     func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
         .init(status: 200, headers: [:], data: try await fetchRssData(for: product))
+    }
+
+    func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
+        .init(status: 200, headers: [:], data: try await fetchGeoJsonData(for: product))
     }
 }
 
@@ -74,11 +79,17 @@ struct SpcHttpClient: SpcClient {
     /// - Parameter product: the product to query (cat, torn, hail, wind)
     /// - Returns: the Data
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        let response = try await fetchGeoJsonResponse(for: product)
+        guard let data = response.data else { throw SpcError.missingData }
+        return data
+    }
+
+    func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
         let url = try getGeoJSONUrl(for: product)
         logger.info(
             "SPC request started kind=geojson product=\(product.description, privacy: .public) mode=\(HTTPExecutionMode.current.logName, privacy: .public) endpoint=\(url.path, privacy: .public)"
         )
-        return try await fetchSpcData(for: url, headers: HTTPRequestHeaders.spcGeoJSON())
+        return try await fetchSpcResponse(for: url, headers: HTTPRequestHeaders.spcGeoJSON())
     }
     
     /// Wrapper func that pulls the rss data from spc
@@ -98,13 +109,6 @@ struct SpcHttpClient: SpcClient {
         return try await fetchSpcResponse(for: url, headers: HTTPRequestHeaders.spcRss())
     }
     
-    /// Fetches  data using the http session
-    private func fetchSpcData(for url: URL, headers: [String: String]) async throws -> Data {
-        let response = try await fetchSpcResponse(for: url, headers: headers)
-        guard let data = response.data else { throw SpcError.missingData }
-        return data
-    }
-
     private func fetchSpcResponse(for url: URL, headers: [String: String]) async throws -> HTTPResponse {
         try Task.checkCancellation()
 

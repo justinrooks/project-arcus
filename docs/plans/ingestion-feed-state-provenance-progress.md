@@ -50,8 +50,8 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 - Handoff: Meso and outlook outcomes preserve live, 304 revalidation, local-cache, and error-fallback provenance. Only canonical live or revalidated repository acknowledgement advances feed state; malformed cached payloads remain rejected and non-authoritative text responses preserve accepted rows.
 
 ### [#443](https://github.com/justinrooks/project-arcus/issues/443) — Add transport provenance to SPC map outcomes
-- Status: Pending
-- Handoff: Preserve staged convective/fire atomic acceptance.
+- Status: Implemented; awaiting review
+- Handoff: Map domains record live, 304, local-cache, and error-fallback transport only after their staged repository save succeeds. Convective and fire rejection remains independent; non-accepted outcomes preserve prior rows and generations.
 
 ## Verification Ledger
 
