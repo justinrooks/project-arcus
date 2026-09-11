@@ -401,7 +401,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     }
                 }
                 if let outlookOutcome = slowFeedSyncOutcome?.outlook {
-                    freshness.lastOutlookSyncAt = outlookOutcome == .accepted ? now : nil
+                    freshness.lastOutlookSyncAt = outlookOutcome.isCanonicalAcceptance ? now : nil
                 }
                 await progress.report(.completed(.lane(.slowProducts)))
                 environment.logger.debug("Finished home ingestion slow-product sync")
@@ -682,7 +682,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
             async let mesoSync = environment.spcSync.syncMesoscaleDiscussions()
             async let alertSync = environment.arcusAlertSync.sync(context: context)
             let (mesoOutcome, alertOutcome) = await (mesoSync, alertSync)
-            return mesoOutcome == .accepted && alertOutcome.authorizesLocationScopedAcceptance
+            return mesoOutcome.authorizesLocationScopedAcceptance && alertOutcome.authorizesLocationScopedAcceptance
                 ? .completeLocationScopedAcceptance
                 : .incomplete
         }

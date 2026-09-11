@@ -412,7 +412,8 @@ final class Dependencies: Sendable {
                               severeRiskRepo: severeRiskRepo,
                               fireRiskRepo: fireRiskRepo,
                               spcMapBatchPersistenceRepo: spcMapBatchPersistenceRepo,
-                              client: spcClient)
+                              client: spcClient,
+                              feedStateStore: feedStateStore)
         let spcProvider = spc
         logger.debug("SPC provider initialized")
 

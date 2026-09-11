@@ -46,7 +46,8 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 - Handoff: Arcus outcomes preserve live, 304 revalidation, local-cache, and error-fallback provenance. Error fallback cannot reconcile terminal alert payloads; accepted cache remains usable offline without reporting network success.
 
 ### [#445](https://github.com/justinrooks/project-arcus/issues/445) — Propagate SPC text transport provenance
-- Status: Pending
+- Status: Implemented; awaiting review
+- Handoff: Meso and outlook outcomes preserve live, 304 revalidation, local-cache, and error-fallback provenance. Only canonical live or revalidated repository acknowledgement advances feed state; malformed cached payloads remain rejected and non-authoritative text responses preserve accepted rows.
 
 ### [#443](https://github.com/justinrooks/project-arcus/issues/443) — Add transport provenance to SPC map outcomes
 - Status: Pending
@@ -56,3 +57,4 @@ HTTP responses expose source, but Arcus/SPC provider contracts often discard it.
 
 - [#441](https://github.com/justinrooks/project-arcus/issues/441): focused `FeedStateStoreTests` lane passed (5 tests) and Debug simulator build passed.
 - [#444](https://github.com/justinrooks/project-arcus/issues/444): focused Arcus repository/provider lane passed (29 tests), full unit lane passed (1,119 tests), and Debug simulator build passed.
+- [#445](https://github.com/justinrooks/project-arcus/issues/445): focused SPC text repository/provider lane passed (50 tests), full unit lane passed (1,156 tests), and Debug simulator build passed.

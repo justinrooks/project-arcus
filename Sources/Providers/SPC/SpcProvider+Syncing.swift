@@ -241,14 +241,22 @@ extension SpcProvider: SpcSyncing {
             signposter.endInterval("Background Run", runInterval)
         }
 
+        let transport = SpcTextTransportTracker()
+        let trackingClient = SourceTrackingSpcClient(client: client, transport: transport)
+
         do {
             await beforeOutlookCommit()
-            let source = try await outlookRepo.refreshConvectiveOutlooks(using: client) { [self] in
+            let source = try await outlookRepo.refreshConvectiveOutlooks(using: trackingClient) { [self] in
                 await reserveOutlookSyncCommit(for: runID)
             }
+            await record(
+                source: source,
+                canonicalAccepted: source == .live || source == .cacheRevalidated304,
+                feedID: "spc.outlook"
+            )
             try Task.checkCancellation()
             let outcome = Self.outlookOutcome(for: source)
-            guard outcome == .accepted else {
+            guard outcome.isCanonicalAcceptance else {
                 logger.info("SPC convective outlook sync finished result=\(String(describing: outcome), privacy: .public) persistedPublished=false")
                 return outcome
             }
@@ -278,12 +286,20 @@ extension SpcProvider: SpcSyncing {
             return outcome
         } catch is CancellationError {
             logger.notice("Convective outlook sync cancelled")
+            await record(source: await transport.source, failure: .cancelled, feedID: "spc.outlook")
             return .cancelled
         } catch SpcError.parsingError {
             logger.error("Convective outlook sync rejected")
+            await record(source: await transport.source, failure: .rejected, feedID: "spc.outlook")
             return .rejected
         } catch {
             logger.error("Error syncing convective outlook text products: \(error.localizedDescription, privacy: .public)")
+            let source = await transport.source
+            await record(
+                source: source,
+                failure: source == nil ? .transport : .persistence,
+                feedID: "spc.outlook"
+            )
             return .failed
         }
     }
@@ -317,38 +333,102 @@ extension SpcProvider: SpcSyncing {
             mesoSyncTask = nil
         }
 
+        let transport = SpcTextTransportTracker()
+        let trackingClient = SourceTrackingSpcClient(client: client, transport: transport)
+
         do {
-            let source = try await mesoRepo.refreshMesoscaleDiscussions(using: client)
+            let source = try await mesoRepo.refreshMesoscaleDiscussions(using: trackingClient)
+            await record(
+                source: source,
+                canonicalAccepted: source == .live || source == .cacheRevalidated304,
+                feedID: "spc.meso"
+            )
             let outcome = Self.mesoOutcome(for: source)
             logger.info("SPC meso sync finished result=\(String(describing: outcome), privacy: .public)")
             return outcome
         } catch is CancellationError {
             logger.notice("Mesoscale discussion sync cancelled")
+            await record(source: await transport.source, failure: .cancelled, feedID: "spc.meso")
             return .cancelled
         } catch SpcError.parsingError {
             logger.error("Mesoscale discussion sync rejected")
+            await record(source: await transport.source, failure: .rejected, feedID: "spc.meso")
             return .rejected
         } catch {
             logger.error("Error syncing mesoscale discussion text products: \(error.localizedDescription, privacy: .public)")
+            let source = await transport.source
+            await record(
+                source: source,
+                failure: source == nil ? .transport : .persistence,
+                feedID: "spc.meso"
+            )
             return .failed
         }
     }
 
     private static func mesoOutcome(for source: HTTPResponse.Source) -> SpcMesoSyncOutcome {
         switch source {
-        case .live, .cacheRevalidated304:
-            .accepted
-        case .localCache, .cacheFallback:
-            .fallback
+        case .live:
+            .live
+        case .cacheRevalidated304:
+            .revalidated
+        case .localCache:
+            .localCache
+        case .cacheFallback:
+            .errorFallback
         }
     }
 
     private static func outlookOutcome(for source: HTTPResponse.Source) -> SpcOutlookSyncOutcome {
         switch source {
-        case .live, .cacheRevalidated304:
-            .accepted
-        case .localCache, .cacheFallback:
-            .fallback
+        case .live:
+            .live
+        case .cacheRevalidated304:
+            .revalidated
+        case .localCache:
+            .localCache
+        case .cacheFallback:
+            .errorFallback
+        }
+    }
+
+    private func record(
+        source: HTTPResponse.Source? = nil,
+        canonicalAccepted: Bool = false,
+        failure: FeedStateFailureClassification? = nil,
+        feedID: String
+    ) async {
+        guard let feedStateStore else { return }
+
+        let now = Date.now
+        let networkSucceeded = source == .live || source == .cacheRevalidated304
+        do {
+            _ = try await feedStateStore.update(
+                .init(
+                    feedID: feedID,
+                    attemptedAt: now,
+                    networkSucceededAt: networkSucceeded ? now : nil,
+                    canonicalAcceptedAt: canonicalAccepted ? now : nil,
+                    validAt: canonicalAccepted ? now : nil,
+                    transportSource: source.map(Self.feedStateTransportSource(for:)),
+                    failure: failure ?? (source == .cacheFallback ? .transport : nil)
+                )
+            )
+        } catch {
+            logger.error("Unable to record SPC feed state feed=\(feedID, privacy: .public) error=\(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private static func feedStateTransportSource(for source: HTTPResponse.Source) -> FeedStateTransportSource {
+        switch source {
+        case .live:
+            .live
+        case .cacheRevalidated304:
+            .revalidated
+        case .localCache:
+            .localCache
+        case .cacheFallback:
+            .errorFallback
         }
     }
     
@@ -889,6 +969,33 @@ extension SpcProvider: SpcSyncing {
     private static func isoTimestamp(_ date: Date?) -> String {
         guard let date else { return "none" }
         return date.ISO8601Format()
+    }
+}
+
+private actor SpcTextTransportTracker {
+    private(set) var source: HTTPResponse.Source?
+
+    func record(_ source: HTTPResponse.Source) {
+        self.source = source
+    }
+}
+
+private struct SourceTrackingSpcClient: SpcClient {
+    let client: any SpcClient
+    let transport: SpcTextTransportTracker
+
+    func fetchRssData(for product: RssProduct) async throws -> Data {
+        try await client.fetchRssData(for: product)
+    }
+
+    func fetchRssResponse(for product: RssProduct) async throws -> HTTPResponse {
+        let response = try await client.fetchRssResponse(for: product)
+        await transport.record(response.source)
+        return response
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        try await client.fetchGeoJsonData(for: product)
     }
 }
 

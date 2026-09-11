@@ -16,6 +16,7 @@ enum FeedStateFailureClassification: String, Codable, Sendable {
     case cancelled
     case transport
     case rejected
+    case persistence
 }
 
 struct FeedStateRecord: Codable, Sendable, Equatable {
