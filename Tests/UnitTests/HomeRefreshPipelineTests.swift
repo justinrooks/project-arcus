@@ -2443,6 +2443,7 @@ struct HomeRefreshPipelineTests {
     func hotProjection_requiresCompleteLocationScopedAcceptance() async throws {
         let cases: [(String, SpcMesoSyncOutcome, ArcusLocationSyncOutcome, Bool)] = [
             ("accepted", .accepted, .accepted, true),
+            ("meso revalidated", .revalidated, .accepted, true),
             ("meso failure", .failed, .accepted, false),
             ("Arcus failure", .accepted, .failed, false),
             ("meso cancellation", .cancelled, .accepted, false),
@@ -2672,7 +2673,7 @@ struct HomeRefreshPipelineTests {
         #expect(await spc.syncMapProductsCount() == 1)
         #expect(await spc.syncConvectiveOutlooksCount() == 2)
 
-        await spc.configureOutlookSync(outcome: .accepted)
+        await spc.configureOutlookSync(outcome: .revalidated)
         _ = try await executor.run(plan: slowProductPlan())
         #expect(await spc.syncMapProductsCount() == 1)
         #expect(await spc.syncConvectiveOutlooksCount() == 3)
@@ -2919,6 +2920,25 @@ struct HomeRefreshPipelineTests {
         #expect(await coordinator.requestCount() == 0)
         #expect(pipeline.outlooks.map(\.title) == sampleOutlooks().map(\.title))
         #expect(pipeline.outlook?.title == "Day 2 Convective Outlook")
+        #expect(pipeline.outlookRefreshStatus == .success(hasContent: true))
+    }
+
+    @Test("manual outlook refresh accepts revalidated transport")
+    func refreshOutlooksManually_revalidatedTransportRefreshesOutlooks() async {
+        let spc = FakeSpcProvider(
+            outlooks: sampleOutlooks(),
+            outlookSyncOutcome: .revalidated
+        )
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.refreshOutlooksManually(
+            environment: makeEnvironment(
+                spc: spc,
+                locationSession: FakeLocationSession(currentContext: makeContext(), preparedContext: makeContext())
+            )
+        )
+
+        #expect(await spc.outlookQueryCount() == 1)
         #expect(pipeline.outlookRefreshStatus == .success(hasContent: true))
     }
 

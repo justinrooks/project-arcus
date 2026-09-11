@@ -65,19 +65,42 @@ struct SpcMapSyncOutcome: Sendable, Equatable {
 }
 
 enum SpcMesoSyncOutcome: Sendable, Equatable {
-    case accepted
-    case fallback
+    case live
+    case revalidated
+    case localCache
+    case errorFallback
     case rejected
     case failed
     case cancelled
+
+    static var accepted: Self { .live }
+    static var fallback: Self { .errorFallback }
+
+    var authorizesLocationScopedAcceptance: Bool {
+        switch self {
+        case .live, .revalidated:
+            true
+        case .localCache, .errorFallback, .rejected, .failed, .cancelled:
+            false
+        }
+    }
 }
 
 enum SpcOutlookSyncOutcome: Sendable, Equatable {
-    case accepted
-    case fallback
+    case live
+    case revalidated
+    case localCache
+    case errorFallback
     case rejected
     case failed
     case cancelled
+
+    static var accepted: Self { .live }
+    static var fallback: Self { .errorFallback }
+
+    var isCanonicalAcceptance: Bool {
+        self == .live || self == .revalidated
+    }
 }
 
 protocol SpcSyncing: Sendable {//where Self: Actor {

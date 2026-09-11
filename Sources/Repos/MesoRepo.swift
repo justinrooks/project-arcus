@@ -37,6 +37,11 @@ actor MesoRepo {
             logger.error("Mesoscale RSS contained malformed recognized discussions")
             throw SpcError.parsingError
         }
+
+        guard response.source == .live || response.source == .cacheRevalidated304 else {
+            logger.notice("Ignored non-authoritative mesoscale response source=\(String(describing: response.source), privacy: .public)")
+            return response.source
+        }
         
         try upsert(mesos)
         logger.debug("Persisted mesoscale discussion refresh count=\(mesos.count, privacy: .public)")

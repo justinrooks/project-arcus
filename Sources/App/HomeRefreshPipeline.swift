@@ -207,7 +207,7 @@ final class HomeRefreshPipeline {
         let outcome = await HTTPExecutionMode.$current.withValue(.foreground) {
             await environment.sync.syncConvectiveOutlooks()
         }
-        guard outcome == .accepted else {
+        guard outcome.isCanonicalAcceptance else {
             outlookRefreshStatus = .failed
             environment.logger.error("Manual convective outlook refresh finished result=\(String(describing: outcome), privacy: .public)")
             return

@@ -25,6 +25,7 @@ actor SpcProvider {
     let spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo
     let mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection
     let client: SpcClient
+    let feedStateStore: FeedStateStore?
     let beforeOutlookCommit: @Sendable () async -> Void
     let beforeOutlookPublication: @Sendable () async -> Void
     let outlookPublicationDateProvider: (@Sendable () async throws -> Date?)?
@@ -57,6 +58,7 @@ actor SpcProvider {
          spcMapBatchPersistenceRepo: SpcMapBatchPersistenceRepo,
          mapBatchPersistenceFailureInjection: SpcMapBatchPersistenceFailureInjection = .none,
          client: SpcClient,
+         feedStateStore: FeedStateStore? = nil,
          beforeOutlookCommit: @escaping @Sendable () async -> Void = {},
          beforeOutlookPublication: @escaping @Sendable () async -> Void = {},
          outlookPublicationDateProvider: (@Sendable () async throws -> Date?)? = nil) {
@@ -70,6 +72,7 @@ actor SpcProvider {
         self.spcMapBatchPersistenceRepo = spcMapBatchPersistenceRepo
         self.mapBatchPersistenceFailureInjection = mapBatchPersistenceFailureInjection
         self.client = client
+        self.feedStateStore = feedStateStore
         self.beforeOutlookCommit = beforeOutlookCommit
         self.beforeOutlookPublication = beforeOutlookPublication
         self.outlookPublicationDateProvider = outlookPublicationDateProvider

@@ -31,6 +31,23 @@ private struct FakeSpcClient: SpcClient {
     }
 }
 
+private struct SourcedRssSpcClient: SpcClient {
+    let response: HTTPResponse
+
+    func fetchRssData(for feed: RssProduct) async throws -> Data {
+        guard let data = response.data else { throw SpcError.missingData }
+        return data
+    }
+
+    func fetchRssResponse(for feed: RssProduct) async throws -> HTTPResponse {
+        response
+    }
+
+    func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
+        throw SpcError.missingGeoJsonData
+    }
+}
+
 private enum TestError: Error { case boom }
 
 // MARK: - Sample RSS payloads
@@ -306,6 +323,43 @@ struct ConvectiveOutlookRepoTests {
 
         try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(try #require(emptyMesoRSS.data(using: .utf8)))))
         #expect(try await repo.getLatestMapData(asOf: utcDate(2025, 11, 12, 13)).count == 1)
+    }
+
+    @Test("non-authoritative meso payloads preserve accepted rows and malformed cache remains rejected")
+    func refresh_nonAuthoritativeMesoPreservesAcceptedRows() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [MD.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = MesoRepo(modelContainer: container)
+        let acceptedData = try #require(sampleValidMesoRSS.data(using: .utf8))
+        try await repo.refreshMesoscaleDiscussions(using: FakeSpcClient(mode: .success(acceptedData)))
+
+        let localCacheData = try #require(
+            sampleValidMesoRSS
+                .replacingOccurrences(of: "1234", with: "5678")
+                .data(using: .utf8)
+        )
+        let localCacheSource = try await repo.refreshMesoscaleDiscussions(
+            using: SourcedRssSpcClient(
+                response: .init(status: 200, headers: [:], data: localCacheData, source: .localCache)
+            )
+        )
+        #expect(localCacheSource == .localCache)
+        #expect(try await repo.getLatestMapData(asOf: utcDate(2025, 11, 12, 13)).map(\.number) == [1234])
+
+        do {
+            try await repo.refreshMesoscaleDiscussions(
+                using: SourcedRssSpcClient(
+                    response: .init(status: 200, headers: [:], data: Data("not-xml".utf8), source: .localCache)
+                )
+            )
+            Issue.record("Expected malformed cached meso payload to be rejected")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+
+        #expect(try await repo.getLatestMapData(asOf: utcDate(2025, 11, 12, 13)).map(\.number) == [1234])
     }
 
     @Test("meso DDHHmmZ validity parses across month and year boundaries")
