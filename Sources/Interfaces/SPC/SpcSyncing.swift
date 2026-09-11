@@ -36,22 +36,35 @@ enum SpcMapSyncDomainOutcome: Sendable, Equatable {
     }
 }
 
+enum SpcMapTransportSource: Sendable, Equatable {
+    case live
+    case revalidated
+    case localCache
+    case errorFallback
+}
+
 struct SpcMapSyncOutcome: Sendable, Equatable {
     let convective: SpcMapSyncDomainOutcome
     let fire: SpcMapSyncDomainOutcome
     let convectiveSource: SpcMapSourceIdentity?
     let fireSource: SpcMapSourceIdentity?
+    let convectiveTransportSource: SpcMapTransportSource?
+    let fireTransportSource: SpcMapTransportSource?
 
     init(
         convective: SpcMapSyncDomainOutcome,
         fire: SpcMapSyncDomainOutcome,
         convectiveSource: SpcMapSourceIdentity? = nil,
-        fireSource: SpcMapSourceIdentity? = nil
+        fireSource: SpcMapSourceIdentity? = nil,
+        convectiveTransportSource: SpcMapTransportSource? = nil,
+        fireTransportSource: SpcMapTransportSource? = nil
     ) {
         self.convective = convective
         self.fire = fire
         self.convectiveSource = convectiveSource
         self.fireSource = fireSource
+        self.convectiveTransportSource = convectiveTransportSource
+        self.fireTransportSource = fireTransportSource
     }
 
     static let accepted = SpcMapSyncOutcome(convective: .accepted, fire: .accepted)

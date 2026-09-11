@@ -636,6 +636,19 @@ struct SpcHttpClientTests {
         #expect((request.headers["Accept"] ?? "").contains("application/geo+json"))
     }
 
+    @Test("fetchGeoJsonResponse preserves cache transport provenance")
+    func fetchGeoJsonResponse_preservesTransportSource() async throws {
+        let payload = Data("{\"type\":\"FeatureCollection\",\"features\":[]}".utf8)
+        let http = SpcMockHTTPClient(
+            response: HTTPResponse(status: 200, headers: [:], data: payload, source: .cacheRevalidated304)
+        )
+        let client = SpcHttpClient(http: http)
+
+        let response = try await client.fetchGeoJsonResponse(for: .fireRH)
+        #expect(response.data == payload)
+        #expect(response.source == .cacheRevalidated304)
+    }
+
     @Test("429 maps to SpcError.rateLimited")
     func status429_throwsRateLimited() async throws {
         let http = SpcMockHTTPClient(

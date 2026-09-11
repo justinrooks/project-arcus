@@ -419,6 +419,35 @@ extension SpcProvider: SpcSyncing {
         }
     }
 
+    private func recordMapDomain(
+        outcome: SpcMapSyncDomainOutcome,
+        source: HTTPResponse.Source?,
+        feedID: String
+    ) async {
+        switch outcome {
+        case .accepted:
+            await record(
+                source: source,
+                canonicalAccepted: source == .live || source == .cacheRevalidated304,
+                feedID: feedID
+            )
+        case .rejected:
+            await record(
+                source: source,
+                failure: source == nil ? .transport : .rejected,
+                feedID: feedID
+            )
+        case .failed:
+            await record(
+                source: source,
+                failure: source == nil ? .transport : .persistence,
+                feedID: feedID
+            )
+        case .skipped:
+            break
+        }
+    }
+
     private static func feedStateTransportSource(for source: HTTPResponse.Source) -> FeedStateTransportSource {
         switch source {
         case .live:
@@ -547,6 +576,12 @@ extension SpcProvider: SpcSyncing {
     }
 
     private func persistStagedMapProducts(_ batch: StagedSpcMapProductBatch) async -> SpcMapSyncOutcome {
+        let convectiveTransport = Self.transportSource(
+            in: batch.products,
+            for: [.categorical, .hail, .wind, .tornado]
+        )
+        let fireTransport = Self.transportSource(in: batch.products, for: [.fireRH])
+
         let convectiveOutcome: SpcMapSyncDomainOutcome
         let convectiveSource: SpcMapSourceIdentity?
         switch batch.validation.convective {
@@ -595,6 +630,11 @@ extension SpcProvider: SpcSyncing {
             convectiveOutcome = .rejected
             convectiveSource = nil
         }
+        await recordMapDomain(
+            outcome: convectiveOutcome,
+            source: convectiveTransport,
+            feedID: "spc.map.convective"
+        )
 
         let fireOutcome: SpcMapSyncDomainOutcome
         let fireSource: SpcMapSourceIdentity?
@@ -640,12 +680,19 @@ extension SpcProvider: SpcSyncing {
             fireOutcome = .rejected
             fireSource = nil
         }
+        await recordMapDomain(
+            outcome: fireOutcome,
+            source: fireTransport,
+            feedID: "spc.map.fire"
+        )
 
         return SpcMapSyncOutcome(
             convective: convectiveOutcome,
             fire: fireOutcome,
             convectiveSource: convectiveSource,
-            fireSource: fireSource
+            fireSource: fireSource,
+            convectiveTransportSource: convectiveTransport.map(Self.mapTransportSource(for:)),
+            fireTransportSource: fireTransport.map(Self.mapTransportSource(for:))
         )
     }
 
@@ -655,7 +702,8 @@ extension SpcProvider: SpcSyncing {
         now: Date
     ) async -> StagedSpcMapProduct {
         do {
-            let data = try await client.fetchGeoJsonData(for: product)
+            let response = try await client.fetchGeoJsonResponse(for: product)
+            guard let data = response.data else { throw SpcError.missingData }
             guard let decoded: GeoJSONFeatureCollection = JsonParser.decode(from: data) else {
                 return StagedSpcMapProduct(
                     product: product,
@@ -666,6 +714,7 @@ extension SpcProvider: SpcSyncing {
                     valid: nil,
                     expires: nil,
                     data: nil,
+                    transportSource: response.source,
                     status: .rejected(reason: "decode_failed"),
                     windowMetadata: nil
                 )
@@ -684,6 +733,7 @@ extension SpcProvider: SpcSyncing {
                     valid: nil,
                     expires: nil,
                     data: data,
+                    transportSource: response.source,
                     status: .rejected(reason: preflightError.reason),
                     windowMetadata: nil
                 )
@@ -697,6 +747,7 @@ extension SpcProvider: SpcSyncing {
                     valid: nil,
                     expires: nil,
                     data: data,
+                    transportSource: response.source,
                     status: .rejected(reason: "\(product.rawValue)_preflight_failed"),
                     windowMetadata: nil
                 )
@@ -724,6 +775,7 @@ extension SpcProvider: SpcSyncing {
                 valid: valid,
                 expires: expires,
                 data: materialPolygonCount == 0 ? Self.emptyFeatureCollectionData() : data,
+                transportSource: response.source,
                 status: status,
                 windowMetadata: metadata
             )
@@ -737,6 +789,7 @@ extension SpcProvider: SpcSyncing {
                 valid: nil,
                 expires: nil,
                 data: nil,
+                transportSource: nil,
                 status: .rejected(reason: "cancelled"),
                 windowMetadata: nil
             )
@@ -750,6 +803,7 @@ extension SpcProvider: SpcSyncing {
                 valid: nil,
                 expires: nil,
                 data: nil,
+                transportSource: nil,
                 status: .rejected(reason: "fetch_failed"),
                 windowMetadata: nil
             )
@@ -758,6 +812,31 @@ extension SpcProvider: SpcSyncing {
 
     private static func emptyFeatureCollectionData() -> Data? {
         try? JSONEncoder().encode(GeoJSONFeatureCollection.empty)
+    }
+
+    private static func transportSource(
+        in stagedProducts: [GeoJSONProduct: StagedSpcMapProduct],
+        for products: [GeoJSONProduct]
+    ) -> HTTPResponse.Source? {
+        let sources = products.compactMap { stagedProducts[$0]?.transportSource }
+        guard sources.count == products.count else { return nil }
+        if sources.contains(.cacheFallback) { return .cacheFallback }
+        if sources.contains(.localCache) { return .localCache }
+        if sources.contains(.cacheRevalidated304) { return .cacheRevalidated304 }
+        return .live
+    }
+
+    private static func mapTransportSource(for source: HTTPResponse.Source) -> SpcMapTransportSource {
+        switch source {
+        case .live:
+            .live
+        case .cacheRevalidated304:
+            .revalidated
+        case .localCache:
+            .localCache
+        case .cacheFallback:
+            .errorFallback
+        }
     }
 
     private func validateStagedMapBatch(
@@ -997,6 +1076,10 @@ private struct SourceTrackingSpcClient: SpcClient {
     func fetchGeoJsonData(for product: GeoJSONProduct) async throws -> Data {
         try await client.fetchGeoJsonData(for: product)
     }
+
+    func fetchGeoJsonResponse(for product: GeoJSONProduct) async throws -> HTTPResponse {
+        try await client.fetchGeoJsonResponse(for: product)
+    }
 }
 
 private struct StagedSpcMapProductBatch: Sendable {
@@ -1013,6 +1096,7 @@ private struct StagedSpcMapProduct: Sendable {
     let valid: Date?
     let expires: Date?
     let data: Data?
+    let transportSource: HTTPResponse.Source?
     let status: StagedSpcMapProductValidation
     let windowMetadata: StagedProductWindowMetadata?
 }
