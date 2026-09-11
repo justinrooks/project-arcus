@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+## v1.2.0(190)
+### UI / UX
+- The new large Local Awareness widget presents prioritized active alerts with clear lifecycle details, truthful overflow counts, and Storm and Severe Risk context; it also provides a dedicated quiet state when no local alerts are active.
+<!-- evidence: 5b9cb13, c7ef991, d4caa07, e1f743b, 0b50c08, e7f883d -->
+- Widget risk labels and alert presentation now preserve complete risk meaning across small, combined, Lock Screen, and large widgets, with severity-aware emphasis and more legible quiet states.
+<!-- evidence: 5543fb8, aa17c29, 85c2b44, 84ea560, 7f24452 -->
+- Widgets now prioritize current warnings, watches, and mesoscale discussions for Smart Stack relevance while keeping stale, unavailable, and quiet states neutral.
+<!-- evidence: 614201c -->
+- Today, Storm Setup, Map, Summary, and Alert Center now use clearer severe-weather wording, semantic alert styling, consistent alert chronology, and an explicit conditional-intensity treatment.
+<!-- evidence: f263431, e4be2d2, 5e21ce4, 937fc3a, 9658826, 3e6d3ed -->
+
+### Reliability
+- Widget refreshes now distinguish alert and risk freshness, use accepted source dates for risk freshness, and update promptly after accepted projections and remote alerts.
+<!-- evidence: 265d44f -->
+- Home and widgets now publish only the projection record that was successfully committed; when persistence cannot confirm a refresh, previously durable content and air-quality data remain visible.
+<!-- evidence: 4ba84de, c701a2f, 4ca545e -->
+- Manual convective-outlook refreshes preserve the last accepted outlook and report failure when fresh data is rejected, unavailable, or cannot be read; map and outlook feeds also refresh independently.
+<!-- evidence: 93c23d2, 782ab7b, 9a5ac89 -->
+- Arcus alerts and SPC text and map feeds now retain transport and acceptance provenance, preventing non-authoritative fallback responses from advancing canonical feed state.
+<!-- evidence: d587fc6, e705b3b, 19f1393 -->
+
+### Tests / QA
+- Regression coverage was expanded for widget presentation, accessibility, freshness, relevance, durable projection publication, feed acceptance, and refresh recovery paths.
+<!-- evidence: e7f883d, 265d44f, 4ba84de, c701a2f, 93c23d2, e705b3b, 19f1393 -->
+
 ## v1.1.1(142)
 
 ### Reliability

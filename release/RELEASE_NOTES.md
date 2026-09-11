@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v1.2.0(190)
+
+## Overview
+This update introduces a richer large Local Awareness widget, improves severe-weather language and accessibility across the app, and makes widget and Home refreshes more trustworthy when fresh data cannot be accepted or committed.
+
+## Highlights
+- The large Local Awareness widget now shows prioritized active alerts, lifecycle details, truthful overflow counts, Storm and Severe Risk context, and a dedicated quiet state when no local alerts are active.
+- Risk labels and alert presentation preserve complete meaning across small, combined, Lock Screen, and large widgets, with severity-aware emphasis and clearer quiet states.
+- Widgets prioritize current warnings, watches, and mesoscale discussions for Smart Stack relevance, while stale, unavailable, and quiet states remain neutral.
+- Today, Storm Setup, Map, Summary, and Alert Center use clearer severe-weather wording, semantic alert styling, consistent alert chronology, and explicit conditional-intensity guidance.
+- Widget refreshes distinguish alert and risk freshness and update after accepted projections and remote alerts.
+- Home and widgets now retain previously durable content when persistence cannot confirm a refresh; manual outlook refreshes preserve the last accepted outlook when fresh data fails.
+- Arcus alerts and SPC feeds now retain transport and acceptance provenance so non-authoritative fallback responses do not advance canonical feed state.
+
 ## v1.1.1(142)
 
 ## Overview
