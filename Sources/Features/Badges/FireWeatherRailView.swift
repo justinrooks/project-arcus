@@ -9,6 +9,9 @@ import SwiftUI
 
 struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var railVerticalPadding = 10
+
     let level: FireRiskLevel?
     var isOffline: Bool = false
     var showsResolvingPlaceholder: Bool = false
@@ -52,16 +55,22 @@ struct FireWeatherRailView: View {
     private func resolvedContent(level: FireRiskLevel) -> some View {
         let presentation = level.supportingPresentation()
 
-        HStack(spacing: 12) {
-            Image(systemName: level.symbol)
-                .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(presentation.title)
-                    .formatMessageText(for: colorScheme)
-                Text(presentation.detail)
-                    .formatSummaryText(for: colorScheme)
+        Group {
+            if usesAccessibilityLayout && isOffline {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        SummaryAvailabilityBadge(state: .stale)
+                    }
+
+                    railMessageContent(presentation: presentation, level: level)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                railMessageContent(presentation: presentation, level: level)
             }
         }
+        .padding(.vertical, railVerticalPadding)
         .railStyle(
             background: presentation.isSubdued
                 ? RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
@@ -72,10 +81,25 @@ struct FireWeatherRailView: View {
             shadowY: presentation.isSubdued ? 3 : 4
         )
         .overlay(alignment: .topTrailing) {
-            if isOffline {
+            if isOffline && !usesAccessibilityLayout {
                 SummaryAvailabilityBadge(state: .stale)
                     .padding(.trailing, 12)
                     .padding(.top, 8)
+            }
+        }
+    }
+
+    private func railMessageContent(
+        presentation: FireRiskSupportingPresentation,
+        level: FireRiskLevel
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: level.symbol)
+                .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
+            VStack(alignment: .leading, spacing: 3) {
+                messageText(presentation.title)
+                Text(presentation.detail)
+                    .formatSummaryText(for: colorScheme)
             }
         }
     }
@@ -85,13 +109,31 @@ struct FireWeatherRailView: View {
             Image(systemName: "flame")
                 .formatBadgeImage(colorScheme: colorScheme)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Fire Risk")
-                    .formatMessageText(for: colorScheme)
+                messageText("Fire Risk")
                 Text("Getting fire risk…")
                     .formatSummaryText(for: colorScheme)
             }
         }
+        .padding(.vertical, railVerticalPadding)
         .railStyle(background: resolvingBackground)
+    }
+
+    @ViewBuilder
+    private func messageText(_ text: String) -> some View {
+        if usesAccessibilityLayout {
+            Text(text)
+                .font(.headline)
+                .foregroundStyle(RiskBadgeVisualStyle.messageForeground(for: colorScheme))
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(text)
+                .formatMessageText(for: colorScheme)
+        }
+    }
+
+    private var usesAccessibilityLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize
     }
 
     private var unavailableContent: some View {
@@ -104,6 +146,7 @@ struct FireWeatherRailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+        .padding(.vertical, railVerticalPadding)
         .padding([.leading, .trailing], 15)
         .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4)
     }
