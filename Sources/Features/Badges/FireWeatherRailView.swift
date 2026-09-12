@@ -55,13 +55,19 @@ struct FireWeatherRailView: View {
     private func resolvedContent(level: FireRiskLevel) -> some View {
         let presentation = level.supportingPresentation()
 
-        HStack(spacing: 12) {
-            Image(systemName: level.symbol)
-                .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
-            VStack(alignment: .leading, spacing: 3) {
-                messageText(presentation.title)
-                Text(presentation.detail)
-                    .formatSummaryText(for: colorScheme)
+        Group {
+            if usesAccessibilityLayout && isOffline {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Spacer(minLength: 0)
+                        SummaryAvailabilityBadge(state: .stale)
+                    }
+
+                    railMessageContent(presentation: presentation, level: level)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                railMessageContent(presentation: presentation, level: level)
             }
         }
         .padding(.vertical, railVerticalPadding)
@@ -75,10 +81,25 @@ struct FireWeatherRailView: View {
             shadowY: presentation.isSubdued ? 3 : 4
         )
         .overlay(alignment: .topTrailing) {
-            if isOffline {
+            if isOffline && !usesAccessibilityLayout {
                 SummaryAvailabilityBadge(state: .stale)
                     .padding(.trailing, 12)
                     .padding(.top, 8)
+            }
+        }
+    }
+
+    private func railMessageContent(
+        presentation: FireRiskSupportingPresentation,
+        level: FireRiskLevel
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: level.symbol)
+                .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
+            VStack(alignment: .leading, spacing: 3) {
+                messageText(presentation.title)
+                Text(presentation.detail)
+                    .formatSummaryText(for: colorScheme)
             }
         }
     }
@@ -125,6 +146,7 @@ struct FireWeatherRailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+        .padding(.vertical, railVerticalPadding)
         .padding([.leading, .trailing], 15)
         .cardBackground(cornerRadius: SkyAwareRadius.large, shadowOpacity: 0.18, shadowRadius: 8, shadowY: 4)
     }
