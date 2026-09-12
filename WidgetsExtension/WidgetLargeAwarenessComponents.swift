@@ -55,7 +55,9 @@ struct WidgetLargeAwarenessView: View {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 3) {
                     locationLabel
-                    freshnessLabel
+                    if WidgetFreshnessFormatter.lineSuppressingStaleState(for: freshness) != nil {
+                        freshnessLabel
+                    }
                 }
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -63,7 +65,9 @@ struct WidgetLargeAwarenessView: View {
 
                     Spacer(minLength: 8)
 
-                    freshnessLabel
+                    if WidgetFreshnessFormatter.lineSuppressingStaleState(for: freshness) != nil {
+                        freshnessLabel
+                    }
                 }
             }
         }

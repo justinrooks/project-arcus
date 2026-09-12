@@ -25,4 +25,9 @@ enum WidgetFreshnessFormatter {
             return "Delayed update · \(formatter.string(from: timestamp))"
         }
     }
+
+    static func lineSuppressingStaleState(for freshness: WidgetFreshnessState) -> String? {
+        guard freshness.state != .stale else { return nil }
+        return line(for: freshness)
+    }
 }
