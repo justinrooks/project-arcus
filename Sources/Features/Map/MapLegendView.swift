@@ -3,6 +3,7 @@ import MapKit
 import UIKit
 
 struct MapLegend: View {
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showsHatchingExplanation = false
 
     let state: MapLegendState
@@ -50,7 +51,13 @@ struct MapLegend: View {
                         .padding(.bottom, 6)
 
                     Button {
-                        showsHatchingExplanation = true
+                        if horizontalSizeClass == .compact {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showsHatchingExplanation.toggle()
+                            }
+                        } else {
+                            showsHatchingExplanation = true
+                        }
                     } label: {
                         HatchLegendRow(hatchStyles: SevereIntensityPresentation.levels(for: state.layer).map {
                             HatchStyle.default.adjusted(forIntensityLevel: $0.level)
@@ -63,8 +70,17 @@ struct MapLegend: View {
                             pressedOverlayOpacity: 0.06
                         )
                     )
-                    .popover(isPresented: $showsHatchingExplanation, attachmentAnchor: .rect(.bounds)) {
+                    .popover(isPresented: Binding(
+                        get: { horizontalSizeClass != .compact && showsHatchingExplanation },
+                        set: { showsHatchingExplanation = $0 }
+                    ), attachmentAnchor: .rect(.bounds)) {
                         HatchingExplanationView(layer: state.layer)
+                    }
+                    if horizontalSizeClass == .compact {
+                        if showsHatchingExplanation {
+                            HatchingExplanationView(layer: state.layer, isInline: true)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                     }
                 }
             }
@@ -286,10 +302,17 @@ private struct WarningLegendRow: View {
 
 struct HatchingExplanationView: View {
     let layer: MapLayer
+    var isInline = false
 
     var body: some View {
         ScrollView { explanationContent }
-            .frame(minWidth: 280, idealWidth: 300, maxWidth: 360, maxHeight: 500, alignment: .leading)
+            .frame(
+                minWidth: isInline ? nil : 280,
+                idealWidth: isInline ? nil : 300,
+                maxWidth: isInline ? .infinity : 360,
+                maxHeight: isInline ? 360 : 500,
+                alignment: .leading
+            )
     }
 
     var explanationContent: some View {
