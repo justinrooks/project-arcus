@@ -9,6 +9,9 @@ import SwiftUI
 
 struct FireWeatherRailView: View {
     @Environment(\.colorScheme) var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var railVerticalPadding = 10
+
     let level: FireRiskLevel?
     var isOffline: Bool = false
     var showsResolvingPlaceholder: Bool = false
@@ -56,12 +59,12 @@ struct FireWeatherRailView: View {
             Image(systemName: level.symbol)
                 .formatBadgeImage(size: 35 * presentation.iconScale, colorScheme: colorScheme)
             VStack(alignment: .leading, spacing: 3) {
-                Text(presentation.title)
-                    .formatMessageText(for: colorScheme)
+                messageText(presentation.title)
                 Text(presentation.detail)
                     .formatSummaryText(for: colorScheme)
             }
         }
+        .padding(.vertical, railVerticalPadding)
         .railStyle(
             background: presentation.isSubdued
                 ? RiskBadgeVisualStyle.subduedFireBackground(for: colorScheme)
@@ -85,13 +88,31 @@ struct FireWeatherRailView: View {
             Image(systemName: "flame")
                 .formatBadgeImage(colorScheme: colorScheme)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Fire Risk")
-                    .formatMessageText(for: colorScheme)
+                messageText("Fire Risk")
                 Text("Getting fire risk…")
                     .formatSummaryText(for: colorScheme)
             }
         }
+        .padding(.vertical, railVerticalPadding)
         .railStyle(background: resolvingBackground)
+    }
+
+    @ViewBuilder
+    private func messageText(_ text: String) -> some View {
+        if usesAccessibilityLayout {
+            Text(text)
+                .font(.headline)
+                .foregroundStyle(RiskBadgeVisualStyle.messageForeground(for: colorScheme))
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            Text(text)
+                .formatMessageText(for: colorScheme)
+        }
+    }
+
+    private var usesAccessibilityLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize
     }
 
     private var unavailableContent: some View {
