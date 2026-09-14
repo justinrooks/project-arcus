@@ -9,6 +9,7 @@ import SwiftUI
 
 struct AwarenessSupportRow: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let title: String
     let detail: String
@@ -33,14 +34,14 @@ struct AwarenessSupportRow: View {
                 Text(title)
                     .font(rowMetrics.titleFont)
                     .foregroundColor(RiskBadgeVisualStyle.messageForeground(for: colorScheme))
-                    .lineLimit(1)
+                    .lineLimit(usesAccessibilityLayout ? nil : 1)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if !detail.isEmpty {
                     Text(detail)
                         .font(rowMetrics.detailFont)
                         .foregroundStyle(RiskBadgeVisualStyle.summaryForeground(for: colorScheme))
-                        .lineLimit(2)
+                        .lineLimit(usesAccessibilityLayout ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -134,6 +135,10 @@ struct AwarenessSupportRow: View {
                 detailFont: .footnote
             )
         }
+    }
+
+    private var usesAccessibilityLayout: Bool {
+        dynamicTypeSize.isAccessibilitySize
     }
 
     private struct Metrics {
