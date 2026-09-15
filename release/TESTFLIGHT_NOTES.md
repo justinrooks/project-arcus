@@ -1,16 +1,19 @@
 Unreleased
-SkyAware v1.2.0(190)
+SkyAware v1.2.0(193)
 Highlights:
 - The large Local Awareness widget now displays prioritized active alerts, overflow counts, Storm and Severe Risk context, and a quiet state when no local alerts are active.
 - Widgets preserve complete risk labels across sizes and now prioritize current alerts for Smart Stack relevance.
-- Today, Storm Setup, Map, Summary, and Alert Center use clearer severe-weather wording and consistent alert ordering.
+- Today, Storm Setup, Map, Summary, and Alert Center use clearer severe-weather wording and consistent alert ordering; compact iPhone hatching guidance and Today support rails now adapt more cleanly to accessibility layouts.
 - Widget freshness and Home publication now preserve trusted content when a fresh refresh is not accepted or cannot be committed.
 - Manual outlook refreshes preserve the last accepted outlook and report failure when fresh data is unavailable or rejected.
+- Medium and large widgets no longer display stale freshness warning text, and widget risk footers have more stable spacing and alignment.
 
 What to test:
 - Add enough active alerts to exercise the large Local Awareness widget’s single-alert, multiple-alert, overflow, quiet, stale, and unavailable states; verify VoiceOver describes the visible alert order and total count correctly.
 - Check small, combined, Lock Screen, and large widgets with quiet and elevated storm or severe risk; confirm labels remain complete and current active alerts receive Smart Stack relevance.
 - Simulate unavailable, rejected, or failed refreshes where feasible; confirm the prior accepted outlook, Home content, and air-quality data remain visible rather than appearing freshly updated.
+- On a compact iPhone, expand the map hatching explanation and confirm it stays within the legend while the map remains visible; verify a regular-width layout still uses the popover.
+- Exercise Today support rails and the no-alert state at accessibility Dynamic Type sizes, and check medium/large widgets after they become stale for readable wrapping, stable footer layout, and no stale warning copy.
 
 SkyAware v1.1.1(142)
 

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.2.0(190)
+## v1.2.0(193)
 ### UI / UX
 - The new large Local Awareness widget presents prioritized active alerts with clear lifecycle details, truthful overflow counts, and Storm and Severe Risk context; it also provides a dedicated quiet state when no local alerts are active.
 <!-- evidence: 5b9cb13, c7ef991, d4caa07, e1f743b, 0b50c08, e7f883d -->
@@ -12,6 +12,12 @@
 <!-- evidence: 614201c -->
 - Today, Storm Setup, Map, Summary, and Alert Center now use clearer severe-weather wording, semantic alert styling, consistent alert chronology, and an explicit conditional-intensity treatment.
 <!-- evidence: f263431, e4be2d2, 5e21ce4, 937fc3a, 9658826, 3e6d3ed -->
+- On compact iPhone layouts, the map’s hatching explanation expands inline within the legend while regular-width layouts retain the anchored popover.
+<!-- evidence: 2fa5431 -->
+- Today support rails and the no-alert rail now provide Dynamic Type-aware spacing and wrapping, with a stacked accessibility layout where needed to keep essential copy readable.
+<!-- evidence: 82cfb7f, 77b2ac7 -->
+- Widget risk footers now use more stable alignment and spacing across large and medium layouts.
+<!-- evidence: dca5737, 6f2b6c1 -->
 
 ### Reliability
 - Widget refreshes now distinguish alert and risk freshness, use accepted source dates for risk freshness, and update promptly after accepted projections and remote alerts.
@@ -22,10 +28,12 @@
 <!-- evidence: 93c23d2, 782ab7b, 9a5ac89 -->
 - Arcus alerts and SPC text and map feeds now retain transport and acceptance provenance, preventing non-authoritative fallback responses from advancing canonical feed state.
 <!-- evidence: d587fc6, e705b3b, 19f1393 -->
+- Available medium and large widgets no longer show stale freshness warning text, while fresh timestamps and explicit unavailable states remain visible.
+<!-- evidence: 3abd3ac -->
 
 ### Tests / QA
 - Regression coverage was expanded for widget presentation, accessibility, freshness, relevance, durable projection publication, feed acceptance, and refresh recovery paths.
-<!-- evidence: e7f883d, 265d44f, 4ba84de, c701a2f, 93c23d2, e705b3b, 19f1393 -->
+<!-- evidence: e7f883d, 265d44f, 3abd3ac, 4ba84de, c701a2f, 93c23d2, e705b3b, 19f1393 -->
 
 ## v1.1.1(142)
 

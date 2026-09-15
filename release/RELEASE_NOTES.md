@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v1.2.0(190)
+## v1.2.0(193)
 
 ## Overview
 This update introduces a richer large Local Awareness widget, improves severe-weather language and accessibility across the app, and makes widget and Home refreshes more trustworthy when fresh data cannot be accepted or committed.
@@ -15,6 +15,10 @@ This update introduces a richer large Local Awareness widget, improves severe-we
 - Widget refreshes distinguish alert and risk freshness and update after accepted projections and remote alerts.
 - Home and widgets now retain previously durable content when persistence cannot confirm a refresh; manual outlook refreshes preserve the last accepted outlook when fresh data fails.
 - Arcus alerts and SPC feeds now retain transport and acceptance provenance so non-authoritative fallback responses do not advance canonical feed state.
+- On compact iPhone layouts, the map’s hatching explanation now expands inline within the legend; regular-width layouts retain the anchored popover.
+- Today support rails and the no-alert rail now handle Dynamic Type with more breathing room and natural text wrapping, including a stacked accessibility layout where needed.
+- Widget risk footers use more stable alignment and spacing across large and medium layouts.
+- Available medium and large widgets no longer show stale freshness warning text, while fresh timestamps and explicit unavailable states remain visible.
 
 ## v1.1.1(142)
 
