@@ -337,7 +337,7 @@ private struct WidgetLargeRiskContextFooter: View {
                         columns
                     }
                 } else {
-                    HStack(alignment: .bottom, spacing: 12) {
+                    HStack(alignment: .top, spacing: 12) {
                         columns
                     }
                 }
@@ -367,6 +367,9 @@ private struct WidgetLargeRiskContextColumn: View {
     let title: String
     let state: WidgetRiskDisplayState
     let style: WidgetRiskVisualStyle
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private static let regularValueRowHeight: CGFloat = 30
 
     private var accent: Color {
         state == .placeholder ? .secondary : style.tint
@@ -400,6 +403,10 @@ private struct WidgetLargeRiskContextColumn: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(
+                        minHeight: dynamicTypeSize.isAccessibilitySize ? nil : Self.regularValueRowHeight,
+                        alignment: .top
+                    )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
