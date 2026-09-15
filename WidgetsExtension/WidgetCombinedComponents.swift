@@ -166,7 +166,7 @@ private struct WidgetCombinedLargeCard: View {
             ZStack(alignment: .topLeading) {
                 decorativeGlowLayer(in: proxy.size)
 
-                VStack(alignment: .leading, spacing: isMediumFamily ? 10 : 14) {
+                VStack(alignment: .leading, spacing: isMediumFamily ? 6 : 14) {
                     if isMediumFamily, let selectedAlert = snapshot.selectedAlert {
                         WidgetCombinedIntegratedAlertRow(
                             alert: selectedAlert,
@@ -213,7 +213,8 @@ private struct WidgetCombinedLargeCard: View {
                     }
                 }
                 .padding(.horizontal, isMediumFamily ? 14 : 16)
-                .padding(.vertical, isMediumFamily ? 12 : 16)
+                .padding(.top, isMediumFamily ? 12 : 16)
+                .padding(.bottom, 18)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
