@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v1.2.0(195)
+### Reliability
+- SkyAware now reports a minimal foreground activity signal when it becomes active, using its stable installation ID without depending on notification or location permissions; failed reports remain eligible for a later foreground retry.
+<!-- evidence: 7b8664a -->
+
+### Tests / QA
+- Added focused coverage for foreground activity lifecycle reporting, retry behavior, minimal request shape, and foreground networking policy.
+<!-- evidence: 7b8664a -->
+
 ## v1.2.0(193)
 ### UI / UX
 - The new large Local Awareness widget presents prioritized active alerts with clear lifecycle details, truthful overflow counts, and Storm and Severe Risk context; it also provides a dedicated quiet state when no local alerts are active.

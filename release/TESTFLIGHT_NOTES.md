@@ -1,4 +1,12 @@
 Unreleased
+SkyAware v1.2.0(195)
+Highlights:
+- SkyAware now reports a minimal foreground activity signal when it becomes active, using its existing stable installation ID.
+- Foreground reporting remains independent of notification and location permissions; failed reports remain eligible for a later foreground retry.
+
+What to test:
+- Re-activate after a failed foreground report and confirm a later foreground transition makes another reporting attempt.
+
 SkyAware v1.2.0(193)
 Highlights:
 - The large Local Awareness widget now displays prioritized active alerts, overflow counts, Storm and Severe Risk context, and a quiet state when no local alerts are active.

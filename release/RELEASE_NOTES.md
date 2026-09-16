@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## v1.2.0(195)
+
+## Overview
+This build adds a minimal foreground activity signal that uses the existing stable installation ID when SkyAware becomes active.
+
+## Highlights
+- Foreground activity reporting remains independent of notification and location permissions.
+- Failed reports remain eligible for a later foreground retry.
+
 ## v1.2.0(193)
 
 ## Overview
