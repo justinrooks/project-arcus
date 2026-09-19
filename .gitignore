@@ -44,3 +44,6 @@ fastlane/test_output
 
 # codex
 .codex/*
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

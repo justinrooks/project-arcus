@@ -3,6 +3,7 @@ import Testing
 @testable import SkyAware
 
 @Suite("Widget Snapshot Refresh Coordinator")
+@MainActor
 struct WidgetSnapshotRefreshCoordinatorTests {
     @Test("risk projection writes snapshot and reloads risk + combined kinds")
     func riskProjection_writesSnapshotAndReloadsTargetedKinds() throws {
@@ -95,6 +96,45 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         ])
     }
 
+    @Test("static widget fixture seeding requires opt-in and persists the warning")
+    func staticWidgetFixtureSeeding_requiresExplicitOptIn() throws {
+        let sandbox = try makeSandboxDirectory()
+        let store = WidgetSnapshotStore(directoryURL: sandbox)
+        let reloadedKinds = ReloadedKindsRecorder()
+        let coordinator = WidgetSnapshotRefreshCoordinator(
+            store: store,
+            reloadTimeline: { reloadedKinds.append($0) }
+        )
+        let generatedAt = Date()
+
+        try SkyAwareApp.seedUITestWidgetSnapshotIfNeeded(
+            environment: ["UI_TESTS_STATIC_HOME": "1"],
+            generatedAt: generatedAt,
+            widgetSnapshotRefresher: coordinator
+        )
+        #expect(store.load().snapshot == nil)
+        #expect(reloadedKinds.values().isEmpty)
+
+        try SkyAwareApp.seedUITestWidgetSnapshotIfNeeded(
+            environment: [
+                "UI_TESTS_STATIC_HOME": "1",
+                "UI_TESTS_STATIC_WIDGETS": "1"
+            ],
+            generatedAt: generatedAt,
+            widgetSnapshotRefresher: coordinator
+        )
+
+        let snapshot = try #require(store.load().snapshot)
+        #expect(snapshot.selectedAlert?.title == "UI Test Severe Thunderstorm Warning")
+        #expect(snapshot.stormRisk.label == "Enhanced Risk")
+        #expect(snapshot.severeRisk.label == "Tornado")
+        #expect(snapshot.availability == .available)
+        #expect(snapshot.locationSummary == "Norman, OK")
+        #expect(snapshot.freshness.timestamp == generatedAt)
+        #expect(snapshot.alertFreshness?.timestamp == generatedAt)
+        #expect(reloadedKinds.values() == SkyAwareWidgetKind.allSnapshotBacked)
+    }
+
     @Test("risk projection overwrites stale tornado state with all clear")
     func riskProjection_overwritesStaleTornadoStateWithAllClear() throws {
         let sandbox = try makeSandboxDirectory()
@@ -147,6 +187,19 @@ struct WidgetSnapshotRefreshCoordinatorTests {
         #expect(homeWidgetRefreshScope(for: remoteReceivedPlan) == nil)
         #expect(homeWidgetRefreshScope(for: remoteOpenedPlan) == nil)
         #expect(homeWidgetRefreshScope(for: foregroundPlan) == .riskOrLocationProjection)
+    }
+
+    @Test("static widget fixtures block ingestion snapshot overwrites only when fully opted in")
+    func staticWidgetFixtures_blockIngestionOverwritesOnlyWhenFullyOptedIn() {
+        #expect(
+            shouldRefreshHomeWidgetsForEnvironment([
+                "UI_TESTS_STATIC_HOME": "1",
+                "UI_TESTS_STATIC_WIDGETS": "1"
+            ]) == false
+        )
+        #expect(shouldRefreshHomeWidgetsForEnvironment(["UI_TESTS_STATIC_HOME": "1"]))
+        #expect(shouldRefreshHomeWidgetsForEnvironment(["UI_TESTS_STATIC_WIDGETS": "1"]))
+        #expect(shouldRefreshHomeWidgetsForEnvironment([:]))
     }
 
     private func makeSandboxDirectory() throws -> URL {
