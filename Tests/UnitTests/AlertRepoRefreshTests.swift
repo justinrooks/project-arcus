@@ -65,6 +65,105 @@ struct AlertRepoRefreshTests {
         }
     }
 
+    @Test("empty live collection preserves omitted active alert")
+    func refresh_emptyLiveCollectionPreservesOmittedActiveAlert() async throws {
+        let id = "123e4567-e89b-12d3-a456-426614174020"
+        let seed = alertPayloadArrayJSON(id: id, geometry: polygonGeometryJSON())
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(seed.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let before = try #require(await repo.alert(id: id))
+        let now = ISO8601DateFormatter().date(from: "2026-03-24T12:30:00Z")!
+        let activeBefore = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            forecastZone: "COZ245",
+            cell: 613725958748241919,
+            on: now
+        )
+        #expect(activeBefore.map(\.id) == [ArcusAlertIdentifier.canonical(id)])
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data("[]".utf8), source: .live),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let after = try #require(await repo.alert(id: id))
+        #expect(after == before)
+
+        let activeAfter = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            forecastZone: "COZ245",
+            cell: 613725958748241919,
+            on: now
+        )
+        #expect(activeAfter.map(\.id) == [ArcusAlertIdentifier.canonical(id)])
+    }
+
+    @Test("partial live collection preserves an omitted active alert")
+    func refresh_partialLiveCollectionPreservesOmittedActiveAlert() async throws {
+        let includedID = "123e4567-e89b-12d3-a456-426614174021"
+        let omittedID = "123e4567-e89b-12d3-a456-426614174022"
+        let seed = """
+        [
+          \(alertPayloadObjectJSON(id: includedID, messageId: "urn:alert:included-initial")),
+          \(alertPayloadObjectJSON(id: omittedID, messageId: "urn:alert:omitted"))
+        ]
+        """
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(seed.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let omittedBefore = try #require(await repo.alert(id: omittedID))
+        let updatedIncluded = alertPayloadArrayJSON(
+            id: includedID,
+            messageId: "urn:alert:included-updated",
+            currentRevisionSent: "2026-03-24T12:45:00Z"
+        )
+
+        try await repo.refresh(
+            using: StubArcusClient(payload: Data(updatedIncluded.utf8)),
+            for: "COC031",
+            and: "COZ245",
+            and: "COZ245",
+            in: 613725958748241919
+        )
+
+        let includedAfter = try #require(await repo.alert(id: includedID))
+        #expect(includedAfter.messageId == "urn:alert:included-updated")
+        #expect(includedAfter.currentRevisionSent == ISO8601DateFormatter().date(from: "2026-03-24T12:45:00Z"))
+
+        let omittedAfter = try #require(await repo.alert(id: omittedID))
+        #expect(omittedAfter == omittedBefore)
+
+        let active = try await repo.active(
+            countyCode: "COC031",
+            fireZone: "COZ245",
+            forecastZone: "COZ245",
+            cell: 613725958748241919,
+            on: ISO8601DateFormatter().date(from: "2026-03-24T12:50:00Z")!
+        )
+        #expect(active.map(\.id).sorted() == [
+            ArcusAlertIdentifier.canonical(includedID),
+            ArcusAlertIdentifier.canonical(omittedID)
+        ].sorted())
+    }
+
     @Test("Skips cancelled Arcus alerts even if timing fields are still active")
     func skipsCancelledPayloads() async throws {
         let now = ISO8601DateFormatter().date(from: "2026-03-24T12:00:00Z")!
@@ -627,10 +726,30 @@ private func alertPayloadArrayJSON(
     ends: String = "2026-03-24T13:15:00Z",
     geometry: String? = nil
 ) -> String {
+    let object = alertPayloadObjectJSON(
+        id: id,
+        messageId: messageId,
+        currentRevisionSent: currentRevisionSent,
+        messageType: messageType,
+        state: state,
+        ends: ends,
+        geometry: geometry
+    )
+    return "[\(object)]"
+}
+
+private func alertPayloadObjectJSON(
+    id: String,
+    messageId: String = "urn:alert:test",
+    currentRevisionSent: String = "2026-03-24T12:15:00Z",
+    messageType: String = "Alert",
+    state: String = "Active",
+    ends: String = "2026-03-24T13:15:00Z",
+    geometry: String? = nil
+) -> String {
     let geometryField = geometry.map { ",\n            \"geometry\": \($0)" } ?? ""
 
     return """
-        [
           {
             "id": "\(id)",
             "event": "Tornado Warning",
@@ -658,7 +777,6 @@ private func alertPayloadArrayJSON(
             "ugc": ["COC031"],
             "h3Cells": [613725958748241919]\(geometryField)
           }
-        ]
         """
 }
 
