@@ -87,10 +87,24 @@ struct SkyAwareApp: App {
             onReady: { deps in
                 Self.applyUITestLocationOverridesIfNeeded(locationSession: deps.locationSession)
                 Self.applyUITestStormSetupFixtureIfNeeded(locationSession: deps.locationSession)
-                let widgetDriver = (try? WidgetSnapshotStore()).map {
+                let widgetSnapshotRefresher = (try? WidgetSnapshotStore()).map {
+                    WidgetSnapshotRefreshCoordinator(store: $0)
+                }
+                if let widgetSnapshotRefresher {
+                    do {
+                        try Self.seedUITestWidgetSnapshotIfNeeded(
+                            widgetSnapshotRefresher: widgetSnapshotRefresher
+                        )
+                    } catch {
+                        Logger.appMain.error(
+                            "Failed to seed UI test widget snapshot: \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
+                let widgetDriver = widgetSnapshotRefresher.map {
                     RemoteAlertWidgetSnapshotRefreshDriver(
                         projectionStore: deps.homeProjectionStore,
-                        widgetSnapshotRefresher: WidgetSnapshotRefreshCoordinator(store: $0)
+                        widgetSnapshotRefresher: $0
                     )
                 }
                 SkyAwareAppDelegate.install(
@@ -260,6 +274,33 @@ enum BackgroundRefreshExecution {
             Logger.appMain.error("Blocked refresh successor attempt=\(attemptID, privacy: .public) outcome=\(String(describing: outcome), privacy: .public)")
         }
         return .blocked(reason: reason, scheduling: outcome)
+    }
+}
+
+extension SkyAwareApp {
+    static func seedUITestWidgetSnapshotIfNeeded(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        generatedAt: Date = .now,
+        widgetSnapshotRefresher: any WidgetSnapshotRefreshing
+    ) throws {
+        guard environment["UI_TESTS_STATIC_HOME"] == "1",
+              environment["UI_TESTS_STATIC_WIDGETS"] == "1" else {
+            return
+        }
+
+        try widgetSnapshotRefresher.refresh(
+            scope: .riskOrLocationProjection,
+            input: .init(
+                generatedAt: generatedAt,
+                riskSnapshotTimestamp: generatedAt,
+                alertSnapshotTimestamp: generatedAt,
+                stormRisk: .enhanced,
+                severeRisk: .tornado(probability: 0.10),
+                alerts: uiTestLaunchWatches,
+                mesos: uiTestLaunchMesos,
+                locationSummary: "Norman, OK"
+            )
+        )
     }
 }
 

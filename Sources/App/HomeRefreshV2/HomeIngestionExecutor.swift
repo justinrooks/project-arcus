@@ -909,6 +909,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         slowProductDecision: SlowProductPersistenceDecision,
         acceptsHotFeedSnapshot: Bool
     ) throws {
+        guard shouldRefreshHomeWidgetsForEnvironment(ProcessInfo.processInfo.environment) else {
+            return
+        }
         guard let widgetSnapshotRefresher = environment.widgetSnapshotRefresher,
               let scope = homeWidgetRefreshScope(for: plan) else {
             return
@@ -1107,6 +1110,11 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         }
     }
 
+}
+
+func shouldRefreshHomeWidgetsForEnvironment(_ environment: [String: String]) -> Bool {
+    environment["UI_TESTS_STATIC_HOME"] != "1"
+        || environment["UI_TESTS_STATIC_WIDGETS"] != "1"
 }
 
 func homeWidgetRefreshScope(for plan: HomeIngestionPlan) -> WidgetSnapshotChangeScope? {
