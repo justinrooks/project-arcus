@@ -6,7 +6,7 @@ import Foundation
 @Suite("AlertRepo purge()", .serialized)
 struct AlertRepoPurgeTests {
     // Helper to quickly build a WatchModel
-    private func makeAlert(number: String, issued: Date, validEnd: Date) -> Watch {
+    private func makeAlert(number: String, issued: Date, validEnd: Date, expires: Date? = nil) -> Watch {
         let iso = ISO8601DateFormatter()
         return Watch(
             nwsId: number,
@@ -16,7 +16,7 @@ struct AlertRepoPurgeTests {
             sent: issued,
             effective: iso.date(from: "2025-11-25T22:20:00Z")!,
             onset: iso.date(from: "2025-11-25T22:20:00Z")!,
-            expires: validEnd,
+            expires: expires ?? validEnd,
             ends: validEnd,
             status: "Actual",
             messageType: "Update",
@@ -52,7 +52,7 @@ struct AlertRepoPurgeTests {
         return try context.fetchCount(descriptor)
     }
 
-    @Test("Deletes only records with validEnd < now (== now stays)")
+    @Test("Deletes records when either terminal boundary reaches now")
     func deletesExpiredOnly() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [Watch.self]) }
         try await MainActor.run { try TestStore.reset(Watch.self, in: container) }
@@ -64,10 +64,12 @@ struct AlertRepoPurgeTests {
         let expired = makeAlert(number: "1\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(-1)) // < now
         let boundary = makeAlert(number: "2\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now)                       // == now
         let future = makeAlert(number: "3\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60))  // > now
+        let expiresBoundary = makeAlert(number: "4\(tag)", issued: now.addingTimeInterval(-3600), validEnd: now.addingTimeInterval(60), expires: now) // expires == now
 
         ctx.insert(expired)
         ctx.insert(boundary)
         ctx.insert(future)
+        ctx.insert(expiresBoundary)
         try ctx.save()
 
         try await repo.purge(asOf: now)
@@ -75,8 +77,9 @@ struct AlertRepoPurgeTests {
         let remaining = try fetchWatches(tag: tag, in: ctx)
         let remainingIds = Set(remaining.map { $0.nwsId })
         #expect(!remainingIds.contains("1\(tag)"), "Expired (< now) should be deleted")
-        #expect(remainingIds.contains("2\(tag)"), "Boundary (== now) should remain")
+        #expect(!remainingIds.contains("2\(tag)"), "ends boundary (== now) should be deleted")
         #expect(remainingIds.contains("3\(tag)"), "Future (> now) should remain")
+        #expect(!remainingIds.contains("4\(tag)"), "expires boundary (== now) should be deleted")
     }
 
     @Test("Deletes multiple expired records in one pass")
@@ -119,7 +122,7 @@ struct AlertRepoPurgeTests {
 
         let remaining = try fetchWatches(tag: tag, in: ctx)
         let remainingIds = Set(remaining.map { $0.nwsId })
-        #expect(remainingIds.contains("1\(tag)"))
+        #expect(!remainingIds.contains("1\(tag)"))
         #expect(remainingIds.contains("2\(tag)"))
     }
 

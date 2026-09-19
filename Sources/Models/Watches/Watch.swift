@@ -11,9 +11,10 @@ import SwiftData
 
 extension Watch {
     // Derived values
+    nonisolated var terminalAt: Date { min(expires, ends) }
     nonisolated var isActive: Bool { isActive(at: .init()) }
     nonisolated func isActive(at date: Date) -> Bool {
-        effective <= date && date <= ends
+        effective <= date && date < terminalAt
     }
     
     // MARK: Fetch Descriptors
@@ -22,7 +23,7 @@ extension Watch {
     /// - Returns: fetch descriptor
     static func currentWatchesDescriptor(date: Date = .now) -> FetchDescriptor<Watch> {
         let predicate = #Predicate<Watch> { watch in
-            watch.effective <= date && date <= watch.ends
+            watch.effective <= date && date < watch.expires && date < watch.ends
         }
         return FetchDescriptor(predicate: predicate)
     }
@@ -35,7 +36,9 @@ extension Watch {
     }
     
     static func expiredWatchesDescriptor(asOf now: Date) -> FetchDescriptor<Watch> {
-        let predicate = #Predicate<Watch> { $0.ends < now }
+        let predicate = #Predicate<Watch> { watch in
+            watch.expires <= now || watch.ends <= now
+        }
         return FetchDescriptor(predicate: predicate)
     }
 }

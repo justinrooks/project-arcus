@@ -317,7 +317,7 @@ actor AlertRepo {
         let status = watch.status
         let messageType = watch.messageType
 
-        guard watch.effective <= date && date <= watch.ends else {
+        guard watch.isActive(at: date) else {
             return false
         }
 

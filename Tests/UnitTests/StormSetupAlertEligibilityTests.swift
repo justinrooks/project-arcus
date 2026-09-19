@@ -37,6 +37,10 @@ struct StormSetupAlertEligibilityTests {
             now: now
         ) == false)
         #expect(StormSetupAlertEligibility.qualifies(
+            makeAlert(title: "Tornado Warning", issued: now.addingTimeInterval(-1), expires: now, ends: now.addingTimeInterval(1)),
+            now: now
+        ) == false)
+        #expect(StormSetupAlertEligibility.qualifies(
             makeAlert(title: "Tornado Warning", issued: now.addingTimeInterval(-2), ends: now.addingTimeInterval(-1)),
             now: now
         ) == false)
@@ -45,6 +49,7 @@ struct StormSetupAlertEligibilityTests {
     private func makeAlert(
         title: String,
         issued: Date? = nil,
+        expires: Date? = nil,
         ends: Date? = nil
     ) -> AlertDTO {
         let resolvedIssued = issued ?? now.addingTimeInterval(-1)
@@ -57,7 +62,7 @@ struct StormSetupAlertEligibilityTests {
             title: title,
             headline: title,
             issued: resolvedIssued,
-            expires: resolvedEnds,
+            expires: expires ?? resolvedEnds,
             ends: resolvedEnds,
             messageType: "Alert",
             sender: nil,
