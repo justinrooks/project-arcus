@@ -24,6 +24,7 @@ enum StormSetupAlertEligibility {
 
         return qualifyingEventTitles.contains(normalizedTitle)
             && alert.issued <= now
+            && alert.expires > now
             && alert.ends > now
     }
 }

@@ -86,6 +86,7 @@ struct AlertRepoActiveTests {
         issued: Date,
         effective: Date,
         validEnd: Date,
+        expires: Date? = nil,
         ugcZones: [String] = ["ALC013", "ALC025", "ALC035", "ALC041", "ALC099", "ALC129", "ALC131"],
         cells: [Int64] = [],
         status: String = "Actual",
@@ -102,7 +103,7 @@ struct AlertRepoActiveTests {
             sent: issued,
             effective: effective,
             onset: iso.date(from: "2025-11-25T22:20:00Z")!,
-            expires: validEnd,
+            expires: expires ?? validEnd,
             ends: validEnd,
             status: status,
             messageType: messageType,
@@ -138,10 +139,14 @@ struct AlertRepoActiveTests {
         let active = makeAlert(number: "1\(tag)", issued: now.addingTimeInterval(-3600), effective: now.addingTimeInterval(-300), validEnd: now.addingTimeInterval(600))
         let expired = makeAlert(number: "2\(tag)", issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(-10))
         let upcoming = makeAlert(number: "3\(tag)", issued: now.addingTimeInterval(-600), effective: now.addingTimeInterval(600), validEnd: now.addingTimeInterval(3600))
+        let expiresElapsed = makeAlert(number: "4\(tag)", issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now.addingTimeInterval(600), expires: now)
+        let endsElapsed = makeAlert(number: "5\(tag)", issued: now.addingTimeInterval(-7200), effective: now.addingTimeInterval(-7200), validEnd: now, expires: now.addingTimeInterval(600))
 
         ctx.insert(active)
         ctx.insert(expired)
         ctx.insert(upcoming)
+        ctx.insert(expiresElapsed)
+        ctx.insert(endsElapsed)
         try ctx.save()
 
         let hits = try await repo.active(
@@ -156,6 +161,8 @@ struct AlertRepoActiveTests {
         #expect(ids.contains("1\(tag)"))
         #expect(!ids.contains("2\(tag)"))
         #expect(!ids.contains("3\(tag)"))
+        #expect(!ids.contains("4\(tag)"))
+        #expect(!ids.contains("5\(tag)"))
     }
 
     @Test("Keeps cell-based matches even when UGC metadata is absent")
@@ -463,6 +470,17 @@ struct AlertRepoActiveTests {
             event: "Tornado Warning",
             geometry: geometry
         )
+        let expiresElapsed = makeAlert(
+            number: "expires-elapsed",
+            issued: now.addingTimeInterval(-7200),
+            effective: now.addingTimeInterval(-7200),
+            validEnd: now.addingTimeInterval(600),
+            expires: now,
+            status: "Active",
+            messageType: "Alert",
+            event: "Tornado Warning",
+            geometry: geometry
+        )
         let canceledMessage = makeAlert(
             number: "canceled-message",
             issued: now.addingTimeInterval(-3600),
@@ -515,6 +533,7 @@ struct AlertRepoActiveTests {
         )
 
         ctx.insert(expired)
+        ctx.insert(expiresElapsed)
         ctx.insert(canceledMessage)
         ctx.insert(cancelledState)
         ctx.insert(nonActiveState)
