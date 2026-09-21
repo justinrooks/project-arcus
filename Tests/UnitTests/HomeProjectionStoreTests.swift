@@ -1055,6 +1055,172 @@ struct HomeProjectionStoreTests {
         #expect(change.current.stormRisk == .enhanced)
     }
 
+    @Test("E4 drift inside one H3 cell preserves a batched newer-source transition")
+    func updateSlowProducts_sameH3DriftWithNewSourceCreatesBatchedRiskChange() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let first = makeContext(latitude: 39.7500, longitude: -104.4400, timestamp: 100)
+        let drifted = makeContext(latitude: 39.7509, longitude: -104.4409, timestamp: 200)
+
+        #expect(HomeProjection.projectionKey(for: first) == HomeProjection.projectionKey(for: drifted))
+        #expect(HomeProjection.riskComparisonLocationKey(for: first) == HomeProjection.riskComparisonLocationKey(for: drifted))
+        _ = try await store.updateSlowProducts(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: first
+        )
+
+        let change = try #require(await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .hail(probability: 0.15),
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 2),
+            fireSource: makeSource(revision: 2),
+            for: drifted
+        ))
+
+        #expect(change.changedDimensions == [.storm, .severe])
+        #expect(change.comparisonLocationKey == "h3-r8:\(first.h3Cell)")
+    }
+
+    @Test("moving H3 cells under one source emits only when local risk changes")
+    func updateSlowProducts_locationTransitionRequiresChangedProfile() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let store = HomeProjectionStore(modelContainer: container)
+        let first = makeContext(h3Cell: 123_456)
+        let changed = makeContext(latitude: 40.02, longitude: -104.87, h3Cell: 654_321)
+        let unchanged = makeContext(latitude: 40.03, longitude: -104.88, h3Cell: 987_654)
+        let source = makeSource(revision: 1)
+
+        _ = try await store.updateSlowProducts(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: source,
+            fireSource: source,
+            for: first
+        )
+        let changedLocation = try #require(await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: source,
+            fireSource: source,
+            for: changed
+        ))
+        let unchangedLocation = try await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            convectiveSource: source,
+            fireSource: source,
+            for: unchanged
+        )
+
+        #expect(changedLocation.changedDimensions == [.storm])
+        #expect(unchangedLocation == nil)
+    }
+
+    @Test("foreground-observed comparison state survives disk reopen for background evaluation")
+    func updateSlowProducts_foregroundComparisonStateSurvivesDiskReopen() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let context = makeContext()
+
+        do {
+            let store = HomeProjectionStore(
+                modelContainer: try ModelContainer(for: schema, configurations: configuration)
+            )
+            _ = try await store.commitCore(
+                .init(
+                    slowProducts: (.allClear, .allClear, .clear),
+                    convectiveSource: makeSource(revision: 1),
+                    fireSource: makeSource(revision: 1)
+                ),
+                for: context
+            )
+            let foreground = try await store.commitCore(
+                .init(
+                    slowProducts: (.marginal, .hail(probability: 0.15), .clear),
+                    convectiveSource: makeSource(revision: 2),
+                    fireSource: makeSource(revision: 2),
+                    riskComparisonMode: .observeOnly
+                ),
+                for: context
+            )
+            #expect(foreground.riskProfileChange == nil)
+        }
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        let background = try await reopenedStore.commitCore(
+            .init(slowProducts: (.marginal, .hail(probability: 0.15), .clear)),
+            for: context
+        )
+
+        #expect(background.riskProfileChange?.changedDimensions == [.storm, .severe])
+    }
+
+    @Test("legacy E4 baseline emits the first newer-source transition after disk reopen")
+    func updateSlowProducts_legacyForecastBaselineMigratesOnDiskReopen() async throws {
+        let context = makeContext()
+        let fixture = try makeLegacyComparisonFixture(context: context)
+        let store = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: fixture.schema, configurations: fixture.configuration)
+        )
+
+        let change = try #require(await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .hail(probability: 0.15),
+            fireRisk: .clear,
+            convectiveSource: makeSource(revision: 2),
+            fireSource: makeSource(revision: 2),
+            for: context
+        ))
+
+        #expect(change.previous.stormRisk == .allClear)
+        #expect(change.previous.severeRisk == .allClear)
+        #expect(change.changedDimensions == [.storm, .severe])
+    }
+
+    @Test("legacy E4 baseline emits a same-source H3 movement after disk reopen")
+    func updateSlowProducts_legacyLocationBaselineMigratesOnDiskReopen() async throws {
+        let first = makeContext(h3Cell: 123_456)
+        let moved = makeContext(latitude: 40.02, longitude: -104.87, h3Cell: 654_321)
+        let fixture = try makeLegacyComparisonFixture(context: first)
+        let store = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: fixture.schema, configurations: fixture.configuration)
+        )
+
+        let change = try #require(await store.updateSlowProducts(
+            stormRisk: .marginal,
+            severeRisk: .hail(probability: 0.15),
+            fireRisk: .elevated,
+            convectiveSource: makeSource(revision: 1),
+            fireSource: makeSource(revision: 1),
+            for: moved
+        ))
+
+        #expect(change.previous == RiskProfile(
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear
+        ))
+        #expect(change.changedDimensions == [.storm, .severe, .fire])
+    }
+
     @Test("leaving and revisiting a projection seeds before later accepted changes")
     func updateSlowProducts_revisitedProjectionDoesNotUseHistoricalBaseline() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -1103,7 +1269,7 @@ struct HomeProjectionStoreTests {
             for: first
         ))
 
-        #expect(newLocation == nil)
+        #expect(newLocation?.changedDimensions == [.storm])
         #expect(revisit == nil)
         #expect(stableChange.changedDimensions == [.storm])
     }
@@ -1142,7 +1308,11 @@ struct HomeProjectionStoreTests {
         let projections = try ModelContext(container).fetch(FetchDescriptor<HomeProjection>())
         let current = try #require(projections.first { $0.projectionKey == targetProjection.projectionKey })
         #expect(current.convectiveRiskComparisonLocationKey == HomeProjection.riskComparisonLocationKey(for: target))
-        #expect(current.convectiveRiskComparisonSourceKey == makeSource(revision: 2).persistenceToken)
+        #expect(
+            RiskComparisonBaselineState.decode(current.convectiveRiskComparisonSourceKey)?.baselineSourceKey
+                == makeSource(revision: 2).persistenceToken
+        )
+        #expect(current.record.convectiveSourceToken == makeSource(revision: 2).persistenceToken)
         #expect(projections.filter { $0.id != current.id }.allSatisfy {
             $0.convectiveRiskComparisonLocationKey == nil && $0.convectiveRiskComparisonSourceKey == nil
         })
@@ -1757,6 +1927,41 @@ struct HomeProjectionStoreTests {
             fireZoneLabel: "Front Range"
         )
         return LocationContext(snapshot: snapshot, h3Cell: snapshot.h3Cell ?? h3Cell, grid: grid)
+    }
+
+    private func makeLegacyComparisonFixture(
+        context: LocationContext
+    ) throws -> (schema: Schema, configuration: ModelConfiguration) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let modelContext = ModelContext(container)
+        let projection = HomeProjection(context: context)
+        projection.stormRisk = .allClear
+        projection.severeRisk = .allClear
+        projection.fireRisk = .clear
+        let gridKey = context.refreshKey.gridKey
+        let legacyLocationKey = [
+            HomeProjection.projectionKey(for: context),
+            "latitudeE4:\(gridKey.latitudeE4)",
+            "longitudeE4:\(gridKey.longitudeE4)"
+        ].joined(separator: "|")
+        let legacySourceKey = makeSource(revision: 1).persistenceToken
+        projection.convectiveRiskComparisonLocationKey = legacyLocationKey
+        projection.convectiveRiskComparisonSourceKey = legacySourceKey
+        projection.fireRiskComparisonLocationKey = legacyLocationKey
+        projection.fireRiskComparisonSourceKey = legacySourceKey
+        modelContext.insert(projection)
+        try modelContext.save()
+        return (schema, configuration)
     }
 
     private func productionSchema() -> Schema {

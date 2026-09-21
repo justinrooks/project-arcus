@@ -37,7 +37,7 @@ private struct SevereRiskSignature: Sendable, Equatable {
     }
 }
 
-struct RiskProfile: Sendable, Equatable {
+struct RiskProfile: Sendable, Codable, Equatable {
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
     let fireRisk: FireRiskLevel?
@@ -112,6 +112,41 @@ struct RiskProfile: Sendable, Equatable {
     }
 }
 
+/// Versioned payload stored in the existing comparison-source columns. The baseline fields are consumed only by
+/// background ingestion; `observedSourceKey` may advance in the foreground so presentation can remain current.
+struct RiskComparisonBaselineState: Sendable, Codable, Equatable {
+    private static let prefix = "risk-baseline-v1:"
+
+    let baselineSourceKey: String?
+    let observedSourceKey: String?
+    let profile: RiskProfile?
+
+    var persistenceToken: String? {
+        guard baselineSourceKey != nil || observedSourceKey != nil || profile != nil,
+              let data = try? JSONEncoder().encode(self) else {
+            return nil
+        }
+        return Self.prefix + data.base64EncodedString()
+    }
+
+    static func decode(_ token: String?, legacyProfile: RiskProfile? = nil) -> Self? {
+        guard let token else { return nil }
+        guard token.hasPrefix(prefix) else {
+            return .init(
+                baselineSourceKey: token,
+                observedSourceKey: token,
+                profile: legacyProfile
+            )
+        }
+        guard let data = Data(base64Encoded: String(token.dropFirst(prefix.count))) else { return nil }
+        return try? JSONDecoder().decode(Self.self, from: data)
+    }
+
+    static func observedSourceKey(from token: String?) -> String? {
+        decode(token)?.observedSourceKey
+    }
+}
+
 struct RiskProfileChange: Sendable, Equatable {
     /// Identifies one accepted persistence transition, rather than its destination profile.
     let occurrenceID: String
@@ -163,12 +198,18 @@ struct HomeProjectionCommitAcknowledgement: Sendable, Equatable {
 }
 
 struct HomeProjectionCoreCommit: Sendable {
+    enum RiskComparisonMode: Sendable, Equatable {
+        case evaluate
+        case observeOnly
+    }
+
     let weather: SummaryWeather??
     let slowProducts: (stormRisk: StormRiskLevel?, severeRisk: SevereWeatherThreat?, fireRisk: FireRiskLevel?)?
     let updatesConvectiveRisk: Bool
     let updatesFireRisk: Bool
     let convectiveSource: SpcMapSourceIdentity?
     let fireSource: SpcMapSourceIdentity?
+    let riskComparisonMode: RiskComparisonMode
     let hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])?
 
     init(
@@ -178,6 +219,7 @@ struct HomeProjectionCoreCommit: Sendable {
         updatesFireRisk: Bool = true,
         convectiveSource: SpcMapSourceIdentity? = nil,
         fireSource: SpcMapSourceIdentity? = nil,
+        riskComparisonMode: RiskComparisonMode = .evaluate,
         hotAlerts: (alerts: [AlertDTO], mesos: [MdDTO])? = nil
     ) {
         self.weather = weather
@@ -186,6 +228,7 @@ struct HomeProjectionCoreCommit: Sendable {
         self.updatesFireRisk = updatesFireRisk
         self.convectiveSource = convectiveSource
         self.fireSource = fireSource
+        self.riskComparisonMode = riskComparisonMode
         self.hotAlerts = hotAlerts
     }
 }
@@ -384,12 +427,15 @@ actor HomeProjectionStore {
         loadedAt: Date = .now
     ) throws -> HomeProjectionCommitAcknowledgement {
         let projection = try fetchOrCreateModel(for: context, touchedAt: loadedAt)
-        let previousProfile = RiskProfile(
+        let persistedProfile = RiskProfile(
             stormRisk: projection.stormRisk,
             severeRisk: projection.severeRisk,
             fireRisk: projection.fireRisk
         )
         var eligibleDimensions: [RiskProfileDimension] = []
+        var previousStormRisk: StormRiskLevel?
+        var previousSevereRisk: SevereWeatherThreat?
+        var previousFireRisk: FireRiskLevel?
 
         if let weather = commit.weather {
             projection.weatherPayload = weather.map(HomeProjectionWeatherPayload.init(summary:))
@@ -397,27 +443,47 @@ actor HomeProjectionStore {
         }
         if let slowProducts = commit.slowProducts {
             if commit.updatesConvectiveRisk {
-                if try advancesComparisonBaseline(
-                    for: .convective,
-                    projection: projection,
-                    context: context,
-                    acceptedSource: commit.convectiveSource
-                ) {
-                    eligibleDimensions.append(contentsOf: [.storm, .severe])
-                }
                 projection.stormRisk = slowProducts.stormRisk
                 projection.severeRisk = slowProducts.severeRisk
             }
             if commit.updatesFireRisk {
-                if try advancesComparisonBaseline(
-                    for: .fire,
-                    projection: projection,
-                    context: context,
-                    acceptedSource: commit.fireSource
-                ) {
-                    eligibleDimensions.append(.fire)
-                }
                 projection.fireRisk = slowProducts.fireRisk
+            }
+            let currentProfile = RiskProfile(
+                stormRisk: projection.stormRisk,
+                severeRisk: projection.severeRisk,
+                fireRisk: projection.fireRisk
+            )
+            previousStormRisk = currentProfile.stormRisk
+            previousSevereRisk = currentProfile.severeRisk
+            previousFireRisk = currentProfile.fireRisk
+
+            if commit.updatesConvectiveRisk,
+               let previousProfile = try processComparisonBaseline(
+                   for: .convective,
+                   projection: projection,
+                   context: context,
+                   acceptedSource: commit.convectiveSource,
+                   currentProfile: currentProfile,
+                   persistedProfile: persistedProfile,
+                   mode: commit.riskComparisonMode
+               ) {
+                previousStormRisk = previousProfile.stormRisk
+                previousSevereRisk = previousProfile.severeRisk
+                eligibleDimensions.append(contentsOf: [.storm, .severe])
+            }
+            if commit.updatesFireRisk,
+               let previousProfile = try processComparisonBaseline(
+                   for: .fire,
+                   projection: projection,
+                   context: context,
+                   acceptedSource: commit.fireSource,
+                   currentProfile: currentProfile,
+                   persistedProfile: persistedProfile,
+                   mode: commit.riskComparisonMode
+               ) {
+                previousFireRisk = previousProfile.fireRisk
+                eligibleDimensions.append(.fire)
             }
             if commit.updatesConvectiveRisk && commit.updatesFireRisk {
                 projection.lastSlowProductsLoadAt = loadedAt
@@ -434,7 +500,13 @@ actor HomeProjectionStore {
         return .init(
             record: projection.record,
             riskProfileChange: .init(
-                previous: previousProfile,
+                previous: commit.slowProducts.map { _ in
+                    RiskProfile(
+                        stormRisk: previousStormRisk,
+                        severeRisk: previousSevereRisk,
+                        fireRisk: previousFireRisk
+                    )
+                },
                 current: commit.slowProducts.flatMap { _ in
                     RiskProfile(
                         stormRisk: projection.stormRisk,
@@ -455,92 +527,148 @@ actor HomeProjectionStore {
         case fire
     }
 
-    /// A domain can notify only when a newly accepted SPC source replaces the source sampled at the same
-    /// projection-plus-E4 location identity. All other writes rebase the active domain baseline silently.
-    private func advancesComparisonBaseline(
+    /// Returns the prior background-consumed profile only for a forecast transition at the same H3 cell or a
+    /// location transition under the same accepted source. Foreground writes update observed source metadata but
+    /// never consume the notification baseline.
+    private func processComparisonBaseline(
         for domain: RiskComparisonDomain,
         projection: HomeProjection,
         context: LocationContext,
-        acceptedSource: SpcMapSourceIdentity?
-    ) throws -> Bool {
+        acceptedSource: SpcMapSourceIdentity?,
+        currentProfile: RiskProfile,
+        persistedProfile: RiskProfile,
+        mode: HomeProjectionCoreCommit.RiskComparisonMode
+    ) throws -> RiskProfile? {
         let locationKey = HomeProjection.riskComparisonLocationKey(for: context)
-        let previousLocationKey = comparisonLocationKey(for: domain, projection: projection)
-        let previousSourceKey = comparisonSourceKey(for: domain, projection: projection)
         let acceptedSourceKey = acceptedSource?.persistenceToken
-        let sourceKey: String?
-        if let acceptedSourceKey {
-            sourceKey = acceptedSourceKey
-        } else if let previousSourceKey {
-            sourceKey = previousSourceKey
-        } else {
-            sourceKey = try activeComparisonSourceKey(for: domain)
-        }
-        let advances = previousLocationKey == locationKey
-            && previousSourceKey != nil
-            && acceptedSourceKey != nil
-            && acceptedSourceKey != previousSourceKey
+        let comparisonProjections = try fetchComparisonProjections(for: domain)
+        let activeBaseline = activeComparisonBaseline(
+            for: domain,
+            in: comparisonProjections,
+            currentProjection: projection,
+            persistedProfile: persistedProfile
+        )
+        let localState = comparisonState(
+            for: domain,
+            projection: projection,
+            legacyProfile: persistedProfile
+        )
+        let observedSourceKey = acceptedSourceKey
+            ?? localState?.observedSourceKey
+            ?? activeBaseline?.state.observedSourceKey
+            ?? activeBaseline?.state.baselineSourceKey
 
-        try invalidateOtherComparisonBaselines(for: domain, keeping: projection)
-        setComparisonBaseline(
+        if mode == .observeOnly {
+            let state: RiskComparisonBaselineState
+            if comparisonLocationKey(for: domain, projection: projection) != nil,
+               let localState {
+                state = .init(
+                    baselineSourceKey: localState.baselineSourceKey,
+                    observedSourceKey: observedSourceKey,
+                    profile: localState.profile
+                )
+            } else {
+                state = .init(
+                    baselineSourceKey: nil,
+                    observedSourceKey: observedSourceKey,
+                    profile: nil
+                )
+            }
+            setComparisonState(
+                for: domain,
+                projection: projection,
+                locationKey: comparisonLocationKey(for: domain, projection: projection),
+                state: state
+            )
+            return nil
+        }
+
+        let isForecastTransition = activeBaseline?.locationKey == locationKey
+            && activeBaseline?.state.baselineSourceKey != nil
+            && observedSourceKey != nil
+            && observedSourceKey != activeBaseline?.state.baselineSourceKey
+        let isLocationTransition = activeBaseline?.locationKey != locationKey
+            && activeBaseline?.state.baselineSourceKey != nil
+            && observedSourceKey == activeBaseline?.state.baselineSourceKey
+        let previousProfile = isForecastTransition || isLocationTransition
+            ? activeBaseline?.state.profile
+            : nil
+
+        invalidateOtherComparisonBaselines(
+            for: domain,
+            in: comparisonProjections,
+            keeping: projection
+        )
+        setComparisonState(
             for: domain,
             projection: projection,
             locationKey: locationKey,
-            sourceKey: sourceKey
+            state: .init(
+                baselineSourceKey: observedSourceKey,
+                observedSourceKey: observedSourceKey,
+                profile: domainProfile(for: domain, from: currentProfile)
+            )
         )
-        return advances
+        return previousProfile
     }
 
-    private func activeComparisonSourceKey(for domain: RiskComparisonDomain) throws -> String? {
-        var descriptor: FetchDescriptor<HomeProjection>
-        switch domain {
-        case .convective:
-            descriptor = FetchDescriptor(
-                predicate: #Predicate { $0.convectiveRiskComparisonSourceKey != nil },
-                sortBy: [
-                    SortDescriptor(\.updatedAt, order: .reverse),
-                    SortDescriptor(\.projectionKey, order: .forward)
-                ]
-            )
-        case .fire:
-            descriptor = FetchDescriptor(
-                predicate: #Predicate { $0.fireRiskComparisonSourceKey != nil },
-                sortBy: [
-                    SortDescriptor(\.updatedAt, order: .reverse),
-                    SortDescriptor(\.projectionKey, order: .forward)
-                ]
-            )
-        }
-        descriptor.fetchLimit = 1
-        let projections = try modelContext.fetch(descriptor)
-        recordFetchedRows(projections.count)
-        return projections.lazy.compactMap {
-            self.comparisonSourceKey(for: domain, projection: $0)
+    private func activeComparisonBaseline(
+        for domain: RiskComparisonDomain,
+        in projections: [HomeProjection],
+        currentProjection: HomeProjection,
+        persistedProfile: RiskProfile
+    ) -> (locationKey: String, state: RiskComparisonBaselineState)? {
+        projections.lazy.compactMap { projection in
+            guard let storedLocationKey = self.comparisonLocationKey(for: domain, projection: projection),
+                  let state = self.comparisonState(
+                      for: domain,
+                      projection: projection,
+                      legacyProfile: projection.id == currentProjection.id ? persistedProfile : nil
+                  ),
+                  state.baselineSourceKey != nil,
+                  state.profile != nil else {
+                return nil
+            }
+            return (self.normalizedComparisonLocationKey(storedLocationKey, projection: projection), state)
         }.first
     }
 
-    private func invalidateOtherComparisonBaselines(
-        for domain: RiskComparisonDomain,
-        keeping projection: HomeProjection
-    ) throws {
+    private func fetchComparisonProjections(for domain: RiskComparisonDomain) throws -> [HomeProjection] {
         let descriptor: FetchDescriptor<HomeProjection>
         switch domain {
         case .convective:
             descriptor = FetchDescriptor(
                 predicate: #Predicate {
                     $0.convectiveRiskComparisonLocationKey != nil || $0.convectiveRiskComparisonSourceKey != nil
-                }
+                },
+                sortBy: [
+                    SortDescriptor(\.updatedAt, order: .reverse),
+                    SortDescriptor(\.projectionKey, order: .forward)
+                ]
             )
         case .fire:
             descriptor = FetchDescriptor(
                 predicate: #Predicate {
                     $0.fireRiskComparisonLocationKey != nil || $0.fireRiskComparisonSourceKey != nil
-                }
+                },
+                sortBy: [
+                    SortDescriptor(\.updatedAt, order: .reverse),
+                    SortDescriptor(\.projectionKey, order: .forward)
+                ]
             )
         }
         let projections = try modelContext.fetch(descriptor)
         recordFetchedRows(projections.count)
+        return projections
+    }
+
+    private func invalidateOtherComparisonBaselines(
+        for domain: RiskComparisonDomain,
+        in projections: [HomeProjection],
+        keeping projection: HomeProjection
+    ) {
         for other in projections where other.id != projection.id {
-            setComparisonBaseline(for: domain, projection: other, locationKey: nil, sourceKey: nil)
+            setComparisonState(for: domain, projection: other, locationKey: nil, state: nil)
         }
     }
 
@@ -554,19 +682,53 @@ actor HomeProjectionStore {
         }
     }
 
-    private func comparisonSourceKey(for domain: RiskComparisonDomain, projection: HomeProjection) -> String? {
+    private func comparisonState(
+        for domain: RiskComparisonDomain,
+        projection: HomeProjection,
+        legacyProfile: RiskProfile? = nil
+    ) -> RiskComparisonBaselineState? {
+        let token: String?
         switch domain {
-        case .convective: projection.convectiveRiskComparisonSourceKey
-        case .fire: projection.fireRiskComparisonSourceKey
+        case .convective: token = projection.convectiveRiskComparisonSourceKey
+        case .fire: token = projection.fireRiskComparisonSourceKey
+        }
+        return RiskComparisonBaselineState.decode(
+            token,
+            legacyProfile: domainProfile(
+                for: domain,
+                from: legacyProfile ?? RiskProfile(
+                    stormRisk: projection.stormRisk,
+                    severeRisk: projection.severeRisk,
+                    fireRisk: projection.fireRisk
+                )
+            )
+        )
+    }
+
+    private func normalizedComparisonLocationKey(
+        _ storedLocationKey: String,
+        projection: HomeProjection
+    ) -> String {
+        guard storedLocationKey.hasPrefix("h3-r8:") == false else { return storedLocationKey }
+        return "h3-r8:\(projection.h3Cell)"
+    }
+
+    private func domainProfile(for domain: RiskComparisonDomain, from profile: RiskProfile) -> RiskProfile {
+        switch domain {
+        case .convective:
+            RiskProfile(stormRisk: profile.stormRisk, severeRisk: profile.severeRisk, fireRisk: nil)
+        case .fire:
+            RiskProfile(stormRisk: nil, severeRisk: nil, fireRisk: profile.fireRisk)
         }
     }
 
-    private func setComparisonBaseline(
+    private func setComparisonState(
         for domain: RiskComparisonDomain,
         projection: HomeProjection,
         locationKey: String?,
-        sourceKey: String?
+        state: RiskComparisonBaselineState?
     ) {
+        let sourceKey = state?.persistenceToken
         let didChange: Bool
         switch domain {
         case .convective:

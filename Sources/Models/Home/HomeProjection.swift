@@ -309,15 +309,10 @@ extension HomeProjection {
         return components.joined(separator: "|")
     }
 
-    /// Risk comparisons require both the coarse projection and the existing E4 coordinate bucket.
-    /// A different identity seeds a baseline instead of treating movement as a forecast change.
+    /// Risk-change notifications use the app's existing resolution-8 H3 cell as their location identity.
+    /// Projection and coordinate cache keys intentionally remain independent from this contract.
     static func riskComparisonLocationKey(for context: LocationContext) -> String {
-        let gridKey = context.refreshKey.gridKey
-        return [
-            projectionKey(for: context),
-            "latitudeE4:\(gridKey.latitudeE4)",
-            "longitudeE4:\(gridKey.longitudeE4)"
-        ].joined(separator: "|")
+        "h3-r8:\(context.h3Cell)"
     }
 
     var record: HomeProjectionRecord {
@@ -351,7 +346,9 @@ extension HomeProjection {
             stormSetupCurrentResponse: stormSetupCurrentResponse,
             stormSetup: stormSetupCurrentResponse.map(StormSetupDTO.init(response:)),
             lastStormSetupLoadAt: lastStormSetupLoadAt,
-            convectiveSourceToken: convectiveRiskComparisonSourceKey
+            convectiveSourceToken: RiskComparisonBaselineState.observedSourceKey(
+                from: convectiveRiskComparisonSourceKey
+            )
         )
     }
 
