@@ -146,11 +146,13 @@ struct SummaryView: View {
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
+    let isStormSetupRefreshInFlight: Bool
     let showsOfflineToken: Bool
     let locationReliabilityRailState: LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
+    let onRefreshStormSetup: () async -> Void
 
 #if DEBUG
     @AppStorage("stormSetupForceDisplay", store: UserDefaults.shared)
@@ -176,11 +178,13 @@ struct SummaryView: View {
         readinessState: SummaryReadinessState,
         resolutionState: SummaryResolutionState,
         isRefreshInFlight: Bool = false,
+        isStormSetupRefreshInFlight: Bool = false,
         showsOfflineToken: Bool,
         locationReliabilityRailState: LocationReliabilityRailState? = nil,
         onOpenMapLayer: @escaping (MapLayer) -> Void,
         onOpenAlerts: @escaping () -> Void,
-        onOpenOutlooks: @escaping () -> Void
+        onOpenOutlooks: @escaping () -> Void,
+        onRefreshStormSetup: @escaping () async -> Void = {}
     ) {
         self.snap = snap
         self.stormSetup = stormSetup
@@ -200,11 +204,13 @@ struct SummaryView: View {
         self.readinessState = readinessState
         self.resolutionState = resolutionState
         self.isRefreshInFlight = isRefreshInFlight
+        self.isStormSetupRefreshInFlight = isStormSetupRefreshInFlight
         self.showsOfflineToken = showsOfflineToken
         self.locationReliabilityRailState = locationReliabilityRailState
         self.onOpenMapLayer = onOpenMapLayer
         self.onOpenAlerts = onOpenAlerts
         self.onOpenOutlooks = onOpenOutlooks
+        self.onRefreshStormSetup = onRefreshStormSetup
     }
 
     private var isWeatherLoading: Bool {
@@ -362,7 +368,11 @@ struct SummaryView: View {
 
                 case .visible(let presentation):
                     NavigationLink {
-                        StormSetupDetailView(presentation: presentation)
+                        StormSetupDetailView(
+                            presentation: presentation,
+                            isRefreshing: isStormSetupRefreshInFlight,
+                            onRefresh: onRefreshStormSetup
+                        )
                     } label: {
                         StormSetupSummaryCard(presentation: presentation.summaryPresentation)
                     }

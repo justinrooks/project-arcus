@@ -199,7 +199,14 @@ protocol HomeIngestionExecuting: Sendable {
     func run(plan: HomeIngestionPlan, progress: HomeIngestionRunProgress) async throws -> HomeSnapshot
 }
 
-actor HomeIngestionExecutor: HomeIngestionExecuting {
+protocol HomeStormSetupManualExecuting: Actor, Sendable {
+    func refreshStormSetupManually(
+        context: LocationContext,
+        snapshot: HomeSnapshot
+    ) async -> HomeStormSetupIngestion.RefreshDecision
+}
+
+actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuting {
     private enum ProjectionPersistenceResult {
         case unavailable
         case notRequired(HomeProjectionRecord?)
@@ -335,6 +342,21 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
         let executionMode = httpExecutionMode(for: plan)
         return try await HTTPExecutionMode.$current.withValue(executionMode) {
             try await runScoped(plan: plan, progress: progress, executionMode: executionMode)
+        }
+    }
+
+    func refreshStormSetupManually(
+        context: LocationContext,
+        snapshot: HomeSnapshot
+    ) async -> HomeStormSetupIngestion.RefreshDecision {
+        await HTTPExecutionMode.$current.withValue(.foreground) {
+            await stormSetupIngestion.refresh(
+                context: context,
+                snapshot: snapshot,
+                plan: HomeIngestionPlan(request: .init(trigger: .sessionTick, locationContext: context)),
+                executionMode: .foreground,
+                intent: .userInitiated
+            )
         }
     }
 

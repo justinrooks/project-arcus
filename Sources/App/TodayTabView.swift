@@ -23,12 +23,14 @@ struct TodayTabView: View {
     let readinessState: SummaryReadinessState
     let resolutionState: SummaryResolutionState
     let isRefreshInFlight: Bool
+    let isStormSetupRefreshInFlight: Bool
     let showsOfflineToken: Bool
     let locationReliabilityRailState: SummaryView.LocationReliabilityRailState?
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
     let refreshAction: () async -> Void
+    let refreshStormSetupAction: () async -> Void
 
     private var weatherLocationIdentity: SummaryWeatherLocationIdentity? {
         SummaryWeatherLocationIdentity(snapshot: snap)
@@ -79,11 +81,13 @@ struct TodayTabView: View {
                         readinessState: readinessState,
                         resolutionState: resolutionState,
                         isRefreshInFlight: isRefreshInFlight,
+                        isStormSetupRefreshInFlight: isStormSetupRefreshInFlight,
                         showsOfflineToken: showsOfflineToken,
                         locationReliabilityRailState: locationReliabilityRailState,
                         onOpenMapLayer: onOpenMapLayer,
                         onOpenAlerts: onOpenAlerts,
-                        onOpenOutlooks: onOpenOutlooks
+                        onOpenOutlooks: onOpenOutlooks,
+                        onRefreshStormSetup: refreshStormSetupAction
                     )
                         .toolbar(.hidden, for: .navigationBar)
                         .background(.skyAwareBackground)

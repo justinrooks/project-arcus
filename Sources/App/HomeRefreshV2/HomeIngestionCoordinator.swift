@@ -16,6 +16,13 @@ protocol HomeIngestionCoordinating: Actor, Sendable {
     ) async throws -> HomeSnapshot
 }
 
+protocol HomeStormSetupManualRefreshing: Actor, Sendable {
+    func refreshStormSetupManually(
+        context: LocationContext,
+        snapshot: HomeSnapshot
+    ) async -> HomeStormSetupIngestion.RefreshDecision
+}
+
 extension HomeIngestionCoordinating {
     func enqueueAndWait(
         _ trigger: HomeRefreshTrigger,
@@ -45,7 +52,7 @@ extension HomeIngestionCoordinating {
     }
 }
 
-actor HomeIngestionCoordinator: HomeIngestionCoordinating {
+actor HomeIngestionCoordinator: HomeIngestionCoordinating, HomeStormSetupManualRefreshing {
     private struct Waiter {
         let id: UUID
         let requestedPlan: HomeIngestionPlan
@@ -130,6 +137,16 @@ actor HomeIngestionCoordinator: HomeIngestionCoordinating {
                 await self.cancelWaiter(withID: waiterID)
             }
         }
+    }
+
+    func refreshStormSetupManually(
+        context: LocationContext,
+        snapshot: HomeSnapshot
+    ) async -> HomeStormSetupIngestion.RefreshDecision {
+        guard let executor = executor as? any HomeStormSetupManualExecuting else {
+            return .init(result: .skipped, currentResponse: nil, stormSetup: nil)
+        }
+        return await executor.refreshStormSetupManually(context: context, snapshot: snapshot)
     }
 
     private func submit(_ requestedPlan: HomeIngestionPlan, waiter: Waiter?) {

@@ -10,6 +10,11 @@ import OSLog
 import ArcusCore
 
 actor HomeStormSetupIngestion {
+    enum RefreshIntent: Sendable {
+        case automatic
+        case userInitiated
+    }
+
     struct RefreshDecision: Sendable {
         let result: HomeStormSetupRefreshResult
         let currentResponse: StormSetupCurrentResponse?
@@ -21,6 +26,22 @@ actor HomeStormSetupIngestion {
         var lastAttemptAt: Date?
         var lastSuccessAt: Date?
         var lastAttemptFailed: Bool
+    }
+
+    private struct ActiveRefresh: Sendable {
+        let id: UUID
+        let intent: RefreshIntent
+        var task: Task<Void, Never>?
+        var waiters: [UUID: CheckedContinuation<RefreshDecision, Never>]
+        var pendingManual: [UUID: PendingManual]
+    }
+
+    private struct PendingManual: Sendable {
+        let context: LocationContext
+        let snapshot: HomeSnapshot
+        let plan: HomeIngestionPlan
+        let executionMode: HTTPExecutionMode
+        let continuation: CheckedContinuation<RefreshDecision, Never>
     }
 
     private struct QueryTimeoutError: Error {}
@@ -42,6 +63,7 @@ actor HomeStormSetupIngestion {
     private let failedAttemptBackoff: TimeInterval
 
     private var refreshStates: [String: RefreshState] = [:]
+    private var activeRefreshes: [String: ActiveRefresh] = [:]
 
     init(
         logger: Logger,
@@ -65,12 +87,11 @@ actor HomeStormSetupIngestion {
         context: LocationContext?,
         snapshot: HomeSnapshot,
         plan: HomeIngestionPlan,
-        executionMode: HTTPExecutionMode
+        executionMode: HTTPExecutionMode,
+        intent: RefreshIntent = .automatic
     ) async -> RefreshDecision {
-        let startedAt = Date()
-        let now = currentDate()
-
         guard let context else {
+            let startedAt = Date()
             logOutcome(
                 outcome: "skipped",
                 reason: "no-location",
@@ -79,6 +100,83 @@ actor HomeStormSetupIngestion {
             )
             return .init(result: .skipped, currentResponse: nil, stormSetup: nil)
         }
+
+        let projectionKey = HomeProjection.projectionKey(for: context)
+        let ownerID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if var activeRefresh = activeRefreshes[projectionKey] {
+                    if intent == .userInitiated, activeRefresh.intent == .automatic {
+                        activeRefresh.pendingManual[ownerID] = .init(
+                            context: context,
+                            snapshot: snapshot,
+                            plan: plan,
+                            executionMode: executionMode,
+                            continuation: continuation
+                        )
+                    } else {
+                        activeRefresh.waiters[ownerID] = continuation
+                    }
+                    activeRefreshes[projectionKey] = activeRefresh
+                    return
+                }
+                startRefresh(
+                    context: context,
+                    snapshot: snapshot,
+                    plan: plan,
+                    executionMode: executionMode,
+                    intent: intent,
+                    projectionKey: projectionKey,
+                    waiterID: ownerID,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(ownerID, for: projectionKey) }
+        }
+    }
+
+    private func startRefresh(context: LocationContext, snapshot: HomeSnapshot, plan: HomeIngestionPlan, executionMode: HTTPExecutionMode, intent: RefreshIntent, projectionKey: String, waiterID: UUID, continuation: CheckedContinuation<RefreshDecision, Never>) {
+        let refreshID = UUID()
+        activeRefreshes[projectionKey] = .init(id: refreshID, intent: intent, task: nil, waiters: [waiterID: continuation], pendingManual: [:])
+        let task = Task {
+            let decision = await self.performRefresh(context: context, snapshot: snapshot, plan: plan, executionMode: executionMode, intent: intent)
+            self.finishRefresh(id: refreshID, for: projectionKey, decision: decision)
+        }
+        activeRefreshes[projectionKey]?.task = task
+    }
+
+    private func cancelWaiter(_ waiterID: UUID, for projectionKey: String) {
+        guard var active = activeRefreshes[projectionKey] else { return }
+        if let continuation = active.waiters.removeValue(forKey: waiterID) ?? active.pendingManual.removeValue(forKey: waiterID)?.continuation {
+            continuation.resume(returning: .init(result: .cancelled, currentResponse: nil, stormSetup: nil))
+        }
+        if active.waiters.isEmpty && active.pendingManual.isEmpty { active.task?.cancel() }
+        activeRefreshes[projectionKey] = active
+    }
+
+    private func finishRefresh(id: UUID, for projectionKey: String, decision: RefreshDecision) {
+        guard let active = activeRefreshes[projectionKey], active.id == id else { return }
+        active.waiters.values.forEach { $0.resume(returning: decision) }
+        if let next = active.pendingManual.values.first {
+            activeRefreshes[projectionKey] = nil
+            startRefresh(context: next.context, snapshot: next.snapshot, plan: next.plan, executionMode: next.executionMode, intent: .userInitiated, projectionKey: projectionKey, waiterID: UUID(), continuation: next.continuation)
+            if var promoted = activeRefreshes[projectionKey] {
+                for (owner, pending) in active.pendingManual.dropFirst() { promoted.waiters[owner] = pending.continuation }
+                activeRefreshes[projectionKey] = promoted
+            }
+        } else { activeRefreshes[projectionKey] = nil }
+    }
+
+    private func performRefresh(
+        context: LocationContext,
+        snapshot: HomeSnapshot,
+        plan: HomeIngestionPlan,
+        executionMode: HTTPExecutionMode,
+        intent: RefreshIntent
+    ) async -> RefreshDecision {
+        let startedAt = Date()
+        let now = currentDate()
 
         guard let projectionStore else {
             logOutcome(
@@ -114,8 +212,10 @@ actor HomeStormSetupIngestion {
             now: now
         )
 
-        let shouldFetchPrimary = querying != nil && StormSetupFetchPolicy.shouldFetch(policyInput)
-        let shouldBackOffPrimary = shouldBackOff(for: projectionKey, plan: plan, now: now)
+        let shouldFetchPrimary = querying != nil
+            && preferences.stormSetupEnabled
+            && (intent == .userInitiated || StormSetupFetchPolicy.shouldFetch(policyInput))
+        let shouldBackOffPrimary = intent == .automatic && shouldBackOff(for: projectionKey, plan: plan, now: now)
 
         if shouldFetchPrimary == false {
             let resolvedStormSetup = freshCachedStormSetup
