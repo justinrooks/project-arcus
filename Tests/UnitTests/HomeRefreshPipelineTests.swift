@@ -2344,6 +2344,58 @@ struct HomeRefreshPipelineTests {
         #expect(moved.stormRisk == .allClear)
     }
 
+    @Test("foreground risk ingestion preserves a newer-source transition for background delivery")
+    func foregroundRiskRefresh_doesNotConsumeBackgroundComparisonBaseline() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: acceptedMapSyncOutcome(revision: 1),
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: locationSession,
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+
+        let baseline = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+        await spc.configureMapSync(
+            outcome: acceptedMapSyncOutcome(revision: 2),
+            stormRisk: .marginal,
+            severeRisk: .hail(probability: 0.15),
+            fireRisk: .clear
+        )
+        let foreground = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh)),
+            progress: .none
+        )
+        let background = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh)),
+            progress: .none
+        )
+
+        #expect(baseline.riskProfileChange == nil)
+        #expect(foreground.riskProfileChange == nil)
+        #expect(background.riskProfileChange?.changedDimensions == [.storm, .severe])
+    }
+
     @Test("hot-alert providers overlap and join before completion")
     func hotAlertSync_overlapsProvidersAndJoinsBeforeCompletion() async throws {
         let context = makeContext()

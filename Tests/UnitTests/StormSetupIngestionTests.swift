@@ -1426,7 +1426,7 @@ struct StormSetupIngestionTests {
         #expect(callCount == 1)
     }
 
-    @Test("accepted changed profile exposes the delta even when widget refresh fails")
+    @Test("accepted background profile change exposes the delta even when widget refresh fails")
     func acceptedChangedProfile_exposesDeltaEvenWhenWidgetRefreshFails() async throws {
         let context = makeContext()
         let widgetRefresher = ThrowingWidgetSnapshotRefresher()
@@ -1452,7 +1452,7 @@ struct StormSetupIngestionTests {
         )
 
         let snapshot = try await harness.executor.run(
-            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
         )
 
         let expectedChange = try #require(RiskProfileChange(
@@ -1583,7 +1583,7 @@ struct StormSetupIngestionTests {
                 mapSyncOutcome: acceptedStormSetupMapSyncOutcome(revision: 2)
             )
             let acceptedSnapshot = try await acceptedHarness.executor.run(
-                plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+                plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
             )
             #expect(acceptedSnapshot.riskProfileChange?.changedDimensions == [.storm, .severe, .fire])
         }
@@ -1629,11 +1629,11 @@ struct StormSetupIngestionTests {
             mapSyncOutcome: acceptedStormSetupMapSyncOutcome(revision: 2)
         )
         let acceptedSnapshot = try await acceptedHarness.executor.run(
-            plan: HomeIngestionPlan(request: .init(trigger: .manualRefresh))
+            plan: HomeIngestionPlan(request: .init(trigger: .backgroundRefresh))
         )
 
         #expect(acceptedSnapshot.riskProfileChange?.changedDimensions == [.storm, .severe, .fire])
-        #expect(acceptedSnapshot.riskProfileChange?.previous.stormRisk == .slight)
+        #expect(acceptedSnapshot.riskProfileChange?.previous.stormRisk == .marginal)
     }
 
     @Test("missing or failed risk persistence cannot fabricate a delta")

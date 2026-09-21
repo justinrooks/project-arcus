@@ -48,8 +48,8 @@ struct HomeProjectionStoreScalingMeasurementTests {
 
         var projections = try fetchProjections(from: fixture.container)
         let inherited = try #require(projections.first(where: { $0.projectionKey == fixture.targetKey }))
-        #expect(inherited.convectiveRiskComparisonSourceKey == inheritedSource.persistenceToken)
-        #expect(inherited.fireRiskComparisonSourceKey == (population == 1 ? inheritedSource.persistenceToken : nil))
+        #expect(sourceKey(inherited.convectiveRiskComparisonSourceKey) == inheritedSource.persistenceToken)
+        #expect(sourceKey(inherited.fireRiskComparisonSourceKey) == (population == 1 ? inheritedSource.persistenceToken : nil))
         #expect(projections.filter { $0.id != inherited.id }.allSatisfy {
             $0.convectiveRiskComparisonSourceKey == nil
         })
@@ -68,8 +68,8 @@ struct HomeProjectionStoreScalingMeasurementTests {
 
         projections = try fetchProjections(from: fixture.container)
         let current = try #require(projections.first(where: { $0.projectionKey == fixture.targetKey }))
-        #expect(current.convectiveRiskComparisonSourceKey == acceptedSource.persistenceToken)
-        #expect(current.fireRiskComparisonSourceKey == (population == 1 ? inheritedSource.persistenceToken : nil))
+        #expect(sourceKey(current.convectiveRiskComparisonSourceKey) == acceptedSource.persistenceToken)
+        #expect(sourceKey(current.fireRiskComparisonSourceKey) == (population == 1 ? inheritedSource.persistenceToken : nil))
         #expect(HomeView.selectProjection(from: projections.map(\.record), currentContext: fixture.target)?.projectionKey == fixture.targetKey)
 
         _ = try await store.commitCore(
@@ -85,8 +85,8 @@ struct HomeProjectionStoreScalingMeasurementTests {
 
         projections = try fetchProjections(from: fixture.container)
         let mixedDomain = try #require(projections.first(where: { $0.projectionKey == fixture.targetKey }))
-        #expect(mixedDomain.convectiveRiskComparisonSourceKey == acceptedSource.persistenceToken)
-        #expect(mixedDomain.fireRiskComparisonSourceKey == acceptedSource.persistenceToken)
+        #expect(sourceKey(mixedDomain.convectiveRiskComparisonSourceKey) == acceptedSource.persistenceToken)
+        #expect(sourceKey(mixedDomain.fireRiskComparisonSourceKey) == acceptedSource.persistenceToken)
         #expect(projections.filter { $0.id != mixedDomain.id }.allSatisfy {
             $0.convectiveRiskComparisonSourceKey == nil && $0.fireRiskComparisonSourceKey == nil
         })
@@ -201,6 +201,10 @@ struct HomeProjectionStoreScalingMeasurementTests {
         try ModelContext(container).fetch(
             FetchDescriptor(sortBy: [SortDescriptor(\HomeProjection.updatedAt, order: .reverse)])
         )
+    }
+
+    private func sourceKey(_ token: String?) -> String? {
+        RiskComparisonBaselineState.decode(token)?.baselineSourceKey
     }
 
     private func locationContext(index: Int) -> LocationContext {

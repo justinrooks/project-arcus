@@ -871,6 +871,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting {
                     updatesFireRisk: slowProductDecision.updatesFire,
                     convectiveSource: slowProductDecision.convectiveSource,
                     fireSource: slowProductDecision.fireSource,
+                    riskComparisonMode: plan.executionClass == .background ? .evaluate : .observeOnly,
                     hotAlerts: hotAlerts
                 ),
                 for: context,
