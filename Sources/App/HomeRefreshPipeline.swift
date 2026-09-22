@@ -97,6 +97,7 @@ final class HomeRefreshPipeline {
     private var latestVisibleSubmissionID: UUID?
     private var acceptedCorePublication: AcceptedCorePublication?
     private var suppressedCoreSubmissionID: UUID?
+    private(set) var isStormSetupRefreshInFlight = false
 
     var snap: LocationSnapshot?
     var summaryWeather: SummaryWeather?
@@ -213,6 +214,51 @@ final class HomeRefreshPipeline {
             return
         }
         await refreshOutlooks(using: environment.outlooks)
+    }
+
+    func refreshStormSetupManually(environment: Environment) async {
+        updateEnvironment(environment)
+        guard isStormSetupRefreshInFlight == false else { return }
+        guard let context = environment.locationSession.currentContext else {
+            environment.logger.debug("Skipping manual Storm Setup refresh reason=no-location")
+            return
+        }
+        guard let coordinator = environment.coordinator as? any HomeStormSetupManualRefreshing else {
+            environment.logger.error("Skipping manual Storm Setup refresh reason=unsupported-coordinator")
+            return
+        }
+
+        isStormSetupRefreshInFlight = true
+        defer { isStormSetupRefreshInFlight = false }
+
+        let snapshot = HomeSnapshot(
+            locationContext: context,
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormSetup: stormSetup,
+            stormSetupCurrentResponse: stormSetupCurrentResponse,
+            stormRisk: stormRisk,
+            severeRisk: severeRisk,
+            fireRisk: fireRisk,
+            mesos: mesos,
+            alerts: alerts,
+            outlooks: outlooks,
+            latestOutlook: outlook
+        )
+        let decision = await coordinator.refreshStormSetupManually(context: context, snapshot: snapshot)
+        guard environment.locationSession.currentContext?.refreshKey == context.refreshKey else {
+            environment.logger.debug("Discarding manual Storm Setup refresh reason=context-changed")
+            return
+        }
+        applyStormSetup(
+            .init(
+                snapshot: HomeSnapshot(
+                    refreshKey: context.refreshKey,
+                    stormSetup: decision.stormSetup,
+                    stormSetupCurrentResponse: decision.currentResponse
+                )
+            )
+        )
     }
 
     func enqueueRefresh(_ trigger: HomeView.RefreshTrigger, environment: Environment) async {

@@ -236,6 +236,7 @@ struct HomeView: View {
             readinessState: readinessState,
             resolutionState: refreshPipeline.resolutionState,
             isRefreshInFlight: refreshPipeline.isRefreshInFlight,
+            isStormSetupRefreshInFlight: refreshPipeline.isStormSetupRefreshInFlight,
             showsOfflineToken: runtimeConnectivityState.isOffline,
             locationReliabilityRailState: showsLocationReliabilityRail
                 ? SummaryView.LocationReliabilityRailState(
@@ -245,13 +246,17 @@ struct HomeView: View {
                 : nil,
             onOpenMapLayer: openMap,
             onOpenAlerts: openAlertsTab,
-            onOpenOutlooks: openOutlooksTab
-        ) {
-            await refreshPipeline.forceRefreshCurrentContext(
-                showsLoading: true,
-                environment: refreshEnvironment
-            )
-        }
+            onOpenOutlooks: openOutlooksTab,
+            refreshAction: {
+                await refreshPipeline.forceRefreshCurrentContext(
+                    showsLoading: true,
+                    environment: refreshEnvironment
+                )
+            },
+            refreshStormSetupAction: {
+                await refreshPipeline.refreshStormSetupManually(environment: refreshEnvironment)
+            }
+        )
         .modifier(SummaryIntensityModifier(
             request: SummaryIntensityRequest(
                 projection: presentation.projection,

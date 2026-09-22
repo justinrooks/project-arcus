@@ -12,8 +12,20 @@ struct StormSetupDetailView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let presentation: StormSetupDetailPresentation
+    let isRefreshing: Bool
+    let onRefresh: () async -> Void
 
     @State private var showsGuidanceSheet = false
+
+    init(
+        presentation: StormSetupDetailPresentation,
+        isRefreshing: Bool = false,
+        onRefresh: @escaping () async -> Void = {}
+    ) {
+        self.presentation = presentation
+        self.isRefreshing = isRefreshing
+        self.onRefresh = onRefresh
+    }
 
     private var adaptiveLayout: SkyAwareAdaptiveLayout {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
@@ -52,6 +64,21 @@ struct StormSetupDetailView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarBackground(.skyAwareBackground, for: .navigationBar)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await onRefresh() }
+                } label: {
+                    if isRefreshing {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .disabled(isRefreshing)
+                .accessibilityLabel("Refresh Storm Setup")
+                .accessibilityHint("Checks for the latest Storm Setup guidance for this location.")
+                .accessibilityIdentifier("storm-setup-refresh")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showsGuidanceSheet = true

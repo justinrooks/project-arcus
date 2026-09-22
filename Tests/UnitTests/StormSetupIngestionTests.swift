@@ -9,6 +9,192 @@ import ArcusCore
 @MainActor
 @Suite("Storm Setup Ingestion", .serialized)
 struct StormSetupIngestionTests {
+    @Test("manual Storm Setup refresh bypasses fresh-cache and automatic eligibility gates")
+    func manualRefresh_bypassesFreshCacheAndAutomaticEligibility() async throws {
+        let context = makeContext()
+        let dateProvider = MutableDateProvider(fixedNow)
+        let original = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(3600)
+        )
+        let updated = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(7200),
+            modelRunTime: fixedNow
+        )
+        let query = StormSetupQueryingFake(response: .success(original))
+        let harness = try makeHarness(
+            context: context,
+            query: query,
+            dateProvider: dateProvider,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            activeAlerts: [],
+            activeMesos: []
+        )
+        _ = try await harness.projectionStore.updateStormSetup(
+            original.stormSetupCurrentResponse,
+            for: context,
+            loadedAt: fixedNow
+        )
+        await query.setResponse(.success(updated))
+
+        let decision = await harness.executor.refreshStormSetupManually(
+            context: context,
+            snapshot: HomeSnapshot(
+                locationContext: context,
+                refreshKey: context.refreshKey,
+                stormRisk: .allClear,
+                severeRisk: .allClear
+            )
+        )
+
+        #expect(await query.requestCount() == 1)
+        #expect(decision.result == .success)
+        #expect(decision.stormSetup == normalizedStormSetupDTO(updated))
+    }
+
+    @Test("manual Storm Setup refresh retains fresh cached data after failure")
+    func manualRefresh_failureRetainsFreshCachedData() async throws {
+        let context = makeContext()
+        let original = makeStormSetupDTO(
+            h3Cell: context.h3Cell,
+            expiresAt: fixedNow.addingTimeInterval(3600)
+        )
+        let query = StormSetupQueryingFake(response: .failure(TestError.failed))
+        let harness = try makeHarness(context: context, query: query)
+        _ = try await harness.projectionStore.updateStormSetup(
+            original.stormSetupCurrentResponse,
+            for: context,
+            loadedAt: fixedNow
+        )
+
+        let decision = await harness.executor.refreshStormSetupManually(
+            context: context,
+            snapshot: HomeSnapshot(locationContext: context, refreshKey: context.refreshKey)
+        )
+
+        #expect(decision.result == .failure)
+        #expect(decision.stormSetup == normalizedStormSetupDTO(original))
+        #expect(await query.requestCount() == 1)
+    }
+
+    @Test("manual Storm Setup refresh remains disabled when the feature is off")
+    func manualRefresh_disabledMakesNoRequest() async throws {
+        let context = makeContext()
+        let query = StormSetupQueryingFake(
+            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600)))
+        )
+        let harness = try makeHarness(
+            context: context,
+            query: query,
+            preferences: .init(stormSetupEnabled: false, detailedIngredientsEnabled: false)
+        )
+
+        let decision = await harness.executor.refreshStormSetupManually(
+            context: context,
+            snapshot: HomeSnapshot(locationContext: context, refreshKey: context.refreshKey)
+        )
+
+        #expect(decision.result == .skipped)
+        #expect(await query.requestCount() == 0)
+    }
+
+    @Test("manual Storm Setup refresh coalesces rapid requests for the same context")
+    func manualRefresh_coalescesSameContextRequests() async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let query = StormSetupQueryingFake(
+            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+            gate: gate
+        )
+        let harness = try makeHarness(context: context, query: query)
+        let coordinator = HomeIngestionCoordinator(executor: harness.executor)
+        let snapshot = HomeSnapshot(locationContext: context, refreshKey: context.refreshKey)
+
+        async let first = coordinator.refreshStormSetupManually(context: context, snapshot: snapshot)
+        let requestStarted = await waitUntil(timeout: 5) {
+            await query.requestCount() == 1
+        }
+        #expect(requestStarted)
+        async let second = coordinator.refreshStormSetupManually(context: context, snapshot: snapshot)
+        await Task.yield()
+        #expect(await query.requestCount() == 1)
+
+        await gate.open()
+        let firstDecision = await first
+        let secondDecision = await second
+        #expect(firstDecision.result == .success)
+        #expect(secondDecision.result == .success)
+        #expect(await query.requestCount() == 1)
+    }
+
+    @Test("manual Storm Setup refresh waits for automatic enrichment before its follow-up")
+    func manualRefresh_waitsForAutomaticEnrichment() async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let query = StormSetupQueryingFake(
+            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+            gate: gate
+        )
+        let harness = try makeHarness(context: context, query: query)
+        let coordinator = HomeIngestionCoordinator(executor: harness.executor)
+        let automatic = Task {
+            try await harness.executor.run(
+                plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate))
+            )
+        }
+        let automaticStarted = await waitUntil(timeout: 5) {
+            await query.requestCount() == 1
+        }
+        #expect(automaticStarted)
+
+        async let manual = coordinator.refreshStormSetupManually(
+            context: context,
+            snapshot: HomeSnapshot(locationContext: context, refreshKey: context.refreshKey)
+        )
+        await Task.yield()
+        #expect(await query.requestCount() == 1)
+
+        await gate.open()
+        _ = try await automatic.value
+        _ = await manual
+        #expect(await query.requestCount() == 2)
+    }
+
+    @Test("cancelling a pending manual refresh returns promptly without a follow-up")
+    func manualRefresh_cancellationRemovesPendingFollowUp() async throws {
+        let context = makeContext()
+        let gate = CancellationGate()
+        let query = StormSetupQueryingFake(
+            response: .success(makeStormSetupDTO(h3Cell: context.h3Cell, expiresAt: fixedNow.addingTimeInterval(3600))),
+            gate: gate
+        )
+        let harness = try makeHarness(context: context, query: query)
+        let coordinator = HomeIngestionCoordinator(executor: harness.executor)
+        let automatic = Task {
+            try await harness.executor.run(plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate)))
+        }
+        #expect(await waitUntil(timeout: 5) { await query.requestCount() == 1 })
+
+        let manual = Task {
+            await coordinator.refreshStormSetupManually(
+                context: context,
+                snapshot: HomeSnapshot(locationContext: context, refreshKey: context.refreshKey)
+            )
+        }
+        await Task.yield()
+        manual.cancel()
+        let decision = await manual.value
+        #expect(decision.result == .cancelled)
+        #expect(await query.requestCount() == 1)
+
+        await gate.open()
+        _ = try await automatic.value
+        await Task.yield()
+        #expect(await query.requestCount() == 1)
+    }
+
     @Test("disabled and quiet runs make no requests")
     func disabledAndQuietRunsMakeNoRequests() async throws {
         let cases: [(String, StormSetupPreferences, StormRiskLevel?, SevereWeatherThreat?, Bool, Bool)] = [
