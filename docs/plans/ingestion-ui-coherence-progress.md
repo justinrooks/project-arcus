@@ -25,7 +25,7 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 
 | Order | Issue | Status | Dependency |
 |---:|---|---|---|
-| 1 | [#453](https://github.com/justinrooks/project-arcus/issues/453) — Define cache-forward presentation vocabulary | Pending | Cache acceptance contract |
+| 1 | [#453](https://github.com/justinrooks/project-arcus/issues/453) — Define atomic visible-revision contract | Ready for commit | Cache acceptance contract |
 | 2 | [#458](https://github.com/justinrooks/project-arcus/issues/458) — Introduce focused Home presentation-state derivation | Pending | 01 and persistence gating |
 | 3 | [#449](https://github.com/justinrooks/project-arcus/issues/449) — Stabilize Today cache-to-refresh transitions | Pending | 02 and keyed Home observation |
 | 4 | [#457](https://github.com/justinrooks/project-arcus/issues/457) — Unify refresh affordances and status feedback | Pending | 01 |
@@ -46,8 +46,30 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 
 ## Status Ledger
 
-### [#453](https://github.com/justinrooks/project-arcus/issues/453) — Define cache-forward presentation vocabulary
-- Status: Pending
+### [#453](https://github.com/justinrooks/project-arcus/issues/453) — Define atomic visible-revision contract
+- Status: Ready for commit after human review, independent review, and focused/full unit validation.
+- Contract: `HomeVisiblePresentation` owns one location-scoped `HomeVisibleRevision`. Its core fields come
+  solely from an accepted persisted `HomeProjectionRecord`; refresh source, activity, and failure are
+  separate metadata. The view may render a retained revision with failure/offline/unavailable status.
+- Promotion: a `commitCore` acknowledgement may promote core only when that commit accepted weather
+  or slow products. A hot-alert-only prime may update accepted alerts, but cannot certify weather,
+  storm, severe, or fire risk. Accepted enrichment may update AQI/Storm Setup only and cannot change
+  the core risk/weather fields. Progress and rejected or failed candidates never promote content.
+- Context: compare the record's projection key to the currently presented location before promotion.
+  A different key clears the visible revision immediately; late old-context results are ignored.
+  A persisted fallback is eligible only when no revision is displayed, for that same key, and with
+  a core acceptance timestamp. Older same-key accepted commits cannot replace a newer core.
+  Refresh lifecycle events carry both an attempt ID and their location key, so superseded attempts
+  cannot change a new context's activity or outcome. Without a resolved context, no prior location's
+  risk is treated as current.
+- Persistence availability is location-scoped and separate from accepted content. A successful
+  same-key read may clear an unavailable status without replacing the accepted core revision.
+- Empty: nil core values count as authoritative empty only after weather, slow-product, and alert
+  acceptance markers exist. An absent record or missing markers remain unresolved; failure is a
+  separate outcome. Optional enrichment does not participate in core emptiness.
+- Handoff: #458 should derive this state from keyed repository observations; #449 should route the
+  executor's accepted publication through the same persistence authority. Neither should feed
+  transient pipeline risk/weather values directly into the visible revision.
 
 ### [#458](https://github.com/justinrooks/project-arcus/issues/458) — Introduce focused Home presentation-state derivation
 - Status: Pending
@@ -79,5 +101,16 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 
 ## Verification Ledger
 
-No implementation validation yet.
-
+- #453 final focused Swift Testing suite:
+  `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeVisibleRevisionTests`;
+  finalized Debug iPhone 17 (iOS 26.5) result at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.dhj9JS/unit.xcresult`.
+  Passed: 9 test cases, 12 parameterized executions, 0 failures or skips.
+- Complete unit lane finalized at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.L9ZqMu/unit.xcresult`:
+  1,195 test cases and 1,230 parameterized executions passed, 0 failures or skips.
+- Selected `SkyAwareUITests.testTabNavigationLoadsEachPrimaryView` smoke test passed before the
+  final pure-model offline/persistence-state adjustment, with a finalized result at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.RVRC5Z/ui-navigation.xcresult`.
+  A final rerun could not launch the simulator test runner and reached no test case; it is not
+  passing post-change UI evidence. The unit lane compiled the final source in Debug.
