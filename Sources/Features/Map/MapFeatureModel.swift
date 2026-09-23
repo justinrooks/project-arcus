@@ -14,6 +14,14 @@ import ArcusCore
 @MainActor
 @Observable
 final class MapFeatureModel {
+    private static let invalidatingFeedIDs: Set<String> = [
+        "spc.map.convective",
+        "spc.map.fire",
+        "spc.meso",
+        "arcus.alert",
+        "arcus.alerts"
+    ]
+
     private let logger = Logger.uiMap
     private let polygonMapper = MapPolygonMapper()
     private let planner = MapScenePlanner()
@@ -23,6 +31,20 @@ final class MapFeatureModel {
     private var showsWarningGeometry = true
     private var isLoading = false
     private var pendingReload = false
+
+    static func shouldReload(forAcceptedFeedID feedID: String) -> Bool {
+        invalidatingFeedIDs.contains(feedID)
+    }
+
+    static func observeAcceptedFeedUpdates(
+        from updates: AsyncStream<FeedStateGenerationUpdate>,
+        onRelevantUpdate: @MainActor (FeedStateGenerationUpdate) async -> Void
+    ) async {
+        for await update in updates {
+            guard shouldReload(forAcceptedFeedID: update.feedID) else { continue }
+            await onRelevantUpdate(update)
+        }
+    }
 
     private(set) var activeScene = MapLayerScene.placeholder(for: .categorical)
     private(set) var initialCenterCoordinate: CLLocationCoordinate2D?
@@ -65,54 +87,152 @@ final class MapFeatureModel {
         using service: any SpcMapData,
         warningSource: any ArcusAlertQuerying
     ) async -> Bool {
-        async let severeTask = fetchSevereRiskShapes(using: service)
-        async let stormTask = fetchStormRiskShapes(using: service)
-        async let mesoTask = fetchMesoShapes(using: service)
-        async let fireTask = fetchFireRiskShapes(using: service)
-        async let warningTask = fetchActiveWarningGeometry(using: warningSource)
-
-        let (severeResult, stormResult, mesoResult, fireResult, warningResult) = await (
-            severeTask,
-            stormTask,
-            mesoTask,
-            fireTask,
-            warningTask
+        let selectedLayer = currentSelectedLayer
+        let selectedPayload = await fetchSelectedLayerPayload(
+            selectedLayer,
+            using: service,
+            warningSource: warningSource
         )
 
-        guard !Task.isCancelled else { return false }
-
-        if severeResult.isCancellation ||
-            stormResult.isCancellation ||
-            mesoResult.isCancellation ||
-            fireResult.isCancellation ||
-            warningResult.isCancellation {
+        guard Task.isCancelled == false, containsCancellation(in: selectedPayload) == false else {
             return false
         }
 
-        let payload = MapDataPayload(
-            stormRisk: stormResult,
-            severeRisks: severeResult,
-            mesos: mesoResult,
-            fireRisk: fireResult,
-            activeWarnings: warningResult
+        let selectedWarningPolygons = polygonMapper.warningPolygons(
+            from: selectedPayload.activeWarnings.value ?? []
+        )
+        let selectedPlan = await planner.buildRenderPlan(
+            for: selectedLayer,
+            payload: selectedPayload,
+            existingPlan: renderPlans[selectedLayer],
+            polygonMapper: polygonMapper,
+            warningPolygons: selectedWarningPolygons
         )
 
-        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings.value ?? [])
+        guard Task.isCancelled == false else { return false }
 
-        let plannedScenes = await planner.buildRenderPlans(
+        renderPlans[selectedLayer] = selectedPlan
+        sceneCache.removeAll()
+        if currentSelectedLayer == selectedLayer {
+            applySelectedLayer(selectedLayer)
+        }
+
+        let payload = await fetchRemainingPayload(
+            selectedLayer,
+            selectedPayload: selectedPayload,
+            using: service
+        )
+
+        guard Task.isCancelled == false, containsCancellation(in: payload) == false else {
+            return false
+        }
+
+        let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings.value ?? [])
+        let remainingPlans = await planner.buildRemainingRenderPlans(
+            excluding: selectedLayer,
             payload: payload,
             existingPlans: renderPlans,
             polygonMapper: polygonMapper,
             warningPolygons: warningPolygons
         )
 
-        guard !Task.isCancelled else { return false }
+        guard Task.isCancelled == false else { return false }
 
-        renderPlans = plannedScenes
-        sceneCache.removeAll()
-
+        renderPlans.merge(remainingPlans) { _, newPlan in newPlan }
+        sceneCache.removeAll(except: selectedLayer)
         applySelectedLayer(currentSelectedLayer)
         return true
+    }
+
+    private func fetchSelectedLayerPayload(
+        _ layer: MapLayer,
+        using service: any SpcMapData,
+        warningSource: any ArcusAlertQuerying
+    ) async -> MapDataPayload {
+        async let warnings = fetchActiveWarningGeometry(using: warningSource)
+
+        switch layer {
+        case .categorical:
+            let stormRisk = await fetchStormRiskShapes(using: service)
+            return MapDataPayload(
+                stormRisk: stormRisk,
+                severeRisks: .failure,
+                mesos: .failure,
+                fireRisk: .failure,
+                activeWarnings: await warnings
+            )
+        case .wind, .hail, .tornado:
+            let severeRisks = await fetchSevereRiskShapes(using: service)
+            return MapDataPayload(
+                stormRisk: .failure,
+                severeRisks: severeRisks,
+                mesos: .failure,
+                fireRisk: .failure,
+                activeWarnings: await warnings
+            )
+        case .meso:
+            let mesos = await fetchMesoShapes(using: service)
+            return MapDataPayload(
+                stormRisk: .failure,
+                severeRisks: .failure,
+                mesos: mesos,
+                fireRisk: .failure,
+                activeWarnings: await warnings
+            )
+        case .fire:
+            let fireRisk = await fetchFireRiskShapes(using: service)
+            return MapDataPayload(
+                stormRisk: .failure,
+                severeRisks: .failure,
+                mesos: .failure,
+                fireRisk: fireRisk,
+                activeWarnings: await warnings
+            )
+        }
+    }
+
+    private func fetchRemainingPayload(
+        _ selectedLayer: MapLayer,
+        selectedPayload: MapDataPayload,
+        using service: any SpcMapData
+    ) async -> MapDataPayload {
+        async let severeRisks = usesSevereRiskShapes(selectedLayer)
+            ? selectedPayload.severeRisks
+            : fetchSevereRiskShapes(using: service)
+        async let stormRisk = selectedLayer == .categorical
+            ? selectedPayload.stormRisk
+            : fetchStormRiskShapes(using: service)
+        async let mesos = selectedLayer == .meso
+            ? selectedPayload.mesos
+            : fetchMesoShapes(using: service)
+        async let fireRisk = selectedLayer == .fire
+            ? selectedPayload.fireRisk
+            : fetchFireRiskShapes(using: service)
+
+        return await MapDataPayload(
+            stormRisk: stormRisk,
+            severeRisks: severeRisks,
+            mesos: mesos,
+            fireRisk: fireRisk,
+            activeWarnings: selectedPayload.activeWarnings
+        )
+    }
+
+    private func usesSevereRiskShapes(_ layer: MapLayer) -> Bool {
+        switch layer {
+        case .wind, .hail, .tornado:
+            true
+        case .categorical, .meso, .fire:
+            false
+        }
+    }
+
+    private func containsCancellation(in payload: MapDataPayload) -> Bool {
+        payload.stormRisk.isCancellation ||
+            payload.severeRisks.isCancellation ||
+            payload.mesos.isCancellation ||
+            payload.fireRisk.isCancellation ||
+            payload.activeWarnings.isCancellation
     }
 
     func selectLayer(_ layer: MapLayer) {
@@ -288,6 +408,51 @@ final class MapFeatureModel {
     }
 }
 
+@MainActor
+final class MapReloadCoordinator {
+    typealias Operation = @MainActor @Sendable () async -> Void
+
+    private var reloadTask: Task<Void, Never>?
+    private var activeTaskID: UUID?
+    private var pendingOperation: Operation?
+
+    var hasScheduledReload: Bool { reloadTask != nil }
+
+    func schedule(_ operation: @escaping Operation) {
+        guard reloadTask == nil else {
+            pendingOperation = operation
+            return
+        }
+
+        let taskID = UUID()
+        activeTaskID = taskID
+        reloadTask = Task {
+            var nextOperation = operation
+            repeat {
+                pendingOperation = nil
+                await nextOperation()
+                guard Task.isCancelled == false,
+                      activeTaskID == taskID,
+                      let pendingOperation else {
+                    break
+                }
+                nextOperation = pendingOperation
+            } while true
+
+            guard activeTaskID == taskID else { return }
+            reloadTask = nil
+            activeTaskID = nil
+        }
+    }
+
+    func cancel() {
+        activeTaskID = nil
+        pendingOperation = nil
+        reloadTask?.cancel()
+        reloadTask = nil
+    }
+}
+
 struct MapSceneCache {
     static let capacity = 2
 
@@ -318,6 +483,11 @@ struct MapSceneCache {
     mutating func removeAll() {
         scenes.removeAll(keepingCapacity: true)
         layers.removeAll(keepingCapacity: true)
+    }
+
+    mutating func removeAll(except layer: MapLayer) {
+        scenes = scenes.filter { $0.key == layer }
+        layers = layers.filter { $0 == layer }
     }
 
     mutating func updateScenes(_ transform: (MapLayerScene) -> MapLayerScene) {

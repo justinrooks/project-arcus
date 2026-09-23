@@ -235,6 +235,33 @@ actor ReloadGate {
     }
 }
 
+actor IndexedReloadGate {
+    private var started: Set<Int> = []
+    private var startWaiters: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var releaseWaiters: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var released: Set<Int> = []
+
+    func run(_ index: Int) async {
+        started.insert(index)
+        startWaiters.removeValue(forKey: index)?.resume()
+        if released.remove(index) != nil { return }
+        await withCheckedContinuation { releaseWaiters[index] = $0 }
+    }
+
+    func waitUntilStarted(_ index: Int) async {
+        guard started.contains(index) == false else { return }
+        await withCheckedContinuation { startWaiters[index] = $0 }
+    }
+
+    func release(_ index: Int) {
+        if let continuation = releaseWaiters.removeValue(forKey: index) {
+            continuation.resume()
+        } else {
+            released.insert(index)
+        }
+    }
+}
+
 struct QueuedReloadSpcMapData: SpcMapData {
     let gate: ReloadGate
     let counter: MapDataCallCounter
@@ -271,4 +298,3 @@ struct QueuedReloadSpcMapData: SpcMapData {
 }
 
 struct StubError: Error {}
-

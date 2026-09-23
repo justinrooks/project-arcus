@@ -38,25 +38,44 @@ enum MapFetchOutcome<Value: Sendable>: Sendable {
 }
 
 actor MapScenePlanner {
-    func buildRenderPlans(
+    func buildRenderPlan(
+        for layer: MapLayer,
+        payload: MapDataPayload,
+        existingPlan: MapLayerRenderPlan?,
+        polygonMapper: MapPolygonMapper,
+        warningPolygons: KeyedMapPolygons
+    ) -> MapLayerRenderPlan {
+        MapRenderPlanBuilder.build(
+            layer: layer,
+            payload: payload,
+            existingPlan: existingPlan,
+            polygonMapper: polygonMapper,
+            warningPolygons: warningPolygons
+        )
+    }
+
+    func buildRemainingRenderPlans(
+        excluding selectedLayer: MapLayer,
         payload: MapDataPayload,
         existingPlans: [MapLayer: MapLayerRenderPlan],
         polygonMapper: MapPolygonMapper,
         warningPolygons: KeyedMapPolygons
     ) -> [MapLayer: MapLayerRenderPlan] {
         Dictionary(
-            uniqueKeysWithValues: MapLayer.allCases.map { layer in
-                (
-                    layer,
-                    MapRenderPlanBuilder.build(
-                        layer: layer,
-                        payload: payload,
-                        existingPlan: existingPlans[layer],
-                        polygonMapper: polygonMapper,
-                        warningPolygons: warningPolygons
+            uniqueKeysWithValues: MapLayer.allCases
+                .filter { $0 != selectedLayer }
+                .map { layer in
+                    (
+                        layer,
+                        buildRenderPlan(
+                            for: layer,
+                            payload: payload,
+                            existingPlan: existingPlans[layer],
+                            polygonMapper: polygonMapper,
+                            warningPolygons: warningPolygons
+                        )
                     )
-                )
-            }
+                }
         )
     }
 }

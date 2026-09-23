@@ -10,6 +10,52 @@ import Testing
 struct MapFeatureModelSceneTests {
     private let now = Date(timeIntervalSince1970: 1_735_689_600) // Jan 1, 2025 00:00:00 UTC
 
+    @Test("only map, meso, and alert accepted feeds invalidate the map")
+    func acceptedFeedInvalidation_isScopedToVisibleMapInputs() {
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.convective"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.map.fire"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.meso"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "arcus.alert"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "arcus.alerts"))
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "spc.outlook") == false)
+        #expect(MapFeatureModel.shouldReload(forAcceptedFeedID: "home.projection") == false)
+    }
+
+    @Test("accepted feed events reach the map observer and reload map data")
+    func acceptedFeedEvent_triggersMapReload() async throws {
+        let store = FeedStateStore(directoryURL: FileManager.default.temporaryDirectory
+            .appendingPathComponent("MapFeedObserverTests")
+            .appendingPathComponent(UUID().uuidString))
+        let updates = await store.acceptedGenerationUpdates()
+        let counter = MapDataCallCounter()
+        let service = CountingSpcMapData(counter: counter, severeRisks: [], stormRisk: [], mesos: [], fireRisk: [])
+        let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        var observed: [FeedStateGenerationUpdate] = []
+        let (reloads, reloadContinuation) = AsyncStream<Void>.makeStream()
+        var reloadIterator = reloads.makeAsyncIterator()
+        let observer = Task { @MainActor in
+            await MapFeatureModel.observeAcceptedFeedUpdates(from: updates) { update in
+                observed.append(update)
+                await model.reload(using: service, warningSource: warnings, selectedLayer: .categorical)
+                reloadContinuation.yield(())
+            }
+        }
+
+        let now = Date(timeIntervalSince1970: 1_735_689_600)
+        _ = try await store.update(.init(feedID: "spc.outlook", attemptedAt: now, canonicalAcceptedAt: now))
+        _ = try await store.update(.init(feedID: "spc.map.convective", attemptedAt: now, canonicalAcceptedAt: now))
+        _ = await reloadIterator.next()
+        observer.cancel()
+
+        #expect(observed == [FeedStateGenerationUpdate(feedID: "spc.map.convective", generation: 1)])
+        let counts = await counter.snapshot()
+        #expect(counts.storm == 1)
+        #expect(counts.severe == 1)
+        #expect(counts.meso == 1)
+        #expect(counts.fire == 1)
+    }
+
     @Test("scene cache retains only the two most recently used layers")
     func sceneCache_retainsTwoMostRecentlyUsedLayers() {
         var cache = MapSceneCache()
@@ -161,6 +207,45 @@ struct MapFeatureModelSceneTests {
         #expect(counts.fire == 2)
     }
 
+    @Test("selected layer installs before unrelated map fetches finish")
+    func reload_installsSelectedLayerBeforeRemainingFetches() async throws {
+        let gate = ReloadGate()
+        let service = SelectedFireGatedSpcMapData(gate: gate)
+        let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let reload = Task { await model.reload(using: service, warningSource: warnings, selectedLayer: .fire) }
+
+        await gate.waitUntilFirstStormFetchStarts()
+
+        #expect(model.activeScene.legendState.layer == .fire)
+        #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [8])
+        #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|8|") == true)
+
+        await gate.releaseFirstStormFetch()
+        await reload.value
+    }
+
+    @Test("cancelled reload cannot clear a newer scheduled reload")
+    func reloadCoordinator_cancelledTaskCannotClearNewerTask() async {
+        let gate = IndexedReloadGate()
+        let coordinator = MapReloadCoordinator()
+
+        coordinator.schedule { await gate.run(1) }
+        await gate.waitUntilStarted(1)
+        coordinator.cancel()
+
+        coordinator.schedule { await gate.run(2) }
+        await gate.waitUntilStarted(2)
+        await gate.release(1)
+        await Task.yield()
+
+        #expect(coordinator.hasScheduledReload)
+        coordinator.schedule { await gate.run(3) }
+        await gate.release(2)
+        await gate.waitUntilStarted(3)
+        await gate.release(3)
+    }
+
     @Test("reload replaces stale cached layer scenes with the latest map data")
     func reload_replacesStaleCachedScenes() async {
         let store = MutableMapDataStore(
@@ -268,6 +353,35 @@ struct MapFeatureModelSceneTests {
         #expect(coordinatesEqual(canvasCoordinate, first))
     }
 
+}
+
+private struct SelectedFireGatedSpcMapData: SpcMapData {
+    let gate: ReloadGate
+
+    func getSevereRiskShapes() async throws -> [SevereRiskShapeDTO] { [] }
+
+    func getStormRiskMapData() async throws -> [StormRiskDTO] {
+        await gate.markFirstStormFetchStarted()
+        await gate.waitForRelease()
+        return []
+    }
+
+    func getMesoMapData() async throws -> [MdDTO] { [] }
+
+    func getFireRisk() async throws -> [FireRiskDTO] {
+        [FireRiskDTO(
+            product: "WindRH",
+            issued: Date(timeIntervalSince1970: 1_735_689_600),
+            expires: Date(timeIntervalSince1970: 1_735_693_200),
+            valid: Date(timeIntervalSince1970: 1_735_689_600),
+            riskLevel: 8,
+            riskLevelDescription: "Critical",
+            label: "Critical Fire Weather Area",
+            stroke: nil,
+            fill: nil,
+            polygons: [makeGeoPolygon(title: "Critical Fire Weather Area")]
+        )]
+    }
 }
 
 
