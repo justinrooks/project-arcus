@@ -44,8 +44,8 @@ Map reloads on scene activation rather than accepted feed changes. Home observes
 - Handoff: The map observes persisted accepted feed generation events while active and rereads canonical providers for convective map, fire map, meso, and alert changes. Other feed attempts and acceptances do not invalidate it; existing scene replacement preserves the current map while reads resolve.
 
 ### [#455](https://github.com/justinrooks/project-arcus/issues/455) — Introduce keyed Home projection observation
-- Status: Pending
-- Handoff: Preserve startup fallback and travel-back selection.
+- Status: Implemented — no SwiftData schema change
+- Handoff: Home uses one plain, newest-first `@Query` over all retained projections. Current-location and startup display readiness are selected in memory through `HomeProjectionRecord.newestDisplayReady(in:)`, preserving legacy partial-risk and nil-weather cache behavior while avoiding unsupported custom-type predicates. The actor fallback uses the same sorted descriptor. This read is intentionally unbounded until issue #456 adds explicit retention; retain that dependency when sequencing #456.
 
 ### [#456](https://github.com/justinrooks/project-arcus/issues/456) — Add explicit Home projection retention
 - Status: Pending
@@ -58,5 +58,4 @@ Map reloads on scene activation rather than accepted feed changes. Home observes
 
 ## Verification Ledger
 
-No implementation validation yet.
-
+- [#455](https://github.com/justinrooks/project-arcus/issues/455): focused `HomeViewKeyedProjectionObservationTests` passed (2 tests, 0 failures, 0 skipped) on iPhone 17, iOS 26.5, Debug: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.eYPkL6/unit.xcresult`. The full unit lane passed (1,188 tests, 0 failures, 0 skipped) on the same simulator and configuration: `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.tjwVGk/unit.xcresult`. `git diff --check` passes.

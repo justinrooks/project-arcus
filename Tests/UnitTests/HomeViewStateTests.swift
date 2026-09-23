@@ -1,7 +1,10 @@
 import Foundation
 import CoreLocation
 import SwiftUI
+import SwiftData
+import UIKit
 import Testing
+import Observation
 import ArcusCore
 @testable import SkyAware
 
@@ -933,7 +936,261 @@ struct HomeViewProjectionLaunchTests {
             centroid: .init(latitude: 39.5, longitude: -100.0),
             surfaceHeightMslM: 1132.4
         )
+}
+
+@Suite("HomeView Keyed Projection Observation")
+@MainActor
+struct HomeViewKeyedProjectionObservationTests {
+    @MainActor
+    private final class ObservationRecorder {
+        var snapshots: [HomeProjectionObservation.Snapshot] = []
+        var contentIdentityTokens: [UUID] = []
     }
+
+    @MainActor
+    @Observable
+    final class ProjectionKeyState {
+        var projectionKey: String?
+
+        init(projectionKey: String?) {
+            self.projectionKey = projectionKey
+        }
+    }
+
+    private struct ObservationHost: View {
+        let state: ProjectionKeyState
+        let recorder: ObservationRecorder
+
+        var body: some View {
+            HomeProjectionObservation(projectionKey: state.projectionKey) { current, startup in
+                let snapshot = HomeProjectionObservation.Snapshot(current: current, latestObserved: startup)
+                ObservationContentProbe(snapshot: snapshot, recorder: recorder)
+            }
+        }
+    }
+
+    private struct ObservationContentProbe: View {
+        let snapshot: HomeProjectionObservation.Snapshot
+        let recorder: ObservationRecorder
+        @State private var identityToken = UUID()
+
+        var body: some View {
+            Text("\(snapshot.current?.id.uuidString ?? "missing") / \(snapshot.latestObserved?.id.uuidString ?? "missing")")
+                .onAppear {
+                    recorder.snapshots.append(snapshot)
+                    recorder.contentIdentityTokens.append(identityToken)
+                }
+                .onChange(of: snapshot) { _, newSnapshot in
+                    recorder.snapshots.append(newSnapshot)
+                    recorder.contentIdentityTokens.append(identityToken)
+                }
+        }
+    }
+
+    @Test("observation publishes warm startup, keyed travel, replacement, and fallback deletion")
+    func observationPublishesRetainedProjectionTransitions() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let modelContext = ModelContext(container)
+        let currentLocation = makeContext(h3Cell: 511, countyCode: "COC005", fireZone: "COZ214")
+        let travelLocation = makeContext(h3Cell: 522, countyCode: "COC001", fireZone: "COZ200")
+        let missingLocation = makeContext(h3Cell: 533, countyCode: "COC031", fireZone: "COZ201")
+        let currentProjection = makeProjection(
+            in: modelContext,
+            location: currentLocation,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            isDisplayReady: true
+        )
+        let travelProjection = makeProjection(
+            in: modelContext,
+            location: travelLocation,
+            updatedAt: Date(timeIntervalSince1970: 200),
+            isDisplayReady: true
+        )
+        try modelContext.save()
+
+        let recorder = ObservationRecorder()
+        let keyState = ProjectionKeyState(projectionKey: nil)
+        let host = UIHostingController(
+            rootView: ObservationHost(state: keyState, recorder: recorder).modelContainer(container)
+        )
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+
+        try await waitForEmission(in: recorder, afterCount: 0) {
+            $0.current == nil && $0.latestObserved?.id == travelProjection.id
+        }
+        #expect(recorder.snapshots.last?.latestObserved?.id == travelProjection.id)
+
+        keyState.projectionKey = HomeProjection.projectionKey(for: currentLocation)
+        try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) {
+            $0.current?.id == currentProjection.id
+        }
+        keyState.projectionKey = HomeProjection.projectionKey(for: travelLocation)
+        try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) {
+            $0.current?.id == travelProjection.id
+        }
+        keyState.projectionKey = HomeProjection.projectionKey(for: missingLocation)
+        try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) { $0.current == nil }
+
+        keyState.projectionKey = HomeProjection.projectionKey(for: currentLocation)
+        try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) {
+            $0.current?.id == currentProjection.id
+        }
+        #expect(Set(recorder.contentIdentityTokens).count == 1)
+
+        var priorEmissionCount = recorder.snapshots.count
+        let replacement = makeProjection(
+            in: modelContext,
+            location: currentLocation,
+            updatedAt: Date(timeIntervalSince1970: 300),
+            isDisplayReady: true
+        )
+        try modelContext.save()
+        priorEmissionCount = recorder.snapshots.count
+        try await waitForEmission(in: recorder, afterCount: priorEmissionCount) { $0.current?.id == replacement.id }
+
+        let newerStartupFallback = makeProjection(
+            in: modelContext,
+            location: missingLocation,
+            updatedAt: Date(timeIntervalSince1970: 400),
+            isDisplayReady: true
+        )
+        try modelContext.save()
+        priorEmissionCount = recorder.snapshots.count
+        try await waitForEmission(in: recorder, afterCount: priorEmissionCount) {
+            $0.latestObserved?.id == newerStartupFallback.id
+        }
+        modelContext.delete(newerStartupFallback)
+        try modelContext.save()
+        priorEmissionCount = recorder.snapshots.count
+        try await waitForEmission(in: recorder, afterCount: priorEmissionCount) {
+            $0.latestObserved?.id == replacement.id
+        }
+
+        window.isHidden = true
+    }
+
+    @Test("projection query observes all sorted rows and preserves readiness selection")
+    func projectionQuery_observesAllRowsAndReplacesOlderValues() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let modelContext = ModelContext(container)
+        let currentLocation = makeContext(h3Cell: 111, countyCode: "COC005", fireZone: "COZ214")
+        let travelLocation = makeContext(h3Cell: 222, countyCode: "COC001", fireZone: "COZ200")
+        let placeholderLocation = makeContext(h3Cell: 444, countyCode: "COC047", fireZone: "COZ202")
+
+        _ = makeProjection(
+            in: modelContext,
+            location: currentLocation,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            isDisplayReady: true
+        )
+        let replacementCurrent = makeProjection(
+            in: modelContext,
+            location: currentLocation,
+            updatedAt: Date(timeIntervalSince1970: 300),
+            isDisplayReady: true
+        )
+        let newestOtherLocation = makeProjection(
+            in: modelContext,
+            location: travelLocation,
+            updatedAt: Date(timeIntervalSince1970: 200),
+            isDisplayReady: true
+        )
+        let unreadyPlaceholder = makeProjection(
+            in: modelContext,
+            location: placeholderLocation,
+            updatedAt: Date(timeIntervalSince1970: 400),
+            isDisplayReady: false
+        )
+        for offset in 1...55 {
+            _ = makeProjection(
+                in: modelContext,
+                location: placeholderLocation,
+                updatedAt: Date(timeIntervalSince1970: TimeInterval(offset)),
+                isDisplayReady: false
+            )
+        }
+        try modelContext.save()
+
+        let descriptor = HomeProjection.orderedProjectionsDescriptor()
+        let allCandidates = try modelContext.fetch(descriptor)
+        #expect(descriptor.predicate == nil)
+        #expect(descriptor.fetchLimit == nil)
+        #expect(allCandidates.count == 59)
+        #expect(allCandidates.contains(where: { $0.id == unreadyPlaceholder.id }))
+        let currentCandidates = allCandidates.filter {
+            $0.projectionKey == HomeProjection.projectionKey(for: currentLocation)
+        }
+        #expect(
+            HomeProjectionObservation.newestDisplayReadyProjection(in: currentCandidates)?.id == replacementCurrent.id
+        )
+        #expect(
+            HomeProjectionObservation.newestDisplayReadyProjection(in: allCandidates)?.id == replacementCurrent.id
+        )
+
+        let store = HomeProjectionStore(modelContainer: container)
+        await store.resetOperationMetricsForTesting()
+        let newestReady = try await store.newestDisplayReadyProjection()
+        #expect(newestReady?.id == replacementCurrent.id)
+        let storeMetrics = await store.operationMetricsForTesting()
+        #expect(storeMetrics.rowsFetched == allCandidates.count)
+        #expect(
+            HomeView.selectProjection(
+                from: [newestReady].compactMap { $0 },
+                currentContext: nil
+            ) == replacementCurrent.record
+        )
+
+        let travelCandidates = allCandidates.filter {
+            $0.projectionKey == HomeProjection.projectionKey(for: travelLocation)
+        }
+        #expect(HomeProjectionObservation.newestDisplayReadyProjection(in: travelCandidates)?.id == newestOtherLocation.id)
+
+        let missingCandidates = allCandidates.filter {
+            $0.projectionKey == HomeProjection.projectionKey(
+                for: makeContext(h3Cell: 333, countyCode: "COC031", fireZone: "COZ201")
+            )
+        }
+        #expect(missingCandidates.isEmpty)
+
+        modelContext.delete(replacementCurrent)
+        try modelContext.save()
+        let fallbackAfterDeletion = try modelContext.fetch(HomeProjection.orderedProjectionsDescriptor())
+        #expect(
+            HomeProjectionObservation.newestDisplayReadyProjection(in: fallbackAfterDeletion)?.id == newestOtherLocation.id
+        )
+    }
+
+    private func makeProjection(
+        in modelContext: ModelContext,
+        location: LocationContext,
+        updatedAt: Date,
+        isDisplayReady: Bool
+    ) -> HomeProjection {
+        let projection = HomeProjection(context: location, createdAt: updatedAt)
+        projection.updatedAt = updatedAt
+        if isDisplayReady {
+            projection.lastHotAlertsLoadAt = updatedAt
+        }
+        modelContext.insert(projection)
+        return projection
+    }
+
+    private func waitForEmission(
+        in recorder: ObservationRecorder,
+        afterCount: Int,
+        matching predicate: (HomeProjectionObservation.Snapshot) -> Bool
+    ) async throws {
+        for _ in 0..<100 {
+            if recorder.snapshots.dropFirst(afterCount).contains(where: predicate) { return }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        Issue.record("Timed out waiting for a matching Home projection observation")
+    }
+}
 
 
 @Suite("HomeView Outlook Display")

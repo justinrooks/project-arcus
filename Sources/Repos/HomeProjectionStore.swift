@@ -326,6 +326,12 @@ actor HomeProjectionStore {
         try fetchLatestProjection()?.record
     }
 
+    func newestDisplayReadyProjection() throws -> HomeProjectionRecord? {
+        let projections = try modelContext.fetch(HomeProjection.orderedProjectionsDescriptor())
+        recordFetchedRows(projections.count)
+        return HomeProjectionRecord.newestDisplayReady(in: projections.map(\.record))
+    }
+
     func fetchOrCreateProjection(
         for context: LocationContext,
         viewedAt: Date = .now
