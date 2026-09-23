@@ -43,6 +43,11 @@ struct FeedStateRecord: Codable, Sendable, Equatable {
     }
 }
 
+struct FeedStateGenerationUpdate: Sendable, Equatable {
+    let feedID: String
+    let generation: Int
+}
+
 struct FeedStateUpdate: Sendable {
     let feedID: String
     let attemptedAt: Date
@@ -94,6 +99,7 @@ actor FeedStateStore {
     private let maximumRecordCount: Int
     private let nowProvider: @Sendable () -> Date
     private let fileManager: FileManager
+    private var acceptedGenerationContinuations: [UUID: AsyncStream<FeedStateGenerationUpdate>.Continuation] = [:]
 
     init(
         directoryURL: URL? = nil,
@@ -110,6 +116,21 @@ actor FeedStateStore {
 
     func record(for feedID: String) throws -> FeedStateRecord? {
         try load().records.first { $0.feedID == feedID }
+    }
+
+    func acceptedGenerationUpdates() -> AsyncStream<FeedStateGenerationUpdate> {
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: FeedStateGenerationUpdate.self,
+            bufferingPolicy: .unbounded
+        )
+        let id = UUID()
+        acceptedGenerationContinuations[id] = continuation
+        continuation.onTermination = { @Sendable [weak self] _ in
+            Task { [weak self] in
+                await self?.removeAcceptedGenerationContinuation(id)
+            }
+        }
+        return stream
     }
 
     func update(_ update: FeedStateUpdate) throws -> FeedStateRecord {
@@ -147,7 +168,17 @@ actor FeedStateStore {
         sidecar.records.sort { $0.lastAttemptAt > $1.lastAttemptAt }
         sidecar.records = Array(sidecar.records.prefix(maximumRecordCount))
         try persist(sidecar)
+        if update.canonicalAcceptedAt != nil {
+            let generationUpdate = FeedStateGenerationUpdate(feedID: record.feedID, generation: record.generation)
+            for continuation in acceptedGenerationContinuations.values {
+                continuation.yield(generationUpdate)
+            }
+        }
         return record
+    }
+
+    private func removeAcceptedGenerationContinuation(_ id: UUID) {
+        acceptedGenerationContinuations[id] = nil
     }
 
     private func load() throws -> Sidecar {

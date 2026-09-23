@@ -40,7 +40,8 @@ Map reloads on scene activation rather than accepted feed changes. Home observes
 ## Status Ledger
 
 ### [#452](https://github.com/justinrooks/project-arcus/issues/452) — Invalidate the visible map from accepted generations
-- Status: Pending
+- Status: Implemented — awaiting human review
+- Handoff: The map observes persisted accepted feed generation events while active and rereads canonical providers for convective map, fire map, meso, and alert changes. Other feed attempts and acceptances do not invalidate it; existing scene replacement preserves the current map while reads resolve.
 
 ### [#455](https://github.com/justinrooks/project-arcus/issues/455) — Introduce keyed Home projection observation
 - Status: Pending

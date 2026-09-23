@@ -4,6 +4,36 @@ import Testing
 
 @Suite("FeedStateStore")
 struct FeedStateStoreTests {
+    @Test("accepted generation updates publish only canonical acceptance")
+    func acceptedGenerationUpdates_publishOnlyCanonicalAcceptance() async throws {
+        let now = Date(timeIntervalSince1970: 1_735_689_600)
+        let store = FeedStateStore(directoryURL: try makeDirectory(), nowProvider: { now.addingTimeInterval(10) })
+        let stream = await store.acceptedGenerationUpdates()
+        var iterator = stream.makeAsyncIterator()
+
+        _ = try await store.update(FeedStateUpdate(
+            feedID: "spc.map.convective",
+            attemptedAt: now,
+            canonicalAcceptedAt: now
+        ))
+        let firstUpdate = await iterator.next()
+        #expect(firstUpdate == FeedStateGenerationUpdate(feedID: "spc.map.convective", generation: 1))
+
+        _ = try await store.update(FeedStateUpdate(
+            feedID: "spc.map.convective",
+            attemptedAt: now.addingTimeInterval(1),
+            failure: .rejected
+        ))
+        _ = try await store.update(FeedStateUpdate(
+            feedID: "spc.map.convective",
+            attemptedAt: now.addingTimeInterval(2),
+            canonicalAcceptedAt: now.addingTimeInterval(2)
+        ))
+
+        let nextUpdate = await iterator.next()
+        #expect(nextUpdate == FeedStateGenerationUpdate(feedID: "spc.map.convective", generation: 2))
+    }
+
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     @Test("round trips primitive feed metadata and advances generation only on acceptance")

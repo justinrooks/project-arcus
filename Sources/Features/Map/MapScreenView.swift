@@ -20,7 +20,7 @@ struct MapScreenView: View {
 
     @Binding private var selected: MapLayer
     @State private var model = MapFeatureModel()
-    @State private var reloadTask: Task<Void, Never>?
+    @State private var reloadCoordinator = MapReloadCoordinator()
 
     init(selectedLayer: Binding<MapLayer> = .constant(.categorical)) {
         _selected = selectedLayer
@@ -45,23 +45,31 @@ struct MapScreenView: View {
             model.setWarningGeometryVisible(newValue)
         }
         .onChange(of: scenePhase, initial: true) { _, newValue in
-            guard newValue == .active else { return }
-            model.setWarningGeometryVisible(showsWarningGeometry)
-            scheduleReload()
+            if newValue == .active {
+                model.setWarningGeometryVisible(showsWarningGeometry)
+            }
         }
         .onChange(of: viewportCoordinate, initial: true) { _, newValue in
             model.captureInitialCenterCoordinateIfNeeded(newValue?.coordinate)
         }
         .onDisappear {
-            reloadTask?.cancel()
-            reloadTask = nil
+            reloadCoordinator.cancel()
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+
+            let updates = await dependencies.feedStateStore.acceptedGenerationUpdates()
+            scheduleReload()
+
+            await MapFeatureModel.observeAcceptedFeedUpdates(from: updates) { _ in
+                scheduleReload()
+            }
         }
     }
     
     @MainActor
     private func scheduleReload() {
-        reloadTask?.cancel()
-        reloadTask = Task {
+        reloadCoordinator.schedule {
             await model.reload(
                 using: dependencies.spcMapData,
                 warningSource: dependencies.arcusProvider,
