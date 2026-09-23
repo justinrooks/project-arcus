@@ -24,9 +24,6 @@ struct HomeView: View {
     @AppStorage("detailedIngredientsEnabled", store: UserDefaults.shared)
     private var detailedIngredientsEnabled: Bool = false
 
-    @Query(sort: [SortDescriptor(\HomeProjection.updatedAt, order: .reverse)])
-    private var cachedProjections: [HomeProjection]
-
     @Query(sort: [SortDescriptor(\ConvectiveOutlook.published, order: .reverse)])
     private var cachedOutlooks: [ConvectiveOutlook]
 
@@ -56,14 +53,56 @@ struct HomeView: View {
         locationSession.currentContext?.refreshKey
     }
 
+    private var currentProjectionKey: String? {
+        locationSession.currentContext.map(HomeProjection.projectionKey(for:))
+    }
+
+    private var homeProjectionObservation: some View {
+        HomeProjectionObservation(
+            projectionKey: currentProjectionKey
+        ) { current, startup in
+            let presentation = presentationSnapshot(
+                now: Date(),
+                currentProjection: current,
+                startupProjection: startup
+            )
+            let readinessState = readinessState(presentation: presentation)
+            let todayContentState = todayContentState(
+                presentation: presentation,
+                readinessState: readinessState
+            )
+            let localAlertsDisplayState = localAlertsDisplayState(
+                presentation: presentation,
+                todayContentState: todayContentState,
+                readinessState: readinessState
+            )
+            let stormSetupProfileAnalysisResponse = stormSetupPreferences.effectiveDetailedIngredientsEnabled
+                ? presentation.stormSetupCurrentResponse?.profileAnalysis
+                : nil
+            homeBody(
+                presentation: presentation,
+                readinessState: readinessState,
+                todayContentState: todayContentState,
+                localAlertsDisplayState: localAlertsDisplayState,
+                stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse
+            )
+        }
+    }
+
     private var cachedOutlookDTOs: [ConvectiveOutlookDTO] {
         cachedOutlooks.map(\.dto)
     }
 
-    private func presentationSnapshot(now: Date) -> HomePresentationSnapshot {
+    private func presentationSnapshot(
+        now: Date,
+        currentProjection: HomeProjectionRecord?,
+        startupProjection: HomeProjectionRecord?
+    ) -> HomePresentationSnapshot {
         HomePresentationSnapshot(
-            projections: cachedProjections.map(\.record),
-            newestStartupProjection: cachedProjections.first?.record,
+            projections: locationSession.currentContext == nil
+                ? startupProjection.map { [$0] } ?? []
+                : currentProjection.map { [$0] } ?? [],
+            newestStartupProjection: startupProjection,
             currentContext: locationSession.currentContext,
             pipelineSnap: refreshPipeline.snap,
             pipelineStormRisk: refreshPipeline.stormRisk,
@@ -321,24 +360,7 @@ struct HomeView: View {
     }
 
     var body: some View {
-        let presentation = presentationSnapshot(now: Date())
-        let readinessState = readinessState(presentation: presentation)
-        let todayContentState = todayContentState(presentation: presentation, readinessState: readinessState)
-        let localAlertsDisplayState = localAlertsDisplayState(
-            presentation: presentation,
-            todayContentState: todayContentState,
-            readinessState: readinessState
-        )
-        let stormSetupProfileAnalysisResponse = stormSetupPreferences.effectiveDetailedIngredientsEnabled
-            ? presentation.stormSetupCurrentResponse?.profileAnalysis
-            : nil
-        homeBody(
-            presentation: presentation,
-            readinessState: readinessState,
-            todayContentState: todayContentState,
-            localAlertsDisplayState: localAlertsDisplayState,
-            stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse
-        )
+        homeProjectionObservation
     }
 
     @ViewBuilder
@@ -437,16 +459,16 @@ struct HomeView: View {
             selectedTab = .alerts
         }
         .onChange(of: locationSession.reliabilityState) { _, _ in
-            refreshLocationReliabilityRail()
+            refreshLocationReliabilityRail(presentation: presentation)
         }
         .onChange(of: presentation.stormRisk) { _, _ in
-            refreshLocationReliabilityRail()
+            refreshLocationReliabilityRail(presentation: presentation)
         }
         .onChange(of: presentation.severeRisk) { _, _ in
-            refreshLocationReliabilityRail()
+            refreshLocationReliabilityRail(presentation: presentation)
         }
         .task {
-            refreshLocationReliabilityRail()
+            refreshLocationReliabilityRail(presentation: presentation)
         }
         .sheet(isPresented: $showsLocationReliabilitySheet) {
             LocationReliabilitySummaryExplanationSheet(
@@ -485,6 +507,52 @@ struct HomeView: View {
     }
 }
 
+struct HomeProjectionObservation: View {
+    struct Snapshot: Equatable {
+        let current: HomeProjectionRecord?
+        let latestObserved: HomeProjectionRecord?
+    }
+
+    @Query private var projections: [HomeProjection]
+
+    private let projectionKey: String?
+    private let content: (HomeProjectionRecord?, HomeProjectionRecord?) -> AnyView
+
+    init<Content: View>(
+        projectionKey: String?,
+        @ViewBuilder content: @escaping (HomeProjectionRecord?, HomeProjectionRecord?) -> Content
+    ) {
+        self.projectionKey = projectionKey
+        self.content = { current, startup in
+            AnyView(content(current, startup))
+        }
+        _projections = Query(HomeProjection.orderedProjectionsDescriptor())
+    }
+
+    private var snapshot: Snapshot {
+        Snapshot(
+            current: projectionKey == nil
+                ? nil
+                : Self.newestDisplayReadyProjection(in: currentProjectionCandidates),
+            latestObserved: Self.newestDisplayReadyProjection(in: projections)
+        )
+    }
+
+    private var currentProjectionCandidates: [HomeProjection] {
+        guard let projectionKey else { return [] }
+        return projections.filter { $0.projectionKey == projectionKey }
+    }
+
+    static func newestDisplayReadyProjection(in projections: [HomeProjection]) -> HomeProjectionRecord? {
+        HomeProjectionRecord.newestDisplayReady(in: projections.map(\.record))
+    }
+
+    var body: some View {
+        content(snapshot.current, snapshot.latestObserved)
+    }
+
+}
+
 extension HomeView {
     private func openMap(_ layer: MapLayer) {
         selectedMapLayer = layer
@@ -518,7 +586,7 @@ extension HomeView {
         }
     }
 
-    private func refreshLocationReliabilityRail() {
+    private func refreshLocationReliabilityRail(presentation: HomePresentationSnapshot) {
         if isUITestForceReliabilityRail {
             let qualifyingDay = LocationReliabilitySummaryRailEligibility.localDayString(
                 for: .now,
@@ -536,7 +604,6 @@ extension HomeView {
         let now = Date.now
         let timeZone = TimeZone.autoupdatingCurrent
         let reliability = locationSession.reliabilityState
-        let presentation = presentationSnapshot(now: now)
         let ledger = LocationReliabilityAskLedger.live()
         let decision = LocationReliabilitySummaryRailEligibility.decision(
             reliability: reliability,

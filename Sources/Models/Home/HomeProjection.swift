@@ -148,6 +148,24 @@ struct HomeProjectionRecord: Sendable, Equatable {
 }
 
 extension HomeProjectionRecord {
+    var isDisplayReady: Bool {
+        weather != nil ||
+        stormRisk != nil ||
+        severeRisk != nil ||
+        fireRisk != nil ||
+        lastHotAlertsLoadAt != nil
+    }
+
+    static func newestDisplayReady(in records: [HomeProjectionRecord]) -> HomeProjectionRecord? {
+        records
+            .filter(\.isDisplayReady)
+            .max {
+                if $0.updatedAt != $1.updatedAt { return $0.updatedAt < $1.updatedAt }
+                if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+                return $0.projectionKey > $1.projectionKey
+            }
+    }
+
     var locationSnapshot: LocationSnapshot {
         LocationSnapshot(
             coordinates: .init(latitude: latitude, longitude: longitude),
@@ -251,6 +269,16 @@ final class HomeProjection {
 }
 
 extension HomeProjection {
+    static func orderedProjectionsDescriptor() -> FetchDescriptor<HomeProjection> {
+        FetchDescriptor<HomeProjection>(
+            sortBy: [
+                SortDescriptor(\.updatedAt, order: .reverse),
+                SortDescriptor(\.createdAt, order: .reverse),
+                SortDescriptor(\.projectionKey, order: .forward)
+            ]
+        )
+    }
+
     var severeRisk: SevereWeatherThreat? {
         get {
             guard let severeRiskKindRawValue else { return nil }
