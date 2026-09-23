@@ -141,6 +141,240 @@ struct HomeViewRefreshTriggerTests {
     }
 }
 
+@Suite("Home visible revision contract")
+struct HomeVisibleRevisionTests {
+    private let key = "h3:1|county:COC001|forecast:COZ001|fire:COZ201"
+
+    @Test(
+        "accepted core replaces cache only after a coherent persistence acknowledgement",
+        arguments: HomeVisiblePresentation.RefreshSource.allCases
+    )
+    func acceptedCorePromotesForEveryRefreshSource(source: HomeVisiblePresentation.RefreshSource) {
+        let cached = record(at: 100, stormRisk: .slight)
+        let accepted = record(at: 200)
+        let attemptID = UUID()
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(cached))
+        state.apply(.refreshStarted(id: attemptID, source: source, projectionKey: key))
+
+        #expect(state.phase == .cachedRefreshing)
+        #expect(state.revision?.core == cached)
+        #expect(state.refreshSource == source)
+
+        state.apply(.coreAccepted(.init(record: accepted, riskProfileChange: nil), .init(weather: .some(nil))))
+        #expect(state.revision?.core == accepted)
+        #expect(state.isRefreshing)
+        state.apply(.refreshFinished(id: attemptID))
+        #expect(state.phase == .current)
+    }
+
+    @Test("a hot alert prime cannot certify or replace the core revision")
+    func hotPrimeCannotCertifyCore() {
+        let cached = record(at: 100, stormRisk: .slight)
+        let alertPrime = record(at: 200, acceptedAlerts: true)
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(cached))
+        state.apply(.coreAccepted(
+            .init(record: alertPrime, riskProfileChange: nil),
+            .init(hotAlerts: (alerts: [], mesos: []))
+        ))
+        #expect(state.revision?.core == cached)
+
+        state.apply(.alertsAccepted(alertPrime))
+        #expect(state.revision?.core == cached)
+        #expect(state.revision?.alerts == alertPrime)
+        state.apply(.persistedFallback(alertPrime))
+        #expect(state.revision?.core == cached)
+
+        var noCore = HomeVisiblePresentation(contextKey: key)
+        noCore.apply(.persistedFallback(record(
+            at: 100,
+            acceptedWeather: false,
+            acceptedRisks: false,
+            acceptedAlerts: true
+        )))
+        noCore.apply(.alertsAccepted(alertPrime))
+        #expect(noCore.revision == nil)
+        #expect(noCore.phase == .noCacheResolving)
+    }
+
+    @Test("a same-context attempt preserves cache through failure and rejection")
+    func sameContextFailuresPreserveCache() {
+        let cached = record(at: 100, stormRisk: .slight)
+        let failedAttempt = UUID()
+        let rejectedAttempt = UUID()
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(cached))
+        state.apply(.refreshStarted(id: failedAttempt, source: .manual, projectionKey: key))
+        state.apply(.failed(id: failedAttempt))
+        #expect(state.phase == .failureWithCache)
+        #expect(state.revision?.core == cached)
+
+        state.apply(.refreshStarted(id: rejectedAttempt, source: .timer, projectionKey: key))
+        state.apply(.rejected(id: rejectedAttempt))
+        #expect(state.phase == .failureWithCache)
+        #expect(state.revision?.core == cached)
+    }
+
+    @Test("location changes reject prior location content and late old-context acceptance")
+    func locationChangeRejectsOldContext() {
+        let old = record(at: 100, stormRisk: .slight)
+        let newKey = "h3:2|county:COC003|forecast:COZ002|fire:COZ202"
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(old))
+        state.apply(.contextChanged(projectionKey: newKey))
+        #expect(state.revision == nil)
+        #expect(state.phase == .noCacheResolving)
+
+        state.apply(.coreAccepted(.init(record: old, riskProfileChange: nil), .init(weather: .some(nil))))
+        state.apply(.persistedFallback(old))
+        #expect(state.revision == nil)
+
+        let new = record(at: 150, key: newKey, stormRisk: .slight)
+        state.apply(.persistedFallback(new))
+        #expect(state.revision?.core == new)
+    }
+
+    @Test("accepted empty requires all core and alert acceptance markers")
+    func emptyIsDistinctFromUnloadedAndFailure() {
+        var state = HomeVisiblePresentation(contextKey: key)
+        #expect(state.phase == .noCacheResolving)
+        state.apply(.persistedFallback(record(at: 100, acceptedWeather: true, acceptedRisks: false)))
+        #expect(state.phase == .current)
+        let empty = record(at: 200, acceptedWeather: true, acceptedRisks: true, acceptedAlerts: true)
+        state.apply(.coreAccepted(.init(record: empty, riskProfileChange: nil), .init(weather: .some(nil))))
+        #expect(state.phase == .authoritativeEmpty)
+        let attemptID = UUID()
+        state.apply(.refreshStarted(id: attemptID, source: .manual, projectionKey: key))
+        state.apply(.failed(id: attemptID))
+        #expect(state.phase == .failureWithCache)
+    }
+
+    @Test("older accepted core and fallback cannot replace a newer same-context revision")
+    func olderCoreCannotReplaceNewerCore() {
+        let newer = record(at: 200, stormRisk: .slight)
+        let older = record(at: 100)
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.coreAccepted(.init(record: newer, riskProfileChange: nil), .init(weather: .some(nil))))
+        state.apply(.coreAccepted(.init(record: older, riskProfileChange: nil), .init(weather: .some(nil))))
+        state.apply(.persistedFallback(older))
+        #expect(state.revision?.core == newer)
+    }
+
+    @Test("late terminal events from an old context cannot change the current attempt")
+    func lateAttemptCannotChangeNewContext() {
+        let oldAttempt = UUID()
+        let newAttempt = UUID()
+        let newKey = "h3:2|county:COC003|forecast:COZ002|fire:COZ202"
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.refreshStarted(id: oldAttempt, source: .foregroundActivate, projectionKey: key))
+        state.apply(.contextChanged(projectionKey: newKey))
+        state.apply(.refreshStarted(id: oldAttempt, source: .foregroundActivate, projectionKey: key))
+        #expect(state.activeAttemptID == nil)
+        state.apply(.refreshStarted(id: newAttempt, source: .manual, projectionKey: newKey))
+
+        state.apply(.refreshFinished(id: oldAttempt))
+        state.apply(.failed(id: oldAttempt))
+        state.apply(.rejected(id: oldAttempt))
+        state.apply(.offline(id: oldAttempt))
+        #expect(state.isRefreshing)
+        #expect(state.refreshSource == .manual)
+        #expect(state.activeAttemptID == newAttempt)
+        #expect(state.phase == .noCacheResolving)
+
+        state.apply(.refreshFinished(id: newAttempt))
+        #expect(state.isRefreshing == false)
+        #expect(state.activeAttemptID == nil)
+    }
+
+    @Test("optional enrichment and alerts cannot change accepted core risk")
+    func enrichmentDoesNotChangeCore() {
+        let core = record(at: 100, stormRisk: .slight)
+        let enriched = record(at: 200, acceptedAlerts: true, acceptedEnrichment: true)
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(core))
+        state.apply(.enrichmentAccepted(enriched))
+        state.apply(.alertsAccepted(enriched))
+        #expect(state.revision?.stormRisk == .slight)
+        #expect(state.revision?.core == core)
+        #expect(state.revision?.enrichment == enriched)
+    }
+
+    @Test("offline, unavailable location, and unavailable persistence remain distinct")
+    func availabilityStates() {
+        let cached = record(at: 100, stormRisk: .slight)
+        let attemptID = UUID()
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(cached))
+        state.apply(.connectivityChanged(isOffline: true))
+        #expect(state.phase == .staleOffline)
+        state.apply(.connectivityChanged(isOffline: false))
+        #expect(state.phase == .current)
+        state.apply(.refreshStarted(id: attemptID, source: .manual, projectionKey: key))
+        state.apply(.offline(id: attemptID))
+        #expect(state.phase == .staleOffline)
+        #expect(state.revision?.core == cached)
+        let recoveryAttempt = UUID()
+        state.apply(.refreshStarted(id: recoveryAttempt, source: .timer, projectionKey: key))
+        state.apply(.persistenceUnavailable(projectionKey: key))
+        #expect(state.phase == .persistenceUnavailable)
+        #expect(state.revision?.core == cached)
+        state.apply(.persistenceRecovered(projectionKey: "other-location"))
+        #expect(state.phase == .persistenceUnavailable)
+        state.apply(.persistenceRecovered(projectionKey: key))
+        state.apply(.refreshFinished(id: recoveryAttempt))
+        #expect(state.phase == .current)
+        #expect(state.revision?.core == cached)
+        state.apply(.locationUnavailable)
+        #expect(state.phase == .locationUnavailable)
+        #expect(state.revision == nil)
+
+        var unresolved = HomeVisiblePresentation()
+        unresolved.apply(.persistenceUnavailable(projectionKey: nil))
+        #expect(unresolved.phase == .persistenceUnavailable)
+        unresolved.apply(.persistenceRecovered(projectionKey: nil))
+        #expect(unresolved.phase == .noCacheResolving)
+    }
+
+    private func record(
+        at timestamp: TimeInterval,
+        key projectionKey: String? = nil,
+        stormRisk: StormRiskLevel? = nil,
+        acceptedWeather: Bool = true,
+        acceptedRisks: Bool = true,
+        acceptedAlerts: Bool = false,
+        acceptedEnrichment: Bool = false
+    ) -> HomeProjectionRecord {
+        let date = Date(timeIntervalSince1970: timestamp)
+        return HomeProjectionRecord(
+            id: UUID(),
+            projectionKey: projectionKey ?? key,
+            latitude: 39,
+            longitude: -104,
+            h3Cell: 1,
+            countyCode: "COC001",
+            forecastZone: "COZ001",
+            fireZone: "COZ201",
+            placemarkSummary: nil,
+            timeZoneId: "America/Denver",
+            locationTimestamp: date,
+            createdAt: date,
+            updatedAt: date,
+            lastViewedAt: date,
+            weather: nil,
+            stormRisk: stormRisk,
+            severeRisk: nil,
+            fireRisk: nil,
+            activeAlerts: [],
+            activeMesos: [],
+            lastHotAlertsLoadAt: acceptedAlerts ? date : nil,
+            lastSlowProductsLoadAt: acceptedRisks ? date : nil,
+            lastWeatherLoadAt: acceptedWeather ? date : nil,
+            lastAirQualityLoadAt: acceptedEnrichment ? date : nil
+        )
+    }
+}
+
 
 @Suite("HomeView Projection Launch")
 @MainActor
