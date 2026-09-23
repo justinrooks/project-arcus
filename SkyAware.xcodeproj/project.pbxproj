@@ -12,6 +12,7 @@
 		D1A1000A31AA000100A10001 /* SkyAwareWidgetsExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D2A000032F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */; };
 		D2A000052F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */; };
+		D58000012F58000100AA1001 /* BarometricPressureTrendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D58000022F58000100AA1001 /* BarometricPressureTrendTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +65,7 @@
 		D1A1000231AA000100A10001 /* SkyAwareWidgetsExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SkyAwareWidgetsExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2A000022F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data.sqlite; sourceTree = "<group>"; };
 		D2A000042F60000100AA1001 /* Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Tests/UnitTests/Fixtures/HomeProjectionPreviousProduction/SkyAware_Data_v1_1_0_113.sqlite; sourceTree = "<group>"; };
+		D58000022F58000100AA1001 /* BarometricPressureTrendTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/UnitTests/BarometricPressureTrendTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -131,6 +133,7 @@
 				UnitTests/SevereWeatherThreatTests.swift,
 				UnitTests/SkyAwareAdaptiveLayoutTests.swift,
 				UnitTests/SkyAwareAppActivationCleanupTests.swift,
+				UnitTests/BarometricPressureTrendTests.swift,
 				UnitTests/SkyAwareMotionTests.swift,
 				UnitTests/SpcProviderSyncMapProductsTests.swift,
 				UnitTests/SpcRiskTestSupport.swift,
@@ -620,6 +623,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D58000012F58000100AA1001 /* BarometricPressureTrendTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -803,6 +807,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to help keep severe-weather awareness and notifications more current, even when the app is not open.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "SkyAware uses the iPhone barometer to measure short-term local pressure changes in the developer diagnostics screen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -846,6 +851,7 @@
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.weather";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "SkyAware uses your location to help keep severe-weather awareness and notifications more current, even when the app is not open.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "SkyAware uses your location to determine relevant severe-weather risk and nearby weather events for your area.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "SkyAware uses the iPhone barometer to measure short-term local pressure changes in the developer diagnostics screen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;

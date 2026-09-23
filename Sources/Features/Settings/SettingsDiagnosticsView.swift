@@ -118,6 +118,18 @@ struct SettingsDiagnosticsView: View {
                 .buttonStyle(.plain)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+
+                NavigationLink {
+                    BarometricPressureTrendView()
+                        .navigationTitle("Pressure Trend")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbarBackground(.skyAwareBackground, for: .navigationBar)
+                } label: {
+                    settingsNavRow("Pressure Trend", systemImage: "gauge.with.dots.needle.67percent")
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
 
             sectionCard(title: "Location Diagnostics", symbol: "iphone.badge.location", accent: .primary) {
