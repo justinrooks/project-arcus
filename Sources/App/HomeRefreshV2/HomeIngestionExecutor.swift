@@ -709,24 +709,33 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         executionMode: HTTPExecutionMode
     ) async -> HotFeedSyncOutcome {
         if let remoteAlertContext = plan.remoteAlertContext {
-            await HTTPExecutionMode.$current.withValue(executionMode) {
-                await withTaskGroup(of: Void.self) { group in
-                    group.addTask { _ = await self.environment.spcSync.syncMesoscaleDiscussions() }
-                    group.addTask {
-                        _ = await self.environment.arcusAlertSync.syncRemoteAlert(
-                            id: remoteAlertContext.alertID,
-                            revisionSent: remoteAlertContext.revisionSent
-                        )
-                    }
-
-                    if plan.lanes != [.hotAlerts], let context {
-                        group.addTask { _ = await self.environment.arcusAlertSync.sync(context: context) }
-                    }
-
-                    await group.waitForAll()
-                }
+            async let mesoOutcome = HTTPExecutionMode.$current.withValue(executionMode) {
+                await environment.spcSync.syncMesoscaleDiscussions()
             }
-            return .targeted
+            async let remoteAlertOutcome = HTTPExecutionMode.$current.withValue(executionMode) {
+                await environment.arcusAlertSync.syncRemoteAlert(
+                    id: remoteAlertContext.alertID,
+                    revisionSent: remoteAlertContext.revisionSent
+                )
+            }
+            async let locationAlertOutcome: ArcusLocationSyncOutcome? = {
+                guard plan.lanes != [.hotAlerts], let context else { return nil }
+                return await HTTPExecutionMode.$current.withValue(executionMode) {
+                    await environment.arcusAlertSync.sync(context: context)
+                }
+            }()
+            let (mesoResult, _, locationAlertResult) = await (
+                mesoOutcome,
+                remoteAlertOutcome,
+                locationAlertOutcome
+            )
+
+            guard plan.lanes != [.hotAlerts] else { return .targeted }
+            guard mesoResult.authorizesLocationScopedAcceptance,
+                  locationAlertResult?.authorizesLocationScopedAcceptance == true else {
+                return .incomplete
+            }
+            return .completeLocationScopedAcceptance
         }
 
         guard let context else { return .incomplete }

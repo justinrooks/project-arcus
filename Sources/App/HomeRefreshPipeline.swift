@@ -105,7 +105,7 @@ final class HomeRefreshPipeline {
     private var deferredContextRefreshKey: LocationContext.RefreshKey?
     private var activeRefreshCount = 0
     private var followUpRefreshCount = 0
-    private var didCompleteConditionsRefreshSuccessfully = false
+    private var didCompleteManualConditionsRefreshSuccessfully = false
     private var latestVisibleSubmissionID: UUID?
     private var acceptedCorePublication: AcceptedCorePublication?
     private var suppressedCoreSubmissionID: UUID?
@@ -353,7 +353,7 @@ final class HomeRefreshPipeline {
 
         if waitsForCompletion {
             let outcome = await runRefresh(trigger, environment: environment)
-            finishForegroundRefresh(outcome: outcome)
+            finishForegroundRefresh(outcome: outcome, trigger: trigger)
             if trigger == .manual {
                 completeManualRefresh(outcome: outcome)
             }
@@ -363,7 +363,7 @@ final class HomeRefreshPipeline {
         Task { @MainActor [weak self] in
             guard let self else { return }
             let outcome = await self.runRefresh(trigger, environment: environment)
-            self.finishForegroundRefresh(outcome: outcome)
+            self.finishForegroundRefresh(outcome: outcome, trigger: trigger)
             if trigger == .manual {
                 self.completeManualRefresh(outcome: outcome)
             } else if outcome == .completed {
@@ -397,7 +397,11 @@ final class HomeRefreshPipeline {
             environment.logger.info(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alertss=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
             )
-            return refreshOutcome(for: snapshot, environment: environment)
+            return refreshOutcome(
+                for: snapshot,
+                environment: environment,
+                requiresAcceptedRequestedLanes: trigger == .manual
+            )
         } catch is CancellationError {
             environment.logger.notice(
                 "Foreground refresh cancelled trigger=\(trigger.logName, privacy: .public)"
@@ -412,13 +416,24 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func refreshOutcome(for snapshot: HomeSnapshot, environment: Environment) -> RefreshOutcome {
+    private func refreshOutcome(
+        for snapshot: HomeSnapshot,
+        environment: Environment,
+        requiresAcceptedRequestedLanes: Bool = false
+    ) -> RefreshOutcome {
         guard let context = snapshot.locationContext,
               snapshot.weatherRefreshResult != .failure,
               snapshot.weatherRefreshResult != .skipped,
               environment.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
                 == HomeProjection.projectionKey(for: context) else {
             return .failed
+        }
+        if requiresAcceptedRequestedLanes {
+            guard snapshot.freshness.lastHotFeedSyncAt != nil,
+                  snapshot.freshness.lastMapProductSyncAt != nil,
+                  snapshot.freshness.lastOutlookSyncAt != nil else {
+                return .failed
+            }
         }
         return .completed
     }
@@ -469,7 +484,7 @@ final class HomeRefreshPipeline {
 
     private func beginForegroundRefresh() {
         if activeRefreshCount == 0, followUpRefreshCount == 0 {
-            didCompleteConditionsRefreshSuccessfully = false
+            didCompleteManualConditionsRefreshSuccessfully = false
         }
         activeRefreshCount += 1
         if activeRefreshCount == 1 {
@@ -477,10 +492,10 @@ final class HomeRefreshPipeline {
         }
     }
 
-    private func finishForegroundRefresh(outcome: RefreshOutcome) {
+    private func finishForegroundRefresh(outcome: RefreshOutcome, trigger: HomeView.RefreshTrigger) {
         guard activeRefreshCount > 0 else { return }
-        if outcome == .completed {
-            didCompleteConditionsRefreshSuccessfully = true
+        if trigger == .manual, outcome == .completed {
+            didCompleteManualConditionsRefreshSuccessfully = true
         }
         activeRefreshCount -= 1
         finalizeForegroundRefreshIfNeeded()
@@ -596,9 +611,6 @@ final class HomeRefreshPipeline {
             guard let self else { return }
             var outcome: RefreshOutcome = .failed
             defer {
-                if outcome == .completed {
-                    self.didCompleteConditionsRefreshSuccessfully = true
-                }
                 self.followUpRefreshCount -= 1
                 self.finalizeForegroundRefreshIfNeeded()
             }
@@ -623,9 +635,9 @@ final class HomeRefreshPipeline {
 
         resolutionState.finishAll(
             completedTask: .finalizing,
-            conditionsUpdated: didCompleteConditionsRefreshSuccessfully
+            conditionsUpdated: didCompleteManualConditionsRefreshSuccessfully
         )
-        didCompleteConditionsRefreshSuccessfully = false
+        didCompleteManualConditionsRefreshSuccessfully = false
         let deferredContextRefreshKey = self.deferredContextRefreshKey
         self.deferredContextRefreshKey = nil
         guard

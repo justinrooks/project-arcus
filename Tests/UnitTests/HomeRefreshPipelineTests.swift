@@ -1502,11 +1502,18 @@ struct HomeRefreshPipelineTests {
     @Test("manual refresh reports completion only after location-scoped weather acceptance")
     func manualRefresh_reportsAcceptedCompletion() async {
         let context = makeContext()
+        let acceptedAt = Date()
         let coordinator = RecordingHomeIngestionCoordinator(
             snapshot: HomeSnapshot(
                 locationContext: context,
                 refreshKey: context.refreshKey,
-                weatherRefreshResult: .success(nil)
+                weatherRefreshResult: .success(nil),
+                freshness: HomeFreshnessState(
+                    lastHotFeedSyncAt: acceptedAt,
+                    lastMapProductSyncAt: acceptedAt,
+                    lastOutlookSyncAt: acceptedAt,
+                    lastWeatherSyncAt: acceptedAt
+                )
             )
         )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
@@ -1521,6 +1528,35 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.didManualRefreshFail == false)
         #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Conditions refreshed.")
         #expect(pipeline.resolutionState.conditionsUpdatedMessage == "Conditions up to date")
+    }
+
+    @Test("manual refresh reports failure when an accepted requested lane is missing")
+    func manualRefresh_doesNotReportSuccessWhenOutlookLaneFails() async {
+        let context = makeContext()
+        let acceptedAt = Date()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationContext: context,
+                refreshKey: context.refreshKey,
+                weatherRefreshResult: .success(nil),
+                freshness: HomeFreshnessState(
+                    lastHotFeedSyncAt: acceptedAt,
+                    lastMapProductSyncAt: acceptedAt,
+                    lastWeatherSyncAt: acceptedAt
+                )
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        )
+
+        #expect(pipeline.didManualRefreshFail)
+        #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refresh couldn't complete.")
+        #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
     }
 
     @Test("manual refresh without a resolved context does not announce success")
@@ -1561,7 +1597,20 @@ struct HomeRefreshPipelineTests {
     @Test("automatic refresh remains silent in the manual accessibility channel")
     func automaticRefresh_doesNotAnnounce() async {
         let context = makeContext()
-        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
+        let acceptedAt = Date()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationContext: context,
+                refreshKey: context.refreshKey,
+                weatherRefreshResult: .success(nil),
+                freshness: HomeFreshnessState(
+                    lastHotFeedSyncAt: acceptedAt,
+                    lastMapProductSyncAt: acceptedAt,
+                    lastOutlookSyncAt: acceptedAt,
+                    lastWeatherSyncAt: acceptedAt
+                )
+            )
+        )
         let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
         let pipeline = HomeRefreshPipeline()
 
@@ -1572,6 +1621,7 @@ struct HomeRefreshPipelineTests {
         await pipeline.waitForIdle()
 
         #expect(pipeline.manualRefreshAccessibilityEvent == nil)
+        #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
     }
 
     @Test("manual refresh outcome is discarded when its location context changes")
@@ -2965,6 +3015,46 @@ struct HomeRefreshPipelineTests {
         #expect(projection.activeMesos == [originalMeso])
         #expect(projection.lastHotAlertsLoadAt == priorLoadAt)
         #expect(snapshot.freshness.lastHotFeedSyncAt == nil)
+    }
+
+    @Test("merged manual remote-alert refresh invalidates freshness when location alerts fail")
+    func mergedManualRemoteAlertRefresh_requiresLocationAlertAcceptance() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        let manualPlan = HomeIngestionPlan(
+            request: .init(trigger: .manualRefresh, locationContext: context)
+        )
+        let baseline = try await executor.run(plan: manualPlan)
+        #expect(baseline.freshness.lastHotFeedSyncAt != nil)
+
+        await alerts.setLocationSyncOutcome(.failed)
+        var mergedPlan = manualPlan
+        mergedPlan.merge(
+            with: HomeIngestionPlan(
+                request: .init(
+                    trigger: .remoteHotAlertReceived,
+                    remoteAlertContext: .init(alertID: Watch.sampleWatchRows[1].id)
+                )
+            )
+        )
+        let refreshed = try await executor.run(plan: mergedPlan)
+
+        #expect(refreshed.freshness.lastHotFeedSyncAt == nil)
     }
 
     @Test("slow-product providers overlap, join, and preserve map outcome")
@@ -4537,7 +4627,7 @@ private final class RecordingWidgetSnapshotRefresher: @unchecked Sendable, Widge
 private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     private let activeAlerts: [AlertDTO]
     private let syncGate: AsyncGate?
-    private let locationSyncOutcome: ArcusLocationSyncOutcome
+    private var locationSyncOutcome: ArcusLocationSyncOutcome
     private var syncCalls = 0
     private var queryCalls = 0
     private var observedHTTPModeValues: [HTTPExecutionMode] = []
@@ -4589,6 +4679,9 @@ private actor FakeAlertProvider: ArcusAlertSyncing, ArcusAlertQuerying {
     func queryCount() -> Int { queryCalls }
     func observedHTTPModes() -> [HTTPExecutionMode] { observedHTTPModeValues }
     func cancelledSyncCount() -> Int { cancelledSyncCalls }
+    func setLocationSyncOutcome(_ outcome: ArcusLocationSyncOutcome) {
+        locationSyncOutcome = outcome
+    }
 }
 
 private func testMapSource(revision: TimeInterval) -> SpcMapSourceIdentity {
