@@ -300,10 +300,29 @@ extension HomeProjectionPersisting {
 
 @ModelActor
 actor HomeProjectionStore {
+    static let recentRetentionAge: TimeInterval = 30 * 24 * 60 * 60
+    static let maximumRecentUsefulProjections = 10
+    private static let pendingRetentionIDsDefaultsKey = "homeProjection.pendingRetentionIDs.v1"
+
     private let performanceSignposter = OSSignposter(logger: Logger.appHomeRefresh)
+
+    private var retentionCoordinator: HomeProjectionRetentionCoordinator {
+        HomeProjectionRetentionCoordinator.forStore(modelContainer)
+    }
+
+    private var scopedPendingRetentionIDsDefaultsKey: String {
+        let storePath = modelContainer.configurations.first?.url.standardizedFileURL.path ?? "default"
+        let pathHash = storePath.utf8.reduce(UInt64(14_695_981_039_346_656_037)) { hash, byte in
+            (hash ^ UInt64(byte)) &* 1_099_511_628_211
+        }
+        return "\(Self.pendingRetentionIDsDefaultsKey).\(String(pathHash, radix: 16))"
+    }
+
 #if DEBUG
     private var failsNextSaveForTesting = false
     private var operationMetrics = HomeProjectionStoreOperationMetrics()
+    private var retentionCheckpointForTesting: (@Sendable () async -> Void)?
+    private var retentionDeletionCheckpointForTesting: (@Sendable (String?, UUID?) async -> Void)?
 
     func failNextSaveForTesting() {
         failsNextSaveForTesting = true
@@ -315,6 +334,16 @@ actor HomeProjectionStore {
 
     func operationMetricsForTesting() -> HomeProjectionStoreOperationMetrics {
         operationMetrics
+    }
+
+    func setRetentionCheckpointForTesting(_ checkpoint: (@Sendable () async -> Void)?) {
+        retentionCheckpointForTesting = checkpoint
+    }
+
+    func setRetentionDeletionCheckpointForTesting(
+        _ checkpoint: (@Sendable (String?, UUID?) async -> Void)?
+    ) {
+        retentionDeletionCheckpointForTesting = checkpoint
     }
 #endif
 
@@ -330,6 +359,109 @@ actor HomeProjectionStore {
         let projections = try modelContext.fetch(HomeProjection.orderedProjectionsDescriptor())
         recordFetchedRows(projections.count)
         return HomeProjectionRecord.newestDisplayReady(in: projections.map(\.record))
+    }
+
+    func retainRecentProjections(
+        forActiveContext activeContext: LocationContext,
+        now: Date = .now
+    ) async throws {
+#if DEBUG
+        await retentionCheckpointForTesting?()
+#endif
+        try Task.checkCancellation()
+
+        let coordinator = retentionCoordinator
+        await coordinator.acquire()
+        defer { coordinator.release() }
+        try Task.checkCancellation()
+
+        let projections = try modelContext.fetch(HomeProjection.orderedProjectionsDescriptor())
+        recordFetchedRows(projections.count)
+
+        let cutoff = now.addingTimeInterval(-Self.recentRetentionAge)
+        let activeProjectionKey = HomeProjection.projectionKey(for: activeContext)
+        let activeProjection = projections.first { $0.projectionKey == activeProjectionKey }
+        let startupFallback = HomeProjectionRecord.newestDisplayReady(in: projections.map(\.record))?.id
+        let recentUseful = projections
+            .filter { projection in
+                projection.record.isDisplayReady
+                    && max(projection.updatedAt, projection.lastViewedAt ?? .distantPast) >= cutoff
+            }
+            .sorted(by: Self.isMoreRecentlyUseful)
+            .prefix(Self.maximumRecentUsefulProjections)
+
+        var retainedIDs = Set(recentUseful.map(\.id))
+        if let startupFallback {
+            retainedIDs.insert(startupFallback)
+        }
+        if let activeProjection {
+            retainedIDs.insert(activeProjection.id)
+        }
+
+        var protectedIDs = retainedIDs
+        let selectedActiveKey = coordinator.currentActiveProjectionKey()
+        let selectedActiveProjection = projections.first { $0.projectionKey == selectedActiveKey }
+        if let selectedActiveProjection {
+            protectedIDs.insert(selectedActiveProjection.id)
+        }
+
+        let currentCandidateIDs = Set(
+            projections.lazy.map(\.id).filter { protectedIDs.contains($0) == false }
+        )
+        let pendingIDs = Set(
+            UserDefaults.standard.stringArray(forKey: scopedPendingRetentionIDsDefaultsKey) ?? []
+        )
+        let deletionCandidates = projections.filter {
+            currentCandidateIDs.contains($0.id) && pendingIDs.contains($0.id.uuidString)
+        }
+
+#if DEBUG
+        let capturedActiveKey = coordinator.currentActiveProjectionKey()
+        let capturedActiveID = projections.first { $0.projectionKey == capturedActiveKey }?.id
+        await retentionDeletionCheckpointForTesting?(capturedActiveKey, capturedActiveID)
+#endif
+        try Task.checkCancellation()
+
+        // Keep the active key stable from the final protection check through the save.
+        let removed = try coordinator.withActiveProjectionKey { latestActiveKey in
+            let latestActiveProjection = projections.first { $0.projectionKey == latestActiveKey }
+            let latestActiveID = latestActiveProjection?.id
+            let removed = deletionCandidates.filter { $0.id != latestActiveID }
+
+            let didRecordPassedContext = activeProjection.map { $0.lastViewedAt != now } ?? false
+            activeProjection?.lastViewedAt = now
+            let didRecordCurrentContext = latestActiveProjection.map { $0.lastViewedAt != now } ?? false
+            latestActiveProjection?.lastViewedAt = now
+
+            for projection in removed {
+                modelContext.delete(projection)
+            }
+            if Task.isCancelled {
+                modelContext.rollback()
+                throw CancellationError()
+            }
+            if removed.isEmpty == false || didRecordPassedContext || didRecordCurrentContext {
+                try saveProjection(named: "Home Projection Retention Save")
+            }
+            return removed
+        }
+
+        // Stage candidates even when the active context has no row yet. A later sweep
+        // deletes only rows that remain outside the active, fallback, and recent sets.
+        let nextPendingIDs = currentCandidateIDs.subtracting(removed.map(\.id))
+        UserDefaults.standard.set(
+            nextPendingIDs.map(\.uuidString).sorted(),
+            forKey: scopedPendingRetentionIDsDefaultsKey
+        )
+    }
+
+    private static func isMoreRecentlyUseful(_ lhs: HomeProjection, _ rhs: HomeProjection) -> Bool {
+        let lhsUsefulAt = max(lhs.updatedAt, lhs.lastViewedAt ?? .distantPast)
+        let rhsUsefulAt = max(rhs.updatedAt, rhs.lastViewedAt ?? .distantPast)
+        if lhsUsefulAt != rhsUsefulAt { return lhsUsefulAt > rhsUsefulAt }
+        if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt > rhs.createdAt }
+        return lhs.projectionKey < rhs.projectionKey
     }
 
     func fetchOrCreateProjection(

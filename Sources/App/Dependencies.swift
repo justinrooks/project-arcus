@@ -443,7 +443,8 @@ final class Dependencies: Sendable {
             locationManager: locationManager,
             locationContextResolver: locationContextResolver,
             locationUploadCoordinator: locationUploadCoordinator,
-            durableContextCache: DurableLocationContextCache()
+            durableContextCache: DurableLocationContextCache(),
+            retentionCoordinator: HomeProjectionRetentionCoordinator.forStore(container)
         )
         logger.info("Location session initialized")
         Task { @MainActor in

@@ -33,6 +33,7 @@ final class LocationSession {
     private let locationContextResolver: any LocationContextResolving
     private let locationUploadCoordinator: any LocationUploadCoordinating
     private let durableContextCache: any DurableLocationContextCaching
+    private let retentionCoordinator: HomeProjectionRetentionCoordinator
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
@@ -58,13 +59,15 @@ final class LocationSession {
         locationManager: LocationManager,
         locationContextResolver: any LocationContextResolving,
         locationUploadCoordinator: any LocationUploadCoordinating,
-        durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache()
+        durableContextCache: any DurableLocationContextCaching = NoOpDurableLocationContextCache(),
+        retentionCoordinator: HomeProjectionRetentionCoordinator = HomeProjectionRetentionCoordinator()
     ) {
         self.locationClient = locationClient
         self.locationManager = locationManager
         self.locationContextResolver = locationContextResolver
         self.locationUploadCoordinator = locationUploadCoordinator
         self.durableContextCache = durableContextCache
+        self.retentionCoordinator = retentionCoordinator
         self.authorizationStatus = locationManager.authStatus
         self.accuracyAuthorization = locationManager.accuracyAuthorization
 
@@ -126,7 +129,7 @@ final class LocationSession {
         invalidateDurableContextIfMoved(by: currentSnapshot)
 
         if authorizationStatus.isLocationAuthorized == false && showsAuthorizationPrompt == false {
-            currentContext = nil
+            await publishCurrentContext(nil)
             startupState = .failed("location-unavailable")
             return nil
         }
@@ -144,8 +147,7 @@ final class LocationSession {
                 maximumAcceptedLocationAge: maximumAcceptedLocationAge,
                 placemarkTimeout: placemarkTimeout
             )
-            currentSnapshot = context.snapshot
-            applyResolvedContext(context)
+            await applyResolvedContext(context)
             if let uploadSource {
                 await locationUploadCoordinator.enqueue(
                     context,
@@ -157,7 +159,7 @@ final class LocationSession {
             startupState = .ready
             return context
         } catch {
-            currentContext = nil
+            await publishCurrentContext(nil)
             startupState = .failed(Self.failureCode(for: error))
             return nil
         }
@@ -212,7 +214,7 @@ final class LocationSession {
 
         if let context = reusableContext {
             currentSnapshot = context.snapshot
-            applyResolvedContext(context)
+            await applyResolvedContext(context)
             if let uploadSource {
                 await locationUploadCoordinator.enqueue(
                     context,
@@ -240,7 +242,7 @@ final class LocationSession {
                 placemarkTimeout: placemarkTimeout
             )
         case .skipLocationDependentWork:
-            currentContext = nil
+            await publishCurrentContext(nil)
             startupState = .failed("location-context-unavailable")
             return nil
         }
@@ -305,7 +307,7 @@ final class LocationSession {
         }
 
         self.currentSnapshot = resolvedContext.snapshot
-        applyResolvedContext(resolvedContext)
+        await applyResolvedContext(resolvedContext)
         return resolvedContext
     }
 
@@ -342,7 +344,7 @@ final class LocationSession {
 
         if status.isLocationAuthorized == false {
             let hadContext = currentContext != nil
-            currentContext = nil
+            Task { await publishCurrentContext(nil) }
             startupState = .failed("location-unavailable")
             logger.notice("Location access unavailable; currentContextReset=\(hadContext, privacy: .public)")
         }
@@ -369,10 +371,8 @@ final class LocationSession {
                 )
                 if Task.isCancelled { return }
 
-                await MainActor.run {
-                    self.applyResolvedContext(context)
-                    self.startupState = .ready
-                }
+                await self.applyResolvedContext(context)
+                self.startupState = .ready
                 await self.locationUploadCoordinator.enqueue(
                     context,
                     source: .foregroundLocationChange,
@@ -382,20 +382,24 @@ final class LocationSession {
             } catch is CancellationError {
                 return
             } catch {
-                await MainActor.run {
-                    self.currentContext = nil
-                    self.startupState = .failed(Self.failureCode(for: error))
-                }
+                await self.publishCurrentContext(nil)
+                self.startupState = .failed(Self.failureCode(for: error))
             }
         }
     }
 
-    private func applyResolvedContext(_ context: LocationContext) {
+    private func applyResolvedContext(_ context: LocationContext) async {
+        await publishCurrentContext(context)
         if currentSnapshot != context.snapshot {
             currentSnapshot = context.snapshot
         }
-        currentContext = context
         durableContextCache.save(context)
+    }
+
+    func publishCurrentContext(_ context: LocationContext?) async {
+        await retentionCoordinator.publish(context) {
+            currentContext = context
+        }
     }
 
     private func invalidateDurableContextIfMoved(by snapshot: LocationSnapshot?) {
