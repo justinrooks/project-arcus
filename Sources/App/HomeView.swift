@@ -60,10 +60,10 @@ struct HomeView: View {
     private var homeProjectionObservation: some View {
         HomeProjectionObservation(
             projectionKey: currentProjectionKey
-        ) { current, startup in
+        ) { visibleRevision, startup in
             let presentation = presentationSnapshot(
                 now: Date(),
-                currentProjection: current,
+                visibleRevision: visibleRevision,
                 startupProjection: startup
             )
             let readinessState = readinessState(presentation: presentation)
@@ -95,13 +95,11 @@ struct HomeView: View {
 
     private func presentationSnapshot(
         now: Date,
-        currentProjection: HomeProjectionRecord?,
+        visibleRevision: HomeVisibleRevision?,
         startupProjection: HomeProjectionRecord?
     ) -> HomePresentationSnapshot {
         HomePresentationSnapshot(
-            projections: locationSession.currentContext == nil
-                ? startupProjection.map { [$0] } ?? []
-                : currentProjection.map { [$0] } ?? [],
+            visibleRevision: visibleRevision,
             newestStartupProjection: startupProjection,
             currentContext: locationSession.currentContext,
             pipelineSnap: refreshPipeline.snap,
@@ -113,7 +111,6 @@ struct HomeView: View {
             pipelineMesos: refreshPipeline.mesos,
             pipelineAlerts: refreshPipeline.alerts,
             resolvedLocationScopedRefreshKey: refreshPipeline.lastResolvedLocationScopedRefreshKey,
-            airQualityRefreshKey: refreshPipeline.airQualityRefreshKey,
             alertSnapshotRefreshKey: refreshPipeline.alertSnapshotRefreshKey,
             pipelineStormSetup: refreshPipeline.stormSetup,
             pipelineStormSetupCurrentResponse: refreshPipeline.stormSetupCurrentResponse,
@@ -514,17 +511,18 @@ struct HomeProjectionObservation: View {
     }
 
     @Query private var projections: [HomeProjection]
+    @State private var acceptedRevision: HomeVisibleRevision?
 
     private let projectionKey: String?
-    private let content: (HomeProjectionRecord?, HomeProjectionRecord?) -> AnyView
+    private let content: (HomeVisibleRevision?, HomeProjectionRecord?) -> AnyView
 
     init<Content: View>(
         projectionKey: String?,
-        @ViewBuilder content: @escaping (HomeProjectionRecord?, HomeProjectionRecord?) -> Content
+        @ViewBuilder content: @escaping (HomeVisibleRevision?, HomeProjectionRecord?) -> Content
     ) {
         self.projectionKey = projectionKey
-        self.content = { current, startup in
-            AnyView(content(current, startup))
+        self.content = { revision, startup in
+            AnyView(content(revision, startup))
         }
         _projections = Query(HomeProjection.orderedProjectionsDescriptor())
     }
@@ -547,8 +545,22 @@ struct HomeProjectionObservation: View {
         HomeProjectionRecord.newestDisplayReady(in: projections.map(\.record))
     }
 
+    private var visibleRevision: HomeVisibleRevision? {
+        HomeVisibleRevision.derive(
+            previous: acceptedRevision,
+            observed: projectionKey == nil ? snapshot.latestObserved : snapshot.current,
+            projectionKey: projectionKey ?? snapshot.latestObserved?.projectionKey
+        )
+    }
+
     var body: some View {
-        content(snapshot.current, snapshot.latestObserved)
+        content(visibleRevision, snapshot.latestObserved)
+            .onChange(of: snapshot, initial: true) { _, _ in
+                acceptedRevision = visibleRevision
+            }
+            .onChange(of: projectionKey) { _, _ in
+                acceptedRevision = visibleRevision
+            }
     }
 
 }

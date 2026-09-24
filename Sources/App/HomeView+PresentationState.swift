@@ -23,7 +23,7 @@ extension HomeView {
         let isCurrentContextCommittedAlertSnapshot: Bool
 
         init(
-            projections: [HomeProjectionRecord],
+            visibleRevision: HomeVisibleRevision?,
             newestStartupProjection: HomeProjectionRecord?,
             currentContext: LocationContext?,
             pipelineSnap: LocationSnapshot?,
@@ -35,7 +35,6 @@ extension HomeView {
             pipelineMesos: [MdDTO],
             pipelineAlerts: [AlertDTO],
             resolvedLocationScopedRefreshKey: LocationContext.RefreshKey?,
-            airQualityRefreshKey: LocationContext.RefreshKey?,
             alertSnapshotRefreshKey: LocationContext.RefreshKey?,
             pipelineStormSetup: StormSetupDTO?,
             pipelineStormSetupCurrentResponse: StormSetupCurrentResponse?,
@@ -43,60 +42,38 @@ extension HomeView {
             isUITestStaticMode: Bool,
             now: Date
         ) {
-            let projection = HomeView.selectProjection(from: projections, currentContext: currentContext)
+            let projection = visibleRevision?.core
             let currentRefreshKey = currentContext?.refreshKey
             let isResolved = currentRefreshKey == resolvedLocationScopedRefreshKey && currentRefreshKey != nil
-            let isAirQualityResolved = currentRefreshKey == airQualityRefreshKey && currentRefreshKey != nil
             let currentAlertsAreCommitted = currentRefreshKey == alertSnapshotRefreshKey && currentRefreshKey != nil
+            let enrichment = visibleRevision?.enrichment ?? projection
             let response = HomeView.selectStormSetupCurrentResponse(
-                projection: projection,
+                projection: enrichment,
                 currentContext: currentContext,
-                pipelineValue: pipelineStormSetupCurrentResponse,
-                pipelineRefreshKey: stormSetupRefreshKey,
+                pipelineValue: isUITestStaticMode ? pipelineStormSetupCurrentResponse : nil,
+                pipelineRefreshKey: isUITestStaticMode ? stormSetupRefreshKey : nil,
                 now: now
             )
 
             self.projection = projection
-            self.locationSnapshot = HomeView.preferredSummaryValue(
-                projectionValue: projection?.locationSnapshot,
-                pipelineValue: pipelineSnap,
-                prefersPipelineValue: isResolved
-            )
-            self.stormRisk = HomeView.preferredSummaryValue(
-                projectionValue: projection?.stormRisk,
-                pipelineValue: pipelineStormRisk,
-                prefersPipelineValue: isResolved
-            )
-            self.severeRisk = HomeView.preferredSummaryValue(
-                projectionValue: projection?.severeRisk,
-                pipelineValue: pipelineSevereRisk,
-                prefersPipelineValue: isResolved
-            )
-            self.fireRisk = HomeView.preferredSummaryValue(
-                projectionValue: projection?.fireRisk,
-                pipelineValue: pipelineFireRisk,
-                prefersPipelineValue: isResolved
-            )
-            self.weather = HomeView.preferredSummaryValue(
-                projectionValue: projection?.weather,
-                pipelineValue: pipelineWeather,
-                prefersPipelineValue: isResolved
-            )
-            self.airQuality = isAirQualityResolved
-                ? pipelineAirQuality ?? projection?.airQuality
-                : projection?.airQuality
+            self.locationSnapshot = projection?.locationSnapshot ?? (isUITestStaticMode ? pipelineSnap : nil)
+            self.stormRisk = visibleRevision?.stormRisk ?? (isUITestStaticMode ? pipelineStormRisk : nil)
+            self.severeRisk = visibleRevision?.severeRisk ?? (isUITestStaticMode ? pipelineSevereRisk : nil)
+            self.fireRisk = visibleRevision?.fireRisk ?? (isUITestStaticMode ? pipelineFireRisk : nil)
+            self.weather = visibleRevision?.weather ?? (isUITestStaticMode ? pipelineWeather : nil)
+            self.airQuality = visibleRevision?.airQuality ?? (isUITestStaticMode ? pipelineAirQuality : nil)
             self.mesos = isUITestStaticMode && !pipelineMesos.isEmpty
                 ? pipelineMesos
-                : (currentAlertsAreCommitted ? pipelineMesos : projection?.activeMesos ?? [])
+                : visibleRevision?.activeMesos ?? []
             self.alerts = isUITestStaticMode && !pipelineAlerts.isEmpty
                 ? pipelineAlerts
-                : (currentAlertsAreCommitted ? pipelineAlerts : projection?.activeAlerts ?? [])
+                : visibleRevision?.activeAlerts ?? []
             self.stormSetupCurrentResponse = response
             self.stormSetup = response.map(StormSetupDTO.init(response:)) ?? HomeView.selectStormSetup(
-                projection: projection,
+                projection: enrichment,
                 currentContext: currentContext,
-                pipelineValue: pipelineStormSetup,
-                pipelineRefreshKey: stormSetupRefreshKey,
+                pipelineValue: isUITestStaticMode ? pipelineStormSetup : nil,
+                pipelineRefreshKey: isUITestStaticMode ? stormSetupRefreshKey : nil,
                 now: now
             )
             self.locationTimeZone = HomeView.resolveLocationTimeZone(
@@ -243,17 +220,6 @@ extension HomeView {
         readinessState != .locationUnavailable &&
         hasProjection == false &&
         (isRefreshInFlight || readinessState != .ready)
-    }
-
-    nonisolated static func preferredSummaryValue<T>(
-        projectionValue: T?,
-        pipelineValue: T?,
-        prefersPipelineValue: Bool
-    ) -> T? {
-        if prefersPipelineValue {
-            return pipelineValue ?? projectionValue
-        }
-        return projectionValue ?? pipelineValue
     }
 
     static func shouldScheduleStormSetupSettingsRefresh(

@@ -26,7 +26,7 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 | Order | Issue | Status | Dependency |
 |---:|---|---|---|
 | 1 | [#453](https://github.com/justinrooks/project-arcus/issues/453) — Define atomic visible-revision contract | Ready for commit | Cache acceptance contract |
-| 2 | [#458](https://github.com/justinrooks/project-arcus/issues/458) — Introduce focused Home presentation-state derivation | Pending | 01 and persistence gating |
+| 2 | [#458](https://github.com/justinrooks/project-arcus/issues/458) — Introduce focused Home presentation-state derivation | Ready for commit | 01 and persistence gating |
 | 3 | [#449](https://github.com/justinrooks/project-arcus/issues/449) — Stabilize Today cache-to-refresh transitions | Pending | 02 and keyed Home observation |
 | 4 | [#457](https://github.com/justinrooks/project-arcus/issues/457) — Unify refresh affordances and status feedback | Pending | 01 |
 | 5 | [#454](https://github.com/justinrooks/project-arcus/issues/454) — Normalize Alerts and Outlook loading states | Pending | 01 and typed feed outcomes |
@@ -72,7 +72,16 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
   transient pipeline risk/weather values directly into the visible revision.
 
 ### [#458](https://github.com/justinrooks/project-arcus/issues/458) — Introduce focused Home presentation-state derivation
-- Status: Pending
+- Status: Ready for commit after human review of the corrected change.
+- Home derives one visible core revision from the keyed accepted projection. Same-context observation gaps
+  retain the prior accepted revision; a different context clears it. Hot-alert and optional-enrichment
+  writes may advance only their sections, while refresh/activity metadata remains separate. Transient
+  pipeline risk and weather values no longer arbitrate production Home content.
+- Independent review found that the first warm revision was rendered before it was retained. The
+  observation now seeds that revision on initial render; a hosted regression test covers the first
+  same-context gap and subsequent location-key change. The reviewer confirmed the correction, and
+  human review is complete. The user reports tests passing; no newer result bundle was available
+  locally, so the verification ledger below remains the inspectable evidence.
 
 ### [#449](https://github.com/justinrooks/project-arcus/issues/449) — Stabilize Today cache-to-refresh transitions
 - Status: Pending
@@ -101,6 +110,22 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 
 ## Verification Ledger
 
+- #458 corrected focused Home suites finalized at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.mPbqQj/unit.xcresult`:
+  15 test cases and 18 parameterized executions passed, 0 failures or skips. The corrected Debug
+  iPhone 17 simulator build and `git diff --check` passed.
+- The corrected selected navigation smoke finalized at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.d35ZwC/ui-navigation.xcresult`:
+  1 executed, 0 passed, 1 failed, 0 skipped. Its failure reports a
+  `SkyAwareWidgetsExtension` startup crash in `_EXRunningExtension._start` before navigation
+  assertions. The pre-correction navigation result at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.qYzpbk/ui-navigation.xcresult`
+  passed 1/1 but is not evidence for the corrected source.
+- The pre-correction full #458 unit lane finalized at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.ZWKqVy/unit.xcresult`:
+  1,201 test cases, 1,173 passed, 28 failed, 0 skipped. All 28 failures report a single runner
+  crash in `HomeProjectionStoreScalingMeasurementTests.fetchProjections(from:)` during a Core Data
+  SQLite fetch; this lane is not passing evidence for the corrected source.
 - #453 final focused Swift Testing suite:
   `tools/ci/run_test_lane.sh unit -only-testing:SkyAwareTests/HomeVisibleRevisionTests`;
   finalized Debug iPhone 17 (iOS 26.5) result at

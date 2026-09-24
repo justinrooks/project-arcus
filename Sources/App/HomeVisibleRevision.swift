@@ -28,6 +28,39 @@ struct HomeVisibleRevision: Sendable, Equatable {
         weather == nil && stormRisk == nil && severeRisk == nil && fireRisk == nil &&
         activeAlerts.isEmpty && activeMesos.isEmpty
     }
+
+    /// Derive the visible value from accepted persistence only. A hot-alert or enrichment write
+    /// can update its own section without promoting the core weather/risk revision.
+    static func derive(
+        previous: HomeVisibleRevision?,
+        observed: HomeProjectionRecord?,
+        projectionKey: String?
+    ) -> HomeVisibleRevision? {
+        let previous = previous.flatMap { $0.projectionKey == projectionKey ? $0 : nil }
+        guard let observed, observed.projectionKey == projectionKey else { return previous }
+        let hasCoreAcceptance = observed.lastWeatherLoadAt != nil || observed.lastSlowProductsLoadAt != nil
+        guard hasCoreAcceptance || previous != nil else { return nil }
+
+        let core: HomeProjectionRecord
+        if let previous {
+            let newerWeather = observed.lastWeatherLoadAt.map { $0 > (previous.core.lastWeatherLoadAt ?? .distantPast) } ?? false
+            let newerRisks = observed.lastSlowProductsLoadAt.map { $0 > (previous.core.lastSlowProductsLoadAt ?? .distantPast) } ?? false
+            core = (newerWeather || newerRisks) && observed.updatedAt >= previous.core.updatedAt
+                ? observed : previous.core
+        } else {
+            core = observed
+        }
+
+        let priorAlerts = previous?.alerts ?? previous?.core
+        let alerts = observed.lastHotAlertsLoadAt != nil &&
+            observed.updatedAt >= (priorAlerts?.updatedAt ?? .distantPast)
+            ? observed : previous?.alerts
+        let priorEnrichment = previous?.enrichment ?? previous?.core
+        let enrichment = (observed.lastAirQualityLoadAt != nil || observed.lastStormSetupLoadAt != nil) &&
+            observed.updatedAt >= (priorEnrichment?.updatedAt ?? .distantPast)
+            ? observed : previous?.enrichment
+        return HomeVisibleRevision(core: core, alerts: alerts, enrichment: enrichment)
+    }
 }
 
 /// Pure transition contract for #453. #458/#449 will wire repository observations and ingestion events to it.
