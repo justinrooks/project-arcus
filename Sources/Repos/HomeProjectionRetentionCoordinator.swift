@@ -29,6 +29,7 @@ final class HomeProjectionRetentionCoordinator: @unchecked Sendable {
     private let stateLock = NSLock()
     private var hasLease = false
     private var leaseWaiters: [CheckedContinuation<Void, Never>] = []
+    private let activeProjectionLock = NSLock()
     private var activeProjectionKey: String?
 
     static func forStore(_ modelContainer: ModelContainer) -> HomeProjectionRetentionCoordinator {
@@ -59,9 +60,15 @@ final class HomeProjectionRetentionCoordinator: @unchecked Sendable {
     }
 
     func currentActiveProjectionKey() -> String? {
-        stateLock.lock()
-        defer { stateLock.unlock() }
+        activeProjectionLock.lock()
+        defer { activeProjectionLock.unlock() }
         return activeProjectionKey
+    }
+
+    func withActiveProjectionKey<T>(_ body: (String?) throws -> T) rethrows -> T {
+        activeProjectionLock.lock()
+        defer { activeProjectionLock.unlock() }
+        return try body(activeProjectionKey)
     }
 
     func waitingPublisherCount() -> Int {
@@ -71,9 +78,9 @@ final class HomeProjectionRetentionCoordinator: @unchecked Sendable {
     }
 
     func setActiveProjectionKey(_ key: String?) {
-        stateLock.lock()
+        activeProjectionLock.lock()
         activeProjectionKey = key
-        stateLock.unlock()
+        activeProjectionLock.unlock()
     }
 
     @MainActor

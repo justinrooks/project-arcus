@@ -2485,7 +2485,7 @@ struct HomeProjectionStoreTests {
         let retentionA = Task {
             try await store.retainRecentProjections(forActiveContext: contextA, now: now)
         }
-        await gate.waitUntilSuspended()
+        _ = await gate.waitUntilSuspended()
 
         await retentionCoordinator.publish(contextB) {}
         await store.setRetentionCheckpointForTesting(nil)
@@ -2547,11 +2547,15 @@ struct HomeProjectionStoreTests {
         // The first sweep stages B because it is outside the active, fallback, and recent sets.
         try await store.retainRecentProjections(forActiveContext: contextA, now: now)
         let gate = ProjectionRetentionGate()
-        await store.setRetentionDeletionCheckpointForTesting { await gate.suspend() }
+        await store.setRetentionDeletionCheckpointForTesting { capturedKey, capturedID in
+            await gate.suspend(capturedActiveKey: capturedKey, capturedActiveID: capturedID)
+        }
         let inFlightSweep = Task {
             try await store.retainRecentProjections(forActiveContext: contextA, now: now)
         }
-        await gate.waitUntilSuspended()
+        let (capturedActiveKey, capturedActiveID) = await gate.waitUntilSuspended()
+        #expect(capturedActiveKey == HomeProjection.projectionKey(for: contextA))
+        #expect(capturedActiveID == oldActive.id)
         #expect(coordinator.currentActiveProjectionKey() == HomeProjection.projectionKey(for: contextA))
 
         var publishedContext: LocationContext?
@@ -2779,20 +2783,26 @@ struct HomeProjectionStoreTests {
 private actor ProjectionRetentionGate {
     private var didStart = false
     private var isOpen = false
+    private var capturedActiveKey: String?
+    private var capturedActiveID: UUID?
     private var startContinuation: CheckedContinuation<Void, Never>?
     private var openContinuation: CheckedContinuation<Void, Never>?
 
-    func suspend() async {
+    func suspend(capturedActiveKey: String? = nil, capturedActiveID: UUID? = nil) async {
         guard isOpen == false else { return }
+        self.capturedActiveKey = capturedActiveKey
+        self.capturedActiveID = capturedActiveID
         didStart = true
         startContinuation?.resume()
         startContinuation = nil
         await withCheckedContinuation { openContinuation = $0 }
     }
 
-    func waitUntilSuspended() async {
-        guard didStart == false else { return }
-        await withCheckedContinuation { startContinuation = $0 }
+    func waitUntilSuspended() async -> (String?, UUID?) {
+        if didStart == false {
+            await withCheckedContinuation { startContinuation = $0 }
+        }
+        return (capturedActiveKey, capturedActiveID)
     }
 
     func open() {

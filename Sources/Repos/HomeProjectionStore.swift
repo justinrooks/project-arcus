@@ -322,7 +322,7 @@ actor HomeProjectionStore {
     private var failsNextSaveForTesting = false
     private var operationMetrics = HomeProjectionStoreOperationMetrics()
     private var retentionCheckpointForTesting: (@Sendable () async -> Void)?
-    private var retentionDeletionCheckpointForTesting: (@Sendable () async -> Void)?
+    private var retentionDeletionCheckpointForTesting: (@Sendable (String?, UUID?) async -> Void)?
 
     func failNextSaveForTesting() {
         failsNextSaveForTesting = true
@@ -340,7 +340,9 @@ actor HomeProjectionStore {
         retentionCheckpointForTesting = checkpoint
     }
 
-    func setRetentionDeletionCheckpointForTesting(_ checkpoint: (@Sendable () async -> Void)?) {
+    func setRetentionDeletionCheckpointForTesting(
+        _ checkpoint: (@Sendable (String?, UUID?) async -> Void)?
+    ) {
         retentionDeletionCheckpointForTesting = checkpoint
     }
 #endif
@@ -414,31 +416,34 @@ actor HomeProjectionStore {
         }
 
 #if DEBUG
-        await retentionDeletionCheckpointForTesting?()
+        let capturedActiveKey = coordinator.currentActiveProjectionKey()
+        let capturedActiveID = projections.first { $0.projectionKey == capturedActiveKey }?.id
+        await retentionDeletionCheckpointForTesting?(capturedActiveKey, capturedActiveID)
 #endif
         try Task.checkCancellation()
 
-        // A publisher can update the active key while this sweep owns the lease.
-        // Recheck after selection so the newly active projection is excluded from deletion.
-        let latestActiveKey = coordinator.currentActiveProjectionKey()
-        let latestActiveProjection = projections.first { $0.projectionKey == latestActiveKey }
-        let latestActiveID = latestActiveProjection?.id
-        let removed = deletionCandidates.filter { $0.id != latestActiveID }
+        // Keep the active key stable from the final protection check through the save.
+        let removed = try coordinator.withActiveProjectionKey { latestActiveKey in
+            let latestActiveProjection = projections.first { $0.projectionKey == latestActiveKey }
+            let latestActiveID = latestActiveProjection?.id
+            let removed = deletionCandidates.filter { $0.id != latestActiveID }
 
-        let didRecordPassedContext = activeProjection.map { $0.lastViewedAt != now } ?? false
-        activeProjection?.lastViewedAt = now
-        let didRecordCurrentContext = latestActiveProjection.map { $0.lastViewedAt != now } ?? false
-        latestActiveProjection?.lastViewedAt = now
+            let didRecordPassedContext = activeProjection.map { $0.lastViewedAt != now } ?? false
+            activeProjection?.lastViewedAt = now
+            let didRecordCurrentContext = latestActiveProjection.map { $0.lastViewedAt != now } ?? false
+            latestActiveProjection?.lastViewedAt = now
 
-        for projection in removed {
-            modelContext.delete(projection)
-        }
-        if Task.isCancelled {
-            modelContext.rollback()
-            throw CancellationError()
-        }
-        if removed.isEmpty == false || didRecordPassedContext || didRecordCurrentContext {
-            try saveProjection(named: "Home Projection Retention Save")
+            for projection in removed {
+                modelContext.delete(projection)
+            }
+            if Task.isCancelled {
+                modelContext.rollback()
+                throw CancellationError()
+            }
+            if removed.isEmpty == false || didRecordPassedContext || didRecordCurrentContext {
+                try saveProjection(named: "Home Projection Retention Save")
+            }
+            return removed
         }
 
         // Stage candidates even when the active context has no row yet. A later sweep
