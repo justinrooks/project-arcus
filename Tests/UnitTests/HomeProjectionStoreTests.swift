@@ -2204,6 +2204,62 @@ struct HomeProjectionStoreTests {
         )
     }
 
+    @Test("Home completes staged retention without another location change")
+    func homeRetentionRunsFollowUpSweepForStationaryLocation() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let now = Date(timeIntervalSince1970: 9_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let activeContext = makeContext(h3Cell: 800_100)
+        let fallbackContext = makeContext(h3Cell: 800_101)
+        let staleContext = makeContext(h3Cell: 800_102)
+
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let modelContext = ModelContext(container)
+        let active = HomeProjection(context: activeContext, createdAt: now.addingTimeInterval(-60 * day))
+        modelContext.insert(active)
+
+        let fallback = HomeProjection(
+            context: fallbackContext,
+            createdAt: now.addingTimeInterval(-40 * day)
+        )
+        fallback.updatedAt = now.addingTimeInterval(-35 * day)
+        fallback.stormRisk = .marginal
+        modelContext.insert(fallback)
+
+        let stale = HomeProjection(
+            context: staleContext,
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        stale.updatedAt = now.addingTimeInterval(-50 * day)
+        stale.stormRisk = .high
+        modelContext.insert(stale)
+        try modelContext.save()
+
+        let store = HomeProjectionStore(modelContainer: container)
+        try await HomeView.retainProjectionIfContextResolved(
+            activeContext,
+            for: activeContext.refreshKey,
+            using: store,
+            now: now
+        )
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        #expect(try await reopenedStore.projection(for: staleContext) == nil)
+        #expect(try await reopenedStore.projection(for: activeContext) != nil)
+        #expect(try await reopenedStore.projection(for: fallbackContext)?.stormRisk == .marginal)
+    }
+
     @Test("retention keeps the active projection and newest recent useful rows across disk reopen")
     func historicalProjectionRetention_preservesActiveAndStartupFallbackAfterReopen() async throws {
         let root = FileManager.default.temporaryDirectory
@@ -2444,26 +2500,74 @@ struct HomeProjectionStoreTests {
         await retentionCoordinator.publish(nil) {}
     }
 
-    @Test("waiting for retention coordination does not block the main actor")
-    func retentionPublicationWaitDoesNotBlockMainActor() async {
+    @Test("location and authorization publication update immediately while retention owns the lease")
+    @MainActor
+    func locationAndAuthorizationPublicationUpdateBeforeRetentionLeaseReleases() async {
         let coordinator = HomeProjectionRetentionCoordinator()
         let context = makeContext(h3Cell: 855_000)
+        var currentContext: LocationContext?
         await coordinator.acquire()
 
         let publication = Task { @MainActor in
-            await coordinator.publish(context) {}
+            await coordinator.publish(context) { currentContext = context }
         }
         for _ in 0..<100 where coordinator.waitingPublisherCount() == 0 {
             await Task.yield()
         }
         #expect(coordinator.waitingPublisherCount() == 1)
-
-        let heartbeat = Task { @MainActor in true }
-        #expect(await heartbeat.value)
+        #expect(currentContext?.h3Cell == context.h3Cell)
 
         coordinator.release()
         await publication.value
-        await coordinator.publish(nil) {}
+        #expect(coordinator.currentActiveProjectionKey() == HomeProjection.projectionKey(for: context))
+
+        await coordinator.acquire()
+        let revocation = Task { @MainActor in
+            await coordinator.publish(nil) { currentContext = nil }
+        }
+        for _ in 0..<100 where coordinator.waitingPublisherCount() == 0 {
+            await Task.yield()
+        }
+        #expect(coordinator.waitingPublisherCount() == 1)
+        #expect(currentContext == nil)
+
+        coordinator.release()
+        await revocation.value
+        #expect(coordinator.currentActiveProjectionKey() == nil)
+    }
+
+    @Test("cancelled waiting publisher cannot supersede a newer location context")
+    @MainActor
+    func cancelledWaitingPublisherDoesNotSupersedeNewerContext() async {
+        let coordinator = HomeProjectionRetentionCoordinator()
+        let oldContext = makeContext(h3Cell: 855_100)
+        let newContext = makeContext(h3Cell: 855_101)
+        var currentContext: LocationContext?
+        await coordinator.acquire()
+
+        let oldPublication = Task { @MainActor in
+            await coordinator.publish(oldContext) { currentContext = oldContext }
+        }
+        for _ in 0..<100 where coordinator.waitingPublisherCount() == 0 {
+            await Task.yield()
+        }
+        #expect(coordinator.waitingPublisherCount() == 1)
+        oldPublication.cancel()
+
+        let newPublication = Task { @MainActor in
+            await coordinator.publish(newContext) { currentContext = newContext }
+        }
+        for _ in 0..<100 where coordinator.waitingPublisherCount() < 2 {
+            await Task.yield()
+        }
+        #expect(coordinator.waitingPublisherCount() == 2)
+        #expect(currentContext?.h3Cell == newContext.h3Cell)
+
+        coordinator.release()
+        await oldPublication.value
+        await newPublication.value
+        #expect(currentContext?.h3Cell == newContext.h3Cell)
+        #expect(coordinator.currentActiveProjectionKey() == HomeProjection.projectionKey(for: newContext))
     }
 
     @Test("retention stages stale rows when successive active locations have no projection yet")

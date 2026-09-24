@@ -620,6 +620,9 @@ extension HomeView {
     ) async throws {
         guard let context, context.refreshKey == refreshKey else { return }
         try await store.retainRecentProjections(forActiveContext: context, now: now)
+        await Task.yield()
+        try Task.checkCancellation()
+        try await store.retainRecentProjections(forActiveContext: context, now: now)
     }
 
     static func tabSelection(forIncomingURL url: URL) -> HomeTab? {
