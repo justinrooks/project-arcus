@@ -88,6 +88,10 @@ struct HomeView: View {
                 stormSetupProfileAnalysisResponse: stormSetupProfileAnalysisResponse
             )
         }
+        .onChange(of: refreshPipeline.manualRefreshAccessibilityEvent) { _, event in
+            guard let event else { return }
+            AccessibilityNotification.Announcement(event.message).post()
+        }
     }
 
     private var cachedOutlookDTOs: [ConvectiveOutlookDTO] {
@@ -174,7 +178,9 @@ struct HomeView: View {
                 )
             ),
             isRefreshing: refreshPipeline.isRefreshInFlight,
-            isOffline: runtimeConnectivityState.isOffline
+            isOffline: runtimeConnectivityState.isOffline,
+            isManualRefreshInFlight: refreshPipeline.isManualRefreshInFlight,
+            didManualRefreshFail: refreshPipeline.didManualRefreshFail
         )
     }
 
@@ -302,7 +308,7 @@ struct HomeView: View {
                 contentState: todayContentState
             ),
             refreshRevision: presentation.projection?.updatedAt,
-            isRefreshing: refreshPipeline.isRefreshInFlight
+            isRefreshing: refreshPipeline.isManualRefreshInFlight
         ))
     }
 

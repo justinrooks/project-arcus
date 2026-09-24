@@ -7,9 +7,9 @@ import Testing
 @Suite("Today Content State")
 @MainActor
 struct TodayContentStateTests {
-    @Test("cached refreshing exposes the calm page cue and suppresses section loading branches")
+    @Test("cached manual refresh preserves content and suppresses section loading branches")
     func cachedRefreshing_exposesCalmCueAndSuppressesSectionLoadingBranches() {
-        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue == false)
         #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
         #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
         #expect(TodayContentState.noCacheResolving.suppressesRoutineRefreshMotion == false)
@@ -51,15 +51,26 @@ struct TodayContentStateTests {
 
     @Test("no cache while resolving maps to the resolving state")
     func noCacheResolving_mapsToResolvingState() {
-        #expect(
-            TodayContentState.from(
-                readinessState: .loadingLocalData,
-                hasCachedContent: false,
-                hasLiveContent: false,
-                isRefreshing: false,
-                isOffline: false
-            ) == .noCacheResolving
+        let readinessResolving = TodayContentState.from(
+            readinessState: .loadingLocalData,
+            hasCachedContent: false,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: false
         )
+        #expect(readinessResolving == .noCacheResolving)
+        #expect(readinessResolving.showsResolvingSurface)
+        #expect(readinessResolving.suppressesRoutineRefreshMotion == false)
+
+        let refreshResolving = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: false,
+            hasLiveContent: false,
+            isRefreshing: true,
+            isOffline: false
+        )
+        #expect(refreshResolving == .noCacheResolving)
+        #expect(refreshResolving.showsResolvingSurface)
     }
 
     @Test("cached content refreshes while online")
@@ -70,7 +81,8 @@ struct TodayContentStateTests {
                 hasCachedContent: true,
                 hasLiveContent: false,
                 isRefreshing: true,
-                isOffline: false
+                isOffline: false,
+                isManualRefreshInFlight: true
             ) == .cachedRefreshing
         )
     }
@@ -109,7 +121,8 @@ struct TodayContentStateTests {
                 hasCachedContent: true,
                 hasLiveContent: false,
                 isRefreshing: true,
-                isOffline: true
+                isOffline: true,
+                isManualRefreshInFlight: true
             ) == .staleRefreshing
         )
     }
@@ -127,9 +140,9 @@ struct TodayContentStateTests {
         )
     }
 
-    @Test("stale refreshing keeps cached content visible instead of collapsing to unavailable")
+    @Test("stale manual refreshing keeps cached content visible instead of collapsing to unavailable")
     func staleRefreshing_keepsCachedContentVisible() {
-        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue == false)
         #expect(TodayContentState.staleRefreshing.showsResolvingSurface == false)
         #expect(
             LocalAlertsDisplayState.from(
@@ -141,6 +154,65 @@ struct TodayContentStateTests {
                 isLocationUnavailable: false
             ).presentationState == .empty
         )
+    }
+
+    @Test("cached refresh activity distinguishes quiet automatic work from manual outcomes")
+    func cachedRefreshActivity_distinguishesAutomaticAndManualOutcomes() {
+        let automatic = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: true,
+            isOffline: false
+        )
+        #expect(automatic == .quietRefreshing)
+        #expect(automatic.manualRefreshStatusMessage == nil)
+        #expect(automatic.allowsSectionResolvingTreatment == false)
+
+        let manual = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: true,
+            isOffline: false,
+            isManualRefreshInFlight: true
+        )
+        #expect(manual == .cachedRefreshing)
+        #expect(manual.manualRefreshStatusMessage == nil)
+        #expect(manual.showsCalmUpdatingCue == false)
+
+        let offlineManual = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: true,
+            isOffline: true,
+            isManualRefreshInFlight: true
+        )
+        #expect(offlineManual == .staleRefreshing)
+        #expect(offlineManual.manualRefreshStatusMessage == nil)
+
+        let failedManual = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: false,
+            didManualRefreshFail: true
+        )
+        #expect(failedManual == .refreshFailedWithCache)
+        #expect(failedManual.manualRefreshStatusMessage == "Couldn't update. Showing saved conditions.")
+        #expect(failedManual.showsCalmUpdatingCue)
+
+        let offlineAfterFailure = TodayContentState.from(
+            readinessState: .ready,
+            hasCachedContent: true,
+            hasLiveContent: false,
+            isRefreshing: false,
+            isOffline: true,
+            didManualRefreshFail: true
+        )
+        #expect(offlineAfterFailure == .degraded)
     }
 
     @Test("no cache and no content maps to unavailable")
@@ -197,11 +269,11 @@ struct TodaySurfaceStateFlowTests {
 
     @Test("cached refresh keeps the page calm and suppresses full-content transitions")
     func cachedRefresh_keepsThePageCalm() {
-        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.cachedRefreshing.showsCalmUpdatingCue == false)
         #expect(TodayContentState.cachedRefreshing.suppressesRoutineRefreshMotion)
         #expect(TodayContentState.cachedRefreshing.allowsSectionResolvingTreatment == false)
         #expect(TodayContentState.cachedRefreshing.showsResolvingSurface == false)
-        #expect(TodayContentState.staleRefreshing.suppressesRoutineRefreshMotion == false)
+        #expect(TodayContentState.staleRefreshing.suppressesRoutineRefreshMotion)
     }
 
     @Test("stale cache keeps useful content visible during offline refresh")
@@ -212,10 +284,11 @@ struct TodaySurfaceStateFlowTests {
                 hasCachedContent: true,
                 hasLiveContent: false,
                 isRefreshing: true,
-                isOffline: true
+                isOffline: true,
+                isManualRefreshInFlight: true
             ) == .staleRefreshing
         )
-        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue)
+        #expect(TodayContentState.staleRefreshing.showsCalmUpdatingCue == false)
         #expect(TodayContentState.staleRefreshing.showsResolvingSurface == false)
         #expect(
             SummaryContentPresentationState.from(

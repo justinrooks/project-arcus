@@ -65,6 +65,26 @@ struct SummaryStatus: View {
         SkyAwareAdaptiveLayout(dynamicTypeSize: dynamicTypeSize)
     }
 
+    var secondaryStatusMessage: String? {
+        let showsNativeManualRefreshProgress = todayContentState == .cachedRefreshing
+            || todayContentState == .staleRefreshing
+
+        return todayContentState.manualRefreshStatusMessage
+            ?? (showsNativeManualRefreshProgress ? nil : resolutionState.primaryActiveMessage)
+            ?? resolutionState.conditionsUpdatedMessage
+            ?? (todayContentState.showsCalmUpdatingCue ? resolutionState.recentCompletedMessage : nil)
+    }
+
+    private var secondaryStatusDeadline: Date? {
+        guard todayContentState.manualRefreshStatusMessage == nil,
+              resolutionState.primaryActiveMessage == nil else { return nil }
+        if resolutionState.conditionsUpdatedMessage != nil {
+            return resolutionState.conditionsUpdatedDeadline
+        }
+        guard todayContentState.showsCalmUpdatingCue else { return nil }
+        return resolutionState.recentCompletedDeadline
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             header
@@ -161,13 +181,8 @@ struct SummaryStatus: View {
                 .truncationMode(.tail)
 
             SummaryStatusSecondaryLine(
-                message: todayContentState.showsCalmUpdatingCue
-                    ? resolutionState.primaryActiveMessage ?? resolutionState.recentCompletedMessage
-                    : nil,
-                recentCompletedDeadline: todayContentState.showsCalmUpdatingCue
-                    && resolutionState.primaryActiveMessage == nil
-                    ? resolutionState.recentCompletedDeadline
-                    : nil
+                message: secondaryStatusMessage,
+                recentCompletedDeadline: secondaryStatusDeadline
             )
         }
         .animation(SkyAwareMotion.message(reduceMotion), value: statusText)

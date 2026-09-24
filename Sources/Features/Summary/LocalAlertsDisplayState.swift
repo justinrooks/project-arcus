@@ -76,7 +76,7 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
             }
             return .current(content: content, source: .live)
 
-        case .current:
+        case .quietRefreshing, .refreshFailedWithCache, .current:
             if hasCachedProjection {
                 guard lastHotAlertsLoadAt != nil || hasActiveAlerts else {
                     return .unavailable(reason: .noUsefulAlertState)

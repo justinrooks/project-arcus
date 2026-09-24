@@ -517,7 +517,7 @@ struct SummaryView: View {
             summaryState: .select(.init(
                 policyInput: policyInput,
                 hasDisplayableGuidance: presentation != nil,
-                isRefreshInFlight: isRefreshInFlight,
+                isRefreshInFlight: isStormSetupRefreshInFlight,
                 isLocationUnavailable: isLocationUnavailable,
                 isForcedPresentation: isForcedPresentation
             )),
