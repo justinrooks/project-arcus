@@ -148,6 +148,42 @@ struct HomeViewRefreshTriggerTests {
 struct HomeVisibleRevisionTests {
     private let key = "h3:1|county:COC001|forecast:COZ001|fire:COZ201"
 
+    @Test("repository observation promotes core only at an accepted core boundary")
+    func observedRevisionPromotesAtomically() {
+        let old = record(at: 100, stormRisk: .slight)
+        let hotOnly = record(at: 200, acceptedWeather: false, acceptedRisks: false, acceptedAlerts: true)
+        let enrichmentOnly = record(at: 300, acceptedWeather: false, acceptedRisks: false, acceptedEnrichment: true)
+        let accepted = record(at: 400, stormRisk: .enhanced)
+
+        let warm = HomeVisibleRevision.derive(previous: nil, observed: old, projectionKey: key)
+        #expect(warm?.core == old)
+        let alerts = HomeVisibleRevision.derive(previous: warm, observed: hotOnly, projectionKey: key)
+        #expect(alerts?.core == old)
+        #expect(alerts?.alerts == hotOnly)
+        let enriched = HomeVisibleRevision.derive(previous: alerts, observed: enrichmentOnly, projectionKey: key)
+        #expect(enriched?.core == old)
+        #expect(enriched?.enrichment == enrichmentOnly)
+        let promoted = HomeVisibleRevision.derive(previous: enriched, observed: accepted, projectionKey: key)
+        #expect(promoted?.core == accepted)
+        #expect(promoted?.stormRisk == .enhanced)
+    }
+
+    @Test("cold start, failed read, and location transition respect the visible context")
+    func observedRevisionPreservesAcceptedContext() {
+        let hotOnly = record(at: 100, acceptedWeather: false, acceptedRisks: false, acceptedAlerts: true)
+        let accepted = record(at: 200, stormRisk: .slight)
+        let otherKey = "h3:2|county:COC003|forecast:COZ002|fire:COZ202"
+        let other = record(at: 300, key: otherKey, stormRisk: .enhanced)
+
+        #expect(HomeVisibleRevision.derive(previous: nil, observed: nil, projectionKey: key) == nil)
+        #expect(HomeVisibleRevision.derive(previous: nil, observed: hotOnly, projectionKey: key) == nil)
+        let warm = HomeVisibleRevision.derive(previous: nil, observed: accepted, projectionKey: key)
+        #expect(HomeVisibleRevision.derive(previous: warm, observed: nil, projectionKey: key) == warm)
+        #expect(HomeVisibleRevision.derive(previous: warm, observed: accepted, projectionKey: otherKey) == nil)
+        #expect(HomeVisibleRevision.derive(previous: warm, observed: other, projectionKey: otherKey)?.core == other)
+        #expect(HomeVisibleRevision.derive(previous: nil, observed: accepted, projectionKey: accepted.projectionKey)?.core == accepted)
+    }
+
     @Test(
         "accepted core replaces cache only after a coherent persistence acknowledgement",
         arguments: HomeVisiblePresentation.RefreshSource.allCases
@@ -477,36 +513,6 @@ struct HomeViewProjectionLaunchTests {
                 hasProjection: true
             ) == false
         )
-    }
-
-    @Test("summary prefers pipeline risk values once current context resolves in pipeline")
-    func summaryValue_prefersPipelineWhenContextResolved() {
-        let selected = HomeView.preferredSummaryValue(
-            projectionValue: StormRiskLevel.slight,
-            pipelineValue: StormRiskLevel.enhanced,
-            prefersPipelineValue: true
-        )
-        #expect(selected == .enhanced)
-    }
-
-    @Test("summary falls back to projection values when pipeline has no value")
-    func summaryValue_fallsBackToProjectionWhenPipelineMissing() {
-        let selected = HomeView.preferredSummaryValue(
-            projectionValue: SevereWeatherThreat.tornado(probability: 0.10),
-            pipelineValue: nil,
-            prefersPipelineValue: true
-        )
-        #expect(selected == .tornado(probability: 0.10))
-    }
-
-    @Test("summary prefers projection values when pipeline is not authoritative")
-    func summaryValue_prefersProjectionWhenPipelineNotAuthoritative() {
-        let selected = HomeView.preferredSummaryValue(
-            projectionValue: FireRiskLevel.critical,
-            pipelineValue: FireRiskLevel.clear,
-            prefersPipelineValue: false
-        )
-        #expect(selected == .critical)
     }
 
     @Test("storm setup selection prefers the current projection until a matching pipeline value exists")
@@ -962,8 +968,8 @@ struct HomeViewKeyedProjectionObservationTests {
         let recorder: ObservationRecorder
 
         var body: some View {
-            HomeProjectionObservation(projectionKey: state.projectionKey) { current, startup in
-                let snapshot = HomeProjectionObservation.Snapshot(current: current, latestObserved: startup)
+            HomeProjectionObservation(projectionKey: state.projectionKey) { revision, startup in
+                let snapshot = HomeProjectionObservation.Snapshot(current: revision?.core, latestObserved: startup)
                 ObservationContentProbe(snapshot: snapshot, recorder: recorder)
             }
         }
@@ -1020,7 +1026,7 @@ struct HomeViewKeyedProjectionObservationTests {
         host.view.layoutIfNeeded()
 
         try await waitForEmission(in: recorder, afterCount: 0) {
-            $0.current == nil && $0.latestObserved?.id == travelProjection.id
+            $0.current?.id == travelProjection.id && $0.latestObserved?.id == travelProjection.id
         }
         #expect(recorder.snapshots.last?.latestObserved?.id == travelProjection.id)
 
@@ -1070,6 +1076,44 @@ struct HomeViewKeyedProjectionObservationTests {
             $0.latestObserved?.id == replacement.id
         }
 
+        window.isHidden = true
+    }
+
+    @Test("initial warm revision survives its first same-context observation gap")
+    func initialWarmRevisionSurvivesFirstGap() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let modelContext = ModelContext(container)
+        let location = makeContext(h3Cell: 611, countyCode: "COC005", fireZone: "COZ214")
+        let other = makeContext(h3Cell: 622, countyCode: "COC001", fireZone: "COZ200")
+        let cached = makeProjection(
+            in: modelContext,
+            location: location,
+            updatedAt: Date(timeIntervalSince1970: 100),
+            isDisplayReady: true
+        )
+        try modelContext.save()
+
+        let recorder = ObservationRecorder()
+        let keyState = ProjectionKeyState(projectionKey: HomeProjection.projectionKey(for: location))
+        let host = UIHostingController(
+            rootView: ObservationHost(state: keyState, recorder: recorder).modelContainer(container)
+        )
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        try await waitForEmission(in: recorder, afterCount: 0) { $0.current?.id == cached.id }
+
+        modelContext.delete(cached)
+        try modelContext.save()
+        let beforeGap = recorder.snapshots.count
+        try await waitForEmission(in: recorder, afterCount: beforeGap) {
+            $0.current?.id == cached.id && $0.latestObserved == nil
+        }
+
+        keyState.projectionKey = HomeProjection.projectionKey(for: other)
+        try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) { $0.current == nil }
         window.isHidden = true
     }
 
@@ -1174,6 +1218,7 @@ struct HomeViewKeyedProjectionObservationTests {
         projection.updatedAt = updatedAt
         if isDisplayReady {
             projection.lastHotAlertsLoadAt = updatedAt
+            projection.lastSlowProductsLoadAt = updatedAt
         }
         modelContext.insert(projection)
         return projection
@@ -1287,14 +1332,13 @@ struct HomeViewAlertOwnershipTests {
             pipelineMesos: [],
             pipelineAlerts: [],
             resolvedLocationScopedRefreshKey: currentContext.refreshKey,
-            airQualityRefreshKey: currentContext.refreshKey,
             alertSnapshotRefreshKey: currentContext.refreshKey
         )
         #expect(committed.isCurrentContextResolvedInPipeline)
         #expect(committed.isCurrentContextCommittedAlertSnapshot)
-        #expect(committed.alerts.isEmpty)
-        #expect(committed.mesos.isEmpty)
-        #expect(committed.airQuality?.aqi == 121)
+        #expect(committed.alerts == [cachedAlert])
+        #expect(committed.mesos == [cachedMeso])
+        #expect(committed.airQuality == cachedAirQuality)
 
         let preserved = makePresentationSnapshot(
             projections: [projection],
@@ -1320,7 +1364,6 @@ struct HomeViewAlertOwnershipTests {
             currentContext: previousContext,
             pipelineAirQuality: airQuality,
             resolvedLocationScopedRefreshKey: previousContext.refreshKey,
-            airQualityRefreshKey: currentContext.refreshKey,
             alertSnapshotRefreshKey: previousContext.refreshKey
         )
         #expect(locationChanged.projection == newLocationProjection)
@@ -1332,7 +1375,6 @@ struct HomeViewAlertOwnershipTests {
             currentContext: previousContext,
             pipelineAirQuality: airQuality,
             resolvedLocationScopedRefreshKey: previousContext.refreshKey,
-            airQualityRefreshKey: currentContext.refreshKey,
             alertSnapshotRefreshKey: previousContext.refreshKey
         )
         #expect(locationChangedWithoutCache.airQuality == nil)
@@ -1358,12 +1400,12 @@ struct HomeViewAlertOwnershipTests {
         pipelineMesos: [MdDTO] = [],
         pipelineAlerts: [AlertDTO] = [],
         resolvedLocationScopedRefreshKey: LocationContext.RefreshKey? = nil,
-        airQualityRefreshKey: LocationContext.RefreshKey? = nil,
         alertSnapshotRefreshKey: LocationContext.RefreshKey? = nil,
         isUITestStaticMode: Bool = false
     ) -> HomeView.HomePresentationSnapshot {
         HomeView.HomePresentationSnapshot(
-            projections: projections,
+            visibleRevision: HomeView.selectProjection(from: projections, currentContext: currentContext)
+                .map { HomeVisibleRevision(core: $0, alerts: nil, enrichment: nil) },
             newestStartupProjection: newestStartupProjection,
             currentContext: currentContext,
             pipelineSnap: nil,
@@ -1375,7 +1417,6 @@ struct HomeViewAlertOwnershipTests {
             pipelineMesos: pipelineMesos,
             pipelineAlerts: pipelineAlerts,
             resolvedLocationScopedRefreshKey: resolvedLocationScopedRefreshKey,
-            airQualityRefreshKey: airQualityRefreshKey,
             alertSnapshotRefreshKey: alertSnapshotRefreshKey,
             pipelineStormSetup: nil,
             pipelineStormSetupCurrentResponse: nil,
