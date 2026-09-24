@@ -33,6 +33,7 @@ struct HomeView: View {
     @State private var refreshPipeline: HomeRefreshPipeline
     @State private var selectedTab: HomeTab = .today
     @State private var selectedMapLayer: MapLayer = .categorical
+    @State private var projectionRetentionTask: Task<Void, Never>?
     @State private var showsLocationReliabilityRail: Bool = false
     @State private var locationReliabilityRailQualifyingDay: String?
     @State private var locationReliabilityRailLastEligibilityReason: LocationReliabilitySummaryRailEligibilityReason?
@@ -417,7 +418,28 @@ struct HomeView: View {
                 await refreshPipeline.handleScenePhaseChange(newPhase, environment: refreshEnvironment)
             }
         }
-        .onChange(of: currentContextRefreshKey) { _, newKey in
+        .onChange(of: currentContextRefreshKey, initial: true) { _, newKey in
+            projectionRetentionTask?.cancel()
+            projectionRetentionTask = nil
+            if isUITestStaticMode == false,
+               let currentContext = locationSession.currentContext,
+               currentContext.refreshKey == newKey {
+                projectionRetentionTask = Task(priority: .utility) {
+                    do {
+                        try await Self.retainProjectionIfContextResolved(
+                            currentContext,
+                            for: newKey,
+                            using: dependencies.homeProjectionStore
+                        )
+                    } catch is CancellationError {
+                        return
+                    } catch {
+                        logger.error(
+                            "Home projection retention cleanup failed: \(error.localizedDescription, privacy: .public)"
+                        )
+                    }
+                }
+            }
             guard isUITestStaticMode == false else { return }
             Task {
                 await refreshPipeline.handleContextRefreshKeyChange(
@@ -426,6 +448,9 @@ struct HomeView: View {
                     environment: refreshEnvironment
                 )
             }
+        }
+        .onDisappear {
+            projectionRetentionTask?.cancel()
         }
         .onChange(of: stormSetupEnabled) { oldValue, newValue in
             scheduleStormSetupSettingsRefreshIfNeeded(
@@ -585,6 +610,16 @@ extension HomeView {
         case map
         case outlooks
         case settings
+    }
+
+    static func retainProjectionIfContextResolved(
+        _ context: LocationContext?,
+        for refreshKey: LocationContext.RefreshKey?,
+        using store: HomeProjectionStore,
+        now: Date = .now
+    ) async throws {
+        guard let context, context.refreshKey == refreshKey else { return }
+        try await store.retainRecentProjections(forActiveContext: context, now: now)
     }
 
     static func tabSelection(forIncomingURL url: URL) -> HomeTab? {

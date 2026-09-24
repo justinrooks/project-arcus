@@ -2204,6 +2204,318 @@ struct HomeProjectionStoreTests {
         )
     }
 
+    @Test("retention keeps the active projection and newest recent useful rows across disk reopen")
+    func historicalProjectionRetention_preservesActiveAndStartupFallbackAfterReopen() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let now = Date(timeIntervalSince1970: 10_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let activeContext = makeContext(h3Cell: 800_000)
+        let fallbackContext = makeContext(h3Cell: 800_001)
+        let staleContext = makeContext(h3Cell: 800_002)
+        var recentContexts: [LocationContext] = []
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let modelContext = ModelContext(container)
+            for index in 0..<12 {
+                let context = makeContext(h3Cell: Int64(810_000 + index))
+                let projection = HomeProjection(
+                    context: context,
+                    createdAt: now.addingTimeInterval(-40 * day),
+                    lastViewedAt: now.addingTimeInterval(-Double(20 - index) * day)
+                )
+                projection.updatedAt = now.addingTimeInterval(-40 * day)
+                projection.stormRisk = .slight
+                modelContext.insert(projection)
+                recentContexts.append(context)
+            }
+
+            let fallback = HomeProjection(
+                context: fallbackContext,
+                createdAt: now.addingTimeInterval(-40 * day)
+            )
+            fallback.updatedAt = now.addingTimeInterval(-35 * day)
+            fallback.stormRisk = .marginal
+            modelContext.insert(fallback)
+
+            let stale = HomeProjection(
+                context: staleContext,
+                createdAt: now.addingTimeInterval(-60 * day)
+            )
+            stale.updatedAt = now.addingTimeInterval(-50 * day)
+            stale.stormRisk = .high
+            modelContext.insert(stale)
+
+            let active = HomeProjection(
+                context: activeContext,
+                createdAt: now.addingTimeInterval(-60 * day)
+            )
+            modelContext.insert(active)
+            try modelContext.save()
+
+            let store = HomeProjectionStore(modelContainer: container)
+            try await store.retainRecentProjections(
+                forActiveContext: activeContext,
+                now: now
+            )
+            #expect(try await store.projection(for: staleContext) != nil)
+            try await store.retainRecentProjections(
+                forActiveContext: activeContext,
+                now: now
+            )
+        }
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        #expect(try await reopenedStore.projection(for: activeContext) != nil)
+        #expect(try await reopenedStore.projection(for: staleContext) == nil)
+        #expect(try await reopenedStore.projection(for: fallbackContext)?.stormRisk == .marginal)
+        #expect(
+            try await reopenedStore.newestDisplayReadyProjection()?.projectionKey
+                == HomeProjection.projectionKey(for: fallbackContext)
+        )
+        for (index, context) in recentContexts.enumerated() {
+            let projection = try await reopenedStore.projection(for: context)
+            #expect((projection != nil) == (index >= 2))
+        }
+    }
+
+    @Test("viewed old projections remain useful after Home moves to another location")
+    func retentionRecordsViewBeforeLaterLocationChanges() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let now = Date(timeIntervalSince1970: 12_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let viewedContext = makeContext(h3Cell: 820_000)
+        var recentContexts: [LocationContext] = []
+
+        do {
+            let container = try ModelContainer(for: schema, configurations: configuration)
+            let modelContext = ModelContext(container)
+            let viewed = HomeProjection(
+                context: viewedContext,
+                createdAt: now.addingTimeInterval(-60 * day)
+            )
+            viewed.updatedAt = now.addingTimeInterval(-50 * day)
+            viewed.stormRisk = .moderate
+            modelContext.insert(viewed)
+
+            for index in 0..<11 {
+                let context = makeContext(h3Cell: Int64(830_000 + index))
+                let projection = HomeProjection(
+                    context: context,
+                    createdAt: now.addingTimeInterval(-40 * day),
+                    lastViewedAt: now.addingTimeInterval(-Double(20 - index) * day)
+                )
+                projection.updatedAt = now.addingTimeInterval(-40 * day)
+                projection.stormRisk = .slight
+                modelContext.insert(projection)
+                recentContexts.append(context)
+            }
+            try modelContext.save()
+
+            let store = HomeProjectionStore(modelContainer: container)
+            try await HomeView.retainProjectionIfContextResolved(
+                nil,
+                for: viewedContext.refreshKey,
+                using: store,
+                now: now.addingTimeInterval(-day)
+            )
+            try await HomeView.retainProjectionIfContextResolved(
+                viewedContext,
+                for: recentContexts[0].refreshKey,
+                using: store,
+                now: now.addingTimeInterval(-day)
+            )
+            #expect(try await store.projection(for: viewedContext)?.lastViewedAt == nil)
+            try await HomeView.retainProjectionIfContextResolved(
+                viewedContext,
+                for: viewedContext.refreshKey,
+                using: store,
+                now: now.addingTimeInterval(-day)
+            )
+            try await HomeView.retainProjectionIfContextResolved(
+                recentContexts[10],
+                for: recentContexts[10].refreshKey,
+                using: store,
+                now: now
+            )
+        }
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        let viewedProjection = try #require(await reopenedStore.projection(for: viewedContext))
+        #expect(viewedProjection.lastViewedAt == now.addingTimeInterval(-day))
+        #expect(try await reopenedStore.projection(for: recentContexts[10]) != nil)
+    }
+
+    @Test("active context publication at the retention commit boundary preserves the new projection")
+    func supersededRetentionDoesNotDeleteNewActiveProjection() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let now = Date(timeIntervalSince1970: 14_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let contextA = makeContext(h3Cell: 840_000)
+        let contextB = makeContext(h3Cell: 840_001)
+
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let modelContext = ModelContext(container)
+        for index in 0..<11 {
+            let context = makeContext(h3Cell: Int64(850_000 + index))
+            let projection = HomeProjection(
+                context: context,
+                createdAt: now.addingTimeInterval(-40 * day),
+                lastViewedAt: now.addingTimeInterval(-Double(20 - index) * day)
+            )
+            projection.updatedAt = now.addingTimeInterval(-40 * day)
+            projection.stormRisk = .slight
+            modelContext.insert(projection)
+        }
+        let fallback = HomeProjection(
+            context: makeContext(h3Cell: 850_020),
+            createdAt: now.addingTimeInterval(-40 * day)
+        )
+        fallback.updatedAt = now.addingTimeInterval(-35 * day)
+        fallback.stormRisk = .marginal
+        modelContext.insert(fallback)
+
+        let staleActive = HomeProjection(
+            context: contextA,
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        modelContext.insert(staleActive)
+        let newlyActive = HomeProjection(
+            context: contextB,
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        newlyActive.updatedAt = now.addingTimeInterval(-50 * day)
+        newlyActive.stormRisk = .high
+        modelContext.insert(newlyActive)
+        try modelContext.save()
+
+        let store = HomeProjectionStore(modelContainer: container)
+        let retentionCoordinator = HomeProjectionRetentionCoordinator.forStore(container)
+        await retentionCoordinator.publish(contextA) {}
+        try await store.retainRecentProjections(forActiveContext: contextA, now: now)
+        let gate = ProjectionRetentionGate()
+        await store.setRetentionCheckpointForTesting { await gate.suspend() }
+        let retentionA = Task {
+            try await store.retainRecentProjections(forActiveContext: contextA, now: now)
+        }
+        await gate.waitUntilSuspended()
+
+        await retentionCoordinator.publish(contextB) {}
+        await store.setRetentionCheckpointForTesting(nil)
+        await gate.open()
+        try await retentionA.value
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        let persistedNewActive = try #require(await reopenedStore.projection(for: contextB))
+        #expect(persistedNewActive.lastViewedAt == now)
+        await retentionCoordinator.publish(nil) {}
+    }
+
+    @Test("waiting for retention coordination does not block the main actor")
+    func retentionPublicationWaitDoesNotBlockMainActor() async {
+        let coordinator = HomeProjectionRetentionCoordinator()
+        let context = makeContext(h3Cell: 855_000)
+        await coordinator.acquire()
+
+        let publication = Task { @MainActor in
+            await coordinator.publish(context) {}
+        }
+        for _ in 0..<100 where coordinator.waitingPublisherCount() == 0 {
+            await Task.yield()
+        }
+        #expect(coordinator.waitingPublisherCount() == 1)
+
+        let heartbeat = Task { @MainActor in true }
+        #expect(await heartbeat.value)
+
+        coordinator.release()
+        await publication.value
+        await coordinator.publish(nil) {}
+    }
+
+    @Test("retention stages stale rows when successive active locations have no projection yet")
+    func retentionStagesCandidatesWithoutAnActiveProjection() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let now = Date(timeIntervalSince1970: 16_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let firstNewContext = makeContext(h3Cell: 860_000)
+        let secondNewContext = makeContext(h3Cell: 860_001)
+        let staleContext = makeContext(h3Cell: 860_002)
+        let fallbackContext = makeContext(h3Cell: 860_003)
+
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let modelContext = ModelContext(container)
+        let stale = HomeProjection(
+            context: staleContext,
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        stale.updatedAt = now.addingTimeInterval(-50 * day)
+        stale.stormRisk = .high
+        modelContext.insert(stale)
+
+        let fallback = HomeProjection(
+            context: fallbackContext,
+            createdAt: now.addingTimeInterval(-40 * day)
+        )
+        fallback.updatedAt = now.addingTimeInterval(-35 * day)
+        fallback.stormRisk = .marginal
+        modelContext.insert(fallback)
+        try modelContext.save()
+
+        let store = HomeProjectionStore(modelContainer: container)
+        try await store.retainRecentProjections(forActiveContext: firstNewContext, now: now)
+        #expect(try await store.projection(for: staleContext) != nil)
+        try await store.retainRecentProjections(forActiveContext: secondNewContext, now: now)
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        #expect(try await reopenedStore.projection(for: staleContext) == nil)
+        #expect(try await reopenedStore.projection(for: fallbackContext)?.stormRisk == .marginal)
+    }
+
     private func makeAnvilAnalyzeProfileResponse() -> AnvilAnalyzeProfileResponse {
         AnvilAnalyzeProfileResponse(
             effectiveLayer: .init(
@@ -2279,6 +2591,32 @@ struct HomeProjectionStoreTests {
             effectiveLayer: nil,
             stormMotion: nil
         )
+}
+
+private actor ProjectionRetentionGate {
+    private var didStart = false
+    private var isOpen = false
+    private var startContinuation: CheckedContinuation<Void, Never>?
+    private var openContinuation: CheckedContinuation<Void, Never>?
+
+    func suspend() async {
+        guard isOpen == false else { return }
+        didStart = true
+        startContinuation?.resume()
+        startContinuation = nil
+        await withCheckedContinuation { openContinuation = $0 }
+    }
+
+    func waitUntilSuspended() async {
+        guard didStart == false else { return }
+        await withCheckedContinuation { startContinuation = $0 }
+    }
+
+    func open() {
+        isOpen = true
+        openContinuation?.resume()
+        openContinuation = nil
+    }
 }
 
 private final class HomeProjectionFixtureBundleLocator {}
