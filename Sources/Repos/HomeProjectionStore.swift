@@ -322,6 +322,7 @@ actor HomeProjectionStore {
     private var failsNextSaveForTesting = false
     private var operationMetrics = HomeProjectionStoreOperationMetrics()
     private var retentionCheckpointForTesting: (@Sendable () async -> Void)?
+    private var retentionDeletionCheckpointForTesting: (@Sendable () async -> Void)?
 
     func failNextSaveForTesting() {
         failsNextSaveForTesting = true
@@ -337,6 +338,10 @@ actor HomeProjectionStore {
 
     func setRetentionCheckpointForTesting(_ checkpoint: (@Sendable () async -> Void)?) {
         retentionCheckpointForTesting = checkpoint
+    }
+
+    func setRetentionDeletionCheckpointForTesting(_ checkpoint: (@Sendable () async -> Void)?) {
+        retentionDeletionCheckpointForTesting = checkpoint
     }
 #endif
 
@@ -392,10 +397,10 @@ actor HomeProjectionStore {
         }
 
         var protectedIDs = retainedIDs
-        let currentActiveKey = coordinator.currentActiveProjectionKey()
-        let currentActiveProjection = projections.first { $0.projectionKey == currentActiveKey }
-        if let currentActiveProjection {
-            protectedIDs.insert(currentActiveProjection.id)
+        let selectedActiveKey = coordinator.currentActiveProjectionKey()
+        let selectedActiveProjection = projections.first { $0.projectionKey == selectedActiveKey }
+        if let selectedActiveProjection {
+            protectedIDs.insert(selectedActiveProjection.id)
         }
 
         let currentCandidateIDs = Set(
@@ -404,14 +409,26 @@ actor HomeProjectionStore {
         let pendingIDs = Set(
             UserDefaults.standard.stringArray(forKey: scopedPendingRetentionIDsDefaultsKey) ?? []
         )
-        let removed = projections.filter {
+        let deletionCandidates = projections.filter {
             currentCandidateIDs.contains($0.id) && pendingIDs.contains($0.id.uuidString)
         }
 
+#if DEBUG
+        await retentionDeletionCheckpointForTesting?()
+#endif
+        try Task.checkCancellation()
+
+        // A publisher can update the active key while this sweep owns the lease.
+        // Recheck after selection so the newly active projection is excluded from deletion.
+        let latestActiveKey = coordinator.currentActiveProjectionKey()
+        let latestActiveProjection = projections.first { $0.projectionKey == latestActiveKey }
+        let latestActiveID = latestActiveProjection?.id
+        let removed = deletionCandidates.filter { $0.id != latestActiveID }
+
         let didRecordPassedContext = activeProjection.map { $0.lastViewedAt != now } ?? false
         activeProjection?.lastViewedAt = now
-        let didRecordCurrentContext = currentActiveProjection.map { $0.lastViewedAt != now } ?? false
-        currentActiveProjection?.lastViewedAt = now
+        let didRecordCurrentContext = latestActiveProjection.map { $0.lastViewedAt != now } ?? false
+        latestActiveProjection?.lastViewedAt = now
 
         for projection in removed {
             modelContext.delete(projection)

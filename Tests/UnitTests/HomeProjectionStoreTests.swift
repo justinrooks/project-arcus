@@ -2500,6 +2500,85 @@ struct HomeProjectionStoreTests {
         await retentionCoordinator.publish(nil) {}
     }
 
+    @Test("active projection published during a retention sweep survives its staged deletion")
+    func newlyPublishedProjectionSurvivesInFlightRetentionSweep() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeProjectionStoreTests")
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let schema = Schema([HomeProjection.self])
+        let configuration = ModelConfiguration(
+            "SkyAware_Data",
+            schema: schema,
+            url: root.appendingPathComponent("SkyAware_Data.sqlite")
+        )
+        let now = Date(timeIntervalSince1970: 15_000_000)
+        let day: TimeInterval = 24 * 60 * 60
+        let contextA = makeContext(h3Cell: 860_000)
+        let contextB = makeContext(h3Cell: 860_001)
+
+        let container = try ModelContainer(for: schema, configurations: configuration)
+        let modelContext = ModelContext(container)
+        let oldActive = HomeProjection(
+            context: contextA,
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        modelContext.insert(oldActive)
+        let stagedCandidate = HomeProjection(
+            context: contextB,
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        stagedCandidate.updatedAt = now.addingTimeInterval(-50 * day)
+        stagedCandidate.stormRisk = .high
+        modelContext.insert(stagedCandidate)
+        let startupFallback = HomeProjection(
+            context: makeContext(h3Cell: 860_002),
+            createdAt: now.addingTimeInterval(-60 * day)
+        )
+        startupFallback.updatedAt = now.addingTimeInterval(-40 * day)
+        startupFallback.stormRisk = .marginal
+        modelContext.insert(startupFallback)
+        try modelContext.save()
+
+        let store = HomeProjectionStore(modelContainer: container)
+        let coordinator = HomeProjectionRetentionCoordinator.forStore(container)
+        await coordinator.publish(contextA) {}
+
+        // The first sweep stages B because it is outside the active, fallback, and recent sets.
+        try await store.retainRecentProjections(forActiveContext: contextA, now: now)
+        let gate = ProjectionRetentionGate()
+        await store.setRetentionDeletionCheckpointForTesting { await gate.suspend() }
+        let inFlightSweep = Task {
+            try await store.retainRecentProjections(forActiveContext: contextA, now: now)
+        }
+        await gate.waitUntilSuspended()
+        #expect(coordinator.currentActiveProjectionKey() == HomeProjection.projectionKey(for: contextA))
+
+        var publishedContext: LocationContext?
+        let publication = Task { @MainActor in
+            await coordinator.publish(contextB) { publishedContext = contextB }
+        }
+        for _ in 0..<100 where coordinator.waitingPublisherCount() == 0 {
+            await Task.yield()
+        }
+
+        #expect(coordinator.waitingPublisherCount() == 1)
+        #expect(publishedContext?.h3Cell == contextB.h3Cell)
+        #expect(coordinator.currentActiveProjectionKey() == HomeProjection.projectionKey(for: contextB))
+
+        await store.setRetentionDeletionCheckpointForTesting(nil)
+        await gate.open()
+        try await inFlightSweep.value
+        await publication.value
+
+        let reopenedStore = HomeProjectionStore(
+            modelContainer: try ModelContainer(for: schema, configurations: configuration)
+        )
+        let persistedNewActive = try #require(await reopenedStore.projection(for: contextB))
+        #expect(persistedNewActive.lastViewedAt == now)
+        await coordinator.publish(nil) {}
+    }
+
     @Test("location and authorization publication update immediately while retention owns the lease")
     @MainActor
     func locationAndAuthorizationPublicationUpdateBeforeRetentionLeaseReleases() async {
