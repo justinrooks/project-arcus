@@ -1360,7 +1360,7 @@ struct HomeRefreshPipelineTests {
                 hasLiveContent: false,
                 isRefreshing: pipeline.isRefreshInFlight,
                 isOffline: false
-            ) == .cachedRefreshing
+            ) == .quietRefreshing
         )
 
         let weatherState = TodayVisibleWeatherState.resolve(
@@ -1421,7 +1421,7 @@ struct HomeRefreshPipelineTests {
                 hasLiveContent: false,
                 isRefreshing: pipeline.isRefreshInFlight,
                 isOffline: false
-            ) == .cachedRefreshing
+            ) == .quietRefreshing
         )
 
         let weatherState = TodayVisibleWeatherState.resolve(
@@ -1490,9 +1490,128 @@ struct HomeRefreshPipelineTests {
         )
 
         #expect(pipeline.resolutionState.isRefreshing == false)
+        #expect(pipeline.didManualRefreshFail)
+        #expect(pipeline.isManualRefreshInFlight == false)
+        #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refresh couldn't complete.")
+        #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
         for section in SummarySection.resolveForwardSections {
             #expect(pipeline.resolutionState.isResolving(section) == false)
         }
+    }
+
+    @Test("manual refresh reports completion only after location-scoped weather acceptance")
+    func manualRefresh_reportsAcceptedCompletion() async {
+        let context = makeContext()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationContext: context,
+                refreshKey: context.refreshKey,
+                weatherRefreshResult: .success(nil)
+            )
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        )
+
+        #expect(pipeline.isManualRefreshInFlight == false)
+        #expect(pipeline.didManualRefreshFail == false)
+        #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Conditions refreshed.")
+        #expect(pipeline.resolutionState.conditionsUpdatedMessage == "Conditions up to date")
+    }
+
+    @Test("manual refresh without a resolved context does not announce success")
+    func manualRefreshWithoutContext_doesNotAnnounceSuccess() async {
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: .empty)
+        let locationSession = FakeLocationSession(currentContext: nil, preparedContext: nil)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        )
+
+        #expect(pipeline.didManualRefreshFail)
+        #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refresh couldn't complete.")
+    }
+
+    @Test("manual refresh cancellation clears activity without a result announcement")
+    func manualRefreshCancellation_doesNotReportFailure() async {
+        let context = makeContext()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            results: [.failure(CancellationError())]
+        )
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        )
+
+        #expect(pipeline.isManualRefreshInFlight == false)
+        #expect(pipeline.didManualRefreshFail == false)
+        #expect(pipeline.manualRefreshAccessibilityEvent?.message == "Refreshing conditions.")
+        #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
+    }
+
+    @Test("automatic refresh remains silent in the manual accessibility channel")
+    func automaticRefresh_doesNotAnnounce() async {
+        let context = makeContext()
+        let coordinator = RecordingHomeIngestionCoordinator(snapshot: HomeSnapshot(locationContext: context))
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.enqueueRefresh(
+            .timer,
+            environment: makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        )
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.manualRefreshAccessibilityEvent == nil)
+    }
+
+    @Test("manual refresh outcome is discarded when its location context changes")
+    func manualRefresh_locationChangeDiscardsOldOutcome() async {
+        let originalContext = makeContext()
+        let movedContext = makeContext(latitude: 39.76, h3Cell: 654_321, timestamp: 200)
+        let gate = AsyncGate()
+        let coordinator = RecordingHomeIngestionCoordinator(
+            snapshot: HomeSnapshot(
+                locationContext: originalContext,
+                refreshKey: originalContext.refreshKey,
+                weatherRefreshResult: .success(nil)
+            ),
+            runGate: gate
+        )
+        let locationSession = FakeLocationSession(
+            currentContext: originalContext,
+            preparedContext: originalContext
+        )
+        let pipeline = HomeRefreshPipeline()
+        let environment = makeEnvironment(coordinator: coordinator, locationSession: locationSession)
+        let refreshTask = Task { @MainActor in
+            await pipeline.forceRefreshCurrentContext(showsLoading: true, environment: environment)
+        }
+
+        #expect(await waitUntil { await coordinator.requestCount() == 1 })
+        let startEvent = pipeline.manualRefreshAccessibilityEvent
+        locationSession.currentContext = movedContext
+        await pipeline.handleContextRefreshKeyChange(
+            movedContext.refreshKey,
+            scenePhase: .active,
+            environment: environment
+        )
+        await gate.open()
+        await refreshTask.value
+
+        #expect(pipeline.isManualRefreshInFlight == false)
+        #expect(pipeline.didManualRefreshFail == false)
+        #expect(pipeline.manualRefreshAccessibilityEvent == startEvent)
+        #expect(pipeline.resolutionState.conditionsUpdatedMessage == nil)
     }
 
     @Test("visible refresh clears stale weather when snapshot omits weather")

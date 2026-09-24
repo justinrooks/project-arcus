@@ -58,6 +58,88 @@ struct TodayResolvingSurfaceStateTests {
             ).showsResolvingSurface == false
         )
     }
+
+    @Test("active progress remains visible with cached content during quiet refresh")
+    func activeProgressMessage_isVisibleDuringQuietCachedRefresh() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .weather, sections: [.conditions])
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .quietRefreshing,
+            showsOfflineToken: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == "Updating your conditions…")
+    }
+
+    @Test("manual refresh uses native progress without a duplicate status line")
+    func activeProgressMessage_isSuppressedDuringManualRefresh() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .alerts, sections: [.alerts])
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .cachedRefreshing,
+            showsOfflineToken: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == nil)
+    }
+
+    @Test("manual refresh failure keeps the saved-conditions status")
+    func manualRefreshFailure_keepsSavedConditionsStatus() {
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: SummaryResolutionState(),
+            todayContentState: .refreshFailedWithCache,
+            showsOfflineToken: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == "Couldn't update. Showing saved conditions.")
+    }
+
+    @Test("successful refresh shows conditions up to date after active progress ends")
+    func conditionsUpdatedMessage_followsSuccessfulFinalization() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .finalizing, sections: [])
+        resolutionState.finishAll(conditionsUpdated: true)
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .current,
+            showsOfflineToken: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == "Conditions up to date")
+        #expect(resolutionState.conditionsUpdatedDeadline != nil)
+    }
+
+    @Test("unsuccessful refresh does not show conditions up to date")
+    func conditionsUpdatedMessage_requiresSuccessfulFinalization() {
+        var resolutionState = SummaryResolutionState()
+        resolutionState.begin(task: .finalizing, sections: [])
+        resolutionState.finishAll(conditionsUpdated: false)
+        let status = SummaryStatus(
+            statusText: "Bennett, CO",
+            weather: nil,
+            resolutionState: resolutionState,
+            todayContentState: .current,
+            showsOfflineToken: false,
+            isLocationUnavailable: false
+        )
+
+        #expect(status.secondaryStatusMessage == nil)
+        #expect(resolutionState.conditionsUpdatedAt == nil)
+    }
 }
 
 

@@ -1266,6 +1266,10 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected the tab bar to remain available while resolving.")
         XCTAssertTrue(app.staticTexts["Getting your conditions ready"].exists, "Expected the resolving title.")
         XCTAssertTrue(app.staticTexts["Finding your location…"].exists, "Expected the active resolving message.")
+        XCTAssertTrue(
+            app.activityIndicators.firstMatch.waitForExistence(timeout: 2),
+            "Expected a visible progress affordance while no accepted content is available."
+        )
         XCTAssertFalse(app.scrollViews["summary-scroll"].exists, "Summary content must remain absent while resolving.")
         attachScreenshot(app, named: "today-no-cache-resolving-\(appearance)")
 

@@ -10,8 +10,10 @@ import Foundation
 enum TodayContentState: Sendable, Equatable {
     case noCacheResolving
     case cachedRefreshing
+    case quietRefreshing
     case current
     case staleRefreshing
+    case refreshFailedWithCache
     case degraded
     case unavailable
 
@@ -20,17 +22,22 @@ enum TodayContentState: Sendable, Equatable {
         hasCachedContent: Bool,
         hasLiveContent: Bool,
         isRefreshing: Bool,
-        isOffline: Bool
+        isOffline: Bool,
+        isManualRefreshInFlight: Bool = false,
+        didManualRefreshFail: Bool = false
     ) -> TodayContentState {
         if readinessState == .locationUnavailable {
             return .unavailable
         }
 
         if hasCachedContent {
-            if isRefreshing {
+            if isManualRefreshInFlight {
                 return isOffline ? .staleRefreshing : .cachedRefreshing
             }
-            return isOffline ? .degraded : .current
+            if isOffline { return .degraded }
+            if didManualRefreshFail { return .refreshFailedWithCache }
+            if isRefreshing { return .quietRefreshing }
+            return .current
         }
 
         if hasLiveContent {
@@ -54,18 +61,39 @@ enum TodayContentState: Sendable, Equatable {
 
     var showsCalmUpdatingCue: Bool {
         switch self {
-        case .cachedRefreshing, .staleRefreshing:
+        case .refreshFailedWithCache:
             true
-        case .noCacheResolving, .current, .degraded, .unavailable:
+        case .noCacheResolving, .cachedRefreshing, .quietRefreshing, .current,
+             .staleRefreshing, .degraded, .unavailable:
             false
         }
     }
 
+    var manualRefreshStatusMessage: String? {
+        switch self {
+        case .refreshFailedWithCache:
+            "Couldn't update. Showing saved conditions."
+        case .noCacheResolving, .cachedRefreshing, .quietRefreshing, .current,
+             .staleRefreshing, .degraded, .unavailable:
+            nil
+        }
+    }
+
     var allowsSectionResolvingTreatment: Bool {
-        self != .cachedRefreshing
+        switch self {
+        case .cachedRefreshing, .quietRefreshing, .staleRefreshing, .refreshFailedWithCache:
+            false
+        case .noCacheResolving, .current, .degraded, .unavailable:
+            true
+        }
     }
 
     var suppressesRoutineRefreshMotion: Bool {
-        self == .cachedRefreshing
+        switch self {
+        case .cachedRefreshing, .quietRefreshing, .staleRefreshing, .refreshFailedWithCache:
+            true
+        case .noCacheResolving, .current, .degraded, .unavailable:
+            false
+        }
     }
 }

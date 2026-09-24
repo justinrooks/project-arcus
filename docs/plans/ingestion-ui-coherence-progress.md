@@ -105,7 +105,62 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
   reconciliation. Do not duplicate completed issue #253 without regression evidence.
 
 ### [#457](https://github.com/justinrooks/project-arcus/issues/457) — Unify refresh affordances and status feedback
-- Status: Pending
+- Status: Implementation complete; awaiting human review.
+- Home now keeps the accepted visible revision in place while refresh activity remains metadata.
+  Automatic/session refresh no longer adds the cached-refresh header cue or applies section resolving
+  treatment; manual refresh retains the native pull feedback and a concise in-place status. A failed
+  manual refresh with cached content reports that saved conditions remain visible. Offline continues
+  to use the existing offline token and cached projection.
+- VoiceOver receives one announcement at manual refresh start and one on completion. Automatic and
+  background refreshes do not announce. The changes do not alter ingestion acceptance or scheduling.
+- Independent review corrections: automatic refresh no longer drives Storm Setup into its
+  analyzing state, the header does not add a second refresh indicator alongside native pull-to-refresh,
+  cancellation does not persist as a refresh failure, and success requires a resolved location and
+  accepted weather outcome. Failure announcements remain neutral when no cached conditions exist.
+- Added pipeline coverage for manual success, missing location context, cancellation, automatic
+  silence, and location changes. State coverage distinguishes automatic activity, manual activity,
+  cached failure, and offline behavior. Updated cached projection expectations to reflect quiet
+  automatic refreshes.
+- Tightened the cold/no-cache resolving surface with a single indeterminate progress indicator in
+  the existing `LoadingView`; warm-cache refresh states remain quiet. The state test verifies both
+  readiness-driven and refresh-driven no-cache resolution, and the UI fixture checks the rendered
+  activity indicator in light and dark appearance.
+- Status-line regression correction: `SummaryStatus` now gives the active provider task message
+  precedence over the quiet-refresh presentation cue. This keeps a concise “what is loading” line
+  below the location while cached content remains stable and without adding another spinner. Manual
+  failure copy retains priority, and recent-completion messages remain restrained.
+- Successful current-location refresh completion now sets a short-lived “Conditions up to date”
+  message in that same line. A new refresh clears it; failed, cancelled, skipped-weather, and stale-
+  location outcomes do not set it.
+- Validation: focused `HomeRefreshPipelineTests` passed 82/82 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.NyTTqN/unit.xcresult`;
+  Today/content-state suites passed 23/23 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.64SSdM/unit.xcresult`;
+  full Debug unit lane passed 1,219/1,219 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.phNPtW/unit.xcresult`
+  (iPhone 17 simulator, iOS 26.5). `git diff --check` passed. VoiceOver was not manually exercised
+  in the simulator; announcement behavior is covered by pipeline state tests. Follow-up cold-state
+  validation passed `TodayContentStateTests` 10/10 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.q6CrJ0/unit.xcresult` and the
+  no-cache resolving UI fixture 1/1 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.AYDZGB/ui-navigation.xcresult`.
+  The follow-up progress-line and resolving-state suite passed 6/6 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.PppfPl/unit.xcresult`.
+  Conditions-up-to-date state tests passed 8/8 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.6HyNn2/unit.xcresult`;
+  successful pipeline completion passed 1/1 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.RiwyBp/unit.xcresult`;
+  failed and cancelled pipeline outcomes passed 2/2 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.ryRE4e/unit.xcresult`.
+  Stale-location completion passed 1/1 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.Wye43W/unit.xcresult`.
+  A combined focused lane stalled during Xcode result finalization and was stopped; its incomplete
+  bundle at `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.Iqsr2S/unit.xcresult`
+  was not counted as passing evidence. A separate automatic-timer case also failed to finalize
+  within five minutes and was stopped; its incomplete bundle at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.ROn6OU/unit.xcresult` is not
+  passing evidence. The successful pipeline integration was verified through the manual completion
+  path; automatic completion remains unverified by a finalized pipeline test.
 
 ### [#454](https://github.com/justinrooks/project-arcus/issues/454) — Normalize Alerts and Outlook loading states
 - Status: Pending

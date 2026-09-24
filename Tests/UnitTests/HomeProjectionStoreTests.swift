@@ -1755,10 +1755,10 @@ struct HomeProjectionStoreTests {
             let preCloseAlerts = try #require(await store.projection(for: alertsContext))
             let preClosePartialRisk = try #require(await store.projection(for: partialRiskContext))
             let preCloseComplete = try #require(await store.projection(for: completeContext))
-            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseWeather], currentContext: weatherContext)) == .cachedRefreshing)
-            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseAlerts], currentContext: alertsContext)) == .cachedRefreshing)
-            #expect(todayContentState(for: HomeView.selectProjection(from: [preClosePartialRisk], currentContext: partialRiskContext)) == .cachedRefreshing)
-            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseComplete], currentContext: completeContext)) == .cachedRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseWeather], currentContext: weatherContext)) == .quietRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseAlerts], currentContext: alertsContext)) == .quietRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preClosePartialRisk], currentContext: partialRiskContext)) == .quietRefreshing)
+            #expect(todayContentState(for: HomeView.selectProjection(from: [preCloseComplete], currentContext: completeContext)) == .quietRefreshing)
         }
 
         let reopenedContainer = try ModelContainer(for: schema, configurations: configuration)
@@ -1772,10 +1772,10 @@ struct HomeProjectionStoreTests {
         #expect(HomeView.selectProjection(from: [alertsProjection], currentContext: alertsContext) == alertsProjection)
         #expect(HomeView.selectProjection(from: [partialRiskProjection], currentContext: partialRiskContext) == partialRiskProjection)
         #expect(HomeView.selectProjection(from: [completeProjection], currentContext: completeContext) == completeProjection)
-        #expect(todayContentState(for: HomeView.selectProjection(from: [weatherProjection], currentContext: weatherContext)) == .cachedRefreshing)
-        #expect(todayContentState(for: HomeView.selectProjection(from: [alertsProjection], currentContext: alertsContext)) == .cachedRefreshing)
-        #expect(todayContentState(for: HomeView.selectProjection(from: [partialRiskProjection], currentContext: partialRiskContext)) == .cachedRefreshing)
-        #expect(todayContentState(for: HomeView.selectProjection(from: [completeProjection], currentContext: completeContext)) == .cachedRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [weatherProjection], currentContext: weatherContext)) == .quietRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [alertsProjection], currentContext: alertsContext)) == .quietRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [partialRiskProjection], currentContext: partialRiskContext)) == .quietRefreshing)
+        #expect(todayContentState(for: HomeView.selectProjection(from: [completeProjection], currentContext: completeContext)) == .quietRefreshing)
 
         let emptyProjection = HomeProjection(context: makeContext(h3Cell: 999_999)).record
         #expect(HomeView.selectProjection(from: [emptyProjection], currentContext: nil) == nil)

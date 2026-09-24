@@ -58,6 +58,7 @@ struct SummaryResolutionState: Equatable {
     private(set) var resolvingSections: Set<SummarySection> = []
     private(set) var lastCompletedTask: SummaryProviderTask?
     private(set) var lastCompletedAt: Date?
+    private(set) var conditionsUpdatedAt: Date?
     private var taskSections: [SummaryProviderTask: Set<SummarySection>] = [:]
 
     var isRefreshing: Bool {
@@ -98,6 +99,16 @@ struct SummaryResolutionState: Equatable {
         }
     }
 
+    var conditionsUpdatedDeadline: Date? {
+        guard conditionsUpdatedAt != nil else { return nil }
+        return conditionsUpdatedAt?.addingTimeInterval(1.25)
+    }
+
+    var conditionsUpdatedMessage: String? {
+        guard let conditionsUpdatedDeadline, Date() <= conditionsUpdatedDeadline else { return nil }
+        return "Conditions up to date"
+    }
+
     func isResolving(_ section: SummarySection) -> Bool {
         resolvingSections.contains(section)
     }
@@ -117,6 +128,7 @@ struct SummaryResolutionState: Equatable {
         if task == .finalizing {
             lastCompletedTask = nil
             lastCompletedAt = nil
+            conditionsUpdatedAt = nil
         }
     }
 
@@ -147,18 +159,21 @@ struct SummaryResolutionState: Equatable {
         resolvingSections.removeAll()
         lastCompletedTask = nil
         lastCompletedAt = nil
+        conditionsUpdatedAt = nil
         taskSections.removeAll()
     }
 
     mutating func finishAll(
         completedTask: SummaryProviderTask = .finalizing,
-        completedAt: Date = .now
+        completedAt: Date = .now,
+        conditionsUpdated: Bool = false
     ) {
         activeTasks.removeAll()
         resolvingSections.removeAll()
         taskSections.removeAll()
         lastCompletedTask = completedTask
         lastCompletedAt = completedAt
+        conditionsUpdatedAt = conditionsUpdated ? completedAt : nil
     }
 }
 
