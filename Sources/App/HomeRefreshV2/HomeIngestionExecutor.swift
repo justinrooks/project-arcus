@@ -26,6 +26,7 @@ typealias HomeIngestionProgressHandler = @Sendable (HomeIngestionProgressEvent) 
 struct HomeIngestionCorePublication: Sendable, Equatable {
     let locationSnapshot: LocationSnapshot?
     let refreshKey: LocationContext.RefreshKey?
+    let hasAcceptedCoreSnapshot: Bool
     let weatherRefreshResult: HomeWeatherRefreshResult
     let stormRisk: StormRiskLevel?
     let severeRisk: SevereWeatherThreat?
@@ -36,9 +37,10 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
     let outlooks: [ConvectiveOutlookDTO]
     let latestOutlook: ConvectiveOutlookDTO?
 
-    init(snapshot: HomeSnapshot) {
+    init(snapshot: HomeSnapshot, hasAcceptedCoreSnapshot: Bool = true) {
         locationSnapshot = snapshot.locationSnapshot
         refreshKey = snapshot.refreshKey
+        self.hasAcceptedCoreSnapshot = hasAcceptedCoreSnapshot
         weatherRefreshResult = snapshot.weatherRefreshResult
         stormRisk = snapshot.stormRisk
         severeRisk = snapshot.severeRisk
@@ -53,6 +55,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
     init(snapshot: HomeSnapshot, retainedProjection: HomeProjectionRecord) {
         locationSnapshot = retainedProjection.locationSnapshot
         refreshKey = snapshot.refreshKey
+        hasAcceptedCoreSnapshot = false
         weatherRefreshResult = .skipped
         stormRisk = retainedProjection.stormRisk
         severeRisk = retainedProjection.severeRisk
@@ -64,9 +67,14 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         latestOutlook = snapshot.latestOutlook
     }
 
-    init(snapshot: HomeSnapshot, acknowledgedProjection: HomeProjectionRecord) {
+    init(
+        snapshot: HomeSnapshot,
+        acknowledgedProjection: HomeProjectionRecord,
+        hasAcceptedCoreSnapshot: Bool = true
+    ) {
         locationSnapshot = acknowledgedProjection.locationSnapshot
         refreshKey = snapshot.refreshKey
+        self.hasAcceptedCoreSnapshot = hasAcceptedCoreSnapshot
         weatherRefreshResult = snapshot.weatherRefreshResult
         stormRisk = acknowledgedProjection.stormRisk
         severeRisk = acknowledgedProjection.severeRisk
@@ -249,6 +257,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
 
         var shouldUpdateProjection: Bool {
             updatesConvective || updatesFire
+        }
+
+        var advancesCoreAcceptance: Bool {
+            updatesConvective && updatesFire
         }
     }
 
@@ -479,7 +491,10 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             switch persistenceResult {
             case .unavailable:
                 await progress.publish(
-                    HomeIngestionPublication(runID: progress.runID, stage: .core(.init(snapshot: snapshot)))
+                    HomeIngestionPublication(
+                        runID: progress.runID,
+                        stage: .core(.init(snapshot: snapshot, hasAcceptedCoreSnapshot: false))
+                    )
                 )
             case .notRequired(let retainedProjection), .failed(let retainedProjection):
                 if let retainedProjection {
@@ -495,16 +510,31 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                     )
                 }
             case .committed(let acknowledgement):
+                let acceptedWeather: Bool
+                if case .success = weatherRefresh {
+                    acceptedWeather = true
+                } else {
+                    acceptedWeather = false
+                }
                 await progress.publish(
                     HomeIngestionPublication(
                         runID: progress.runID,
-                        stage: .core(.init(snapshot: snapshot, acknowledgedProjection: acknowledgement.record))
+                        stage: .core(
+                            .init(
+                                snapshot: snapshot,
+                                acknowledgedProjection: acknowledgement.record,
+                                hasAcceptedCoreSnapshot: acceptedWeather || slowProductDecision.advancesCoreAcceptance
+                            )
+                        )
                     )
                 )
             }
         } else {
             await progress.publish(
-                HomeIngestionPublication(runID: progress.runID, stage: .core(.init(snapshot: snapshot)))
+                HomeIngestionPublication(
+                    runID: progress.runID,
+                    stage: .core(.init(snapshot: snapshot, hasAcceptedCoreSnapshot: false))
+                )
             )
         }
 
@@ -1035,7 +1065,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         plan: HomeIngestionPlan,
         mapSyncOutcome: SpcMapSyncOutcome?
     ) -> SlowProductPersistenceDecision {
-        let shouldUpdateSlowProjection = plan.lanes.contains(.slowProducts) || plan.isLocationBearing
+        let shouldUpdateSlowProjection = plan.lanes.contains(.slowProducts)
         guard shouldUpdateSlowProjection else {
             let decision = SlowProductPersistenceDecision(
                 updatesConvective: false,
@@ -1053,31 +1083,15 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             return decision
         }
 
-        guard plan.lanes.contains(.slowProducts) else {
-            let decision = SlowProductPersistenceDecision(
-                updatesConvective: true,
-                updatesFire: true,
-                convectiveSource: nil,
-                fireSource: nil,
-                reconcilesRejectedDomains: false,
-                shouldRefreshRiskWidgets: true
-            )
-            logSlowProductPersistenceDecision(
-                mapSyncOutcome: mapSyncOutcome,
-                decision: decision,
-                reason: "location_only_refresh"
-            )
-            return decision
-        }
-
         guard let mapSyncOutcome else {
+            let shouldReconcileRisk = plan.isLocationBearing || plan.executionClass == .background
             let decision = SlowProductPersistenceDecision(
-                updatesConvective: true,
-                updatesFire: true,
+                updatesConvective: shouldReconcileRisk,
+                updatesFire: shouldReconcileRisk,
                 convectiveSource: nil,
                 fireSource: nil,
                 reconcilesRejectedDomains: false,
-                shouldRefreshRiskWidgets: true
+                shouldRefreshRiskWidgets: shouldReconcileRisk
             )
             logSlowProductPersistenceDecision(
                 mapSyncOutcome: nil,

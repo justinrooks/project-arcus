@@ -223,7 +223,7 @@ struct HomeIngestionPlan: Sendable, Equatable {
 
         if let locationContext = request.locationContext {
             locationRequest = .explicit(locationContext)
-            isLocationBearing = true
+            isLocationBearing = isLocationBearing && lanes.contains(.slowProducts)
             isScheduledBackgroundRefresh = false
         }
 

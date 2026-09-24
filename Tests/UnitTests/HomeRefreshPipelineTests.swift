@@ -1144,7 +1144,7 @@ struct HomeRefreshPipelineTests {
             await coordinator.requestCount() == 2
         }
         #expect(requestCountReached)
-        #expect(pipeline.lastResolvedLocationScopedRefreshKey == newContext.refreshKey)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
         #expect(pipeline.stormSetup == oldStormSetup)
         #expect(pipeline.stormSetupRefreshKey == oldContext.refreshKey)
 
@@ -1997,6 +1997,7 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.severeRisk == .wind(probability: 0.15))
         #expect(pipeline.fireRisk == .critical)
         #expect(pipeline.resolutionState.isRefreshing)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
 
         await followUpGate.open()
         await pipeline.waitForIdle()
@@ -2006,6 +2007,208 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.fireRisk == .critical)
         #expect(pipeline.lastResolvedLocationScopedRefreshKey == context.refreshKey)
         #expect(pipeline.resolutionState.isRefreshing == false)
+    }
+
+    @Test("explicit hot prime updates accepted alerts without risk pinball before the full revision")
+    func explicitHotPrime_preservesCoreUntilFullAcceptance() async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        _ = try await projectionStore.updateWeather(
+            sampleWeather(), for: context, loadedAt: Date(timeIntervalSince1970: 100)
+        )
+        _ = try await projectionStore.updateSlowProducts(
+            stormRisk: .slight,
+            severeRisk: .hail(probability: 0.30),
+            fireRisk: .elevated,
+            for: context,
+            loadedAt: Date(timeIntervalSince1970: 110)
+        )
+        let cached = try #require(await projectionStore.projection(for: context))
+        let spc = FakeSpcProvider(
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [Watch.sampleWatchRows[1]])
+        let executor = HomeIngestionExecutor(
+            environment: .init(
+                logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+                spcSync: spc,
+                arcusAlertSync: alerts,
+                weatherClient: FakeWeatherClient(result: .failure),
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+                snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+                projectionStore: projectionStore,
+                widgetSnapshotRefresher: nil
+            )
+        )
+        let primePlan = HomeIngestionPlan(request: .init(trigger: .foregroundPrime, locationContext: context))
+        #expect(primePlan.isLocationBearing == false)
+        let primePublications = PipelinePublicationRecorder()
+        _ = try await executor.run(
+            plan: primePlan,
+            progress: .init(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { await primePublications.append($0) }
+            )
+        )
+        let afterPrime = try #require(await projectionStore.projection(for: context))
+        let primeCore = try #require(await primePublications.firstCore())
+        let warm = HomeVisibleRevision.derive(previous: nil, observed: cached, projectionKey: cached.projectionKey)
+        let afterAlerts = HomeVisibleRevision.derive(
+            previous: warm, observed: afterPrime, projectionKey: cached.projectionKey
+        )
+        #expect(primeCore.hasAcceptedCoreSnapshot == false)
+        #expect(afterPrime.lastSlowProductsLoadAt == cached.lastSlowProductsLoadAt)
+        #expect(afterAlerts?.core == cached)
+        #expect(afterAlerts?.severeRisk == .hail(probability: 0.30))
+        #expect(afterAlerts?.activeAlerts == [Watch.sampleWatchRows[1]])
+
+        await spc.configureMapSync(
+            outcome: .accepted,
+            stormRisk: .moderate,
+            severeRisk: .wind(probability: 0.20),
+            fireRisk: .critical
+        )
+        let fullPublications = PipelinePublicationRecorder()
+        _ = try await executor.run(
+            plan: HomeIngestionPlan(request: .init(trigger: .foregroundActivate, locationContext: context)),
+            progress: .init(
+                markHotAlertsCompleted: {},
+                report: { _ in },
+                publish: { await fullPublications.append($0) }
+            )
+        )
+        let accepted = try #require(await projectionStore.projection(for: context))
+        let fullCore = try #require(await fullPublications.firstCore())
+        let promoted = HomeVisibleRevision.derive(
+            previous: afterAlerts, observed: accepted, projectionKey: cached.projectionKey
+        )
+        #expect(fullCore.hasAcceptedCoreSnapshot)
+        #expect(promoted?.core == accepted)
+        #expect(promoted?.severeRisk == .wind(probability: 0.20))
+    }
+
+    @Test("partial SPC acceptance cannot resolve a core after weather failure", arguments: [false, true])
+    func partialSlowProductAcceptance_preservesCoreOwnership(hasCachedCore: Bool) async throws {
+        let container = try TestStore.container(for: [HomeProjection.self])
+        let projectionStore = HomeProjectionStore(modelContainer: container)
+        let context = makeContext()
+        let cached: HomeProjectionRecord?
+        if hasCachedCore {
+            _ = try await projectionStore.updateWeather(
+                sampleWeather(), for: context, loadedAt: Date(timeIntervalSince1970: 100)
+            )
+            _ = try await projectionStore.updateSlowProducts(
+                stormRisk: .slight,
+                severeRisk: .hail(probability: 0.30),
+                fireRisk: .elevated,
+                for: context,
+                loadedAt: Date(timeIntervalSince1970: 110)
+            )
+            cached = try await projectionStore.projection(for: context)
+        } else {
+            cached = nil
+        }
+
+        let spc = FakeSpcProvider(
+            activeMesos: [],
+            outlooks: sampleOutlooks(),
+            mapSyncOutcome: .init(
+                convective: .rejected,
+                fire: .accepted,
+                fireSource: testMapSource(revision: 2)
+            ),
+            stormRiskValue: .allClear,
+            severeRiskValue: .allClear,
+            fireRiskValue: .clear
+        )
+        let alerts = FakeAlertProvider(activeAlerts: [])
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: cached?.stormRisk,
+            initialSevereRisk: cached?.severeRisk,
+            initialFireRisk: cached?.fireRisk
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                spc: spc,
+                alerts: alerts,
+                weather: FakeWeatherClient(result: .failure),
+                locationSession: locationSession,
+                homeProjectionStore: projectionStore
+            )
+        )
+
+        let persisted = try #require(await projectionStore.projection(for: context))
+        let previous = HomeVisibleRevision.derive(
+            previous: nil,
+            observed: cached,
+            projectionKey: persisted.projectionKey
+        )
+        let visible = HomeVisibleRevision.derive(
+            previous: previous,
+            observed: persisted,
+            projectionKey: persisted.projectionKey
+        )
+        #expect(persisted.lastSlowProductsLoadAt == cached?.lastSlowProductsLoadAt)
+        #expect(visible?.core == cached)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
+        #expect(pipeline.stormRisk == cached?.stormRisk)
+        #expect(pipeline.severeRisk == cached?.severeRisk)
+        #expect(pipeline.fireRisk == cached?.fireRisk)
+    }
+
+    @Test("hot-only publication keeps pipeline core ownership while updating alerts")
+    func hotOnlyPublication_keepsCoreOwnership() async {
+        let context = makeContext()
+        let cachedAlert = Watch.sampleWatchRows[0]
+        let acceptedAlert = Watch.sampleWatchRows[1]
+        let snapshot = HomeSnapshot(
+            locationSnapshot: context.snapshot,
+            refreshKey: context.refreshKey,
+            stormRisk: .allClear,
+            severeRisk: .allClear,
+            fireRisk: .clear,
+            alerts: [acceptedAlert]
+        )
+        let coordinator = ScriptedStagedHomeIngestionCoordinator(
+            runs: [
+                .init(
+                    core: .init(
+                        runID: UUID(),
+                        stage: .core(.init(snapshot: snapshot, hasAcceptedCoreSnapshot: false))
+                    ),
+                    finalSnapshot: snapshot
+                )
+            ]
+        )
+        let pipeline = HomeRefreshPipeline(
+            initialSnap: context.snapshot,
+            initialStormRisk: .slight,
+            initialSevereRisk: .hail(probability: 0.30),
+            initialFireRisk: .elevated,
+            initialAlerts: [cachedAlert]
+        )
+
+        await pipeline.forceRefreshCurrentContext(
+            showsLoading: true,
+            environment: makeEnvironment(
+                coordinator: coordinator,
+                locationSession: FakeLocationSession(currentContext: context, preparedContext: context)
+            )
+        )
+
+        #expect(pipeline.stormRisk == .slight)
+        #expect(pipeline.severeRisk == .hail(probability: 0.30))
+        #expect(pipeline.fireRisk == .elevated)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
+        #expect(pipeline.alerts == [acceptedAlert])
     }
 
     @Test("failed location-scoped reads keep the existing cached projection without marking the context resolved")
@@ -2915,8 +3118,8 @@ struct HomeRefreshPipelineTests {
         #expect(widgetRecorder.refreshCallCount() == 1)
     }
 
-    @Test("refresh failures preserve the previously resolved location scope key")
-    func refreshFailure_preservesPreviousResolvedLocationScopeKey() async {
+    @Test("prime success followed by full failure does not resolve the location scope")
+    func primeSuccessFullFailure_doesNotResolveLocationScope() async {
         let originalContext = makeContext(timestamp: 100)
         let changedContext = makeContext(timestamp: 200)
         let successSnapshot = HomeSnapshot(
@@ -2941,13 +3144,13 @@ struct HomeRefreshPipelineTests {
         await pipeline.handleScenePhaseChange(.active, environment: environment)
         await pipeline.waitForIdle()
 
-        #expect(pipeline.lastResolvedLocationScopedRefreshKey == originalContext.refreshKey)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
 
         locationSession.currentContext = changedContext
         await pipeline.enqueueRefresh(.contextChanged, environment: environment)
         await pipeline.waitForIdle()
 
-        #expect(pipeline.lastResolvedLocationScopedRefreshKey == originalContext.refreshKey)
+        #expect(pipeline.lastResolvedLocationScopedRefreshKey == nil)
     }
 
     @Test("manual outlook refresh only touches outlook sync and query paths")
