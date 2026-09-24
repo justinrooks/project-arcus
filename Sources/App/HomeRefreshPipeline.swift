@@ -343,16 +343,12 @@ final class HomeRefreshPipeline {
         environment: Environment
     ) async {
         let startedAt = Date()
-        let previousResolvedRefreshKey = lastResolvedLocationScopedRefreshKey
         do {
             let snapshot: HomeSnapshot
             if shouldPrimeSummary(for: trigger) {
                 snapshot = try await environment.coordinator.enqueueAndWait(
                     makePrimeRequest(for: trigger, using: environment.locationSession)
                 )
-                if trigger == .sceneActive, snapshot.locationSnapshot != nil {
-                    lastResolvedLocationScopedRefreshKey = snapshot.refreshKey
-                }
                 scheduleFollowUpRefresh(
                     makeFollowUpRequest(for: trigger, resolvedContext: snapshot.locationContext),
                     environment: environment
@@ -368,9 +364,6 @@ final class HomeRefreshPipeline {
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alertss=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
             )
         } catch {
-            if shouldPrimeSummary(for: trigger) {
-                lastResolvedLocationScopedRefreshKey = previousResolvedRefreshKey
-            }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.error(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
@@ -631,11 +624,11 @@ final class HomeRefreshPipeline {
     }
 
     private func applyCore(_ core: HomeIngestionCorePublication) {
-        let locationChanged = core.locationSnapshot != nil
+        let locationChanged = core.hasAcceptedCoreSnapshot && core.locationSnapshot != nil
             && lastResolvedLocationScopedRefreshKey != nil
             && core.refreshKey != lastResolvedLocationScopedRefreshKey
 
-        if let locationSnapshot = core.locationSnapshot {
+        if core.hasAcceptedCoreSnapshot, let locationSnapshot = core.locationSnapshot {
             snap = locationSnapshot
             lastResolvedLocationScopedRefreshKey = core.refreshKey
             riskSnapshot = HomeRiskSnapshot(
@@ -643,16 +636,6 @@ final class HomeRefreshPipeline {
                 severeRisk: core.severeRisk,
                 fireRisk: core.fireRisk
             )
-            if core.hasAcceptedAlertSnapshot {
-                commitAlertSnapshotIfChanged(
-                    HomeAlertSnapshot(
-                        refreshKey: core.refreshKey,
-                        mesos: core.mesos,
-                        alerts: core.alerts
-                    )
-                )
-            }
-
             if core.refreshKey != stormSetupRefreshKey {
                 stormSetup = nil
                 stormSetupCurrentResponse = nil
@@ -664,6 +647,16 @@ final class HomeRefreshPipeline {
             }
         }
 
+        if core.hasAcceptedAlertSnapshot {
+            commitAlertSnapshotIfChanged(
+                HomeAlertSnapshot(refreshKey: core.refreshKey, mesos: core.mesos, alerts: core.alerts)
+            )
+        }
+
+        outlookSnapshot = HomeOutlookSnapshot(outlooks: core.outlooks, outlook: core.latestOutlook)
+        outlookRefreshStatus = .success(hasContent: core.outlooks.isEmpty == false)
+        guard core.hasAcceptedCoreSnapshot else { return }
+
         switch core.weatherRefreshResult {
         case .success(let weather):
             summaryWeather = weather
@@ -674,11 +667,6 @@ final class HomeRefreshPipeline {
             break
         }
 
-        outlookSnapshot = HomeOutlookSnapshot(
-            outlooks: core.outlooks,
-            outlook: core.latestOutlook
-        )
-        outlookRefreshStatus = .success(hasContent: core.outlooks.isEmpty == false)
         performanceSignposter.emitEvent("Today Visible Commit")
     }
 

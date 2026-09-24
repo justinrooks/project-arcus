@@ -27,7 +27,7 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 |---:|---|---|---|
 | 1 | [#453](https://github.com/justinrooks/project-arcus/issues/453) — Define atomic visible-revision contract | Ready for commit | Cache acceptance contract |
 | 2 | [#458](https://github.com/justinrooks/project-arcus/issues/458) — Introduce focused Home presentation-state derivation | Ready for commit | 01 and persistence gating |
-| 3 | [#449](https://github.com/justinrooks/project-arcus/issues/449) — Stabilize Today cache-to-refresh transitions | Pending | 02 and keyed Home observation |
+| 3 | [#449](https://github.com/justinrooks/project-arcus/issues/449) — Stabilize Today cache-to-refresh transitions | Review complete; PR authorized | 02 and keyed Home observation |
 | 4 | [#457](https://github.com/justinrooks/project-arcus/issues/457) — Unify refresh affordances and status feedback | Pending | 01 |
 | 5 | [#454](https://github.com/justinrooks/project-arcus/issues/454) — Normalize Alerts and Outlook loading states | Pending | 01 and typed feed outcomes |
 | 6 | [#459](https://github.com/justinrooks/project-arcus/issues/459) — Refine map loading and accepted-generation transitions | Pending | Reactive map invalidation |
@@ -84,8 +84,25 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
   locally, so the verification ledger below remains the inspectable evidence.
 
 ### [#449](https://github.com/justinrooks/project-arcus/issues/449) — Stabilize Today cache-to-refresh transitions
-- Status: Pending
-- Handoff: Do not duplicate completed issue #253 without regression evidence.
+- Status: Human and independent review complete; PR authorized.
+- A hot-only prime with an explicit location can persist accepted Local Alerts, but cannot write
+  slow-product risk or mark the generic core location resolved. Pipeline core publication now
+  requires an accepted persisted weather or slow-product replacement; failed, unavailable, and
+  retained-only results keep the prior core presentation. Outlook completion remains independent.
+- A disk-backed regression follows hail through an accepted alert prime to an accepted wind
+  replacement without an intermediate clear core revision. Pipeline coverage checks hot-only
+  publication and prime success followed by full-refresh failure. Existing Home revision tests
+  cover warm cache, manual refresh failure, location-key changes with and without matching cache,
+  and overlapping submissions. View identity and layout code were unchanged.
+- A follow-up full-suite crash occurred in a SwiftData save notification while hosted projection
+  observation tests were active. Those tests now hide their windows and detach the root view
+  controller on every exit path so query views are not left attached after test completion.
+- Independent review found that a partial SPC domain commit could mark an incomplete core resolved
+  after weather failure. Core certification now requires both SPC domains to update, matching the
+  persisted slow-product acceptance marker; a parameterized disk-backed regression covers cold
+  and cached contexts. The reviewer confirmed the correction.
+- Handoff: Human review should check certification under merged plans and background risk-baseline
+  reconciliation. Do not duplicate completed issue #253 without regression evidence.
 
 ### [#457](https://github.com/justinrooks/project-arcus/issues/457) — Unify refresh affordances and status feedback
 - Status: Pending
@@ -110,6 +127,41 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 
 ## Verification Ledger
 
+- #449 focused `HomeRefreshPipelineTests` finalized at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.5hPeqE/unit.xcresult`:
+  75 test cases passed, 0 failures or skips (76 parameterized executions). The full Debug unit lane
+  with the additional hot-only pipeline regression finalized at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.ElFeoR/unit.xcresult`:
+  1,204 test cases passed, 0 failures or skips (1,239 parameterized executions), iPhone 17
+  simulator, iOS 26.5. `git diff --check` passed. Tested base: `a5e2f3d59f0d2a38de49579144089f780ac9360d`;
+  SHA-256 of the uncommitted production/test diff: `ecf99561f3ca107801f922ae3256071baef9abb813b7786045bb8afbd88059ff`.
+  The full bundle reports 72.15% aggregate line coverage (65,827/91,235); no matching baseline
+  was measured, so coverage impact is unknown.
+- #449 follow-up: a full unit run at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.ObxUK7/unit.xcresult`
+  failed with 169 cases marked by one app-process crash during a SwiftData projection save. The
+  named bounded-upload-drain case passed in the focused `LocationProviderTests` run at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.3ZbHQ9/unit.xcresult`
+  (69/69), and the diagnostic full run excluding the hosted projection-observation suite passed
+  1,201/1,201 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.PUrlwh/unit.xcresult`.
+  After hosted-window teardown, two complete Debug unit runs passed 1,204/1,204 with no failures
+  or skips at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.hdNBFn/unit.xcresult`
+  and `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.JvpCV0/unit.xcresult`,
+  iPhone 17 simulator, iOS 26.5. The bounded-upload-drain case passed in both complete runs.
+  Aggregate line coverage varied from 71.33% to 72.25% across the two passing runs; no reliable
+  coverage impact can be inferred from that variation.
+- #449 independent-review correction: the new partial-SPC regression failed in both cold and
+  cached variants before the correction at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.PKcmwh/unit.xcresult`.
+  After correction, focused `HomeRefreshPipelineTests` passed 77/77 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.kfOkBS/unit.xcresult`
+  (79 parameterized executions), and the complete Debug unit lane passed 1,205/1,205 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.8Ggoik/unit.xcresult`
+  (1,241 parameterized executions), with no failures or skips on iPhone 17 simulator, iOS 26.5.
+  Aggregate line coverage was 71.43%; prior passing runs varied enough that an attributable
+  coverage change cannot be determined.
 - #458 corrected focused Home suites finalized at
   `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.mPbqQj/unit.xcresult`:
   15 test cases and 18 parameterized executions passed, 0 failures or skips. The corrected Debug

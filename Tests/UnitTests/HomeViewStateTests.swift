@@ -1021,6 +1021,10 @@ struct HomeViewKeyedProjectionObservationTests {
         )
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = host
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
         window.makeKeyAndVisible()
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
@@ -1075,8 +1079,6 @@ struct HomeViewKeyedProjectionObservationTests {
         try await waitForEmission(in: recorder, afterCount: priorEmissionCount) {
             $0.latestObserved?.id == replacement.id
         }
-
-        window.isHidden = true
     }
 
     @Test("initial warm revision survives its first same-context observation gap")
@@ -1100,6 +1102,10 @@ struct HomeViewKeyedProjectionObservationTests {
         )
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = host
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
         window.makeKeyAndVisible()
         host.view.setNeedsLayout()
         host.view.layoutIfNeeded()
@@ -1114,7 +1120,6 @@ struct HomeViewKeyedProjectionObservationTests {
 
         keyState.projectionKey = HomeProjection.projectionKey(for: other)
         try await waitForEmission(in: recorder, afterCount: recorder.snapshots.count) { $0.current == nil }
-        window.isHidden = true
     }
 
     @Test("projection query observes all sorted rows and preserves readiness selection")
