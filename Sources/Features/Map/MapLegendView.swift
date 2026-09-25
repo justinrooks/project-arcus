@@ -4,6 +4,7 @@ import UIKit
 
 struct MapLegend: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showsHatchingExplanation = false
 
     let state: MapLegendState
@@ -52,7 +53,7 @@ struct MapLegend: View {
 
                     Button {
                         if horizontalSizeClass == .compact {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            withAnimation(SkyAwareMotion.disclosure(reduceMotion)) {
                                 showsHatchingExplanation.toggle()
                             }
                         } else {
@@ -79,7 +80,7 @@ struct MapLegend: View {
                     if horizontalSizeClass == .compact {
                         if showsHatchingExplanation {
                             HatchingExplanationView(layer: state.layer, isInline: true)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
+                                .transition(hatchingExplanationTransition)
                         }
                     }
                 }
@@ -94,6 +95,10 @@ struct MapLegend: View {
             shadowRadius: 8,
             shadowY: 3
         )
+    }
+
+    private var hatchingExplanationTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top))
     }
 }
 

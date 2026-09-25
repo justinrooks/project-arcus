@@ -195,7 +195,20 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
   build and `SkyAware_Tests` build-for-testing both succeeded after the final test changes.
 
 ### [#462](https://github.com/justinrooks/project-arcus/issues/462) — Codify restrained cross-feature motion
-- Status: Pending
+- Status: Implementation complete — independent review complete; awaiting human review.
+- Reduce Motion now disables shared nonessential animation tokens. The compact map legend keeps opacity-only
+  disclosure under Reduce Motion and removes its inline movement; the desktop popover remains native.
+- Accepted Storm Risk and Severe Risk badge content now replaces directly, without content transitions or
+  value animations that could imply intermediate risk states. Primary awareness text also replaces directly,
+  and Storm Setup slot changes no longer animate layout geometry.
+- No root animation exists, and remaining implicit animations are scoped to explicit values. Motion policy
+  coverage passed 5/5 in the focused unit lane on iPhone 17 / iOS 26.5 (Debug); result:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.wNkpRl/unit.xcresult`.
+- `git diff --check` passed. Independent review found no actionable defects.
+- Navigation UI validation remains unavailable: the documented lane selected 33 tests rather than one and
+  stalled amid simulator launch failures; its result was unfinalized. An explicit selector matched only the
+  intended tab-navigation test, but its runner failed to launch and the result was also unfinalized. Neither
+  attempt is passing evidence. Manual simulator accessibility interaction was not performed.
 
 ### [#463](https://github.com/justinrooks/project-arcus/issues/463) — Refine cached-detail navigation transitions
 - Status: Pending

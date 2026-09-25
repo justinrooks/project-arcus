@@ -15,7 +15,6 @@ struct StormRiskBadgeView: View {
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         Group {
@@ -62,7 +61,6 @@ struct StormRiskBadgeView: View {
             VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
                 Image(systemName: level.iconName)
                     .formatBadgeImage(colorScheme: colorScheme)
-                    .contentTransition(.opacity)
 
                 Text(level.message)
                     .font(.headline)
@@ -70,21 +68,17 @@ struct StormRiskBadgeView: View {
                     .lineLimit(badgeLineLimit)
                     .multilineTextAlignment(badgeTextAlignment)
                     .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
 
                 Text(level.summary)
                     .formatSummaryText(for: colorScheme)
                     .lineLimit(badgeSummaryLineLimit)
                     .multilineTextAlignment(badgeTextAlignment)
                     .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
             }
             .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         }
         .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         .badgeStyle(background: level.iconColor(for: colorScheme), allowsVerticalGrowth: usesAccessibilityLayout)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: level.message)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: level.summary)
     }
 
     private var resolvingContent: some View {

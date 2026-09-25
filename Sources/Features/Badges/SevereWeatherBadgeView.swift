@@ -15,7 +15,6 @@ struct SevereWeatherBadgeView: View {
 
     @Environment(\.colorScheme) var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         Group {
@@ -64,7 +63,6 @@ struct SevereWeatherBadgeView: View {
             VStack(alignment: badgeAlignment, spacing: badgeSpacing) {
                 Image(systemName: threat.iconName)
                     .formatBadgeImage(colorScheme: colorScheme)
-                    .contentTransition(.opacity)
 
                 Text(threat.message)
                     .font(.headline)
@@ -72,7 +70,6 @@ struct SevereWeatherBadgeView: View {
                     .lineLimit(badgeLineLimit)
                     .multilineTextAlignment(badgeTextAlignment)
                     .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
 
                 Text(valueText)
                     .formatSummaryText(for: colorScheme)
@@ -80,14 +77,11 @@ struct SevereWeatherBadgeView: View {
                     .lineLimit(badgeSummaryLineLimit)
                     .multilineTextAlignment(badgeTextAlignment)
                     .fixedSize(horizontal: false, vertical: true)
-                    .contentTransition(.opacity)
             }
             .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         }
         .frame(maxWidth: .infinity, alignment: badgeFrameAlignment)
         .badgeStyle(background: threat.iconColor(for: colorScheme), allowsVerticalGrowth: usesAccessibilityLayout)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: threat.message)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: threat.dynamicSummary)
     }
 
     private var resolvingContent: some View {
