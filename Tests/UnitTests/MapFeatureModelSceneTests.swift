@@ -207,22 +207,104 @@ struct MapFeatureModelSceneTests {
         #expect(counts.fire == 2)
     }
 
-    @Test("selected layer installs before unrelated map fetches finish")
-    func reload_installsSelectedLayerBeforeRemainingFetches() async throws {
+    @Test("accepted replacement waits for every map plan before replacing a visible scene")
+    func reload_retainsVisibleSceneUntilAllReplacementPlansAreReady() async throws {
         let gate = ReloadGate()
-        let service = SelectedFireGatedSpcMapData(gate: gate)
         let model = MapFeatureModel()
         let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
-        let reload = Task { await model.reload(using: service, warningSource: warnings, selectedLayer: .fire) }
+        let center = CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903)
+        let baseline = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([makeFireRisk(level: 5, title: "Elevated Fire Weather Area")])
+        )
+        let replacement = SelectedFireGatedSpcMapData(gate: gate)
+
+        model.captureInitialCenterCoordinateIfNeeded(center)
+        await model.reload(using: baseline, warningSource: warnings, selectedLayer: .fire)
+        let reload = Task { await model.reload(using: replacement, warningSource: warnings, selectedLayer: .fire) }
 
         await gate.waitUntilFirstStormFetchStarts()
 
         #expect(model.activeScene.legendState.layer == .fire)
-        #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [8])
-        #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|8|") == true)
+        #expect(model.activeScene.legendState.presentationState == .resolving)
+        #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [5])
+        #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|5|") == true)
+        #expect(coordinatesEqual(try #require(model.activeScene.canvasState.initialCenterCoordinate), center))
+
+        model.selectLayer(.categorical)
+        #expect(model.activeScene.legendState.layer == .categorical)
+        #expect(coordinatesEqual(try #require(model.activeScene.canvasState.initialCenterCoordinate), center))
 
         await gate.releaseFirstStormFetch()
         await reload.value
+
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.layer == .categorical)
+        #expect(coordinatesEqual(try #require(model.activeScene.canvasState.initialCenterCoordinate), center))
+
+        model.selectLayer(.fire)
+        #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [8])
+        #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|8|") == true)
+    }
+
+    @Test("cancelling a staged replacement retains the visible map scene")
+    func reload_cancellationRetainsVisibleScene() async throws {
+        let gate = ReloadGate()
+        let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let baseline = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([makeFireRisk(level: 5, title: "Elevated Fire Weather Area")])
+        )
+
+        await model.reload(using: baseline, warningSource: warnings, selectedLayer: .fire)
+        let reload = Task {
+            await model.reload(
+                using: SelectedFireGatedSpcMapData(gate: gate),
+                warningSource: warnings,
+                selectedLayer: .fire
+            )
+        }
+
+        await gate.waitUntilFirstStormFetchStarts()
+        reload.cancel()
+        await gate.releaseFirstStormFetch()
+        await reload.value
+
+        #expect(model.activeScene.legendState.layer == .fire)
+        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [5])
+        #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|5|") == true)
+    }
+
+    @Test("failed replacement retains the previous accepted map scene")
+    func reload_failureRetainsVisibleScene() async {
+        let model = MapFeatureModel()
+        let warnings = StubArcusAlertQuerying(activeWarnings: .success([]))
+        let baseline = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .success([makeFireRisk(level: 5, title: "Elevated Fire Weather Area")])
+        )
+        let failedReplacement = StubSpcMapData(
+            severeRisks: .success([]),
+            stormRisk: .success([]),
+            mesos: .success([]),
+            fireRisk: .failure(StubError())
+        )
+
+        await model.reload(using: baseline, warningSource: warnings, selectedLayer: .fire)
+        await model.reload(using: failedReplacement, warningSource: warnings, selectedLayer: .fire)
+
+        #expect(model.activeScene.legendState.layer == .fire)
+        #expect(model.activeScene.legendState.presentationState == .stale)
+        #expect(model.activeScene.legendState.fireItems.map(\.riskLevel) == [5])
+        #expect(model.activeScene.canvasState.overlays.first?.key.contains("fire|5|") == true)
     }
 
     @Test("cancelled reload cannot clear a newer scheduled reload")
@@ -369,19 +451,23 @@ private struct SelectedFireGatedSpcMapData: SpcMapData {
     func getMesoMapData() async throws -> [MdDTO] { [] }
 
     func getFireRisk() async throws -> [FireRiskDTO] {
-        [FireRiskDTO(
-            product: "WindRH",
-            issued: Date(timeIntervalSince1970: 1_735_689_600),
-            expires: Date(timeIntervalSince1970: 1_735_693_200),
-            valid: Date(timeIntervalSince1970: 1_735_689_600),
-            riskLevel: 8,
-            riskLevelDescription: "Critical",
-            label: "Critical Fire Weather Area",
-            stroke: nil,
-            fill: nil,
-            polygons: [makeGeoPolygon(title: "Critical Fire Weather Area")]
-        )]
+        [makeFireRisk(level: 8, title: "Critical Fire Weather Area")]
     }
+}
+
+private func makeFireRisk(level: Int, title: String) -> FireRiskDTO {
+    FireRiskDTO(
+        product: "WindRH",
+        issued: Date(timeIntervalSince1970: 1_735_689_600),
+        expires: Date(timeIntervalSince1970: 1_735_693_200),
+        valid: Date(timeIntervalSince1970: 1_735_689_600),
+        riskLevel: level,
+        riskLevelDescription: level == 8 ? "Critical" : "Elevated",
+        label: title,
+        stroke: nil,
+        fill: nil,
+        polygons: [makeGeoPolygon(title: title)]
+    )
 }
 
 
