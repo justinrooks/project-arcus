@@ -1246,8 +1246,8 @@ struct HomeViewKeyedProjectionObservationTests {
 @Suite("HomeView Outlook Display")
 @MainActor
 struct HomeViewOutlookDisplayTests {
-    @Test("cached outlooks stay visible when a fresh snapshot returns no outlooks")
-    func cachedOutlooks_stayVisibleWhenLiveResultsAreEmpty() {
+    @Test("cached outlooks remain during failure, but accepted empty replaces them")
+    func cachedOutlooks_followAcceptance() {
         let cachedOutlooks = [
             makeOutlook(title: "Cached Outlook A"),
             makeOutlook(title: "Cached Outlook B")
@@ -1256,15 +1256,24 @@ struct HomeViewOutlookDisplayTests {
         #expect(
             HomeView.preferredOutlooks(
                 cachedOutlooks: cachedOutlooks,
-                liveOutlooks: []
+                liveOutlooks: [],
+                refreshStatus: .failed
             ) == cachedOutlooks
         )
         #expect(
-            HomeView.preferredOutlook(
-                cachedOutlook: cachedOutlooks.first,
+            HomeView.preferredOutlooks(
+                cachedOutlooks: cachedOutlooks,
                 liveOutlooks: [],
-                liveOutlook: nil
-            ) == cachedOutlooks.first
+                refreshStatus: .success(hasContent: false)
+            ).isEmpty
+        )
+        #expect(
+            HomeView.preferredOutlooks(
+                cachedOutlooks: cachedOutlooks,
+                liveOutlooks: [],
+                refreshStatus: .failed,
+                hasAcceptedEmptySnapshot: true
+            ).isEmpty
         )
     }
 

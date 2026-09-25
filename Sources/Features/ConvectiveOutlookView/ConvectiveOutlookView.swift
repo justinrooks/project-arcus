@@ -33,13 +33,17 @@ struct ConvectiveOutlookView: View {
     init(
         dtos: [ConvectiveOutlookDTO],
         refreshStatus: ConvectiveOutlookRefreshStatus? = nil,
+        hasAcceptedEmptySnapshot: Bool = false,
+        isOffline: Bool = false,
         onRefresh: (() async -> Void)? = nil
     ) {
         self.dtos = dtos
         self.onRefresh = onRefresh
         self.presentationState = ConvectiveOutlookPresentationState.resolve(
             dtos: dtos,
-            refreshStatus: refreshStatus ?? (dtos.isEmpty ? .loading : .success(hasContent: true))
+            refreshStatus: refreshStatus ?? (dtos.isEmpty ? .loading : .success(hasContent: true)),
+            hasAcceptedEmptySnapshot: hasAcceptedEmptySnapshot,
+            isOffline: isOffline
         )
     }
 
@@ -189,6 +193,12 @@ struct ConvectiveOutlookView: View {
             Text(overviewMessage)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+            if let activityMessage {
+                Text(activityMessage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
         }
         .padding(SkyAwareSpacing.contentInset)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -220,10 +230,19 @@ struct ConvectiveOutlookView: View {
     }
 
     private var overviewProviderText: String? {
-        guard presentationState == .populated, latestOutlook != nil else {
+        guard case .populated = presentationState, latestOutlook != nil else {
             return nil
         }
         return "SPC discussion"
+    }
+
+    private var activityMessage: String? {
+        switch presentationState.activity {
+        case .refreshing: "Refreshing outlooks. Showing the last confirmed result."
+        case .failed: "Outlooks could not be updated. Showing the last confirmed result."
+        case .stale: "Showing saved outlooks. The latest update is unavailable."
+        case .current, nil: nil
+        }
     }
 
     private var overviewMessage: String {
