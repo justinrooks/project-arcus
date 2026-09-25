@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct PrimaryAwarenessHeroView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -120,8 +119,6 @@ struct PrimaryAwarenessHeroView: View {
             x: 0,
             y: primary.isQuiet ? 2 : 4
         )
-        .animation(SkyAwareMotion.settle(reduceMotion), value: primary.title)
-        .animation(SkyAwareMotion.settle(reduceMotion), value: primary.detail)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(primary.title)
         .accessibilityValue(primary.detail)

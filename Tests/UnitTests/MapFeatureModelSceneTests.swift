@@ -240,8 +240,9 @@ struct MapFeatureModelSceneTests {
         await gate.releaseFirstStormFetch()
         await reload.value
 
-        #expect(model.activeScene.legendState.presentationState == .current)
+        #expect(model.activeScene.legendState.presentationState == .confirmedEmpty)
         #expect(model.activeScene.legendState.layer == .categorical)
+        #expect(model.activeScene.canvasState.overlays.isEmpty)
         #expect(coordinatesEqual(try #require(model.activeScene.canvasState.initialCenterCoordinate), center))
 
         model.selectLayer(.fire)

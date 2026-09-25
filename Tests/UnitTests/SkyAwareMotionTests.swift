@@ -13,6 +13,17 @@ struct SkyAwareMotionTests {
         #expect(SkyAwareMotion.onboardingStep(true) == nil)
     }
 
+    @Test("Reduce Motion removes nonessential motion tokens")
+    func reduceMotionRemovesNonessentialMotionTokens() {
+        #expect(SkyAwareMotion.resolve(true) == nil)
+        #expect(SkyAwareMotion.settle(true) == nil)
+        #expect(SkyAwareMotion.message(true) == nil)
+        #expect(SkyAwareMotion.press(true) == nil)
+        #expect(SkyAwareMotion.disclosure(true) == nil)
+        #expect(SkyAwareMotion.layerChange(true) == nil)
+        #expect(SkyAwareMotion.toastPresentation(true) == nil)
+    }
+
     @Test("resolving ambient effects run when motion is allowed")
     func resolvingAmbientEffectsRunWhenMotionIsAllowed() {
         #expect(LoadingView.shouldAnimateAmbientEffects(reduceMotion: false))

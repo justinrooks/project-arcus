@@ -387,10 +387,9 @@ struct SummaryView: View {
                     .padding(.vertical, 8)
                     .contentShape(Rectangle())
                     .accessibilityIdentifier("summary-storm-setup-card")
-                    .transition(.opacity.combined(with: .scale(scale: 0.99, anchor: .center)))
+                    .transition(.opacity)
                 }
             }
-            .animation(SkyAwareMotion.settle(reduceMotion), value: stormSetupSlotState)
 
         case .atmosphericConditions:
             if isLocationUnavailable == false {
