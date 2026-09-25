@@ -541,6 +541,122 @@ import ArcusCore
     }
 }
 
+#Preview("Home – Atomic Presentation Contract") {
+    HomePresentationContractPreview()
+}
+
+@MainActor
+private struct HomePresentationContractPreview: View {
+    @State private var scenario: Scenario = .refreshing
+
+    private enum Scenario: String, CaseIterable {
+        case cold = "Cold start"
+        case warm = "Warm cache"
+        case refreshing = "Refreshing"
+        case failed = "Failed refresh"
+        case empty = "Accepted empty"
+        case changedLocation = "Location changed"
+    }
+
+    private var presentation: HomeVisiblePresentation {
+        let key = "preview:current-location"
+        let cached = Self.record(key: key, at: 100, risk: .slight)
+        let attemptID = UUID(uuid: (0, 0, 0, 0, 0, 0, 4, 97, 0, 0, 0, 0, 0, 0, 0, 1))
+        var state = HomeVisiblePresentation(contextKey: key)
+
+        switch scenario {
+        case .cold:
+            break
+        case .warm:
+            state.apply(.persistedFallback(cached))
+        case .refreshing:
+            state.apply(.persistedFallback(cached))
+            state.apply(.refreshStarted(id: attemptID, source: .manual, projectionKey: key))
+        case .failed:
+            state.apply(.persistedFallback(cached))
+            state.apply(.refreshStarted(id: attemptID, source: .manual, projectionKey: key))
+            state.apply(.failed(id: attemptID))
+        case .empty:
+            let empty = Self.record(key: key, at: 200, risk: nil, acceptedAlerts: true)
+            state.apply(.coreAccepted(
+                .init(record: empty, riskProfileChange: nil),
+                .init(weather: .some(nil))
+            ))
+        case .changedLocation:
+            state.apply(.persistedFallback(cached))
+            state.apply(.contextChanged(projectionKey: "preview:next-location"))
+        }
+        return state
+    }
+
+    var body: some View {
+        let current = presentation
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Production Home state")
+                .font(.headline)
+            Text("Phase: \(String(describing: current.phase))")
+            Text("Accepted risk: \(current.revision?.stormRisk.map { String(describing: $0) } ?? "none")")
+            Text("Context: \(current.contextKey ?? "unavailable")")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            ViewThatFits {
+                HStack {
+                    scenarioButtons
+                }
+                VStack(alignment: .leading) {
+                    scenarioButtons
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.skyAwareBackground)
+    }
+
+    @ViewBuilder
+    private var scenarioButtons: some View {
+        ForEach(Scenario.allCases, id: \.self) { value in
+            Button(value.rawValue) { scenario = value }
+                .buttonStyle(.bordered)
+                .font(.caption)
+        }
+    }
+
+    private static func record(
+        key: String,
+        at timestamp: TimeInterval,
+        risk: StormRiskLevel?,
+        acceptedAlerts: Bool = false
+    ) -> HomeProjectionRecord {
+        let date = Date(timeIntervalSince1970: timestamp)
+        return HomeProjectionRecord(
+            id: UUID(uuid: (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1)),
+            projectionKey: key,
+            latitude: 39,
+            longitude: -104,
+            h3Cell: 1,
+            countyCode: "COC001",
+            forecastZone: "COZ001",
+            fireZone: "COZ201",
+            placemarkSummary: "Preview location",
+            timeZoneId: "America/Denver",
+            locationTimestamp: date,
+            createdAt: date,
+            updatedAt: date,
+            lastViewedAt: date,
+            weather: risk == nil ? nil : SummaryPreviewData.weather,
+            stormRisk: risk,
+            severeRisk: risk == nil ? nil : .allClear,
+            fireRisk: risk == nil ? nil : .clear,
+            activeAlerts: [],
+            activeMesos: [],
+            lastHotAlertsLoadAt: acceptedAlerts ? date : nil,
+            lastSlowProductsLoadAt: date,
+            lastWeatherLoadAt: date
+        )
+    }
+}
+
 private struct SummaryPreviewContent: View {
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?

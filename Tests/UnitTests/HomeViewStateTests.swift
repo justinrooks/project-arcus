@@ -207,6 +207,67 @@ struct HomeVisibleRevisionTests {
         #expect(state.phase == .current)
     }
 
+    @Test("accepted risk replacement is atomic and remains visible after refresh failure")
+    func acceptedRiskReplacementRemainsAtomic() {
+        let cached = record(at: 100, stormRisk: .slight)
+        let replacement = record(at: 200, stormRisk: .enhanced)
+        let attemptID = UUID()
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(cached))
+        state.apply(.refreshStarted(id: attemptID, source: .manual, projectionKey: key))
+
+        #expect(state.revision?.stormRisk == .slight)
+        #expect(state.phase == .cachedRefreshing)
+        state.apply(.coreAccepted(
+            .init(record: replacement, riskProfileChange: nil),
+            .init(weather: .some(nil))
+        ))
+        #expect(state.revision?.stormRisk == .enhanced)
+        #expect(state.revision?.core == replacement)
+        #expect(state.phase == .cachedRefreshing)
+
+        state.apply(.failed(id: attemptID))
+        #expect(state.phase == .failureWithCache)
+        #expect(state.revision?.stormRisk == .enhanced)
+    }
+
+    @Test("location transition uses only matching accepted content and distinguishes empty from failure")
+    func locationTransitionRequiresMatchingAcceptedContent() {
+        let old = record(at: 100, stormRisk: .slight)
+        let newKey = "h3:2|county:COC003|forecast:COZ002|fire:COZ202"
+        let matching = record(at: 200, key: newKey, stormRisk: .enhanced)
+        let empty = record(
+            at: 300,
+            key: newKey,
+            acceptedWeather: true,
+            acceptedRisks: true,
+            acceptedAlerts: true
+        )
+        var state = HomeVisiblePresentation(contextKey: key)
+        state.apply(.persistedFallback(old))
+        state.apply(.contextChanged(projectionKey: newKey))
+        #expect(state.revision == nil)
+        #expect(state.phase == .noCacheResolving)
+
+        state.apply(.persistedFallback(old))
+        #expect(state.revision == nil)
+        state.apply(.persistedFallback(matching))
+        #expect(state.revision?.stormRisk == .enhanced)
+        #expect(state.phase == .current)
+
+        state.apply(.contextChanged(projectionKey: newKey))
+        state.apply(.coreAccepted(
+            .init(record: empty, riskProfileChange: nil),
+            .init(weather: .some(nil))
+        ))
+        #expect(state.phase == .authoritativeEmpty)
+        let attemptID = UUID()
+        state.apply(.refreshStarted(id: attemptID, source: .manual, projectionKey: newKey))
+        state.apply(.failed(id: attemptID))
+        #expect(state.phase == .failureWithCache)
+        #expect(state.revision?.isAuthoritativelyEmpty == true)
+    }
+
     @Test("a hot alert prime cannot certify or replace the core revision")
     func hotPrimeCannotCertifyCore() {
         let cached = record(at: 100, stormRisk: .slight)

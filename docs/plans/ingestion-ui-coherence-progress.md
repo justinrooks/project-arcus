@@ -214,7 +214,18 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
 - Status: Pending
 
 ### [#461](https://github.com/justinrooks/project-arcus/issues/461) — Add a presentation-state preview matrix
-- Status: Pending
+- Status: Implementation complete; awaiting human review.
+- Added an interactive Summary preview backed by `HomeVisiblePresentation` for cold start, warm cache,
+  refresh, failed refresh, accepted empty, and location change. The phase and accepted risk shown in
+  the preview come from the production contract; its records are deterministic in-memory fixtures.
+- Added focused contract regressions for atomic accepted-risk replacement through refresh failure and
+  location changes with matching and non-matching cache, including authoritative empty followed by
+  failure. Existing contract coverage continues to exercise prime-only acceptance and enrichment
+  without core risk churn. Existing feature previews provide stale/offline and high-risk alert states.
+- Focused `HomeVisibleRevisionTests` passed 13/13 cases (16 parameterized executions), no failures
+  or skips, on iPhone 17 / iOS 26.5 (Debug). Result:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.7OL9LK/unit.xcresult`.
+  `git diff --check` passed. Preview interaction was not manually exercised in Xcode Canvas.
 
 ### [#460](https://github.com/justinrooks/project-arcus/issues/460) — Validate accessibility, hitches, and transition behavior
 - Status: Pending validation gate
