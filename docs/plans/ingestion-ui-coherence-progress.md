@@ -186,7 +186,13 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
   No matching coverage baseline was measured, so impact is unknown.
 
 ### [#459](https://github.com/justinrooks/project-arcus/issues/459) — Refine map loading and accepted-generation transitions
-- Status: Pending
+- Status: Implementation complete — awaiting human review
+- The current accepted map scene remains visible with compact resolving feedback while every
+  replacement plan is rebuilt. Staged plans replace the scene together only after the reload
+  completes; cancellation leaves the prior scene in place.
+- Focused map-scene test execution did not finalize on iPhone 17 / iOS 26.5: three result bundles
+  stopped in `Staging` without an `Info.plist`, so they are not passing evidence. The Debug app
+  build and `SkyAware_Tests` build-for-testing both succeeded after the final test changes.
 
 ### [#462](https://github.com/justinrooks/project-arcus/issues/462) — Codify restrained cross-feature motion
 - Status: Pending

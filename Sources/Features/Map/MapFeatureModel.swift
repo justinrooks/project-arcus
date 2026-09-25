@@ -111,12 +111,6 @@ final class MapFeatureModel {
 
         guard Task.isCancelled == false else { return false }
 
-        renderPlans[selectedLayer] = selectedPlan
-        sceneCache.removeAll()
-        if currentSelectedLayer == selectedLayer {
-            applySelectedLayer(selectedLayer)
-        }
-
         let payload = await fetchRemainingPayload(
             selectedLayer,
             selectedPayload: selectedPayload,
@@ -128,18 +122,21 @@ final class MapFeatureModel {
         }
 
         let warningPolygons = polygonMapper.warningPolygons(from: payload.activeWarnings.value ?? [])
+        var candidatePlans = renderPlans
+        candidatePlans[selectedLayer] = selectedPlan
         let remainingPlans = await planner.buildRemainingRenderPlans(
             excluding: selectedLayer,
             payload: payload,
-            existingPlans: renderPlans,
+            existingPlans: candidatePlans,
             polygonMapper: polygonMapper,
             warningPolygons: warningPolygons
         )
 
         guard Task.isCancelled == false else { return false }
 
-        renderPlans.merge(remainingPlans) { _, newPlan in newPlan }
-        sceneCache.removeAll(except: selectedLayer)
+        candidatePlans.merge(remainingPlans) { _, newPlan in newPlan }
+        renderPlans = candidatePlans
+        sceneCache.removeAll()
         applySelectedLayer(currentSelectedLayer)
         return true
     }
