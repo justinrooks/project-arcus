@@ -33,6 +33,7 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
     case noCacheResolving
     case current(content: Content, source: Source)
     case cachedRefreshing(content: Content)
+    case cachedFailed(content: Content)
     case staleOrDegraded(content: Content)
     case unavailable(reason: UnavailableReason)
 
@@ -42,6 +43,7 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
         isCurrentContextResolvedInPipeline: Bool,
         lastHotAlertsLoadAt: Date?,
         hasActiveAlerts: Bool,
+        didAlertRefreshFail: Bool = false,
         isLocationUnavailable: Bool
     ) -> LocalAlertsDisplayState {
         if isLocationUnavailable {
@@ -49,6 +51,13 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
         }
 
         let content: Content = hasActiveAlerts ? .populated : .empty
+        let hasAcceptedAlerts = isCurrentContextResolvedInPipeline || lastHotAlertsLoadAt != nil
+
+        if didAlertRefreshFail {
+            return hasAcceptedAlerts
+                ? .cachedFailed(content: content)
+                : .unavailable(reason: .noUsefulAlertState)
+        }
 
         if isCurrentContextResolvedInPipeline {
             return .current(content: content, source: .live)
@@ -59,31 +68,34 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
             return .noCacheResolving
 
         case .cachedRefreshing:
-            if hasCachedProjection {
-                guard lastHotAlertsLoadAt != nil || hasActiveAlerts else {
-                    return .unavailable(reason: .noUsefulAlertState)
-                }
+            if hasCachedProjection && hasAcceptedAlerts {
                 return .cachedRefreshing(content: content)
             }
             return .noCacheResolving
 
         case .staleRefreshing, .degraded:
-            if hasCachedProjection {
-                guard lastHotAlertsLoadAt != nil || hasActiveAlerts else {
-                    return .unavailable(reason: .noUsefulAlertState)
-                }
+            if hasCachedProjection && hasAcceptedAlerts {
                 return .staleOrDegraded(content: content)
             }
-            return .current(content: content, source: .live)
+            return .unavailable(reason: .noUsefulAlertState)
 
-        case .quietRefreshing, .refreshFailedWithCache, .current:
-            if hasCachedProjection {
-                guard lastHotAlertsLoadAt != nil || hasActiveAlerts else {
-                    return .unavailable(reason: .noUsefulAlertState)
-                }
+        case .refreshFailedWithCache:
+            if hasCachedProjection && hasAcceptedAlerts {
                 return .current(content: content, source: .cached)
             }
-            return .current(content: content, source: .live)
+            return .unavailable(reason: .noUsefulAlertState)
+
+        case .quietRefreshing:
+            if hasCachedProjection && hasAcceptedAlerts {
+                return .cachedRefreshing(content: content)
+            }
+            return .noCacheResolving
+
+        case .current:
+            if hasCachedProjection && hasAcceptedAlerts {
+                return .current(content: content, source: .cached)
+            }
+            return .unavailable(reason: .noUsefulAlertState)
 
         case .unavailable:
             return .unavailable(reason: .noUsefulAlertState)
@@ -94,7 +106,8 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
         switch self {
         case .noCacheResolving:
             .loading
-        case .current(let content, _), .cachedRefreshing(let content), .staleOrDegraded(let content):
+        case .current(let content, _), .cachedRefreshing(let content),
+             .cachedFailed(let content), .staleOrDegraded(let content):
             content == .populated ? .alerts : .empty
         case .unavailable:
             .unavailable
@@ -112,10 +125,16 @@ enum LocalAlertsDisplayState: Sendable, Equatable {
         case .noCacheResolving,
             .current,
             .cachedRefreshing,
+            .cachedFailed,
             .staleOrDegraded(content: .empty),
             .unavailable:
             false
         }
+    }
+
+    var showsFailedRefreshCopy: Bool {
+        if case .cachedFailed = self { return true }
+        return false
     }
 
     var usesSummaryResolvingTreatment: Bool {

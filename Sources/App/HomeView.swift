@@ -133,17 +133,15 @@ struct HomeView: View {
     }
 
     private var displayedOutlook: ConvectiveOutlookDTO? {
-        Self.preferredOutlook(
-            cachedOutlook: cachedOutlooks.first?.dto,
-            liveOutlooks: refreshPipeline.outlooks,
-            liveOutlook: refreshPipeline.outlook
-        )
+        displayedOutlooks.first
     }
 
     private var displayedOutlooks: [ConvectiveOutlookDTO] {
         Self.preferredOutlooks(
             cachedOutlooks: cachedOutlookDTOs,
-            liveOutlooks: refreshPipeline.outlooks
+            liveOutlooks: refreshPipeline.outlooks,
+            refreshStatus: refreshPipeline.outlookRefreshStatus,
+            hasAcceptedEmptySnapshot: refreshPipeline.hasAcceptedEmptyOutlookSnapshot
         )
     }
 
@@ -155,9 +153,10 @@ struct HomeView: View {
         LocalAlertsDisplayState.from(
             todayContentState: todayContentState,
             hasCachedProjection: presentation.projection != nil,
-            isCurrentContextResolvedInPipeline: presentation.isCurrentContextCommittedAlertSnapshot,
-            lastHotAlertsLoadAt: presentation.projection?.lastHotAlertsLoadAt,
+            isCurrentContextResolvedInPipeline: presentation.isCurrentContextCommittedAlertSnapshot || isUITestStaticMode,
+            lastHotAlertsLoadAt: presentation.lastAcceptedAlertsLoadAt,
             hasActiveAlerts: !presentation.mesos.isEmpty || !presentation.alerts.isEmpty,
+            didAlertRefreshFail: refreshPipeline.didManualAlertRefreshFail,
             isLocationUnavailable: readinessState == .locationUnavailable
         )
     }
@@ -271,6 +270,12 @@ struct HomeView: View {
             mesos: presentation.mesos,
             alerts: presentation.alerts,
             outlook: displayedOutlook,
+            outlookPresentationState: ConvectiveOutlookPresentationState.resolve(
+                dtos: displayedOutlooks,
+                refreshStatus: refreshPipeline.outlookRefreshStatus,
+                hasAcceptedEmptySnapshot: refreshPipeline.hasAcceptedEmptyOutlookSnapshot,
+                isOffline: runtimeConnectivityState.isOffline
+            ),
             weather: presentation.weather,
             airQuality: presentation.airQuality,
             locationTimeZone: presentation.locationTimeZone,
@@ -312,11 +317,15 @@ struct HomeView: View {
         ))
     }
 
-    private func alertsTab(presentation: HomePresentationSnapshot) -> some View {
+    private func alertsTab(
+        presentation: HomePresentationSnapshot,
+        localAlertsDisplayState: LocalAlertsDisplayState
+    ) -> some View {
         NavigationStack {
             AlertView(
                 mesos: presentation.mesos,
                 alerts: presentation.alerts,
+                localAlertsDisplayState: localAlertsDisplayState,
                 focusedAlertRequest: remoteAlertPresentationState.focusRequest,
                 onRefresh: {
                     logger.notice("Manual alerts refresh requested")
@@ -349,6 +358,8 @@ struct HomeView: View {
             ConvectiveOutlookView(
                 dtos: displayedOutlooks,
                 refreshStatus: refreshPipeline.outlookRefreshStatus,
+                hasAcceptedEmptySnapshot: refreshPipeline.hasAcceptedEmptyOutlookSnapshot,
+                isOffline: runtimeConnectivityState.isOffline,
                 onRefresh: {
                     logger.notice("Manual convective outlook refresh requested")
                     await refreshPipeline.refreshOutlooksManually(environment: refreshEnvironment)
@@ -390,7 +401,7 @@ struct HomeView: View {
                 }
 
                 Tab("Alerts", systemImage: "exclamationmark.triangle", value: .alerts) {
-                    alertsTab(presentation: presentation)
+                    alertsTab(presentation: presentation, localAlertsDisplayState: localAlertsDisplayState)
                 }
                 .badge(presentation.mesos.count + presentation.alerts.count)
 

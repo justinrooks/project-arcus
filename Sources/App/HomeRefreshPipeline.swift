@@ -113,6 +113,7 @@ final class HomeRefreshPipeline {
     private(set) var isStormSetupRefreshInFlight = false
     private(set) var isManualRefreshInFlight = false
     private(set) var didManualRefreshFail = false
+    private(set) var didManualAlertRefreshFail = false
     private(set) var manualRefreshAccessibilityEvent: HomeManualRefreshAccessibilityEvent?
 
     var snap: LocationSnapshot?
@@ -124,6 +125,7 @@ final class HomeRefreshPipeline {
     private(set) var alertSnapshot: HomeAlertSnapshot
     private(set) var outlookSnapshot: HomeOutlookSnapshot
     private(set) var outlookRefreshStatus: ConvectiveOutlookRefreshStatus
+    private(set) var hasAcceptedEmptyOutlookSnapshot = false
     var resolutionState = SummaryResolutionState()
 
     var stormRisk: StormRiskLevel? { riskSnapshot.stormRisk }
@@ -183,6 +185,7 @@ final class HomeRefreshPipeline {
 
     func resetLocationRefreshContext() {
         deferredContextRefreshKey = nil
+        didManualAlertRefreshFail = false
     }
 
     func handleScenePhaseChange(_ newPhase: ScenePhase, environment: Environment) async {
@@ -217,6 +220,7 @@ final class HomeRefreshPipeline {
         updateEnvironment(environment)
         isManualRefreshInFlight = true
         didManualRefreshFail = false
+        didManualAlertRefreshFail = false
         manualRefreshProjectionKey = environment.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
         postManualRefreshAccessibilityEvent("Refreshing conditions.")
         await submit(.manual, waitsForCompletion: showsLoading)
@@ -224,6 +228,7 @@ final class HomeRefreshPipeline {
 
     func refreshOutlooksManually(environment: Environment) async {
         updateEnvironment(environment)
+        outlookRefreshStatus = .loading
 
         let outcome = await HTTPExecutionMode.$current.withValue(.foreground) {
             await environment.sync.syncConvectiveOutlooks()
@@ -346,6 +351,10 @@ final class HomeRefreshPipeline {
     private func submit(_ trigger: HomeView.RefreshTrigger, waitsForCompletion: Bool) async {
         guard let environment else { return }
 
+        if trigger == .contextChanged {
+            didManualAlertRefreshFail = false
+        }
+
         environment.logger.info(
             "Foreground refresh started trigger=\(trigger.logName, privacy: .public) waitsForCompletion=\(waitsForCompletion, privacy: .public)"
         )
@@ -368,6 +377,7 @@ final class HomeRefreshPipeline {
                 self.completeManualRefresh(outcome: outcome)
             } else if outcome == .completed {
                 self.didManualRefreshFail = false
+                self.didManualAlertRefreshFail = false
             }
         }
     }
@@ -397,17 +407,22 @@ final class HomeRefreshPipeline {
             environment.logger.info(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=success durationMs=\(durationMs, privacy: .public) hasLocationSnapshot=\((snapshot.locationSnapshot != nil), privacy: .public) alertss=\(snapshot.alerts.count, privacy: .public) mesos=\(snapshot.mesos.count, privacy: .public) outlooks=\(snapshot.outlooks.count, privacy: .public) weather=\((snapshot.weather != nil), privacy: .public)"
             )
+            if trigger == .manual {
+                didManualAlertRefreshFail = snapshot.freshness.lastHotFeedSyncAt == nil
+            }
             return refreshOutcome(
                 for: snapshot,
                 environment: environment,
                 requiresAcceptedRequestedLanes: trigger == .manual
             )
         } catch is CancellationError {
+            if trigger == .manual { didManualAlertRefreshFail = false }
             environment.logger.notice(
                 "Foreground refresh cancelled trigger=\(trigger.logName, privacy: .public)"
             )
             return .cancelled
         } catch {
+            if trigger == .manual { didManualAlertRefreshFail = true }
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment.logger.error(
                 "Foreground refresh finished trigger=\(trigger.logName, privacy: .public) result=failure durationMs=\(durationMs, privacy: .public) error=\(error.localizedDescription, privacy: .public)"
@@ -443,6 +458,7 @@ final class HomeRefreshPipeline {
         let currentProjectionKey = environment?.locationSession.currentContext.map(HomeProjection.projectionKey(for:))
         guard currentProjectionKey == manualRefreshProjectionKey else {
             manualRefreshProjectionKey = nil
+            didManualAlertRefreshFail = false
             return
         }
         manualRefreshProjectionKey = nil
@@ -469,6 +485,7 @@ final class HomeRefreshPipeline {
             let latest = dtos.max(by: { $0.published < $1.published })
             outlookSnapshot = HomeOutlookSnapshot(outlooks: dtos, outlook: latest)
             outlookRefreshStatus = .success(hasContent: dtos.isEmpty == false)
+            hasAcceptedEmptyOutlookSnapshot = dtos.isEmpty
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment?.logger.info(
                 "Manual convective outlook refresh finished result=success durationMs=\(durationMs, privacy: .public) outlooks=\(dtos.count, privacy: .public)"
@@ -757,7 +774,15 @@ final class HomeRefreshPipeline {
         }
 
         outlookSnapshot = HomeOutlookSnapshot(outlooks: core.outlooks, outlook: core.latestOutlook)
-        outlookRefreshStatus = .success(hasContent: core.outlooks.isEmpty == false)
+        if core.hasAcceptedOutlookSnapshot {
+            outlookRefreshStatus = .success(hasContent: core.outlooks.isEmpty == false)
+            hasAcceptedEmptyOutlookSnapshot = core.outlooks.isEmpty
+        } else {
+            outlookRefreshStatus = core.outlooks.isEmpty ? .failed : .stale
+            if core.outlooks.isEmpty == false {
+                hasAcceptedEmptyOutlookSnapshot = false
+            }
+        }
         guard core.hasAcceptedCoreSnapshot else { return }
 
         switch core.weatherRefreshResult {

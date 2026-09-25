@@ -163,7 +163,27 @@ Home combines SwiftData and pipeline state, while feature tabs use differing loa
   path; automatic completion remains unverified by a finalized pipeline test.
 
 ### [#454](https://github.com/justinrooks/project-arcus/issues/454) — Normalize Alerts and Outlook loading states
-- Status: Pending
+- Status: Revised diff passed human and independent review; ready for commit approval.
+- Alerts now require an accepted hot-alert snapshot before presenting an authoritative empty state;
+  cached alerts retain refresh, failure, and stale status. Outlooks retain accepted rows or
+  authoritative empty across refresh and failure, and rejected empty results stay unavailable.
+- Review corrections route accepted alert state into the Alerts tab, distinguish Outlook states in
+  Today's summary, separate hot-alert failure from unrelated refresh failures, and show unavailable
+  on an offline Outlook cold start. No persistence schema was changed. Accepted-empty Outlook
+  provenance across app restart remains a follow-up because this runbook forbids schema changes.
+- The final Debug unit lane passed 1,238/1,238 test cases (1,274 parameterized executions),
+  with no failures or skips, on iPhone 17 / iOS 26.5:
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.YLlMuC/unit.xcresult`.
+  Focused semantic tests passed 22/22 at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.hBxgzN/unit.xcresult`.
+  Selected Alerts, tab, and Outlook UI navigation checks passed 3/3 with no failures or skips at
+  `/var/folders/sl/llpj7km14cb97fd1nmkt8gt40000gn/T/skyaware-results.0NPLM3/ui-navigation.xcresult`.
+  The UI checks do not yet exercise in-place accepted replacement or assert scroll continuity.
+  Human review confirmed the revised screens and scrolling behavior by observation;
+  this is manual evidence rather than an automated replacement test.
+  Tested base: `ae56433647619ebf0b95db4fabc4ed3d3541b479`; SHA-256 of the uncommitted
+  production/test diff: `fbda72e117416ac6a1b36a61f67bac47f86f337cc2e3f32ff8c3e9dd8e66c6a6`.
+  No matching coverage baseline was measured, so impact is unknown.
 
 ### [#459](https://github.com/justinrooks/project-arcus/issues/459) — Refine map loading and accepted-generation transitions
 - Status: Pending

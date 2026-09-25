@@ -4,6 +4,8 @@ import SwiftUI
 
 struct TodayTabView: View {
     @State private var visibleWeatherState = TodayVisibleWeatherState()
+    @State private var selectedSummaryAlert: AlertDTO?
+    @State private var selectedSummaryAlertDetent: PresentationDetent = .medium
 
     let snap: LocationSnapshot?
     let stormSetup: StormSetupDTO?
@@ -15,6 +17,7 @@ struct TodayTabView: View {
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
+    let outlookPresentationState: ConvectiveOutlookPresentationState
     let weather: SummaryWeather?
     let airQuality: AirQualityCurrentResponse?
     let locationTimeZone: TimeZone
@@ -73,6 +76,7 @@ struct TodayTabView: View {
                         mesos: mesos,
                         alerts: alerts,
                         outlook: outlook,
+                        outlookPresentationState: outlookPresentationState,
                         weather: visibleWeather,
                         airQuality: airQuality,
                         locationTimeZone: locationTimeZone,
@@ -87,6 +91,10 @@ struct TodayTabView: View {
                         onOpenMapLayer: onOpenMapLayer,
                         onOpenAlerts: onOpenAlerts,
                         onOpenOutlooks: onOpenOutlooks,
+                        onSelectAlert: { alert in
+                            selectedSummaryAlertDetent = .medium
+                            selectedSummaryAlert = alert
+                        },
                         onRefreshStormSetup: refreshStormSetupAction
                     )
                         .toolbar(.hidden, for: .navigationBar)
@@ -100,6 +108,30 @@ struct TodayTabView: View {
             }
         }
         .background(Color(.skyAwareBackground).ignoresSafeArea())
+        .sheet(item: $selectedSummaryAlert) { alert in
+            NavigationStack {
+                GeometryReader { geometry in
+                    let isExpanded = selectedSummaryAlertDetent == .large
+                    ScrollView {
+                        AlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
+                            .padding(.top, 8)
+                            .padding(.horizontal, 6)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: geometry.size.height,
+                                maxHeight: isExpanded ? nil : geometry.size.height,
+                                alignment: .top
+                            )
+                    }
+                    .scrollBounceBehavior(.basedOnSize)
+                    .background(.skyAwareBackground)
+                }
+                .navigationBarTitleDisplayMode(.inline)
+            }
+            .accessibilityIdentifier("summary-watch-detail-sheet")
+            .presentationDetents([.medium, .large], selection: $selectedSummaryAlertDetent)
+            .presentationDragIndicator(.visible)
+        }
         .task(id: visibleWeatherTaskState) {
             visibleWeatherState = TodayVisibleWeatherState.resolve(
                 liveWeather: weather,

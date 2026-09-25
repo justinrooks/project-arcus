@@ -16,6 +16,7 @@ extension HomeView {
         let airQuality: AirQualityCurrentResponse?
         let mesos: [MdDTO]
         let alerts: [AlertDTO]
+        let lastAcceptedAlertsLoadAt: Date?
         let stormSetup: StormSetupDTO?
         let stormSetupCurrentResponse: StormSetupCurrentResponse?
         let locationTimeZone: TimeZone
@@ -68,6 +69,7 @@ extension HomeView {
             self.alerts = isUITestStaticMode && !pipelineAlerts.isEmpty
                 ? pipelineAlerts
                 : visibleRevision?.activeAlerts ?? []
+            self.lastAcceptedAlertsLoadAt = (visibleRevision?.alerts ?? projection)?.lastHotAlertsLoadAt
             self.stormSetupCurrentResponse = response
             self.stormSetup = response.map(StormSetupDTO.init(response:)) ?? HomeView.selectStormSetup(
                 projection: enrichment,
@@ -244,16 +246,12 @@ extension HomeView {
 
     static func preferredOutlooks(
         cachedOutlooks: [ConvectiveOutlookDTO],
-        liveOutlooks: [ConvectiveOutlookDTO]
-    ) -> [ConvectiveOutlookDTO] {
-        liveOutlooks.isEmpty ? cachedOutlooks : liveOutlooks
-    }
-
-    static func preferredOutlook(
-        cachedOutlook: ConvectiveOutlookDTO?,
         liveOutlooks: [ConvectiveOutlookDTO],
-        liveOutlook: ConvectiveOutlookDTO?
-    ) -> ConvectiveOutlookDTO? {
-        liveOutlooks.first ?? cachedOutlook ?? liveOutlook
+        refreshStatus: ConvectiveOutlookRefreshStatus,
+        hasAcceptedEmptySnapshot: Bool = false
+    ) -> [ConvectiveOutlookDTO] {
+        if hasAcceptedEmptySnapshot { return [] }
+        if case .success(hasContent: false) = refreshStatus { return [] }
+        return liveOutlooks.isEmpty ? cachedOutlooks : liveOutlooks
     }
 }

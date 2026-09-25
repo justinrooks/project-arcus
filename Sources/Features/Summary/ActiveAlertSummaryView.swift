@@ -28,6 +28,7 @@ struct ActiveAlertSummaryView: View {
     let todayContentState: TodayContentState
     let isOffline: Bool
     let onOpenAlertCenter: (() -> Void)?
+    let onSelectAlert: ((AlertDTO) -> Void)?
     private let sortedMesos: [MdDTO]
     private let sortedAlerts: [AlertDTO]
     
@@ -43,7 +44,8 @@ struct ActiveAlertSummaryView: View {
         localAlertsDisplayState: LocalAlertsDisplayState = .current(content: .populated, source: .cached),
         todayContentState: TodayContentState = .current,
         isOffline: Bool = false,
-        onOpenAlertCenter: (() -> Void)? = nil
+        onOpenAlertCenter: (() -> Void)? = nil,
+        onSelectAlert: ((AlertDTO) -> Void)? = nil
     ) {
         self.mesos = mesos
         self.alerts = alerts
@@ -51,6 +53,7 @@ struct ActiveAlertSummaryView: View {
         self.todayContentState = todayContentState
         self.isOffline = isOffline
         self.onOpenAlertCenter = onOpenAlertCenter
+        self.onSelectAlert = onSelectAlert
         self.sortedMesos = AlertPresentationOrdering.ordered(mesos)
         self.sortedAlerts = AlertPresentationOrdering.ordered(alerts)
     }
@@ -120,8 +123,12 @@ struct ActiveAlertSummaryView: View {
                 items: sortedAlerts,
                 limit: 2,
                 onSelect: {
-                    selectedAlertDetent = .medium
-                    selectedAlert = $0
+                    if let onSelectAlert {
+                        onSelectAlert($0)
+                    } else {
+                        selectedAlertDetent = .medium
+                        selectedAlert = $0
+                    }
                 }
             ) { alert in
                 WatchRowView(alert: alert)
@@ -188,6 +195,12 @@ struct ActiveAlertSummaryView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Offline. Showing saved local alerts when available.")
+            }
+
+            if localAlertsDisplayState.showsFailedRefreshCopy {
+                Label("Local alerts could not be updated. Showing the last confirmed state.", systemImage: "arrow.clockwise.circle")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
             }
 
             innerContent
@@ -409,7 +422,8 @@ private struct ActiveAlertSection<Item: Identifiable, Row: View>: View {
                         onSelect(item)
                     } label: {
                         row(item)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(
                         SkyAwarePressableButtonStyle(

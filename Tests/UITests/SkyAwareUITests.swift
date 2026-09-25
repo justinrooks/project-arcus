@@ -545,9 +545,9 @@ final class SkyAwareUITests: XCTestCase {
         XCTAssertTrue(alertsTab.waitForExistence(timeout: 10), "Expected Alerts tab to exist.")
         alertsTab.tap()
 
-        let alertCenterWatchText = app.staticTexts["UI Test Tornado Watch"].firstMatch
-        XCTAssertTrue(alertCenterWatchText.waitForExistence(timeout: 10), "Expected seeded watch to appear in Alerts tab.")
-        alertCenterWatchText.tap()
+        let alertCenterWatchRow = app.buttons["alert-center-watch-row-ui-test-watch-001"]
+        XCTAssertTrue(alertCenterWatchRow.waitForExistence(timeout: 10), "Expected seeded watch to appear in Alerts tab.")
+        alertCenterWatchRow.tap()
 
         XCTAssertTrue(app.navigationBars["Weather Alert"].waitForExistence(timeout: 10), "Expected Alert tab watch tap to push WatchDetailView.")
         saveScreenshot(app, named: "alert-detail-light")

@@ -12,6 +12,7 @@ struct AlertView: View {
 
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
+    let localAlertsDisplayState: LocalAlertsDisplayState
     private let sortedAlerts: [AlertDTO]
     private let sortedMesos: [MdDTO]
     private let latestIssued: Date?
@@ -22,10 +23,6 @@ struct AlertView: View {
     @State private var selectedAlert: AlertDTO?
     @State private var activeTip: MesoscaleDiscussionTip?
     
-    private var hasNoAlerts: Bool {
-        alerts.isEmpty && mesos.isEmpty
-    }
-
     private var totalAlertCount: Int {
         alerts.count + mesos.count
     }
@@ -41,12 +38,14 @@ struct AlertView: View {
     init(
         mesos: [MdDTO],
         alerts: [AlertDTO],
+        localAlertsDisplayState: LocalAlertsDisplayState,
         focusedAlertRequest: RemoteAlertFocusRequest? = nil,
         onRefresh: (() async -> Void)? = nil,
         onFocusedAlertRequestHandled: ((RemoteAlertFocusRequest.ID) -> Void)? = nil
     ) {
         self.mesos = mesos
         self.alerts = alerts
+        self.localAlertsDisplayState = localAlertsDisplayState
         self.sortedAlerts = AlertPresentationOrdering.ordered(alerts)
         self.sortedMesos = AlertPresentationOrdering.ordered(mesos)
         self.latestIssued = AlertView.latestIssued(alerts: alerts, mesos: mesos)
@@ -195,8 +194,8 @@ struct AlertView: View {
     private var overviewCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(
-                hasNoAlerts ? "No active alerts" : activeLocalAlertLabel,
-                systemImage: hasNoAlerts ? "bell" : "bolt.badge.clock"
+                overviewTitle,
+                systemImage: localAlertsDisplayState.presentationState == .alerts ? "bolt.badge.clock" : "bell"
             )
             .symbolVariant(.fill)
             .font(.headline.weight(.semibold))
@@ -204,8 +203,14 @@ struct AlertView: View {
             Text(overviewMessage)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+            if let statusText {
+                Text(statusText)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
             
-            if let latestIssued {
+            if localAlertsDisplayState.presentationState == .alerts, let latestIssued {
                 Text("Most recent activity: \(latestIssued.relativeDate())")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -219,11 +224,39 @@ struct AlertView: View {
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
     }
     
-    private var overviewMessage: String {
-        if hasNoAlerts {
-            return "SkyAware is monitoring your local area. New alerts and mesoscale discussions will appear here as soon as they are issued."
+    var overviewTitle: String {
+        switch localAlertsDisplayState {
+        case .noCacheResolving:
+            return "Checking local alerts"
+        case .unavailable(reason: .locationUnavailable):
+            return "Location unavailable"
+        case .unavailable(reason: .noUsefulAlertState):
+            return "Alert status unavailable"
+        case .current(.empty, _), .cachedRefreshing(.empty),
+             .cachedFailed(.empty), .staleOrDegraded(.empty):
+            return "No active alerts"
+        case .current(.populated, _), .cachedRefreshing(.populated),
+             .cachedFailed(.populated), .staleOrDegraded(.populated):
+            return activeLocalAlertLabel
         }
-        
+    }
+
+    var overviewMessage: String {
+        switch localAlertsDisplayState {
+        case .noCacheResolving:
+            return "Bringing in local alerts…"
+        case .unavailable(reason: .locationUnavailable):
+            return "Allow location access to check alerts for your area."
+        case .unavailable(reason: .noUsefulAlertState):
+            return "Local alert status could not be confirmed. Try again later."
+        case .current(.empty, _), .cachedRefreshing(.empty),
+             .cachedFailed(.empty), .staleOrDegraded(.empty):
+            return "The last confirmed check found no active local alerts or mesoscale discussions."
+        case .current(.populated, _), .cachedRefreshing(.populated),
+             .cachedFailed(.populated), .staleOrDegraded(.populated):
+            break
+        }
+
         if sortedAlerts.isEmpty {
             return "Mesoscale discussions are active for your area. Open one to check timing, concern area, and warning potential."
         }
@@ -233,6 +266,19 @@ struct AlertView: View {
         }
         
         return "Warnings are shown before watches, then mesoscale discussions. Within each group, items that end sooner are surfaced first."
+    }
+
+    var statusText: String? {
+        switch localAlertsDisplayState {
+        case .cachedRefreshing:
+            return "Checking for updates. Showing the last confirmed alert state."
+        case .cachedFailed:
+            return "Local alerts could not be updated. Showing the last confirmed state."
+        case .staleOrDegraded:
+            return "Showing the last confirmed alert state while updates are unavailable."
+        case .noCacheResolving, .current, .unavailable:
+            return nil
+        }
     }
 
     @ViewBuilder
@@ -345,7 +391,11 @@ private struct MesoscaleDiscussionTipView: View {
 
 #Preview {
     NavigationStack {
-        AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+        AlertView(
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            localAlertsDisplayState: .current(content: .populated, source: .live)
+        )
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -355,7 +405,7 @@ private struct MesoscaleDiscussionTipView: View {
 
 #Preview("Empty") {
     NavigationStack {
-        AlertView(mesos: [], alerts: [])
+        AlertView(mesos: [], alerts: [], localAlertsDisplayState: .current(content: .empty, source: .live))
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -365,7 +415,11 @@ private struct MesoscaleDiscussionTipView: View {
 
 #Preview("Accessibility") {
     NavigationStack {
-        AlertView(mesos: MD.sampleDiscussionDTOs, alerts: Watch.sampleWatchRows)
+        AlertView(
+            mesos: MD.sampleDiscussionDTOs,
+            alerts: Watch.sampleWatchRows,
+            localAlertsDisplayState: .current(content: .populated, source: .live)
+        )
             .environment(\.dynamicTypeSize, .accessibility3)
             .navigationTitle("Active Alerts")
             .navigationBarTitleDisplayMode(.large)

@@ -320,11 +320,97 @@ struct SummaryViewLocalAlertsTests {
     }
 }
 
+@Suite("Alerts tab overview")
+@MainActor
+struct AlertCenterOverviewTests {
+    @Test("empty arrays use acceptance state instead of claiming monitoring")
+    func emptyOverviewStates() {
+        let unaccepted = AlertView(
+            mesos: [], alerts: [], localAlertsDisplayState: .unavailable(reason: .noUsefulAlertState)
+        )
+        #expect(unaccepted.overviewTitle == "Alert status unavailable")
+        #expect(unaccepted.overviewMessage.contains("could not be confirmed"))
+
+        let resolving = AlertView(mesos: [], alerts: [], localAlertsDisplayState: .noCacheResolving)
+        #expect(resolving.overviewTitle == "Checking local alerts")
+
+        let acceptedEmpty = AlertView(mesos: [], alerts: [], localAlertsDisplayState: .current(content: .empty, source: .live))
+        #expect(acceptedEmpty.overviewTitle == "No active alerts")
+        #expect(acceptedEmpty.overviewMessage.contains("last confirmed check"))
+
+        let refreshing = AlertView(mesos: [], alerts: [], localAlertsDisplayState: .cachedRefreshing(content: .empty))
+        #expect(refreshing.statusText?.contains("Checking for updates") == true)
+
+        let failed = AlertView(mesos: [], alerts: [], localAlertsDisplayState: .cachedFailed(content: .empty))
+        #expect(failed.statusText?.contains("could not be updated") == true)
+    }
+}
+
 
 @Suite("Local Alerts Display State")
 @MainActor
 struct LocalAlertsDisplayStateTests {
     private let loadedAt = Date(timeIntervalSince1970: 1_000)
+
+    @Test("unaccepted alert arrays cannot certify an empty or monitored state")
+    func unacceptedAlertsAreUnavailable() {
+        for hasActiveAlerts in [false, true] {
+            #expect(LocalAlertsDisplayState.from(
+                todayContentState: .current,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: nil,
+                hasActiveAlerts: hasActiveAlerts,
+                isLocationUnavailable: false
+            ) == .unavailable(reason: .noUsefulAlertState))
+        }
+    }
+
+    @Test("accepted cached alerts retain failure without turning empty")
+    func failedRefreshRetainsAcceptedState() {
+        for hasActiveAlerts in [false, true] {
+            let state = LocalAlertsDisplayState.from(
+                todayContentState: .refreshFailedWithCache,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: hasActiveAlerts,
+                didAlertRefreshFail: true,
+                isLocationUnavailable: false
+            )
+            #expect(state == .cachedFailed(content: hasActiveAlerts ? .populated : .empty))
+            #expect(state.showsFailedRefreshCopy)
+        }
+    }
+
+    @Test("unrelated lane failure does not label accepted alerts as failed")
+    func otherLaneFailureKeepsAcceptedAlertsCurrent() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .refreshFailedWithCache,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: true,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: true,
+            didAlertRefreshFail: false,
+            isLocationUnavailable: false
+        )
+        #expect(state == .current(content: .populated, source: .live))
+        #expect(state.showsFailedRefreshCopy == false)
+    }
+
+    @Test("alert lane failure retains prior accepted content")
+    func alertLaneFailureOverridesPriorAcceptedMarker() {
+        let state = LocalAlertsDisplayState.from(
+            todayContentState: .refreshFailedWithCache,
+            hasCachedProjection: true,
+            isCurrentContextResolvedInPipeline: true,
+            lastHotAlertsLoadAt: loadedAt,
+            hasActiveAlerts: false,
+            didAlertRefreshFail: true,
+            isLocationUnavailable: false
+        )
+        #expect(state == .cachedFailed(content: .empty))
+    }
 
     @Test("no-cache resolving stays calm")
     func noCacheResolving_staysCalm() {
@@ -410,6 +496,16 @@ struct LocalAlertsDisplayStateTests {
                 isLocationUnavailable: false
             ) == .cachedRefreshing(content: .populated)
         )
+        #expect(
+            LocalAlertsDisplayState.from(
+                todayContentState: .quietRefreshing,
+                hasCachedProjection: true,
+                isCurrentContextResolvedInPipeline: false,
+                lastHotAlertsLoadAt: loadedAt,
+                hasActiveAlerts: true,
+                isLocationUnavailable: false
+            ) == .cachedRefreshing(content: .populated)
+        )
     }
 
     @Test("offline stale and degraded states retain cached content")
@@ -470,4 +566,3 @@ struct LocalAlertsDisplayStateTests {
         )
     }
 }
-

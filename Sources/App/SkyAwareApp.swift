@@ -361,12 +361,14 @@ private extension SkyAwareApp {
                     initialStormSetupRefreshKey: fixture.context.refreshKey,
                     initialMesos: Self.uiTestLaunchMesos,
                     initialAlerts: Self.uiTestLaunchWatches,
+                    initialOutlooks: ConvectiveOutlook.sampleOutlookDtos,
                     initialRefreshInFlight: fixture.isRefreshInFlight
                 )
             } else {
                 HomeView(
                     initialMesos: Self.uiTestLaunchMesos,
-                    initialAlerts: Self.uiTestLaunchWatches
+                    initialAlerts: Self.uiTestLaunchWatches,
+                    initialOutlooks: ConvectiveOutlook.sampleOutlookDtos
                 )
             }
         } else {

@@ -36,6 +36,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
     let hasAcceptedAlertSnapshot: Bool
     let outlooks: [ConvectiveOutlookDTO]
     let latestOutlook: ConvectiveOutlookDTO?
+    let hasAcceptedOutlookSnapshot: Bool
 
     init(snapshot: HomeSnapshot, hasAcceptedCoreSnapshot: Bool = true) {
         locationSnapshot = snapshot.locationSnapshot
@@ -50,6 +51,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         hasAcceptedAlertSnapshot = true
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
+        hasAcceptedOutlookSnapshot = snapshot.freshness.lastOutlookSyncAt != nil
     }
 
     init(snapshot: HomeSnapshot, retainedProjection: HomeProjectionRecord) {
@@ -65,6 +67,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         hasAcceptedAlertSnapshot = retainedProjection.lastHotAlertsLoadAt != nil
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
+        hasAcceptedOutlookSnapshot = snapshot.freshness.lastOutlookSyncAt != nil
     }
 
     init(
@@ -84,6 +87,7 @@ struct HomeIngestionCorePublication: Sendable, Equatable {
         hasAcceptedAlertSnapshot = acknowledgedProjection.lastHotAlertsLoadAt != nil
         outlooks = snapshot.outlooks
         latestOutlook = snapshot.latestOutlook
+        hasAcceptedOutlookSnapshot = snapshot.freshness.lastOutlookSyncAt != nil
     }
 }
 

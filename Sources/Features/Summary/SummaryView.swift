@@ -138,6 +138,7 @@ struct SummaryView: View {
     let mesos: [MdDTO]
     let alerts: [AlertDTO]
     let outlook: ConvectiveOutlookDTO?
+    let outlookPresentationState: ConvectiveOutlookPresentationState
     let weather: SummaryWeather?
     let airQuality: AirQualityCurrentResponse?
     let locationTimeZone: TimeZone
@@ -152,6 +153,7 @@ struct SummaryView: View {
     let onOpenMapLayer: (MapLayer) -> Void
     let onOpenAlerts: () -> Void
     let onOpenOutlooks: () -> Void
+    let onSelectAlert: ((AlertDTO) -> Void)?
     let onRefreshStormSetup: () async -> Void
 
 #if DEBUG
@@ -170,6 +172,7 @@ struct SummaryView: View {
         mesos: [MdDTO] = [],
         alerts: [AlertDTO] = [],
         outlook: ConvectiveOutlookDTO? = nil,
+        outlookPresentationState: ConvectiveOutlookPresentationState = .loading,
         weather: SummaryWeather? = nil,
         airQuality: AirQualityCurrentResponse? = nil,
         locationTimeZone: TimeZone = .autoupdatingCurrent,
@@ -184,6 +187,7 @@ struct SummaryView: View {
         onOpenMapLayer: @escaping (MapLayer) -> Void,
         onOpenAlerts: @escaping () -> Void,
         onOpenOutlooks: @escaping () -> Void,
+        onSelectAlert: ((AlertDTO) -> Void)? = nil,
         onRefreshStormSetup: @escaping () async -> Void = {}
     ) {
         self.snap = snap
@@ -196,6 +200,7 @@ struct SummaryView: View {
         self.mesos = mesos
         self.alerts = alerts
         self.outlook = outlook
+        self.outlookPresentationState = outlookPresentationState
         self.weather = weather
         self.airQuality = airQuality
         self.locationTimeZone = locationTimeZone
@@ -210,6 +215,7 @@ struct SummaryView: View {
         self.onOpenMapLayer = onOpenMapLayer
         self.onOpenAlerts = onOpenAlerts
         self.onOpenOutlooks = onOpenOutlooks
+        self.onSelectAlert = onSelectAlert
         self.onRefreshStormSetup = onRefreshStormSetup
     }
 
@@ -409,8 +415,7 @@ struct SummaryView: View {
         case .outlookSummary:
             OutlookSummaryCard(
                 outlook: outlook,
-                isLoading: outlook == nil && (readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
-                isPending: outlook == nil && !(readinessState == .loadingLocation || readinessState == .resolvingLocalContext),
+                presentationState: outlookPresentationState,
                 todayContentState: todayContentState,
                 onBrowseAllOutlooks: onOpenOutlooks
             )
@@ -429,11 +434,19 @@ struct SummaryView: View {
     private var localAlertsSection: some View {
         switch localAlertsPresentationState {
         case .unavailable:
-            unavailableCard(
-                title: "Location Required",
-                message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
-                symbol: "location.slash"
-            )
+            if localAlertsDisplayState == .unavailable(reason: .locationUnavailable) {
+                unavailableCard(
+                    title: "Location Required",
+                    message: "Active alerts appear after SkyAware resolves your local county and fire zone.",
+                    symbol: "location.slash"
+                )
+            } else {
+                unavailableCard(
+                    title: "Local alerts unavailable",
+                    message: "SkyAware has not confirmed the current local alert state. Check again when the feed is available.",
+                    symbol: "cloud.slash"
+                )
+            }
 
         case .loading, .alerts, .empty:
             ActiveAlertSummaryView(
@@ -442,7 +455,8 @@ struct SummaryView: View {
                 localAlertsDisplayState: localAlertsDisplayState,
                 todayContentState: todayContentState,
                 isOffline: localAlertsDisplayState.showsOfflineStatusCopy,
-                onOpenAlertCenter: onOpenAlerts
+                onOpenAlertCenter: onOpenAlerts,
+                onSelectAlert: onSelectAlert
             )
             .summaryResolving(
                 localAlertsDisplayState.usesSummaryResolvingTreatment &&

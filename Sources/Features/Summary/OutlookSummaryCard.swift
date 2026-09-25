@@ -11,8 +11,7 @@ struct OutlookSummaryCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let outlook: ConvectiveOutlookDTO?
-    let isLoading: Bool
-    let isPending: Bool
+    let presentationState: ConvectiveOutlookPresentationState
     let todayContentState: TodayContentState
     let onBrowseAllOutlooks: (() -> Void)?
     
@@ -20,14 +19,12 @@ struct OutlookSummaryCard: View {
 
     init(
         outlook: ConvectiveOutlookDTO?,
-        isLoading: Bool = false,
-        isPending: Bool = false,
+        presentationState: ConvectiveOutlookPresentationState? = nil,
         todayContentState: TodayContentState = .current,
         onBrowseAllOutlooks: (() -> Void)? = nil
     ) {
         self.outlook = outlook
-        self.isLoading = isLoading
-        self.isPending = isPending
+        self.presentationState = presentationState ?? (outlook == nil ? .loading : .populated(.current))
         self.todayContentState = todayContentState
         self.onBrowseAllOutlooks = onBrowseAllOutlooks
     }
@@ -39,9 +36,7 @@ struct OutlookSummaryCard: View {
     private var summaryText: String {
         Self.outlookSummaryText(
             outlook: outlook,
-            todayContentState: todayContentState,
-            isLoading: isLoading,
-            isPending: isPending
+            presentationState: presentationState
         )
     }
 
@@ -50,7 +45,7 @@ struct OutlookSummaryCard: View {
             return "sun.max.fill"
         }
 
-        if todayContentState.showsResolvingSurface {
+        if presentationState == .loading {
             return "sun.horizon.fill"
         }
 
@@ -70,6 +65,12 @@ struct OutlookSummaryCard: View {
                 .lineSpacing(4)
                 .lineLimit(5)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let statusText = Self.statusText(for: presentationState) {
+                Text(statusText)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
             
             Button(action: {
                 guard outlook != nil else { return }
@@ -84,11 +85,11 @@ struct OutlookSummaryCard: View {
                 .frame(maxWidth: .infinity)
             }
             .skyAwareGlassButtonStyle()
-            .disabled(isLoading || outlook == nil)
+            .disabled(outlook == nil)
         }
         .padding(18)
         .cardBackground(cornerRadius: SkyAwareRadius.card, shadowOpacity: 0.08, shadowRadius: 8, shadowY: 3)
-        .placeholder(isLoading && todayContentState.showsResolvingSurface, animated: true)
+        .placeholder(presentationState == .loading && todayContentState.showsResolvingSurface, animated: true)
         .navigationDestination(isPresented: $navigateToFull) {
             if let outlook {
                 ConvectiveOutlookDetailView(outlook: outlook)
@@ -133,19 +134,35 @@ struct OutlookSummaryCard: View {
 
     static func outlookSummaryText(
         outlook: ConvectiveOutlookDTO?,
-        todayContentState: TodayContentState,
-        isLoading: Bool,
-        isPending: Bool
+        presentationState: ConvectiveOutlookPresentationState
     ) -> String {
         if let summary = outlook?.summary {
             return summary
         }
 
-        if isLoading && todayContentState.showsResolvingSurface {
-            return "Getting outlook details…"
+        switch presentationState {
+        case .loading:
+            return "Checking outlook details…"
+        case .unavailable:
+            return "Outlook information is unavailable. Try again later."
+        case .empty:
+            return "No current convective outlooks were returned in the last confirmed update."
+        case .populated:
+            return "Outlook details will appear here when available."
         }
+    }
 
-        return "Outlook details will appear here when available."
+    static func statusText(for presentationState: ConvectiveOutlookPresentationState) -> String? {
+        switch presentationState.activity {
+        case .refreshing:
+            return "Checking for an updated outlook. Showing the last confirmed result."
+        case .failed:
+            return "Outlook could not be updated. Showing the last confirmed result."
+        case .stale:
+            return "Showing the last confirmed outlook while updates are unavailable."
+        case .current, nil:
+            return nil
+        }
     }
 }
 
@@ -169,14 +186,14 @@ struct OutlookSummaryCard: View {
 
 #Preview("Outlook Summary - Resolving") {
     NavigationStack {
-        OutlookSummaryCard(outlook: nil, isPending: true)
+        OutlookSummaryCard(outlook: nil, presentationState: .unavailable)
             .padding()
     }
 }
 
 #Preview("Outlook Summary - Initial Resolve") {
     NavigationStack {
-        OutlookSummaryCard(outlook: nil, isLoading: true, todayContentState: .noCacheResolving)
+        OutlookSummaryCard(outlook: nil, presentationState: .loading, todayContentState: .noCacheResolving)
             .padding()
     }
 }

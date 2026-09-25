@@ -3462,6 +3462,32 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.outlookRefreshStatus == .failed)
     }
 
+    @Test("manual outlook failure retains a previously accepted empty result")
+    func refreshOutlooksManually_failureRetainsAcceptedEmpty() async {
+        let context = makeContext()
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.refreshOutlooksManually(
+            environment: makeEnvironment(
+                spc: FakeSpcProvider(outlooks: []),
+                locationSession: locationSession
+            )
+        )
+        #expect(pipeline.outlookRefreshStatus == .success(hasContent: false))
+        #expect(pipeline.hasAcceptedEmptyOutlookSnapshot)
+
+        await pipeline.refreshOutlooksManually(
+            environment: makeEnvironment(
+                spc: FakeSpcProvider(outlooks: [], outlookSyncOutcome: .failed),
+                locationSession: locationSession
+            )
+        )
+        #expect(pipeline.outlookRefreshStatus == .failed)
+        #expect(pipeline.hasAcceptedEmptyOutlookSnapshot)
+        #expect(pipeline.outlooks.isEmpty)
+    }
+
     @Test("foreground outlook refresh marks empty results as completed")
     func foregroundOutlookRefresh_marksEmptyResultsAsCompleted() async {
         let context = makeContext()
@@ -3481,6 +3507,24 @@ struct HomeRefreshPipelineTests {
         #expect(pipeline.outlooks.isEmpty)
         #expect(pipeline.outlook == nil)
         #expect(pipeline.outlookRefreshStatus == .success(hasContent: false))
+    }
+
+    @Test("rejected foreground outlook empty does not become accepted empty")
+    func foregroundOutlookRefresh_rejectedEmptyIsUnavailable() async {
+        let context = makeContext()
+        let spc = FakeSpcProvider(outlooks: [], outlookSyncOutcome: .rejected)
+        let locationSession = FakeLocationSession(currentContext: context, preparedContext: context)
+        let pipeline = HomeRefreshPipeline()
+
+        await pipeline.handleScenePhaseChange(
+            .active,
+            environment: makeEnvironment(spc: spc, locationSession: locationSession)
+        )
+        await pipeline.waitForIdle()
+
+        #expect(pipeline.outlooks.isEmpty)
+        #expect(pipeline.outlookRefreshStatus == .failed)
+        #expect(pipeline.hasAcceptedEmptyOutlookSnapshot == false)
     }
 
     @Test("background location change resolves from latest accepted snapshot instead of stale current context")

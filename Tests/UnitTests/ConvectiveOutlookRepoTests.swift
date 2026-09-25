@@ -904,6 +904,7 @@ struct ConvectiveOutlookDetailPresentationTests {
 }
 
 @Suite("ConvectiveOutlookView presentation state")
+@MainActor
 struct ConvectiveOutlookViewPresentationStateTests {
     @Test("loading state wins while refresh is in flight and no outlooks are shown")
     func loadingStateWins() {
@@ -921,7 +922,7 @@ struct ConvectiveOutlookViewPresentationStateTests {
             ConvectiveOutlookPresentationState.resolve(
                 dtos: [],
                 refreshStatus: .success(hasContent: false)
-            ) == .empty
+            ) == .empty(.current)
         )
     }
 
@@ -941,7 +942,51 @@ struct ConvectiveOutlookViewPresentationStateTests {
             ConvectiveOutlookPresentationState.resolve(
                 dtos: [ConvectiveOutlook.sampleOutlookDtos[0]],
                 refreshStatus: .failed
-            ) == .populated
+            ) == .populated(.failed)
         )
+    }
+
+    @Test("accepted cached rows stay visible while refreshing or offline")
+    func acceptedRowsRetainActivity() {
+        let outlooks = [ConvectiveOutlook.sampleOutlookDtos[0]]
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: outlooks, refreshStatus: .loading
+        ) == .populated(.refreshing))
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: outlooks, refreshStatus: .success(hasContent: true), isOffline: true
+        ) == .populated(.stale))
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: outlooks, refreshStatus: .failed, isOffline: true
+        ) == .populated(.failed))
+    }
+
+    @Test("accepted empty remains distinct while offline")
+    func acceptedEmptyOffline() {
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: [], refreshStatus: .success(hasContent: false), isOffline: true
+        ) == .empty(.stale))
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: [], refreshStatus: .failed, hasAcceptedEmptySnapshot: true
+        ) == .empty(.failed))
+    }
+
+    @Test("offline cold start without accepted Outlook content is unavailable")
+    func offlineColdStartIsUnavailable() {
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: [], refreshStatus: .loading, isOffline: true
+        ) == .unavailable)
+        #expect(OutlookSummaryCard.outlookSummaryText(
+            outlook: nil, presentationState: .unavailable
+        ).contains("unavailable"))
+    }
+
+    @Test("an unaccepted empty result is unavailable")
+    func unacceptedEmptyIsUnavailable() {
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: [], refreshStatus: .stale
+        ) == .unavailable)
+        #expect(ConvectiveOutlookPresentationState.resolve(
+            dtos: [], refreshStatus: .success(hasContent: true)
+        ) == .unavailable)
     }
 }
