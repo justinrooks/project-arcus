@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## v1.3.0(219)
+
+## Overview
+This build makes Home, Today, Alerts, Outlook, Storm Setup, and Map presentation more stable during refreshes, failures, location changes, and partial data updates. It also corrects risk-change notification baselines and adds diagnostic and preview coverage for these states.
+
+## Highlights
+- Storm Setup details now support a scoped refresh while retaining accepted visible guidance when fresh data is unchanged or unavailable.
+- Home promotes accepted weather and risk replacements atomically and retains the last accepted location-scoped content through refresh failures and partial updates.
+- Today, Alerts, and Outlook distinguish loading, accepted empty, unavailable, and failed states while keeping useful cached content visible.
+- Map replacement reloads preserve the visible scene, selected layer, and camera until replacement data is ready, cancelled, or rejected.
+- Risk-change notifications use the active H3 cell and accepted forecast transitions for their comparison baseline.
+- Alert lifecycle and omission handling now preserve locally active alerts until their correct terminal boundary or an accepted omission.
+- Reduce Motion disables presentation animations, and developer diagnostics include a 15-minute barometric pressure trend view.
+
 ## v1.2.0(195)
 
 ## Overview

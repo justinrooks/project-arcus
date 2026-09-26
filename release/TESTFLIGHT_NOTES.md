@@ -1,4 +1,20 @@
 Unreleased
+SkyAware v1.3.0(219)
+Highlights:
+- Home keeps the last accepted weather and risk content visible while refreshes fail or partial updates complete, and accepted replacements appear atomically.
+- Today, Alerts, and Outlook now show clearer loading, empty, unavailable, and failed states during refreshes.
+- Map reloads preserve the current scene, selected layer, and camera while replacement data loads or fails.
+- Storm Setup details now support refreshing the current location without discarding visible guidance when no replacement is accepted.
+- Risk-change notifications use improved location and forecast baselines; active alerts remain visible through partial or empty feed responses until their correct terminal boundary.
+- Reduce Motion disables presentation animations. Developer diagnostics include a 15-minute barometric pressure trend view.
+
+What to test:
+- Refresh Home, Storm Setup, Alerts, and Outlook with cached content present; confirm useful accepted content remains visible while the refresh is loading or fails, and that accepted empty results are presented as empty rather than unavailable.
+- Change map layers and trigger replacement reloads; confirm the visible scene and camera remain stable until replacement data is ready, and that a failed or cancelled reload keeps the prior scene.
+- Exercise alerts that have different `expires` and `ends` times, plus partial and empty feed responses; confirm alerts remain active until the earliest terminal boundary and are not removed by unaccepted omissions.
+- Trigger risk changes after an accepted forecast revision and after moving between H3 cells; confirm eligible notification changes are evaluated once from the correct baseline.
+- Check the Storm Setup scoped refresh and the Reduce Motion setting, and review the diagnostics pressure trend view on a device with a barometric sensor.
+
 SkyAware v1.2.0(195)
 Highlights:
 - SkyAware now reports a minimal foreground activity signal when it becomes active, using its existing stable installation ID.
