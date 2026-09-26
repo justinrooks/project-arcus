@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## v1.3.0(219)
+
+### UI / UX
+- Storm Setup details now support a scoped refresh for the accepted location while retaining visible guidance when the refresh has no change or fails.
+<!-- evidence: 577f77b -->
+- Map reloads now preserve the accepted scene, selected layer, and camera while replacement data is loading, cancelled, or rejected; accepted feed generations still trigger a refresh.
+<!-- evidence: 82578ff, 1b45489 -->
+- Today, Alerts, and Outlook presentation now distinguish loading, accepted empty, unavailable, and failed states, while cached content remains visible and refresh progress stays calm.
+<!-- evidence: ae56433, d5fe719 -->
+- Reduce Motion now disables the app's presentation animations instead of substituting near-zero-duration animations.
+<!-- evidence: 0a1781a -->
+
+### Background & Notifications
+- Risk-change notification baselines now follow the active H3 cell and accepted forecast transitions, so location changes and newer accepted forecasts are evaluated without foreground ingestion consuming the notification baseline.
+<!-- evidence: a42dc2e -->
+
+### Reliability
+- Home now derives core weather and risk content from one accepted, location-scoped visible revision, promotes replacements atomically, and keeps the last accepted revision through refresh failures and partial updates.
+<!-- evidence: 978ea69, 2bb0fc8, a5e2f3d, afbb9ea -->
+- Home projection retention now protects the active and newest display-ready projections, keeps a bounded recent history, and cleans up stale rows after resolved location changes.
+<!-- evidence: cf57285 -->
+- Alert activity now ends at the earliest terminal boundary, and empty or partial live alert collections no longer remove locally active alerts without accepted omission semantics.
+<!-- evidence: 66595d8, 1478d23 -->
+
+### Tests / QA
+- Regression coverage now covers static widget snapshot preservation, alert lifecycle and omission handling, risk-change notification baselines, scoped Storm Setup refresh, accepted map generations and replacement reloads, atomic Home presentation, projection retention, refresh recovery, semantic loading states, and restrained motion.
+<!-- evidence: 914c7d1, 66595d8, 1478d23, a42dc2e, 577f77b, 82578ff, 978ea69, 2bb0fc8, a5e2f3d, afbb9ea, cf57285, ae56433, d5fe719, 1b45489, 0a1781a -->
+- Added an interactive Summary preview matrix for cold start, warm cache, refresh, failed refresh, accepted empty, and location change states, backed by the production presentation contract.
+<!-- evidence: db5d427 -->
+
+### Maintenance / Cleanup
+- Developer diagnostics now include a 15-minute barometric pressure trend view.
+<!-- evidence: 4c609dd -->
+
 ## v1.2.0(195)
 ### Reliability
 - SkyAware now reports a minimal foreground activity signal when it becomes active, using its stable installation ID without depending on notification or location permissions; failed reports remain eligible for a later foreground retry.
