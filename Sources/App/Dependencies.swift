@@ -112,6 +112,12 @@ final class Dependencies: Sendable {
         }
         return value
     }
+    var alertDetailReconciliationObservation: (feedStateStore: FeedStateStore, alertRepo: AlertRepo)? {
+        guard let feedStateStore = _feedStateStore, let alertRepo = _alertRepo else {
+            return nil
+        }
+        return (feedStateStore, alertRepo)
+    }
     var homeIngestionCoordinator: any HomeIngestionCoordinating {
         guard let value = _homeIngestionCoordinator else {
             fatalError("Dependencies.homeIngestionCoordinator used while unconfigured")
