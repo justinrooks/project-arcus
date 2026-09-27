@@ -51,7 +51,7 @@ actor ConvectiveOutlookRepo {
         }
 
         guard await shouldCommit() else { throw CancellationError() }
-        try upsert(outlooks)
+        try replaceAcceptedCollection(with: outlooks)
         logger.debug("Persisted convective outlook refresh count=\(outlooks.count, privacy: .public)")
         return response.source
     }
@@ -79,9 +79,15 @@ actor ConvectiveOutlookRepo {
                                                        validUntil: $0.validUntil) }
         return dtos
     }
+
+    func collectionSnapshot(for day: Int = 1) throws -> ConvectiveOutlookCollectionSnapshot {
+        let rows = try modelContext.fetch(FetchDescriptor<ConvectiveOutlook>())
+        return ConvectiveOutlookCollectionSnapshot(rows: rows, day: day)
+    }
     
     func current() throws -> ConvectiveOutlookDTO? {
         var fetchDescriptor = FetchDescriptor<ConvectiveOutlook>(
+            predicate: #Predicate { $0.day != 0 },
             sortBy: [.init(\.published, order: .reverse)]
         )
         fetchDescriptor.fetchLimit = 1
@@ -104,30 +110,36 @@ actor ConvectiveOutlookRepo {
         let cutoff = Calendar.current.date(byAdding: .day, value: -2, to: now) ?? now
         logger.info("Purging convective outlooks older than \(cutoff, privacy: .public)")
         
-        // Fetch in batches to avoid large in-memory sets
-        let predicate = #Predicate<ConvectiveOutlook> { $0.published < cutoff }
-        var desc = FetchDescriptor<ConvectiveOutlook>(predicate: predicate)
-        desc.fetchLimit = 50
-        
-        while true {
-            let batch = try modelContext.fetch(desc)
-            if batch.isEmpty { break }
-            logger.debug("Found \(batch.count, privacy: .public) to purge")
-            
-            for obj in batch { modelContext.delete(obj) }
-            
+        let rows = try modelContext.fetch(FetchDescriptor<ConvectiveOutlook>())
+        guard rows.contains(where: { $0.published < cutoff }) else { return }
+        // A partial purge would make the remaining rows look like a newly accepted collection.
+        for row in rows { modelContext.delete(row) }
+        do {
             try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
         }
         
         logger.info("Convective outlooks purged")
     }
     
     // MARK: Helpers
-    private func upsert(_ items: [ConvectiveOutlook]) throws {
+    private func replaceAcceptedCollection(with items: [ConvectiveOutlook]) throws {
+        let previous = try modelContext.fetch(FetchDescriptor<ConvectiveOutlook>())
+        for row in previous { modelContext.delete(row) }
         for item in items {
             modelContext.insert(item)
         }
-        try modelContext.save()
+        if let latestPublished = items.map(\.published).max() {
+            modelContext.insert(ConvectiveOutlook.collectionMarker(published: latestPublished))
+        }
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            throw error
+        }
     }
     
     private func makeConvectiveOutlook(from rssItem: Item) -> ConvectiveOutlook? {
