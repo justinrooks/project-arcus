@@ -166,7 +166,7 @@ struct AlertView: View {
 
     private func alertDetail(for alert: AlertDTO) -> some View {
         ScrollView {
-            AlertDetailView(alert: alert, layout: .full)
+            ReconciledAlertDetailView(alert: alert, layout: .full)
                 .padding(.top, SkyAwareSpacing.compact)
                 .padding(.bottom, 24)
         }

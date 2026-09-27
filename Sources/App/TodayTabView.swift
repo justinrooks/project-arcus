@@ -113,7 +113,7 @@ struct TodayTabView: View {
                 GeometryReader { geometry in
                     let isExpanded = selectedSummaryAlertDetent == .large
                     ScrollView {
-                        AlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
+                        ReconciledAlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
                             .padding(.top, 8)
                             .padding(.horizontal, 6)
                             .frame(

@@ -76,6 +76,7 @@
 				UITests/SkyAwareUITests.swift,
 				UITests/SkyAwareUITestsLaunchTests.swift,
 				UnitTests/AirQualityHTTPClientTests.swift,
+				UnitTests/AlertDetailReconciliationTests.swift,
 				UnitTests/AlertNotificationTests.swift,
 				UnitTests/AlertPresentationOrderingTests.swift,
 				UnitTests/AlertRepoActiveTests.swift,
@@ -168,6 +169,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				UnitTests/AirQualityHTTPClientTests.swift,
+				UnitTests/AlertDetailReconciliationTests.swift,
 				UnitTests/AlertNotificationTests.swift,
 				UnitTests/AlertPresentationOrderingTests.swift,
 				UnitTests/AlertRepoActiveTests.swift,
@@ -952,7 +954,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Config/SkyAwareWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 220;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YVC4WFW94T;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Config/WidgetExtension-Info.plist";
@@ -980,7 +982,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = Config/SkyAwareWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 220;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = YVC4WFW94T;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = "Config/WidgetExtension-Info.plist";

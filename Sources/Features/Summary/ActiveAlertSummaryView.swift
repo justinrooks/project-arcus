@@ -216,7 +216,7 @@ struct ActiveAlertSummaryView: View {
         }
         .sheet(item: $selectedAlert) { alert in
             sheetContent(selection: $selectedAlertDetent) { isExpanded in
-                AlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
+                ReconciledAlertDetailView(alert: alert, layout: .sheet, isExpanded: isExpanded)
                     .padding(.top, 8)
                     .padding(.horizontal, 6)
             }

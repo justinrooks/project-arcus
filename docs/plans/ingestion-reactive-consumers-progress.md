@@ -52,7 +52,8 @@ Map reloads on scene activation rather than accepted feed changes. Home observes
 - Handoff: On initial observation and each keyed Home location-context change, the projection store records the active row's view and retains that row, the newest display-ready startup fallback, and up to 10 recent display-ready projections whose newest update or view is within 30 days. Stale projection IDs are staged per SwiftData store in UserDefaults and are deleted only on a later sweep if they remain outside the retention set, including when no active row exists yet. `HomeProjectionRetentionCoordinator` in its own source file provides a per-store async lease that serializes active-context publication with deletion and view updates without blocking the MainActor during SwiftData work. No canonical feed stores or SwiftData schema are changed. Retention waits for a resolved Home context, cancels superseded location work, and rolls back if cancellation arrives before save.
 
 ### [#451](https://github.com/justinrooks/project-arcus/issues/451) — Reconcile open alert detail with accepted revisions
-- Status: Pending optional
+- Status: Implemented — awaiting human review
+- Handoff: Alert detail remains immediately seeded from its selected cached DTO. While open, each alert-detail entry point observes accepted `arcus.alert` and `arcus.alerts` generations, rereads the canonical local alert by stable ID, and replaces its detail only when that same identity has a newer accepted revision. Unrelated feeds, absent/rejected rereads, mismatched identities, and older or unversioned candidates retain the visible detail; dismissal or navigation away cancels the view-scoped observation task.
 
 ### [#450](https://github.com/justinrooks/project-arcus/issues/450) — Prove end-to-end cache consumer behavior
 - Status: Pending validation gate
