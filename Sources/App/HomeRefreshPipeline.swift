@@ -481,11 +481,13 @@ final class HomeRefreshPipeline {
     private func refreshOutlooks(using outlooksService: any SpcOutlookQuerying) async {
         let startedAt = Date()
         do {
-            let dtos = try await outlooksService.getConvectiveOutlooks()
+            let collection = try await outlooksService.getConvectiveOutlookSnapshot()
+            let dtos = collection.outlooks
             let latest = dtos.max(by: { $0.published < $1.published })
             outlookSnapshot = HomeOutlookSnapshot(outlooks: dtos, outlook: latest)
-            outlookRefreshStatus = .success(hasContent: dtos.isEmpty == false)
-            hasAcceptedEmptyOutlookSnapshot = dtos.isEmpty
+            outlookRefreshStatus = collection.isAccepted
+                ? .success(hasContent: dtos.isEmpty == false) : .failed
+            hasAcceptedEmptyOutlookSnapshot = collection.isAcceptedEmpty
             let durationMs = Int(Date().timeIntervalSince(startedAt) * 1000)
             environment?.logger.info(
                 "Manual convective outlook refresh finished result=success durationMs=\(durationMs, privacy: .public) outlooks=\(dtos.count, privacy: .public)"
@@ -779,9 +781,7 @@ final class HomeRefreshPipeline {
             hasAcceptedEmptyOutlookSnapshot = core.outlooks.isEmpty
         } else {
             outlookRefreshStatus = core.outlooks.isEmpty ? .failed : .stale
-            if core.outlooks.isEmpty == false {
-                hasAcceptedEmptyOutlookSnapshot = false
-            }
+            hasAcceptedEmptyOutlookSnapshot = core.hasAcceptedOutlookCollection && core.outlooks.isEmpty
         }
         guard core.hasAcceptedCoreSnapshot else { return }
 

@@ -36,6 +36,7 @@ struct HomeSnapshot: Sendable, Equatable {
     var alerts: [AlertDTO]
     var outlooks: [ConvectiveOutlookDTO]
     var latestOutlook: ConvectiveOutlookDTO?
+    var hasAcceptedOutlookCollection: Bool
     var freshness: HomeFreshnessState
 
     init(
@@ -57,6 +58,7 @@ struct HomeSnapshot: Sendable, Equatable {
         alerts: [AlertDTO] = [],
         outlooks: [ConvectiveOutlookDTO] = [],
         latestOutlook: ConvectiveOutlookDTO? = nil,
+        hasAcceptedOutlookCollection: Bool = false,
         freshness: HomeFreshnessState = .init()
     ) {
         self.locationContext = locationContext
@@ -77,6 +79,7 @@ struct HomeSnapshot: Sendable, Equatable {
         self.alerts = alerts
         self.outlooks = outlooks
         self.latestOutlook = latestOutlook
+        self.hasAcceptedOutlookCollection = hasAcceptedOutlookCollection
         self.freshness = freshness
     }
 

@@ -37,12 +37,14 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         freshness: HomeFreshnessState
     ) async throws -> HomeSnapshot {
         guard let context else {
-            let outlooks = try await spcOutlook.getConvectiveOutlooks()
+            let collection = try await spcOutlook.getConvectiveOutlookSnapshot()
+            let outlooks = collection.outlooks
             let latestOutlook = outlooks.max(by: { $0.published < $1.published })
             return HomeSnapshot(
                 weather: weather,
                 outlooks: outlooks,
                 latestOutlook: latestOutlook,
+                hasAcceptedOutlookCollection: collection.isAccepted,
                 freshness: freshness
             )
         }
@@ -54,9 +56,10 @@ actor HomeSnapshotStore: HomeSnapshotReading {
         async let fireRisk = spcRisk.getFireRisk(for: coord)
         async let mesos = spcRisk.getActiveMesos(at: .now, for: coord)
         async let alerts = arcusAlerts.getActiveAlerts(context: context)
-        async let outlooks = spcOutlook.getConvectiveOutlooks()
+        async let collection = spcOutlook.getConvectiveOutlookSnapshot()
 
-        let resolvedOutlooks = try await outlooks
+        let resolvedCollection = try await collection
+        let resolvedOutlooks = resolvedCollection.outlooks
         let latestOutlook = resolvedOutlooks.max(by: { $0.published < $1.published })
 
         return try await HomeSnapshot(
@@ -70,6 +73,7 @@ actor HomeSnapshotStore: HomeSnapshotReading {
             alerts: alerts,
             outlooks: resolvedOutlooks,
             latestOutlook: latestOutlook,
+            hasAcceptedOutlookCollection: resolvedCollection.isAccepted,
             freshness: freshness
         )
     }

@@ -51,6 +51,24 @@ final class ConvectiveOutlook {
 }
 
 extension ConvectiveOutlook {
+    private static let collectionMarkerTitle = "SkyAware accepted outlook collection"
+
+    var isCollectionMarker: Bool { title == Self.collectionMarkerTitle }
+
+    static func collectionMarker(published: Date) -> ConvectiveOutlook {
+        ConvectiveOutlook(
+            title: collectionMarkerTitle,
+            link: URL(fileURLWithPath: "/"),
+            published: published,
+            fullText: "",
+            summary: "",
+            day: 0,
+            riskLevel: nil,
+            issued: nil,
+            validUntil: nil
+        )
+    }
+
     var dto: ConvectiveOutlookDTO {
         ConvectiveOutlookDTO(
             title: title,
@@ -63,5 +81,35 @@ extension ConvectiveOutlook {
             issued: issued,
             validUntil: validUntil
         )
+    }
+}
+
+enum ConvectiveOutlookCollectionSnapshot: Sendable, Equatable {
+    case unavailable
+    case accepted([ConvectiveOutlookDTO])
+
+    init(rows: [ConvectiveOutlook], day: Int = 1) {
+        guard rows.contains(where: \.isCollectionMarker) else {
+            self = .unavailable
+            return
+        }
+        self = .accepted(rows.filter { $0.day == day }
+            .sorted { $0.published > $1.published }
+            .map(\.dto))
+    }
+
+    var outlooks: [ConvectiveOutlookDTO] {
+        if case .accepted(let outlooks) = self { return outlooks }
+        return []
+    }
+
+    var isAcceptedEmpty: Bool {
+        if case .accepted(let outlooks) = self { return outlooks.isEmpty }
+        return false
+    }
+
+    var isAccepted: Bool {
+        if case .accepted = self { return true }
+        return false
     }
 }

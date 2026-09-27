@@ -506,7 +506,7 @@ struct ConvectiveOutlookRepoTests {
         #expect(day2[0].title.contains("C"))
     }
 
-    @Test("purge deletes items older than two days from reference date")
+    @Test("purge discards an aged accepted collection as a unit")
     @MainActor
     func purge_removesOldItems() async throws {
         let container = try await MainActor.run { try TestStore.container(for: [ConvectiveOutlook.self]) }
@@ -541,10 +541,91 @@ struct ConvectiveOutlookRepoTests {
         let repo = ConvectiveOutlookRepo(modelContainer: container)
         try await repo.purge(asOf: now)
 
-        // Only the recent item should remain
+        // Partial retention would misrepresent the accepted collection.
         let remaining = try await repo.fetchConvectiveOutlooks(for: 1)
-        #expect(remaining.count == 1)
-        #expect(remaining[0].title.contains("Recent"))
+        #expect(remaining.isEmpty)
+        #expect(try await repo.collectionSnapshot() == .unavailable)
+    }
+
+    @Test("accepted Day 1 absence replaces old rows and survives a disk reopen")
+    func acceptedEmpty_reopensAndPreservesProvenance() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [ConvectiveOutlook.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+        let populated = try #require(sampleValidRSS.data(using: .utf8))
+        let dayTwoOnly = try #require(sampleValidRSS.replacingOccurrences(
+            of: "Day 1 Convective Outlook", with: "Day 1 Fire Weather Outlook"
+        ).data(using: .utf8))
+
+        #expect(try await repo.collectionSnapshot() == .unavailable)
+        // A legacy partial row set has no accepted-set marker.
+        let legacy = ConvectiveOutlook(
+            title: "Legacy Day 2 Convective Outlook",
+            link: URL(string: "https://example.com/legacy")!,
+            published: utcDate(2025, 11, 11, 12),
+            fullText: "legacy", summary: "legacy", day: 2,
+            riskLevel: nil, issued: nil, validUntil: nil
+        )
+        await MainActor.run { container.mainContext.insert(legacy) }
+        try await MainActor.run { try container.mainContext.save() }
+        #expect(try await repo.collectionSnapshot() == .unavailable)
+        try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(populated)))
+        #expect(try await repo.collectionSnapshot().outlooks.count == 1)
+        try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .success(dayTwoOnly)))
+        #expect(try await repo.collectionSnapshot() == .accepted([]))
+        #expect(try await repo.fetchConvectiveOutlooks(for: 1).isEmpty)
+        #expect(try await repo.fetchConvectiveOutlooks(for: 2).count == 1)
+
+        let reopened = try await MainActor.run { () throws -> ModelContainer in
+            let schema = Schema([ConvectiveOutlook.self])
+            let configuration = ModelConfiguration(
+                "ConvectiveOutlookRepoTests", schema: schema,
+                url: directory.appendingPathComponent("SkyAware.sqlite")
+            )
+            return try ModelContainer(for: schema, configurations: configuration)
+        }
+        let reopenedRepo = ConvectiveOutlookRepo(modelContainer: reopened)
+        #expect(try await reopenedRepo.collectionSnapshot() == .accepted([]))
+
+        let feedState = FeedStateStore(directoryURL: directory)
+        let acceptedAt = Date.now
+        _ = try await feedState.update(FeedStateUpdate(
+            feedID: "spc.outlook", attemptedAt: acceptedAt, canonicalAcceptedAt: acceptedAt
+        ))
+        try await reopenedRepo.purge(asOf: utcDate(2025, 11, 15, 12))
+        #expect(try await reopenedRepo.collectionSnapshot() == .unavailable)
+        #expect(try await FeedStateStore(directoryURL: directory).record(for: "spc.outlook")?.generation == 1)
+    }
+
+    @Test("rejected and failed refresh preserve the accepted collection")
+    func rejectedAndFailedRefresh_preserveAcceptedCollection() async throws {
+        let (container, directory) = try await MainActor.run {
+            try makeDiskContainer(for: [ConvectiveOutlook.self])
+        }
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repo = ConvectiveOutlookRepo(modelContainer: container)
+        try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(
+            mode: .success(try #require(sampleValidRSS.data(using: .utf8)))
+        ))
+        let accepted = try await repo.collectionSnapshot()
+
+        do {
+            try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(
+                mode: .success(try #require(sampleOnlyNonMatchingTitlesRSS.data(using: .utf8)))
+            ))
+            Issue.record("Expected rejected refresh")
+        } catch let error as SpcError {
+            #expect(error == .parsingError)
+        }
+        #expect(try await repo.collectionSnapshot() == accepted)
+
+        do {
+            try await repo.refreshConvectiveOutlooks(using: FakeSpcClient(mode: .failure(TestError.boom)))
+            Issue.record("Expected failed refresh")
+        } catch TestError.boom {}
+        #expect(try await repo.collectionSnapshot() == accepted)
     }
 
     private func utcDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int = 0) -> Date {

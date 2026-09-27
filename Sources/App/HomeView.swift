@@ -94,8 +94,16 @@ struct HomeView: View {
         }
     }
 
+    private var cachedOutlookSnapshot: ConvectiveOutlookCollectionSnapshot {
+        ConvectiveOutlookCollectionSnapshot(rows: cachedOutlooks)
+    }
+
     private var cachedOutlookDTOs: [ConvectiveOutlookDTO] {
-        cachedOutlooks.map(\.dto)
+        cachedOutlookSnapshot.outlooks
+    }
+
+    private var hasAcceptedEmptyOutlookSnapshot: Bool {
+        refreshPipeline.hasAcceptedEmptyOutlookSnapshot || cachedOutlookSnapshot.isAcceptedEmpty
     }
 
     private func presentationSnapshot(
@@ -141,7 +149,7 @@ struct HomeView: View {
             cachedOutlooks: cachedOutlookDTOs,
             liveOutlooks: refreshPipeline.outlooks,
             refreshStatus: refreshPipeline.outlookRefreshStatus,
-            hasAcceptedEmptySnapshot: refreshPipeline.hasAcceptedEmptyOutlookSnapshot
+            hasAcceptedEmptySnapshot: hasAcceptedEmptyOutlookSnapshot
         )
     }
 
@@ -273,7 +281,7 @@ struct HomeView: View {
             outlookPresentationState: ConvectiveOutlookPresentationState.resolve(
                 dtos: displayedOutlooks,
                 refreshStatus: refreshPipeline.outlookRefreshStatus,
-                hasAcceptedEmptySnapshot: refreshPipeline.hasAcceptedEmptyOutlookSnapshot,
+                hasAcceptedEmptySnapshot: hasAcceptedEmptyOutlookSnapshot,
                 isOffline: runtimeConnectivityState.isOffline
             ),
             weather: presentation.weather,
@@ -358,7 +366,7 @@ struct HomeView: View {
             ConvectiveOutlookView(
                 dtos: displayedOutlooks,
                 refreshStatus: refreshPipeline.outlookRefreshStatus,
-                hasAcceptedEmptySnapshot: refreshPipeline.hasAcceptedEmptyOutlookSnapshot,
+                hasAcceptedEmptySnapshot: hasAcceptedEmptyOutlookSnapshot,
                 isOffline: runtimeConnectivityState.isOffline,
                 onRefresh: {
                     logger.notice("Manual convective outlook refresh requested")

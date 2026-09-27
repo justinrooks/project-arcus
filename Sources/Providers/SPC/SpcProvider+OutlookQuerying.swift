@@ -16,4 +16,8 @@ extension SpcProvider: SpcOutlookQuerying {
     func getConvectiveOutlooks() async throws -> [ConvectiveOutlookDTO] {
         try await outlookRepo.fetchConvectiveOutlooks()
     }
+
+    func getConvectiveOutlookSnapshot() async throws -> ConvectiveOutlookCollectionSnapshot {
+        try await outlookRepo.collectionSnapshot()
+    }
 }

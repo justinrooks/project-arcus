@@ -250,6 +250,9 @@ extension HomeView {
         refreshStatus: ConvectiveOutlookRefreshStatus,
         hasAcceptedEmptySnapshot: Bool = false
     ) -> [ConvectiveOutlookDTO] {
+        if case .success(hasContent: true) = refreshStatus, liveOutlooks.isEmpty == false {
+            return liveOutlooks
+        }
         if hasAcceptedEmptySnapshot { return [] }
         if case .success(hasContent: false) = refreshStatus { return [] }
         return liveOutlooks.isEmpty ? cachedOutlooks : liveOutlooks

@@ -4475,6 +4475,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
     private let marksBackgroundDeadlineDuringMesoSync: Bool
     private var mapSyncOutcome: SpcMapSyncOutcome
     private var outlookSyncOutcome: SpcOutlookSyncOutcome
+    private var hasAcceptedOutlookCollection: Bool
     private var stormRiskValue: StormRiskLevel
     private var severeRiskValue: SevereWeatherThreat
     private var fireRiskValue: FireRiskLevel
@@ -4517,6 +4518,7 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         self.marksBackgroundDeadlineDuringMesoSync = marksBackgroundDeadlineDuringMesoSync
         self.mapSyncOutcome = mapSyncOutcome
         self.outlookSyncOutcome = outlookSyncOutcome
+        self.hasAcceptedOutlookCollection = outlooks.isEmpty == false
         self.stormRiskValue = stormRiskValue
         self.severeRiskValue = severeRiskValue
         self.fireRiskValue = fireRiskValue
@@ -4564,7 +4566,9 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
         if let convectiveOutlookGate {
             await convectiveOutlookGate.wait()
         }
-        return Task.isCancelled ? .cancelled : outlookSyncOutcome
+        if Task.isCancelled { return .cancelled }
+        if outlookSyncOutcome.isCanonicalAcceptance { hasAcceptedOutlookCollection = true }
+        return outlookSyncOutcome
     }
 
     func syncMesoscaleDiscussions() async -> SpcMesoSyncOutcome {
@@ -4629,6 +4633,11 @@ private actor FakeSpcProvider: SpcSyncing, SpcRiskQuerying, SpcOutlookQuerying {
             throw outlookReadError
         }
         return outlookValues
+    }
+
+    func getConvectiveOutlookSnapshot() async throws -> ConvectiveOutlookCollectionSnapshot {
+        let outlooks = try await getConvectiveOutlooks()
+        return hasAcceptedOutlookCollection ? .accepted(outlooks) : .unavailable
     }
 
     func syncMapProductsCount() -> Int { syncMapProductsCalls }
