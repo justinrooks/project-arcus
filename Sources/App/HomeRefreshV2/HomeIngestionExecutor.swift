@@ -285,6 +285,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         let locationSession: any HomeContextPreparing
         let snapshotStore: any HomeSnapshotReading
         let projectionStore: (any HomeProjectionPersisting)?
+        let feedStateStore: FeedStateStore?
         let widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?
         let stormSetupQuerying: (any StormSetupQuerying)?
         let airQualityQuerying: (any AirQualityQuerying)?
@@ -301,6 +302,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             locationSession: any HomeContextPreparing,
             snapshotStore: any HomeSnapshotReading,
             projectionStore: (any HomeProjectionPersisting)?,
+            feedStateStore: FeedStateStore? = nil,
             widgetSnapshotRefresher: (any WidgetSnapshotRefreshing)?,
             stormSetupQuerying: (any StormSetupQuerying)? = nil,
             airQualityQuerying: (any AirQualityQuerying)? = nil,
@@ -316,6 +318,7 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             self.locationSession = locationSession
             self.snapshotStore = snapshotStore
             self.projectionStore = projectionStore
+            self.feedStateStore = feedStateStore
             self.widgetSnapshotRefresher = widgetSnapshotRefresher
             self.stormSetupQuerying = stormSetupQuerying
             self.airQualityQuerying = airQualityQuerying
@@ -397,6 +400,19 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         )
         await progress.report(context == nil ? .skipped(.location(plan.lanes)) : .completed(.location(plan.lanes)))
         let now = Date()
+        let hotFeedID = context.map { "home.hot.\(HomeProjection.projectionKey(for: $0))" }
+        if let hotFeedID, let feedStateStore = environment.feedStateStore {
+            do {
+                let record = try await feedStateStore.record(for: hotFeedID)
+                freshness.lastHotFeedSyncAt = (record?.generation ?? 0) > 0 && record?.lastFailure == nil
+                    ? record?.lastCanonicalAcceptanceAt : nil
+            } catch {
+                freshness.lastHotFeedSyncAt = nil
+                environment.logger.error("Unable to load coherent hot feed state: \(String(describing: error), privacy: .public)")
+            }
+        } else if environment.feedStateStore != nil {
+            freshness.lastHotFeedSyncAt = nil
+        }
         environment.logger.debug(
             "Home ingestion context resolution finished available=\((context != nil), privacy: .public) mode=\(executionMode.logName, privacy: .public)"
         )
@@ -405,14 +421,12 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
         if plan.lanes.contains(.hotAlerts) {
             if shouldSyncHotFeeds(plan: plan, now: now) {
                 await progress.report(.started(.lane(.hotAlerts)))
+                if plan.remoteAlertContext == nil || plan.lanes != [.hotAlerts] {
+                    await recordHotFeedStart(feedID: hotFeedID, attemptedAt: now)
+                }
                 environment.logger.info("Running home ingestion hot-alert sync mode=\(executionMode.logName, privacy: .public)")
                 hotFeedSyncOutcome = await syncHotFeeds(plan: plan, context: context, executionMode: executionMode)
                 try await throwIfBackgroundDeadlineExceeded()
-                if hotFeedSyncOutcome?.advancesFreshness == true {
-                    freshness.lastHotFeedSyncAt = now
-                } else if hotFeedSyncOutcome?.invalidatesFreshness == true {
-                    freshness.lastHotFeedSyncAt = nil
-                }
                 await progress.report(.completed(.lane(.hotAlerts)))
                 environment.logger.debug("Finished home ingestion hot-alert sync")
             } else {
@@ -421,6 +435,9 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             }
         }
 
+        if hotFeedSyncOutcome?.invalidatesFreshness == true {
+            freshness.lastHotFeedSyncAt = nil
+        }
         await progress.markHotAlertsCompleted()
 
         var slowFeedSyncOutcome: SlowFeedSyncOutcome?
@@ -487,6 +504,13 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
                 slowProductDecision: slowProductDecision,
                 acceptsHotFeedSnapshot: hotFeedSyncOutcome?.advancesFreshness == true
             )
+            await recordHotFeedAttempt(
+                feedID: hotFeedID,
+                outcome: hotFeedSyncOutcome,
+                persistenceResult: persistenceResult,
+                attemptedAt: now
+            )
+            snapshot.freshness.lastHotFeedSyncAt = freshness.lastHotFeedSyncAt
             switch persistenceResult {
             case .unavailable, .notRequired:
                 break
@@ -683,6 +707,56 @@ actor HomeIngestionExecutor: HomeIngestionExecuting, HomeStormSetupManualExecuti
             return .locationChanged
         }
         return .locationResolved
+    }
+
+    private func recordHotFeedStart(feedID: String?, attemptedAt: Date) async {
+        guard let feedID, let feedStateStore = environment.feedStateStore else { return }
+        do {
+            _ = try await feedStateStore.update(.init(
+                feedID: feedID,
+                attemptedAt: attemptedAt,
+                failure: .cancelled
+            ))
+        } catch {
+            environment.logger.error("Unable to start coherent hot feed state: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    private func recordHotFeedAttempt(
+        feedID: String?,
+        outcome: HotFeedSyncOutcome?,
+        persistenceResult: ProjectionPersistenceResult,
+        attemptedAt: Date
+    ) async {
+        guard let outcome, outcome != .targeted else { return }
+
+        let accepted: Bool
+        if case .committed = persistenceResult {
+            accepted = outcome.advancesFreshness
+        } else {
+            accepted = false
+        }
+
+        guard let feedStateStore = environment.feedStateStore else {
+            freshness.lastHotFeedSyncAt = outcome.advancesFreshness ? Date() : nil
+            return
+        }
+        guard let feedID else { return }
+
+        let acceptedAt = accepted ? Date() : nil
+        do {
+            _ = try await feedStateStore.update(.init(
+                feedID: feedID,
+                attemptedAt: attemptedAt,
+                canonicalAcceptedAt: acceptedAt,
+                failure: accepted ? nil : (Task.isCancelled ? .cancelled :
+                    outcome.advancesFreshness ? .persistence : .transport)
+            ))
+            freshness.lastHotFeedSyncAt = acceptedAt
+        } catch {
+            freshness.lastHotFeedSyncAt = nil
+            environment.logger.error("Unable to record coherent hot feed state: \(String(describing: error), privacy: .public)")
+        }
     }
 
     private func shouldSyncHotFeeds(plan: HomeIngestionPlan, now: Date) -> Bool {
