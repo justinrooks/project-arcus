@@ -547,6 +547,7 @@ final class Dependencies: Sendable {
                 locationSession: locationSession,
                 snapshotStore: homeSnapshotStore,
                 projectionStore: homeProjectionStore,
+                feedStateStore: feedStateStore,
                 widgetSnapshotRefresher: widgetSnapshotRefresher,
                 stormSetupQuerying: stormSetupClient,
                 airQualityQuerying: airQualityClient,

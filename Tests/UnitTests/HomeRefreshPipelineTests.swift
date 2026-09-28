@@ -2926,6 +2926,175 @@ struct HomeRefreshPipelineTests {
         }
     }
 
+    @Test("accepted hot state suppresses a redundant sync after feed state reopens")
+    func hotAdmission_reopenedAcceptedStateSkipsSync() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let firstSpc = FakeSpcProvider()
+        let firstAlerts = FakeAlertProvider()
+        let firstStore = FeedStateStore(directoryURL: directory)
+        let first = makeHotExecutor(
+            spc: firstSpc, alerts: firstAlerts, context: context,
+            projectionStore: projectionStore, feedStateStore: firstStore
+        )
+
+        _ = try await first.run(plan: .init(request: .init(trigger: .sessionTick)))
+
+        let feedID = "home.hot.\(HomeProjection.projectionKey(for: context))"
+        let accepted = try #require(await firstStore.record(for: feedID))
+        #expect(accepted.generation == 1)
+        #expect(accepted.lastCanonicalAcceptanceAt != nil)
+        #expect(try #require(accepted.lastCanonicalAcceptanceAt) >= accepted.lastAttemptAt)
+
+        let secondSpc = FakeSpcProvider()
+        let secondAlerts = FakeAlertProvider()
+        let reopened = makeHotExecutor(
+            spc: secondSpc, alerts: secondAlerts, context: context,
+            projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        let snapshot = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
+
+        #expect(await secondSpc.syncMesoscaleDiscussionsCount() == 0)
+        #expect(await secondAlerts.syncCount() == 0)
+        #expect(snapshot.freshness.lastHotFeedSyncAt == accepted.lastCanonicalAcceptanceAt)
+    }
+
+    @Test("fallback and failed hot attempts remain retry eligible after reopen", arguments: [
+        ArcusLocationSyncOutcome.errorFallback, .failed
+    ])
+    func hotAdmission_incompleteAttemptRetriesAfterReopen(outcome: ArcusLocationSyncOutcome) async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let alerts = FakeAlertProvider()
+        let store = FeedStateStore(directoryURL: directory)
+        let executor = makeHotExecutor(
+            spc: FakeSpcProvider(), alerts: alerts, context: context,
+            projectionStore: projectionStore, feedStateStore: store
+        )
+        _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick)))
+
+        await alerts.setLocationSyncOutcome(outcome)
+        let incomplete = try await executor.run(plan: .init(request: .init(trigger: .foregroundPrime)))
+        #expect(incomplete.freshness.lastHotFeedSyncAt == nil)
+
+        let feedID = "home.hot.\(HomeProjection.projectionKey(for: context))"
+        let record = try #require(await store.record(for: feedID))
+        #expect(record.generation == 1)
+        #expect(record.lastFailure == .transport)
+
+        let retrySpc = FakeSpcProvider()
+        let retryAlerts = FakeAlertProvider()
+        let reopened = makeHotExecutor(
+            spc: retrySpc, alerts: retryAlerts, context: context,
+            projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
+        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 1)
+        #expect(await retryAlerts.syncCount() == 1)
+    }
+
+    @Test("cancelled hot work leaves its previous acceptance retry eligible")
+    func hotAdmission_cancelledAttemptRetriesAfterReopen() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let store = FeedStateStore(directoryURL: directory)
+        let mesoGate = AsyncGate()
+        let alertGate = AsyncGate()
+        let spc = FakeSpcProvider(syncMesoscaleGate: mesoGate)
+        let alerts = FakeAlertProvider(syncGate: alertGate)
+        let executor = makeHotExecutor(
+            spc: spc, alerts: alerts, context: context,
+            projectionStore: projectionStore, feedStateStore: store
+        )
+        let task = Task {
+            try await executor.run(plan: .init(request: .init(trigger: .foregroundPrime)))
+        }
+        #expect(await waitUntil {
+            let mesoStarted = await spc.syncMesoscaleDiscussionsCount() == 1
+            let alertStarted = await alerts.syncCount() == 1
+            return mesoStarted && alertStarted
+        })
+        task.cancel()
+        await mesoGate.open()
+        await alertGate.open()
+        _ = try? await task.value
+
+        let feedID = "home.hot.\(HomeProjection.projectionKey(for: context))"
+        #expect(try await store.record(for: feedID)?.lastFailure == .cancelled)
+
+        let retrySpc = FakeSpcProvider()
+        let reopened = makeHotExecutor(
+            spc: retrySpc, alerts: FakeAlertProvider(), context: context,
+            projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
+        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 1)
+    }
+
+    @Test("projection failure does not durably accept a complete hot sync")
+    func hotAdmission_projectionFailureRetriesAfterReopen() async throws {
+        let context = makeContext()
+        let directory = try makeFeedStateDirectory()
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let store = FeedStateStore(directoryURL: directory)
+        let executor = makeHotExecutor(
+            spc: FakeSpcProvider(), alerts: FakeAlertProvider(), context: context,
+            projectionStore: projectionStore, feedStateStore: store
+        )
+        _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick)))
+
+        await projectionStore.failNextSaveForTesting()
+        let failed = try await executor.run(plan: .init(request: .init(trigger: .foregroundPrime)))
+        #expect(failed.freshness.lastHotFeedSyncAt == nil)
+
+        let feedID = "home.hot.\(HomeProjection.projectionKey(for: context))"
+        let record = try #require(await store.record(for: feedID))
+        #expect(record.generation == 1)
+        #expect(record.lastFailure == .persistence)
+
+        let retrySpc = FakeSpcProvider()
+        let reopened = makeHotExecutor(
+            spc: retrySpc, alerts: FakeAlertProvider(), context: context,
+            projectionStore: projectionStore, feedStateStore: FeedStateStore(directoryURL: directory)
+        )
+        _ = try await reopened.run(plan: .init(request: .init(trigger: .sessionTick)))
+        #expect(await retrySpc.syncMesoscaleDiscussionsCount() == 1)
+    }
+
+    @Test("coherent hot admission is location scoped and targeted alerts do not accept it")
+    func hotAdmission_locationsAndTargetedAlertsStayDistinct() async throws {
+        let firstContext = makeContext(h3Cell: 123_456)
+        let secondContext = makeContext(h3Cell: 654_321)
+        let store = FeedStateStore(directoryURL: try makeFeedStateDirectory())
+        let projectionStore = HomeProjectionStore(modelContainer: try TestStore.container(for: [HomeProjection.self]))
+        let spc = FakeSpcProvider()
+        let alerts = FakeAlertProvider()
+        let executor = makeHotExecutor(
+            spc: spc, alerts: alerts, context: firstContext,
+            projectionStore: projectionStore, feedStateStore: store
+        )
+        let firstFeedID = "home.hot.\(HomeProjection.projectionKey(for: firstContext))"
+
+        _ = try await executor.run(plan: .init(request: .init(
+            trigger: .remoteHotAlertReceived,
+            locationContext: firstContext,
+            remoteAlertContext: .init(alertID: Watch.sampleWatchRows[0].id)
+        )))
+        #expect(try await store.record(for: firstFeedID) == nil)
+
+        _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: firstContext)))
+        _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: secondContext)))
+        _ = try await executor.run(plan: .init(request: .init(trigger: .sessionTick, locationContext: firstContext)))
+
+        #expect(await spc.syncMesoscaleDiscussionsCount() == 3)
+        #expect(await alerts.syncCount() == 3)
+        #expect(try await store.record(for: firstFeedID)?.generation == 1)
+        #expect(try await store.record(for: "home.hot.\(HomeProjection.projectionKey(for: secondContext))")?.generation == 1)
+    }
+
     @Test("risk widget refresh preserves the coherent hot slice after partial hot acceptance")
     func riskWidgetRefresh_preservesCoherentHotSliceAfterPartialHotAcceptance() async throws {
         let container = try TestStore.container(for: [HomeProjection.self])
@@ -3771,6 +3940,34 @@ struct HomeRefreshPipelineTests {
                 widgetSnapshotRefresher: nil
             )
         )
+    }
+
+    private func makeHotExecutor(
+        spc: FakeSpcProvider,
+        alerts: FakeAlertProvider,
+        context: LocationContext,
+        projectionStore: HomeProjectionStore,
+        feedStateStore: FeedStateStore
+    ) -> HomeIngestionExecutor {
+        HomeIngestionExecutor(environment: .init(
+            logger: Logger(subsystem: "SkyAwareTests", category: "HomeRefreshPipelineTests"),
+            spcSync: spc,
+            arcusAlertSync: alerts,
+            weatherClient: FakeWeatherClient(),
+            locationSession: FakeLocationSession(currentContext: context, preparedContext: context),
+            snapshotStore: HomeSnapshotStore(spcRisk: spc, spcOutlook: spc, arcusAlerts: alerts),
+            projectionStore: projectionStore,
+            feedStateStore: feedStateStore,
+            widgetSnapshotRefresher: nil
+        ))
+    }
+
+    private func makeFeedStateDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("HomeHotAdmissionTests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
     }
 
     private func slowProductPlan(forced: Bool = false) -> HomeIngestionPlan {
