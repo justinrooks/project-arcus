@@ -1,7 +1,7 @@
 # Current App Store Listing
 
 ## Version
-1.1.0
+1.2.0
 
 ## App Name
 SkyAware
@@ -29,6 +29,7 @@ SkyAware shows you:
 • Atmospheric conditions that can support severe storms
 • Interactive risk maps and official outlook information
 • Location-aware notifications when important conditions change
+• Home Screen and Lock Screen widgets for quick risk checks, including prioritized local alerts in the large widget
 
 Dig deeper when you want more context, or get the important picture in just a few seconds.
 
@@ -42,14 +43,15 @@ Important
 
 SkyAware is an informational severe-weather awareness app. It does not issue official warnings, and notifications may not always be immediate. Always rely on official alerts from the National Weather Service, NOAA Weather Radio, and local authorities for emergency information.
 
+
 ## What's New in This Version
-SkyAware 1.1 brings deeper severe-weather awareness, faster updates, and a more reliable experience.
-• New Storm Setup adds deeper context when severe storms are a concern, with a focused summary and optional detailed atmospheric ingredients.
-• New risk-change notifications can alert you when your local severe-weather risk changes, with smarter handling to reduce duplicate or misleading notifications.
-• Today is faster and steadier, showing the important picture sooner while keeping useful conditions, alerts, and air-quality information in place during refreshes.
-• Maps are more accurate and resilient, with improved risk-area geometry and better preservation of active warning information during temporary refresh issues.
-• Background updates and notifications are more reliable, with improved scheduling, recovery, location handling, and retry behavior.
-• Fire-weather wording, startup presentation, accessibility, and many details throughout the app have also been refined.
+SkyAware 1.3 keeps local severe-weather awareness steadier while conditions update.
+
+• Today keeps the last reliable weather and risk information visible while updates finish or fail, then changes only when replacement information is ready.
+• Alerts, Outlook, and Storm Setup now show clearer loading, unavailable, failed, and genuinely quiet states.
+• Maps preserve the selected layer and camera while replacement data loads.
+• Risk-change notifications and active alert handling have been refined so local changes are compared from the right context, and active alerts are not removed by incomplete source updates.
+• Reduce Motion now turns off presentation animations across key surfaces.
 
 ## Keywords
 storm,tornado,warning,alert,watch,mesoscale,spc,nws,outlook,thunderstorm,hail,wind,fire,forecast
